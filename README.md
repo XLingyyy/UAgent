@@ -2,24 +2,24 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows — starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP0 — Project Foundation
+## Current Stage: UI Foundation
 
-Establishing the TypeScript monorepo baseline with Electron + React desktop shell, shared type definitions, runtime state machine, and MCP client abstractions. No real UE connection or LLM calls yet.
+Building the UAgent desktop shell on Tauri 2 + React + Vite with an AppShell layout (TitleBar, LeftSidebar, Workspace, InspectorPane), dark theme tokens, and animation tokens. Agent Runtime / MCP / LLM / Verifier functionality will be layered in after the UI shell is stable.
 
 ## Technology Stack
 
-- **Desktop Shell**: Electron 31 + React 18 + Vite
-- **Build**: electron-vite
+- **Desktop Shell**: Tauri 2 + React 18 + Vite 5
 - **Language**: TypeScript 5.5+ (strict mode)
 - **Package Manager**: pnpm 9+ monorepo
 - **Linting**: ESLint 9 (flat config) + Prettier
-- **Testing**: Vitest
+- **Testing**: Vitest + Testing Library
 
 ## Quick Start
 
 ```bash
 pnpm install
-pnpm dev          # Launch Electron desktop workspace
+pnpm --filter @uagent/desktop web:dev   # Start Vite dev server (browser preview)
+pnpm --filter @uagent/desktop dev        # Start Tauri native dev (requires Rust)
 pnpm typecheck    # TypeScript checking
 pnpm lint         # Static analysis
 pnpm test         # Run test suite
@@ -28,14 +28,30 @@ pnpm test         # Run test suite
 ## Project Structure
 
 ```
-apps/desktop/         Electron + React desktop app
-packages/shared/      Shared types (messages, plans, tools, evidence)
-packages/runtime/     Agent state machine and task execution
+apps/desktop/
+  src-tauri/        Tauri 2 native shell (Rust)
+  web/              React + Vite frontend
+    src/
+      app/          Root App and providers
+      shell/        AppShell, TitleBar, MainLayout, GlobalOverlays
+      sidebar/      LeftSidebar
+      workspace/    Workspace (ConversationViewport + ComposerDock area)
+      inspector/    InspectorPane
+      components/   Reusable presentational components
+      stores/       UI state stores (Zustand layer — placeholder)
+      styles/       tokens, theme, animations, globals
+      types/        UI type definitions
+packages/shared/    Shared types (messages, plans, tools, evidence)
+packages/runtime/   Agent state machine and task execution
 packages/mcp-client/  MCP server profile and connection types
-docs/                 Architecture, roadmap, development guide
+docs/               Architecture, roadmap, development guide
 ```
 
-## Non-Goals (MVP0)
+## Native Build Prerequisites
+
+The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and platform-specific WebView dependencies. The web frontend (`pnpm --filter @uagent/desktop web:build`) builds without Rust.
+
+## Non-Goals (current stage)
 
 - Real Unreal Engine connection or Editor launch
 - Real LLM API calls or provider integration

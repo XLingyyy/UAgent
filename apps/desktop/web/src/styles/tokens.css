@@ -1,0 +1,94 @@
+/**
+ * UAgent Design Tokens
+ *
+ * Raw, theme-independent design values.
+ * Do not reference these directly in components; use the semantic
+ * tokens declared in theme.css instead.
+ */
+
+:root {
+  /* ---- Color primitives (dark baseline) ---- */
+  --ua-color-gray-50: #f7f8fa;
+  --ua-color-gray-100: #e3e6ec;
+  --ua-color-gray-200: #c6ccd6;
+  --ua-color-gray-300: #9ba3b2;
+  --ua-color-gray-400: #717a8c;
+  --ua-color-gray-500: #525a6a;
+  --ua-color-gray-600: #3a4050;
+  --ua-color-gray-700: #2a2f3c;
+  --ua-color-gray-800: #1d212b;
+  --ua-color-gray-850: #161922;
+  --ua-color-gray-900: #101218;
+  --ua-color-gray-950: #0a0c10;
+
+  --ua-color-blue-400: #5b8cff;
+  --ua-color-blue-500: #3d6ef0;
+  --ua-color-blue-600: #2b54d4;
+
+  --ua-color-red-400: #f0696e;
+  --ua-color-red-500: #e5484d;
+
+  --ua-color-amber-400: #e0a73a;
+  --ua-color-amber-500: #d9923a;
+
+  --ua-color-green-400: #3fb950;
+
+  /* ---- Radius scale ---- */
+  --ua-radius-xs: 3px;
+  --ua-radius-sm: 5px;
+  --ua-radius-md: 7px;
+  --ua-radius-lg: 10px;
+  --ua-radius-xl: 14px;
+
+  /* ---- Spacing scale (4px base) ---- */
+  --ua-space-0: 0px;
+  --ua-space-1: 4px;
+  --ua-space-2: 8px;
+  --ua-space-3: 12px;
+  --ua-space-4: 16px;
+  --ua-space-5: 20px;
+  --ua-space-6: 24px;
+  --ua-space-8: 32px;
+  --ua-space-10: 40px;
+  --ua-space-12: 48px;
+
+  /* ---- Typography scale ---- */
+  --ua-font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --ua-font-mono: "SF Mono", "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace;
+
+  --ua-font-size-xs: 11px;
+  --ua-font-size-sm: 12px;
+  --ua-font-size-base: 13px;
+  --ua-font-size-md: 14px;
+  --ua-font-size-lg: 16px;
+  --ua-font-size-xl: 18px;
+  --ua-font-size-2xl: 22px;
+
+  --ua-font-weight-normal: 400;
+  --ua-font-weight-medium: 500;
+  --ua-font-weight-semibold: 600;
+  --ua-font-weight-bold: 700;
+
+  --ua-line-height-tight: 1.3;
+  --ua-line-height-normal: 1.5;
+  --ua-line-height-relaxed: 1.65;
+
+  /* ---- Layout dimensions ---- */
+  --ua-sidebar-width: 248px;
+  --ua-sidebar-min-width: 220px;
+  --ua-inspector-width: 340px;
+  --ua-inspector-min-width: 280px;
+  --ua-titlebar-height: 40px;
+  --ua-composer-min-height: 64px;
+
+  /* ---- Z-index scale ---- */
+  --ua-z-base: 0;
+  --ua-z-sidebar: 10;
+  --ua-z-workspace: 10;
+  --ua-z-inspector: 20;
+  --ua-z-titlebar: 100;
+  --ua-z-overlay: 1000;
+  --ua-z-modal: 2000;
+  --ua-z-toast: 3000;
+}

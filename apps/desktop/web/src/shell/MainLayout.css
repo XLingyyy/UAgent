@@ -1,0 +1,29 @@
+.ua-main-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  min-height: 0;
+}
+
+/**
+ * On narrow screens the inspector becomes an overlay panel
+ * instead of participating in the flex flow, so the Workspace
+ * (and its future Composer dock) is never squeezed.
+ */
+@media (max-width: 899px) {
+  .ua-inspector {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .ua-inspector--closed {
+    transform: translateX(100%);
+    width: var(--ua-inspector-width);
+    min-width: var(--ua-inspector-min-width);
+    opacity: 1;
+  }
+}

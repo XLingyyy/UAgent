@@ -1,0 +1,6 @@
+.ua-global-overlays {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--ua-z-overlay);
+}

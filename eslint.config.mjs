@@ -24,6 +24,7 @@ export default tseslint.config(
       ".git/",
       ".agent-bus/",
       "监工文档/",
+      "apps/desktop/src-tauri/**",
       "*.config.*",
     ],
   },

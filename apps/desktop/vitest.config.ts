@@ -5,12 +5,13 @@ import { resolve } from "node:path";
 export default defineConfig({
   plugins: [react()],
   test: {
-    environment: "node",
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    environment: "jsdom",
+    globals: true,
+    include: ["web/src/**/*.test.ts", "web/src/**/*.test.tsx"],
   },
   resolve: {
     alias: {
-      "@renderer": resolve("src/renderer/src"),
+      "@": resolve(__dirname, "web/src"),
     },
   },
 });

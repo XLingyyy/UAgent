@@ -1,0 +1,50 @@
+/**
+ * UAgent Theme — Dark baseline
+ *
+ * Semantic tokens that map raw design values to UI roles.
+ * Components should only reference these semantic tokens.
+ */
+
+:root,
+[data-theme="dark"] {
+  --ua-bg: var(--ua-color-gray-950);
+  --ua-bg-sidebar: var(--ua-color-gray-900);
+  --ua-bg-panel: var(--ua-color-gray-850);
+  --ua-bg-elevated: var(--ua-color-gray-800);
+  --ua-bg-hover: rgba(255, 255, 255, 0.04);
+  --ua-bg-active: rgba(255, 255, 255, 0.07);
+  --ua-bg-input: var(--ua-color-gray-800);
+
+  --ua-border: var(--ua-color-gray-700);
+  --ua-border-subtle: var(--ua-color-gray-800);
+  --ua-border-strong: var(--ua-color-gray-600);
+
+  --ua-text: var(--ua-color-gray-100);
+  --ua-text-muted: var(--ua-color-gray-400);
+  --ua-text-subtle: var(--ua-color-gray-500);
+  --ua-text-inverse: var(--ua-color-gray-950);
+
+  --ua-accent: var(--ua-color-blue-500);
+  --ua-accent-hover: var(--ua-color-blue-400);
+  --ua-accent-active: var(--ua-color-blue-600);
+  --ua-accent-fg: #ffffff;
+  --ua-accent-subtle: rgba(61, 110, 240, 0.12);
+
+  --ua-danger: var(--ua-color-red-500);
+  --ua-danger-hover: var(--ua-color-red-400);
+  --ua-danger-subtle: rgba(229, 72, 77, 0.12);
+
+  --ua-warning: var(--ua-color-amber-500);
+  --ua-warning-hover: var(--ua-color-amber-400);
+  --ua-warning-subtle: rgba(217, 146, 58, 0.12);
+
+  --ua-success: var(--ua-color-green-400);
+  --ua-success-subtle: rgba(63, 185, 80, 0.12);
+
+  /* Focus ring */
+  --ua-focus-ring: 0 0 0 2px var(--ua-color-gray-950), 0 0 0 4px var(--ua-accent);
+
+  /* Scrollbar */
+  --ua-scrollbar-thumb: var(--ua-color-gray-600);
+  --ua-scrollbar-track: transparent;
+}

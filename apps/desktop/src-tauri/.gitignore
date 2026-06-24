@@ -1,0 +1,9 @@
+# Tauri build artifacts
+/target/
+/gen/schemas/
+
+# Generated icons
+/icons/
+
+# Tauri generated
+/gen/

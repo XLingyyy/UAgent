@@ -1,0 +1,138 @@
+/**
+ * UAgent Global Styles
+ *
+ * Reset, base element styling, and shared utility classes.
+ * Imported once at the application root.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+html {
+  font-size: var(--ua-font-size-base);
+  font-family: var(--ua-font-sans);
+  color: var(--ua-text);
+  background: var(--ua-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  line-height: var(--ua-line-height-normal);
+  user-select: none;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Links ---- */
+a {
+  color: var(--ua-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--ua-accent-hover);
+}
+
+/* ---- Buttons reset ---- */
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow: var(--ua-focus-ring);
+}
+
+/* ---- Inputs reset ---- */
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--ua-text);
+  background: var(--ua-bg-input);
+  border: 1px solid var(--ua-border);
+  border-radius: var(--ua-radius-sm);
+  padding: var(--ua-space-2) var(--ua-space-3);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--ua-accent);
+}
+
+/* ---- Scrollbar styling ---- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--ua-scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ua-scrollbar-thumb);
+  border-radius: var(--ua-radius-xs);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ua-border-strong);
+}
+
+/* ---- Selection ---- */
+::selection {
+  background: var(--ua-accent-subtle);
+  color: var(--ua-text);
+}
+
+/* ---- Utility classes ---- */
+.ua-text-muted {
+  color: var(--ua-text-muted);
+}
+
+.ua-text-mono {
+  font-family: var(--ua-font-mono);
+}
+
+/* ---- AppShell layout helpers ---- */
+.ua-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.ua-app__body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}

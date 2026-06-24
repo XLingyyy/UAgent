@@ -4,7 +4,7 @@
   "private": true,
   "description": "UAgent — AI Agent Host/Client aligned with UE5.8 Unreal MCP Server",
   "scripts": {
-    "dev": "pnpm -r --filter @uagent/desktop dev",
+    "dev": "pnpm --filter @uagent/desktop dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",

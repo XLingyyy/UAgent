@@ -1,0 +1,36 @@
+/**
+ * UAgent Animation Tokens
+ *
+ * Centralized motion timing and easing. All transitions and
+ * animations in the UI should reference these tokens.
+ */
+
+:root {
+  /* Easing curves */
+  --ua-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ua-ease-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --ua-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ua-ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* Duration scale */
+  --ua-dur-instant: 60ms;
+  --ua-dur-fast: 120ms;
+  --ua-dur-mid: 180ms;
+  --ua-dur-slow: 220ms;
+  --ua-dur-slower: 320ms;
+}
+
+/**
+ * Respect the user's motion preference.
+ * All animations and transitions are effectively disabled.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

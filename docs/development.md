@@ -6,6 +6,15 @@
 - pnpm >= 9.0.0
 - Git
 
+### Native Build (optional)
+
+To run the Tauri 2 native desktop build (`pnpm --filter @uagent/desktop dev` or `tauri build`), you also need:
+
+- Rust toolchain (`rustc` / `cargo`) — install via https://rustup.rs
+- Platform-specific WebView runtime (WebView2 on Windows, WebKit on macOS/Linux)
+
+The web frontend builds and runs without Rust.
+
 ## Getting Started
 
 ```bash
@@ -14,8 +23,11 @@ git clone <repo-url> uagent
 cd uagent
 pnpm install
 
-# Start desktop app in development mode
-pnpm dev
+# Start web dev server (browser preview, no Rust needed)
+pnpm --filter @uagent/desktop web:dev
+
+# Start Tauri native dev (requires Rust)
+pnpm --filter @uagent/desktop dev
 
 # Run all checks
 pnpm typecheck
@@ -25,51 +37,79 @@ pnpm test
 
 ## Development Commands
 
-| Command             | Description                                  |
-| ------------------- | -------------------------------------------- |
-| `pnpm dev`          | Start Electron desktop app in dev mode       |
-| `pnpm build`        | Build all packages and apps                  |
-| `pnpm typecheck`    | TypeScript type checking across all packages |
-| `pnpm lint`         | ESLint static analysis                       |
-| `pnpm lint:fix`     | Auto-fix lint issues                         |
-| `pnpm format`       | Format code with Prettier                    |
-| `pnpm format:check` | Check code formatting                        |
-| `pnpm test`         | Run all tests with Vitest                    |
+| Command                                         | Description                                   |
+| ----------------------------------------------- | --------------------------------------------- |
+| `pnpm --filter @uagent/desktop web:dev`         | Start Vite dev server on port 1420            |
+| `pnpm --filter @uagent/desktop web:build`       | Build web frontend to `apps/desktop/web/dist` |
+| `pnpm --filter @uagent/desktop dev`             | Start Tauri native dev (requires Rust)        |
+| `pnpm --filter @uagent/desktop tauri --version` | Verify Tauri CLI is installed                 |
+| `pnpm typecheck`                                | TypeScript type checking across all packages  |
+| `pnpm lint`                                     | ESLint static analysis                        |
+| `pnpm lint:fix`                                 | Auto-fix lint issues                          |
+| `pnpm format`                                   | Format code with Prettier                     |
+| `pnpm format:check`                             | Check code formatting                         |
+| `pnpm test`                                     | Run all tests with Vitest                     |
 
 ## Project Structure
 
 ```text
 uagent/
 ├── apps/
-│   └── desktop/          # Electron + React desktop app
-│       ├── src/
-│       │   ├── main/     # Electron main process
-│       │   ├── preload/  # Preload bridge
-│       │   └── renderer/ # React SPA (workspace UI)
-│       └── electron.vite.config.ts
+│   └── desktop/                  # Tauri 2 + React + Vite desktop app
+│       ├── src-tauri/            # Tauri native shell (Rust)
+│       │   ├── src/              # Rust entry points
+│       │   ├── capabilities/     # Tauri permission capabilities
+│       │   ├── Cargo.toml        # Rust manifest
+│       │   └── tauri.conf.json   # Tauri configuration
+│       ├── web/                  # React + Vite frontend
+│       │   ├── src/
+│       │   │   ├── app/          # Root App and UI providers
+│       │   │   ├── shell/        # AppShell, TitleBar, MainLayout, GlobalOverlays
+│       │   │   ├── sidebar/      # LeftSidebar
+│       │   │   ├── workspace/    # Workspace (viewport + composer dock)
+│       │   │   ├── inspector/    # InspectorPane
+│       │   │   ├── components/   # Reusable presentational components
+│       │   │   ├── stores/       # UI state stores (placeholder)
+│       │   │   ├── styles/       # tokens, theme, animations, globals
+│       │   │   └── types/        # UI type definitions
+│       │   ├── index.html
+│       │   ├── vite.config.ts
+│       │   └── tsconfig.json
+│       ├── vitest.config.ts
+│       └── package.json
 ├── packages/
-│   ├── shared/           # Shared types and utilities
-│   ├── runtime/          # Agent runtime engine
-│   └── mcp-client/       # MCP client abstraction
+│   ├── shared/                   # Shared types and utilities
+│   ├── runtime/                  # Agent runtime engine
+│   └── mcp-client/               # MCP client abstraction
 ├── docs/
 │   ├── architecture.md
 │   ├── mvp-roadmap.md
 │   └── development.md
-├── package.json          # Root workspace config
+├── package.json                  # Root workspace config
 ├── pnpm-workspace.yaml
-├── tsconfig.json         # Base TypeScript config
-└── eslint.config.mjs     # Flat ESLint config
+├── tsconfig.json                 # Base TypeScript config
+└── eslint.config.mjs             # Flat ESLint config
 ```
 
 ## Technology Stack
 
 - **Runtime**: Node.js >= 20
 - **Language**: TypeScript 5.5+
-- **Desktop**: Electron 31 + React 18
-- **Build**: electron-vite + Vite 5
+- **Desktop**: Tauri 2 + React 18 + Vite 5
 - **Package Manager**: pnpm 9+
 - **Linting**: ESLint 9 (flat config) + Prettier
-- **Testing**: Vitest
+- **Testing**: Vitest + Testing Library
+
+## UI Styling
+
+All visual tokens are centralized in `apps/desktop/web/src/styles/`:
+
+- **`tokens.css`** — raw design values (colors, radius, spacing, typography, layout dimensions).
+- **`theme.css`** — semantic tokens (`--ua-bg`, `--ua-text`, `--ua-accent`, etc.) mapped to the dark theme.
+- **`animations.css`** — motion tokens with `prefers-reduced-motion` support.
+- **`globals.css`** — reset and base element styles.
+
+Components should only reference semantic tokens from `theme.css`, not raw values from `tokens.css`.
 
 ## Adding a New Package
 
@@ -96,8 +136,10 @@ Each package contains its own test suite using Vitest:
 pnpm test
 
 # Run tests for a specific package
-pnpm --filter @uagent/runtime test
+pnpm --filter @uagent/desktop test
 
 # Watch mode
-pnpm --filter @uagent/shared test:watch
+pnpm --filter @uagent/desktop test:watch
 ```
+
+The desktop app includes UI shell smoke tests using Testing Library (`@testing-library/react`) with a jsdom environment.
