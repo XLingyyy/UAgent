@@ -1,6 +1,10 @@
 .ua-project-section {
+  display: flex;
+  flex-direction: column;
   padding: 0 var(--ua-space-2) var(--ua-space-2);
   border-bottom: 1px solid var(--ua-border-subtle);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .ua-project-section__header {

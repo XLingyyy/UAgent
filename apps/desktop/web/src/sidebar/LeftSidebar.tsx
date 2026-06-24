@@ -3,6 +3,7 @@ import { PrimaryNav } from "./PrimaryNav";
 import { ProjectSection } from "./ProjectSection";
 import { ThreadSection } from "./ThreadSection";
 import { mockProject, mockThreads } from "./sidebar-data";
+import { mockProjectTree } from "./project-tree-data";
 import "./LeftSidebar.css";
 
 export function LeftSidebar() {
@@ -15,7 +16,7 @@ export function LeftSidebar() {
         <PrimaryNav activeNav={sidebar.activeNav} onNavChange={setActiveNav} />
       </div>
       <div className="ua-sidebar__body">
-        <ProjectSection project={mockProject} />
+        <ProjectSection project={mockProject} treeNodes={mockProjectTree} />
         <ThreadSection
           threads={mockThreads}
           activeThreadId={sidebar.activeThreadId}

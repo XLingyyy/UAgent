@@ -128,6 +128,49 @@ describe("LeftSidebar", () => {
     });
   });
 
+  describe("ProjectTree", () => {
+    it("renders the Project Tree label", () => {
+      renderSidebar();
+      expect(screen.getByText("Project Tree")).toBeTruthy();
+    });
+
+    it("renders root nodes Content and Config", () => {
+      renderSidebar();
+      expect(screen.getByText("Content")).toBeTruthy();
+      expect(screen.getByText("Config")).toBeTruthy();
+    });
+
+    it("renders Content children (Maps, Characters, Materials) by default", () => {
+      renderSidebar();
+      expect(screen.getByText("Maps")).toBeTruthy();
+      expect(screen.getByText("Characters")).toBeTruthy();
+      expect(screen.getByText("Materials")).toBeTruthy();
+    });
+
+    it("toggles folder expand on click", () => {
+      renderSidebar();
+      const contentToggles = screen
+        .getAllByText("▸")
+        .filter((el) => el.closest('[role="treeitem"]')?.textContent?.includes("Content"));
+      expect(contentToggles.length).toBeGreaterThan(0);
+      fireEvent.click(contentToggles[0]);
+      expect(screen.queryByText("Maps")).toBeNull();
+    });
+
+    it("selects a tree node on click", () => {
+      renderSidebar();
+      const contentItem = screen.getByText("Content").closest('[role="treeitem"]')!;
+      fireEvent.click(contentItem);
+      expect(contentItem.getAttribute("aria-selected")).toBe("true");
+    });
+
+    it("shows Config folder and its child", () => {
+      renderSidebar();
+      expect(screen.getByText("Config")).toBeTruthy();
+      expect(screen.getByText("DefaultGame.ini")).toBeTruthy();
+    });
+  });
+
   describe("Footer", () => {
     it("renders the version badge", () => {
       renderSidebar();

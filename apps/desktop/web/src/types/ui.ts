@@ -15,6 +15,24 @@ export interface MockProject {
   path: string;
 }
 
+/** Node type identifiers for the project tree. */
+export type ProjectTreeNodeType =
+  | "Folder"
+  | "Map"
+  | "Blueprint"
+  | "Material"
+  | "Asset"
+  | "Config"
+  | "Project";
+
+/** A single node in the mock project tree. */
+export interface ProjectTreeNode {
+  id: string;
+  name: string;
+  type: ProjectTreeNodeType;
+  children?: ProjectTreeNode[];
+}
+
 /** Mock thread / conversation data shape for the sidebar ThreadSection. */
 export interface MockThread {
   id: string;

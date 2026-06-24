@@ -1,0 +1,23 @@
+.ua-project-tree {
+  display: flex;
+  flex-direction: column;
+  padding: var(--ua-space-1) 0;
+  overflow: hidden;
+}
+
+.ua-project-tree__scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.ua-project-tree__label {
+  padding: var(--ua-space-2) var(--ua-space-2) var(--ua-space-1);
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ua-text-subtle);
+  flex-shrink: 0;
+}

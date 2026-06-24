@@ -1,0 +1,73 @@
+.ua-tree-node {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 var(--ua-space-2);
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--ua-radius-xs);
+  margin: 0 var(--ua-space-1);
+  transition:
+    background var(--ua-dur-fast) var(--ua-ease-standard),
+    color var(--ua-dur-fast) var(--ua-ease-standard);
+}
+
+.ua-tree-node:hover {
+  background: var(--ua-bg-hover);
+}
+
+.ua-tree-node--selected {
+  background: var(--ua-bg-active);
+  color: var(--ua-text);
+}
+
+.ua-tree-node--selected:hover {
+  background: var(--ua-bg-active);
+}
+
+.ua-tree-node__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  font-size: var(--ua-font-size-xs);
+  color: var(--ua-text-subtle);
+  transition: transform var(--ua-dur-fast) var(--ua-ease-standard);
+}
+
+.ua-tree-node__toggle--expanded {
+  transform: rotate(90deg);
+}
+
+.ua-tree-node__toggle--leaf {
+  visibility: hidden;
+}
+
+.ua-tree-node__name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--ua-font-size-sm);
+  color: var(--ua-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ua-tree-node--selected .ua-tree-node__name {
+  color: var(--ua-text);
+}
+
+.ua-tree-node__type {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: var(--ua-font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px var(--ua-space-1);
+  border-radius: 2px;
+  color: var(--ua-text-subtle);
+  background: var(--ua-bg-panel);
+  margin-left: var(--ua-space-1);
+}

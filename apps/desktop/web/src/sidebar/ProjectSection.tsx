@@ -1,11 +1,13 @@
-import type { MockProject } from "../types/ui";
+import type { MockProject, ProjectTreeNode as ProjectTreeNodeType } from "../types/ui";
+import { ProjectTree } from "./ProjectTree";
 import "./ProjectSection.css";
 
 export interface ProjectSectionProps {
   project: MockProject;
+  treeNodes: ProjectTreeNodeType[];
 }
 
-export function ProjectSection({ project }: ProjectSectionProps) {
+export function ProjectSection({ project, treeNodes }: ProjectSectionProps) {
   return (
     <section className="ua-project-section" aria-label="Current project">
       <div className="ua-project-section__header">
@@ -34,6 +36,7 @@ export function ProjectSection({ project }: ProjectSectionProps) {
           </button>
         </div>
       </div>
+      <ProjectTree nodes={treeNodes} />
     </section>
   );
 }
