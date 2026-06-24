@@ -1,0 +1,15 @@
+# OS-generated files
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# Editor and local environment files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
