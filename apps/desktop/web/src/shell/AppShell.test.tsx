@@ -26,9 +26,9 @@ describe("AppShell", () => {
     expect(container.querySelector(".ua-global-overlays")).toBeTruthy();
   });
 
-  it("renders the ComposerDock placeholder in the workspace", () => {
+  it("renders the ComposerDock in the workspace", () => {
     renderAppShell();
-    expect(screen.getByText("ComposerDock placeholder")).toBeTruthy();
+    expect(screen.getByLabelText("Composer dock")).toBeTruthy();
   });
 
   it("does not render any microphone or voice button", () => {

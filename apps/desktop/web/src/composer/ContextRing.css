@@ -1,0 +1,27 @@
+.ua-context-ring {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font-size: var(--ua-font-size-xs);
+  color: var(--ua-text-muted);
+  font-family: var(--ua-font-mono);
+}
+
+.ua-context-ring__svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.ua-context-ring__track {
+  stroke: var(--ua-border);
+}
+
+.ua-context-ring__progress {
+  stroke: var(--ua-accent);
+}
+
+.ua-context-ring__value {
+  min-width: 28px;
+  text-align: right;
+}

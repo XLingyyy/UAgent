@@ -42,16 +42,19 @@ describe("Workspace", () => {
     expect(within(viewport).getByText("Review summary")).toBeTruthy();
   });
 
-  it("keeps the ComposerDock as a disabled placeholder without send behavior", () => {
+  it("renders the standalone ComposerDock input and status rows", () => {
     const { container } = renderWorkspace();
 
-    const dock = screen.getByLabelText("Composer dock placeholder");
-    expect(within(dock).getByText("ComposerDock placeholder")).toBeTruthy();
-    const disabledSend = within(dock).getByRole("button", { name: "Send disabled" });
+    const dock = screen.getByLabelText("Composer dock");
+    expect(within(dock).getByLabelText("Composer input")).toBeTruthy();
+    expect(within(dock).getByLabelText("Permission: Request approval")).toBeTruthy();
+    expect(within(dock).getByLabelText("context: 12% used")).toBeTruthy();
+
+    const disabledSend = within(dock).getByRole("button", { name: "Send - disabled" });
     expect(disabledSend).toBeTruthy();
     expect((disabledSend as HTMLButtonElement).disabled).toBe(true);
     expect(dock.querySelector("form")).toBeNull();
-    expect(container.querySelectorAll(".ua-workspace button:not(:disabled)").length).toBe(0);
+    expect(container.querySelectorAll(".ua-composer button:not(:disabled)").length).toBe(0);
   });
 
   it("does not render microphone, voice, or record controls", () => {
