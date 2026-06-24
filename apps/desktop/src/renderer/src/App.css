@@ -1,0 +1,186 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, sans-serif;
+  font-size: 14px;
+  color: #e0e0e0;
+  background: #1a1a2e;
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.workspace-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: #16213e;
+  border-bottom: 1px solid #2a2a4a;
+}
+
+.workspace-header h1 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.version-badge {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #7c83ff;
+  background: rgba(124, 131, 255, 0.15);
+  border: 1px solid rgba(124, 131, 255, 0.3);
+  border-radius: 4px;
+}
+
+.workspace-main {
+  display: grid;
+  grid-template-areas:
+    "chat plan"
+    "timeline evidence";
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  flex: 1;
+  gap: 1px;
+  background: #2a2a4a;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  background: #1a1a2e;
+  overflow: hidden;
+}
+
+.panel-chat {
+  grid-area: chat;
+}
+
+.panel-plan {
+  grid-area: plan;
+}
+
+.panel-timeline {
+  grid-area: timeline;
+}
+
+.panel-evidence {
+  grid-area: evidence;
+}
+
+.panel-title {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8888aa;
+  background: #16213e;
+  border-bottom: 1px solid #2a2a4a;
+}
+
+.panel-content {
+  flex: 1;
+  padding: 12px 16px;
+  overflow-y: auto;
+}
+
+.message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.message-role {
+  font-size: 11px;
+  font-weight: 600;
+  color: #7c83ff;
+  text-transform: uppercase;
+  min-width: 60px;
+}
+
+.message-text {
+  font-size: 13px;
+  line-height: 1.4;
+  color: #c0c0d0;
+}
+
+.plan-list,
+.timeline-list,
+.evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+}
+
+.plan-item,
+.timeline-item,
+.evidence-item {
+  display: flex;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 13px;
+}
+
+.plan-status,
+.timeline-status,
+.evidence-type {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  min-width: 70px;
+}
+
+.plan-completed .plan-status,
+.timeline-completed .timeline-status {
+  color: #4ecdc4;
+}
+
+.plan-in_progress .plan-status,
+.timeline-running .timeline-status {
+  color: #ffe66d;
+}
+
+.plan-pending .plan-status,
+.timeline-pending .timeline-status {
+  color: #8888aa;
+}
+
+.plan-failed .plan-status,
+.timeline-failed .timeline-status {
+  color: #ff6b6b;
+}
+
+.evidence-source {
+  color: #7c83ff;
+}
+
+.timeline-result,
+.evidence-time {
+  color: #666680;
+  font-size: 12px;
+}

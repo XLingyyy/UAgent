@@ -22,6 +22,16 @@ uagent-workflow-supervisor.md
 uagent-workflow-implementer.md
 uagent-workflow-reviewer.md
 
+# Dependencies and builds
+node_modules/
+out/
+dist/
+
+# Environment and secrets
+.env
+.env.*
+*.secret
+
 # Agent workflow process docs
 docs/project-status.md
 docs/agent-workflow.md
