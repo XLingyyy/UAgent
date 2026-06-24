@@ -1,0 +1,83 @@
+.ua-review-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-4);
+  padding: var(--ua-space-3);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.ua-review-panel__summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ua-space-2);
+}
+
+.ua-review-panel__findings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-2);
+}
+
+.ua-review-panel__section-title {
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-semibold);
+  color: var(--ua-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: var(--ua-space-1);
+}
+
+.ua-review-panel__evidence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-2);
+}
+
+.ua-review-panel__evidence-note {
+  font-size: var(--ua-font-size-xs);
+  color: var(--ua-text-subtle);
+  font-style: italic;
+}
+
+.ua-review-panel__evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-1);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ua-review-panel__evidence-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ua-space-2);
+  font-size: var(--ua-font-size-xs);
+  color: var(--ua-text-muted);
+}
+
+.ua-review-panel__evidence-icon {
+  font-size: var(--ua-font-size-sm);
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.ua-review-panel__evidence-item--checked .ua-review-panel__evidence-icon {
+  color: var(--ua-success);
+}
+
+.ua-review-panel__evidence-item--unchecked .ua-review-panel__evidence-icon {
+  color: var(--ua-danger);
+}
+
+.ua-review-panel__evidence-item--pending .ua-review-panel__evidence-icon {
+  color: var(--ua-warning);
+}
+
+.ua-review-panel__evidence-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

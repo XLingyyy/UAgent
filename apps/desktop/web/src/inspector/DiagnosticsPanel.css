@@ -1,0 +1,88 @@
+.ua-diagnostics-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-4);
+  padding: var(--ua-space-3);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.ua-diagnostics-panel__summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-2);
+}
+
+.ua-diagnostics-panel__section-title {
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-semibold);
+  color: var(--ua-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: var(--ua-space-1);
+}
+
+.ua-diagnostics-panel__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-2);
+}
+
+.ua-diagnostics-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-1);
+  padding: var(--ua-space-2) var(--ua-space-3);
+  background: var(--ua-bg);
+  border: 1px solid var(--ua-border);
+  border-radius: var(--ua-radius-sm);
+  min-width: 0;
+}
+
+.ua-diagnostics-item__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ua-space-2);
+}
+
+.ua-diagnostics-item__label {
+  font-size: var(--ua-font-size-sm);
+  font-weight: var(--ua-font-weight-semibold);
+  color: var(--ua-text);
+}
+
+.ua-diagnostics-item__state {
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-bold);
+  padding: 1px var(--ua-space-1);
+  border-radius: var(--ua-radius-xs);
+  flex-shrink: 0;
+}
+
+.ua-diagnostics-item__state--default {
+  color: var(--ua-text-muted);
+  background: var(--ua-bg-elevated);
+}
+
+.ua-diagnostics-item__state--warning {
+  color: var(--ua-warning);
+  background: var(--ua-warning-subtle);
+}
+
+.ua-diagnostics-item__state--accent {
+  color: var(--ua-accent);
+  background: var(--ua-accent-subtle);
+}
+
+.ua-diagnostics-item__state--success {
+  color: var(--ua-success);
+  background: var(--ua-success-subtle);
+}
+
+.ua-diagnostics-item__description {
+  font-size: var(--ua-font-size-xs);
+  line-height: var(--ua-line-height-relaxed);
+  color: var(--ua-text-muted);
+  word-break: break-word;
+}

@@ -1,20 +1,18 @@
+import { useState } from "react";
+import { ReviewPanel } from "./ReviewPanel";
+import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import "./InspectorPane.css";
 
+export type InspectorTab = "review" | "diagnostics";
+
 export interface InspectorPaneProps {
-  /** Whether the inspector is visible. */
   open: boolean;
-  /** Callback to close the inspector. */
   onClose?: () => void;
 }
 
-/**
- * Right-side inspector pane.
- *
- * Will host the review tab, diagnostics, and detail panels in
- * subsequent UI tasks. For now it renders a structural placeholder
- * with a close button so the toggle interaction is testable.
- */
 export function InspectorPane({ open, onClose }: InspectorPaneProps) {
+  const [activeTab, setActiveTab] = useState<InspectorTab>("review");
+
   return (
     <aside
       className={`ua-inspector ${open ? "ua-inspector--open" : "ua-inspector--closed"}`}
@@ -30,21 +28,33 @@ export function InspectorPane({ open, onClose }: InspectorPaneProps) {
             aria-label="Close inspector"
             type="button"
           >
-            ✕
+            x
           </button>
         )}
       </div>
       <div className="ua-inspector__body">
-        <div className="ua-inspector__tab-bar">
-          <button className="ua-inspector__tab ua-inspector__tab--active" type="button">
+        <div className="ua-inspector__tab-bar" role="tablist" aria-label="Inspector tabs">
+          <button
+            className={`ua-inspector__tab ${activeTab === "review" ? "ua-inspector__tab--active" : ""}`}
+            role="tab"
+            aria-selected={activeTab === "review"}
+            onClick={() => setActiveTab("review")}
+            type="button"
+          >
             Review
           </button>
-          <button className="ua-inspector__tab" type="button">
+          <button
+            className={`ua-inspector__tab ${activeTab === "diagnostics" ? "ua-inspector__tab--active" : ""}`}
+            role="tab"
+            aria-selected={activeTab === "diagnostics"}
+            onClick={() => setActiveTab("diagnostics")}
+            type="button"
+          >
             Diagnostics
           </button>
         </div>
-        <div className="ua-inspector__content">
-          <span className="ua-inspector__placeholder">Inspector content placeholder</span>
+        <div className="ua-inspector__content" role="tabpanel">
+          {activeTab === "review" ? <ReviewPanel /> : <DiagnosticsPanel />}
         </div>
       </div>
     </aside>
