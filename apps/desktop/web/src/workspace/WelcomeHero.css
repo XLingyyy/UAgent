@@ -1,0 +1,69 @@
+.ua-welcome-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+  gap: var(--ua-space-4);
+  padding: var(--ua-space-5);
+  border: 1px solid var(--ua-border-subtle);
+  border-radius: var(--ua-radius-md);
+  background: var(--ua-bg-panel);
+}
+
+.ua-welcome-hero__copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-2);
+  min-width: 0;
+}
+
+.ua-welcome-hero__eyebrow {
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ua-text-subtle);
+}
+
+.ua-welcome-hero__title {
+  font-size: var(--ua-font-size-xl);
+  font-weight: var(--ua-font-weight-semibold);
+  line-height: var(--ua-line-height-tight);
+  color: var(--ua-text);
+}
+
+.ua-welcome-hero__description {
+  max-width: 640px;
+  font-size: var(--ua-font-size-base);
+  line-height: var(--ua-line-height-normal);
+  color: var(--ua-text-muted);
+}
+
+.ua-welcome-hero__facts {
+  display: grid;
+  gap: var(--ua-space-2);
+  margin: 0;
+}
+
+.ua-welcome-hero__fact {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ua-welcome-hero__fact dt {
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-medium);
+  color: var(--ua-text-subtle);
+}
+
+.ua-welcome-hero__fact dd {
+  margin: 0;
+  font-size: var(--ua-font-size-sm);
+  color: var(--ua-text);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 899px) {
+  .ua-welcome-hero {
+    grid-template-columns: 1fr;
+  }
+}

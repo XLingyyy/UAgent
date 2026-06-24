@@ -1,0 +1,65 @@
+import { describe, it, expect } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import { Workspace } from "./Workspace";
+
+function renderWorkspace() {
+  return render(<Workspace />);
+}
+
+describe("Workspace", () => {
+  it("renders a compact WelcomeHero for the current Unreal project context", () => {
+    renderWorkspace();
+
+    expect(screen.getByRole("heading", { name: "Lyra_Prototype workspace" })).toBeTruthy();
+    expect(screen.getByText("Plan / Build / Review mock workflows")).toBeTruthy();
+    expect(screen.getByText("Local UI preview")).toBeTruthy();
+    expect(screen.getByText("UE not connected")).toBeTruthy();
+  });
+
+  it("renders a status strip with project, mode, runtime, and UE state", () => {
+    renderWorkspace();
+
+    const strip = screen.getByLabelText("Workspace status");
+    expect(within(strip).getByText("Project")).toBeTruthy();
+    expect(within(strip).getByText("Lyra_Prototype")).toBeTruthy();
+    expect(within(strip).getByText("Mode")).toBeTruthy();
+    expect(within(strip).getByText("Plan")).toBeTruthy();
+    expect(within(strip).getByText("Runtime")).toBeTruthy();
+    expect(within(strip).getByText("Mock")).toBeTruthy();
+    expect(within(strip).getByText("UE")).toBeTruthy();
+    expect(within(strip).getByText("Not connected")).toBeTruthy();
+  });
+
+  it("renders at least three mock conversation and activity messages", () => {
+    renderWorkspace();
+
+    const viewport = screen.getByLabelText("Conversation activity");
+    const messages = within(viewport).getAllByRole("article");
+    expect(messages.length).toBeGreaterThanOrEqual(3);
+    expect(within(viewport).getByText("User request")).toBeTruthy();
+    expect(within(viewport).getByText("Agent plan")).toBeTruthy();
+    expect(within(viewport).getByText("Tool event")).toBeTruthy();
+    expect(within(viewport).getByText("Review summary")).toBeTruthy();
+  });
+
+  it("keeps the ComposerDock as a disabled placeholder without send behavior", () => {
+    const { container } = renderWorkspace();
+
+    const dock = screen.getByLabelText("Composer dock placeholder");
+    expect(within(dock).getByText("ComposerDock placeholder")).toBeTruthy();
+    const disabledSend = within(dock).getByRole("button", { name: "Send disabled" });
+    expect(disabledSend).toBeTruthy();
+    expect((disabledSend as HTMLButtonElement).disabled).toBe(true);
+    expect(dock.querySelector("form")).toBeNull();
+    expect(container.querySelectorAll(".ua-workspace button:not(:disabled)").length).toBe(0);
+  });
+
+  it("does not render microphone, voice, or record controls", () => {
+    const { container } = renderWorkspace();
+
+    const audioControls = container.querySelectorAll(
+      '[aria-label*="mic" i], [aria-label*="voice" i], [aria-label*="record" i]',
+    );
+    expect(audioControls.length).toBe(0);
+  });
+});
