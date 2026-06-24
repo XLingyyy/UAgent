@@ -1,10 +1,14 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import type { UIContextValue, UIShellState, UATheme } from "../types/ui";
+import type { UIContextValue, UIShellState, UATheme, NavSection } from "../types/ui";
 
 const DEFAULT_STATE: UIShellState = {
   theme: "dark" as UATheme,
   inspector: {
     open: true,
+  },
+  sidebar: {
+    activeNav: "workspace" as NavSection,
+    activeThreadId: "thread-1",
   },
 };
 
@@ -37,6 +41,16 @@ export function UIProvider({ children, initialState }: UIProviderProps) {
         setState((prev) => ({
           ...prev,
           inspector: { open },
+        })),
+      setActiveNav: (nav: NavSection) =>
+        setState((prev) => ({
+          ...prev,
+          sidebar: { ...prev.sidebar, activeNav: nav },
+        })),
+      setActiveThread: (threadId: string) =>
+        setState((prev) => ({
+          ...prev,
+          sidebar: { ...prev.sidebar, activeThreadId: threadId },
         })),
     }),
     [state],

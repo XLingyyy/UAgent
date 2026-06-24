@@ -1,0 +1,103 @@
+.ua-thread-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--ua-space-2) var(--ua-space-3);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ua-thread-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ua-space-2) var(--ua-space-2) var(--ua-space-1);
+}
+
+.ua-thread-section__label {
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ua-text-subtle);
+}
+
+.ua-thread-section__list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.ua-thread-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ua-space-2);
+  width: 100%;
+  padding: var(--ua-space-2);
+  border-radius: var(--ua-radius-sm);
+  text-align: left;
+  transition: background var(--ua-dur-fast) var(--ua-ease-standard);
+}
+
+.ua-thread-item:hover {
+  background: var(--ua-bg-hover);
+}
+
+.ua-thread-item--active {
+  background: var(--ua-bg-active);
+}
+
+.ua-thread-item--active .ua-thread-item__title {
+  color: var(--ua-text);
+}
+
+.ua-thread-item__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ua-thread-item__title {
+  font-size: var(--ua-font-size-sm);
+  font-weight: var(--ua-font-weight-medium);
+  color: var(--ua-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ua-thread-item__time {
+  font-size: var(--ua-font-size-xs);
+  color: var(--ua-text-subtle);
+}
+
+.ua-thread-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: var(--ua-font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px var(--ua-space-1);
+  border-radius: var(--ua-radius-xs);
+  line-height: 1;
+}
+
+.ua-thread-badge--plan {
+  background: var(--ua-accent-subtle);
+  color: var(--ua-accent);
+}
+
+.ua-thread-badge--build {
+  background: var(--ua-warning-subtle);
+  color: var(--ua-warning-hover);
+}
+
+.ua-thread-badge--review {
+  background: var(--ua-success-subtle);
+  color: var(--ua-success);
+}

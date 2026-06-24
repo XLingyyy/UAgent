@@ -1,40 +1,30 @@
+import { useUI } from "../app/providers";
+import { PrimaryNav } from "./PrimaryNav";
+import { ProjectSection } from "./ProjectSection";
+import { ThreadSection } from "./ThreadSection";
+import { mockProject, mockThreads } from "./sidebar-data";
 import "./LeftSidebar.css";
 
-/**
- * Left sidebar placeholder.
- *
- * Will host the PrimaryNav, project list, and conversation list
- * in subsequent UI tasks. For now it renders a static structural
- * placeholder so the AppShell layout is testable.
- */
 export function LeftSidebar() {
+  const { state, setActiveNav, setActiveThread } = useUI();
+  const { sidebar } = state;
+
   return (
     <aside className="ua-sidebar" aria-label="Sidebar">
-      <nav className="ua-sidebar__nav">
-        <span className="ua-sidebar__label">Navigation</span>
-        <ul className="ua-sidebar__nav-list">
-          <li className="ua-sidebar__nav-item ua-sidebar__nav-item--active">
-            <span className="ua-sidebar__nav-icon" aria-hidden>
-              ◇
-            </span>
-            <span className="ua-sidebar__nav-text">Workspace</span>
-          </li>
-          <li className="ua-sidebar__nav-item">
-            <span className="ua-sidebar__nav-icon" aria-hidden>
-              ○
-            </span>
-            <span className="ua-sidebar__nav-text">Projects</span>
-          </li>
-          <li className="ua-sidebar__nav-item">
-            <span className="ua-sidebar__nav-icon" aria-hidden>
-              ○
-            </span>
-            <span className="ua-sidebar__nav-text">Settings</span>
-          </li>
-        </ul>
-      </nav>
+      <div className="ua-sidebar__top">
+        <PrimaryNav activeNav={sidebar.activeNav} onNavChange={setActiveNav} />
+      </div>
+      <div className="ua-sidebar__body">
+        <ProjectSection project={mockProject} />
+        <ThreadSection
+          threads={mockThreads}
+          activeThreadId={sidebar.activeThreadId}
+          onThreadSelect={setActiveThread}
+        />
+      </div>
       <div className="ua-sidebar__footer">
-        <span className="ua-sidebar__placeholder">Sidebar placeholder</span>
+        <span className="ua-sidebar__version">UAgent MVP0</span>
+        <span className="ua-sidebar__status">Local · No UE connected</span>
       </div>
     </aside>
   );

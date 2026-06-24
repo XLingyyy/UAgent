@@ -1,0 +1,95 @@
+.ua-project-section {
+  padding: 0 var(--ua-space-2) var(--ua-space-2);
+  border-bottom: 1px solid var(--ua-border-subtle);
+}
+
+.ua-project-section__header {
+  display: flex;
+  align-items: center;
+  padding: var(--ua-space-2) var(--ua-space-2) var(--ua-space-1);
+}
+
+.ua-project-section__label {
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ua-text-subtle);
+}
+
+.ua-project-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-2);
+  padding: var(--ua-space-2);
+  background: var(--ua-bg-panel);
+  border: 1px solid var(--ua-border-subtle);
+  border-radius: var(--ua-radius-sm);
+}
+
+.ua-project-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ua-project-card__name {
+  font-size: var(--ua-font-size-base);
+  font-weight: var(--ua-font-weight-semibold);
+  color: var(--ua-text);
+}
+
+.ua-project-card__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--ua-space-1);
+  font-size: var(--ua-font-size-xs);
+  color: var(--ua-text-muted);
+}
+
+.ua-project-card__sep {
+  color: var(--ua-text-subtle);
+}
+
+.ua-project-card__status {
+  color: var(--ua-warning);
+}
+
+.ua-project-card__path {
+  font-size: var(--ua-font-size-xs);
+  font-family: var(--ua-font-mono);
+  color: var(--ua-text-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.ua-project-card__actions {
+  display: flex;
+  gap: var(--ua-space-1);
+}
+
+.ua-project-card__btn {
+  flex: 1;
+  padding: var(--ua-space-1) var(--ua-space-2);
+  border-radius: var(--ua-radius-xs);
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-medium);
+  color: var(--ua-text-muted);
+  background: var(--ua-bg-elevated);
+  border: 1px solid var(--ua-border-subtle);
+  transition:
+    background var(--ua-dur-fast) var(--ua-ease-standard),
+    color var(--ua-dur-fast) var(--ua-ease-standard);
+}
+
+.ua-project-card__btn:hover:not(:disabled) {
+  background: var(--ua-bg-hover);
+  color: var(--ua-text);
+}
+
+.ua-project-card__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
