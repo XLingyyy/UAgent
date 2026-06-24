@@ -17,7 +17,6 @@ temp/
 # Local workflow and supervisor-only files
 监工文档/
 .agent-bus/
-.agent-bus-b/
 .agent-bus-c/
 uagent-workflow-supervisor.md
 uagent-workflow-implementer.md
