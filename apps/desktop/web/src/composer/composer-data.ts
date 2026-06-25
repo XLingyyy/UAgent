@@ -46,12 +46,64 @@ export const permissionOptions: ComposerPermissionOption[] = [
 
 export type ComposerRunMode = "local" | "sandbox";
 
-export interface ComposerModel {
-  id: string;
+export type ComposerReasoningEffort = "low" | "medium" | "high" | "xhigh";
+
+export type ComposerModelId =
+  | "not-configured"
+  | "openai-gpt-5"
+  | "anthropic-claude-sonnet"
+  | "local-qwen";
+
+export interface ComposerModelOption {
+  id: ComposerModelId;
   label: string;
   provider: string;
-  reasoningEffort: string;
+  contextWindow: string;
+  enabled: boolean;
 }
+
+export interface ComposerReasoningOption {
+  id: ComposerReasoningEffort;
+  label: string;
+}
+
+export const reasoningOptions: ComposerReasoningOption[] = [
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+  { id: "xhigh", label: "XHigh" },
+];
+
+export const modelOptions: ComposerModelOption[] = [
+  {
+    id: "not-configured",
+    label: "Model not configured",
+    provider: "None",
+    contextWindow: "N/A",
+    enabled: true,
+  },
+  {
+    id: "openai-gpt-5",
+    label: "GPT-5 Mock",
+    provider: "Provider A",
+    contextWindow: "200k",
+    enabled: true,
+  },
+  {
+    id: "anthropic-claude-sonnet",
+    label: "Claude Sonnet Mock",
+    provider: "Provider A",
+    contextWindow: "200k",
+    enabled: true,
+  },
+  {
+    id: "local-qwen",
+    label: "Local Qwen Mock",
+    provider: "Provider B",
+    contextWindow: "64k",
+    enabled: true,
+  },
+];
 
 export interface ComposerContextUsage {
   used: number;
@@ -71,7 +123,6 @@ export interface ComposerMockState {
   runMode: ComposerRunMode;
   project: string;
   branch: string;
-  model: ComposerModel;
   context: ComposerContextUsage;
   statusItems: ComposerStatusItem[];
   placeholder: string;
@@ -84,12 +135,6 @@ export const composerMock: ComposerMockState = {
   runMode: "local",
   project: "Lyra_Prototype",
   branch: "main",
-  model: {
-    id: "mock-model",
-    label: "Model not configured",
-    provider: "None",
-    reasoningEffort: "N/A",
-  },
   context: {
     used: 2400,
     total: 20000,

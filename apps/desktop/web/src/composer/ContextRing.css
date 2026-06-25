@@ -19,9 +19,30 @@
 
 .ua-context-ring__progress {
   stroke: var(--ua-accent);
+  transition:
+    stroke-dashoffset var(--ua-dur-mid) var(--ua-ease-standard),
+    stroke var(--ua-dur-mid) var(--ua-ease-standard);
 }
 
 .ua-context-ring__value {
   min-width: 28px;
   text-align: right;
+}
+
+.ua-context-ring--normal .ua-context-ring__progress {
+  stroke: var(--ua-accent);
+}
+
+.ua-context-ring--attention .ua-context-ring__progress {
+  stroke: var(--ua-warning);
+}
+
+.ua-context-ring--warning .ua-context-ring__progress {
+  stroke: var(--ua-danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ua-context-ring__progress {
+    transition: none;
+  }
 }

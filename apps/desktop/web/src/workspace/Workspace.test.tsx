@@ -53,7 +53,9 @@ describe("Workspace", () => {
     const dock = screen.getByLabelText("Composer dock");
     expect(within(dock).getByLabelText("Composer input")).toBeTruthy();
     expect(within(dock).getByLabelText("Permission mode: Request approval")).toBeTruthy();
-    expect(within(dock).getByLabelText("context: 12% used")).toBeTruthy();
+    expect(
+      within(dock).getByLabelText("Context: 2,400 / 20,000 used (12%, 88% remaining)"),
+    ).toBeTruthy();
     expect(within(dock).getByLabelText("Project selector: Lyra_Prototype")).toBeTruthy();
 
     const disabledSend = within(dock).getByRole("button", { name: "Send - disabled" });

@@ -21,8 +21,12 @@ describe("ComposerDock", () => {
     expect(within(dock).getByLabelText("Add context - disabled")).toBeTruthy();
     expect(within(dock).getByLabelText("Permission mode: Request approval")).toBeTruthy();
     expect(within(dock).getByLabelText("Composer input")).toBeTruthy();
-    expect(within(dock).getByLabelText("context: 12% used")).toBeTruthy();
-    expect(within(dock).getByLabelText("Model: Model not configured")).toBeTruthy();
+    expect(
+      within(dock).getByLabelText("Context: 2,400 / 20,000 used (12%, 88% remaining)"),
+    ).toBeTruthy();
+    expect(
+      within(dock).getByLabelText("Model selector: Model not configured, reasoning medium"),
+    ).toBeTruthy();
     expect(within(dock).getByLabelText("Send - disabled")).toBeTruthy();
   });
 
@@ -70,12 +74,16 @@ describe("ComposerDock", () => {
     expect(addBtn.disabled).toBe(true);
   });
 
-  it("renders the context ring with correct percentage", () => {
+  it("renders the ContextRing with correct percentage and tooltip", () => {
     renderDock();
 
-    const ring = screen.getByLabelText("context: 12% used");
+    const ring = screen.getByText("12%").closest(".ua-context-ring")! as HTMLElement;
     expect(ring).toBeTruthy();
-    expect(ring.getAttribute("title")).toBe("Context: 12% used");
+    const title = ring.getAttribute("title");
+    expect(title).toContain("2,400");
+    expect(title).toContain("20,000");
+    expect(title).toContain("12%");
+    expect(title).toContain("88% remaining");
     expect(within(ring).getByText("12%")).toBeTruthy();
   });
 
@@ -118,5 +126,36 @@ describe("ComposerDock", () => {
   it("has no form element", () => {
     const { container } = renderDock();
     expect(container.querySelector("form")).toBeNull();
+  });
+
+  it("opens the ModelSelector dropdown and shows model and reasoning options", () => {
+    renderDock();
+
+    const trigger = screen.getByLabelText("Model selector: Model not configured, reasoning medium");
+    fireEvent.click(trigger);
+
+    const dropdown = screen.getByRole("listbox", {
+      name: "Model and reasoning settings",
+    });
+    expect(dropdown).toBeTruthy();
+    expect(dropdown.textContent).toContain("Reasoning");
+    expect(dropdown.textContent).toContain("Models");
+    expect(dropdown.textContent).toContain("GPT-5 Mock");
+    expect(dropdown.textContent).toContain("Claude Sonnet Mock");
+    expect(dropdown.textContent).toContain("Local Qwen Mock");
+    expect(dropdown.textContent).toContain("Manage providers");
+    expect(dropdown.textContent).toContain("Provider settings coming later");
+  });
+
+  it("syncs model change to ComposerDock ModelSelector trigger label", () => {
+    renderDock();
+
+    const trigger = screen.getByLabelText("Model selector: Model not configured, reasoning medium");
+    fireEvent.click(trigger);
+
+    const gptOption = screen.getByText("Provider A / GPT-5 Mock").closest('[role="option"]')!;
+    fireEvent.click(gptOption);
+
+    expect(screen.getByLabelText("Model selector: GPT-5 Mock, reasoning medium")).toBeTruthy();
   });
 });

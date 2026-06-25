@@ -70,18 +70,6 @@
   color: var(--ua-text-muted);
 }
 
-.ua-composer__model {
-  flex-shrink: 0;
-  font-size: var(--ua-font-size-xs);
-  color: var(--ua-text-muted);
-  border: 1px solid var(--ua-border-subtle);
-  border-radius: var(--ua-radius-xs);
-  padding: var(--ua-space-1) var(--ua-space-2);
-  background: var(--ua-bg-elevated);
-  white-space: nowrap;
-  user-select: none;
-}
-
 .ua-composer__send-btn {
   flex-shrink: 0;
   padding: var(--ua-space-1) var(--ua-space-3);
@@ -185,9 +173,5 @@
 
   .ua-composer__textarea {
     flex-basis: 100%;
-  }
-
-  .ua-composer__model {
-    order: 4;
   }
 }

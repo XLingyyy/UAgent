@@ -1,9 +1,17 @@
 import { useState } from "react";
 import { useUI } from "../app/providers";
 import { ContextRing } from "./ContextRing";
+import { ModelSelector } from "./ModelSelector";
 import { PermissionSelector } from "./PermissionSelector";
 import { ProjectSelector } from "./ProjectSelector";
-import { composerMock, type ComposerPermission } from "./composer-data";
+import {
+  composerMock,
+  modelOptions,
+  reasoningOptions,
+  type ComposerModelId,
+  type ComposerPermission,
+  type ComposerReasoningEffort,
+} from "./composer-data";
 import { MOCK_PROJECTS } from "../project/project-data";
 import "./ComposerDock.css";
 
@@ -11,16 +19,10 @@ export function ComposerDock() {
   const { state, setActiveProject } = useUI();
   const [input, setInput] = useState("");
   const [permission, setPermission] = useState<ComposerPermission>(composerMock.permission);
-  const {
-    runMode,
-    branch,
-    model,
-    context,
-    statusItems,
-    placeholder,
-    addButtonLabel,
-    sendButtonLabel,
-  } = composerMock;
+  const [selectedModelId, setSelectedModelId] = useState<ComposerModelId>("not-configured");
+  const [reasoningEffort, setReasoningEffort] = useState<ComposerReasoningEffort>("medium");
+  const { runMode, branch, context, statusItems, placeholder, addButtonLabel, sendButtonLabel } =
+    composerMock;
 
   return (
     <footer className="ua-composer" aria-label="Composer dock">
@@ -45,11 +47,16 @@ export function ComposerDock() {
           aria-label="Composer input"
         />
 
-        <ContextRing percent={context.percent} />
+        <ContextRing used={context.used} total={context.total} percent={context.percent} />
 
-        <span className="ua-composer__model" aria-label={`Model: ${model.label}`}>
-          {model.label}
-        </span>
+        <ModelSelector
+          modelId={selectedModelId}
+          reasoningEffort={reasoningEffort}
+          models={modelOptions}
+          reasoningOptionsList={reasoningOptions}
+          onModelChange={setSelectedModelId}
+          onReasoningChange={setReasoningEffort}
+        />
 
         <button
           className="ua-composer__send-btn"
