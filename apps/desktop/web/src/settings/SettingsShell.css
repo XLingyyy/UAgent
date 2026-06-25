@@ -1,0 +1,6 @@
+.ua-settings-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}

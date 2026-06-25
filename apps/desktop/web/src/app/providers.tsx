@@ -1,5 +1,12 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import type { UIContextValue, UIShellState, UATheme, NavSection } from "../types/ui";
+import type {
+  UIContextValue,
+  UIShellState,
+  UATheme,
+  NavSection,
+  SettingsPageId,
+} from "../types/ui";
+import { DEFAULT_SETTINGS_PAGE } from "../settings/settings-pages";
 
 const DEFAULT_STATE: UIShellState = {
   theme: "dark" as UATheme,
@@ -11,6 +18,10 @@ const DEFAULT_STATE: UIShellState = {
     activeThreadId: "thread-1",
   },
   activeProjectId: "lyra",
+  settings: {
+    open: false,
+    activePageId: DEFAULT_SETTINGS_PAGE,
+  },
 };
 
 const UIContext = createContext<UIContextValue | null>(null);
@@ -57,6 +68,24 @@ export function UIProvider({ children, initialState }: UIProviderProps) {
         setState((prev) => ({
           ...prev,
           activeProjectId: projectId,
+        })),
+      openSettings: (pageId?: SettingsPageId) =>
+        setState((prev) => ({
+          ...prev,
+          settings: {
+            open: true,
+            activePageId: pageId ?? DEFAULT_SETTINGS_PAGE,
+          },
+        })),
+      closeSettings: () =>
+        setState((prev) => ({
+          ...prev,
+          settings: { ...prev.settings, open: false },
+        })),
+      setActiveSettingsPage: (pageId: SettingsPageId) =>
+        setState((prev) => ({
+          ...prev,
+          settings: { ...prev.settings, activePageId: pageId },
         })),
     }),
     [state],

@@ -2,13 +2,14 @@ import { useUI } from "../app/providers";
 import { PrimaryNav } from "./PrimaryNav";
 import { ProjectSection } from "./ProjectSection";
 import { ThreadSection } from "./ThreadSection";
+import { SidebarFooter } from "./SidebarFooter";
 import { mockThreads } from "./sidebar-data";
 import { mockProjectTree } from "./project-tree-data";
 import { MOCK_PROJECTS } from "../project/project-data";
 import "./LeftSidebar.css";
 
 export function LeftSidebar() {
-  const { state, setActiveNav, setActiveThread } = useUI();
+  const { state, setActiveNav, setActiveThread, openSettings } = useUI();
   const { sidebar, activeProjectId } = state;
 
   const activeProject = activeProjectId
@@ -18,7 +19,11 @@ export function LeftSidebar() {
   return (
     <aside className="ua-sidebar" aria-label="Sidebar">
       <div className="ua-sidebar__top">
-        <PrimaryNav activeNav={sidebar.activeNav} onNavChange={setActiveNav} />
+        <PrimaryNav
+          activeNav={sidebar.activeNav}
+          onNavChange={setActiveNav}
+          onSettingsOpen={() => openSettings("general")}
+        />
       </div>
       <div className="ua-sidebar__body">
         <ProjectSection project={activeProject} treeNodes={activeProject ? mockProjectTree : []} />
@@ -28,10 +33,7 @@ export function LeftSidebar() {
           onThreadSelect={setActiveThread}
         />
       </div>
-      <div className="ua-sidebar__footer">
-        <span className="ua-sidebar__version">UAgent MVP0</span>
-        <span className="ua-sidebar__status">Local · No UE connected</span>
-      </div>
+      <SidebarFooter />
     </aside>
   );
 }

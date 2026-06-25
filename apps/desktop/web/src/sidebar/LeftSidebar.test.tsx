@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { LeftSidebar } from "./LeftSidebar";
 import { UIProvider } from "../app/providers";
 import { mockThreads } from "./sidebar-data";
@@ -26,9 +26,10 @@ describe("LeftSidebar", () => {
   describe("PrimaryNav", () => {
     it("renders Workspace, Projects, and Settings nav items", () => {
       renderSidebar();
-      expect(screen.getByText("Workspace")).toBeTruthy();
-      expect(screen.getByText("Projects")).toBeTruthy();
-      expect(screen.getByText("Settings")).toBeTruthy();
+      const nav = screen.getByLabelText("Primary navigation");
+      expect(within(nav).getByText("Workspace")).toBeTruthy();
+      expect(within(nav).getByText("Projects")).toBeTruthy();
+      expect(within(nav).getByText("Settings")).toBeTruthy();
     });
 
     it("marks Workspace as active by default", () => {
@@ -50,7 +51,8 @@ describe("LeftSidebar", () => {
 
     it("switches active nav to Settings on click", () => {
       renderSidebar();
-      const settingsBtn = screen.getByText("Settings").closest("button")!;
+      const nav = screen.getByLabelText("Primary navigation");
+      const settingsBtn = within(nav).getByText("Settings").closest("button")!;
       fireEvent.click(settingsBtn);
       expect(settingsBtn.classList.contains("ua-primary-nav__item--active")).toBe(true);
       expect(settingsBtn.getAttribute("aria-current")).toBe("page");
@@ -222,7 +224,19 @@ describe("LeftSidebar", () => {
     });
   });
 
-  describe("Footer", () => {
+  describe("SidebarFooter", () => {
+    it("renders the Settings entry button", () => {
+      renderSidebar();
+      expect(screen.getByLabelText("Open settings")).toBeTruthy();
+    });
+
+    it("renders the Account placeholder disabled", () => {
+      renderSidebar();
+      const accountBtn = screen.getByLabelText("Account (coming soon)") as HTMLButtonElement;
+      expect(accountBtn).toBeTruthy();
+      expect(accountBtn.disabled).toBe(true);
+    });
+
     it("renders the version badge", () => {
       renderSidebar();
       expect(screen.getByText("UAgent MVP0")).toBeTruthy();

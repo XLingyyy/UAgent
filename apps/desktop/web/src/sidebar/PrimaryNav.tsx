@@ -16,9 +16,10 @@ const NAV_ITEMS: NavItem[] = [
 export interface PrimaryNavProps {
   activeNav: NavSection;
   onNavChange: (nav: NavSection) => void;
+  onSettingsOpen?: () => void;
 }
 
-export function PrimaryNav({ activeNav, onNavChange }: PrimaryNavProps) {
+export function PrimaryNav({ activeNav, onNavChange, onSettingsOpen }: PrimaryNavProps) {
   return (
     <nav className="ua-primary-nav" aria-label="Primary navigation">
       <ul className="ua-primary-nav__list">
@@ -26,7 +27,12 @@ export function PrimaryNav({ activeNav, onNavChange }: PrimaryNavProps) {
           <li key={item.key}>
             <button
               className={`ua-primary-nav__item${activeNav === item.key ? " ua-primary-nav__item--active" : ""}`}
-              onClick={() => onNavChange(item.key)}
+              onClick={() => {
+                onNavChange(item.key);
+                if (item.key === "settings" && onSettingsOpen) {
+                  onSettingsOpen();
+                }
+              }}
               aria-current={activeNav === item.key ? "page" : undefined}
               type="button"
             >

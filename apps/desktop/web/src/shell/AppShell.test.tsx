@@ -19,6 +19,21 @@ function renderAppShellWithClosedInspector() {
   );
 }
 
+function renderAppShellWithSettings(page?: string) {
+  return render(
+    <UIProvider
+      initialState={{
+        settings: {
+          open: true,
+          activePageId: (page as never) ?? "general",
+        },
+      }}
+    >
+      <AppShell />
+    </UIProvider>,
+  );
+}
+
 describe("AppShell", () => {
   it("renders the title bar with UAgent brand", () => {
     renderAppShell();
@@ -129,5 +144,100 @@ describe("AppShell", () => {
       '[aria-label*="mic" i], [aria-label*="voice" i], [aria-label*="record" i]',
     );
     expect(micElements.length).toBe(0);
+  });
+
+  describe("settings shell", () => {
+    it("renders MainLayout by default and not SettingsShell", () => {
+      const { container } = renderAppShell();
+      expect(container.querySelector(".ua-main-layout")).toBeTruthy();
+      expect(container.querySelector(".ua-settings-shell")).toBeNull();
+    });
+
+    it("exposes data-shell-mode='app' by default", () => {
+      const { container } = renderAppShell();
+      const app = container.querySelector(".ua-app");
+      expect(app?.getAttribute("data-shell-mode")).toBe("app");
+    });
+
+    it("renders SettingsShell when settings.open is true", () => {
+      const { container } = renderAppShellWithSettings();
+      expect(container.querySelector(".ua-main-layout")).toBeNull();
+      expect(container.querySelector(".ua-settings-shell")).toBeTruthy();
+    });
+
+    it("exposes data-shell-mode='settings' when settings are open", () => {
+      const { container } = renderAppShellWithSettings();
+      const app = container.querySelector(".ua-app");
+      expect(app?.getAttribute("data-shell-mode")).toBe("settings");
+    });
+
+    it("renders TitleBar when SettingsShell is open", () => {
+      const { container } = renderAppShellWithSettings();
+      expect(container.querySelector(".ua-titlebar")).toBeTruthy();
+    });
+
+    it("renders GlobalOverlays when SettingsShell is open", () => {
+      const { container } = renderAppShellWithSettings();
+      expect(container.querySelector(".ua-global-overlays")).toBeTruthy();
+    });
+
+    it("renders Settings sidebar with Back to app button when open", () => {
+      renderAppShellWithSettings();
+      expect(screen.getByLabelText("Back to app")).toBeTruthy();
+    });
+
+    it("renders six MVP0 settings entries when open", () => {
+      renderAppShellWithSettings();
+      const nav = screen.getByLabelText("Settings navigation");
+      expect(within(nav).getByText("General")).toBeTruthy();
+      expect(within(nav).getByText("Appearance")).toBeTruthy();
+      expect(within(nav).getByText("Config")).toBeTruthy();
+      expect(within(nav).getByText("Personalization")).toBeTruthy();
+      expect(within(nav).getByText("Archived chats")).toBeTruthy();
+      expect(within(nav).getByText("Provider")).toBeTruthy();
+    });
+
+    it("renders disabled future entries when open", () => {
+      renderAppShellWithSettings();
+      expect(screen.getByText("MCP servers")).toBeTruthy();
+      expect(screen.getByText("Git")).toBeTruthy();
+    });
+
+    it("opens SettingsShell from the sidebar settings entry", () => {
+      const { container } = renderAppShell();
+      fireEvent.click(screen.getByLabelText("Open settings"));
+
+      expect(container.querySelector(".ua-app")?.getAttribute("data-shell-mode")).toBe("settings");
+      expect(container.querySelector(".ua-main-layout")).toBeNull();
+      expect(container.querySelector(".ua-settings-shell")).toBeTruthy();
+    });
+
+    it("returns to MainLayout from Back to app and preserves inspector state", () => {
+      const { container } = renderAppShell();
+      const inspectBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
+      fireEvent.click(inspectBtn);
+
+      fireEvent.click(screen.getByLabelText("Open settings"));
+      fireEvent.click(screen.getByLabelText("Back to app"));
+
+      const layout = container.querySelector(".ua-main-layout");
+      expect(container.querySelector(".ua-app")?.getAttribute("data-shell-mode")).toBe("app");
+      expect(container.querySelector(".ua-settings-shell")).toBeNull();
+      expect(layout).toBeTruthy();
+      expect(layout?.getAttribute("data-inspector-state")).toBe("closed");
+    });
+
+    it("does not render ComposerDock when SettingsShell is open", () => {
+      renderAppShellWithSettings();
+      expect(screen.queryByLabelText("Composer dock")).toBeNull();
+    });
+
+    it("does not render microphone or voice controls in settings shell", () => {
+      const { container } = renderAppShellWithSettings();
+      const micElements = container.querySelectorAll(
+        '[aria-label*="mic" i], [aria-label*="voice" i], [aria-label*="record" i]',
+      );
+      expect(micElements.length).toBe(0);
+    });
   });
 });

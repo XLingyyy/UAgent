@@ -69,6 +69,8 @@ export interface UIShellState {
   sidebar: SidebarState;
   /** Active project id from the shared mock project list, or null for no project. */
   activeProjectId: string | null;
+  /** Settings shell state. */
+  settings: SettingsShellState;
 }
 
 /** Set the active project id (or null for no project). */
@@ -83,6 +85,26 @@ export type SetActiveNav = (nav: NavSection) => void;
 /** Set the active thread by id. */
 export type SetActiveThread = (threadId: string) => void;
 
+/** Settings page identifiers for the MVP0 page registry. */
+export type SettingsPageId =
+  | "general"
+  | "appearance"
+  | "config"
+  | "personalization"
+  | "archived-chats"
+  | "provider"
+  | "mcp-servers"
+  | "browser"
+  | "computer-control"
+  | "git"
+  | "worktrees";
+
+/** Settings shell local UI state. */
+export interface SettingsShellState {
+  open: boolean;
+  activePageId: SettingsPageId;
+}
+
 /** Context value exposed by the UI provider. */
 export interface UIContextValue {
   state: UIShellState;
@@ -91,4 +113,7 @@ export interface UIContextValue {
   setActiveNav: SetActiveNav;
   setActiveThread: SetActiveThread;
   setActiveProject: SetActiveProject;
+  openSettings: (pageId?: SettingsPageId) => void;
+  closeSettings: () => void;
+  setActiveSettingsPage: (pageId: SettingsPageId) => void;
 }
