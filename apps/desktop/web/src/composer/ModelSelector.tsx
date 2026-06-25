@@ -150,9 +150,10 @@ export function ModelSelector({
         position &&
         createPortal(
           <div
-            className="ua-model-selector__dropdown"
+            className="ua-model-selector__dropdown ua-motion-layer"
             role="listbox"
             aria-label="Model and reasoning settings"
+            data-motion="layer"
             style={{
               position: "fixed",
               left: `${position.left}px`,

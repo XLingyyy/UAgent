@@ -49,6 +49,14 @@ describe("AppShell", () => {
     expect(container.querySelector(".ua-global-overlays")).toBeTruthy();
   });
 
+  it("wraps the active shell body in a page motion surface", () => {
+    const { container } = renderAppShell();
+    expect(container.querySelector('.ua-app__body [data-motion="page"]')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Open settings"));
+    expect(container.querySelector('.ua-app__body [data-motion="page"]')).toBeTruthy();
+  });
+
   it("renders the ComposerDock in the workspace with ProjectSelector", () => {
     renderAppShell();
     expect(screen.getByLabelText("Composer dock")).toBeTruthy();

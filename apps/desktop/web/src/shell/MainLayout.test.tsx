@@ -59,6 +59,12 @@ describe("MainLayout", () => {
       expect(inspector?.getAttribute("data-state")).toBe("open");
     });
 
+    it("marks the inspector pane as a motion panel", () => {
+      const { container } = renderMainLayout(true);
+      const inspector = container.querySelector(".ua-inspector");
+      expect(inspector?.getAttribute("data-motion")).toBe("panel");
+    });
+
     it("renders InspectorPane with data-state='closed' when closed", () => {
       const { container } = renderMainLayout(false);
       const inspector = container.querySelector(".ua-inspector");

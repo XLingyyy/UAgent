@@ -77,6 +77,7 @@ describe("ModelSelector", () => {
       name: "Model and reasoning settings",
     });
     expect(dropdown).toBeTruthy();
+    expect(dropdown.getAttribute("data-motion")).toBe("layer");
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
   });
 

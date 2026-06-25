@@ -87,7 +87,7 @@
   padding: var(--ua-space-2);
   border-radius: var(--ua-radius-sm);
   cursor: pointer;
-  transition: background var(--ua-dur-instant) var(--ua-ease-standard);
+  transition: background-color var(--ua-dur-fast) var(--ua-ease-standard);
 }
 
 .ua-model-selector__item:hover {

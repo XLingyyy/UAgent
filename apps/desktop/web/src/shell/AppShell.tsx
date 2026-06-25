@@ -3,6 +3,7 @@ import { TitleBar } from "./TitleBar";
 import { MainLayout } from "./MainLayout";
 import { GlobalOverlays } from "./GlobalOverlays";
 import { SettingsShell } from "../settings/SettingsShell";
+import { useMotionKey } from "../hooks/useMotionKey";
 
 /**
  * UAgent desktop application shell.
@@ -20,11 +21,17 @@ import { SettingsShell } from "../settings/SettingsShell";
 export function AppShell() {
   const { state } = useUI();
   const settingsOpen = state.settings.open;
+  const shellMode = settingsOpen ? "settings" : "app";
+  const motionKey = useMotionKey(shellMode);
 
   return (
-    <div className="ua-app" data-shell-mode={settingsOpen ? "settings" : "app"}>
+    <div className="ua-app" data-shell-mode={shellMode}>
       <TitleBar />
-      <div className="ua-app__body">{settingsOpen ? <SettingsShell /> : <MainLayout />}</div>
+      <div className="ua-app__body">
+        <div key={motionKey} className="ua-motion-page" data-motion="page">
+          {settingsOpen ? <SettingsShell /> : <MainLayout />}
+        </div>
+      </div>
       <GlobalOverlays />
     </div>
   );

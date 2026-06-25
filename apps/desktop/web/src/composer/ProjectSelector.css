@@ -126,7 +126,7 @@
   gap: var(--ua-space-2);
   padding: var(--ua-space-2) var(--ua-space-3);
   cursor: pointer;
-  transition: background 0.1s ease;
+  transition: background-color var(--ua-dur-fast) var(--ua-ease-standard);
 }
 
 .ua-project-selector__item:hover {

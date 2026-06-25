@@ -36,6 +36,7 @@ describe("PermissionSelector", () => {
     openDropdown();
     const dropdown = screen.getByRole("listbox", { name: "Permission mode" });
     expect(dropdown).toBeTruthy();
+    expect(dropdown.getAttribute("data-motion")).toBe("layer");
   });
 
   it("shows four permission options in the dropdown", () => {

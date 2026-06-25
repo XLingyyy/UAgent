@@ -17,7 +17,7 @@ export function LeftSidebar() {
     : null;
 
   return (
-    <aside className="ua-sidebar" aria-label="Sidebar">
+    <aside className="ua-sidebar ua-motion-panel" aria-label="Sidebar" data-motion="panel">
       <div className="ua-sidebar__top">
         <PrimaryNav
           activeNav={sidebar.activeNav}

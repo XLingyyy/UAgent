@@ -33,6 +33,7 @@ describe("ProjectSelector", () => {
     openDropdown();
     const dropdown = screen.getByRole("listbox", { name: "Select project" });
     expect(dropdown).toBeTruthy();
+    expect(dropdown.getAttribute("data-motion")).toBe("layer");
   });
 
   it("renders the search input in the dropdown", () => {

@@ -131,9 +131,10 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
         position &&
         createPortal(
           <div
-            className="ua-permission-selector__dropdown"
+            className="ua-permission-selector__dropdown ua-motion-layer"
             role="listbox"
             aria-label="Permission mode"
+            data-motion="layer"
             style={{
               position: "fixed",
               left: `${position.left}px`,

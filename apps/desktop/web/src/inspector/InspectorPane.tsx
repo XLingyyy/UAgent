@@ -15,9 +15,10 @@ export function InspectorPane({ open, onClose }: InspectorPaneProps) {
 
   return (
     <aside
-      className={`ua-inspector ${open ? "ua-inspector--open" : "ua-inspector--closed"}`}
+      className={`ua-inspector ua-motion-panel ${open ? "ua-inspector--open" : "ua-inspector--closed"}`}
       aria-label="Inspector"
       aria-hidden={!open}
+      data-motion="panel"
       data-state={open ? "open" : "closed"}
     >
       <div className="ua-inspector__header">

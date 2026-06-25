@@ -18,6 +18,78 @@
   --ua-dur-mid: 180ms;
   --ua-dur-slow: 220ms;
   --ua-dur-slower: 320ms;
+
+  /* Motion distances */
+  --ua-motion-page-offset: 12px;
+  --ua-motion-panel-offset: 24px;
+  --ua-motion-layer-offset: 10px;
+}
+
+@keyframes ua-page-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--ua-motion-page-offset), 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes ua-layer-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--ua-motion-layer-offset), 0) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.ua-motion-page {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  animation: ua-page-enter var(--ua-dur-mid) var(--ua-ease-soft);
+  will-change: transform, opacity;
+}
+
+.ua-motion-panel {
+  transition:
+    transform var(--ua-dur-slow) var(--ua-ease-soft),
+    opacity var(--ua-dur-mid) var(--ua-ease-soft),
+    border-color var(--ua-dur-fast) var(--ua-ease-standard),
+    box-shadow var(--ua-dur-mid) var(--ua-ease-standard);
+  will-change: transform, opacity;
+}
+
+[data-motion="panel"][data-state="open"] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+[data-motion="panel"][data-state="closed"] {
+  opacity: 0;
+  transform: translate3d(var(--ua-motion-panel-offset), 0, 0);
+}
+
+.ua-motion-layer {
+  animation: ua-layer-enter var(--ua-dur-mid) var(--ua-ease-soft);
+  transform-origin: bottom left;
+  will-change: transform, opacity;
+}
+
+.ua-motion-interactive {
+  transition:
+    background-color var(--ua-dur-fast) var(--ua-ease-standard),
+    border-color var(--ua-dur-fast) var(--ua-ease-standard),
+    color var(--ua-dur-fast) var(--ua-ease-standard),
+    box-shadow var(--ua-dur-fast) var(--ua-ease-standard),
+    opacity var(--ua-dur-fast) var(--ua-ease-standard);
 }
 
 /**
@@ -30,6 +102,7 @@
   *::after {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
     transition-duration: 1ms !important;
     scroll-behavior: auto !important;
   }

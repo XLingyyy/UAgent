@@ -126,9 +126,10 @@ export function ProjectSelector({ value, projects, onChange }: ProjectSelectorPr
         position &&
         createPortal(
           <div
-            className="ua-project-selector__dropdown"
+            className="ua-project-selector__dropdown ua-motion-layer"
             role="listbox"
             aria-label="Select project"
+            data-motion="layer"
             style={{
               position: "fixed",
               left: `${position.left}px`,

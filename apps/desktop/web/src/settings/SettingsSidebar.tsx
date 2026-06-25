@@ -14,7 +14,11 @@ export function SettingsSidebar() {
   }
 
   return (
-    <aside className="ua-settings-sidebar" aria-label="Settings navigation">
+    <aside
+      className="ua-settings-sidebar ua-motion-panel"
+      aria-label="Settings navigation"
+      data-motion="panel"
+    >
       <div className="ua-settings-sidebar__header">
         <h2 className="ua-settings-sidebar__title">Settings</h2>
         <button
