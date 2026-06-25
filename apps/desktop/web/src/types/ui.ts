@@ -1,3 +1,5 @@
+import type { ProviderConfig, ProviderState } from "./provider";
+
 /**
  * UAgent UI type definitions
  *
@@ -71,6 +73,8 @@ export interface UIShellState {
   activeProjectId: string | null;
   /** Settings shell state. */
   settings: SettingsShellState;
+  /** Local-only provider configuration state. */
+  provider: ProviderState;
 }
 
 /** Set the active project id (or null for no project). */
@@ -116,4 +120,8 @@ export interface UIContextValue {
   openSettings: (pageId?: SettingsPageId) => void;
   closeSettings: () => void;
   setActiveSettingsPage: (pageId: SettingsPageId) => void;
+  setSelectedProvider: (providerId: string | null) => void;
+  saveProvider: (provider: ProviderConfig) => void;
+  deleteProvider: (providerId: string) => void;
+  setDefaultProvider: (providerId: string | null) => void;
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useUI } from "../app/providers";
 import { ContextRing } from "./ContextRing";
 import { ModelSelector } from "./ModelSelector";
@@ -6,7 +6,8 @@ import { PermissionSelector } from "./PermissionSelector";
 import { ProjectSelector } from "./ProjectSelector";
 import {
   composerMock,
-  modelOptions,
+  createComposerModelOptions,
+  getDefaultModelSelection,
   reasoningOptions,
   type ComposerModelId,
   type ComposerPermission,
@@ -16,13 +17,38 @@ import { MOCK_PROJECTS } from "../project/project-data";
 import "./ComposerDock.css";
 
 export function ComposerDock() {
-  const { state, setActiveProject } = useUI();
+  const { state, setActiveProject, openSettings } = useUI();
   const [input, setInput] = useState("");
   const [permission, setPermission] = useState<ComposerPermission>(composerMock.permission);
-  const [selectedModelId, setSelectedModelId] = useState<ComposerModelId>("not-configured");
-  const [reasoningEffort, setReasoningEffort] = useState<ComposerReasoningEffort>("medium");
+  const providerModelOptions = createComposerModelOptions(state.provider.providers);
+  const defaultSelection = getDefaultModelSelection(
+    state.provider.providers,
+    state.provider.defaultProviderId,
+  );
+  const [selectedModelId, setSelectedModelId] = useState<ComposerModelId>(defaultSelection.modelId);
+  const [reasoningEffort, setReasoningEffort] = useState<ComposerReasoningEffort>(
+    defaultSelection.reasoningEffort,
+  );
   const { runMode, branch, context, statusItems, placeholder, addButtonLabel, sendButtonLabel } =
     composerMock;
+
+  useEffect(() => {
+    if (!providerModelOptions.some((option) => option.id === selectedModelId)) {
+      setSelectedModelId(defaultSelection.modelId);
+    }
+  }, [defaultSelection.modelId, providerModelOptions, selectedModelId]);
+
+  useEffect(() => {
+    if (selectedModelId === "not-configured" && defaultSelection.modelId !== "not-configured") {
+      setSelectedModelId(defaultSelection.modelId);
+    }
+  }, [defaultSelection.modelId, selectedModelId]);
+
+  useEffect(() => {
+    if (selectedModelId === defaultSelection.modelId) {
+      setReasoningEffort(defaultSelection.reasoningEffort);
+    }
+  }, [defaultSelection.modelId, defaultSelection.reasoningEffort, selectedModelId]);
 
   return (
     <footer className="ua-composer" aria-label="Composer dock">
@@ -52,10 +78,11 @@ export function ComposerDock() {
         <ModelSelector
           modelId={selectedModelId}
           reasoningEffort={reasoningEffort}
-          models={modelOptions}
+          models={providerModelOptions}
           reasoningOptionsList={reasoningOptions}
           onModelChange={setSelectedModelId}
           onReasoningChange={setReasoningEffort}
+          onManageProviders={() => openSettings("provider")}
         />
 
         <button

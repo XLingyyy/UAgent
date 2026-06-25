@@ -1,3 +1,6 @@
+import { DEFAULT_PROVIDERS, formatContextWindow } from "../provider/provider-data";
+import type { ProviderConfig, ProviderReasoningEffort } from "../types/provider";
+
 export type ComposerPermission = "request-approval" | "auto-approve" | "full-access" | "custom";
 
 export interface ComposerPermissionOption {
@@ -46,13 +49,9 @@ export const permissionOptions: ComposerPermissionOption[] = [
 
 export type ComposerRunMode = "local" | "sandbox";
 
-export type ComposerReasoningEffort = "low" | "medium" | "high" | "xhigh";
+export type ComposerReasoningEffort = ProviderReasoningEffort;
 
-export type ComposerModelId =
-  | "not-configured"
-  | "openai-gpt-5"
-  | "anthropic-claude-sonnet"
-  | "local-qwen";
+export type ComposerModelId = string;
 
 export interface ComposerModelOption {
   id: ComposerModelId;
@@ -74,36 +73,69 @@ export const reasoningOptions: ComposerReasoningOption[] = [
   { id: "xhigh", label: "XHigh" },
 ];
 
-export const modelOptions: ComposerModelOption[] = [
-  {
-    id: "not-configured",
-    label: "Model not configured",
-    provider: "None",
-    contextWindow: "N/A",
-    enabled: true,
-  },
-  {
-    id: "openai-gpt-5",
-    label: "GPT-5 Mock",
-    provider: "Provider A",
-    contextWindow: "200k",
-    enabled: true,
-  },
-  {
-    id: "anthropic-claude-sonnet",
-    label: "Claude Sonnet Mock",
-    provider: "Provider A",
-    contextWindow: "200k",
-    enabled: true,
-  },
-  {
-    id: "local-qwen",
-    label: "Local Qwen Mock",
-    provider: "Provider B",
-    contextWindow: "64k",
-    enabled: true,
-  },
-];
+export function createComposerModelOptions(providers: ProviderConfig[]): ComposerModelOption[] {
+  const options: ComposerModelOption[] = [
+    {
+      id: "not-configured",
+      label: "Model not configured",
+      provider: "None",
+      contextWindow: "N/A",
+      enabled: true,
+    },
+  ];
+
+  providers.forEach((provider) => {
+    if (!provider.enabled) {
+      return;
+    }
+    provider.models.forEach((model) => {
+      options.push({
+        id: model.id,
+        label: model.label,
+        provider: provider.displayName,
+        contextWindow: formatContextWindow(model.contextWindow),
+        enabled: true,
+      });
+    });
+  });
+
+  return options;
+}
+
+export function getDefaultModelSelection(
+  providers: ProviderConfig[],
+  defaultProviderId: string | null,
+): {
+  modelId: ComposerModelId;
+  reasoningEffort: ComposerReasoningEffort;
+} {
+  if (!defaultProviderId) {
+    return {
+      modelId: "not-configured",
+      reasoningEffort: "medium",
+    };
+  }
+
+  const provider = providers.find((item) => item.providerId === defaultProviderId && item.enabled);
+  if (!provider) {
+    return {
+      modelId: "not-configured",
+      reasoningEffort: "medium",
+    };
+  }
+
+  const defaultModel =
+    provider.models.find((model) => model.id === provider.defaultModel)?.id ??
+    provider.models[0]?.id ??
+    "not-configured";
+
+  return {
+    modelId: defaultModel,
+    reasoningEffort: provider.defaultReasoningEffort ?? "medium",
+  };
+}
+
+export const modelOptions: ComposerModelOption[] = createComposerModelOptions(DEFAULT_PROVIDERS);
 
 export interface ComposerContextUsage {
   used: number;

@@ -15,6 +15,7 @@ export interface ModelSelectorProps {
   reasoningOptionsList: ComposerReasoningOption[];
   onModelChange: (modelId: ComposerModelId) => void;
   onReasoningChange: (effort: ComposerReasoningEffort) => void;
+  onManageProviders?: () => void;
 }
 
 interface DropdownPosition {
@@ -44,6 +45,7 @@ export function ModelSelector({
   reasoningOptionsList,
   onModelChange,
   onReasoningChange,
+  onManageProviders,
 }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<DropdownPosition | null>(null);
@@ -112,6 +114,11 @@ export function ModelSelector({
 
   const handleReasoningSelect = (option: ComposerReasoningOption) => {
     onReasoningChange(option.id);
+    close();
+  };
+
+  const handleManageProviders = () => {
+    onManageProviders?.();
     close();
   };
 
@@ -208,16 +215,10 @@ export function ModelSelector({
 
             <div className="ua-model-selector__section-divider" />
 
-            <div
-              className="ua-model-selector__item ua-model-selector__item--disabled"
-              role="option"
-              aria-disabled="true"
-            >
+            <div className="ua-model-selector__item" role="option" onClick={handleManageProviders}>
               <span className="ua-model-selector__item-body">
-                <span className="ua-model-selector__item-label ua-model-selector__item-label--muted">
-                  Manage providers
-                </span>
-                <span className="ua-model-selector__item-desc">Provider settings coming later</span>
+                <span className="ua-model-selector__item-label">Manage providers</span>
+                <span className="ua-model-selector__item-desc">Open provider settings</span>
               </span>
             </div>
           </div>,

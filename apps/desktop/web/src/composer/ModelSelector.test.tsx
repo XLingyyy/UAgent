@@ -9,6 +9,7 @@ function renderSelector(
     reasoningEffort: Parameters<typeof ModelSelector>[0]["reasoningEffort"];
     onModelChange: Parameters<typeof ModelSelector>[0]["onModelChange"];
     onReasoningChange: Parameters<typeof ModelSelector>[0]["onReasoningChange"];
+    onManageProviders: Parameters<typeof ModelSelector>[0]["onManageProviders"];
   }>,
 ) {
   const defaultProps = {
@@ -18,6 +19,7 @@ function renderSelector(
     reasoningOptionsList: reasoningOptions,
     onModelChange: vi.fn(),
     onReasoningChange: vi.fn(),
+    onManageProviders: vi.fn(),
   };
   return {
     ...render(<ModelSelector {...defaultProps} {...props} />),
@@ -197,17 +199,18 @@ describe("ModelSelector", () => {
     expect(onReasoningChange).toHaveBeenCalledWith("high");
   });
 
-  it("renders Manage providers entry disabled", () => {
-    renderSelector();
+  it("opens provider settings when Manage providers is clicked", () => {
+    const onManageProviders = vi.fn();
+    renderSelector({ onManageProviders });
 
     fireEvent.click(
       screen.getByLabelText("Model selector: Model not configured, reasoning medium"),
     );
 
     const manageEntry = screen.getByText("Manage providers").closest('[role="option"]')!;
-    expect(manageEntry.getAttribute("aria-disabled")).toBe("true");
-    expect(manageEntry.textContent).toContain("Provider settings coming later");
-    expect(manageEntry.classList.contains("ua-model-selector__item--disabled")).toBe(true);
+    fireEvent.click(manageEntry);
+
+    expect(onManageProviders).toHaveBeenCalledTimes(1);
   });
 
   it("closes dropdown on Escape key", () => {

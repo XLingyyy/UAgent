@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ComposerDock } from "./ComposerDock";
 import { UIProvider } from "../app/providers";
+import type { ProviderConfig } from "../types/provider";
 
 function renderDock() {
   return render(
@@ -144,7 +145,7 @@ describe("ComposerDock", () => {
     expect(dropdown.textContent).toContain("Claude Sonnet Mock");
     expect(dropdown.textContent).toContain("Local Qwen Mock");
     expect(dropdown.textContent).toContain("Manage providers");
-    expect(dropdown.textContent).toContain("Provider settings coming later");
+    expect(dropdown.textContent).toContain("Open provider settings");
   });
 
   it("syncs model change to ComposerDock ModelSelector trigger label", () => {
@@ -157,5 +158,54 @@ describe("ComposerDock", () => {
     fireEvent.click(gptOption);
 
     expect(screen.getByLabelText("Model selector: GPT-5 Mock, reasoning medium")).toBeTruthy();
+  });
+
+  it("reads provider-backed defaults from UI state", () => {
+    const customProviders: ProviderConfig[] = [
+      {
+        providerId: "studio",
+        displayName: "Studio",
+        baseUrl: "https://mock.studio.local/v1",
+        wireApi: "responses",
+        authMode: "env_key",
+        envKey: "STUDIO_KEY",
+        enabled: true,
+        models: [
+          {
+            id: "studio-gpt-5-1",
+            label: "GPT-5.1 Custom",
+            contextWindow: 256000,
+            supportsReasoning: true,
+            reasoningEfforts: ["medium", "high", "xhigh"],
+          },
+        ],
+        defaultModel: "studio-gpt-5-1",
+        defaultReasoningEffort: "high",
+      },
+    ];
+
+    render(
+      <UIProvider
+        initialState={{
+          provider: {
+            providers: customProviders,
+            selectedProviderId: "studio",
+            defaultProviderId: "studio",
+          },
+        }}
+      >
+        <ComposerDock />
+      </UIProvider>,
+    );
+
+    const trigger = screen.getByLabelText("Model selector: GPT-5.1 Custom, reasoning high");
+    expect(trigger).toBeTruthy();
+
+    fireEvent.click(trigger);
+
+    const dropdown = screen.getByRole("listbox", {
+      name: "Model and reasoning settings",
+    });
+    expect(within(dropdown).getByText("Studio / GPT-5.1 Custom")).toBeTruthy();
   });
 });

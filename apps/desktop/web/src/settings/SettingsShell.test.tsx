@@ -178,7 +178,7 @@ describe("SettingsShell", () => {
     expect(screen.getByText("This is a UI-only mock. No real chat data is accessed.")).toBeTruthy();
     fireEvent.click(within(sidebar).getByText("Provider"));
     expect(
-      screen.getByText(/Provider configuration form will be implemented in UI-014/, {
+      screen.getByText(/Provider values live in memory only. No provider connection is tested./, {
         exact: false,
       }),
     ).toBeTruthy();
@@ -230,25 +230,22 @@ describe("SettingsShell", () => {
     expect(memoryRows.length).toBe(2);
   });
 
-  it("shows Provider action buttons as disabled", () => {
+  it("shows Provider add/edit/delete actions and a disabled test connection placeholder", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
     fireEvent.click(within(sidebar).getByText("Provider"));
     const allButtons = screen.getAllByRole("button");
     const addBtn = allButtons.find((b) => b.textContent === "Add provider") as HTMLButtonElement;
     expect(addBtn).toBeTruthy();
-    expect(addBtn.disabled).toBe(true);
+    expect(addBtn.disabled).toBe(false);
     const editBtn = allButtons.find((b) => b.textContent === "Edit provider") as HTMLButtonElement;
     expect(editBtn).toBeTruthy();
-    expect(editBtn.disabled).toBe(true);
+    expect(editBtn.disabled).toBe(false);
     const deleteBtn = allButtons.find(
       (b) => b.textContent === "Delete provider",
     ) as HTMLButtonElement;
     expect(deleteBtn).toBeTruthy();
-    expect(deleteBtn.disabled).toBe(true);
-    const saveBtn = allButtons.find((b) => b.textContent === "Save provider") as HTMLButtonElement;
-    expect(saveBtn).toBeTruthy();
-    expect(saveBtn.disabled).toBe(true);
+    expect(deleteBtn.disabled).toBe(false);
     const testBtn = allButtons.find(
       (b) => b.textContent === "Test connection",
     ) as HTMLButtonElement;
