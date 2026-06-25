@@ -1,11 +1,11 @@
-import { useUI } from "../app/providers";
 import { ComingSoonGate, type ComingSoonPhase } from "../components/ComingSoonGate";
+import { useSettingsActions, useSettingsStore } from "../stores/ui-store";
 import { getSettingsGroups, type SettingsPageEntry } from "./settings-pages";
 import "./SettingsSidebar.css";
 
 export function SettingsSidebar() {
-  const { state, closeSettings, setActiveSettingsPage } = useUI();
-  const { activePageId } = state.settings;
+  const activePageId = useSettingsStore((state) => state.activePageId);
+  const { closeSettings, setActiveSettingsPage } = useSettingsActions();
   const groups = getSettingsGroups();
 
   function handlePageClick(page: SettingsPageEntry) {

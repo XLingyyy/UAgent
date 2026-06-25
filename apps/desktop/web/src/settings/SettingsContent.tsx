@@ -1,4 +1,3 @@
-import { useUI } from "../app/providers";
 import { getSettingsPage } from "./settings-pages";
 import { GeneralSettings } from "./pages/GeneralSettings";
 import { AppearanceSettings } from "./pages/AppearanceSettings";
@@ -6,6 +5,7 @@ import { ConfigSettings } from "./pages/ConfigSettings";
 import { PersonalizationSettings } from "./pages/PersonalizationSettings";
 import { ArchivedChatsSettings } from "./pages/ArchivedChatsSettings";
 import { ProviderSettings } from "./pages/ProviderSettings";
+import { useSettingsStore } from "../stores/ui-store";
 import "./SettingsContent.css";
 
 const PAGE_COMPONENTS: Record<string, () => React.ReactNode> = {
@@ -18,8 +18,7 @@ const PAGE_COMPONENTS: Record<string, () => React.ReactNode> = {
 };
 
 export function SettingsContent() {
-  const { state } = useUI();
-  const { activePageId } = state.settings;
+  const activePageId = useSettingsStore((state) => state.activePageId);
   const page = getSettingsPage(activePageId);
   const Page = page ? PAGE_COMPONENTS[page.id] : null;
 

@@ -1,4 +1,4 @@
-import { useUI } from "../app/providers";
+import { useLayoutActions, useLayoutStore } from "../stores/ui-store";
 import "./TitleBar.css";
 
 export interface TitleBarProps {
@@ -14,8 +14,8 @@ export interface TitleBarProps {
  * it renders a static bar so the layout is visible.
  */
 export function TitleBar({ title = "UAgent" }: TitleBarProps) {
-  const { state, toggleInspector } = useUI();
-  const inspectorOpen = state.layout.inspector.open;
+  const inspectorOpen = useLayoutStore((state) => state.inspector.open);
+  const { toggleInspector } = useLayoutActions();
 
   return (
     <header className="ua-titlebar" data-tauri-drag-region>

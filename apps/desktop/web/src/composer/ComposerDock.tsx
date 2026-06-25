@@ -1,34 +1,29 @@
-import { useEffect } from "react";
-import { useUI } from "../app/providers";
 import { ComingSoonGate } from "../components/ComingSoonGate";
 import { ContextRing } from "./ContextRing";
 import { ModelSelector } from "./ModelSelector";
 import { PermissionSelector } from "./PermissionSelector";
 import { ProjectSelector } from "./ProjectSelector";
-import {
-  composerMock,
-  createComposerModelOptions,
-  getDefaultModelSelection,
-  reasoningOptions,
-} from "./composer-data";
+import { composerMock, createComposerModelOptions, reasoningOptions } from "./composer-data";
 import { MOCK_PROJECTS } from "../project/project-data";
+import {
+  useComposerActions,
+  useComposerStore,
+  useProjectActions,
+  useProjectStore,
+  useProviderStore,
+  useSettingsActions,
+} from "../stores/ui-store";
 import "./ComposerDock.css";
 
 export function ComposerDock() {
-  const {
-    state,
-    setActiveProject,
-    openSettings,
-    setComposerInput,
-    setComposerPermission,
-    setComposerModel,
-    setComposerReasoning,
-  } = useUI();
-  const providerModelOptions = createComposerModelOptions(state.provider.providers);
-  const defaultSelection = getDefaultModelSelection(
-    state.provider.providers,
-    state.provider.defaultProviderId,
-  );
+  const composer = useComposerStore((state) => state);
+  const provider = useProviderStore((state) => state);
+  const activeProjectId = useProjectStore((state) => state.activeProjectId);
+  const { setActiveProject } = useProjectActions();
+  const { openSettings } = useSettingsActions();
+  const { setComposerInput, setComposerPermission, setComposerModel, setComposerReasoning } =
+    useComposerActions();
+  const providerModelOptions = createComposerModelOptions(provider.providers);
   const {
     input,
     permission,
@@ -38,31 +33,8 @@ export function ComposerDock() {
     branch,
     context,
     statusItems,
-  } = state.composer;
+  } = composer;
   const { placeholder, addButtonLabel, sendButtonLabel } = composerMock;
-
-  useEffect(() => {
-    if (!providerModelOptions.some((option) => option.id === selectedModelId)) {
-      setComposerModel(defaultSelection.modelId);
-    }
-  }, [defaultSelection.modelId, providerModelOptions, selectedModelId, setComposerModel]);
-
-  useEffect(() => {
-    if (selectedModelId === "not-configured" && defaultSelection.modelId !== "not-configured") {
-      setComposerModel(defaultSelection.modelId);
-    }
-  }, [defaultSelection.modelId, selectedModelId, setComposerModel]);
-
-  useEffect(() => {
-    if (selectedModelId === defaultSelection.modelId) {
-      setComposerReasoning(defaultSelection.reasoningEffort);
-    }
-  }, [
-    defaultSelection.modelId,
-    defaultSelection.reasoningEffort,
-    selectedModelId,
-    setComposerReasoning,
-  ]);
 
   return (
     <footer className="ua-composer" aria-label="Composer dock">
@@ -114,7 +86,7 @@ export function ComposerDock() {
 
       <div className="ua-composer__status-row">
         <ProjectSelector
-          value={state.project.activeProjectId}
+          value={activeProjectId}
           projects={MOCK_PROJECTS}
           onChange={setActiveProject}
         />

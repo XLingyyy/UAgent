@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useUI } from "../../app/providers";
 import {
   createModelsForWireApi,
   createProviderDraft,
@@ -7,6 +6,7 @@ import {
   PROVIDER_AUTH_MODE_OPTIONS,
   PROVIDER_WIRE_API_OPTIONS,
 } from "../../provider/provider-data";
+import { useProviderActions, useProviderStore } from "../../stores/ui-store";
 import type {
   ProviderAuthMode,
   ProviderConfig,
@@ -45,8 +45,9 @@ function cloneDraft(draft: ProviderDraft): ProviderConfig {
 }
 
 export function ProviderSettings() {
-  const { state, setSelectedProvider, saveProvider, deleteProvider, setDefaultProvider } = useUI();
-  const { providers, selectedProviderId, defaultProviderId } = state.provider;
+  const { providers, selectedProviderId, defaultProviderId } = useProviderStore((state) => state);
+  const { setSelectedProvider, saveProvider, deleteProvider, setDefaultProvider } =
+    useProviderActions();
   const selectedProvider =
     providers.find((provider) => provider.providerId === selectedProviderId) ?? null;
   const [editorMode, setEditorMode] = useState<ProviderEditorMode>("view");

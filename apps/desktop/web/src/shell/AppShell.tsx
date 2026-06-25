@@ -1,4 +1,4 @@
-import { useUI } from "../app/providers";
+import { useSettingsStore } from "../stores/ui-store";
 import { TitleBar } from "./TitleBar";
 import { MainLayout } from "./MainLayout";
 import { GlobalOverlays } from "./GlobalOverlays";
@@ -19,8 +19,7 @@ import { useMotionKey } from "../hooks/useMotionKey";
  * instead of MainLayout. TitleBar and GlobalOverlays stay.
  */
 export function AppShell() {
-  const { state } = useUI();
-  const settingsOpen = state.settings.open;
+  const settingsOpen = useSettingsStore((state) => state.open);
   const shellMode = settingsOpen ? "settings" : "app";
   const motionKey = useMotionKey(shellMode);
 

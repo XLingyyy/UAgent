@@ -1,7 +1,7 @@
 import { LeftSidebar } from "../sidebar/LeftSidebar";
 import { Workspace } from "../workspace/Workspace";
 import { InspectorPane } from "../inspector/InspectorPane";
-import { useUI } from "../app/providers";
+import { useLayoutActions, useLayoutStore } from "../stores/ui-store";
 import { useInspectorAutoCollapse } from "./useInspectorAutoCollapse";
 import "./MainLayout.css";
 
@@ -16,8 +16,8 @@ import "./MainLayout.css";
  * and CSS constraint.
  */
 export function MainLayout() {
-  const { state, toggleInspector, setInspectorOpen } = useUI();
-  const inspectorOpen = state.layout.inspector.open;
+  const inspectorOpen = useLayoutStore((state) => state.inspector.open);
+  const { toggleInspector, setInspectorOpen } = useLayoutActions();
 
   useInspectorAutoCollapse(setInspectorOpen, 899);
 

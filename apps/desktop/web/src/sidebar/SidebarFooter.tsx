@@ -1,9 +1,9 @@
-import { useUI } from "../app/providers";
 import { ComingSoonGate } from "../components/ComingSoonGate";
+import { useSettingsActions } from "../stores/ui-store";
 import "./SidebarFooter.css";
 
 export function SidebarFooter() {
-  const { openSettings } = useUI();
+  const { openSettings } = useSettingsActions();
 
   return (
     <div className="ua-sidebar-footer">

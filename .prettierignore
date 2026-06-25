@@ -1,0 +1,8 @@
+.agent-bus/
+.agent-bus-c/
+.playwright-cli/
+output/
+tmp/
+apps/desktop/web/dist/
+docs/project-status.md
+docs/context-index.md

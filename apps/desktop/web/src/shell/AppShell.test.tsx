@@ -235,6 +235,42 @@ describe("AppShell", () => {
       expect(layout?.getAttribute("data-inspector-state")).toBe("closed");
     });
 
+    it("resyncs the composer defaults after switching the default provider in settings", () => {
+      const { container } = renderAppShell();
+
+      fireEvent.click(screen.getByLabelText("Open settings"));
+      fireEvent.click(screen.getByText("Provider"));
+      fireEvent.click(screen.getByText("Edit provider"));
+      fireEvent.click(screen.getByLabelText("Use as default provider"));
+      fireEvent.change(screen.getByLabelText("Default model"), {
+        target: { value: "anthropic-claude-sonnet" },
+      });
+      fireEvent.change(screen.getByLabelText("Reasoning effort"), {
+        target: { value: "high" },
+      });
+      fireEvent.click(screen.getByText("Save provider"));
+      fireEvent.click(screen.getByLabelText("Back to app"));
+
+      expect(
+        screen.getByLabelText("Model selector: Claude Sonnet Mock, reasoning high"),
+      ).toBeTruthy();
+
+      fireEvent.click(screen.getByLabelText("Open settings"));
+      fireEvent.click(screen.getByText("Provider"));
+      fireEvent.click(screen.getByText("Provider B"));
+      fireEvent.click(screen.getByText("Edit provider"));
+      fireEvent.click(screen.getByLabelText("Use as default provider"));
+      fireEvent.change(screen.getByLabelText("Reasoning effort"), {
+        target: { value: "low" },
+      });
+      fireEvent.click(screen.getByText("Save provider"));
+
+      fireEvent.click(screen.getByLabelText("Back to app"));
+
+      expect(container.querySelector(".ua-app")?.getAttribute("data-shell-mode")).toBe("app");
+      expect(screen.getByLabelText("Model selector: Local Qwen Mock, reasoning low")).toBeTruthy();
+    });
+
     it("does not render ComposerDock when SettingsShell is open", () => {
       renderAppShellWithSettings();
       expect(screen.queryByLabelText("Composer dock")).toBeNull();

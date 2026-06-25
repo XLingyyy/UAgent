@@ -156,25 +156,50 @@ export type SetComposerModel = (modelId: ComposerModelId) => void;
 
 export type SetComposerReasoning = (effort: ComposerReasoningEffort) => void;
 
-/** Context value exposed by the UI provider. */
-export interface UIContextValue {
-  state: UIShellState;
+export interface LayoutStoreActions {
   toggleInspector: ToggleInspector;
   setInspectorOpen: (open: boolean) => void;
   setActiveNav: SetActiveNav;
-  setActiveThread: SetActiveThread;
-  setActiveProject: SetActiveProject;
+}
+
+export interface SettingsStoreActions {
   openSettings: (pageId?: SettingsPageId) => void;
   closeSettings: () => void;
   setActiveSettingsPage: (pageId: SettingsPageId) => void;
+}
+
+export interface ProjectStoreActions {
+  setActiveProject: SetActiveProject;
+}
+
+export interface ThreadStoreActions {
+  setActiveThread: SetActiveThread;
+}
+
+export interface ComposerStoreActions {
   setComposerInput: SetComposerInput;
   setComposerPermission: SetComposerPermission;
   setComposerModel: SetComposerModel;
   setComposerReasoning: SetComposerReasoning;
+}
+
+export interface ProviderStoreActions {
   setSelectedProvider: (providerId: string | null) => void;
   saveProvider: (provider: ProviderConfig) => void;
   deleteProvider: (providerId: string) => void;
   setDefaultProvider: (providerId: string | null) => void;
+}
+
+/** Context value exposed by the UI provider. */
+export interface UIContextValue
+  extends
+    LayoutStoreActions,
+    SettingsStoreActions,
+    ProjectStoreActions,
+    ThreadStoreActions,
+    ComposerStoreActions,
+    ProviderStoreActions {
+  state: UIShellState;
 }
 
 /** Partial input shape accepted by UIProvider for test/setup seeding. */

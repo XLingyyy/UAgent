@@ -21,6 +21,8 @@ temp/
 uagent-workflow-supervisor.md
 uagent-workflow-implementer.md
 uagent-workflow-reviewer.md
+.playwright-cli/
+output/
 
 # Dependencies and builds
 node_modules/
