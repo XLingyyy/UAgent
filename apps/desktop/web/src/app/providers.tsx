@@ -10,6 +10,7 @@ const DEFAULT_STATE: UIShellState = {
     activeNav: "workspace" as NavSection,
     activeThreadId: "thread-1",
   },
+  activeProjectId: "lyra",
 };
 
 const UIContext = createContext<UIContextValue | null>(null);
@@ -51,6 +52,11 @@ export function UIProvider({ children, initialState }: UIProviderProps) {
         setState((prev) => ({
           ...prev,
           sidebar: { ...prev.sidebar, activeThreadId: threadId },
+        })),
+      setActiveProject: (projectId: string | null) =>
+        setState((prev) => ({
+          ...prev,
+          activeProjectId: projectId,
         })),
     }),
     [state],

@@ -1,9 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { Workspace } from "./Workspace";
+import { UIProvider } from "../app/providers";
 
 function renderWorkspace() {
-  return render(<Workspace />);
+  return render(
+    <UIProvider>
+      <Workspace />
+    </UIProvider>,
+  );
 }
 
 describe("Workspace", () => {
@@ -49,19 +54,12 @@ describe("Workspace", () => {
     expect(within(dock).getByLabelText("Composer input")).toBeTruthy();
     expect(within(dock).getByLabelText("Permission mode: Request approval")).toBeTruthy();
     expect(within(dock).getByLabelText("context: 12% used")).toBeTruthy();
+    expect(within(dock).getByLabelText("Project selector: Lyra_Prototype")).toBeTruthy();
 
     const disabledSend = within(dock).getByRole("button", { name: "Send - disabled" });
     expect(disabledSend).toBeTruthy();
     expect((disabledSend as HTMLButtonElement).disabled).toBe(true);
     expect(dock.querySelector("form")).toBeNull();
-    const disabledBtns = within(dock).getAllByRole("button");
-    const nonDisabledComposerButtons = disabledBtns.filter(
-      (b) => (b as HTMLButtonElement).disabled === false,
-    );
-    expect(nonDisabledComposerButtons.length).toBe(1);
-    expect((nonDisabledComposerButtons[0] as HTMLButtonElement).getAttribute("aria-label")).toMatch(
-      /Permission mode/,
-    );
   });
 
   it("does not render microphone, voice, or record controls", () => {

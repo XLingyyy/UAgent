@@ -1,6 +1,7 @@
 import type { MockProject, MockThread } from "../types/ui";
 
 export const mockProject: MockProject = {
+  id: "lyra",
   name: "Lyra_Prototype",
   engineVersion: "UE 5.8",
   connectionStatus: "Not connected",

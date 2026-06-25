@@ -1,10 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ComposerDock } from "./ComposerDock";
+import { UIProvider } from "../app/providers";
+
+function renderDock() {
+  return render(
+    <UIProvider>
+      <ComposerDock />
+    </UIProvider>,
+  );
+}
 
 describe("ComposerDock", () => {
   it("renders the composer dock with an input row and status row", () => {
-    render(<ComposerDock />);
+    renderDock();
 
     const dock = screen.getByLabelText("Composer dock");
     expect(dock).toBeTruthy();
@@ -17,13 +26,12 @@ describe("ComposerDock", () => {
     expect(within(dock).getByLabelText("Send - disabled")).toBeTruthy();
   });
 
-  it("renders the status row with project, mode, branch, and status items", () => {
-    render(<ComposerDock />);
+  it("renders the status row with ProjectSelector, mode, branch, and status items", () => {
+    renderDock();
 
     const dock = screen.getByLabelText("Composer dock");
 
-    expect(within(dock).getByText("Project")).toBeTruthy();
-    expect(within(dock).getByText("Lyra_Prototype")).toBeTruthy();
+    expect(within(dock).getByLabelText("Project selector: Lyra_Prototype")).toBeTruthy();
     expect(within(dock).getByText("Mode")).toBeTruthy();
     expect(within(dock).getByText("Local mode")).toBeTruthy();
     expect(within(dock).getByText("Branch")).toBeTruthy();
@@ -36,7 +44,7 @@ describe("ComposerDock", () => {
   });
 
   it("shows a textarea with placeholder and allows local input", () => {
-    render(<ComposerDock />);
+    renderDock();
 
     const textarea = screen.getByLabelText("Composer input") as HTMLTextAreaElement;
     expect(textarea.placeholder).toBe(
@@ -49,21 +57,21 @@ describe("ComposerDock", () => {
   });
 
   it("has a disabled send button that submits nothing", () => {
-    render(<ComposerDock />);
+    renderDock();
 
     const sendBtn = screen.getByLabelText("Send - disabled") as HTMLButtonElement;
     expect(sendBtn.disabled).toBe(true);
   });
 
   it("has a disabled add button", () => {
-    render(<ComposerDock />);
+    renderDock();
 
     const addBtn = screen.getByLabelText("Add context - disabled") as HTMLButtonElement;
     expect(addBtn.disabled).toBe(true);
   });
 
   it("renders the context ring with correct percentage", () => {
-    render(<ComposerDock />);
+    renderDock();
 
     const ring = screen.getByLabelText("context: 12% used");
     expect(ring).toBeTruthy();
@@ -71,8 +79,35 @@ describe("ComposerDock", () => {
     expect(within(ring).getByText("12%")).toBeTruthy();
   });
 
+  it("opens the project selector dropdown", () => {
+    renderDock();
+
+    const trigger = screen.getByLabelText("Project selector: Lyra_Prototype");
+    fireEvent.click(trigger);
+
+    const dropdown = screen.getByRole("listbox", { name: "Select project" });
+    expect(dropdown).toBeTruthy();
+    expect(dropdown.textContent).toContain("MechArena_Testbed");
+    expect(dropdown.textContent).toContain("CitySample_Sandbox");
+    expect(dropdown.textContent).toContain("Add new project");
+    expect(dropdown.textContent).toContain("No project");
+  });
+
+  it("syncs project change to ComposerDock trigger label", () => {
+    renderDock();
+
+    const trigger = screen.getByLabelText("Project selector: Lyra_Prototype");
+    fireEvent.click(trigger);
+
+    const options = screen.getAllByRole("option");
+    const mech = options.find((o) => o.textContent?.includes("MechArena_Testbed"));
+    fireEvent.click(mech!);
+
+    expect(screen.getByLabelText("Project selector: MechArena_Testbed")).toBeTruthy();
+  });
+
   it("does not render microphone, voice, or record controls", () => {
-    const { container } = render(<ComposerDock />);
+    const { container } = renderDock();
 
     const audioControls = container.querySelectorAll(
       '[aria-label*="mic" i], [aria-label*="voice" i], [aria-label*="record" i]',
@@ -81,7 +116,7 @@ describe("ComposerDock", () => {
   });
 
   it("has no form element", () => {
-    const { container } = render(<ComposerDock />);
+    const { container } = renderDock();
     expect(container.querySelector("form")).toBeNull();
   });
 });

@@ -1,15 +1,18 @@
 import { useState } from "react";
+import { useUI } from "../app/providers";
 import { ContextRing } from "./ContextRing";
 import { PermissionSelector } from "./PermissionSelector";
+import { ProjectSelector } from "./ProjectSelector";
 import { composerMock, type ComposerPermission } from "./composer-data";
+import { MOCK_PROJECTS } from "../project/project-data";
 import "./ComposerDock.css";
 
 export function ComposerDock() {
+  const { state, setActiveProject } = useUI();
   const [input, setInput] = useState("");
   const [permission, setPermission] = useState<ComposerPermission>(composerMock.permission);
   const {
     runMode,
-    project,
     branch,
     model,
     context,
@@ -59,10 +62,13 @@ export function ComposerDock() {
       </div>
 
       <div className="ua-composer__status-row">
-        <span className="ua-composer__status-item">
-          <span className="ua-composer__status-label">Project</span>
-          <span className="ua-composer__status-value">{project}</span>
-        </span>
+        <ProjectSelector
+          value={state.activeProjectId}
+          projects={MOCK_PROJECTS}
+          onChange={setActiveProject}
+        />
+
+        <span className="ua-composer__status-separator" aria-hidden="true" />
 
         <span className="ua-composer__status-item">
           <span className="ua-composer__status-label">Mode</span>

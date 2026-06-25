@@ -120,6 +120,15 @@
   white-space: nowrap;
 }
 
+.ua-composer__status-separator {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--ua-border-strong);
+  flex-shrink: 0;
+}
+
 .ua-composer__status-item::after {
   content: "";
   display: inline-block;

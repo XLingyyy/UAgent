@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { LeftSidebar } from "./LeftSidebar";
 import { UIProvider } from "../app/providers";
-import { mockProject, mockThreads } from "./sidebar-data";
+import { mockThreads } from "./sidebar-data";
+import { MOCK_PROJECTS } from "../project/project-data";
+
+const defaultProject = MOCK_PROJECTS.find((p) => p.id === "lyra")!;
 
 function renderSidebar() {
   return render(
@@ -55,26 +58,26 @@ describe("LeftSidebar", () => {
   });
 
   describe("ProjectSection", () => {
-    it("renders the project name", () => {
+    it("renders the default project name", () => {
       renderSidebar();
-      expect(screen.getByText(mockProject.name)).toBeTruthy();
+      expect(screen.getByText(defaultProject.name)).toBeTruthy();
     });
 
     it("renders the engine version", () => {
       renderSidebar();
-      expect(screen.getByText(mockProject.engineVersion, { exact: false })).toBeTruthy();
+      expect(screen.getByText(defaultProject.engineVersion, { exact: false })).toBeTruthy();
     });
 
     it("renders the not-connected status", () => {
       renderSidebar();
-      expect(screen.getByText(mockProject.connectionStatus)).toBeTruthy();
+      expect(screen.getByText(defaultProject.connectionStatus)).toBeTruthy();
     });
 
     it("renders the project path", () => {
       renderSidebar();
-      const pathEl = screen.getByText(mockProject.path);
+      const pathEl = screen.getByText(defaultProject.path);
       expect(pathEl).toBeTruthy();
-      expect(pathEl.getAttribute("title")).toBe(mockProject.path);
+      expect(pathEl.getAttribute("title")).toBe(defaultProject.path);
     });
 
     it("renders Open Project and Switch buttons as disabled", () => {
@@ -85,6 +88,54 @@ describe("LeftSidebar", () => {
       const switchBtn = screen.getByText("Switch");
       expect(switchBtn).toBeTruthy();
       expect((switchBtn as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
+  describe("ProjectSection with no project", () => {
+    it("renders empty state when activeProjectId is null", () => {
+      render(
+        <UIProvider initialState={{ activeProjectId: null }}>
+          <LeftSidebar />
+        </UIProvider>,
+      );
+
+      expect(screen.getByText("No project selected")).toBeTruthy();
+      expect(screen.getByText("Select a project from the composer dock")).toBeTruthy();
+      expect(screen.queryByText("Open Project")).toBeNull();
+    });
+
+    it("does not render the project tree when no project is selected", () => {
+      const { container } = render(
+        <UIProvider initialState={{ activeProjectId: null }}>
+          <LeftSidebar />
+        </UIProvider>,
+      );
+
+      expect(screen.queryByText("Project Tree")).toBeNull();
+      expect(container.querySelector('[role="tree"]')).toBeNull();
+    });
+  });
+
+  describe("ProjectSelection sync from ComposerDock", () => {
+    it("renders MechArena_Testbed when activeProjectId is mech", () => {
+      render(
+        <UIProvider initialState={{ activeProjectId: "mech" }}>
+          <LeftSidebar />
+        </UIProvider>,
+      );
+
+      expect(screen.getByText("MechArena_Testbed")).toBeTruthy();
+      expect(screen.queryByText("Lyra_Prototype")).toBeNull();
+    });
+
+    it("renders Lyra_Prototype by default", () => {
+      render(
+        <UIProvider>
+          <LeftSidebar />
+        </UIProvider>,
+      );
+
+      expect(screen.getByText("Lyra_Prototype")).toBeTruthy();
     });
   });
 
@@ -150,7 +201,7 @@ describe("LeftSidebar", () => {
     it("toggles folder expand on click", () => {
       renderSidebar();
       const contentToggles = screen
-        .getAllByText("▸")
+        .getAllByText("\u25B8")
         .filter((el) => el.closest('[role="treeitem"]')?.textContent?.includes("Content"));
       expect(contentToggles.length).toBeGreaterThan(0);
       fireEvent.click(contentToggles[0]);

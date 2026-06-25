@@ -3,11 +3,29 @@ import { ProjectTree } from "./ProjectTree";
 import "./ProjectSection.css";
 
 export interface ProjectSectionProps {
-  project: MockProject;
+  project: MockProject | null;
   treeNodes: ProjectTreeNodeType[];
 }
 
 export function ProjectSection({ project, treeNodes }: ProjectSectionProps) {
+  if (!project) {
+    return (
+      <section className="ua-project-section" aria-label="Current project">
+        <div className="ua-project-section__header">
+          <span className="ua-project-section__label">Project</span>
+        </div>
+        <div className="ua-project-card ua-project-card--empty">
+          <span className="ua-project-card__name ua-project-card__name--empty">
+            No project selected
+          </span>
+          <span className="ua-project-card__empty-text">
+            Select a project from the composer dock
+          </span>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="ua-project-section" aria-label="Current project">
       <div className="ua-project-section__header">

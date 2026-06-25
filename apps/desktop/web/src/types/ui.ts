@@ -9,6 +9,7 @@ export type NavSection = "workspace" | "projects" | "settings";
 
 /** Mock project data shape for the sidebar ProjectSection. */
 export interface MockProject {
+  id: string;
   name: string;
   engineVersion: string;
   connectionStatus: string;
@@ -66,7 +67,12 @@ export interface UIShellState {
   inspector: InspectorState;
   /** Sidebar navigation and selection state. */
   sidebar: SidebarState;
+  /** Active project id from the shared mock project list, or null for no project. */
+  activeProjectId: string | null;
 }
+
+/** Set the active project id (or null for no project). */
+export type SetActiveProject = (projectId: string | null) => void;
 
 /** Toggle the inspector open/closed. */
 export type ToggleInspector = () => void;
@@ -84,4 +90,5 @@ export interface UIContextValue {
   setInspectorOpen: (open: boolean) => void;
   setActiveNav: SetActiveNav;
   setActiveThread: SetActiveThread;
+  setActiveProject: SetActiveProject;
 }

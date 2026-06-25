@@ -97,3 +97,22 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* ---- Empty state ---- */
+
+.ua-project-card--empty {
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  gap: var(--ua-space-1);
+}
+
+.ua-project-card__name--empty {
+  color: var(--ua-text-subtle);
+  font-weight: var(--ua-font-weight-medium);
+}
+
+.ua-project-card__empty-text {
+  font-size: var(--ua-font-size-xs);
+  color: var(--ua-text-subtle);
+}

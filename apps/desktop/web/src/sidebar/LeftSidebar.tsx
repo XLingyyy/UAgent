@@ -2,13 +2,18 @@ import { useUI } from "../app/providers";
 import { PrimaryNav } from "./PrimaryNav";
 import { ProjectSection } from "./ProjectSection";
 import { ThreadSection } from "./ThreadSection";
-import { mockProject, mockThreads } from "./sidebar-data";
+import { mockThreads } from "./sidebar-data";
 import { mockProjectTree } from "./project-tree-data";
+import { MOCK_PROJECTS } from "../project/project-data";
 import "./LeftSidebar.css";
 
 export function LeftSidebar() {
   const { state, setActiveNav, setActiveThread } = useUI();
-  const { sidebar } = state;
+  const { sidebar, activeProjectId } = state;
+
+  const activeProject = activeProjectId
+    ? (MOCK_PROJECTS.find((p) => p.id === activeProjectId) ?? null)
+    : null;
 
   return (
     <aside className="ua-sidebar" aria-label="Sidebar">
@@ -16,7 +21,7 @@ export function LeftSidebar() {
         <PrimaryNav activeNav={sidebar.activeNav} onNavChange={setActiveNav} />
       </div>
       <div className="ua-sidebar__body">
-        <ProjectSection project={mockProject} treeNodes={mockProjectTree} />
+        <ProjectSection project={activeProject} treeNodes={activeProject ? mockProjectTree : []} />
         <ThreadSection
           threads={mockThreads}
           activeThreadId={sidebar.activeThreadId}
