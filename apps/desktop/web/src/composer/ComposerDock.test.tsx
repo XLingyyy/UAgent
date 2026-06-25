@@ -10,7 +10,7 @@ describe("ComposerDock", () => {
     expect(dock).toBeTruthy();
 
     expect(within(dock).getByLabelText("Add context - disabled")).toBeTruthy();
-    expect(within(dock).getByLabelText("Permission: Request approval")).toBeTruthy();
+    expect(within(dock).getByLabelText("Permission mode: Request approval")).toBeTruthy();
     expect(within(dock).getByLabelText("Composer input")).toBeTruthy();
     expect(within(dock).getByLabelText("context: 12% used")).toBeTruthy();
     expect(within(dock).getByLabelText("Model: Model not configured")).toBeTruthy();

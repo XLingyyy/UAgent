@@ -43,18 +43,25 @@ describe("Workspace", () => {
   });
 
   it("renders the standalone ComposerDock input and status rows", () => {
-    const { container } = renderWorkspace();
+    renderWorkspace();
 
     const dock = screen.getByLabelText("Composer dock");
     expect(within(dock).getByLabelText("Composer input")).toBeTruthy();
-    expect(within(dock).getByLabelText("Permission: Request approval")).toBeTruthy();
+    expect(within(dock).getByLabelText("Permission mode: Request approval")).toBeTruthy();
     expect(within(dock).getByLabelText("context: 12% used")).toBeTruthy();
 
     const disabledSend = within(dock).getByRole("button", { name: "Send - disabled" });
     expect(disabledSend).toBeTruthy();
     expect((disabledSend as HTMLButtonElement).disabled).toBe(true);
     expect(dock.querySelector("form")).toBeNull();
-    expect(container.querySelectorAll(".ua-composer button:not(:disabled)").length).toBe(0);
+    const disabledBtns = within(dock).getAllByRole("button");
+    const nonDisabledComposerButtons = disabledBtns.filter(
+      (b) => (b as HTMLButtonElement).disabled === false,
+    );
+    expect(nonDisabledComposerButtons.length).toBe(1);
+    expect((nonDisabledComposerButtons[0] as HTMLButtonElement).getAttribute("aria-label")).toMatch(
+      /Permission mode/,
+    );
   });
 
   it("does not render microphone, voice, or record controls", () => {

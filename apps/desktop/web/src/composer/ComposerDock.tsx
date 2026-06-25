@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { ContextRing } from "./ContextRing";
-import { composerMock } from "./composer-data";
+import { PermissionSelector } from "./PermissionSelector";
+import { composerMock, type ComposerPermission } from "./composer-data";
 import "./ComposerDock.css";
 
 export function ComposerDock() {
   const [input, setInput] = useState("");
+  const [permission, setPermission] = useState<ComposerPermission>(composerMock.permission);
   const {
-    permission,
     runMode,
     project,
     branch,
@@ -31,9 +32,7 @@ export function ComposerDock() {
           {addButtonLabel}
         </button>
 
-        <span className="ua-composer__permission" aria-label="Permission: Request approval">
-          {permission === "request-approval" ? "Request approval" : "Auto approve"}
-        </span>
+        <PermissionSelector value={permission} onChange={setPermission} />
 
         <textarea
           className="ua-composer__textarea"

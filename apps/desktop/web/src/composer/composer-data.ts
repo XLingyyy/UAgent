@@ -1,4 +1,48 @@
-export type ComposerPermission = "auto-approve" | "request-approval";
+export type ComposerPermission = "request-approval" | "auto-approve" | "full-access" | "custom";
+
+export interface ComposerPermissionOption {
+  id: ComposerPermission;
+  label: string;
+  description: string;
+  tone: "default" | "warning" | "accent" | "muted";
+  enabled: boolean;
+  requiresConfirmation: boolean;
+}
+
+export const permissionOptions: ComposerPermissionOption[] = [
+  {
+    id: "request-approval",
+    label: "Request approval",
+    description: "All medium/high-risk operations require confirmation",
+    tone: "default",
+    enabled: true,
+    requiresConfirmation: false,
+  },
+  {
+    id: "auto-approve",
+    label: "Auto approve",
+    description: "Low-risk operations run automatically; medium/high still require confirmation",
+    tone: "accent",
+    enabled: true,
+    requiresConfirmation: false,
+  },
+  {
+    id: "full-access",
+    label: "Full access",
+    description: "MVP0 mock only - no real permissions elevated",
+    tone: "warning",
+    enabled: true,
+    requiresConfirmation: true,
+  },
+  {
+    id: "custom",
+    label: "Custom",
+    description: "Future settings-backed permissions",
+    tone: "muted",
+    enabled: false,
+    requiresConfirmation: false,
+  },
+];
 
 export type ComposerRunMode = "local" | "sandbox";
 
