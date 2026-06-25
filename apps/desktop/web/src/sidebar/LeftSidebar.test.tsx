@@ -6,6 +6,8 @@ import { mockThreads } from "./sidebar-data";
 import { MOCK_PROJECTS } from "../project/project-data";
 
 const defaultProject = MOCK_PROJECTS.find((p) => p.id === "lyra")!;
+const mechProject = MOCK_PROJECTS.find((p) => p.id === "mech")!;
+const cityProject = MOCK_PROJECTS.find((p) => p.id === "city")!;
 
 function renderSidebar() {
   return render(
@@ -40,60 +42,60 @@ describe("LeftSidebar", () => {
     });
 
     it("switches active nav to Projects on click", () => {
-      renderSidebar();
+      const { container } = renderSidebar();
       const projectsBtn = screen.getByText("Projects").closest("button")!;
       fireEvent.click(projectsBtn);
       expect(projectsBtn.classList.contains("ua-primary-nav__item--active")).toBe(true);
       expect(projectsBtn.getAttribute("aria-current")).toBe("page");
       const wsBtn = screen.getByText("Workspace").closest("button")!;
       expect(wsBtn.classList.contains("ua-primary-nav__item--active")).toBe(false);
+      expect(container.querySelector(".ua-sidebar")?.getAttribute("data-sidebar-view")).toBe(
+        "projects",
+      );
     });
 
     it("switches active nav to Settings on click", () => {
-      renderSidebar();
+      const { container } = renderSidebar();
       const nav = screen.getByLabelText("Primary navigation");
       const settingsBtn = within(nav).getByText("Settings").closest("button")!;
       fireEvent.click(settingsBtn);
       expect(settingsBtn.classList.contains("ua-primary-nav__item--active")).toBe(true);
       expect(settingsBtn.getAttribute("aria-current")).toBe("page");
+      expect(container.querySelector(".ua-sidebar")?.getAttribute("data-sidebar-view")).toBe(
+        "workspace",
+      );
+      expect(screen.queryByRole("tree")).toBeNull();
     });
   });
 
-  describe("ProjectSection", () => {
-    it("renders the default project name", () => {
-      renderSidebar();
-      expect(screen.getByText(defaultProject.name)).toBeTruthy();
+  describe("Workspace view", () => {
+    it("exposes the workspace sidebar view by default", () => {
+      const { container } = renderSidebar();
+      const aside = container.querySelector(".ua-sidebar");
+      expect(aside?.getAttribute("data-sidebar-view")).toBe("workspace");
     });
 
-    it("renders the engine version", () => {
+    it("renders a lightweight current project summary", () => {
       renderSidebar();
-      expect(screen.getByText(defaultProject.engineVersion, { exact: false })).toBeTruthy();
-    });
+      const summary = screen.getByLabelText("Workspace project summary");
 
-    it("renders the not-connected status", () => {
-      renderSidebar();
-      expect(screen.getByText(defaultProject.connectionStatus)).toBeTruthy();
-    });
-
-    it("renders the project path", () => {
-      renderSidebar();
-      const pathEl = screen.getByText(defaultProject.path);
+      expect(within(summary).getByText(defaultProject.name)).toBeTruthy();
+      expect(
+        within(summary).getByText(defaultProject.engineVersion, { exact: false }),
+      ).toBeTruthy();
+      expect(within(summary).getByText(defaultProject.connectionStatus)).toBeTruthy();
+      const pathEl = within(summary).getByText(defaultProject.path);
       expect(pathEl).toBeTruthy();
       expect(pathEl.getAttribute("title")).toBe(defaultProject.path);
     });
 
-    it("renders Open Project and Switch buttons as disabled", () => {
+    it("does not render the full asset tree by default", () => {
       renderSidebar();
-      const openBtn = screen.getByText("Open Project");
-      expect(openBtn).toBeTruthy();
-      expect((openBtn as HTMLButtonElement).disabled).toBe(true);
-      const switchBtn = screen.getByText("Switch");
-      expect(switchBtn).toBeTruthy();
-      expect((switchBtn as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.queryByRole("tree")).toBeNull();
+      expect(screen.queryByText("Asset Browser")).toBeNull();
+      expect(screen.queryByText("Content")).toBeNull();
     });
-  });
 
-  describe("ProjectSection with no project", () => {
     it("renders empty state when activeProjectId is null", () => {
       render(
         <UIProvider initialState={{ project: { activeProjectId: null } }}>
@@ -116,9 +118,7 @@ describe("LeftSidebar", () => {
       expect(screen.queryByText("Project Tree")).toBeNull();
       expect(container.querySelector('[role="tree"]')).toBeNull();
     });
-  });
 
-  describe("ProjectSelection sync from ComposerDock", () => {
     it("renders MechArena_Testbed when activeProjectId is mech", () => {
       render(
         <UIProvider initialState={{ project: { activeProjectId: "mech" } }}>
@@ -138,6 +138,107 @@ describe("LeftSidebar", () => {
       );
 
       expect(screen.getByText("Lyra_Prototype")).toBeTruthy();
+    });
+  });
+
+  describe("Projects view", () => {
+    function switchToProjects() {
+      const nav = screen.getByLabelText("Primary navigation");
+      fireEvent.click(within(nav).getByText("Projects").closest("button")!);
+    }
+
+    it("renders the mock project list after clicking Projects", () => {
+      renderSidebar();
+      switchToProjects();
+
+      const projectList = screen.getByRole("listbox", { name: "Mock project list" });
+      for (const project of MOCK_PROJECTS) {
+        expect(
+          within(projectList).getByRole("option", { name: new RegExp(project.name) }),
+        ).toBeTruthy();
+      }
+    });
+
+    it("marks the active project option as selected", () => {
+      renderSidebar();
+      switchToProjects();
+
+      const projectList = screen.getByRole("listbox", { name: "Mock project list" });
+      const lyraOption = within(projectList).getByRole("option", {
+        name: /Lyra_Prototype/,
+      });
+      expect(lyraOption.getAttribute("aria-selected")).toBe("true");
+      expect(lyraOption.getAttribute("aria-current")).toBe("true");
+    });
+
+    it("updates the active project summary when a project is clicked", () => {
+      renderSidebar();
+      switchToProjects();
+
+      const projectList = screen.getByRole("listbox", { name: "Mock project list" });
+      const mechOption = within(projectList).getByRole("option", {
+        name: /MechArena_Testbed/,
+      });
+      fireEvent.click(mechOption);
+
+      expect(mechOption.getAttribute("aria-selected")).toBe("true");
+      const details = screen.getByLabelText("Active project details");
+      expect(within(details).getByText(mechProject.name)).toBeTruthy();
+      expect(within(details).getByText(mechProject.path)).toBeTruthy();
+      expect(within(details).queryByText(defaultProject.path)).toBeNull();
+    });
+
+    it("shows the selected project status, path, and engine version", () => {
+      render(
+        <UIProvider
+          initialState={{
+            layout: { sidebar: { activeNav: "projects" } },
+            project: { activeProjectId: "city" },
+          }}
+        >
+          <LeftSidebar />
+        </UIProvider>,
+      );
+
+      const details = screen.getByLabelText("Active project details");
+      expect(within(details).getByText(cityProject.name)).toBeTruthy();
+      expect(within(details).getByText(cityProject.engineVersion, { exact: false })).toBeTruthy();
+      expect(within(details).getByText(cityProject.connectionStatus)).toBeTruthy();
+      expect(within(details).getByText(cityProject.path)).toBeTruthy();
+    });
+
+    it("renders disabled future project actions without connecting to anything", () => {
+      renderSidebar();
+      switchToProjects();
+
+      const openBtn = screen.getByText("Open Project");
+      expect(openBtn).toBeTruthy();
+      expect((openBtn as HTMLButtonElement).disabled).toBe(true);
+      const switchBtn = screen.getByText("Switch");
+      expect(switchBtn).toBeTruthy();
+      expect((switchBtn as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("renders the current project asset browser only in Projects mode", () => {
+      renderSidebar();
+      switchToProjects();
+
+      expect(screen.getByText("Asset Browser")).toBeTruthy();
+      expect(
+        screen.getByRole("tree", { name: `${defaultProject.name} asset browser` }),
+      ).toBeTruthy();
+      expect(screen.getByText("Content")).toBeTruthy();
+      expect(screen.getByText("Config")).toBeTruthy();
+    });
+
+    it("updates the asset browser label when project selection changes", () => {
+      renderSidebar();
+      switchToProjects();
+
+      const projectList = screen.getByRole("listbox", { name: "Mock project list" });
+      fireEvent.click(within(projectList).getByRole("option", { name: /MechArena_Testbed/ }));
+
+      expect(screen.getByRole("tree", { name: `${mechProject.name} asset browser` })).toBeTruthy();
     });
   });
 
@@ -178,49 +279,6 @@ describe("LeftSidebar", () => {
       expect(screen.getByText("2h ago")).toBeTruthy();
       expect(screen.getByText("5h ago")).toBeTruthy();
       expect(screen.getByText("1d ago")).toBeTruthy();
-    });
-  });
-
-  describe("ProjectTree", () => {
-    it("renders the Project Tree label", () => {
-      renderSidebar();
-      expect(screen.getByText("Project Tree")).toBeTruthy();
-    });
-
-    it("renders root nodes Content and Config", () => {
-      renderSidebar();
-      expect(screen.getByText("Content")).toBeTruthy();
-      expect(screen.getByText("Config")).toBeTruthy();
-    });
-
-    it("renders Content children (Maps, Characters, Materials) by default", () => {
-      renderSidebar();
-      expect(screen.getByText("Maps")).toBeTruthy();
-      expect(screen.getByText("Characters")).toBeTruthy();
-      expect(screen.getByText("Materials")).toBeTruthy();
-    });
-
-    it("toggles folder expand on click", () => {
-      renderSidebar();
-      const contentToggles = screen
-        .getAllByText("\u25B8")
-        .filter((el) => el.closest('[role="treeitem"]')?.textContent?.includes("Content"));
-      expect(contentToggles.length).toBeGreaterThan(0);
-      fireEvent.click(contentToggles[0]);
-      expect(screen.queryByText("Maps")).toBeNull();
-    });
-
-    it("selects a tree node on click", () => {
-      renderSidebar();
-      const contentItem = screen.getByText("Content").closest('[role="treeitem"]')!;
-      fireEvent.click(contentItem);
-      expect(contentItem.getAttribute("aria-selected")).toBe("true");
-    });
-
-    it("shows Config folder and its child", () => {
-      renderSidebar();
-      expect(screen.getByText("Config")).toBeTruthy();
-      expect(screen.getByText("DefaultGame.ini")).toBeTruthy();
     });
   });
 

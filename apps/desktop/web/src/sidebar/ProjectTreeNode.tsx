@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from "react";
 import type { ProjectTreeNode } from "../types/ui";
 import "./ProjectTreeNode.css";
 
@@ -47,26 +48,62 @@ export function ProjectTreeNode({
     .filter(Boolean)
     .join(" ");
 
+  const handleToggle = () => {
+    if (hasChildren) {
+      onToggle(node.id);
+    }
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+      event.preventDefault();
+      onSelect(node.id);
+      return;
+    }
+
+    if (event.key === "ArrowRight" && hasChildren && !isExpanded) {
+      event.preventDefault();
+      onToggle(node.id);
+      return;
+    }
+
+    if (event.key === "ArrowLeft" && hasChildren && isExpanded) {
+      event.preventDefault();
+      onToggle(node.id);
+    }
+  };
+
   return (
     <>
       <div
         className={classNames}
         style={{ paddingLeft: `calc(var(--ua-space-2) + ${depth * 14}px)` }}
         role="treeitem"
+        tabIndex={0}
+        aria-level={depth + 1}
         aria-expanded={hasChildren ? isExpanded : undefined}
         aria-selected={isSelected}
         onClick={() => onSelect(node.id)}
+        onKeyDown={handleKeyDown}
       >
-        <span
-          className={toggleClassNames}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (hasChildren) onToggle(node.id);
-          }}
-          aria-hidden
-        >
-          ▸
-        </span>
+        {hasChildren ? (
+          <button
+            className={toggleClassNames}
+            type="button"
+            aria-label={`${isExpanded ? "Collapse" : "Expand"} ${node.name}`}
+            tabIndex={-1}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggle();
+            }}
+          >
+            ▸
+          </button>
+        ) : (
+          <span className={toggleClassNames} aria-hidden>
+            ▸
+          </span>
+        )}
         <span className="ua-tree-node__name" title={node.name}>
           {node.name}
         </span>

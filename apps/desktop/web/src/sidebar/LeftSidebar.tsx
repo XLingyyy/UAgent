@@ -8,6 +8,7 @@ import { MOCK_PROJECTS } from "../project/project-data";
 import {
   useLayoutActions,
   useLayoutStore,
+  useProjectActions,
   useProjectStore,
   useSettingsActions,
   useThreadActions,
@@ -20,15 +21,22 @@ export function LeftSidebar() {
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const activeThreadId = useThreadStore((state) => state.activeThreadId);
   const { setActiveNav } = useLayoutActions();
+  const { setActiveProject } = useProjectActions();
   const { setActiveThread } = useThreadActions();
   const { openSettings } = useSettingsActions();
 
+  const sidebarView = activeNav === "projects" ? "projects" : "workspace";
   const activeProject = activeProjectId
     ? (MOCK_PROJECTS.find((p) => p.id === activeProjectId) ?? null)
     : null;
 
   return (
-    <aside className="ua-sidebar ua-motion-panel" aria-label="Sidebar" data-motion="panel">
+    <aside
+      className="ua-sidebar ua-motion-panel"
+      aria-label="Sidebar"
+      data-motion="panel"
+      data-sidebar-view={sidebarView}
+    >
       <div className="ua-sidebar__top">
         <PrimaryNav
           activeNav={activeNav}
@@ -36,13 +44,26 @@ export function LeftSidebar() {
           onSettingsOpen={() => openSettings("general")}
         />
       </div>
-      <div className="ua-sidebar__body">
-        <ProjectSection project={activeProject} treeNodes={activeProject ? mockProjectTree : []} />
-        <ThreadSection
-          threads={mockThreads}
-          activeThreadId={activeThreadId}
-          onThreadSelect={setActiveThread}
-        />
+      <div className={`ua-sidebar__body ua-sidebar__body--${sidebarView}`}>
+        {sidebarView === "projects" ? (
+          <ProjectSection
+            mode="projects"
+            project={activeProject}
+            projects={MOCK_PROJECTS}
+            activeProjectId={activeProjectId}
+            onProjectSelect={setActiveProject}
+            treeNodes={activeProject ? mockProjectTree : []}
+          />
+        ) : (
+          <>
+            <ProjectSection mode="workspace" project={activeProject} treeNodes={[]} />
+            <ThreadSection
+              threads={mockThreads}
+              activeThreadId={activeThreadId}
+              onThreadSelect={setActiveThread}
+            />
+          </>
+        )}
       </div>
       <SidebarFooter />
     </aside>

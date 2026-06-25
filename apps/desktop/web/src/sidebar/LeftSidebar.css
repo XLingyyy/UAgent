@@ -22,6 +22,10 @@
   min-height: 0;
 }
 
+.ua-sidebar__body--projects {
+  min-height: 0;
+}
+
 .ua-sidebar__footer {
   flex-shrink: 0;
   display: flex;

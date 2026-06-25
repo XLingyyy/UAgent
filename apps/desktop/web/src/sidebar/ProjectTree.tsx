@@ -5,9 +5,15 @@ import "./ProjectTree.css";
 
 export interface ProjectTreeProps {
   nodes: ProjectTreeNodeType[];
+  label?: string;
+  ariaLabel?: string;
 }
 
-export function ProjectTree({ nodes }: ProjectTreeProps) {
+export function ProjectTree({
+  nodes,
+  label = "Project Tree",
+  ariaLabel = "Project tree",
+}: ProjectTreeProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     function collectTopLevel(node: ProjectTreeNodeType) {
@@ -38,9 +44,9 @@ export function ProjectTree({ nodes }: ProjectTreeProps) {
   }, []);
 
   return (
-    <div className="ua-project-tree" role="tree" aria-label="Project tree">
-      <span className="ua-project-tree__label">Project Tree</span>
-      <div className="ua-project-tree__scroll">
+    <div className="ua-project-tree">
+      <span className="ua-project-tree__label">{label}</span>
+      <div className="ua-project-tree__scroll" role="tree" aria-label={ariaLabel}>
         {nodes.map((node) => (
           <ProjectTreeNode
             key={node.id}

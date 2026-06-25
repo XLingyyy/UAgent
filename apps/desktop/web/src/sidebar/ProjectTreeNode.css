@@ -16,6 +16,12 @@
   background: var(--ua-bg-hover);
 }
 
+.ua-tree-node:focus-visible {
+  outline: 1px solid var(--ua-accent);
+  outline-offset: -1px;
+  background: var(--ua-bg-hover);
+}
+
 .ua-tree-node--selected {
   background: var(--ua-bg-active);
   color: var(--ua-text);
@@ -32,9 +38,17 @@
   width: 16px;
   height: 16px;
   flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   font-size: var(--ua-font-size-xs);
+  font-family: inherit;
   color: var(--ua-text-subtle);
   transition: transform var(--ua-dur-fast) var(--ua-ease-standard);
+}
+
+button.ua-tree-node__toggle {
+  cursor: pointer;
 }
 
 .ua-tree-node__toggle--expanded {
