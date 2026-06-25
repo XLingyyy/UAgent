@@ -11,6 +11,14 @@ function renderWorkspace() {
   );
 }
 
+function renderWorkspaceWithInspectorOpen(open: boolean) {
+  return render(
+    <UIProvider initialState={{ inspector: { open } }}>
+      <Workspace />
+    </UIProvider>,
+  );
+}
+
 describe("Workspace", () => {
   it("renders a compact WelcomeHero for the current Unreal project context", () => {
     renderWorkspace();
@@ -62,6 +70,20 @@ describe("Workspace", () => {
     expect(disabledSend).toBeTruthy();
     expect((disabledSend as HTMLButtonElement).disabled).toBe(true);
     expect(dock.querySelector("form")).toBeNull();
+  });
+
+  describe("ComposerDock availability regardless of inspector state", () => {
+    it("renders ComposerDock when inspector is open", () => {
+      renderWorkspaceWithInspectorOpen(true);
+      expect(screen.getByLabelText("Composer dock")).toBeTruthy();
+      expect(screen.getByLabelText("Composer input")).toBeTruthy();
+    });
+
+    it("renders ComposerDock when inspector is closed", () => {
+      renderWorkspaceWithInspectorOpen(false);
+      expect(screen.getByLabelText("Composer dock")).toBeTruthy();
+      expect(screen.getByLabelText("Composer input")).toBeTruthy();
+    });
   });
 
   it("does not render microphone, voice, or record controls", () => {

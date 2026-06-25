@@ -18,6 +18,7 @@ export function InspectorPane({ open, onClose }: InspectorPaneProps) {
       className={`ua-inspector ${open ? "ua-inspector--open" : "ua-inspector--closed"}`}
       aria-label="Inspector"
       aria-hidden={!open}
+      data-state={open ? "open" : "closed"}
     >
       <div className="ua-inspector__header">
         <span className="ua-inspector__title">Inspector</span>

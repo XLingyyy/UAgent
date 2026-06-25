@@ -11,6 +11,14 @@ function renderAppShell() {
   );
 }
 
+function renderAppShellWithClosedInspector() {
+  return render(
+    <UIProvider initialState={{ inspector: { open: false } }}>
+      <AppShell />
+    </UIProvider>,
+  );
+}
+
 describe("AppShell", () => {
   it("renders the title bar with UAgent brand", () => {
     renderAppShell();
@@ -68,6 +76,51 @@ describe("AppShell", () => {
     expect(screen.getByLabelText("Project selector: No project")).toBeTruthy();
     expect(within(sidebar).getByText("No project selected")).toBeTruthy();
     expect(within(sidebar).queryByText("Project Tree")).toBeNull();
+  });
+
+  describe("inspector toggle synchronization", () => {
+    it("defaults with inspector open and Inspect button showing Close inspector", () => {
+      renderAppShell();
+      const inspectBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
+      expect(inspectBtn.getAttribute("aria-label")).toBe("Close inspector");
+    });
+
+    it("toggles inspector closed and updates button label after clicking Inspect", () => {
+      renderAppShell();
+      const inspectBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
+      fireEvent.click(inspectBtn);
+
+      expect(inspectBtn.getAttribute("aria-label")).toBe("Open inspector");
+      expect(inspectBtn.getAttribute("aria-pressed")).toBe("false");
+    });
+
+    it("closes inspector via close button and syncs TitleBar", () => {
+      renderAppShell();
+      const closeBtn = document.querySelector(".ua-inspector__close") as HTMLButtonElement;
+      fireEvent.click(closeBtn);
+
+      const inspectBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
+      expect(inspectBtn.getAttribute("aria-label")).toBe("Open inspector");
+    });
+
+    it("opens inspector via Inspect button and syncs TitleBar", () => {
+      renderAppShellWithClosedInspector();
+      const inspectBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
+      fireEvent.click(inspectBtn);
+
+      expect(inspectBtn.getAttribute("aria-label")).toBe("Close inspector");
+      expect(inspectBtn.getAttribute("aria-pressed")).toBe("true");
+    });
+
+    it("maintains data-inspector-state on MainLayout after toggle", () => {
+      const { container } = renderAppShell();
+      const layout = container.querySelector(".ua-main-layout");
+      expect(layout?.getAttribute("data-inspector-state")).toBe("open");
+
+      const inspectBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
+      fireEvent.click(inspectBtn);
+      expect(layout?.getAttribute("data-inspector-state")).toBe("closed");
+    });
   });
 
   it("does not render any microphone or voice button", () => {

@@ -9,7 +9,10 @@
 /**
  * On narrow screens the inspector becomes an overlay panel
  * instead of participating in the flex flow, so the Workspace
- * (and its future Composer dock) is never squeezed.
+ * (and its Composer dock) is never squeezed.
+ *
+ * Closed: slides off-screen to the right with full width preserved
+ * for the slide-in transition.
  */
 @media (max-width: 899px) {
   .ua-inspector {
@@ -24,6 +27,6 @@
     transform: translateX(100%);
     width: var(--ua-inspector-width);
     min-width: var(--ua-inspector-min-width);
-    opacity: 1;
+    opacity: 0;
   }
 }

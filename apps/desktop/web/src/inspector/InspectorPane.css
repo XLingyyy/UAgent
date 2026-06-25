@@ -7,10 +7,13 @@
   border-left: 1px solid var(--ua-border);
   z-index: var(--ua-z-inspector);
   overflow: hidden;
+  transform: translateX(0);
+  opacity: 1;
   transition:
     width var(--ua-dur-slow) var(--ua-ease-standard),
     min-width var(--ua-dur-slow) var(--ua-ease-standard),
-    opacity var(--ua-dur-mid) var(--ua-ease-standard),
+    opacity var(--ua-dur-slow) var(--ua-ease-standard),
+    transform var(--ua-dur-slow) var(--ua-ease-soft),
     border-width var(--ua-dur-slow) var(--ua-ease-standard);
 }
 
@@ -18,8 +21,10 @@
   width: 0;
   min-width: 0;
   opacity: 0;
+  transform: translateX(32px);
   border-left-width: 0;
   pointer-events: none;
+  transition-duration: var(--ua-dur-mid);
 }
 
 .ua-inspector__header {

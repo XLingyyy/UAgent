@@ -13,6 +13,7 @@ describe("InspectorPane", () => {
     const aside = container.querySelector(".ua-inspector");
     expect(aside?.classList.contains("ua-inspector--open")).toBe(true);
     expect(aside?.getAttribute("aria-hidden")).toBe("false");
+    expect(aside?.getAttribute("data-state")).toBe("open");
   });
 
   it("renders with closed class when open=false", () => {
@@ -20,6 +21,7 @@ describe("InspectorPane", () => {
     const aside = container.querySelector(".ua-inspector");
     expect(aside?.classList.contains("ua-inspector--closed")).toBe(true);
     expect(aside?.getAttribute("aria-hidden")).toBe("true");
+    expect(aside?.getAttribute("data-state")).toBe("closed");
   });
 
   it("shows a close button when onClose is provided", () => {

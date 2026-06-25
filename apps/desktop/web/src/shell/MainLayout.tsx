@@ -2,6 +2,7 @@ import { LeftSidebar } from "../sidebar/LeftSidebar";
 import { Workspace } from "../workspace/Workspace";
 import { InspectorPane } from "../inspector/InspectorPane";
 import { useUI } from "../app/providers";
+import { useInspectorAutoCollapse } from "./useInspectorAutoCollapse";
 import "./MainLayout.css";
 
 /**
@@ -10,15 +11,21 @@ import "./MainLayout.css";
  * The inspector participates in the flex flow on wide screens.
  * On narrow screens it becomes an overlay so the Composer dock
  * area in the Workspace is never squeezed.
+ *
+ * Exposes `data-inspector-state="open|closed"` for testing
+ * and CSS constraint.
  */
 export function MainLayout() {
-  const { state, toggleInspector } = useUI();
+  const { state, toggleInspector, setInspectorOpen } = useUI();
+  const inspectorOpen = state.inspector.open;
+
+  useInspectorAutoCollapse(setInspectorOpen, 899);
 
   return (
-    <div className="ua-main-layout">
+    <div className="ua-main-layout" data-inspector-state={inspectorOpen ? "open" : "closed"}>
       <LeftSidebar />
       <Workspace />
-      <InspectorPane open={state.inspector.open} onClose={toggleInspector} />
+      <InspectorPane open={inspectorOpen} onClose={toggleInspector} />
     </div>
   );
 }
