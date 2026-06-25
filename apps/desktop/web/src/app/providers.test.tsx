@@ -1,24 +1,44 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { UIProvider, useUI } from "./providers";
+import type { ProviderConfig } from "../types/provider";
 
 function Probe() {
   const {
     state,
     toggleInspector,
     setActiveProject,
+    setActiveNav,
+    setActiveThread,
     openSettings,
     closeSettings,
     setActiveSettingsPage,
+    setComposerInput,
+    setComposerPermission,
+    setComposerModel,
+    setComposerReasoning,
   } = useUI();
+
   return (
     <div>
-      <span data-testid="inspector-open">{String(state.inspector.open)}</span>
-      <span data-testid="active-project">{state.activeProjectId ?? "null"}</span>
+      <span data-testid="inspector-open">{String(state.layout.inspector.open)}</span>
+      <span data-testid="active-nav">{state.layout.sidebar.activeNav}</span>
+      <span data-testid="active-project">{state.project.activeProjectId ?? "null"}</span>
+      <span data-testid="active-thread">{state.thread.activeThreadId ?? "null"}</span>
       <span data-testid="settings-open">{String(state.settings.open)}</span>
       <span data-testid="settings-page">{state.settings.activePageId}</span>
+      <span data-testid="composer-input">{state.composer.input}</span>
+      <span data-testid="composer-permission">{state.composer.permission}</span>
+      <span data-testid="composer-model">{state.composer.selectedModelId}</span>
+      <span data-testid="composer-reasoning">{state.composer.reasoningEffort}</span>
       <button type="button" onClick={toggleInspector}>
         toggle
+      </button>
+      <button type="button" onClick={() => setActiveNav("projects")} data-testid="set-projects">
+        set projects
+      </button>
+      <button type="button" onClick={() => setActiveThread("thread-2")} data-testid="set-thread">
+        set thread
       </button>
       <button type="button" onClick={() => setActiveProject("mech")} data-testid="set-mech">
         set mech
@@ -45,6 +65,34 @@ function Probe() {
       </button>
       <button type="button" onClick={closeSettings} data-testid="close-settings">
         close settings
+      </button>
+      <button
+        type="button"
+        onClick={() => setComposerInput("draft prompt")}
+        data-testid="set-composer-input"
+      >
+        set composer input
+      </button>
+      <button
+        type="button"
+        onClick={() => setComposerPermission("auto-approve")}
+        data-testid="set-composer-permission"
+      >
+        set composer permission
+      </button>
+      <button
+        type="button"
+        onClick={() => setComposerModel("openai-gpt-5")}
+        data-testid="set-composer-model"
+      >
+        set composer model
+      </button>
+      <button
+        type="button"
+        onClick={() => setComposerReasoning("high")}
+        data-testid="set-composer-reasoning"
+      >
+        set composer reasoning
       </button>
     </div>
   );
@@ -75,7 +123,7 @@ describe("UIProvider", () => {
 
   it("respects a custom initial inspector state", () => {
     render(
-      <UIProvider initialState={{ inspector: { open: false } }}>
+      <UIProvider initialState={{ layout: { inspector: { open: false } } }}>
         <Probe />
       </UIProvider>,
     );
@@ -113,7 +161,7 @@ describe("UIProvider", () => {
 
   it("accepts custom initial activeProjectId", () => {
     render(
-      <UIProvider initialState={{ activeProjectId: "city" }}>
+      <UIProvider initialState={{ project: { activeProjectId: "city" } }}>
         <Probe />
       </UIProvider>,
     );
@@ -122,11 +170,110 @@ describe("UIProvider", () => {
 
   it("accepts null initial activeProjectId", () => {
     render(
-      <UIProvider initialState={{ activeProjectId: null }}>
+      <UIProvider initialState={{ project: { activeProjectId: null } }}>
         <Probe />
       </UIProvider>,
     );
     expect(screen.getByTestId("active-project").textContent).toBe("null");
+  });
+
+  it("starts with workspace nav and first thread selected", () => {
+    render(
+      <UIProvider>
+        <Probe />
+      </UIProvider>,
+    );
+    expect(screen.getByTestId("active-nav").textContent).toBe("workspace");
+    expect(screen.getByTestId("active-thread").textContent).toBe("thread-1");
+  });
+
+  it("updates nav and thread in their own stores", () => {
+    render(
+      <UIProvider>
+        <Probe />
+      </UIProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId("set-projects"));
+    fireEvent.click(screen.getByTestId("set-thread"));
+
+    expect(screen.getByTestId("active-nav").textContent).toBe("projects");
+    expect(screen.getByTestId("active-thread").textContent).toBe("thread-2");
+  });
+
+  describe("composer store", () => {
+    it("starts with the default mock composer values", () => {
+      render(
+        <UIProvider>
+          <Probe />
+        </UIProvider>,
+      );
+
+      expect(screen.getByTestId("composer-input").textContent).toBe("");
+      expect(screen.getByTestId("composer-permission").textContent).toBe("request-approval");
+      expect(screen.getByTestId("composer-model").textContent).toBe("not-configured");
+      expect(screen.getByTestId("composer-reasoning").textContent).toBe("medium");
+    });
+
+    it("updates composer slices through dedicated actions", () => {
+      render(
+        <UIProvider>
+          <Probe />
+        </UIProvider>,
+      );
+
+      fireEvent.click(screen.getByTestId("set-composer-input"));
+      fireEvent.click(screen.getByTestId("set-composer-permission"));
+      fireEvent.click(screen.getByTestId("set-composer-model"));
+      fireEvent.click(screen.getByTestId("set-composer-reasoning"));
+
+      expect(screen.getByTestId("composer-input").textContent).toBe("draft prompt");
+      expect(screen.getByTestId("composer-permission").textContent).toBe("auto-approve");
+      expect(screen.getByTestId("composer-model").textContent).toBe("openai-gpt-5");
+      expect(screen.getByTestId("composer-reasoning").textContent).toBe("high");
+    });
+
+    it("derives initial composer selection from the provider store default", () => {
+      const customProviders: ProviderConfig[] = [
+        {
+          providerId: "studio",
+          displayName: "Studio",
+          baseUrl: "https://mock.studio.local/v1",
+          wireApi: "responses",
+          authMode: "env_key",
+          envKey: "STUDIO_KEY",
+          enabled: true,
+          models: [
+            {
+              id: "studio-gpt-5-1",
+              label: "GPT-5.1 Custom",
+              contextWindow: 256000,
+              supportsReasoning: true,
+              reasoningEfforts: ["medium", "high", "xhigh"],
+            },
+          ],
+          defaultModel: "studio-gpt-5-1",
+          defaultReasoningEffort: "high",
+        },
+      ];
+
+      render(
+        <UIProvider
+          initialState={{
+            provider: {
+              providers: customProviders,
+              selectedProviderId: "studio",
+              defaultProviderId: "studio",
+            },
+          }}
+        >
+          <Probe />
+        </UIProvider>,
+      );
+
+      expect(screen.getByTestId("composer-model").textContent).toBe("studio-gpt-5-1");
+      expect(screen.getByTestId("composer-reasoning").textContent).toBe("high");
+    });
   });
 
   describe("settings state", () => {

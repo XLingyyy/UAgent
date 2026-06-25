@@ -1,4 +1,12 @@
 import type { ProviderConfig, ProviderState } from "./provider";
+import type {
+  ComposerContextUsage,
+  ComposerModelId,
+  ComposerPermission,
+  ComposerReasoningEffort,
+  ComposerRunMode,
+  ComposerStatusItem,
+} from "../composer/composer-data";
 
 /**
  * UAgent UI type definitions
@@ -54,25 +62,56 @@ export interface InspectorState {
 export interface SidebarState {
   /** Currently active primary nav section. */
   activeNav: NavSection;
-  /** Currently selected thread id, or null if none. */
-  activeThreadId: string | null;
 }
 
 /** Theme variants supported by the UI shell. */
 export type UATheme = "dark";
 
-/** Global UI shell state consumed by AppShell and child regions. */
-export interface UIShellState {
+/** Layout-related shell state. */
+export interface LayoutStoreState {
   /** Current theme. */
   theme: UATheme;
   /** Inspector pane state. */
   inspector: InspectorState;
   /** Sidebar navigation and selection state. */
   sidebar: SidebarState;
+}
+
+/** Active project selection state. */
+export interface ProjectStoreState {
   /** Active project id from the shared mock project list, or null for no project. */
   activeProjectId: string | null;
+}
+
+/** Active thread selection state. */
+export interface ThreadStoreState {
+  /** Currently selected thread id, or null if none. */
+  activeThreadId: string | null;
+}
+
+/** Composer dock local-only UI state. */
+export interface ComposerStoreState {
+  input: string;
+  permission: ComposerPermission;
+  selectedModelId: ComposerModelId;
+  reasoningEffort: ComposerReasoningEffort;
+  runMode: ComposerRunMode;
+  branch: string;
+  context: ComposerContextUsage;
+  statusItems: ComposerStatusItem[];
+}
+
+/** Global UI shell state consumed by AppShell and child regions. */
+export interface UIShellState {
+  layout: LayoutStoreState;
   /** Settings shell state. */
   settings: SettingsShellState;
+  /** Active project selection state. */
+  project: ProjectStoreState;
+  /** Active thread selection state. */
+  thread: ThreadStoreState;
+  /** Composer dock state. */
+  composer: ComposerStoreState;
   /** Local-only provider configuration state. */
   provider: ProviderState;
 }
@@ -109,6 +148,14 @@ export interface SettingsShellState {
   activePageId: SettingsPageId;
 }
 
+export type SetComposerInput = (input: string) => void;
+
+export type SetComposerPermission = (permission: ComposerPermission) => void;
+
+export type SetComposerModel = (modelId: ComposerModelId) => void;
+
+export type SetComposerReasoning = (effort: ComposerReasoningEffort) => void;
+
 /** Context value exposed by the UI provider. */
 export interface UIContextValue {
   state: UIShellState;
@@ -120,8 +167,25 @@ export interface UIContextValue {
   openSettings: (pageId?: SettingsPageId) => void;
   closeSettings: () => void;
   setActiveSettingsPage: (pageId: SettingsPageId) => void;
+  setComposerInput: SetComposerInput;
+  setComposerPermission: SetComposerPermission;
+  setComposerModel: SetComposerModel;
+  setComposerReasoning: SetComposerReasoning;
   setSelectedProvider: (providerId: string | null) => void;
   saveProvider: (provider: ProviderConfig) => void;
   deleteProvider: (providerId: string) => void;
   setDefaultProvider: (providerId: string | null) => void;
+}
+
+/** Partial input shape accepted by UIProvider for test/setup seeding. */
+export interface UIInitialState {
+  layout?: Partial<LayoutStoreState> & {
+    inspector?: Partial<InspectorState>;
+    sidebar?: Partial<SidebarState>;
+  };
+  settings?: Partial<SettingsShellState>;
+  project?: Partial<ProjectStoreState>;
+  thread?: Partial<ThreadStoreState>;
+  composer?: Partial<ComposerStoreState>;
+  provider?: Partial<ProviderState>;
 }

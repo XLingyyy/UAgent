@@ -5,7 +5,7 @@ import { UIProvider } from "../app/providers";
 
 function renderMainLayout(initialOpen = true) {
   return render(
-    <UIProvider initialState={{ inspector: { open: initialOpen } }}>
+    <UIProvider initialState={{ layout: { inspector: { open: initialOpen } } }}>
       <MainLayout />
     </UIProvider>,
   );

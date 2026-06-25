@@ -13,7 +13,7 @@ function renderAppShell() {
 
 function renderAppShellWithClosedInspector() {
   return render(
-    <UIProvider initialState={{ inspector: { open: false } }}>
+    <UIProvider initialState={{ layout: { inspector: { open: false } } }}>
       <AppShell />
     </UIProvider>,
   );

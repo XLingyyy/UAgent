@@ -13,7 +13,7 @@ function renderWorkspace() {
 
 function renderWorkspaceWithInspectorOpen(open: boolean) {
   return render(
-    <UIProvider initialState={{ inspector: { open } }}>
+    <UIProvider initialState={{ layout: { inspector: { open } } }}>
       <Workspace />
     </UIProvider>,
   );

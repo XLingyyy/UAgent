@@ -10,7 +10,9 @@ import "./LeftSidebar.css";
 
 export function LeftSidebar() {
   const { state, setActiveNav, setActiveThread, openSettings } = useUI();
-  const { sidebar, activeProjectId } = state;
+  const activeNav = state.layout.sidebar.activeNav;
+  const activeProjectId = state.project.activeProjectId;
+  const activeThreadId = state.thread.activeThreadId;
 
   const activeProject = activeProjectId
     ? (MOCK_PROJECTS.find((p) => p.id === activeProjectId) ?? null)
@@ -20,7 +22,7 @@ export function LeftSidebar() {
     <aside className="ua-sidebar ua-motion-panel" aria-label="Sidebar" data-motion="panel">
       <div className="ua-sidebar__top">
         <PrimaryNav
-          activeNav={sidebar.activeNav}
+          activeNav={activeNav}
           onNavChange={setActiveNav}
           onSettingsOpen={() => openSettings("general")}
         />
@@ -29,7 +31,7 @@ export function LeftSidebar() {
         <ProjectSection project={activeProject} treeNodes={activeProject ? mockProjectTree : []} />
         <ThreadSection
           threads={mockThreads}
-          activeThreadId={sidebar.activeThreadId}
+          activeThreadId={activeThreadId}
           onThreadSelect={setActiveThread}
         />
       </div>

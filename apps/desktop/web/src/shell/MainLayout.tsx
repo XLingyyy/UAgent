@@ -17,7 +17,7 @@ import "./MainLayout.css";
  */
 export function MainLayout() {
   const { state, toggleInspector, setInspectorOpen } = useUI();
-  const inspectorOpen = state.inspector.open;
+  const inspectorOpen = state.layout.inspector.open;
 
   useInspectorAutoCollapse(setInspectorOpen, 899);
 

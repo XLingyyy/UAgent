@@ -96,7 +96,7 @@ describe("LeftSidebar", () => {
   describe("ProjectSection with no project", () => {
     it("renders empty state when activeProjectId is null", () => {
       render(
-        <UIProvider initialState={{ activeProjectId: null }}>
+        <UIProvider initialState={{ project: { activeProjectId: null } }}>
           <LeftSidebar />
         </UIProvider>,
       );
@@ -108,7 +108,7 @@ describe("LeftSidebar", () => {
 
     it("does not render the project tree when no project is selected", () => {
       const { container } = render(
-        <UIProvider initialState={{ activeProjectId: null }}>
+        <UIProvider initialState={{ project: { activeProjectId: null } }}>
           <LeftSidebar />
         </UIProvider>,
       );
@@ -121,7 +121,7 @@ describe("LeftSidebar", () => {
   describe("ProjectSelection sync from ComposerDock", () => {
     it("renders MechArena_Testbed when activeProjectId is mech", () => {
       render(
-        <UIProvider initialState={{ activeProjectId: "mech" }}>
+        <UIProvider initialState={{ project: { activeProjectId: "mech" } }}>
           <LeftSidebar />
         </UIProvider>,
       );
