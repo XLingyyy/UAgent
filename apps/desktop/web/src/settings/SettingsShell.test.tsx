@@ -144,8 +144,10 @@ describe("SettingsShell", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
     const mcpBtn = within(sidebar).getByText("MCP servers").closest("button") as HTMLButtonElement;
-    expect(mcpBtn.disabled).toBe(true);
     expect(mcpBtn.getAttribute("aria-disabled")).toBe("true");
+    expect(mcpBtn.getAttribute("title")).toBe(
+      "Coming in MVP1: Manage MCP server configurations and connections.",
+    );
     fireEvent.click(mcpBtn);
     const generalBtn = within(sidebar).getByText("General").closest("button");
     expect(generalBtn?.classList.contains("ua-settings-sidebar__item--active")).toBe(true);

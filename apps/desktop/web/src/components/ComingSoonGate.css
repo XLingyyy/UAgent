@@ -1,0 +1,9 @@
+.ua-coming-soon {
+  display: block;
+  max-width: 100%;
+}
+
+.ua-coming-soon__target {
+  opacity: 0.64;
+  cursor: not-allowed !important;
+}

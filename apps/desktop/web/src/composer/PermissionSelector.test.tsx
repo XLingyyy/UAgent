@@ -164,6 +164,9 @@ describe("PermissionSelector", () => {
     expect(customOption).toBeTruthy();
     expect(customOption!.getAttribute("aria-disabled")).toBe("true");
     expect(customOption!.textContent).toContain("Future settings-backed permissions");
+    expect(customOption!.getAttribute("title")).toBe(
+      "Coming in MVP1: Future settings-backed permissions",
+    );
   });
 
   it("closes the dropdown on Escape key", async () => {

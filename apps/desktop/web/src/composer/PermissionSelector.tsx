@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { ComingSoonGate } from "../components/ComingSoonGate";
 import { type ComposerPermission, permissionOptions } from "./composer-data";
 import "./PermissionSelector.css";
 
@@ -168,30 +169,48 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
                 </div>
               </div>
             ) : (
-              permissionOptions.map((option) => (
-                <div
-                  key={option.id}
-                  className={`ua-permission-selector__item${
-                    option.id === value ? " ua-permission-selector__item--selected" : ""
-                  }${!option.enabled ? " ua-permission-selector__item--disabled" : ""}`}
-                  role="option"
-                  aria-selected={option.id === value}
-                  aria-disabled={!option.enabled || undefined}
-                  onClick={() => handleSelect(option)}
-                >
-                  <span className="ua-permission-selector__item-check" aria-hidden="true">
-                    {option.id === value ? "\u2713" : iconMap[option.id]}
-                  </span>
-                  <span className="ua-permission-selector__item-body">
-                    <span
-                      className={`ua-permission-selector__item-label ua-permission-selector__item-label--${option.tone}`}
-                    >
-                      {option.label}
+              permissionOptions.map((option) => {
+                const optionNode = (
+                  <div
+                    key={option.id}
+                    className={`ua-permission-selector__item${
+                      option.id === value ? " ua-permission-selector__item--selected" : ""
+                    }${!option.enabled ? " ua-permission-selector__item--disabled" : ""}`}
+                    role="option"
+                    aria-selected={option.id === value}
+                    aria-disabled={!option.enabled || undefined}
+                    onClick={() => handleSelect(option)}
+                  >
+                    <span className="ua-permission-selector__item-check" aria-hidden="true">
+                      {option.id === value ? "\u2713" : iconMap[option.id]}
                     </span>
-                    <span className="ua-permission-selector__item-desc">{option.description}</span>
-                  </span>
-                </div>
-              ))
+                    <span className="ua-permission-selector__item-body">
+                      <span
+                        className={`ua-permission-selector__item-label ua-permission-selector__item-label--${option.tone}`}
+                      >
+                        {option.label}
+                      </span>
+                      <span className="ua-permission-selector__item-desc">
+                        {option.description}
+                      </span>
+                    </span>
+                  </div>
+                );
+
+                if (!option.enabled && option.phase && option.comingSoonReason) {
+                  return (
+                    <ComingSoonGate
+                      key={option.id}
+                      phase={option.phase}
+                      reason={option.comingSoonReason}
+                    >
+                      {optionNode}
+                    </ComingSoonGate>
+                  );
+                }
+
+                return optionNode;
+              })
             )}
           </div>,
           document.body,

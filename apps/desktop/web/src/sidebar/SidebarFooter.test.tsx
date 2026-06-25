@@ -17,12 +17,14 @@ describe("SidebarFooter", () => {
     expect(screen.getByLabelText("Open settings")).toBeTruthy();
   });
 
-  it("renders Account placeholder disabled", () => {
+  it("renders Account placeholder through ComingSoonGate", () => {
     renderFooter();
     const accountBtn = screen.getByLabelText("Account (coming soon)") as HTMLButtonElement;
     expect(accountBtn).toBeTruthy();
-    expect(accountBtn.disabled).toBe(true);
     expect(accountBtn.getAttribute("aria-disabled")).toBe("true");
+    expect(accountBtn.getAttribute("title")).toBe(
+      "Coming in MVP2: Account sync and profile controls.",
+    );
   });
 
   it("renders version and status", () => {

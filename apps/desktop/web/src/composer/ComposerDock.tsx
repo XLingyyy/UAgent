@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useUI } from "../app/providers";
+import { ComingSoonGate } from "../components/ComingSoonGate";
 import { ContextRing } from "./ContextRing";
 import { ModelSelector } from "./ModelSelector";
 import { PermissionSelector } from "./PermissionSelector";
@@ -53,15 +54,18 @@ export function ComposerDock() {
   return (
     <footer className="ua-composer" aria-label="Composer dock">
       <div className="ua-composer__input-row">
-        <button
-          className="ua-composer__add-btn"
-          type="button"
-          disabled
-          aria-label="Add context - disabled"
-          title="Add context attachment (future)"
+        <ComingSoonGate
+          phase="MVP1"
+          reason="Attach project files and asset references as additional context."
         >
-          {addButtonLabel}
-        </button>
+          <button
+            className="ua-composer__add-btn"
+            type="button"
+            aria-label="Add context - disabled"
+          >
+            {addButtonLabel}
+          </button>
+        </ComingSoonGate>
 
         <PermissionSelector value={permission} onChange={setPermission} />
 

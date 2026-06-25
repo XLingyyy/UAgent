@@ -145,6 +145,9 @@ describe("ProjectSelector", () => {
     expect(addOption).toBeTruthy();
     expect(addOption!.getAttribute("aria-disabled")).toBe("true");
     expect(addOption!.textContent).toContain("Directory picker coming in MVP1");
+    expect(addOption!.getAttribute("title")).toBe(
+      "Coming in MVP1: Add a new project from a local directory.",
+    );
   });
 
   it("filters projects by search text", () => {

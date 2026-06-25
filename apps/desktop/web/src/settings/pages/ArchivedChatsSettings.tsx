@@ -1,3 +1,4 @@
+import { ComingSoonGate, getComingSoonPhase } from "../../components/ComingSoonGate";
 import { SettingsPageLayout, SettingsSection } from "../SettingsPageLayout";
 import { archivedChatsPageData } from "../settings-page-data";
 import "../pages/SettingsPages.css";
@@ -41,20 +42,36 @@ const mockArchivedChats = [
 ];
 
 function FiltersControls() {
+  const filtersSection = archivedChatsPageData.sections.find(
+    (section) => section.id === "filters",
+  )!;
+  const filtersPhase = getComingSoonPhase(filtersSection.rows[0]?.disabledReason);
+
+  if (!filtersPhase) {
+    return null;
+  }
+
   return (
-    <div className="ua-settings-page__filters">
-      <input
-        type="text"
-        className="ua-settings-page__filter-input"
-        placeholder="Search archives..."
-        disabled
-        aria-disabled="true"
-        aria-label="Search archives"
-      />
-      <button type="button" className="ua-settings-page__filter-btn" disabled aria-disabled="true">
-        All projects
-      </button>
-    </div>
+    <ComingSoonGate phase={filtersPhase} reason={filtersSection.description ?? ""}>
+      <div className="ua-settings-page__filters">
+        <input
+          type="text"
+          className="ua-settings-page__filter-input"
+          placeholder="Search archives..."
+          disabled
+          aria-disabled="true"
+          aria-label="Search archives"
+        />
+        <button
+          type="button"
+          className="ua-settings-page__filter-btn"
+          disabled
+          aria-disabled="true"
+        >
+          All projects
+        </button>
+      </div>
+    </ComingSoonGate>
   );
 }
 

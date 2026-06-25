@@ -68,11 +68,14 @@ describe("ComposerDock", () => {
     expect(sendBtn.disabled).toBe(true);
   });
 
-  it("has a disabled add button", () => {
+  it("shows Add context through ComingSoonGate", () => {
     renderDock();
 
     const addBtn = screen.getByLabelText("Add context - disabled") as HTMLButtonElement;
-    expect(addBtn.disabled).toBe(true);
+    expect(addBtn.getAttribute("aria-disabled")).toBe("true");
+    expect(addBtn.getAttribute("title")).toBe(
+      "Coming in MVP1: Attach project files and asset references as additional context.",
+    );
   });
 
   it("renders the ContextRing with correct percentage and tooltip", () => {

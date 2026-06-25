@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { ComingSoonGate } from "../components/ComingSoonGate";
 import type { MockProject } from "../types/ui";
 import "./ProjectSelector.css";
 
@@ -201,23 +202,25 @@ export function ProjectSelector({ value, projects, onChange }: ProjectSelectorPr
 
             <div className="ua-project-selector__section-divider" />
 
-            <div
-              className="ua-project-selector__item ua-project-selector__item--disabled"
-              role="option"
-              aria-disabled="true"
-            >
-              <span className="ua-project-selector__item-plus" aria-hidden="true">
-                +
-              </span>
-              <span className="ua-project-selector__item-body">
-                <span className="ua-project-selector__item-name ua-project-selector__item-name--muted">
-                  Add new project
+            <ComingSoonGate phase="MVP1" reason="Add a new project from a local directory.">
+              <div
+                className="ua-project-selector__item ua-project-selector__item--disabled"
+                role="option"
+                aria-disabled="true"
+              >
+                <span className="ua-project-selector__item-plus" aria-hidden="true">
+                  +
                 </span>
-                <span className="ua-project-selector__item-desc">
-                  Directory picker coming in MVP1
+                <span className="ua-project-selector__item-body">
+                  <span className="ua-project-selector__item-name ua-project-selector__item-name--muted">
+                    Add new project
+                  </span>
+                  <span className="ua-project-selector__item-desc">
+                    Directory picker coming in MVP1
+                  </span>
                 </span>
-              </span>
-            </div>
+              </div>
+            </ComingSoonGate>
           </div>,
           document.body,
         )}

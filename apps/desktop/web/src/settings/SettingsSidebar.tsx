@@ -1,4 +1,5 @@
 import { useUI } from "../app/providers";
+import { ComingSoonGate, type ComingSoonPhase } from "../components/ComingSoonGate";
 import { getSettingsGroups, type SettingsPageEntry } from "./settings-pages";
 import "./SettingsSidebar.css";
 
@@ -46,25 +47,33 @@ export function SettingsSidebar() {
             <ul className="ua-settings-sidebar__group-list">
               {group.pages.map((page) => {
                 const isActive = page.enabled && page.id === activePageId;
+                const button = (
+                  <button
+                    type="button"
+                    className={`ua-settings-sidebar__item${isActive ? " ua-settings-sidebar__item--active" : ""}${!page.enabled ? " ua-settings-sidebar__item--disabled" : ""}`}
+                    onClick={() => handlePageClick(page)}
+                    aria-disabled={!page.enabled || undefined}
+                    aria-current={isActive ? "page" : undefined}
+                  >
+                    <span className="ua-settings-sidebar__item-text">{page.title}</span>
+                    {page.enabled ? (
+                      <span className="ua-settings-sidebar__item-phase">{page.phase}</span>
+                    ) : (
+                      <span className="ua-settings-sidebar__item-disabled-reason">
+                        {page.disabledReason}
+                      </span>
+                    )}
+                  </button>
+                );
                 return (
                   <li key={page.id}>
-                    <button
-                      type="button"
-                      className={`ua-settings-sidebar__item${isActive ? " ua-settings-sidebar__item--active" : ""}${!page.enabled ? " ua-settings-sidebar__item--disabled" : ""}`}
-                      onClick={() => handlePageClick(page)}
-                      disabled={!page.enabled}
-                      aria-disabled={!page.enabled || undefined}
-                      aria-current={isActive ? "page" : undefined}
-                    >
-                      <span className="ua-settings-sidebar__item-text">{page.title}</span>
-                      {page.enabled ? (
-                        <span className="ua-settings-sidebar__item-phase">{page.phase}</span>
-                      ) : (
-                        <span className="ua-settings-sidebar__item-disabled-reason">
-                          {page.disabledReason}
-                        </span>
-                      )}
-                    </button>
+                    {page.enabled ? (
+                      button
+                    ) : (
+                      <ComingSoonGate phase={page.phase as ComingSoonPhase} reason={page.summary}>
+                        {button}
+                      </ComingSoonGate>
+                    )}
                   </li>
                 );
               })}

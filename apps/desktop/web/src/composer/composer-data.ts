@@ -10,6 +10,8 @@ export interface ComposerPermissionOption {
   tone: "default" | "warning" | "accent" | "muted";
   enabled: boolean;
   requiresConfirmation: boolean;
+  phase?: "MVP1" | "MVP2" | "MVP3" | "MVP4";
+  comingSoonReason?: string;
 }
 
 export const permissionOptions: ComposerPermissionOption[] = [
@@ -44,6 +46,8 @@ export const permissionOptions: ComposerPermissionOption[] = [
     tone: "muted",
     enabled: false,
     requiresConfirmation: false,
+    phase: "MVP1",
+    comingSoonReason: "Future settings-backed permissions",
   },
 ];
 
