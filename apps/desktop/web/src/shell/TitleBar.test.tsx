@@ -33,38 +33,39 @@ describe("TitleBar", () => {
     });
   });
 
-  describe("Inspect button", () => {
-    it("has aria-label 'Close inspector' when inspector is open by default", () => {
+  describe("Tools button", () => {
+    it("renders Tools as the utility pane entry", () => {
       renderTitleBar();
-      const btn = screen.getByRole("button", { name: "Close inspector" });
+      const btn = screen.getByRole("button", { name: "Open tools" });
       expect(btn).toBeTruthy();
+      expect(btn.textContent).toContain("Tools");
     });
 
-    it("has aria-pressed 'true' when inspector is open by default", () => {
+    it("has aria-pressed 'false' when tools are closed by default", () => {
       renderTitleBar();
-      const btn = screen.getByRole("button", { name: "Close inspector" });
-      expect(btn.getAttribute("aria-pressed")).toBe("true");
+      const btn = screen.getByRole("button", { name: "Open tools" });
+      expect(btn.getAttribute("aria-pressed")).toBe("false");
     });
 
-    it("changes aria-label to 'Open inspector' and aria-pressed to 'false' after click", () => {
+    it("changes aria-label to 'Close tools' and aria-pressed to 'true' after click", () => {
       renderTitleBar();
-      const btn = screen.getByRole("button", { name: "Close inspector" });
+      const btn = screen.getByRole("button", { name: "Open tools" });
       fireEvent.click(btn);
 
-      const updatedBtn = screen.getByRole("button", { name: "Open inspector" });
-      expect(updatedBtn).toBeTruthy();
-      expect(updatedBtn.getAttribute("aria-pressed")).toBe("false");
-    });
-
-    it("toggles back to 'Close inspector' and aria-pressed 'true' on second click", () => {
-      renderTitleBar();
-      const btn = screen.getByRole("button", { name: "Close inspector" });
-      fireEvent.click(btn);
-      fireEvent.click(screen.getByRole("button", { name: "Open inspector" }));
-
-      const updatedBtn = screen.getByRole("button", { name: "Close inspector" });
+      const updatedBtn = screen.getByRole("button", { name: "Close tools" });
       expect(updatedBtn).toBeTruthy();
       expect(updatedBtn.getAttribute("aria-pressed")).toBe("true");
+    });
+
+    it("toggles back to 'Open tools' and aria-pressed 'false' on second click", () => {
+      renderTitleBar();
+      const btn = screen.getByRole("button", { name: "Open tools" });
+      fireEvent.click(btn);
+      fireEvent.click(screen.getByRole("button", { name: "Close tools" }));
+
+      const updatedBtn = screen.getByRole("button", { name: "Open tools" });
+      expect(updatedBtn).toBeTruthy();
+      expect(updatedBtn.getAttribute("aria-pressed")).toBe("false");
     });
   });
 });

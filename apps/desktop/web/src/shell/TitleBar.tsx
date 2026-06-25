@@ -16,6 +16,7 @@ export interface TitleBarProps {
 export function TitleBar({ title = "UAgent" }: TitleBarProps) {
   const inspectorOpen = useLayoutStore((state) => state.inspector.open);
   const { toggleInspector } = useLayoutActions();
+  const toolsLabel = inspectorOpen ? "Close tools" : "Open tools";
 
   return (
     <header className="ua-titlebar" data-tauri-drag-region>
@@ -29,11 +30,11 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
         <button
           className="ua-titlebar__btn"
           onClick={toggleInspector}
-          aria-label={inspectorOpen ? "Close inspector" : "Open inspector"}
+          aria-label={toolsLabel}
           aria-pressed={inspectorOpen}
           type="button"
         >
-          <span aria-hidden>Inspect</span>
+          <span aria-hidden>Tools</span>
         </button>
         <span className="ua-titlebar__badge">MVP0</span>
       </div>

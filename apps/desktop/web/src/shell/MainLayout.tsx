@@ -6,14 +6,14 @@ import { useInspectorAutoCollapse } from "./useInspectorAutoCollapse";
 import "./MainLayout.css";
 
 /**
- * Main three-column layout: Sidebar | Workspace | Inspector.
+ * Main center-first layout: Sidebar | Workspace | utility pane.
  *
  * The inspector participates in the flex flow on wide screens.
  * On narrow screens it becomes an overlay so the Composer dock
  * area in the Workspace is never squeezed.
  *
- * Exposes `data-inspector-state="open|closed"` for testing
- * and CSS constraint.
+ * Exposes `data-inspector-state="open|closed"` for regression coverage
+ * and `data-utility-pane-state="open|closed"` for utility drawer tasks.
  */
 export function MainLayout() {
   const inspectorOpen = useLayoutStore((state) => state.inspector.open);
@@ -22,7 +22,11 @@ export function MainLayout() {
   useInspectorAutoCollapse(setInspectorOpen, 899);
 
   return (
-    <div className="ua-main-layout" data-inspector-state={inspectorOpen ? "open" : "closed"}>
+    <div
+      className="ua-main-layout"
+      data-inspector-state={inspectorOpen ? "open" : "closed"}
+      data-utility-pane-state={inspectorOpen ? "open" : "closed"}
+    >
       <LeftSidebar />
       <Workspace />
       <InspectorPane open={inspectorOpen} onClose={toggleInspector} />

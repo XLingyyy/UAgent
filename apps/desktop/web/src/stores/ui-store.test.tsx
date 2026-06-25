@@ -166,7 +166,7 @@ describe("ui-store", () => {
   it("starts each slice with its expected seeded defaults", () => {
     renderSliceProbe();
 
-    expect(screen.getByTestId("inspector-open").textContent).toBe("true");
+    expect(screen.getByTestId("inspector-open").textContent).toBe("false");
     expect(screen.getByTestId("active-nav").textContent).toBe("workspace");
     expect(screen.getByTestId("active-project").textContent).toBe("lyra");
     expect(screen.getByTestId("active-thread").textContent).toBe("thread-1");
@@ -191,7 +191,7 @@ describe("ui-store", () => {
     fireEvent.click(screen.getByText("set composer model"));
     fireEvent.click(screen.getByText("select provider b"));
 
-    expect(screen.getByTestId("inspector-open").textContent).toBe("false");
+    expect(screen.getByTestId("inspector-open").textContent).toBe("true");
     expect(screen.getByTestId("active-nav").textContent).toBe("projects");
     expect(screen.getByTestId("settings-open").textContent).toBe("true");
     expect(screen.getByTestId("settings-page").textContent).toBe("provider");

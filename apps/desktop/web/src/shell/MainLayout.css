@@ -5,10 +5,10 @@
   position: relative;
   min-height: 0;
   grid-template-columns: var(--ua-sidebar-width) minmax(0, 1fr) var(--ua-inspector-width);
-  transition: grid-template-columns var(--ua-dur-slow) var(--ua-ease-standard);
 }
 
-.ua-main-layout[data-inspector-state="closed"] {
+.ua-main-layout[data-inspector-state="closed"],
+.ua-main-layout[data-utility-pane-state="closed"] {
   grid-template-columns: var(--ua-sidebar-width) minmax(0, 1fr) 0px;
 }
 

@@ -99,16 +99,16 @@ function Probe() {
 }
 
 describe("UIProvider", () => {
-  it("starts with the inspector open by default", () => {
+  it("starts with the inspector closed by default", () => {
     render(
       <UIProvider>
         <Probe />
       </UIProvider>,
     );
-    expect(screen.getByTestId("inspector-open").textContent).toBe("true");
+    expect(screen.getByTestId("inspector-open").textContent).toBe("false");
   });
 
-  it("toggles the inspector closed then open", () => {
+  it("toggles the inspector open then closed", () => {
     render(
       <UIProvider>
         <Probe />
@@ -116,9 +116,9 @@ describe("UIProvider", () => {
     );
     const button = screen.getByText("toggle");
     fireEvent.click(button);
-    expect(screen.getByTestId("inspector-open").textContent).toBe("false");
-    fireEvent.click(button);
     expect(screen.getByTestId("inspector-open").textContent).toBe("true");
+    fireEvent.click(button);
+    expect(screen.getByTestId("inspector-open").textContent).toBe("false");
   });
 
   it("respects a custom initial inspector state", () => {

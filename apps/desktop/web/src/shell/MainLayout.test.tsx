@@ -3,9 +3,13 @@ import { render, act, waitFor } from "@testing-library/react";
 import { MainLayout } from "./MainLayout";
 import { UIProvider } from "../app/providers";
 
-function renderMainLayout(initialOpen = true) {
+function renderMainLayout(initialOpen?: boolean) {
   return render(
-    <UIProvider initialState={{ layout: { inspector: { open: initialOpen } } }}>
+    <UIProvider
+      initialState={
+        initialOpen === undefined ? undefined : { layout: { inspector: { open: initialOpen } } }
+      }
+    >
       <MainLayout />
     </UIProvider>,
   );
@@ -39,6 +43,12 @@ function createMatchMediaMock(matches: boolean) {
 
 describe("MainLayout", () => {
   describe("layout state attribute", () => {
+    it("defaults to data-inspector-state='closed'", () => {
+      const { container } = renderMainLayout();
+      const layout = container.querySelector(".ua-main-layout");
+      expect(layout?.getAttribute("data-inspector-state")).toBe("closed");
+    });
+
     it("exposes data-inspector-state='open' when inspector is open", () => {
       const { container } = renderMainLayout(true);
       const layout = container.querySelector(".ua-main-layout");
@@ -50,13 +60,19 @@ describe("MainLayout", () => {
       const layout = container.querySelector(".ua-main-layout");
       expect(layout?.getAttribute("data-inspector-state")).toBe("closed");
     });
+
+    it("exposes data-utility-pane-state in sync with inspector state", () => {
+      const { container } = renderMainLayout(true);
+      const layout = container.querySelector(".ua-main-layout");
+      expect(layout?.getAttribute("data-utility-pane-state")).toBe("open");
+    });
   });
 
   describe("inspector pane data-state", () => {
-    it("renders InspectorPane with data-state='open' by default", () => {
-      const { container } = renderMainLayout(true);
+    it("renders InspectorPane with data-state='closed' by default", () => {
+      const { container } = renderMainLayout();
       const inspector = container.querySelector(".ua-inspector");
-      expect(inspector?.getAttribute("data-state")).toBe("open");
+      expect(inspector?.getAttribute("data-state")).toBe("closed");
     });
 
     it("marks the inspector pane as a motion panel", () => {

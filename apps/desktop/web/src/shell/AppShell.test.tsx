@@ -11,9 +11,9 @@ function renderAppShell() {
   );
 }
 
-function renderAppShellWithClosedInspector() {
+function renderAppShellWithOpenInspector() {
   return render(
-    <UIProvider initialState={{ layout: { inspector: { open: false } } }}>
+    <UIProvider initialState={{ layout: { inspector: { open: true } } }}>
       <AppShell />
     </UIProvider>,
   );
@@ -102,47 +102,51 @@ describe("AppShell", () => {
   });
 
   describe("inspector toggle synchronization", () => {
-    it("defaults with inspector open and Inspect button showing Close inspector", () => {
+    it("defaults with tools closed and the tools button showing Open tools", () => {
       renderAppShell();
-      const inspectBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
-      expect(inspectBtn.getAttribute("aria-label")).toBe("Close inspector");
+      const toolsBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
+      expect(toolsBtn.textContent).toContain("Tools");
+      expect(toolsBtn.getAttribute("aria-label")).toBe("Open tools");
+      expect(toolsBtn.getAttribute("aria-pressed")).toBe("false");
     });
 
-    it("toggles inspector closed and updates button label after clicking Inspect", () => {
+    it("toggles tools open and updates button label after clicking Tools", () => {
       renderAppShell();
-      const inspectBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
-      fireEvent.click(inspectBtn);
+      const toolsBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
+      fireEvent.click(toolsBtn);
 
-      expect(inspectBtn.getAttribute("aria-label")).toBe("Open inspector");
-      expect(inspectBtn.getAttribute("aria-pressed")).toBe("false");
+      expect(toolsBtn.getAttribute("aria-label")).toBe("Close tools");
+      expect(toolsBtn.getAttribute("aria-pressed")).toBe("true");
     });
 
     it("closes inspector via close button and syncs TitleBar", () => {
-      renderAppShell();
+      renderAppShellWithOpenInspector();
       const closeBtn = document.querySelector(".ua-inspector__close") as HTMLButtonElement;
       fireEvent.click(closeBtn);
 
-      const inspectBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
-      expect(inspectBtn.getAttribute("aria-label")).toBe("Open inspector");
+      const toolsBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
+      expect(toolsBtn.getAttribute("aria-label")).toBe("Open tools");
     });
 
-    it("opens inspector via Inspect button and syncs TitleBar", () => {
-      renderAppShellWithClosedInspector();
-      const inspectBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
-      fireEvent.click(inspectBtn);
+    it("opens inspector via Tools button and syncs TitleBar", () => {
+      renderAppShell();
+      const toolsBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
+      fireEvent.click(toolsBtn);
 
-      expect(inspectBtn.getAttribute("aria-label")).toBe("Close inspector");
-      expect(inspectBtn.getAttribute("aria-pressed")).toBe("true");
+      expect(toolsBtn.getAttribute("aria-label")).toBe("Close tools");
+      expect(toolsBtn.getAttribute("aria-pressed")).toBe("true");
     });
 
     it("maintains data-inspector-state on MainLayout after toggle", () => {
       const { container } = renderAppShell();
       const layout = container.querySelector(".ua-main-layout");
-      expect(layout?.getAttribute("data-inspector-state")).toBe("open");
-
-      const inspectBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
-      fireEvent.click(inspectBtn);
       expect(layout?.getAttribute("data-inspector-state")).toBe("closed");
+      expect(layout?.getAttribute("data-utility-pane-state")).toBe("closed");
+
+      const toolsBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
+      fireEvent.click(toolsBtn);
+      expect(layout?.getAttribute("data-inspector-state")).toBe("open");
+      expect(layout?.getAttribute("data-utility-pane-state")).toBe("open");
     });
   });
 
@@ -222,8 +226,8 @@ describe("AppShell", () => {
 
     it("returns to MainLayout from Back to app and preserves inspector state", () => {
       const { container } = renderAppShell();
-      const inspectBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
-      fireEvent.click(inspectBtn);
+      const toolsBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
+      fireEvent.click(toolsBtn);
 
       fireEvent.click(screen.getByLabelText("Open settings"));
       fireEvent.click(screen.getByLabelText("Back to app"));
@@ -232,7 +236,8 @@ describe("AppShell", () => {
       expect(container.querySelector(".ua-app")?.getAttribute("data-shell-mode")).toBe("app");
       expect(container.querySelector(".ua-settings-shell")).toBeNull();
       expect(layout).toBeTruthy();
-      expect(layout?.getAttribute("data-inspector-state")).toBe("closed");
+      expect(layout?.getAttribute("data-inspector-state")).toBe("open");
+      expect(layout?.getAttribute("data-utility-pane-state")).toBe("open");
     });
 
     it("resyncs the composer defaults after switching the default provider in settings", () => {

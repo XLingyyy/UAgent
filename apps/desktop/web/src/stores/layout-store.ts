@@ -3,7 +3,7 @@ import type { LayoutStoreState, NavSection, UATheme, UIInitialState } from "../t
 export const DEFAULT_LAYOUT_STATE: LayoutStoreState = {
   theme: "dark" as UATheme,
   inspector: {
-    open: true,
+    open: false,
   },
   sidebar: {
     activeNav: "workspace" as NavSection,

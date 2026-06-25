@@ -41,6 +41,7 @@
   padding: 0 var(--ua-space-3);
   border-radius: var(--ua-radius-sm);
   font-size: var(--ua-font-size-sm);
+  font-weight: var(--ua-font-weight-medium);
   color: var(--ua-text-muted);
   transition:
     background var(--ua-dur-fast) var(--ua-ease-standard),
@@ -59,10 +60,10 @@
 
 .ua-titlebar__badge {
   font-size: var(--ua-font-size-xs);
-  font-weight: var(--ua-font-weight-semibold);
-  color: var(--ua-accent);
-  background: var(--ua-accent-subtle);
-  border: 1px solid var(--ua-border);
+  font-weight: var(--ua-font-weight-medium);
+  color: var(--ua-text-subtle);
+  background: var(--ua-bg-active);
+  border: 1px solid var(--ua-border-subtle);
   border-radius: var(--ua-radius-xs);
   padding: 2px var(--ua-space-2);
   letter-spacing: 0.04em;
