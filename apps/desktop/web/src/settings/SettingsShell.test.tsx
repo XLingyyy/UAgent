@@ -73,70 +73,71 @@ describe("SettingsShell", () => {
     expect(generalBtn?.classList.contains("ua-settings-sidebar__item--active")).toBe(true);
   });
 
-  it("shows General content by default", () => {
+  it("shows General page with sections by default", () => {
     renderSettingsShell();
     const content = document.querySelector(".ua-settings-content");
     expect(content).toBeTruthy();
-    const matches = screen.getAllByText(
-      "General settings will allow you to configure work mode defaults",
-      { exact: false },
-    );
-    expect(matches.length).toBeGreaterThan(0);
+    expect(content?.getAttribute("data-settings-page")).toBe("general");
+    expect(screen.getByText("Work mode")).toBeTruthy();
+    expect(screen.getByText("Permission defaults")).toBeTruthy();
+    const languageHeadings = screen.getAllByText("Language");
+    expect(languageHeadings.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Bottom panel")).toBeTruthy();
   });
 
-  it("switches to Appearance page on click", () => {
+  it("switches to Appearance page on click and shows sections", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
     fireEvent.click(within(sidebar).getByText("Appearance"));
-    const appearanceBtn = within(sidebar).getByText("Appearance").closest("button");
-    expect(appearanceBtn?.classList.contains("ua-settings-sidebar__item--active")).toBe(true);
-    const matches = screen.getAllByText("Appearance settings will allow you to select a theme", {
-      exact: false,
-    });
-    expect(matches.length).toBeGreaterThan(0);
+    const content = document.querySelector(".ua-settings-content");
+    expect(content?.getAttribute("data-settings-page")).toBe("appearance");
+    expect(screen.getByText("Theme")).toBeTruthy();
+    expect(screen.getByText("Accent")).toBeTruthy();
+    expect(screen.getByText("Typography")).toBeTruthy();
+    expect(screen.getByText("Display")).toBeTruthy();
   });
 
-  it("switches to Config page on click", () => {
+  it("switches to Config page on click and shows sections", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
     fireEvent.click(within(sidebar).getByText("Config"));
-    const matches = screen.getAllByText(
-      "Config settings will allow you to manage approval policies",
-      { exact: false },
-    );
-    expect(matches.length).toBeGreaterThan(0);
+    const content = document.querySelector(".ua-settings-content");
+    expect(content?.getAttribute("data-settings-page")).toBe("config");
+    expect(screen.getByText("Approval policy")).toBeTruthy();
+    expect(screen.getByText("Sandbox permissions")).toBeTruthy();
   });
 
-  it("switches to Personalization page on click", () => {
+  it("switches to Personalization page on click and shows sections", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
     fireEvent.click(within(sidebar).getByText("Personalization"));
-    const matches = screen.getAllByText(
-      "Personalization settings will allow you to define a default agent style",
-      { exact: false },
-    );
-    expect(matches.length).toBeGreaterThan(0);
+    const content = document.querySelector(".ua-settings-content");
+    expect(content?.getAttribute("data-settings-page")).toBe("personalization");
+    expect(screen.getByText("Agent style")).toBeTruthy();
+    expect(screen.getByText("Custom instructions")).toBeTruthy();
+    expect(screen.getByText("Memory")).toBeTruthy();
   });
 
-  it("switches to Archived chats page on click", () => {
+  it("switches to Archived chats page on click and shows sections", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
     fireEvent.click(within(sidebar).getByText("Archived chats"));
-    const matches = screen.getAllByText("Archived chats will allow you to browse and search", {
-      exact: false,
-    });
-    expect(matches.length).toBeGreaterThan(0);
+    const content = document.querySelector(".ua-settings-content");
+    expect(content?.getAttribute("data-settings-page")).toBe("archived-chats");
+    expect(screen.getByText("Search and filters")).toBeTruthy();
+    expect(screen.getByText("Archived conversations")).toBeTruthy();
+    expect(screen.getByText("Actions")).toBeTruthy();
   });
 
-  it("switches to Provider page on click", () => {
+  it("switches to Provider page on click and shows sections", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
     fireEvent.click(within(sidebar).getByText("Provider"));
-    const matches = screen.getAllByText(
-      "Provider configuration form will be implemented in UI-014",
-      { exact: false },
-    );
-    expect(matches.length).toBeGreaterThanOrEqual(1);
+    const content = document.querySelector(".ua-settings-content");
+    expect(content?.getAttribute("data-settings-page")).toBe("provider");
+    expect(screen.getByText("Connected providers")).toBeTruthy();
+    expect(screen.getByText("Provider detail")).toBeTruthy();
+    expect(screen.getByText("Provider actions")).toBeTruthy();
   });
 
   it("disables MCP servers entry and does not switch page", () => {
@@ -167,10 +168,20 @@ describe("SettingsShell", () => {
     expect(mvp0Badges.length).toBe(6);
   });
 
-  it("shows UI-only mock note on each placeholder content", () => {
+  it("shows UI-only mock note on each settings page", () => {
     renderSettingsShell();
-    const notes = screen.getAllByText("This is a UI-only mock.", { exact: false });
-    expect(notes.length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("This is a UI-only mock. No configuration is saved or applied."),
+    ).toBeTruthy();
+    const sidebar = screen.getByLabelText("Settings navigation");
+    fireEvent.click(within(sidebar).getByText("Archived chats"));
+    expect(screen.getByText("This is a UI-only mock. No real chat data is accessed.")).toBeTruthy();
+    fireEvent.click(within(sidebar).getByText("Provider"));
+    expect(
+      screen.getByText(/Provider configuration form will be implemented in UI-014/, {
+        exact: false,
+      }),
+    ).toBeTruthy();
   });
 
   it("does not render a real Provider API key input", () => {
@@ -178,10 +189,8 @@ describe("SettingsShell", () => {
     const sidebar = screen.getByLabelText("Settings navigation");
     fireEvent.click(within(sidebar).getByText("Provider"));
     expect(screen.queryByLabelText("API key", { exact: false })).toBeNull();
-    expect(screen.queryByText("API key input", { exact: false })).toBeNull();
-    expect(screen.queryByText("connection testing", { exact: false })).toBeNull();
-    expect(screen.queryByText(/^Save$/)).toBeNull();
-    expect(screen.queryByText("Test connection")).toBeNull();
+    expect(screen.queryByPlaceholderText(/api key/i)).toBeNull();
+    expect(screen.queryByText("apiKey", { exact: false })).toBeNull();
   });
 
   it("does not render microphone, voice, or record controls", () => {
@@ -190,5 +199,76 @@ describe("SettingsShell", () => {
       '[aria-label*="mic" i], [aria-label*="voice" i], [aria-label*="record" i]',
     );
     expect(micElements.length).toBe(0);
+  });
+
+  it("shows Config reset workspace as disabled", () => {
+    renderSettingsShell();
+    const sidebar = screen.getByLabelText("Settings navigation");
+    fireEvent.click(within(sidebar).getByText("Config"));
+    const resetBtn = screen.getByText("Reset all workspace data") as HTMLButtonElement;
+    expect(resetBtn).toBeTruthy();
+    expect(resetBtn.disabled).toBe(true);
+    expect(resetBtn.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("shows Archived chats delete all as disabled", () => {
+    renderSettingsShell();
+    const sidebar = screen.getByLabelText("Settings navigation");
+    fireEvent.click(within(sidebar).getByText("Archived chats"));
+    const deleteBtns = screen.getAllByText("Delete all archived chats");
+    const deleteBtn = deleteBtns.find((el) => el.tagName === "BUTTON") as HTMLButtonElement;
+    expect(deleteBtn).toBeTruthy();
+    expect(deleteBtn.disabled).toBe(true);
+    expect(deleteBtn.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("shows Personalization memory rows as disabled with future phase labels", () => {
+    renderSettingsShell();
+    const sidebar = screen.getByLabelText("Settings navigation");
+    fireEvent.click(within(sidebar).getByText("Personalization"));
+    const memoryRows = screen.getAllByText("Coming in MVP4");
+    expect(memoryRows.length).toBe(2);
+  });
+
+  it("shows Provider action buttons as disabled", () => {
+    renderSettingsShell();
+    const sidebar = screen.getByLabelText("Settings navigation");
+    fireEvent.click(within(sidebar).getByText("Provider"));
+    const allButtons = screen.getAllByRole("button");
+    const addBtn = allButtons.find((b) => b.textContent === "Add provider") as HTMLButtonElement;
+    expect(addBtn).toBeTruthy();
+    expect(addBtn.disabled).toBe(true);
+    const editBtn = allButtons.find((b) => b.textContent === "Edit provider") as HTMLButtonElement;
+    expect(editBtn).toBeTruthy();
+    expect(editBtn.disabled).toBe(true);
+    const deleteBtn = allButtons.find(
+      (b) => b.textContent === "Delete provider",
+    ) as HTMLButtonElement;
+    expect(deleteBtn).toBeTruthy();
+    expect(deleteBtn.disabled).toBe(true);
+    const saveBtn = allButtons.find((b) => b.textContent === "Save provider") as HTMLButtonElement;
+    expect(saveBtn).toBeTruthy();
+    expect(saveBtn.disabled).toBe(true);
+    const testBtn = allButtons.find(
+      (b) => b.textContent === "Test connection",
+    ) as HTMLButtonElement;
+    expect(testBtn).toBeTruthy();
+    expect(testBtn.disabled).toBe(true);
+  });
+
+  it("shows Archived chats mock entries", () => {
+    renderSettingsShell();
+    const sidebar = screen.getByLabelText("Settings navigation");
+    fireEvent.click(within(sidebar).getByText("Archived chats"));
+    expect(screen.getByText("Fix Material Compilation Errors")).toBeTruthy();
+    expect(screen.getByText("3 archived conversations")).toBeTruthy();
+  });
+
+  it("does not switch to disabled future pages on click", () => {
+    renderSettingsShell();
+    const sidebar = screen.getByLabelText("Settings navigation");
+    fireEvent.click(within(sidebar).getByText("Git"));
+    const content = document.querySelector(".ua-settings-content");
+    expect(content?.getAttribute("data-settings-page")).toBe("general");
   });
 });
