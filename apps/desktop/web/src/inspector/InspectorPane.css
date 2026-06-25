@@ -50,6 +50,12 @@
   color: var(--ua-text);
 }
 
+.ua-inspector__close:focus-visible,
+.ua-inspector__tab:focus-visible {
+  outline: none;
+  box-shadow: var(--ua-focus-ring);
+}
+
 .ua-inspector__body {
   flex: 1;
   display: flex;
@@ -58,35 +64,75 @@
   min-height: 0;
 }
 
+.ua-inspector__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ua-space-2);
+  padding: var(--ua-space-2) var(--ua-space-3);
+  border-bottom: 1px solid var(--ua-border);
+  background: var(--ua-bg);
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.ua-inspector__summary-label {
+  flex-shrink: 0;
+  color: var(--ua-text-subtle);
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-semibold);
+}
+
+.ua-inspector__summary-text {
+  min-width: 0;
+  color: var(--ua-text-muted);
+  font-size: var(--ua-font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ua-inspector__tab-bar {
   display: flex;
-  gap: 0;
+  flex-wrap: wrap;
+  gap: var(--ua-space-1);
   border-bottom: 1px solid var(--ua-border);
-  padding: 0 var(--ua-space-2);
+  padding: var(--ua-space-2);
+  max-height: 132px;
+  overflow-y: auto;
+  align-content: flex-start;
   flex-shrink: 0;
 }
 
 .ua-inspector__tab {
-  padding: var(--ua-space-2) var(--ua-space-3);
+  min-width: 0;
+  padding: var(--ua-space-1) var(--ua-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--ua-radius-sm);
+  background: transparent;
   font-size: var(--ua-font-size-sm);
   color: var(--ua-text-muted);
-  border-bottom: 2px solid transparent;
+  overflow-wrap: anywhere;
   transition:
+    background-color var(--ua-dur-fast) var(--ua-ease-standard),
     color var(--ua-dur-fast) var(--ua-ease-standard),
     border-color var(--ua-dur-fast) var(--ua-ease-standard);
 }
 
 .ua-inspector__tab:hover {
+  background: var(--ua-bg-hover);
   color: var(--ua-text);
 }
 
-.ua-inspector__tab--active {
+.ua-inspector__tab.ua-inspector__tab--active {
+  background: var(--ua-accent-subtle);
   color: var(--ua-text);
-  border-bottom-color: var(--ua-accent);
+  border-color: var(--ua-accent);
 }
 
 .ua-inspector__content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
 }

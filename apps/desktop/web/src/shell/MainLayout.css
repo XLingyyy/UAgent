@@ -36,7 +36,13 @@
     box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
   }
 
-  .ua-inspector[data-state="closed"] {
+  .ua-main-layout .ua-inspector.ua-motion-panel[data-state="open"] {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .ua-main-layout .ua-inspector.ua-motion-panel[data-state="closed"] {
+    opacity: 0;
     transform: translateX(calc(100% + var(--ua-space-3)));
   }
 }

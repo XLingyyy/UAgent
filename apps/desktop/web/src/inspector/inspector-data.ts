@@ -35,6 +35,44 @@ export interface DiagnosticSummary {
   items: DiagnosticItem[];
 }
 
+export type UtilityToolId =
+  | "review"
+  | "diagnostics"
+  | "terminal"
+  | "browser"
+  | "files"
+  | "evidence"
+  | "logs"
+  | "ue"
+  | "asset-search";
+
+export type UtilityPlaceholderToolId = Exclude<
+  UtilityToolId,
+  "review" | "diagnostics" | "evidence"
+>;
+
+export interface UtilityToolDefinition {
+  id: UtilityToolId;
+  label: string;
+  summary: string;
+}
+
+export interface UtilityPlaceholderPanelData {
+  id: UtilityPlaceholderToolId;
+  title: string;
+  state: string;
+  badge: string;
+  items: string[];
+  actionLabel: string;
+}
+
+export interface UtilityEvidencePanelData {
+  title: string;
+  state: string;
+  badge: string;
+  actionLabel: string;
+}
+
 export const reviewSummary: ReviewSummary = {
   status: "Review: Mock ready",
   verdict: "No blocking issues",
@@ -128,4 +166,137 @@ export const diagnosticSummary: DiagnosticSummary = {
       tone: "success",
     },
   ],
+};
+
+export const utilityTools: UtilityToolDefinition[] = [
+  {
+    id: "review",
+    label: "Review",
+    summary: "Review queue",
+  },
+  {
+    id: "diagnostics",
+    label: "Diagnostics",
+    summary: "Mock diagnostics",
+  },
+  {
+    id: "terminal",
+    label: "Terminal",
+    summary: "Static transcript",
+  },
+  {
+    id: "browser",
+    label: "Browser",
+    summary: "Preview placeholder",
+  },
+  {
+    id: "files",
+    label: "Files",
+    summary: "Mock project references",
+  },
+  {
+    id: "evidence",
+    label: "Evidence",
+    summary: "Evidence bundle",
+  },
+  {
+    id: "logs",
+    label: "Logs",
+    summary: "Static rows",
+  },
+  {
+    id: "ue",
+    label: "UE",
+    summary: "UE connection",
+  },
+  {
+    id: "asset-search",
+    label: "Asset Search",
+    summary: "Asset lookup",
+  },
+];
+
+export const utilityPlaceholderPanels: Record<
+  UtilityPlaceholderToolId,
+  UtilityPlaceholderPanelData
+> = {
+  terminal: {
+    id: "terminal",
+    title: "Terminal",
+    state: "Session unavailable",
+    badge: "Mock only",
+    items: [
+      "Transcript preview is static.",
+      "No executable prompt is rendered.",
+      "Session controls are reserved for a later MVP.",
+    ],
+    actionLabel: "Future terminal bridge",
+  },
+  browser: {
+    id: "browser",
+    title: "Browser",
+    state: "Preview unavailable",
+    badge: "Mock only",
+    items: [
+      "Page preview is not mounted.",
+      "No address entry or navigation control is rendered.",
+      "External content loading is outside this UI task.",
+    ],
+    actionLabel: "Future embedded browser",
+  },
+  files: {
+    id: "files",
+    title: "Files",
+    state: "Not mounted",
+    badge: "Mock only",
+    items: [
+      "Project references are static labels.",
+      "No local project mount is attached.",
+      "File operations stay outside this drawer mock.",
+    ],
+    actionLabel: "Future file browser",
+  },
+  logs: {
+    id: "logs",
+    title: "Logs",
+    state: "Static rows only",
+    badge: "Mock only",
+    items: [
+      "09:41 UI shell rendered",
+      "09:42 Tools drawer opened",
+      "09:43 Placeholder row selected",
+    ],
+    actionLabel: "Future log stream",
+  },
+  ue: {
+    id: "ue",
+    title: "UE",
+    state: "Not connected",
+    badge: "Mock only",
+    items: [
+      "MCP profile is not attached.",
+      "Editor session status is not inspected.",
+      "Connection controls remain disabled.",
+    ],
+    actionLabel: "Future UE connection",
+  },
+  "asset-search": {
+    id: "asset-search",
+    title: "Asset Search",
+    state: "Static placeholder",
+    badge: "Mock only",
+    items: [
+      "Index is not available in this UI stage.",
+      "Example asset rows are static copy.",
+      "Project queries are reserved for a later MVP.",
+    ],
+    actionLabel: "Future asset index",
+  },
+};
+
+export const utilityEvidencePanel: UtilityEvidencePanelData = {
+  title: "Review evidence",
+  state: "No live evidence collection",
+  badge: "Mock only",
+  actionLabel: "Future evidence capture",
 };

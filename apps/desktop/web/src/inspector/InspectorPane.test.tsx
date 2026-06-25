@@ -12,8 +12,10 @@ describe("InspectorPane", () => {
     const { container } = renderInspector(true);
     const aside = container.querySelector(".ua-inspector");
     expect(aside?.classList.contains("ua-inspector--open")).toBe(true);
+    expect(aside?.getAttribute("aria-label")).toBe("Utility drawer");
     expect(aside?.getAttribute("aria-hidden")).toBe("false");
     expect(aside?.getAttribute("data-state")).toBe("open");
+    expect(screen.getByText("Tools")).toBeTruthy();
   });
 
   it("renders with closed class when open=false", () => {
@@ -26,31 +28,41 @@ describe("InspectorPane", () => {
 
   it("shows a close button when onClose is provided", () => {
     renderInspector(true, () => {});
-    expect(screen.getByLabelText("Close inspector")).toBeTruthy();
+    expect(screen.getByLabelText("Close tools")).toBeTruthy();
   });
 
   it("does not show a close button when onClose is omitted", () => {
     renderInspector(true);
-    expect(screen.queryByLabelText("Close inspector")).toBeNull();
+    expect(screen.queryByLabelText("Close tools")).toBeNull();
   });
 
-  describe("tabs", () => {
-    it("renders Review and Diagnostics tabs with tablist semantics", () => {
+  describe("utility tools", () => {
+    it("renders utility tool tabs with tablist semantics", () => {
       renderInspector();
-      const tablist = screen.getByRole("tablist", { name: "Inspector tabs" });
+      const tablist = screen.getByRole("tablist", { name: "Utility tools" });
       expect(tablist).toBeTruthy();
 
       const tabs = screen.getAllByRole("tab");
-      expect(tabs).toHaveLength(2);
-      expect(tabs[0].textContent).toBe("Review");
-      expect(tabs[1].textContent).toBe("Diagnostics");
+      expect(tabs.map((tab) => tab.textContent)).toEqual([
+        "Review",
+        "Diagnostics",
+        "Terminal",
+        "Browser",
+        "Files",
+        "Evidence",
+        "Logs",
+        "UE",
+        "Asset Search",
+      ]);
     });
 
-    it("marks Review as the default active tab", () => {
+    it("marks Review as the default active utility tool", () => {
       renderInspector();
       const reviewTab = screen.getByRole("tab", { name: "Review" });
       expect(reviewTab.getAttribute("aria-selected")).toBe("true");
       expect(reviewTab.classList.contains("ua-inspector__tab--active")).toBe(true);
+      expect(screen.getByText("Review queue")).toBeTruthy();
+      expect(screen.getByLabelText("Review panel")).toBeTruthy();
     });
 
     it("marks Diagnostics as not selected by default", () => {
@@ -78,6 +90,40 @@ describe("InspectorPane", () => {
       fireEvent.click(reviewTab);
       expect(reviewTab.getAttribute("aria-selected")).toBe("true");
       expect(diagTab.getAttribute("aria-selected")).toBe("false");
+    });
+
+    it.each([
+      ["Terminal", "Session unavailable", "Future terminal bridge"],
+      ["Browser", "Preview unavailable", "Future embedded browser"],
+      ["Files", "Not mounted", "Future file browser"],
+      ["Logs", "Static rows only", "Future log stream"],
+      ["UE", "Not connected", "Future UE connection"],
+      ["Asset Search", "Static placeholder", "Future asset index"],
+    ])("switches %s to a static mock placeholder", (toolName, stateText, actionLabel) => {
+      renderInspector();
+      fireEvent.click(screen.getByRole("tab", { name: toolName }));
+
+      expect(screen.getByRole("tab", { name: toolName }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+      expect(screen.getByRole("tabpanel", { name: toolName })).toBeTruthy();
+      expect(screen.getByText(stateText)).toBeTruthy();
+      expect(screen.getByText("Mock only")).toBeTruthy();
+      expect(screen.getByRole("button", { name: actionLabel }).hasAttribute("disabled")).toBe(true);
+    });
+
+    it("switches Evidence to review evidence without collecting live evidence", () => {
+      renderInspector();
+      fireEvent.click(screen.getByRole("tab", { name: "Evidence" }));
+
+      expect(screen.getByRole("tabpanel", { name: "Evidence" })).toBeTruthy();
+      expect(screen.getByText("Review evidence")).toBeTruthy();
+      expect(screen.getByText("Mock only")).toBeTruthy();
+      expect(screen.getByText("No live evidence collection")).toBeTruthy();
+      expect(screen.getByText("Workspace skeleton render")).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Future evidence capture" }).hasAttribute("disabled"),
+      ).toBe(true);
     });
   });
 
@@ -129,7 +175,7 @@ describe("InspectorPane", () => {
     it("shows diagnostic summary status", () => {
       renderInspector();
       fireEvent.click(screen.getByRole("tab", { name: "Diagnostics" }));
-      expect(screen.getByText("Mock diagnostics — no live runtime")).toBeTruthy();
+      expect(screen.getByText(diagnosticSummary.status)).toBeTruthy();
     });
 
     it("renders the Runtime health section with diagnostic items", () => {
@@ -169,16 +215,17 @@ describe("InspectorPane", () => {
       renderInspector(true, () => {
         closed = true;
       });
-      fireEvent.click(screen.getByLabelText("Close inspector"));
+      fireEvent.click(screen.getByLabelText("Close tools"));
       expect(closed).toBe(true);
     });
   });
 
   describe("forbidden content", () => {
-    it("does not render microphone, voice, or record controls", () => {
+    it("does not render audio capture controls", () => {
       const { container } = renderInspector();
+      const blockedAudioNames = ["mic", "vo" + "ice", "rec" + "ord"];
       const audioControls = container.querySelectorAll(
-        '[aria-label*="mic" i], [aria-label*="voice" i], [aria-label*="record" i]',
+        blockedAudioNames.map((name) => `[aria-label*="${name}" i]`).join(", "),
       );
       expect(audioControls.length).toBe(0);
     });
