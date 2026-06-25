@@ -18,8 +18,24 @@
   min-height: 0;
 }
 
+.ua-workspace__content--welcome {
+  justify-content: center;
+}
+
+.ua-workspace__welcome-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-3);
+  width: min(100%, 980px);
+  margin: auto;
+}
+
 @media (max-width: 720px) {
   .ua-workspace__content {
     padding: var(--ua-space-4);
+  }
+
+  .ua-workspace__content--welcome {
+    justify-content: flex-start;
   }
 }

@@ -177,14 +177,14 @@ describe("UIProvider", () => {
     expect(screen.getByTestId("active-project").textContent).toBe("null");
   });
 
-  it("starts with workspace nav and first thread selected", () => {
+  it("starts with workspace nav and no active thread selected", () => {
     render(
       <UIProvider>
         <Probe />
       </UIProvider>,
     );
     expect(screen.getByTestId("active-nav").textContent).toBe("workspace");
-    expect(screen.getByTestId("active-thread").textContent).toBe("thread-1");
+    expect(screen.getByTestId("active-thread").textContent).toBe("null");
   });
 
   it("updates nav and thread in their own stores", () => {

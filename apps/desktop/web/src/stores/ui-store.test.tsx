@@ -169,7 +169,7 @@ describe("ui-store", () => {
     expect(screen.getByTestId("inspector-open").textContent).toBe("false");
     expect(screen.getByTestId("active-nav").textContent).toBe("workspace");
     expect(screen.getByTestId("active-project").textContent).toBe("lyra");
-    expect(screen.getByTestId("active-thread").textContent).toBe("thread-1");
+    expect(screen.getByTestId("active-thread").textContent).toBe("null");
     expect(screen.getByTestId("settings-open").textContent).toBe("false");
     expect(screen.getByTestId("settings-page").textContent).toBe("general");
     expect(screen.getByTestId("composer-input").textContent).toBe("");

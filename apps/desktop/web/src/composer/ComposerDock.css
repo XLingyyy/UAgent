@@ -13,10 +13,32 @@
 /* ---- InputRow ---- */
 
 .ua-composer__input-row {
+  display: grid;
+  grid-template-columns: auto minmax(260px, 1fr) auto;
+  align-items: stretch;
+  gap: var(--ua-space-2);
+  min-width: 0;
+}
+
+.ua-composer__left-tools,
+.ua-composer__right-tools {
   display: flex;
   align-items: center;
   gap: var(--ua-space-2);
   min-width: 0;
+}
+
+.ua-composer__left-tools {
+  justify-content: flex-start;
+}
+
+.ua-composer__input-zone {
+  display: flex;
+  min-width: 0;
+}
+
+.ua-composer__right-tools {
+  justify-content: flex-end;
 }
 
 .ua-composer__add-btn {
@@ -56,10 +78,10 @@
   flex: 1;
   min-width: 0;
   resize: none;
-  height: 32px;
+  height: 42px;
   font-size: var(--ua-font-size-sm);
   line-height: 1.4;
-  padding: var(--ua-space-1) var(--ua-space-2);
+  padding: var(--ua-space-2) var(--ua-space-3);
   border-radius: var(--ua-radius-sm);
   border: 1px solid var(--ua-border-subtle);
   background: var(--ua-bg-input);
@@ -166,12 +188,39 @@
 
 /* ---- Responsive ---- */
 
+@media (max-width: 1080px) {
+  .ua-composer__input-row {
+    grid-template-columns: auto minmax(220px, 1fr);
+  }
+
+  .ua-composer__right-tools {
+    grid-column: 2;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
 @media (max-width: 720px) {
   .ua-composer__input-row {
+    grid-template-columns: 1fr;
+  }
+
+  .ua-composer__left-tools,
+  .ua-composer__right-tools {
+    width: 100%;
     flex-wrap: wrap;
   }
 
+  .ua-composer__input-zone,
+  .ua-composer__right-tools {
+    grid-column: 1;
+  }
+
+  .ua-composer__right-tools {
+    justify-content: flex-start;
+  }
+
   .ua-composer__textarea {
-    flex-basis: 100%;
+    min-height: 44px;
   }
 }

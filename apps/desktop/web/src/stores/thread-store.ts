@@ -1,7 +1,7 @@
 import type { ThreadStoreState, UIInitialState } from "../types/ui";
 
 export const DEFAULT_THREAD_STATE: ThreadStoreState = {
-  activeThreadId: "thread-1",
+  activeThreadId: null,
 };
 
 export function createInitialThreadState(initialState?: UIInitialState): ThreadStoreState {

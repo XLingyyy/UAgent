@@ -31,7 +31,29 @@ describe("ComposerDock", () => {
     expect(within(dock).getByLabelText("Send - disabled")).toBeTruthy();
   });
 
-  it("renders the status row with ProjectSelector, mode, branch, and status items", () => {
+  it("groups controls into left tools, primary input, and right tools", () => {
+    const { container } = renderDock();
+
+    const leftTools = container.querySelector(".ua-composer__left-tools") as HTMLElement;
+    const inputZone = container.querySelector(".ua-composer__input-zone") as HTMLElement;
+    const rightTools = container.querySelector(".ua-composer__right-tools") as HTMLElement;
+
+    expect(leftTools).toBeTruthy();
+    expect(inputZone).toBeTruthy();
+    expect(rightTools).toBeTruthy();
+    expect(within(leftTools).getByLabelText("Add context - disabled")).toBeTruthy();
+    expect(within(leftTools).getByLabelText("Permission mode: Request approval")).toBeTruthy();
+    expect(within(inputZone).getByLabelText("Composer input")).toBeTruthy();
+    expect(
+      within(rightTools).getByLabelText("Context: 2,400 / 20,000 used (12%, 88% remaining)"),
+    ).toBeTruthy();
+    expect(
+      within(rightTools).getByLabelText("Model selector: Model not configured, reasoning medium"),
+    ).toBeTruthy();
+    expect(within(rightTools).getByLabelText("Send - disabled")).toBeTruthy();
+  });
+
+  it("renders the status row with only ProjectSelector, local mode, and branch", () => {
     renderDock();
 
     const dock = screen.getByLabelText("Composer dock");
@@ -42,10 +64,10 @@ describe("ComposerDock", () => {
     expect(within(dock).getByText("Branch")).toBeTruthy();
     expect(within(dock).getByText("main")).toBeTruthy();
 
-    expect(within(dock).getByText("UE")).toBeTruthy();
-    expect(within(dock).getByText("Not connected")).toBeTruthy();
-    expect(within(dock).getByText("Runtime")).toBeTruthy();
-    expect(within(dock).getByText("Mock")).toBeTruthy();
+    expect(within(dock).queryByText("UE")).toBeNull();
+    expect(within(dock).queryByText("Not connected")).toBeNull();
+    expect(within(dock).queryByText("Runtime")).toBeNull();
+    expect(within(dock).queryByText("Mock")).toBeNull();
   });
 
   it("shows a textarea with placeholder and allows local input", () => {

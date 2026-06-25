@@ -1,4 +1,5 @@
 .ua-model-selector {
+  min-width: 0;
   flex-shrink: 0;
   position: relative;
 }
@@ -16,6 +17,8 @@
   color: var(--ua-text-muted);
   white-space: nowrap;
   user-select: none;
+  max-width: min(260px, 34vw);
+  min-width: 0;
 }
 
 .ua-model-selector__trigger:hover {
@@ -29,19 +32,26 @@
 .ua-model-selector__trigger-label {
   display: inline-flex;
   align-items: center;
-  gap: 0;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .ua-model-selector__trigger-model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--ua-text);
   font-weight: var(--ua-font-weight-medium);
 }
 
 .ua-model-selector__trigger-reasoning {
+  flex-shrink: 0;
   color: var(--ua-text-muted);
 }
 
 .ua-model-selector__trigger-sep {
+  flex-shrink: 0;
   color: var(--ua-text-subtle);
 }
 
@@ -151,5 +161,9 @@
 @media (max-width: 720px) {
   .ua-model-selector {
     order: 4;
+  }
+
+  .ua-model-selector__trigger {
+    max-width: calc(100vw - var(--ua-space-6));
   }
 }

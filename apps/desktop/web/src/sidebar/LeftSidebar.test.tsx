@@ -250,11 +250,13 @@ describe("LeftSidebar", () => {
       }
     });
 
-    it("marks the first thread as selected by default", () => {
+    it("does not mark any thread as selected by default", () => {
       renderSidebar();
-      const firstBtn = screen.getByText(mockThreads[0].title).closest("button")!;
-      expect(firstBtn.classList.contains("ua-thread-item--active")).toBe(true);
-      expect(firstBtn.getAttribute("aria-selected")).toBe("true");
+      for (const thread of mockThreads) {
+        const button = screen.getByText(thread.title).closest("button")!;
+        expect(button.classList.contains("ua-thread-item--active")).toBe(false);
+        expect(button.getAttribute("aria-selected")).toBe("false");
+      }
     });
 
     it("switches selected thread on click", () => {

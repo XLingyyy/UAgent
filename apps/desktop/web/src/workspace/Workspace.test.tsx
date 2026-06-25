@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { Workspace } from "./Workspace";
 import { UIProvider } from "../app/providers";
+import { LeftSidebar } from "../sidebar/LeftSidebar";
+import { mockThreads } from "../sidebar/sidebar-data";
 
 function renderWorkspace() {
   return render(
@@ -14,6 +16,23 @@ function renderWorkspace() {
 function renderWorkspaceWithInspectorOpen(open: boolean) {
   return render(
     <UIProvider initialState={{ layout: { inspector: { open } } }}>
+      <Workspace />
+    </UIProvider>,
+  );
+}
+
+function renderWorkspaceWithThread(threadId: string) {
+  return render(
+    <UIProvider initialState={{ thread: { activeThreadId: threadId } }}>
+      <Workspace />
+    </UIProvider>,
+  );
+}
+
+function renderSidebarAndWorkspace() {
+  return render(
+    <UIProvider>
+      <LeftSidebar />
       <Workspace />
     </UIProvider>,
   );
@@ -43,9 +62,21 @@ describe("Workspace", () => {
     expect(within(strip).getByText("Not connected")).toBeTruthy();
   });
 
-  it("renders at least three mock conversation and activity messages", () => {
+  it("starts in welcome mode without rendering the activity timeline", () => {
     renderWorkspace();
 
+    const workspace = screen.getByLabelText("Workspace");
+    expect(workspace.getAttribute("data-workspace-mode")).toBe("welcome");
+    expect(screen.getByRole("heading", { name: "Lyra_Prototype workspace" })).toBeTruthy();
+    expect(screen.queryByLabelText("Conversation activity")).toBeNull();
+    expect(screen.queryByText("Activity timeline")).toBeNull();
+  });
+
+  it("renders mock conversation and activity messages when an active thread is seeded", () => {
+    renderWorkspaceWithThread("thread-1");
+
+    const workspace = screen.getByLabelText("Workspace");
+    expect(workspace.getAttribute("data-workspace-mode")).toBe("thread");
     const viewport = screen.getByLabelText("Conversation activity");
     const messages = within(viewport).getAllByRole("article");
     expect(messages.length).toBeGreaterThanOrEqual(3);
@@ -53,6 +84,19 @@ describe("Workspace", () => {
     expect(within(viewport).getByText("Agent plan")).toBeTruthy();
     expect(within(viewport).getByText("Tool event")).toBeTruthy();
     expect(within(viewport).getByText("Review summary")).toBeTruthy();
+  });
+
+  it("switches to thread mode after a recent sidebar conversation is selected", () => {
+    renderSidebarAndWorkspace();
+
+    expect(screen.getByLabelText("Workspace").getAttribute("data-workspace-mode")).toBe("welcome");
+    expect(screen.queryByLabelText("Conversation activity")).toBeNull();
+
+    fireEvent.click(screen.getByText(mockThreads[0].title).closest("button")!);
+
+    expect(screen.getByLabelText("Workspace").getAttribute("data-workspace-mode")).toBe("thread");
+    expect(screen.getByLabelText("Conversation activity")).toBeTruthy();
+    expect(screen.getByText("Activity timeline")).toBeTruthy();
   });
 
   it("renders the standalone ComposerDock input and status rows", () => {

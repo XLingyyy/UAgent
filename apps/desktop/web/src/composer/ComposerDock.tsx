@@ -24,64 +24,62 @@ export function ComposerDock() {
   const { setComposerInput, setComposerPermission, setComposerModel, setComposerReasoning } =
     useComposerActions();
   const providerModelOptions = createComposerModelOptions(provider.providers);
-  const {
-    input,
-    permission,
-    selectedModelId,
-    reasoningEffort,
-    runMode,
-    branch,
-    context,
-    statusItems,
-  } = composer;
+  const { input, permission, selectedModelId, reasoningEffort, runMode, branch, context } =
+    composer;
   const { placeholder, addButtonLabel, sendButtonLabel } = composerMock;
 
   return (
     <footer className="ua-composer" aria-label="Composer dock">
       <div className="ua-composer__input-row">
-        <ComingSoonGate
-          phase="MVP1"
-          reason="Attach project files and asset references as additional context."
-        >
-          <button
-            className="ua-composer__add-btn"
-            type="button"
-            aria-label="Add context - disabled"
+        <div className="ua-composer__left-tools">
+          <ComingSoonGate
+            phase="MVP1"
+            reason="Attach project files and asset references as additional context."
           >
-            {addButtonLabel}
+            <button
+              className="ua-composer__add-btn"
+              type="button"
+              aria-label="Add context - disabled"
+            >
+              {addButtonLabel}
+            </button>
+          </ComingSoonGate>
+
+          <PermissionSelector value={permission} onChange={setComposerPermission} />
+        </div>
+
+        <div className="ua-composer__input-zone">
+          <textarea
+            className="ua-composer__textarea"
+            placeholder={placeholder}
+            value={input}
+            onChange={(e) => setComposerInput(e.target.value)}
+            aria-label="Composer input"
+          />
+        </div>
+
+        <div className="ua-composer__right-tools">
+          <ContextRing used={context.used} total={context.total} percent={context.percent} />
+
+          <ModelSelector
+            modelId={selectedModelId}
+            reasoningEffort={reasoningEffort}
+            models={providerModelOptions}
+            reasoningOptionsList={reasoningOptions}
+            onModelChange={setComposerModel}
+            onReasoningChange={setComposerReasoning}
+            onManageProviders={() => openSettings("provider")}
+          />
+
+          <button
+            className="ua-composer__send-btn"
+            type="button"
+            disabled
+            aria-label="Send - disabled"
+          >
+            {sendButtonLabel}
           </button>
-        </ComingSoonGate>
-
-        <PermissionSelector value={permission} onChange={setComposerPermission} />
-
-        <textarea
-          className="ua-composer__textarea"
-          placeholder={placeholder}
-          value={input}
-          onChange={(e) => setComposerInput(e.target.value)}
-          aria-label="Composer input"
-        />
-
-        <ContextRing used={context.used} total={context.total} percent={context.percent} />
-
-        <ModelSelector
-          modelId={selectedModelId}
-          reasoningEffort={reasoningEffort}
-          models={providerModelOptions}
-          reasoningOptionsList={reasoningOptions}
-          onModelChange={setComposerModel}
-          onReasoningChange={setComposerReasoning}
-          onManageProviders={() => openSettings("provider")}
-        />
-
-        <button
-          className="ua-composer__send-btn"
-          type="button"
-          disabled
-          aria-label="Send - disabled"
-        >
-          {sendButtonLabel}
-        </button>
+        </div>
       </div>
 
       <div className="ua-composer__status-row">
@@ -104,16 +102,6 @@ export function ComposerDock() {
           <span className="ua-composer__status-label">Branch</span>
           <span className="ua-composer__status-value ua-text-mono">{branch}</span>
         </span>
-
-        {statusItems.map((item) => (
-          <span
-            key={item.id}
-            className={`ua-composer__status-item ua-composer__status-item--${item.tone ?? "default"}`}
-          >
-            <span className="ua-composer__status-label">{item.label}</span>
-            <span className="ua-composer__status-value">{item.value}</span>
-          </span>
-        ))}
       </div>
     </footer>
   );
