@@ -7,8 +7,8 @@ export function ReviewPanel() {
   return (
     <section className="ua-review-panel" aria-label="Review panel">
       <div className="ua-review-panel__summary">
-        <InspectorSummaryCard label="Status" value={reviewSummary.status} tone="accent" />
-        <InspectorSummaryCard label="Verdict" value={reviewSummary.verdict} tone="success" />
+        <InspectorSummaryCard label="Status" value={reviewSummary.status} />
+        <InspectorSummaryCard label="Verdict" value={reviewSummary.verdict} />
       </div>
       <div className="ua-review-panel__findings">
         <h3 className="ua-review-panel__section-title">Findings</h3>

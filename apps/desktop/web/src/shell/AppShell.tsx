@@ -1,4 +1,5 @@
-import { useSettingsStore } from "../stores/ui-store";
+import { useEffect } from "react";
+import { useLayoutStore, useSettingsStore } from "../stores/ui-store";
 import { TitleBar } from "./TitleBar";
 import { MainLayout } from "./MainLayout";
 import { GlobalOverlays } from "./GlobalOverlays";
@@ -20,11 +21,16 @@ import { useMotionKey } from "../hooks/useMotionKey";
  */
 export function AppShell() {
   const settingsOpen = useSettingsStore((state) => state.open);
+  const theme = useLayoutStore((state) => state.theme);
   const shellMode = settingsOpen ? "settings" : "app";
   const motionKey = useMotionKey(shellMode);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
   return (
-    <div className="ua-app" data-shell-mode={shellMode}>
+    <div className="ua-app" data-shell-mode={shellMode} data-theme={theme}>
       <TitleBar />
       <div className="ua-app__body">
         <div key={motionKey} className="ua-motion-page" data-motion="page">

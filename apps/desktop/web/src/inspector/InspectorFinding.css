@@ -4,13 +4,13 @@
   gap: var(--ua-space-1);
   padding: var(--ua-space-2) var(--ua-space-3);
   border-left: 3px solid var(--ua-border);
-  background: var(--ua-bg);
+  background: var(--ua-bg-app);
   border-radius: 0 var(--ua-radius-sm) var(--ua-radius-sm) 0;
   min-width: 0;
 }
 
 .ua-finding--info {
-  border-left-color: var(--ua-accent);
+  border-left-color: var(--ua-border-strong);
 }
 
 .ua-finding--warning {
@@ -18,7 +18,7 @@
 }
 
 .ua-finding--passed {
-  border-left-color: var(--ua-success);
+  border-left-color: var(--ua-border-strong);
 }
 
 .ua-finding__header {
@@ -37,8 +37,8 @@
 }
 
 .ua-finding--info .ua-finding__severity {
-  color: var(--ua-accent);
-  background: var(--ua-accent-subtle);
+  color: var(--ua-text-muted);
+  background: var(--ua-bg-elevated);
 }
 
 .ua-finding--warning .ua-finding__severity {
@@ -47,8 +47,8 @@
 }
 
 .ua-finding--passed .ua-finding__severity {
-  color: var(--ua-success);
-  background: var(--ua-success-subtle);
+  color: var(--ua-text-muted);
+  background: var(--ua-bg-elevated);
 }
 
 .ua-finding__title {

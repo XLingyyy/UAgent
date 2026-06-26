@@ -1,76 +1,95 @@
 .ua-welcome-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: var(--ua-space-4);
-  padding: var(--ua-space-5);
-  border: 1px solid var(--ua-border-subtle);
-  border-radius: var(--ua-radius-md);
-  background: var(--ua-bg-panel);
+  width: min(100%, 760px);
+  text-align: center;
 }
 
 .ua-welcome-hero__copy {
   display: flex;
   flex-direction: column;
-  gap: var(--ua-space-2);
+  align-items: center;
+  gap: var(--ua-space-3);
   min-width: 0;
-}
-
-.ua-welcome-hero__eyebrow {
-  font-size: var(--ua-font-size-xs);
-  font-weight: var(--ua-font-weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ua-text-subtle);
 }
 
 .ua-welcome-hero__title {
-  font-size: var(--ua-font-size-xl);
+  max-width: 780px;
+  font-size: 46px;
   font-weight: var(--ua-font-weight-semibold);
-  line-height: var(--ua-line-height-tight);
-  color: var(--ua-text);
+  line-height: 1.08;
+  color: var(--ua-text-primary);
+  text-wrap: balance;
 }
 
 .ua-welcome-hero__description {
-  max-width: 640px;
-  font-size: var(--ua-font-size-base);
+  max-width: 560px;
+  font-size: var(--ua-font-size-lg);
   line-height: var(--ua-line-height-normal);
-  color: var(--ua-text-muted);
-  overflow-wrap: break-word;
+  color: var(--ua-text-secondary);
+  text-wrap: pretty;
 }
 
-.ua-welcome-hero__facts {
-  display: grid;
+.ua-welcome-hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: var(--ua-space-2);
-  margin: 0;
+  max-width: 100%;
 }
 
-.ua-welcome-hero__fact {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.ua-welcome-hero__fact dt {
+.ua-welcome-hero__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: var(--ua-space-1) var(--ua-space-2);
+  border: 1px solid var(--ua-border-soft);
+  border-radius: var(--ua-radius-sm);
+  background: var(--ua-bg-surface);
+  color: var(--ua-text-tertiary);
   font-size: var(--ua-font-size-xs);
   font-weight: var(--ua-font-weight-medium);
-  color: var(--ua-text-subtle);
+  line-height: var(--ua-line-height-tight);
+  white-space: nowrap;
 }
 
-.ua-welcome-hero__fact dd {
-  margin: 0;
-  font-size: var(--ua-font-size-sm);
-  color: var(--ua-text);
-  overflow-wrap: anywhere;
+.ua-welcome-hero__chip--warning {
+  color: var(--ua-warning);
+  background: var(--ua-warning-soft);
+  border-color: transparent;
 }
 
-@media (max-width: 899px) {
+@media (max-width: 720px) {
   .ua-welcome-hero {
-    grid-template-columns: 1fr;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .ua-welcome-hero__copy {
+    align-items: flex-start;
+  }
+
+  .ua-welcome-hero__meta {
+    justify-content: flex-start;
+  }
+
+  .ua-welcome-hero__title {
+    font-size: 30px;
+  }
+
+  .ua-welcome-hero__description {
+    font-size: var(--ua-font-size-md);
   }
 }
 
-@container (max-width: 540px) {
-  .ua-welcome-hero {
-    grid-template-columns: 1fr;
+@container (max-width: 560px) {
+  .ua-welcome-hero__title {
+    font-size: 34px;
+  }
+
+  .ua-welcome-hero__description {
+    font-size: var(--ua-font-size-md);
   }
 }

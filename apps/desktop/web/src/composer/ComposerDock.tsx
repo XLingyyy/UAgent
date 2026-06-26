@@ -15,7 +15,11 @@ import {
 } from "../stores/ui-store";
 import "./ComposerDock.css";
 
-export function ComposerDock() {
+export interface ComposerDockProps {
+  mode?: "welcome" | "thread";
+}
+
+export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const composer = useComposerStore((state) => state);
   const provider = useProviderStore((state) => state);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
@@ -29,7 +33,7 @@ export function ComposerDock() {
   const { placeholder, addButtonLabel, sendButtonLabel } = composerMock;
 
   return (
-    <footer className="ua-composer" aria-label="Composer dock">
+    <footer className="ua-composer" aria-label="Composer dock" data-composer-mode={mode}>
       <div className="ua-composer__input-row">
         <div className="ua-composer__left-tools">
           <ComingSoonGate

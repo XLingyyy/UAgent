@@ -64,7 +64,7 @@ export function InspectorPane({ open, onClose }: InspectorPaneProps) {
             aria-label="Close tools"
             type="button"
           >
-            x
+            Close
           </button>
         )}
       </div>

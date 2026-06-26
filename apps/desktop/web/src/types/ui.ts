@@ -65,7 +65,7 @@ export interface SidebarState {
 }
 
 /** Theme variants supported by the UI shell. */
-export type UATheme = "dark";
+export type UATheme = "dark" | "light";
 
 /** Layout-related shell state. */
 export interface LayoutStoreState {
@@ -125,6 +125,9 @@ export type ToggleInspector = () => void;
 /** Set the active primary nav section. */
 export type SetActiveNav = (nav: NavSection) => void;
 
+/** Set the current UI theme. */
+export type SetTheme = (theme: UATheme) => void;
+
 /** Set the active thread by id. */
 export type SetActiveThread = (threadId: string) => void;
 
@@ -155,6 +158,7 @@ export interface LayoutStoreActions {
   toggleInspector: ToggleInspector;
   setInspectorOpen: (open: boolean) => void;
   setActiveNav: SetActiveNav;
+  setTheme: SetTheme;
 }
 
 export interface SettingsStoreActions {

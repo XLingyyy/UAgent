@@ -3,7 +3,7 @@
   flex-direction: column;
   flex: 1;
   min-width: 0;
-  background: var(--ua-bg);
+  background: var(--ua-bg-app);
   z-index: var(--ua-z-workspace);
   overflow: hidden;
 }
@@ -21,14 +21,17 @@
 
 .ua-workspace__content--welcome {
   justify-content: center;
+  overflow-y: auto;
 }
 
 .ua-workspace__welcome-stack {
   display: flex;
   flex-direction: column;
-  gap: var(--ua-space-3);
-  width: min(100%, 980px);
+  align-items: center;
+  gap: var(--ua-space-4);
+  width: min(100%, 820px);
   margin: auto;
+  padding: var(--ua-space-8) 0;
 }
 
 @media (max-width: 720px) {

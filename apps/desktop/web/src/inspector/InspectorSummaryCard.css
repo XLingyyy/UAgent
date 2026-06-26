@@ -4,7 +4,7 @@
   gap: var(--ua-space-1);
   padding: var(--ua-space-2) var(--ua-space-3);
   background: var(--ua-bg-elevated);
-  border: 1px solid var(--ua-border);
+  border: 1px solid var(--ua-border-soft);
   border-radius: var(--ua-radius-sm);
   min-width: 0;
 }
@@ -35,5 +35,5 @@
 }
 
 .ua-summary-card--success .ua-summary-card__value {
-  color: var(--ua-success);
+  color: var(--ua-text);
 }

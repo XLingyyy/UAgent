@@ -10,13 +10,13 @@
   font-size: var(--ua-font-size-xs);
   color: var(--ua-text-muted);
   border: 1px solid var(--ua-border-subtle);
-  border-radius: var(--ua-radius-xs);
+  border-radius: var(--ua-radius-md);
   padding: var(--ua-space-1) var(--ua-space-2);
   background: var(--ua-bg-elevated);
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
-  height: 24px;
+  height: 28px;
   line-height: 1;
   max-width: 200px;
 }
@@ -56,7 +56,7 @@
   background: var(--ua-bg-elevated);
   border: 1px solid var(--ua-border);
   border-radius: var(--ua-radius-sm);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--ua-shadow-dropdown);
   width: min(360px, calc(100vw - 24px));
   min-width: min(280px, calc(100vw - 24px));
   max-width: 360px;

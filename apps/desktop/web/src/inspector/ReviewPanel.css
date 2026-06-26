@@ -65,7 +65,7 @@
 }
 
 .ua-review-panel__evidence-item--checked .ua-review-panel__evidence-icon {
-  color: var(--ua-success);
+  color: var(--ua-text-tertiary);
 }
 
 .ua-review-panel__evidence-item--unchecked .ua-review-panel__evidence-icon {

@@ -33,7 +33,7 @@
     bottom: 0;
     width: min(var(--ua-inspector-width), calc(100vw - 24px));
     min-width: min(var(--ua-inspector-min-width), calc(100vw - 24px));
-    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--ua-shadow-drawer);
   }
 
   .ua-main-layout .ua-inspector.ua-motion-panel[data-state="open"] {

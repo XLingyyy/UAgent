@@ -1,33 +1,26 @@
 .ua-workspace-status {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  border: 1px solid var(--ua-border-subtle);
-  border-radius: var(--ua-radius-sm);
-  background: var(--ua-bg-panel);
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ua-space-1);
+  flex-wrap: wrap;
+  width: min(100%, 760px);
+  color: var(--ua-text-tertiary);
 }
 
 .ua-workspace-status__item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--ua-space-2);
+  gap: var(--ua-space-1);
   min-width: 0;
-  padding: var(--ua-space-2) var(--ua-space-3);
-  border-right: 1px solid var(--ua-border-subtle);
-}
-
-.ua-workspace-status__item:last-child {
-  border-right: 0;
+  padding: 2px var(--ua-space-2);
 }
 
 .ua-workspace-status__label {
   flex-shrink: 0;
   font-size: var(--ua-font-size-xs);
-  font-weight: var(--ua-font-weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ua-text-subtle);
+  font-weight: var(--ua-font-weight-medium);
+  color: var(--ua-text-tertiary);
 }
 
 .ua-workspace-status__value {
@@ -35,13 +28,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--ua-font-size-sm);
+  font-size: var(--ua-font-size-xs);
   font-weight: var(--ua-font-weight-medium);
-  color: var(--ua-text);
+  color: var(--ua-text-secondary);
 }
 
 .ua-workspace-status__value--accent {
-  color: var(--ua-accent-hover);
+  color: var(--ua-text-secondary);
 }
 
 .ua-workspace-status__value--warning {
@@ -50,28 +43,12 @@
 
 @media (max-width: 899px) {
   .ua-workspace-status {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .ua-workspace-status__item:nth-child(2) {
-    border-right: 0;
-  }
-
-  .ua-workspace-status__item:nth-child(-n + 2) {
-    border-bottom: 1px solid var(--ua-border-subtle);
+    justify-content: flex-start;
   }
 }
 
 @container (max-width: 540px) {
   .ua-workspace-status {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .ua-workspace-status__item:nth-child(2) {
-    border-right: 0;
-  }
-
-  .ua-workspace-status__item:nth-child(-n + 2) {
-    border-bottom: 1px solid var(--ua-border-subtle);
+    justify-content: flex-start;
   }
 }

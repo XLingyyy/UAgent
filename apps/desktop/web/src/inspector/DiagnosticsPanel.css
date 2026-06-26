@@ -33,8 +33,8 @@
   flex-direction: column;
   gap: var(--ua-space-1);
   padding: var(--ua-space-2) var(--ua-space-3);
-  background: var(--ua-bg);
-  border: 1px solid var(--ua-border);
+  background: var(--ua-bg-app);
+  border: 1px solid var(--ua-border-soft);
   border-radius: var(--ua-radius-sm);
   min-width: 0;
 }
@@ -71,13 +71,13 @@
 }
 
 .ua-diagnostics-item__state--accent {
-  color: var(--ua-accent);
-  background: var(--ua-accent-subtle);
+  color: var(--ua-text-muted);
+  background: var(--ua-bg-elevated);
 }
 
 .ua-diagnostics-item__state--success {
-  color: var(--ua-success);
-  background: var(--ua-success-subtle);
+  color: var(--ua-text-muted);
+  background: var(--ua-bg-elevated);
 }
 
 .ua-diagnostics-item__description {

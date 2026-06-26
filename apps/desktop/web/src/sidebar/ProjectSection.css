@@ -8,7 +8,7 @@
 
 .ua-project-section--workspace {
   flex-shrink: 0;
-  border-bottom: 1px solid var(--ua-border-subtle);
+  border-bottom: 1px solid var(--ua-border-soft);
 }
 
 .ua-project-section--projects {
@@ -79,8 +79,8 @@
 }
 
 .ua-project-option--active {
-  background: var(--ua-bg-active);
-  color: var(--ua-text);
+  background: var(--ua-accent-soft);
+  color: var(--ua-accent);
 }
 
 .ua-project-option__name {
@@ -115,10 +115,10 @@
 .ua-project-card {
   display: flex;
   flex-direction: column;
-  gap: var(--ua-space-2);
+  gap: var(--ua-space-1);
   padding: var(--ua-space-2);
-  background: var(--ua-bg-panel);
-  border: 1px solid var(--ua-border-subtle);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: var(--ua-radius-sm);
 }
 
@@ -148,6 +148,9 @@
 
 .ua-project-card__status {
   color: var(--ua-warning);
+  background: var(--ua-warning-soft);
+  border-radius: var(--ua-radius-xs);
+  padding: 1px var(--ua-space-1);
 }
 
 .ua-project-card__path {
@@ -172,7 +175,7 @@
   font-size: var(--ua-font-size-xs);
   font-weight: var(--ua-font-weight-medium);
   color: var(--ua-text-muted);
-  background: var(--ua-bg-elevated);
+  background: var(--ua-bg-surface);
   border: 1px solid var(--ua-border-subtle);
   transition:
     background var(--ua-dur-fast) var(--ua-ease-standard),
@@ -194,7 +197,7 @@
 .ua-project-card--empty {
   align-items: center;
   justify-content: center;
-  min-height: 72px;
+  min-height: 56px;
   gap: var(--ua-space-1);
 }
 

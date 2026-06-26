@@ -56,6 +56,7 @@ export function ModelSelector({
   const modelLabel = currentModel?.label ?? "Model not configured";
   const reasoningLabel = currentReasoning?.label ?? "Medium";
   const triggerAriaLabel = `Model selector: ${modelLabel}, reasoning ${reasoningLabel.toLowerCase()}`;
+  const isModelNotConfigured = modelId === "not-configured";
 
   const close = useCallback(() => {
     setIsOpen(false);
@@ -126,7 +127,9 @@ export function ModelSelector({
     <div className="ua-model-selector">
       <button
         ref={triggerRef}
-        className="ua-model-selector__trigger"
+        className={`ua-model-selector__trigger${
+          isModelNotConfigured ? " ua-model-selector__trigger--warning" : ""
+        }`}
         type="button"
         aria-label={triggerAriaLabel}
         aria-expanded={isOpen}

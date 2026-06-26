@@ -4,8 +4,9 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  background: var(--ua-bg-panel);
-  border-left: 1px solid var(--ua-border);
+  background: var(--ua-bg-surface);
+  border-left: 1px solid var(--ua-border-soft);
+  box-shadow: var(--ua-shadow-drawer);
   z-index: var(--ua-z-inspector);
   overflow: hidden;
 }
@@ -13,6 +14,7 @@
 .ua-inspector--closed {
   pointer-events: none;
   border-left-color: transparent;
+  box-shadow: none;
 }
 
 .ua-inspector__header {
@@ -22,7 +24,7 @@
   height: var(--ua-titlebar-height);
   min-height: var(--ua-titlebar-height);
   padding: 0 var(--ua-space-3);
-  border-bottom: 1px solid var(--ua-border);
+  border-bottom: 1px solid var(--ua-border-soft);
 }
 
 .ua-inspector__title {
@@ -35,11 +37,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
   height: 24px;
+  padding: 0 var(--ua-space-2);
   border-radius: var(--ua-radius-xs);
   color: var(--ua-text-muted);
-  font-size: var(--ua-font-size-sm);
+  font-size: var(--ua-font-size-xs);
   transition:
     background-color var(--ua-dur-fast) var(--ua-ease-standard),
     color var(--ua-dur-fast) var(--ua-ease-standard);
@@ -70,8 +72,8 @@
   justify-content: space-between;
   gap: var(--ua-space-2);
   padding: var(--ua-space-2) var(--ua-space-3);
-  border-bottom: 1px solid var(--ua-border);
-  background: var(--ua-bg);
+  border-bottom: 1px solid var(--ua-border-soft);
+  background: var(--ua-bg-app);
   min-width: 0;
   flex-shrink: 0;
 }
@@ -96,7 +98,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--ua-space-1);
-  border-bottom: 1px solid var(--ua-border);
+  border-bottom: 1px solid var(--ua-border-soft);
   padding: var(--ua-space-2);
   max-height: 132px;
   overflow-y: auto;
@@ -125,9 +127,9 @@
 }
 
 .ua-inspector__tab.ua-inspector__tab--active {
-  background: var(--ua-accent-subtle);
-  color: var(--ua-text);
-  border-color: var(--ua-accent);
+  background: var(--ua-accent-soft);
+  color: var(--ua-accent);
+  border-color: transparent;
 }
 
 .ua-inspector__content {

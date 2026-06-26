@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { SettingsShell } from "./SettingsShell";
 import { UIProvider } from "../app/providers";
+import { useLayoutStore } from "../stores/ui-store";
 
 function renderSettingsShell(initialPage?: string) {
   return render(
@@ -14,6 +15,27 @@ function renderSettingsShell(initialPage?: string) {
       }}
     >
       <SettingsShell />
+    </UIProvider>,
+  );
+}
+
+function ThemeStateProbe() {
+  const theme = useLayoutStore((state) => state.theme);
+  return <span data-testid="theme-state">{theme}</span>;
+}
+
+function renderSettingsShellWithThemeProbe(initialPage?: string) {
+  return render(
+    <UIProvider
+      initialState={{
+        settings: {
+          open: true,
+          activePageId: (initialPage as never) ?? "general",
+        },
+      }}
+    >
+      <SettingsShell />
+      <ThemeStateProbe />
     </UIProvider>,
   );
 }
@@ -102,6 +124,18 @@ describe("SettingsShell", () => {
     expect(screen.getByText("Display")).toBeTruthy();
   });
 
+  it("applies Light and Dark from the Appearance page", () => {
+    renderSettingsShellWithThemeProbe();
+    const sidebar = screen.getByLabelText("Settings navigation");
+    fireEvent.click(within(sidebar).getByText("Appearance"));
+
+    expect(screen.getByTestId("theme-state").textContent).toBe("dark");
+    fireEvent.click(screen.getByRole("radio", { name: "Light" }));
+    expect(screen.getByTestId("theme-state").textContent).toBe("light");
+    fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
+    expect(screen.getByTestId("theme-state").textContent).toBe("dark");
+  });
+
   it("switches to Config page on click and shows sections", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
@@ -161,6 +195,12 @@ describe("SettingsShell", () => {
       screen.getByText("This is a UI-only mock. No configuration is saved or applied."),
     ).toBeTruthy();
     const sidebar = screen.getByLabelText("Settings navigation");
+    fireEvent.click(within(sidebar).getByText("Appearance"));
+    expect(
+      screen.getByText(
+        "Theme is local to this preview. Provider and runtime settings remain mock-only.",
+      ),
+    ).toBeTruthy();
     fireEvent.click(within(sidebar).getByText("Profile"));
     expect(
       screen.getByText("This local profile is a UI-only mock. It is not synced or uploaded."),

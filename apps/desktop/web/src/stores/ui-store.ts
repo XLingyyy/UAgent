@@ -126,6 +126,10 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
               sidebar: { ...previousState.sidebar, activeNav: nav },
             },
       ),
+    setTheme: (theme) =>
+      layoutStore.setState((previousState) =>
+        previousState.theme === theme ? previousState : { ...previousState, theme },
+      ),
   };
 
   const settingsActions: SettingsStoreActions = {

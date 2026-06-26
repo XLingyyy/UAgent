@@ -81,7 +81,7 @@ export const reviewSummary: ReviewSummary = {
     { id: "ev-workspace-ui", label: "Workspace skeleton render", status: "checked" },
     { id: "ev-sidebar-nav", label: "Sidebar nav & project tree", status: "checked" },
     { id: "ev-mock-only", label: "No real UE/MCP/LLM calls", status: "checked" },
-    { id: "ev-dark-theme", label: "Dark theme tokens applied", status: "checked" },
+    { id: "ev-theme", label: "Theme tokens applied", status: "checked" },
   ],
 };
 
@@ -132,7 +132,7 @@ export const diagnosticSummary: DiagnosticSummary = {
       label: "Runtime",
       state: "Mock",
       description: "Agent state machine placeholder; no execution loop or task scheduling yet.",
-      tone: "accent",
+      tone: "default",
     },
     {
       id: "diag-ue",
@@ -163,7 +163,7 @@ export const diagnosticSummary: DiagnosticSummary = {
       state: "Not accessed",
       description:
         "No Tauri FS API or project file reads are performed. Tree data is in-memory mock.",
-      tone: "success",
+      tone: "default",
     },
   ],
 };

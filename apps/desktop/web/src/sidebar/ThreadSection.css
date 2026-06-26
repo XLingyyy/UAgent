@@ -47,11 +47,11 @@
 }
 
 .ua-thread-item--active {
-  background: var(--ua-bg-active);
+  background: var(--ua-accent-soft);
 }
 
 .ua-thread-item--active .ua-thread-item__title {
-  color: var(--ua-text);
+  color: var(--ua-accent);
 }
 
 .ua-thread-item__main {
@@ -85,19 +85,28 @@
   padding: 2px var(--ua-space-1);
   border-radius: var(--ua-radius-xs);
   line-height: 1;
+  background: var(--ua-bg-elevated);
+  color: var(--ua-text-tertiary);
+  border: 1px solid var(--ua-border-soft);
 }
 
 .ua-thread-badge--plan {
-  background: var(--ua-accent-subtle);
-  color: var(--ua-accent);
+  background: var(--ua-bg-elevated);
+  color: var(--ua-text-tertiary);
 }
 
 .ua-thread-badge--build {
-  background: var(--ua-warning-subtle);
-  color: var(--ua-warning-hover);
+  background: var(--ua-bg-elevated);
+  color: var(--ua-text-tertiary);
 }
 
 .ua-thread-badge--review {
-  background: var(--ua-success-subtle);
-  color: var(--ua-success);
+  background: var(--ua-bg-elevated);
+  color: var(--ua-text-tertiary);
+}
+
+.ua-thread-item--active .ua-thread-badge {
+  background: var(--ua-bg-surface);
+  color: var(--ua-accent);
+  border-color: transparent;
 }

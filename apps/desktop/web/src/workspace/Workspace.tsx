@@ -15,6 +15,7 @@ export function Workspace() {
         {workspaceMode === "welcome" ? (
           <div className="ua-workspace__welcome-stack">
             <WelcomeHero />
+            <ComposerDock mode="welcome" />
             <WorkspaceStatusStrip />
           </div>
         ) : (
@@ -24,7 +25,7 @@ export function Workspace() {
           </>
         )}
       </div>
-      <ComposerDock />
+      {workspaceMode === "thread" && <ComposerDock mode="thread" />}
     </main>
   );
 }

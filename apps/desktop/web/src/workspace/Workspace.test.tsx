@@ -39,12 +39,15 @@ function renderSidebarAndWorkspace() {
 }
 
 describe("Workspace", () => {
-  it("renders a compact WelcomeHero for the current Unreal project context", () => {
+  it("renders a welcome prompt for the current Unreal project context", () => {
     renderWorkspace();
 
-    expect(screen.getByRole("heading", { name: "Lyra_Prototype workspace" })).toBeTruthy();
-    expect(screen.getByText("Plan / Build / Review mock workflows")).toBeTruthy();
-    expect(screen.getByText("Local UI preview")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "What should UAgent do in Lyra_Prototype?" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Plan, inspect, or modify your Unreal project with local context."),
+    ).toBeTruthy();
     expect(screen.getByText("UE not connected")).toBeTruthy();
   });
 
@@ -67,9 +70,11 @@ describe("Workspace", () => {
 
     const workspace = screen.getByLabelText("Workspace");
     expect(workspace.getAttribute("data-workspace-mode")).toBe("welcome");
-    expect(screen.getByRole("heading", { name: "Lyra_Prototype workspace" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "What should UAgent do in Lyra_Prototype?" }),
+    ).toBeTruthy();
     expect(screen.queryByLabelText("Conversation activity")).toBeNull();
-    expect(screen.queryByText("Activity timeline")).toBeNull();
+    expect(screen.queryByText("Conversation")).toBeNull();
   });
 
   it("renders mock conversation and activity messages when an active thread is seeded", () => {
@@ -96,13 +101,14 @@ describe("Workspace", () => {
 
     expect(screen.getByLabelText("Workspace").getAttribute("data-workspace-mode")).toBe("thread");
     expect(screen.getByLabelText("Conversation activity")).toBeTruthy();
-    expect(screen.getByText("Activity timeline")).toBeTruthy();
+    expect(screen.getByText("Conversation")).toBeTruthy();
   });
 
   it("renders the standalone ComposerDock input and status rows", () => {
     renderWorkspace();
 
     const dock = screen.getByLabelText("Composer dock");
+    expect(dock.getAttribute("data-composer-mode")).toBe("welcome");
     expect(within(dock).getByLabelText("Composer input")).toBeTruthy();
     expect(within(dock).getByLabelText("Permission mode: Request approval")).toBeTruthy();
     expect(

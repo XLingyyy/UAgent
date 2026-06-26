@@ -28,6 +28,10 @@
   cursor: pointer;
   user-select: none;
   line-height: var(--ua-line-height-tight);
+  transition:
+    background var(--ua-dur-fast) var(--ua-ease-standard),
+    border-color var(--ua-dur-fast) var(--ua-ease-standard),
+    color var(--ua-dur-fast) var(--ua-ease-standard);
 }
 
 .ua-settings-page__option:hover {
@@ -35,15 +39,26 @@
   border-color: var(--ua-border-strong);
 }
 
+.ua-settings-page__option:focus-visible {
+  outline: none;
+  box-shadow: var(--ua-focus-ring);
+}
+
 .ua-settings-page__option--selected {
-  color: var(--ua-accent-fg);
-  background: var(--ua-accent);
+  color: var(--ua-accent);
+  background: var(--ua-accent-soft);
   border-color: var(--ua-accent);
 }
 
 .ua-settings-page__option--selected:hover {
-  color: var(--ua-accent-fg);
-  background: var(--ua-accent-hover);
+  color: var(--ua-accent-hover);
+  background: var(--ua-accent-soft);
+}
+
+.ua-settings-page__option--disabled,
+.ua-settings-page__option:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .ua-settings-page__option-radio {
@@ -56,7 +71,7 @@
 
 .ua-settings-page__option--selected .ua-settings-page__option-radio {
   background: currentColor;
-  box-shadow: inset 0 0 0 2px var(--ua-accent);
+  box-shadow: inset 0 0 0 2px var(--ua-bg-surface);
 }
 
 .ua-settings-page__static-value {
@@ -196,6 +211,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
+  background: var(--ua-accent);
 }
 
 .ua-settings-page__accent-label {

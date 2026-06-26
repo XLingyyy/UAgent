@@ -30,8 +30,8 @@
 }
 
 .ua-primary-nav__item--active {
-  background: var(--ua-bg-active);
-  color: var(--ua-text);
+  background: var(--ua-accent-soft);
+  color: var(--ua-accent);
 }
 
 .ua-primary-nav__icon {

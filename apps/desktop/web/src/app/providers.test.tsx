@@ -10,6 +10,7 @@ function Probe() {
     setActiveProject,
     setActiveNav,
     setActiveThread,
+    setTheme,
     openSettings,
     closeSettings,
     setActiveSettingsPage,
@@ -22,6 +23,7 @@ function Probe() {
   return (
     <div>
       <span data-testid="inspector-open">{String(state.layout.inspector.open)}</span>
+      <span data-testid="theme">{state.layout.theme}</span>
       <span data-testid="active-nav">{state.layout.sidebar.activeNav}</span>
       <span data-testid="active-project">{state.project.activeProjectId ?? "null"}</span>
       <span data-testid="active-thread">{state.thread.activeThreadId ?? "null"}</span>
@@ -33,6 +35,9 @@ function Probe() {
       <span data-testid="composer-reasoning">{state.composer.reasoningEffort}</span>
       <button type="button" onClick={toggleInspector}>
         toggle
+      </button>
+      <button type="button" onClick={() => setTheme("light")} data-testid="set-light-theme">
+        set light
       </button>
       <button type="button" onClick={() => setActiveNav("projects")} data-testid="set-projects">
         set projects
@@ -106,6 +111,25 @@ describe("UIProvider", () => {
       </UIProvider>,
     );
     expect(screen.getByTestId("inspector-open").textContent).toBe("false");
+  });
+
+  it("starts with dark theme by default", () => {
+    render(
+      <UIProvider>
+        <Probe />
+      </UIProvider>,
+    );
+    expect(screen.getByTestId("theme").textContent).toBe("dark");
+  });
+
+  it("updates theme through setTheme", () => {
+    render(
+      <UIProvider>
+        <Probe />
+      </UIProvider>,
+    );
+    fireEvent.click(screen.getByTestId("set-light-theme"));
+    expect(screen.getByTestId("theme").textContent).toBe("light");
   });
 
   it("toggles the inspector open then closed", () => {

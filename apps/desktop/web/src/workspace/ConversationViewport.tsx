@@ -11,9 +11,9 @@ export function ConversationViewport({ messages = workspaceMessages }: Conversat
     <section className="ua-conversation-viewport" aria-label="Conversation activity">
       <div className="ua-conversation-viewport__header">
         <div>
-          <h2 className="ua-conversation-viewport__title">Activity timeline</h2>
+          <h2 className="ua-conversation-viewport__title">Conversation</h2>
           <p className="ua-conversation-viewport__subtitle">
-            Static mock lane for requests, plans, tool events, and review summaries.
+            Requests, plans, tool notes, and review summaries for this mock thread.
           </p>
         </div>
         <span className="ua-conversation-viewport__badge">Mock only</span>

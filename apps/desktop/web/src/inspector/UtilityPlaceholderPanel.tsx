@@ -17,7 +17,13 @@ export function UtilityPlaceholderPanel({ panel }: UtilityPlaceholderPanelProps)
           <span className="ua-utility-placeholder__eyebrow">{panel.badge}</span>
           <h3 className="ua-utility-placeholder__title">{panel.title}</h3>
         </div>
-        <span className="ua-utility-placeholder__state">{panel.state}</span>
+        <span
+          className={`ua-utility-placeholder__state${
+            panel.state === "Not connected" ? " ua-utility-placeholder__state--warning" : ""
+          }`}
+        >
+          {panel.state}
+        </span>
       </div>
 
       <ul className="ua-utility-placeholder__list">

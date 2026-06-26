@@ -160,7 +160,7 @@ describe("InspectorPane", () => {
       expect(screen.getByText("Workspace skeleton render")).toBeTruthy();
       expect(screen.getByText("Sidebar nav & project tree")).toBeTruthy();
       expect(screen.getByText("No real UE/MCP/LLM calls")).toBeTruthy();
-      expect(screen.getByText("Dark theme tokens applied")).toBeTruthy();
+      expect(screen.getByText("Theme tokens applied")).toBeTruthy();
     });
   });
 

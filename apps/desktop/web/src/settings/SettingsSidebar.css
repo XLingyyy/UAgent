@@ -37,6 +37,13 @@
   background: var(--ua-bg-hover);
 }
 
+.ua-settings-sidebar__back:focus-visible,
+.ua-settings-sidebar__search-input:focus-visible,
+.ua-settings-sidebar__item:focus-visible {
+  outline: none;
+  box-shadow: var(--ua-focus-ring);
+}
+
 .ua-settings-sidebar__back-icon {
   font-size: var(--ua-font-size-md);
   line-height: 1;
@@ -113,8 +120,8 @@
 }
 
 .ua-settings-sidebar__item--active {
-  background: var(--ua-bg-active);
-  color: var(--ua-text);
+  background: var(--ua-accent-soft);
+  color: var(--ua-accent);
 }
 
 .ua-settings-sidebar__item--disabled {

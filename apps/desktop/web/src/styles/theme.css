@@ -1,5 +1,5 @@
 /**
- * UAgent Theme — Dark baseline
+ * UAgent Theme
  *
  * Semantic tokens that map raw design values to UI roles.
  * Components should only reference these semantic tokens.
@@ -7,44 +7,106 @@
 
 :root,
 [data-theme="dark"] {
-  --ua-bg: var(--ua-color-gray-950);
-  --ua-bg-sidebar: var(--ua-color-gray-900);
-  --ua-bg-panel: var(--ua-color-gray-850);
-  --ua-bg-elevated: var(--ua-color-gray-800);
-  --ua-bg-hover: rgba(255, 255, 255, 0.04);
-  --ua-bg-active: rgba(255, 255, 255, 0.07);
-  --ua-bg-input: var(--ua-color-gray-800);
+  color-scheme: dark;
 
-  --ua-border: var(--ua-color-gray-700);
-  --ua-border-subtle: var(--ua-color-gray-800);
-  --ua-border-strong: var(--ua-color-gray-600);
+  --ua-bg-app: var(--ua-color-dark-app);
+  --ua-bg-sidebar: var(--ua-color-dark-sidebar);
+  --ua-bg-surface: var(--ua-color-dark-surface);
+  --ua-bg-elevated: var(--ua-color-dark-elevated);
+  --ua-bg-input: rgba(16, 20, 26, 0.92);
+  --ua-bg-hover: rgba(245, 247, 250, 0.045);
+  --ua-bg-active: rgba(143, 180, 255, 0.13);
 
-  --ua-text: var(--ua-color-gray-100);
-  --ua-text-muted: var(--ua-color-gray-400);
-  --ua-text-subtle: var(--ua-color-gray-500);
-  --ua-text-inverse: var(--ua-color-gray-950);
+  --ua-text-primary: var(--ua-color-dark-text-primary);
+  --ua-text-secondary: var(--ua-color-dark-text-secondary);
+  --ua-text-tertiary: var(--ua-color-dark-text-tertiary);
+  --ua-text-inverse: var(--ua-color-dark-app);
 
-  --ua-accent: var(--ua-color-blue-500);
-  --ua-accent-hover: var(--ua-color-blue-400);
-  --ua-accent-active: var(--ua-color-blue-600);
+  --ua-border-default: var(--ua-color-dark-border);
+  --ua-border-soft: rgba(170, 179, 194, 0.1);
+  --ua-border-strong: rgba(170, 179, 194, 0.24);
+
+  --ua-accent: var(--ua-color-dark-accent);
+  --ua-accent-hover: var(--ua-color-dark-accent-hover);
+  --ua-accent-active: #759cf2;
+  --ua-accent-fg: #0b0d12;
+  --ua-accent-soft: rgba(143, 180, 255, 0.14);
+
+  --ua-warning: var(--ua-color-dark-warning);
+  --ua-warning-hover: #ffc15b;
+  --ua-warning-soft: rgba(245, 165, 36, 0.13);
+
+  --ua-danger: var(--ua-color-dark-danger);
+  --ua-danger-hover: #f16970;
+  --ua-danger-soft: rgba(229, 72, 77, 0.13);
+
+  --ua-success: #72c98a;
+  --ua-success-soft: rgba(114, 201, 138, 0.12);
+
+  --ua-focus-ring: 0 0 0 2px var(--ua-bg-app), 0 0 0 4px rgba(143, 180, 255, 0.72);
+  --ua-shadow-dropdown: 0 18px 48px rgba(0, 0, 0, 0.42);
+  --ua-shadow-drawer: -10px 0 34px rgba(0, 0, 0, 0.34);
+  --ua-shadow-command: 0 22px 70px rgba(0, 0, 0, 0.32);
+
+  --ua-scrollbar-thumb: rgba(170, 179, 194, 0.28);
+  --ua-scrollbar-track: transparent;
+
+  /* Legacy aliases retained for existing components. */
+  --ua-bg: var(--ua-bg-app);
+  --ua-bg-panel: var(--ua-bg-surface);
+  --ua-border: var(--ua-border-default);
+  --ua-border-subtle: var(--ua-border-soft);
+  --ua-text: var(--ua-text-primary);
+  --ua-text-muted: var(--ua-text-secondary);
+  --ua-text-subtle: var(--ua-text-tertiary);
+  --ua-accent-subtle: var(--ua-accent-soft);
+  --ua-warning-subtle: var(--ua-warning-soft);
+  --ua-danger-subtle: var(--ua-danger-soft);
+  --ua-success-subtle: var(--ua-success-soft);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --ua-bg-app: var(--ua-color-light-app);
+  --ua-bg-sidebar: var(--ua-color-light-sidebar);
+  --ua-bg-surface: var(--ua-color-light-surface);
+  --ua-bg-elevated: #f9fbff;
+  --ua-bg-input: rgba(255, 255, 255, 0.96);
+  --ua-bg-hover: rgba(17, 24, 39, 0.045);
+  --ua-bg-active: rgba(110, 155, 255, 0.13);
+
+  --ua-text-primary: var(--ua-color-light-text-primary);
+  --ua-text-secondary: var(--ua-color-light-text-secondary);
+  --ua-text-tertiary: var(--ua-color-light-text-tertiary);
+  --ua-text-inverse: var(--ua-color-light-surface);
+
+  --ua-border-default: var(--ua-color-light-border);
+  --ua-border-soft: rgba(138, 148, 166, 0.2);
+  --ua-border-strong: rgba(75, 85, 99, 0.32);
+
+  --ua-accent: var(--ua-color-light-accent);
+  --ua-accent-hover: var(--ua-color-light-accent-hover);
+  --ua-accent-active: #477be8;
   --ua-accent-fg: #ffffff;
-  --ua-accent-subtle: rgba(61, 110, 240, 0.12);
+  --ua-accent-soft: rgba(110, 155, 255, 0.16);
 
-  --ua-danger: var(--ua-color-red-500);
-  --ua-danger-hover: var(--ua-color-red-400);
-  --ua-danger-subtle: rgba(229, 72, 77, 0.12);
+  --ua-warning: var(--ua-color-light-warning);
+  --ua-warning-hover: #c97500;
+  --ua-warning-soft: rgba(229, 138, 0, 0.12);
 
-  --ua-warning: var(--ua-color-amber-500);
-  --ua-warning-hover: var(--ua-color-amber-400);
-  --ua-warning-subtle: rgba(217, 146, 58, 0.12);
+  --ua-danger: var(--ua-color-light-danger);
+  --ua-danger-hover: #b92f37;
+  --ua-danger-soft: rgba(216, 58, 66, 0.11);
 
-  --ua-success: var(--ua-color-green-400);
-  --ua-success-subtle: rgba(63, 185, 80, 0.12);
+  --ua-success: #2f8a5d;
+  --ua-success-soft: rgba(47, 138, 93, 0.1);
 
-  /* Focus ring */
-  --ua-focus-ring: 0 0 0 2px var(--ua-color-gray-950), 0 0 0 4px var(--ua-accent);
+  --ua-focus-ring: 0 0 0 2px var(--ua-bg-app), 0 0 0 4px rgba(110, 155, 255, 0.58);
+  --ua-shadow-dropdown: 0 18px 44px rgba(33, 45, 65, 0.16);
+  --ua-shadow-drawer: -10px 0 32px rgba(33, 45, 65, 0.12);
+  --ua-shadow-command: 0 24px 70px rgba(33, 45, 65, 0.15);
 
-  /* Scrollbar */
-  --ua-scrollbar-thumb: var(--ua-color-gray-600);
+  --ua-scrollbar-thumb: rgba(75, 85, 99, 0.28);
   --ua-scrollbar-track: transparent;
 }

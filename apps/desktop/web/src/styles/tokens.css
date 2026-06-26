@@ -33,6 +33,31 @@
 
   --ua-color-green-400: #3fb950;
 
+  --ua-color-dark-app: #0b0d12;
+  --ua-color-dark-sidebar: #10141a;
+  --ua-color-dark-surface: #151a22;
+  --ua-color-dark-elevated: #171d26;
+  --ua-color-dark-text-primary: #f5f7fa;
+  --ua-color-dark-text-secondary: #aab3c2;
+  --ua-color-dark-text-tertiary: #7d8796;
+  --ua-color-dark-border: #252d39;
+  --ua-color-dark-accent: #8fb4ff;
+  --ua-color-dark-accent-hover: #a5c3ff;
+  --ua-color-dark-warning: #f5a524;
+  --ua-color-dark-danger: #e5484d;
+
+  --ua-color-light-app: #f7f9fc;
+  --ua-color-light-sidebar: #f2f5f9;
+  --ua-color-light-surface: #ffffff;
+  --ua-color-light-text-primary: #111827;
+  --ua-color-light-text-secondary: #4b5563;
+  --ua-color-light-text-tertiary: #8a94a6;
+  --ua-color-light-border: #d7dfea;
+  --ua-color-light-accent: #6e9bff;
+  --ua-color-light-accent-hover: #5b8eff;
+  --ua-color-light-warning: #e58a00;
+  --ua-color-light-danger: #d83a42;
+
   /* ---- Radius scale ---- */
   --ua-radius-xs: 3px;
   --ua-radius-sm: 5px;
