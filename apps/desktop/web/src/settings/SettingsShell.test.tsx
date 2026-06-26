@@ -45,25 +45,30 @@ describe("SettingsShell", () => {
     expect(search.disabled).toBe(true);
   });
 
-  it("renders six MVP0 enabled settings entries", () => {
+  it("renders the six first-stage settings entries only", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
-    expect(within(sidebar).getByText("General")).toBeTruthy();
-    expect(within(sidebar).getByText("Appearance")).toBeTruthy();
-    expect(within(sidebar).getByText("Config")).toBeTruthy();
-    expect(within(sidebar).getByText("Personalization")).toBeTruthy();
-    expect(within(sidebar).getByText("Archived chats")).toBeTruthy();
-    expect(within(sidebar).getByText("Provider")).toBeTruthy();
-  });
+    const navItems = within(sidebar)
+      .getAllByRole("button")
+      .filter((button) => {
+        const text = button.textContent ?? "";
+        return !text.includes("Back to app");
+      });
 
-  it("renders disabled future entries", () => {
-    renderSettingsShell();
-    const sidebar = screen.getByLabelText("Settings navigation");
-    expect(within(sidebar).getByText("MCP servers")).toBeTruthy();
-    expect(within(sidebar).getByText("Browser")).toBeTruthy();
-    expect(within(sidebar).getByText("Computer control")).toBeTruthy();
-    expect(within(sidebar).getByText("Git")).toBeTruthy();
-    expect(within(sidebar).getByText("Worktrees")).toBeTruthy();
+    expect(navItems.map((button) => button.textContent)).toEqual([
+      "ProfileMVP0",
+      "GeneralMVP0",
+      "AppearanceMVP0",
+      "PersonalizationMVP0",
+      "ConfigMVP0",
+      "ProviderMVP0",
+    ]);
+    expect(within(sidebar).queryByText("Archived chats")).toBeNull();
+    expect(within(sidebar).queryByText("MCP servers")).toBeNull();
+    expect(within(sidebar).queryByText("Browser")).toBeNull();
+    expect(within(sidebar).queryByText("Computer control")).toBeNull();
+    expect(within(sidebar).queryByText("Git")).toBeNull();
+    expect(within(sidebar).queryByText("Worktrees")).toBeNull();
   });
 
   it("defaults active page to General", () => {
@@ -118,15 +123,17 @@ describe("SettingsShell", () => {
     expect(screen.getByText("Memory")).toBeTruthy();
   });
 
-  it("switches to Archived chats page on click and shows sections", () => {
+  it("switches to Profile page on click and shows local-only account sections", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
-    fireEvent.click(within(sidebar).getByText("Archived chats"));
+    fireEvent.click(within(sidebar).getByText("Profile"));
     const content = document.querySelector(".ua-settings-content");
-    expect(content?.getAttribute("data-settings-page")).toBe("archived-chats");
-    expect(screen.getByText("Search and filters")).toBeTruthy();
-    expect(screen.getByText("Archived conversations")).toBeTruthy();
-    expect(screen.getByText("Actions")).toBeTruthy();
+    expect(content?.getAttribute("data-settings-page")).toBe("profile");
+    expect(screen.getByText("Local profile summary")).toBeTruthy();
+    expect(screen.getByText("Account status")).toBeTruthy();
+    expect(screen.getByText("Future account sync")).toBeTruthy();
+    expect(screen.getAllByText("Local only").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Not signed in").length).toBeGreaterThan(0);
   });
 
   it("switches to Provider page on click and shows sections", () => {
@@ -135,32 +142,10 @@ describe("SettingsShell", () => {
     fireEvent.click(within(sidebar).getByText("Provider"));
     const content = document.querySelector(".ua-settings-content");
     expect(content?.getAttribute("data-settings-page")).toBe("provider");
-    expect(screen.getByText("Connected providers")).toBeTruthy();
-    expect(screen.getByText("Provider detail")).toBeTruthy();
-    expect(screen.getByText("Provider actions")).toBeTruthy();
-  });
-
-  it("disables MCP servers entry and does not switch page", () => {
-    renderSettingsShell();
-    const sidebar = screen.getByLabelText("Settings navigation");
-    const mcpBtn = within(sidebar).getByText("MCP servers").closest("button") as HTMLButtonElement;
-    expect(mcpBtn.getAttribute("aria-disabled")).toBe("true");
-    expect(mcpBtn.getAttribute("title")).toBe(
-      "Coming in MVP1: Manage MCP server configurations and connections.",
-    );
-    fireEvent.click(mcpBtn);
-    const generalBtn = within(sidebar).getByText("General").closest("button");
-    expect(generalBtn?.classList.contains("ua-settings-sidebar__item--active")).toBe(true);
-  });
-
-  it("shows disabled reason for disabled entries", () => {
-    renderSettingsShell();
-    const sidebar = screen.getByLabelText("Settings navigation");
-    expect(within(sidebar).getByText("Coming in MVP1")).toBeTruthy();
-    const mvp3Reasons = within(sidebar).getAllByText("Coming in MVP3");
-    expect(mvp3Reasons.length).toBe(2);
-    const mvp2Reasons = within(sidebar).getAllByText("Coming in MVP2");
-    expect(mvp2Reasons.length).toBe(2);
+    expect(screen.getByText("Available providers")).toBeTruthy();
+    expect(screen.getByText("Selected provider detail")).toBeTruthy();
+    expect(screen.getByText("Model defaults")).toBeTruthy();
+    expect(screen.getByText("Local-only actions")).toBeTruthy();
   });
 
   it("shows phase badges on enabled entries", () => {
@@ -176,8 +161,10 @@ describe("SettingsShell", () => {
       screen.getByText("This is a UI-only mock. No configuration is saved or applied."),
     ).toBeTruthy();
     const sidebar = screen.getByLabelText("Settings navigation");
-    fireEvent.click(within(sidebar).getByText("Archived chats"));
-    expect(screen.getByText("This is a UI-only mock. No real chat data is accessed.")).toBeTruthy();
+    fireEvent.click(within(sidebar).getByText("Profile"));
+    expect(
+      screen.getByText("This local profile is a UI-only mock. It is not synced or uploaded."),
+    ).toBeTruthy();
     fireEvent.click(within(sidebar).getByText("Provider"));
     expect(
       screen.getByText(/Provider values live in memory only. No provider connection is tested./, {
@@ -213,17 +200,6 @@ describe("SettingsShell", () => {
     expect(resetBtn.getAttribute("aria-disabled")).toBe("true");
   });
 
-  it("shows Archived chats delete all as disabled", () => {
-    renderSettingsShell();
-    const sidebar = screen.getByLabelText("Settings navigation");
-    fireEvent.click(within(sidebar).getByText("Archived chats"));
-    const deleteBtns = screen.getAllByText("Delete all archived chats");
-    const deleteBtn = deleteBtns.find((el) => el.tagName === "BUTTON") as HTMLButtonElement;
-    expect(deleteBtn).toBeTruthy();
-    expect(deleteBtn.disabled).toBe(true);
-    expect(deleteBtn.getAttribute("aria-disabled")).toBe("true");
-  });
-
   it("shows Personalization memory rows as disabled with future phase labels", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
@@ -253,21 +229,5 @@ describe("SettingsShell", () => {
     ) as HTMLButtonElement;
     expect(testBtn).toBeTruthy();
     expect(testBtn.disabled).toBe(true);
-  });
-
-  it("shows Archived chats mock entries", () => {
-    renderSettingsShell();
-    const sidebar = screen.getByLabelText("Settings navigation");
-    fireEvent.click(within(sidebar).getByText("Archived chats"));
-    expect(screen.getByText("Fix Material Compilation Errors")).toBeTruthy();
-    expect(screen.getByText("3 archived conversations")).toBeTruthy();
-  });
-
-  it("does not switch to disabled future pages on click", () => {
-    renderSettingsShell();
-    const sidebar = screen.getByLabelText("Settings navigation");
-    fireEvent.click(within(sidebar).getByText("Git"));
-    const content = document.querySelector(".ua-settings-content");
-    expect(content?.getAttribute("data-settings-page")).toBe("general");
   });
 });

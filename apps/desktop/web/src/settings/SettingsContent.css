@@ -24,12 +24,14 @@
   font-size: var(--ua-font-size-base);
   color: var(--ua-text-muted);
   line-height: var(--ua-line-height-relaxed);
+  max-width: 720px;
 }
 
 .ua-settings-content__body {
   flex: 1;
   overflow-y: auto;
   padding: var(--ua-space-8);
+  min-width: 0;
 }
 
 .ua-settings-content__placeholder {
@@ -50,4 +52,14 @@
   background: var(--ua-bg-elevated);
   border-radius: var(--ua-radius-md);
   border: 1px solid var(--ua-border-subtle);
+}
+
+@media (max-width: 860px) {
+  .ua-settings-content__header {
+    padding: var(--ua-space-5) var(--ua-space-5) var(--ua-space-4);
+  }
+
+  .ua-settings-content__body {
+    padding: var(--ua-space-5);
+  }
 }

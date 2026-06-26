@@ -36,11 +36,19 @@ function createDraft(provider: ProviderConfig, defaultProviderId: string | null)
 
 function cloneDraft(draft: ProviderDraft): ProviderConfig {
   return {
-    ...draft,
+    providerId: draft.providerId,
+    displayName: draft.displayName,
+    baseUrl: draft.baseUrl,
+    wireApi: draft.wireApi,
+    authMode: draft.authMode,
+    envKey: draft.envKey,
     models: draft.models.map((model) => ({
       ...model,
       reasoningEfforts: model.reasoningEfforts ? [...model.reasoningEfforts] : undefined,
     })),
+    defaultModel: draft.defaultModel,
+    defaultReasoningEffort: draft.defaultReasoningEffort,
+    enabled: draft.enabled,
   };
 }
 
@@ -163,13 +171,22 @@ export function ProviderSettings() {
 
   return (
     <SettingsPageLayout page={providerPageData}>
+      <div
+        className="ua-settings-page__provider-status-strip"
+        aria-label="Provider page safeguards"
+      >
+        <span className="ua-settings-page__provider-status-pill">Local only</span>
+        <span className="ua-settings-page__provider-status-pill">No network</span>
+        <span className="ua-settings-page__provider-status-pill">No secret storage</span>
+      </div>
+
       <section className="ua-settings-section" aria-labelledby="section-provider-list">
         <div className="ua-settings-section__header">
           <h3 id="section-provider-list" className="ua-settings-section__title">
-            Connected providers
+            Available providers
           </h3>
           <p className="ua-settings-section__description">
-            Providers available for local model selection.
+            Local mock provider entries available for model selection.
           </p>
         </div>
         <div className="ua-settings-section__body">
@@ -215,10 +232,10 @@ export function ProviderSettings() {
       <section className="ua-settings-section" aria-labelledby="section-provider-detail">
         <div className="ua-settings-section__header">
           <h3 id="section-provider-detail" className="ua-settings-section__title">
-            Provider detail
+            Selected provider detail
           </h3>
           <p className="ua-settings-section__description">
-            Edit local-only provider values and choose defaults for new conversations.
+            Edit local-only provider metadata. Environment key stores a variable name only.
           </p>
         </div>
         <div className="ua-settings-section__body">
@@ -311,7 +328,70 @@ export function ProviderSettings() {
                     aria-label="Environment key"
                   />
                 </label>
+              </div>
 
+              <div className="ua-settings-page__checkbox-row">
+                <label className="ua-settings-page__checkbox">
+                  <input
+                    type="checkbox"
+                    checked={draft.enabled}
+                    onChange={(event) =>
+                      updateDraft((current) => ({
+                        ...current,
+                        enabled: event.target.checked,
+                      }))
+                    }
+                    disabled={!isEditing}
+                    aria-label="Provider enabled"
+                  />
+                  <span>Provider enabled</span>
+                </label>
+              </div>
+              <div className="ua-settings-page__provider-help-text">
+                Environment key stores a variable name only.
+              </div>
+            </div>
+          ) : (
+            <div className="ua-settings-page__provider-empty">
+              <span className="ua-settings-page__provider-empty-text">
+                Select a provider or create a new local configuration.
+              </span>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="ua-settings-section" aria-labelledby="section-model-defaults">
+        <div className="ua-settings-section__header">
+          <h3 id="section-model-defaults" className="ua-settings-section__title">
+            Model defaults
+          </h3>
+          <p className="ua-settings-section__description">
+            Choose the default model and reasoning values reflected by the composer.
+          </p>
+        </div>
+        <div className="ua-settings-section__body">
+          {draft ? (
+            <div className="ua-settings-page__provider-defaults">
+              <div className="ua-settings-page__checkbox-row">
+                <label className="ua-settings-page__checkbox">
+                  <input
+                    type="checkbox"
+                    checked={draft.isDefault}
+                    onChange={(event) =>
+                      updateDraft((current) => ({
+                        ...current,
+                        isDefault: event.target.checked,
+                      }))
+                    }
+                    disabled={!isEditing}
+                    aria-label="Use as default provider"
+                  />
+                  <span>Use as default provider</span>
+                </label>
+              </div>
+
+              <div className="ua-settings-page__field-grid">
                 <label className="ua-settings-page__field">
                   <span className="ua-settings-page__field-label">Default model</span>
                   <select
@@ -353,39 +433,6 @@ export function ProviderSettings() {
                       <option value="medium">Unavailable for this model</option>
                     )}
                   </select>
-                </label>
-              </div>
-
-              <div className="ua-settings-page__checkbox-row">
-                <label className="ua-settings-page__checkbox">
-                  <input
-                    type="checkbox"
-                    checked={draft.isDefault}
-                    onChange={(event) =>
-                      updateDraft((current) => ({
-                        ...current,
-                        isDefault: event.target.checked,
-                      }))
-                    }
-                    disabled={!isEditing}
-                    aria-label="Use as default provider"
-                  />
-                  <span>Use as default provider</span>
-                </label>
-                <label className="ua-settings-page__checkbox">
-                  <input
-                    type="checkbox"
-                    checked={draft.enabled}
-                    onChange={(event) =>
-                      updateDraft((current) => ({
-                        ...current,
-                        enabled: event.target.checked,
-                      }))
-                    }
-                    disabled={!isEditing}
-                    aria-label="Provider enabled"
-                  />
-                  <span>Provider enabled</span>
                 </label>
               </div>
 
@@ -436,10 +483,10 @@ export function ProviderSettings() {
       <section className="ua-settings-section" aria-labelledby="section-provider-actions">
         <div className="ua-settings-section__header">
           <h3 id="section-provider-actions" className="ua-settings-section__title">
-            Provider actions
+            Local-only actions
           </h3>
           <p className="ua-settings-section__description">
-            Save mock/local changes without testing a real connection.
+            Save mock changes without testing a real provider connection.
           </p>
         </div>
         <div className="ua-settings-section__body">

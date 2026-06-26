@@ -1,4 +1,3 @@
-import { ComingSoonGate } from "../components/ComingSoonGate";
 import { useSettingsActions } from "../stores/ui-store";
 import "./SidebarFooter.css";
 
@@ -19,19 +18,17 @@ export function SidebarFooter() {
           </span>
           Settings
         </button>
-        <ComingSoonGate phase="MVP2" reason="Account sync and profile controls.">
-          <button
-            type="button"
-            className="ua-sidebar-footer__btn ua-sidebar-footer__btn--disabled"
-            aria-disabled="true"
-            aria-label="Account (coming soon)"
-          >
-            <span className="ua-sidebar-footer__btn-icon" aria-hidden>
-              &#x25CF;
-            </span>
-            Account
-          </button>
-        </ComingSoonGate>
+        <button
+          type="button"
+          className="ua-sidebar-footer__btn"
+          onClick={() => openSettings("profile")}
+          aria-label="Open profile settings"
+        >
+          <span className="ua-sidebar-footer__btn-icon" aria-hidden>
+            &#x25CF;
+          </span>
+          Account
+        </button>
       </div>
       <div className="ua-sidebar-footer__meta">
         <span className="ua-sidebar-footer__version">UAgent MVP0</span>

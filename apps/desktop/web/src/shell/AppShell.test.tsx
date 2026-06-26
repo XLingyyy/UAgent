@@ -198,21 +198,26 @@ describe("AppShell", () => {
       expect(screen.getByLabelText("Back to app")).toBeTruthy();
     });
 
-    it("renders six MVP0 settings entries when open", () => {
+    it("renders the six first-stage settings entries when open", () => {
       renderAppShellWithSettings();
       const nav = screen.getByLabelText("Settings navigation");
       expect(within(nav).getByText("General")).toBeTruthy();
+      expect(within(nav).getByText("Profile")).toBeTruthy();
       expect(within(nav).getByText("Appearance")).toBeTruthy();
       expect(within(nav).getByText("Config")).toBeTruthy();
       expect(within(nav).getByText("Personalization")).toBeTruthy();
-      expect(within(nav).getByText("Archived chats")).toBeTruthy();
       expect(within(nav).getByText("Provider")).toBeTruthy();
     });
 
-    it("renders disabled future entries when open", () => {
+    it("does not render archived or future settings entries when open", () => {
       renderAppShellWithSettings();
-      expect(screen.getByText("MCP servers")).toBeTruthy();
-      expect(screen.getByText("Git")).toBeTruthy();
+      const nav = screen.getByLabelText("Settings navigation");
+      expect(within(nav).queryByText("Archived chats")).toBeNull();
+      expect(within(nav).queryByText("MCP servers")).toBeNull();
+      expect(within(nav).queryByText("Browser")).toBeNull();
+      expect(within(nav).queryByText("Computer control")).toBeNull();
+      expect(within(nav).queryByText("Git")).toBeNull();
+      expect(within(nav).queryByText("Worktrees")).toBeNull();
     });
 
     it("opens SettingsShell from the sidebar settings entry", () => {
@@ -222,6 +227,22 @@ describe("AppShell", () => {
       expect(container.querySelector(".ua-app")?.getAttribute("data-shell-mode")).toBe("settings");
       expect(container.querySelector(".ua-main-layout")).toBeNull();
       expect(container.querySelector(".ua-settings-shell")).toBeTruthy();
+      expect(
+        container.querySelector(".ua-settings-content")?.getAttribute("data-settings-page"),
+      ).toBe("general");
+    });
+
+    it("opens Profile settings from the sidebar account entry", () => {
+      const { container } = renderAppShell();
+      fireEvent.click(screen.getByLabelText("Open profile settings"));
+
+      expect(container.querySelector(".ua-app")?.getAttribute("data-shell-mode")).toBe("settings");
+      expect(container.querySelector(".ua-main-layout")).toBeNull();
+      expect(container.querySelector(".ua-settings-shell")).toBeTruthy();
+      expect(
+        container.querySelector(".ua-settings-content")?.getAttribute("data-settings-page"),
+      ).toBe("profile");
+      expect(screen.getByText("Local profile summary")).toBeTruthy();
     });
 
     it("returns to MainLayout from Back to app and preserves inspector state", () => {

@@ -78,6 +78,8 @@
   display: flex;
   gap: var(--ua-space-3);
   align-items: center;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .ua-settings-page__static-label {
@@ -85,6 +87,53 @@
   color: var(--ua-text-subtle);
   min-width: 90px;
   line-height: var(--ua-line-height-tight);
+}
+
+.ua-settings-page__status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--ua-space-3);
+  padding: var(--ua-space-3);
+}
+
+.ua-settings-page__status-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-1);
+  padding: var(--ua-space-3);
+  background: var(--ua-bg-panel);
+  border: 1px solid var(--ua-border-subtle);
+  border-radius: var(--ua-radius-md);
+  min-width: 0;
+}
+
+.ua-settings-page__status-label {
+  font-size: var(--ua-font-size-xs);
+  color: var(--ua-text-subtle);
+  line-height: var(--ua-line-height-tight);
+}
+
+.ua-settings-page__status-value {
+  font-size: var(--ua-font-size-base);
+  font-weight: var(--ua-font-weight-medium);
+  color: var(--ua-text);
+  line-height: var(--ua-line-height-tight);
+}
+
+.ua-settings-page__profile-sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ua-space-3);
+  padding: var(--ua-space-3);
+}
+
+.ua-settings-page__profile-sync-copy {
+  min-width: 180px;
+  flex: 1;
+  font-size: var(--ua-font-size-sm);
+  color: var(--ua-text-muted);
+  line-height: var(--ua-line-height-normal);
 }
 
 .ua-settings-page__path-display {
@@ -334,6 +383,27 @@
   padding: var(--ua-space-3);
 }
 
+.ua-settings-page__provider-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ua-space-2);
+  margin-bottom: var(--ua-space-6);
+}
+
+.ua-settings-page__provider-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--ua-space-1) var(--ua-space-2);
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-medium);
+  color: var(--ua-text-muted);
+  background: var(--ua-bg-elevated);
+  border: 1px solid var(--ua-border-subtle);
+  border-radius: var(--ua-radius-sm);
+  line-height: var(--ua-line-height-tight);
+  white-space: nowrap;
+}
+
 .ua-settings-page__provider-empty {
   display: flex;
   flex-direction: column;
@@ -405,6 +475,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--ua-space-3);
   width: 100%;
   padding: var(--ua-space-3) var(--ua-space-4);
@@ -430,6 +501,7 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  flex: 1 1 220px;
 }
 
 .ua-settings-page__provider-card-title {
@@ -441,11 +513,13 @@
 .ua-settings-page__provider-card-meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--ua-space-1);
   font-size: var(--ua-font-size-xs);
   color: var(--ua-text-muted);
   min-width: 0;
   line-height: var(--ua-line-height-tight);
+  overflow-wrap: anywhere;
 }
 
 .ua-settings-page__provider-card-sep {
@@ -480,9 +554,16 @@
   padding: var(--ua-space-3);
 }
 
+.ua-settings-page__provider-defaults {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-5);
+  padding: var(--ua-space-3);
+}
+
 .ua-settings-page__field-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--ua-space-3);
 }
 
@@ -509,6 +590,8 @@
 .ua-settings-page__input,
 .ua-settings-page__select {
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: var(--ua-space-2) var(--ua-space-3);
   font-size: var(--ua-font-size-sm);
   color: var(--ua-text);
@@ -541,6 +624,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--ua-space-2);
+  min-width: 0;
 }
 
 .ua-settings-page__provider-model-list,
@@ -559,6 +643,7 @@
   background: var(--ua-bg-elevated);
   border: 1px solid var(--ua-border-subtle);
   border-radius: var(--ua-radius-sm);
+  min-width: 0;
 }
 
 .ua-settings-page__provider-model-title,
@@ -572,4 +657,10 @@
 .ua-settings-page__action-note {
   font-size: var(--ua-font-size-xs);
   color: var(--ua-text-muted);
+}
+
+.ua-settings-page__provider-help-text {
+  font-size: var(--ua-font-size-xs);
+  color: var(--ua-text-muted);
+  line-height: var(--ua-line-height-normal);
 }

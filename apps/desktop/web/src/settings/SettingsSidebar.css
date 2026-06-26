@@ -1,8 +1,9 @@
 .ua-settings-sidebar {
   display: flex;
   flex-direction: column;
-  width: 248px;
-  min-width: 220px;
+  flex: 0 0 232px;
+  width: 232px;
+  min-width: 208px;
   background: var(--ua-bg-sidebar);
   border-right: 1px solid var(--ua-border);
   overflow: hidden;
@@ -94,6 +95,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--ua-space-2);
   width: 100%;
   padding: var(--ua-space-2) var(--ua-space-2);
   border-radius: var(--ua-radius-sm);
@@ -121,6 +123,7 @@
 }
 
 .ua-settings-sidebar__item-text {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

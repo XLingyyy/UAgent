@@ -1,19 +1,19 @@
 import { getSettingsPage } from "./settings-pages";
 import { GeneralSettings } from "./pages/GeneralSettings";
+import { ProfileSettings } from "./pages/ProfileSettings";
 import { AppearanceSettings } from "./pages/AppearanceSettings";
 import { ConfigSettings } from "./pages/ConfigSettings";
 import { PersonalizationSettings } from "./pages/PersonalizationSettings";
-import { ArchivedChatsSettings } from "./pages/ArchivedChatsSettings";
 import { ProviderSettings } from "./pages/ProviderSettings";
 import { useSettingsStore } from "../stores/ui-store";
 import "./SettingsContent.css";
 
 const PAGE_COMPONENTS: Record<string, () => React.ReactNode> = {
   general: GeneralSettings,
+  profile: ProfileSettings,
   appearance: AppearanceSettings,
   config: ConfigSettings,
   personalization: PersonalizationSettings,
-  "archived-chats": ArchivedChatsSettings,
   provider: ProviderSettings,
 };
 

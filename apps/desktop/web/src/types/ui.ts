@@ -131,16 +131,11 @@ export type SetActiveThread = (threadId: string) => void;
 /** Settings page identifiers for the MVP0 page registry. */
 export type SettingsPageId =
   | "general"
+  | "profile"
   | "appearance"
   | "config"
   | "personalization"
-  | "archived-chats"
-  | "provider"
-  | "mcp-servers"
-  | "browser"
-  | "computer-control"
-  | "git"
-  | "worktrees";
+  | "provider";
 
 /** Settings shell local UI state. */
 export interface SettingsShellState {

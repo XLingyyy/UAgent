@@ -1,12 +1,26 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { SidebarFooter } from "./SidebarFooter";
 import { UIProvider } from "../app/providers";
+import { useSettingsStore } from "../stores/ui-store";
+
+function SettingsStateProbe() {
+  const settingsOpen = useSettingsStore((state) => String(state.open));
+  const activePage = useSettingsStore((state) => state.activePageId);
+
+  return (
+    <div>
+      <span data-testid="settings-open">{settingsOpen}</span>
+      <span data-testid="settings-page">{activePage}</span>
+    </div>
+  );
+}
 
 function renderFooter() {
   return render(
     <UIProvider>
       <SidebarFooter />
+      <SettingsStateProbe />
     </UIProvider>,
   );
 }
@@ -17,14 +31,26 @@ describe("SidebarFooter", () => {
     expect(screen.getByLabelText("Open settings")).toBeTruthy();
   });
 
-  it("renders Account placeholder through ComingSoonGate", () => {
+  it("opens General settings from the Settings entry", () => {
     renderFooter();
-    const accountBtn = screen.getByLabelText("Account (coming soon)") as HTMLButtonElement;
+
+    fireEvent.click(screen.getByLabelText("Open settings"));
+
+    expect(screen.getByTestId("settings-open").textContent).toBe("true");
+    expect(screen.getByTestId("settings-page").textContent).toBe("general");
+  });
+
+  it("opens local Profile settings from the Account entry", () => {
+    renderFooter();
+    const accountBtn = screen.getByLabelText("Open profile settings") as HTMLButtonElement;
+
     expect(accountBtn).toBeTruthy();
-    expect(accountBtn.getAttribute("aria-disabled")).toBe("true");
-    expect(accountBtn.getAttribute("title")).toBe(
-      "Coming in MVP2: Account sync and profile controls.",
-    );
+    expect(accountBtn.getAttribute("aria-disabled")).toBeNull();
+
+    fireEvent.click(accountBtn);
+
+    expect(screen.getByTestId("settings-open").textContent).toBe("true");
+    expect(screen.getByTestId("settings-page").textContent).toBe("profile");
   });
 
   it("renders version and status", () => {

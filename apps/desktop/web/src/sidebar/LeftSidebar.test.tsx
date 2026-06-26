@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { LeftSidebar } from "./LeftSidebar";
 import { UIProvider } from "../app/providers";
+import { useSettingsStore } from "../stores/ui-store";
 import { mockThreads } from "./sidebar-data";
 import { MOCK_PROJECTS } from "../project/project-data";
 
@@ -9,10 +10,23 @@ const defaultProject = MOCK_PROJECTS.find((p) => p.id === "lyra")!;
 const mechProject = MOCK_PROJECTS.find((p) => p.id === "mech")!;
 const cityProject = MOCK_PROJECTS.find((p) => p.id === "city")!;
 
+function SettingsStateProbe() {
+  const settingsOpen = useSettingsStore((state) => String(state.open));
+  const activePage = useSettingsStore((state) => state.activePageId);
+
+  return (
+    <div>
+      <span data-testid="settings-open">{settingsOpen}</span>
+      <span data-testid="settings-page">{activePage}</span>
+    </div>
+  );
+}
+
 function renderSidebar() {
   return render(
     <UIProvider>
       <LeftSidebar />
+      <SettingsStateProbe />
     </UIProvider>,
   );
 }
@@ -290,14 +304,15 @@ describe("LeftSidebar", () => {
       expect(screen.getByLabelText("Open settings")).toBeTruthy();
     });
 
-    it("renders the Account placeholder through ComingSoonGate", () => {
+    it("opens local Profile settings from the Account entry", () => {
       renderSidebar();
-      const accountBtn = screen.getByLabelText("Account (coming soon)") as HTMLButtonElement;
+      const accountBtn = screen.getByLabelText("Open profile settings") as HTMLButtonElement;
+
       expect(accountBtn).toBeTruthy();
-      expect(accountBtn.getAttribute("aria-disabled")).toBe("true");
-      expect(accountBtn.getAttribute("title")).toBe(
-        "Coming in MVP2: Account sync and profile controls.",
-      );
+      fireEvent.click(accountBtn);
+
+      expect(screen.getByTestId("settings-open").textContent).toBe("true");
+      expect(screen.getByTestId("settings-page").textContent).toBe("profile");
     });
 
     it("renders the version badge", () => {

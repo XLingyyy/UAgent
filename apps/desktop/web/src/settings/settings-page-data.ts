@@ -16,7 +16,7 @@ export interface SettingsSectionData {
 }
 
 export interface SettingsPageData {
-  id: SettingsPageId;
+  id: SettingsPageId | string;
   title: string;
   description: string;
   sections: SettingsSectionData[];
@@ -75,6 +75,32 @@ export const generalPageData: SettingsPageData = {
           disabled: false,
         },
       ],
+    },
+  ],
+};
+
+export const profilePageData: SettingsPageData = {
+  id: "profile",
+  title: "Profile",
+  description: "Review local-only profile identity and account status.",
+  sections: [
+    {
+      id: "profile-summary",
+      title: "Local profile summary",
+      description: "Mock identity shown inside this workspace only.",
+      rows: [],
+    },
+    {
+      id: "account-status",
+      title: "Account status",
+      description: "No remote account is attached in MVP0.",
+      rows: [],
+    },
+    {
+      id: "future-account-sync",
+      title: "Future account sync",
+      description: "Reserved placeholder for a later account task.",
+      rows: [],
     },
   ],
 };
@@ -328,40 +354,40 @@ export const archivedChatsPageData: SettingsPageData = {
 export const providerPageData: SettingsPageData = {
   id: "provider",
   title: "Provider",
-  description: "Manage LLM provider connections and model configuration.",
+  description: "Manage local mock provider defaults and model selection.",
   sections: [
     {
       id: "provider-list",
-      title: "Connected providers",
-      description: "Providers available for agent model selection.",
+      title: "Available providers",
+      description: "Local provider entries available for model selection.",
       rows: [],
     },
     {
       id: "provider-detail",
-      title: "Provider detail",
-      description: "Select a provider to view and configure its settings.",
+      title: "Selected provider detail",
+      description: "Edit local-only provider metadata.",
       rows: [
         {
           id: "basic-info",
           label: "Basic information",
-          description: "Provider name, type, and connection URL.",
-          disabled: true,
-          disabledReason: "Select a provider",
-        },
-        {
-          id: "connection-config",
-          label: "Connection configuration",
-          description: "API endpoint, timeout, and retry settings.",
+          description: "Provider name, wire API, and base URL.",
           disabled: true,
           disabledReason: "Select a provider",
         },
         {
           id: "auth-config",
           label: "Authentication",
-          description: "Authentication method and credentials.",
+          description: "Authentication mode and environment variable name.",
           disabled: true,
           disabledReason: "Select a provider",
         },
+      ],
+    },
+    {
+      id: "model-defaults",
+      title: "Model defaults",
+      description: "Choose the local default model and reasoning effort.",
+      rows: [
         {
           id: "model-catalog",
           label: "Model catalog",
@@ -394,7 +420,7 @@ export const providerPageData: SettingsPageData = {
     },
     {
       id: "provider-actions",
-      title: "Provider actions",
+      title: "Local-only actions",
       rows: [
         {
           id: "add-provider",
@@ -438,10 +464,10 @@ export const providerPageData: SettingsPageData = {
 
 const pageDataMap: Record<string, SettingsPageData> = {
   general: generalPageData,
+  profile: profilePageData,
   appearance: appearancePageData,
   config: configPageData,
   personalization: personalizationPageData,
-  "archived-chats": archivedChatsPageData,
   provider: providerPageData,
 };
 
