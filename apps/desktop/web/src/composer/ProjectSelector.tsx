@@ -203,7 +203,11 @@ export function ProjectSelector({ value, projects, onChange }: ProjectSelectorPr
 
             <div className="ua-project-selector__section-divider" />
 
-            <ComingSoonGate phase="MVP1" reason="Add a new project from a local directory.">
+            <ComingSoonGate
+              blockChild
+              phase="MVP1"
+              reason="Add a new project from a local directory."
+            >
               <div
                 className="ua-project-selector__item ua-project-selector__item--disabled"
                 role="option"

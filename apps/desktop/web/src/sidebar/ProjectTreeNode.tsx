@@ -17,8 +17,10 @@ export interface ProjectTreeNodeProps {
   depth: number;
   expandedIds: Set<string>;
   selectedId: string | null;
+  focusedId: string | null;
   onToggle: (nodeId: string) => void;
   onSelect: (nodeId: string) => void;
+  onFocus: (nodeId: string) => void;
 }
 
 export function ProjectTreeNode({
@@ -26,12 +28,15 @@ export function ProjectTreeNode({
   depth,
   expandedIds,
   selectedId,
+  focusedId,
   onToggle,
   onSelect,
+  onFocus,
 }: ProjectTreeNodeProps) {
   const hasChildren = Boolean(node.children?.length);
   const isExpanded = expandedIds.has(node.id);
   const isSelected = selectedId === node.id;
+  const isFocused = focusedId === node.id;
 
   const classNames = ["ua-tree-node", isSelected ? "ua-tree-node--selected" : ""]
     .filter(Boolean)
@@ -54,6 +59,10 @@ export function ProjectTreeNode({
     }
   };
 
+  const handleFocusCapture = () => {
+    onFocus(node.id);
+  };
+
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
       event.preventDefault();
@@ -61,9 +70,13 @@ export function ProjectTreeNode({
       return;
     }
 
-    if (event.key === "ArrowRight" && hasChildren && !isExpanded) {
+    if (event.key === "ArrowRight" && hasChildren) {
       event.preventDefault();
-      onToggle(node.id);
+      if (isExpanded) {
+        onFocus(node.children![0].id);
+      } else {
+        onToggle(node.id);
+      }
       return;
     }
 
@@ -79,11 +92,16 @@ export function ProjectTreeNode({
         className={classNames}
         style={{ paddingLeft: `calc(var(--ua-space-2) + ${depth * 14}px)` }}
         role="treeitem"
-        tabIndex={0}
+        data-node-id={node.id}
+        tabIndex={isFocused ? 0 : -1}
         aria-level={depth + 1}
         aria-expanded={hasChildren ? isExpanded : undefined}
         aria-selected={isSelected}
-        onClick={() => onSelect(node.id)}
+        onClick={() => {
+          onFocus(node.id);
+          onSelect(node.id);
+        }}
+        onFocus={handleFocusCapture}
         onKeyDown={handleKeyDown}
       >
         {hasChildren ? (
@@ -118,8 +136,10 @@ export function ProjectTreeNode({
               depth={depth + 1}
               expandedIds={expandedIds}
               selectedId={selectedId}
+              focusedId={focusedId}
               onToggle={onToggle}
               onSelect={onSelect}
+              onFocus={onFocus}
             />
           ))}
         </div>

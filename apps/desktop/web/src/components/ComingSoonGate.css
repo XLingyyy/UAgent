@@ -1,9 +1,45 @@
 .ua-coming-soon {
-  display: block;
+  display: inline-block;
   max-width: 100%;
+  position: relative;
+}
+
+.ua-coming-soon[data-coming-soon-block] {
+  display: block;
 }
 
 .ua-coming-soon__target {
   opacity: 0.64;
   cursor: not-allowed !important;
+}
+
+.ua-coming-soon__tooltip {
+  position: absolute;
+  bottom: calc(100% + var(--ua-space-1));
+  left: 0;
+  width: max-content;
+  max-width: min(42ch, calc(100vw - var(--ua-space-6)));
+  white-space: normal;
+  padding: var(--ua-space-1) var(--ua-space-2);
+  font-size: var(--ua-font-size-xs);
+  line-height: var(--ua-line-height-normal);
+  color: var(--ua-text);
+  background: var(--ua-bg-elevated);
+  border: 1px solid var(--ua-border);
+  border-radius: var(--ua-radius-sm);
+  pointer-events: none;
+  z-index: var(--ua-z-overlay);
+  opacity: 0;
+  transition: opacity var(--ua-dur-fast) var(--ua-ease-standard);
+}
+
+.ua-coming-soon:hover .ua-coming-soon__tooltip,
+.ua-coming-soon:focus-within .ua-coming-soon__tooltip {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ua-coming-soon__tooltip {
+    transition-duration: 1ms;
+  }
 }

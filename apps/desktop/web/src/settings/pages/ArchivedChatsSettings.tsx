@@ -52,7 +52,7 @@ function FiltersControls() {
   }
 
   return (
-    <ComingSoonGate phase={filtersPhase} reason={filtersSection.description ?? ""}>
+    <ComingSoonGate blockChild phase={filtersPhase} reason={filtersSection.description ?? ""}>
       <div className="ua-settings-page__filters">
         <input
           type="text"

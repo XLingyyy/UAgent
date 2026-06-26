@@ -9,6 +9,7 @@
 }
 
 .ua-workspace__content {
+  container-type: inline-size;
   flex: 1;
   display: flex;
   flex-direction: column;

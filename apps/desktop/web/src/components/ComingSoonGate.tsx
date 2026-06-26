@@ -1,6 +1,7 @@
 import {
   cloneElement,
   isValidElement,
+  useId,
   type KeyboardEvent,
   type MouseEvent,
   type ReactElement,
@@ -13,6 +14,11 @@ export interface ComingSoonGateProps {
   phase: ComingSoonPhase;
   reason: string;
   children: ReactElement;
+  /**
+   * When true, the wrapper uses block-level display instead of inline-block.
+   * Use for block children (div, textarea) to prevent shrink-wrap squeezing.
+   */
+  blockChild?: boolean;
 }
 
 interface ComingSoonChildProps {
@@ -22,6 +28,7 @@ interface ComingSoonChildProps {
   tabIndex?: number;
   title?: string;
   "aria-disabled"?: string;
+  "aria-describedby"?: string;
   "data-coming-soon-phase"?: string;
 }
 
@@ -50,7 +57,9 @@ function createBlockedKeyHandler(originalHandler?: (event: KeyboardEvent<HTMLEle
   };
 }
 
-export function ComingSoonGate({ phase, reason, children }: ComingSoonGateProps) {
+export function ComingSoonGate({ phase, reason, children, blockChild }: ComingSoonGateProps) {
+  const tooltipId = `ua-coming-soon-tooltip-${useId()}`;
+
   if (!isValidElement(children)) {
     return children;
   }
@@ -60,16 +69,25 @@ export function ComingSoonGate({ phase, reason, children }: ComingSoonGateProps)
   const childProps = child.props;
 
   return (
-    <span className="ua-coming-soon" title={message} aria-label={message}>
+    <span
+      className="ua-coming-soon"
+      data-coming-soon-block={blockChild ? "" : undefined}
+      title={message}
+      aria-label={message}
+    >
       {cloneElement(child, {
         className: `${childProps.className ?? ""} ua-coming-soon__target`.trim(),
         title: message,
         "aria-disabled": "true",
+        "aria-describedby": tooltipId,
         "data-coming-soon-phase": phase,
         tabIndex: childProps.tabIndex ?? 0,
         onClick: blockClick,
         onKeyDown: createBlockedKeyHandler(childProps.onKeyDown),
       })}
+      <span id={tooltipId} role="tooltip" className="ua-coming-soon__tooltip">
+        {message}
+      </span>
     </span>
   );
 }

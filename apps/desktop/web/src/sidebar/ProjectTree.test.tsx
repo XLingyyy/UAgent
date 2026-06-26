@@ -104,13 +104,28 @@ describe("ProjectTree", () => {
     expect(screen.getByText("M")).toBeTruthy();
   });
 
-  it("makes visible tree items keyboard focusable", () => {
+  it("uses roving tabindex: only first visible node has tabIndex=0 by default", () => {
     renderTree();
-    const contentTreeItem = screen.getByText("Content").closest('[role="treeitem"]')!;
-    const mapsTreeItem = screen.getByText("Maps").closest('[role="treeitem"]')!;
+    const contentItem = screen.getByText("Content").closest('[role="treeitem"]')!;
+    const mapsItem = screen.getByText("Maps").closest('[role="treeitem"]')!;
+    const charactersItem = screen.getByText("Characters").closest('[role="treeitem"]')!;
+    const configItem = screen.getByText("Config").closest('[role="treeitem"]')!;
 
-    expect(contentTreeItem.getAttribute("tabindex")).toBe("0");
-    expect(mapsTreeItem.getAttribute("tabindex")).toBe("0");
+    expect(contentItem.getAttribute("tabindex")).toBe("0");
+    expect(mapsItem.getAttribute("tabindex")).toBe("-1");
+    expect(charactersItem.getAttribute("tabindex")).toBe("-1");
+    expect(configItem.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("makes a clicked node the active treeitem", () => {
+    renderTree();
+    const contentItem = screen.getByText("Content").closest('[role="treeitem"]')!;
+    const configItem = screen.getByText("Config").closest('[role="treeitem"]')!;
+
+    fireEvent.click(configItem);
+
+    expect(configItem.getAttribute("tabindex")).toBe("0");
+    expect(contentItem.getAttribute("tabindex")).toBe("-1");
   });
 
   it("selects a focused node with Enter and Space", () => {
@@ -143,5 +158,95 @@ describe("ProjectTree", () => {
 
     fireEvent.keyDown(mapsTreeItem, { key: "ArrowRight" });
     expect(screen.getByText("Main.umap")).toBeTruthy();
+  });
+
+  it("moves focus to the first child with ArrowRight on an expanded folder", () => {
+    renderTree();
+    const contentItem = screen.getByText("Content").closest('[role="treeitem"]')!;
+
+    fireEvent.focus(contentItem);
+    fireEvent.keyDown(contentItem, { key: "ArrowRight" });
+
+    const mapsItem = screen.getByText("Maps").closest('[role="treeitem"]')!;
+    expect(mapsItem.getAttribute("tabindex")).toBe("0");
+    expect(contentItem.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("moves focus to the parent with ArrowLeft on a collapsed child folder", () => {
+    renderTree();
+    const mapsItem = screen.getByText("Maps").closest('[role="treeitem"]')!;
+
+    fireEvent.focus(mapsItem);
+    fireEvent.keyDown(mapsItem, { key: "ArrowLeft" });
+
+    const contentItem = screen.getByText("Content").closest('[role="treeitem"]')!;
+    expect(contentItem.getAttribute("tabindex")).toBe("0");
+    expect(mapsItem.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("keeps a visible active treeitem after the focused subtree is collapsed", () => {
+    renderTree();
+    const mapsItem = screen.getByText("Maps").closest('[role="treeitem"]')!;
+
+    fireEvent.focus(mapsItem);
+    fireEvent.click(screen.getByLabelText("Collapse Content"));
+
+    const contentItem = screen.getByText("Content").closest('[role="treeitem"]')!;
+    const configItem = screen.getByText("Config").closest('[role="treeitem"]')!;
+    expect(screen.queryByText("Maps")).toBeNull();
+    expect(contentItem.getAttribute("tabindex")).toBe("0");
+    expect(configItem.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("moves focus with ArrowDown among visible nodes", () => {
+    renderTree();
+    const tree = screen.getByRole("tree");
+    const contentItem = screen.getByText("Content").closest('[role="treeitem"]')!;
+
+    fireEvent.focus(contentItem);
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+
+    const mapsItem = screen.getByText("Maps").closest('[role="treeitem"]')!;
+    expect(mapsItem.getAttribute("tabindex")).toBe("0");
+    expect(contentItem.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("moves focus with ArrowUp among visible nodes", () => {
+    renderTree();
+    const tree = screen.getByRole("tree");
+    const configItem = screen.getByText("Config").closest('[role="treeitem"]')!;
+
+    fireEvent.focus(configItem);
+    fireEvent.keyDown(tree, { key: "ArrowUp" });
+
+    const charactersItem = screen.getByText("Characters").closest('[role="treeitem"]')!;
+    expect(charactersItem.getAttribute("tabindex")).toBe("0");
+    expect(configItem.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("moves focus to first node with Home", () => {
+    renderTree();
+    const tree = screen.getByRole("tree");
+    const configItem = screen.getByText("Config").closest('[role="treeitem"]')!;
+
+    fireEvent.focus(configItem);
+    fireEvent.keyDown(tree, { key: "Home" });
+
+    const contentItem = screen.getByText("Content").closest('[role="treeitem"]')!;
+    expect(contentItem.getAttribute("tabindex")).toBe("0");
+    expect(configItem.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("moves focus to last node with End", () => {
+    renderTree();
+    const tree = screen.getByRole("tree");
+    const contentItem = screen.getByText("Content").closest('[role="treeitem"]')!;
+
+    fireEvent.focus(contentItem);
+    fireEvent.keyDown(tree, { key: "End" });
+
+    const configItem = screen.getByText("Config").closest('[role="treeitem"]')!;
+    expect(configItem.getAttribute("tabindex")).toBe("0");
+    expect(contentItem.getAttribute("tabindex")).toBe("-1");
   });
 });

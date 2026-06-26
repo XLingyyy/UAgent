@@ -53,7 +53,11 @@ function InstructionsDisplay() {
   return (
     <div className="ua-settings-page__instructions-group">
       {projectPhase ? (
-        <ComingSoonGate phase={projectPhase} reason={instructionsSection.rows[0].description ?? ""}>
+        <ComingSoonGate
+          blockChild
+          phase={projectPhase}
+          reason={instructionsSection.rows[0].description ?? ""}
+        >
           <div className="ua-settings-page__instructions-field">
             <span className="ua-settings-page__instructions-label">
               Project custom instructions
@@ -71,7 +75,11 @@ function InstructionsDisplay() {
         </ComingSoonGate>
       ) : null}
       {globalPhase ? (
-        <ComingSoonGate phase={globalPhase} reason={instructionsSection.rows[1].description ?? ""}>
+        <ComingSoonGate
+          blockChild
+          phase={globalPhase}
+          reason={instructionsSection.rows[1].description ?? ""}
+        >
           <div className="ua-settings-page__instructions-field">
             <span className="ua-settings-page__instructions-label">Global custom instructions</span>
             <textarea

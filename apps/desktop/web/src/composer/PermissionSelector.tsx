@@ -202,6 +202,7 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
                   return (
                     <ComingSoonGate
                       key={option.id}
+                      blockChild
                       phase={option.phase}
                       reason={option.comingSoonReason}
                     >
