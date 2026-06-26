@@ -24,6 +24,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const composer = useComposerStore((state) => state);
   const provider = useProviderStore((state) => state);
   const mcpStatus = useRuntimeStore((state) => state.mcp.status);
+  const mcpCapabilities = useRuntimeStore((state) => state.mcp.capabilities);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const { setActiveProject } = useProjectActions();
   const { openSettings } = useSettingsActions();
@@ -127,7 +128,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         <span className="ua-composer__status-item">
           <span className="ua-composer__status-label">Runtime</span>
           <span className="ua-composer__status-value">
-            {mcpStatus === "connected" ? "MCP read-only" : "Mock only"}
+            {mcpStatus === "connected" && mcpCapabilities ? "MCP read-only" : mcpStatus === "connected" ? "Discovery required" : "Mock only"}
           </span>
         </span>
 

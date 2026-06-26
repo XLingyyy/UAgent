@@ -111,6 +111,104 @@ describe("MCP session lifecycle and discovery", () => {
     expect(allMethods3).not.toContain("prompts/list");
   });
 
+  it("readResource sends resources/read with the requested URI through JSON-RPC", async () => {
+    const transport = createTransport({
+      initialize: {
+        protocolVersion: "2025-06-18",
+        serverInfo: { name: "fixture", version: "1.0.0" },
+        capabilities: { resources: {} },
+      },
+      "resources/read": { uri: "ue://selection/current", text: "Current selection data" },
+    });
+    const session = new McpSession({ transport, idFactory: () => 1, clock: () => 10 });
+    await session.connect();
+
+    const result = await session.readResource("ue://selection/current");
+    expect(result).toEqual({ uri: "ue://selection/current", text: "Current selection data" });
+    expect(transport.sendRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "resources/read",
+        params: { uri: "ue://selection/current" },
+      }),
+    );
+  });
+
+  it("readResource fails before initialize", async () => {
+    const transport = createTransport({});
+    const session = new McpSession({ transport });
+
+    await expect(session.readResource("ue://selection/current")).rejects.toThrow(
+      "MCP resources/read cannot be called before initialize.",
+    );
+  });
+
+  it("readResource surfaces JSON-RPC error responses as protocol errors", async () => {
+    const sendRequest = vi.fn(async (request: { method: string }) => {
+      if (request.method === "resources/read") {
+        return { jsonrpc: "2.0" as const, id: 1, error: { code: -32603, message: "Internal error" } };
+      }
+      return { jsonrpc: "2.0" as const, id: 1, result: { protocolVersion: "2025-06-18", serverInfo: { name: "fixture", version: "1.0.0" }, capabilities: { resources: {} } } };
+    });
+    const transport: McpTransport = {
+      sendRequest,
+      sendNotification: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+    };
+    const session = new McpSession({ transport, idFactory: () => 1, clock: () => 10 });
+    await session.connect();
+
+    await expect(session.readResource("ue://bad")).rejects.toThrow("MCP resources/read failed: Internal error");
+  });
+
+  it("callTool sends tools/call with name and arguments through JSON-RPC", async () => {
+    const transport = createTransport({
+      initialize: {
+        protocolVersion: "2025-06-18",
+        serverInfo: { name: "fixture", version: "1.0.0" },
+        capabilities: { tools: {} },
+      },
+      "tools/call": { content: [{ type: "text", text: "Selection data" }] },
+    });
+    const session = new McpSession({ transport, idFactory: () => 1, clock: () => 10 });
+    await session.connect();
+
+    const result = await session.callTool("ue.selection.get", { detail: "full" });
+    expect(result).toEqual({ content: [{ type: "text", text: "Selection data" }] });
+    expect(transport.sendRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "tools/call",
+        params: { name: "ue.selection.get", arguments: { detail: "full" } },
+      }),
+    );
+  });
+
+  it("callTool fails before initialize", async () => {
+    const transport = createTransport({});
+    const session = new McpSession({ transport });
+
+    await expect(session.callTool("ue.selection.get", {})).rejects.toThrow(
+      "MCP tools/call cannot be called before initialize.",
+    );
+  });
+
+  it("callTool surfaces JSON-RPC error responses as protocol errors", async () => {
+    const sendRequest = vi.fn(async (request: { method: string }) => {
+      if (request.method === "tools/call") {
+        return { jsonrpc: "2.0" as const, id: 1, error: { code: -32603, message: "Tool execution failed" } };
+      }
+      return { jsonrpc: "2.0" as const, id: 1, result: { protocolVersion: "2025-06-18", serverInfo: { name: "fixture", version: "1.0.0" }, capabilities: { tools: {} } } };
+    });
+    const transport: McpTransport = {
+      sendRequest,
+      sendNotification: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+    };
+    const session = new McpSession({ transport, idFactory: () => 1, clock: () => 10 });
+    await session.connect();
+
+    await expect(session.callTool("ue.bad", {})).rejects.toThrow("MCP tools/call failed: Tool execution failed");
+  });
+
   it("supports pagination when server returns nextCursor", async () => {
     const sendRequest = vi.fn();
     sendRequest.mockImplementation(async (request: { method: string; params?: { cursor?: string } }) => {

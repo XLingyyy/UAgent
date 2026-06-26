@@ -16,15 +16,32 @@ Composer input -> TaskDraft -> RuntimeClient.submitTask() -> RuntimeRouter -> Mo
 - Later requests include `MCP-Protocol-Version`.
 - HTTP status, timeout, and malformed JSON are mapped to structured MCP errors.
 
+## Session-level Methods
+
+`McpSession` provides two public JSON-RPC methods for read-only execution:
+
+- `readResource(uri: string): Promise<unknown>` — sends `resources/read` via connected transport; fails before initialize.
+- `callTool(name: string, args: Record<string, unknown>): Promise<unknown>` — sends `tools/call` via connected transport; fails before initialize.
+
+Both surface JSON-RPC error responses as `McpProtocolError`. Runtime components never call these directly; they go through `McpReadOnlyRuntime` which wraps policy classification before execution.
+
 ## Read-only Policy
 
 - Unknown tools are blocked by default.
 - Server annotations are advisory only.
 - Tool names containing create/update/delete/remove/save/persist/apply/set/rename/import/export/compile/run/launch/spawn/edit/mutate/write are blocked.
-- `resources/list` and `resources/read` are the primary path.
-- `tools/call` must go through runtime read-only policy before execution.
+- `resources/read` is the primary read-only path, sent through the real MCP session after discovery.
+- `tools/call` must go through runtime read-only policy (`classifyMcpToolRisk`) before execution. Mutating, blocked, unknown, or unresolved tools must never send `tools/call` to the MCP transport.
 - `prompts/list` and prompt metadata are display/discovery only; they are not injected into Composer and do not trigger LLM calls.
 - Blocked tools emit `mcp_tool_blocked`.
+
+## Lifecycle
+
+A connected-but-not-discovered MCP session must not imply MCP read-only execution is available. The runtime router stays on MockRuntime fallback until `discoverMcp()` installs an `McpReadOnlyRuntime`. UI copy reflects this with "Connected · discovery required" wording until discovery completes.
+
+## Lifecycle Events
+
+See `docs/runtime-contract.md` for the full event sequence table, levels, and terminal states.
 
 ## Desktop UX
 

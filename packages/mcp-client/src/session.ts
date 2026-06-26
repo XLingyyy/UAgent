@@ -83,6 +83,32 @@ export class McpSession {
     };
   }
 
+  async readResource(uri: string): Promise<unknown> {
+    if (!this.initialized) {
+      throw new McpProtocolError("MCP resources/read cannot be called before initialize.");
+    }
+    const response = await this.transport.sendRequest(
+      createJsonRpcRequest("resources/read", { uri }, this.idFactory),
+    );
+    if (isJsonRpcErrorResponse(response)) {
+      throw new McpProtocolError(`MCP resources/read failed: ${response.error.message}`);
+    }
+    return response.result;
+  }
+
+  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+    if (!this.initialized) {
+      throw new McpProtocolError("MCP tools/call cannot be called before initialize.");
+    }
+    const response = await this.transport.sendRequest(
+      createJsonRpcRequest("tools/call", { name, arguments: args }, this.idFactory),
+    );
+    if (isJsonRpcErrorResponse(response)) {
+      throw new McpProtocolError(`MCP tools/call failed: ${response.error.message}`);
+    }
+    return response.result;
+  }
+
   async disconnect(): Promise<void> {
     this.initialized = false;
     this.initializeResult = null;

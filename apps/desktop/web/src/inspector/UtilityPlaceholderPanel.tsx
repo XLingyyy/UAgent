@@ -15,11 +15,17 @@ export function UtilityPlaceholderPanel({ panel }: UtilityPlaceholderPanelProps)
   const runtime = useOptionalRuntimeStore((state) => state);
   if (panel.id === "ue" && runtime) {
     const capabilities = runtime.mcp.capabilities;
+    const mcpLabel =
+      runtime.mcp.status === "connected" && capabilities
+        ? "MCP read-only"
+        : runtime.mcp.status === "connected"
+          ? "Discovery required"
+          : "Mock only";
     return (
       <section className="ua-utility-placeholder" aria-label="UE runtime context">
         <div className="ua-utility-placeholder__header">
           <div className="ua-utility-placeholder__title-group">
-            <span className="ua-utility-placeholder__eyebrow">MCP read-only</span>
+            <span className="ua-utility-placeholder__eyebrow">{mcpLabel}</span>
             <h3 className="ua-utility-placeholder__title">UE</h3>
           </div>
           <span

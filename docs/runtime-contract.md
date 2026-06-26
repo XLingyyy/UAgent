@@ -41,22 +41,49 @@ The normal `MockRuntime` path emits:
 
 Failure injection emits `task_failed` when the draft input contains `#fail`. Cancellation emits `task_cancelled` and stops later queued events.
 
-## MVP2 MCP Read-only Events
+## MVP2 MCP Read-only Lifecycle Events
 
-MVP2 adds:
+MVP2 defines a tight lifecycle event sequence for MCP read-only tasks:
 
-1. `mcp_connection_started`
-2. `mcp_connected`
-3. `mcp_discovery_started`
-4. `mcp_discovery_completed`
-5. `mcp_read_started`
-6. `mcp_read_completed`
-7. `mcp_tool_blocked`
-8. `mcp_connection_failed`
-9. `mcp_disconnected`
-10. `mcp_fallback_to_mock`
+| Event | Level | Terminal task state | Description |
+|-------|-------|-------------------|-------------|
+| `mcp_connection_started` | `info` | — | MCP connection attempt started via adapter |
+| `mcp_connected` | `info` | — | MCP initialize completed successfully |
+| `mcp_connection_failed` | `error` | `failed` | MCP initialize failed (protocol or transport error) |
+| `mcp_discovery_started` | `info` | — | tools/list, resources/list, prompts/list started |
+| `mcp_discovery_completed` | `success` | — | Discovery completed with capability summary |
+| `mcp_read_started` | `info` | — | resources/read or read-only tools/call started |
+| `mcp_read_completed` | `success` | — | resources/read or read-only tools/call completed with result |
+| `mcp_tool_blocked` | `warning` | `completed` | Mutating, unknown, or unresolved tool blocked by policy |
+| `mcp_disconnected` | `warning` | `cancelled` | MCP session disconnected (non-mutating, no active work) |
+| `mcp_fallback_to_mock` | `warning` | — | No MCP read-only runtime active; MockRuntime fallback used |
 
-`resources/list` and `resources/read` are the primary read-only path. `tools/call` may only be reached through runtime policy and an explicit read-only classification. Unknown or mutating tools are blocked and must emit `mcp_tool_blocked`.
+### MCP Event Sequences
+
+**Normal read-only resource flow:**
+1. `task_submitted` (`info`) → task state: `submitted`
+2. `mcp_discovery_started` (`info`) → task state: `executing`
+3. `mcp_discovery_completed` (`success`) → task state: `executing`
+4. `mcp_read_started` (`info`) → task state: `executing`
+5. `mcp_read_completed` (`success`) → task state: `executing`
+6. `evidence_created` (`success`) → task state: `executing`
+7. `review_created` (`info`) → task state: `reviewing`
+8. `task_completed` (`success`) → task state: `completed`
+
+**Blocked tool flow:**
+1. `task_submitted` → `mcp_discovery_started` → `mcp_discovery_completed` → `mcp_tool_blocked` → `review_created` → `task_completed`
+
+**Unresolved intent flow:**
+1. `task_submitted` → `mcp_discovery_started` → `mcp_discovery_completed` → `task_failed` (`error`)
+
+**Fallback to MockRuntime:**
+1. `task_submitted` → `mcp_fallback_to_mock` → `plan_created` → `tool_started` → `tool_completed` → `evidence_created` → `review_created` → `task_completed`
+
+### Boundaries
+
+`resources/read` is sent through the connected MCP session JSON-RPC transport after discovery. `tools/call` may only be reached through runtime policy (`classifyMcpToolRisk`) returning `read_only`. Unknown or mutating tools emit `mcp_tool_blocked` and must not send `tools/call`.
+
+Before discovery completes, the UI must not display or imply MCP read-only execution is active. The runtime router remains on MockRuntime fallback until `discoverMcp()` installs an `mcpRuntime`.
 
 ## Boundaries
 

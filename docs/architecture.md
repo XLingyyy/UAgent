@@ -74,7 +74,7 @@ Agent runtime state machine plus the deterministic MVP1 `MockRuntime`. The mock 
 
 ### `packages/mcp-client`
 
-MCP (Model Context Protocol) client abstraction layer. MVP2 implements JSON-RPC 2.0 message helpers, structured protocol/transport errors, Streamable HTTP transport, legacy HTTP+SSE fallback transport, session lifecycle (`initialize` -> `notifications/initialized`), and discovery (`tools/list`, `resources/list`, `prompts/list`). The UE product path uses localhost HTTP transports only; `stdio` remains a generic non-UE type boundary.
+MCP (Model Context Protocol) client abstraction layer. MVP2 implements JSON-RPC 2.0 message helpers, structured protocol/transport errors, Streamable HTTP transport, legacy HTTP+SSE fallback transport, session lifecycle (`initialize` -> `notifications/initialized`), discovery (`tools/list`, `resources/list`, `prompts/list`), and read-only execution methods (`readResource`, `callTool`). The UE product path uses localhost HTTP transports only; `stdio` remains a generic non-UE type boundary.
 
 ### Runtime Router
 

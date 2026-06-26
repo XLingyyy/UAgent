@@ -2,6 +2,12 @@ import { isTerminalTaskState } from "@uagent/shared";
 import { useOptionalRuntimeActions, useOptionalRuntimeStore } from "../stores/ui-store";
 import "./UtilityPlaceholderPanel.css";
 
+function mcpRuntimeLabel(status: string, capabilities: unknown): string {
+  if (status === "connected" && capabilities) return "MCP read-only";
+  if (status === "connected") return "Connected · discovery required";
+  return "Mock only";
+}
+
 export function RuntimePanel() {
   const runtime = useOptionalRuntimeStore((state) => state);
   const runtimeActions = useOptionalRuntimeActions();
@@ -16,7 +22,7 @@ export function RuntimePanel() {
       <div className="ua-utility-placeholder__header">
         <div className="ua-utility-placeholder__title-group">
           <span className="ua-utility-placeholder__eyebrow">
-            {runtime?.mcp.status === "connected" ? "MCP read-only" : "Mock only"}
+            {mcpRuntimeLabel(runtime?.mcp.status ?? "disconnected", runtime?.mcp.capabilities)}
           </span>
           <h3 className="ua-utility-placeholder__title">Runtime context</h3>
         </div>

@@ -6,7 +6,7 @@ AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent p
 
 The MVP1 TaskEvent product chain now extends to a read-only MCP runtime path. Composer input still creates a `TaskDraft` and submits through `RuntimeClient.submitTask()`, but the desktop adapter can route read-only intent to an MCP read-only runtime when a localhost MCP profile is connected. If MCP is disconnected or invalid, `MockRuntime` remains the fallback/demo/test runtime.
 
-MVP2 supports local MCP connection state, initialize/discovery metadata, Streamable HTTP and legacy HTTP+SSE client transports, read-only resource/tool intent routing, TaskEvent display, blocked-tool warnings, and diagnostics. It does not perform real UE writes, real LLM/provider API calls, shell/browser/filesystem product behavior, or approval-driven write actions.
+MVP2 supports local MCP connection state, initialize/discovery metadata, Streamable HTTP and legacy HTTP+SSE client transports, session-level `resources/read` and policy-gated `tools/call` JSON-RPC methods, read-only resource/tool intent routing, TaskEvent display, blocked-tool warnings, and diagnostics. It does not perform real UE writes, real LLM/provider API calls, shell/browser/filesystem product behavior, or approval-driven write actions.
 
 ## Technology Stack
 

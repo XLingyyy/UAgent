@@ -212,9 +212,11 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       try {
         const discovery = await currentSession.discover();
 
+        const session = currentSession!;
         mcpRuntime = createMcpReadOnlyRuntime({
           discovery,
-          readResource: async (uri) => ({ uri, text: "Actor: BP_Door, Component: StaticMesh, Level: L_LyraTest" }),
+          readResource: async (uri) => session.readResource(uri),
+          callTool: async (name, args) => session.callTool(name, args),
           clockStart: 2_000,
         });
         router = createRuntimeRouter({ mockRuntime: client, mcpRuntime });

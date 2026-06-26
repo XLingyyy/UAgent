@@ -4,6 +4,12 @@ import { mapTaskEventToWorkspaceMessage } from "../runtime/event-view-models";
 import { useRuntimeStore, useThreadStore } from "../stores/ui-store";
 import "./ConversationViewport.css";
 
+function mcpBadgeLabel(status: string, capabilities: unknown): string {
+  if (status === "connected" && capabilities) return "MCP read-only";
+  if (status === "connected") return "Discovery required";
+  return "Mock only";
+}
+
 export interface ConversationViewportProps {
   messages?: WorkspaceMessage[];
 }
@@ -16,6 +22,7 @@ export function ConversationViewport({ messages = workspaceMessages }: Conversat
   const runtimeMessages = runtimeEvents?.map(mapTaskEventToWorkspaceMessage);
   const visibleMessages = runtimeMessages && runtimeMessages.length > 0 ? runtimeMessages : messages;
   const mcpStatus = useRuntimeStore((state) => state.mcp.status);
+  const mcpCapabilities = useRuntimeStore((state) => state.mcp.capabilities);
 
   return (
     <section className="ua-conversation-viewport" aria-label="Conversation activity">
@@ -27,7 +34,7 @@ export function ConversationViewport({ messages = workspaceMessages }: Conversat
           </p>
         </div>
         <span className="ua-conversation-viewport__badge">
-          {mcpStatus === "connected" ? "MCP read-only" : "Mock only"}
+          {mcpBadgeLabel(mcpStatus, mcpCapabilities)}
         </span>
       </div>
       <div className="ua-conversation-viewport__list">

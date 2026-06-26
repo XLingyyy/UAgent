@@ -235,6 +235,66 @@ describe("DesktopRuntimeAdapter", () => {
     expect(snapshot.tasksById[record.id].state).toBe("completed");
   });
 
+  it("blocked tool path does not send tools/call to MCP transport", async () => {
+    const sendRequest = vi.fn(async (request: { method: string }) => {
+      const fixture = fullDiscoveryFixtures[request.method];
+      return { jsonrpc: "2.0" as const, id: 1, result: fixture ?? null };
+    });
+    const transport: McpTransportClient = {
+      sendRequest,
+      sendNotification: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+    };
+    const adapter = createDesktopRuntimeAdapter({ createTransport: () => transport });
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+
+    sendRequest.mockClear();
+
+    await adapter.submitTask({ ...baseDraft, input: "delete current selection" });
+
+    const toolCallCalls = sendRequest.mock.calls.filter(
+      (call: unknown[]) => (call[0] as { method: string }).method === "tools/call",
+    );
+    expect(toolCallCalls).toHaveLength(0);
+  });
+
+  it("unknown discovered tool path does not send tools/call to MCP transport and ends in failed terminal state", async () => {
+    const unknownToolFixtures: Record<string, unknown> = {
+      initialize: fullDiscoveryFixtures.initialize,
+      "tools/list": {
+        tools: [{ name: "ue.magic", description: "Unknown editor capability" }],
+      },
+      "resources/list": { resources: [] },
+      "prompts/list": { prompts: [] },
+    };
+    const sendRequest = vi.fn(async (request: { id: string | number | null; method: string }) => {
+      const fixture = unknownToolFixtures[request.method];
+      return { jsonrpc: "2.0" as const, id: request.id, result: fixture ?? null };
+    });
+    const transport: McpTransportClient = {
+      sendRequest,
+      sendNotification: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+    };
+    const adapter = createDesktopRuntimeAdapter({ createTransport: () => transport });
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+
+    sendRequest.mockClear();
+
+    const record = await adapter.submitTask({ ...baseDraft, input: "use magic tool" });
+    const snapshot = adapter.getSnapshot();
+    const events = snapshot.eventsByTaskId[record.id].map((event) => event.type);
+    const toolCallCalls = sendRequest.mock.calls.filter(
+      (call: unknown[]) => (call[0] as { method: string }).method === "tools/call",
+    );
+
+    expect(toolCallCalls).toHaveLength(0);
+    expect(events.at(-1)).toBe("task_failed");
+    expect(snapshot.tasksById[record.id].state).toBe("failed");
+  });
+
   it("blocks non-localhost endpoints and keeps MockRuntime fallback available", async () => {
     const adapter = createDesktopRuntimeAdapter();
     adapter.setMcpEndpoint("https://example.com/mcp");

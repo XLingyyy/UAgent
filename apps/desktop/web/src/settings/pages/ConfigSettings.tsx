@@ -124,15 +124,15 @@ function SandboxDisplay() {
     <div className="ua-settings-page__static-stack">
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">File system</span>
-        <span className="ua-settings-page__static-value">Read / Write</span>
+        <span className="ua-settings-page__static-value ua-settings-page__static-value--staged">Staged · not yet enabled</span>
       </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Commands</span>
-        <span className="ua-settings-page__static-value">Approved only</span>
+        <span className="ua-settings-page__static-value ua-settings-page__static-value--staged">Staged · not yet enabled</span>
       </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Network</span>
-        <span className="ua-settings-page__static-value">Allowed</span>
+        <span className="ua-settings-page__static-value ua-settings-page__static-value--staged">Staged · not yet enabled</span>
       </div>
     </div>
   );

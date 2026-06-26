@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createMockRuntime } from "./mock-runtime.js";
 import { createRuntimeRouter } from "./runtime-router.js";
 import { createMcpReadOnlyRuntime } from "./mcp-readonly-runtime.js";
@@ -108,6 +108,39 @@ describe("RuntimeRouter", () => {
     const events = snapshot.eventsByTaskId[record.id];
 
     expect(events.map((event) => event.type).at(-1)).toBe("task_failed");
+    expect(snapshot.tasksById[record.id].state).toBe("failed");
+  });
+
+  it("does not execute unknown discovered tools and ends unresolved intent in failed terminal state", async () => {
+    const callTool = vi.fn(async () => ({}));
+    const mcpRuntime = createMcpReadOnlyRuntime({
+      discovery: {
+        ...discovery,
+        tools: [{ name: "ue.magic", description: "Unknown editor capability" }],
+        resources: [],
+        capabilitySummary: {
+          tools: 1,
+          resources: 0,
+          prompts: 0,
+          readOnlyTools: 0,
+          blockedTools: 1,
+        },
+      },
+      callTool,
+      clockStart: 2_000,
+    });
+
+    const record = await mcpRuntime.submitTask({ ...draft, input: "use magic tool" });
+    const snapshot = mcpRuntime.getSnapshot();
+    const events = snapshot.eventsByTaskId[record.id];
+
+    expect(callTool).not.toHaveBeenCalled();
+    expect(events.map((event) => event.type)).toEqual([
+      "task_submitted",
+      "mcp_discovery_started",
+      "mcp_discovery_completed",
+      "task_failed",
+    ]);
     expect(snapshot.tasksById[record.id].state).toBe("failed");
   });
 

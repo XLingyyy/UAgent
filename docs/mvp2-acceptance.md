@@ -5,11 +5,13 @@
 - No MCP server: Composer submit uses MockRuntime fallback and emits `mcp_fallback_to_mock`.
 - Localhost MCP endpoint: Connect shows connected state, protocol version, server info, and capability counts.
 - Discover shows tools/resources/prompts counts and read-only semantic summary.
+- Connected-but-not-discovered state shows "Connected · discovery required" copy, does not imply read-only ready.
 - Read-only request such as `检查当前选择` emits MCP discovery/read/evidence/review/completion events.
 - UtilityDrawer Runtime / UE / Evidence / Diagnostics all reflect the active runtime task.
 - Fixture write-like tools such as delete/save/apply are classified as blocked and do not execute.
 - Invalid endpoint shows an error and leaves MockRuntime fallback available.
 - Disconnect returns MCP state to disconnected and later tasks still run through fallback.
+- Blocked and unknown tool paths must never send `tools/call` to the MCP transport.
 
 ## Required Commands
 
