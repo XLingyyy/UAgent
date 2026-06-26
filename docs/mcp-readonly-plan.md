@@ -43,6 +43,16 @@ A connected-but-not-discovered MCP session must not imply MCP read-only executio
 
 See `docs/runtime-contract.md` for the full event sequence table, levels, and terminal states.
 
+## POST-MVP3-LONGRUN-002+003 Fixture Matrix
+
+The MCP read-only path is now covered by test-only fixture harnesses:
+
+- Fixture engine: request log, method routing, JSON-RPC success/error, malformed response injection, timeout injection, and reusable named scenarios.
+- Streamable HTTP fixture fetch: JSON response, SSE response, `Mcp-Session-Id` retention, `resources/read`, and malformed SSE handling.
+- Legacy HTTP+SSE fixture fetch: endpoint event, POST endpoint, relative endpoint resolution, `resources/read`, and bad endpoint event handling.
+- Discovery matrix: tools/resources/prompts, capability absence skip, pagination, missing field/protocol error, and JSON-RPC error.
+- Runtime request-log invariant: read-only `tools/call` may be sent only after local policy allows it; blocked, unknown, mutating, and unresolved paths must have `tools/call` count `0`.
+
 ## Desktop UX
 
 - Config settings expose a localhost MCP endpoint, connect, discover, and disconnect.

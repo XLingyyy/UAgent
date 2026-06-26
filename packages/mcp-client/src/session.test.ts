@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { McpTransport } from "./transport.js";
 import { McpSession } from "./session.js";
+import { createMcpFixtureScenario } from "./fixtures/mcp-fixture-engine.js";
+import { StreamableHttpTransport } from "./transport-streamable-http.js";
+import { createStreamableHttpFixtureFetch } from "./fixtures/streamable-http-fixture.js";
 
 function createTransport(results: Record<string, unknown>): McpTransport {
   return {
@@ -248,5 +251,54 @@ describe("MCP session lifecycle and discovery", () => {
 
     expect(discovery.capabilitySummary.tools).toBe(2);
     expect(discovery.tools).toHaveLength(2);
+  });
+
+  it("uses fixture transport to discover paginated resources and skip absent prompts", async () => {
+    const scenario = createMcpFixtureScenario({
+      routes: {
+        initialize: { result: { protocolVersion: "2025-06-18", serverInfo: { name: "fixture", version: "1.0.0" }, capabilities: { tools: {}, resources: {} } } },
+        "tools/list": { result: { tools: [{ name: "ue.selection.get" }] } },
+        "resources/list": ({ request }) =>
+          (request.params as { cursor?: string } | undefined)?.cursor === "page-2"
+            ? { result: { resources: [{ uri: "ue://selection/secondary" }] } }
+            : { result: { resources: [{ uri: "ue://selection/current" }], nextCursor: "page-2" } },
+      },
+    });
+    const session = new McpSession({
+      transport: new StreamableHttpTransport({
+        endpoint: "http://127.0.0.1:8765/mcp",
+        fetch: createStreamableHttpFixtureFetch(scenario),
+      }),
+      clock: () => 10,
+    });
+
+    await session.connect();
+    const discovery = await session.discover();
+
+    expect(discovery.resources.map((resource) => resource.uri)).toEqual([
+      "ue://selection/current",
+      "ue://selection/secondary",
+    ]);
+    expect(scenario.findRequests("resources/list")).toHaveLength(2);
+    expect(scenario.findRequests("prompts/list")).toHaveLength(0);
+  });
+
+  it("surfaces fixture discovery JSON-RPC errors", async () => {
+    const scenario = createMcpFixtureScenario({
+      routes: {
+        initialize: { result: { protocolVersion: "2025-06-18", serverInfo: { name: "fixture", version: "1.0.0" }, capabilities: { tools: {} } } },
+        "tools/list": { error: { code: -32603, message: "discovery failed" } },
+      },
+    });
+    const session = new McpSession({
+      transport: new StreamableHttpTransport({
+        endpoint: "http://127.0.0.1:8765/mcp",
+        fetch: createStreamableHttpFixtureFetch(scenario),
+      }),
+    });
+
+    await session.connect();
+
+    await expect(session.discover()).rejects.toThrow("MCP discovery request tools/list failed: discovery failed");
   });
 });

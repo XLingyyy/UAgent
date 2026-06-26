@@ -1,11 +1,11 @@
 import type {
   ProviderCapability,
-  ProviderRuntimeError,
   ProviderRuntimeRequest,
   ProviderRuntimeResponse,
   ProviderStreamChunk,
 } from "@uagent/shared";
 import type { ProviderAdapter } from "./provider-adapter.js";
+import { createProviderRuntimeError } from "./provider-error.js";
 
 const MOCK_CREATED_AT = 1_000;
 
@@ -44,18 +44,28 @@ export class MockTextProvider implements ProviderAdapter {
 
 export class MockStreamingProvider extends MockTextProvider {
   override readonly id = "mock-streaming";
+  private readonly chunks: string[];
+  private readonly failAtChunk: number | null;
+
+  constructor(options: { chunks?: string[]; failAtChunk?: number } = {}) {
+    super();
+    this.chunks = options.chunks ?? ["Mock ", "stream ", "response"];
+    this.failAtChunk = options.failAtChunk ?? null;
+  }
 
   async *stream(request: ProviderRuntimeRequest): AsyncIterable<ProviderStreamChunk> {
-    const deltas = ["Mock ", "stream ", "response"];
-    for (let index = 0; index < deltas.length; index += 1) {
+    for (let index = 0; index < this.chunks.length; index += 1) {
+      if (this.failAtChunk === index + 1) {
+        throw createProviderRuntimeError(this.id, "provider_unavailable", `Mock stream failed at chunk ${index + 1}.`);
+      }
       yield {
         id: `${this.id}-chunk-${request.id}-${index + 1}`,
         requestId: request.id,
         providerId: this.id,
         modelId: request.modelId,
         index,
-        delta: deltas[index] ?? "",
-        done: index === deltas.length - 1,
+        delta: this.chunks[index] ?? "",
+        done: index === this.chunks.length - 1,
       };
     }
   }
@@ -76,7 +86,7 @@ export class FailingProvider implements ProviderAdapter {
 
   async complete(request: ProviderRuntimeRequest): Promise<ProviderRuntimeResponse> {
     void request;
-    throw createProviderRuntimeError(this.id, "Deterministic provider failure.");
+    throw createProviderRuntimeError(this.id, "malformed_response", "Deterministic provider failure.");
   }
 
   getCapabilities(): ProviderCapability {
@@ -94,6 +104,9 @@ export class ProviderRegistry {
   private readonly adapters = new Map<string, ProviderAdapter>();
 
   register(adapter: ProviderAdapter): void {
+    if (this.adapters.has(adapter.id)) {
+      throw new Error(`Provider adapter is already registered: ${adapter.id}`);
+    }
     this.adapters.set(adapter.id, adapter);
   }
 
@@ -117,13 +130,4 @@ function lastMessageText(request: ProviderRuntimeRequest): string {
 function countTokens(text: string): number {
   const trimmed = text.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
-}
-
-function createProviderRuntimeError(providerId: string, message: string): ProviderRuntimeError {
-  return {
-    name: "ProviderRuntimeError",
-    providerId,
-    message,
-    retryable: false,
-  };
 }

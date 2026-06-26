@@ -29,6 +29,7 @@ Composer input
 - Trace recorder/replay: derives `AgentRunTrace` from the task event stream for audit, deterministic tests, replay fixtures, and UI display. It does not replace `TaskEvent` or `RuntimeSnapshot`.
 - Prompt builder: assembles deterministic POST-MVP3 prompt envelopes for future provider work. It is text assembly only and does not call any provider.
 - Provider-ready mock bridge: defines provider runtime request/response/stream/error/capability contracts plus deterministic mock providers. It prepares MVP4 adapter boundaries without implementing real provider integration.
+- Provider runtime v0.2 mock bridge: adds deterministic request builder, lifecycle events, scripted streaming, cancellation, usage accounting, error taxonomy, and trace projection for mock-only readiness.
 - Desktop adapter: routes Composer submissions through AgentLoop while preserving MCP connect/discover/disconnect, localhost guard, legacy SSE fallback, thread selection, and MockRuntime fallback behavior.
 - UI: consumes only `TaskEvent` and `RuntimeSnapshot` from the runtime store to display plan, current step, observations, evidence, reports, and diagnostics.
 

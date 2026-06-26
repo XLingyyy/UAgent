@@ -20,6 +20,15 @@ export interface ProviderRuntimeRequest {
   };
 }
 
+export type ProviderRuntimeErrorCode =
+  | "auth_missing"
+  | "rate_limited"
+  | "timeout"
+  | "network_error"
+  | "malformed_response"
+  | "cancelled"
+  | "provider_unavailable";
+
 export interface ProviderUsage {
   inputTokens: number;
   outputTokens: number;
@@ -50,10 +59,60 @@ export interface ProviderStreamChunk {
 export interface ProviderRuntimeError {
   name: "ProviderRuntimeError";
   providerId: string;
+  code: ProviderRuntimeErrorCode;
   message: string;
   retryable: boolean;
   cause?: string;
 }
+
+export type ProviderRuntimeEvent =
+  | {
+      type: "provider_request_started";
+      requestId: string;
+      providerId: string;
+      modelId: string;
+    }
+  | {
+      type: "provider_stream_started";
+      requestId: string;
+      providerId: string;
+    }
+  | {
+      type: "provider_stream_delta";
+      requestId: string;
+      providerId: string;
+      chunk: ProviderStreamChunk;
+    }
+  | {
+      type: "provider_stream_completed";
+      requestId: string;
+      providerId: string;
+      text: string;
+    }
+  | {
+      type: "provider_request_completed";
+      requestId: string;
+      providerId: string;
+      response: ProviderRuntimeResponse;
+    }
+  | {
+      type: "provider_request_failed";
+      requestId: string;
+      providerId: string;
+      error: ProviderRuntimeError;
+    }
+  | {
+      type: "provider_request_cancelled";
+      requestId: string;
+      providerId: string;
+      reason: string;
+    }
+  | {
+      type: "provider_usage_recorded";
+      requestId: string;
+      providerId: string;
+      usage: ProviderUsage;
+    };
 
 export interface ProviderCapability {
   providerId: string;

@@ -51,3 +51,9 @@ Allowed matches are contracts, docs, tests, mock-only adapters, existing MCP rea
 ## MVP4 Readiness
 
 After this acceptance passes, the recommended next stage is MVP4 Provider Adapter implementation. MVP4 should start with explicit secret handling design, real adapter boundaries, streaming UI semantics, cancellation/error mapping, and provider-specific tests. It must not reuse POST-MVP3 mock providers as real network adapters.
+
+## POST-MVP3-LONGRUN-002+003 Addendum
+
+The follow-up LONGRUN-002+003 checkpoint adds a test-only MCP fixture engine and in-process transport harnesses for Streamable HTTP and legacy HTTP+SSE. The fixture matrix covers initialize, initialized notification logging, session id propagation, discovery pagination, capability absence, `resources/read`, policy-gated `tools/call`, blocked and unknown tool request-log invariants, malformed protocol responses, timeout injection, legacy endpoint errors, disconnect-style errors, and non-localhost guard behavior.
+
+Provider runtime readiness is extended to v0.2 mock-only semantics: deterministic request building from `PromptEnvelope`, provider runtime lifecycle events, scripted mock streaming, cancellation, usage accounting, error taxonomy, and trace/view-model projection. This is still not MVP4 real provider integration.

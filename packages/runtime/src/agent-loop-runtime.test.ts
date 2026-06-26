@@ -186,4 +186,64 @@ describe("createAgentLoopRuntime", () => {
     expect(events.map((event) => event.type)).not.toContain("task_completed");
     expect(runtime.getSnapshot().tasksById[taskId].state).toBe("cancelled");
   });
+
+  it("passes injected resources/read result through observation, evidence, report, and request log", async () => {
+    const requestLog: Array<{ method: string; params: unknown }> = [];
+    const runtime = createAgentLoopRuntime({
+      runtimeMode: "mcp-readonly",
+      discovery,
+      readResource: async (uri) => {
+        requestLog.push({ method: "resources/read", params: { uri } });
+        return { contents: [{ type: "text", text: "Fixture selection data" }] };
+      },
+      callTool: async (name, args) => {
+        requestLog.push({ method: "tools/call", params: { name, arguments: args } });
+        return { content: [] };
+      },
+      clockStart: 2_000,
+    });
+
+    const record = await runtime.submitTask(baseDraft);
+    const events = runtime.getSnapshot().eventsByTaskId[record.id];
+
+    expect(requestLog.filter((entry) => entry.method === "resources/read")).toHaveLength(1);
+    expect(requestLog.filter((entry) => entry.method === "tools/call")).toHaveLength(0);
+    expect(events.find((event) => event.type === "agent_observation_created")?.body).toContain(
+      "Fixture selection data",
+    );
+    expect(events.map((event) => event.type)).toContain("evidence_created");
+    expect(events.map((event) => event.type)).toContain("agent_report_created");
+  });
+
+  it("passes read-only tools/call through request log when no resource matches", async () => {
+    const requestLog: Array<{ method: string; params: unknown }> = [];
+    const toolOnlyDiscovery: McpDiscoverySnapshot = {
+      ...discovery,
+      resources: [],
+      capabilitySummary: { tools: 1, resources: 0, prompts: 0, readOnlyTools: 1, blockedTools: 0 },
+    };
+    const runtime = createAgentLoopRuntime({
+      runtimeMode: "mcp-readonly",
+      discovery: toolOnlyDiscovery,
+      readResource: async (uri) => {
+        requestLog.push({ method: "resources/read", params: { uri } });
+        return { contents: [] };
+      },
+      callTool: async (name, args) => {
+        requestLog.push({ method: "tools/call", params: { name, arguments: args } });
+        return { content: [{ type: "text", text: "Tool fixture data" }] };
+      },
+      clockStart: 2_000,
+    });
+
+    const record = await runtime.submitTask(baseDraft);
+
+    expect(requestLog.filter((entry) => entry.method === "resources/read")).toHaveLength(0);
+    expect(requestLog.filter((entry) => entry.method === "tools/call")).toHaveLength(1);
+    expect(requestLog.find((entry) => entry.method === "tools/call")?.params).toEqual({
+      name: "ue.selection.get",
+      arguments: {},
+    });
+    expect(runtime.getSnapshot().tasksById[record.id].state).toBe("completed");
+  });
 });

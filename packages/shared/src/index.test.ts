@@ -25,6 +25,7 @@ import {
   type AgentRunTrace,
   type AgentTraceEvent,
   type ProviderCapability,
+  type ProviderRuntimeEvent,
   type ProviderRuntimeRequest,
   type ProviderRuntimeResponse,
   type ProviderRuntimeError,
@@ -506,13 +507,40 @@ describe("@uagent/shared types", () => {
     const error: ProviderRuntimeError = {
       name: "ProviderRuntimeError",
       providerId: "mock-failing",
+      code: "malformed_response",
       message: "Deterministic provider failure.",
       retryable: false,
     };
+    const events: ProviderRuntimeEvent[] = [
+      {
+        type: "provider_request_started",
+        requestId: request.id,
+        providerId: request.providerId,
+        modelId: request.modelId,
+      },
+      {
+        type: "provider_usage_recorded",
+        requestId: request.id,
+        providerId: request.providerId,
+        usage: response.usage,
+      },
+      {
+        type: "provider_request_failed",
+        requestId: request.id,
+        providerId: request.providerId,
+        error,
+      },
+    ];
 
     expect(request.messages[0].role).toBe("system");
     expect(response.usage.totalTokens).toBe(17);
     expect(capability.isMock).toBe(true);
+    expect(error.code).toBe("malformed_response");
     expect(error.retryable).toBe(false);
+    expect(events.map((event) => event.type)).toEqual([
+      "provider_request_started",
+      "provider_usage_recorded",
+      "provider_request_failed",
+    ]);
   });
 });

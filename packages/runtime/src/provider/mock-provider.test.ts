@@ -74,4 +74,30 @@ describe("mock provider adapters", () => {
     });
     expect(() => registry.get("missing")).toThrow("Provider adapter is not registered: missing");
   });
+
+  it("rejects duplicate registration with a clear error message", () => {
+    const registry = new ProviderRegistry();
+    registry.register(new MockTextProvider());
+
+    expect(() => registry.register(new MockTextProvider())).toThrow("Provider adapter is already registered: mock-text");
+    expect(registry.listCapabilities().map((capability) => capability.providerId)).toEqual(["mock-text"]);
+  });
+
+  it("reports scripted empty streams and chunk failures", async () => {
+    const emptyProvider = new MockStreamingProvider({ chunks: [] });
+    const failedProvider = new MockStreamingProvider({ chunks: ["A", "B"], failAtChunk: 2 });
+    const emptyChunks = [];
+
+    for await (const chunk of emptyProvider.stream(request)) {
+      emptyChunks.push(chunk);
+    }
+
+    expect(emptyChunks).toEqual([]);
+    const iterator = failedProvider.stream(request)[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toMatchObject({ value: { delta: "A", done: false } });
+    await expect(iterator.next()).rejects.toMatchObject({
+      name: "ProviderRuntimeError",
+      code: "provider_unavailable",
+    });
+  });
 });

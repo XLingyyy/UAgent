@@ -40,7 +40,15 @@ export type TaskEventType =
   | "mcp_tool_blocked"
   | "mcp_connection_failed"
   | "mcp_disconnected"
-  | "mcp_fallback_to_mock";
+  | "mcp_fallback_to_mock"
+  | "provider_request_started"
+  | "provider_stream_started"
+  | "provider_stream_delta"
+  | "provider_stream_completed"
+  | "provider_request_completed"
+  | "provider_request_failed"
+  | "provider_request_cancelled"
+  | "provider_usage_recorded";
 
 export type TaskEventLevel = "info" | "success" | "warning" | "error";
 

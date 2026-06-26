@@ -112,6 +112,8 @@ export type { ApprovalRequest, ApprovalRequestState } from "./approval.js";
 export type {
   ProviderCapability,
   ProviderMessageRole,
+  ProviderRuntimeErrorCode,
+  ProviderRuntimeEvent,
   ProviderRuntimeError,
   ProviderRuntimeMessage,
   ProviderRuntimeRequest,

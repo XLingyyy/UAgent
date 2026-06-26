@@ -227,6 +227,18 @@ function toTraceEvent(event: TaskEvent): AgentTraceEvent[] {
       return [{ ...base, type: "run_failed", error: event.body ?? event.title }];
     case "task_cancelled":
       return [{ ...base, type: "run_cancelled" }];
+    case "provider_request_started":
+    case "provider_stream_started":
+    case "provider_stream_delta":
+    case "provider_usage_recorded":
+      return [{ ...base, type: "action_selected" }];
+    case "provider_stream_completed":
+    case "provider_request_completed":
+      return [{ ...base, type: "report_created" }];
+    case "provider_request_failed":
+      return [{ ...base, type: "run_failed", error: event.body ?? event.title }];
+    case "provider_request_cancelled":
+      return [{ ...base, type: "run_cancelled" }];
     default:
       return [];
   }

@@ -35,6 +35,21 @@ export { buildPromptEnvelope, type BuildPromptEnvelopeInput, type PromptEnvelope
 export { buildContextPack, buildToolPolicyPack, type PromptProviderMetadata } from "./prompt/context-pack.js";
 export type { ProviderAdapter } from "./provider/provider-adapter.js";
 export {
+  buildProviderRuntimeRequest,
+  type BuildProviderRuntimeRequestInput,
+} from "./provider/provider-request-builder.js";
+export {
+  createProviderRuntimeError,
+  normalizeProviderError,
+} from "./provider/provider-error.js";
+export {
+  runProviderComplete,
+  runProviderStream,
+  type ProviderCompleteResult,
+  type ProviderExecutionOptions,
+  type ProviderStreamResult,
+} from "./provider/provider-runner.js";
+export {
   FailingProvider,
   MockStreamingProvider,
   MockTextProvider,

@@ -30,6 +30,14 @@ const EVENT_LABELS: Record<TaskEvent["type"], string> = {
   mcp_connection_failed: "MCP failed",
   mcp_disconnected: "MCP disconnected",
   mcp_fallback_to_mock: "Runtime fallback",
+  provider_request_started: "Provider request",
+  provider_stream_started: "Provider stream",
+  provider_stream_delta: "Provider stream",
+  provider_stream_completed: "Provider stream completed",
+  provider_request_completed: "Provider completed",
+  provider_request_failed: "Provider failed",
+  provider_request_cancelled: "Provider cancelled",
+  provider_usage_recorded: "Provider usage",
 };
 
 const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
@@ -61,6 +69,14 @@ const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
   mcp_connection_failed: "review-summary",
   mcp_disconnected: "review-summary",
   mcp_fallback_to_mock: "tool-event",
+  provider_request_started: "tool-event",
+  provider_stream_started: "tool-event",
+  provider_stream_delta: "tool-event",
+  provider_stream_completed: "tool-event",
+  provider_request_completed: "review-summary",
+  provider_request_failed: "review-summary",
+  provider_request_cancelled: "review-summary",
+  provider_usage_recorded: "tool-event",
 };
 
 function formatTimestamp(createdAt: number): string {
@@ -100,6 +116,8 @@ export function extractRuntimeDiagnostics(events: TaskEvent[]): TaskEvent[] {
       event.type === "task_failed" ||
       event.type === "task_cancelled" ||
       event.type === "agent_step_failed" ||
+      event.type === "provider_request_failed" ||
+      event.type === "provider_request_cancelled" ||
       event.type === "mcp_tool_blocked" ||
       event.type === "mcp_connection_failed" ||
       event.type === "mcp_disconnected",
@@ -111,6 +129,8 @@ export function extractRuntimeEvidence(events: TaskEvent[]): TaskEvent[] {
     (event) =>
       event.type === "evidence_created" ||
       event.type === "agent_observation_created" ||
-      event.type === "mcp_read_completed",
+      event.type === "mcp_read_completed" ||
+      event.type === "provider_stream_delta" ||
+      event.type === "provider_usage_recorded",
   );
 }

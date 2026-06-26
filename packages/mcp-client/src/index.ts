@@ -61,3 +61,14 @@ export { StreamableHttpTransport, parseFirstSseJsonMessage } from "./transport-s
 export { LegacySseTransport, parseLegacyEndpointEvent } from "./transport-legacy-sse.js";
 export { McpDiscoveryService } from "./discovery.js";
 export { McpSession, type McpInitializeResult, type McpSessionOptions } from "./session.js";
+export { createMcpFixtureScenario } from "./fixtures/mcp-fixture-engine.js";
+export { createStreamableHttpFixtureFetch } from "./fixtures/streamable-http-fixture.js";
+export { createLegacySseFixtureFetch } from "./fixtures/legacy-sse-fixture.js";
+export { createLongrunMcpScenarioCorpus } from "./fixtures/scenarios.js";
+export type {
+  McpFixtureRequestLogEntry,
+  McpFixtureRouteHandler,
+  McpFixtureRouteResult,
+  McpFixtureScenario,
+  McpFixtureScenarioOptions,
+} from "./fixtures/mcp-fixture-types.js";

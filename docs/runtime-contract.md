@@ -37,6 +37,7 @@ Composer input
 - `AgentReport`: deterministic final report with summary, findings, evidence references, blocked actions, and next steps.
 - `AgentRunTrace`: POST-MVP3 audit/replay projection built from a task's `TaskEvent` stream. It records trace events, step snapshots, observations, evidence references, report summary, blocked actions, and terminal status without becoming runtime state.
 - `ProviderRuntimeRequest`, `ProviderRuntimeResponse`, `ProviderStreamChunk`, `ProviderUsage`, `ProviderRuntimeError`, and `ProviderCapability`: provider-ready interface types for future MVP4 adapters. POST-MVP3 only ships mock adapters and does not read secrets or call provider HTTP APIs.
+- `ProviderRuntimeEvent` and `ProviderRuntimeErrorCode`: POST-MVP3-LONGRUN-002+003 provider lifecycle and error taxonomy for mock-only streaming, cancellation, usage accounting, and failure mapping.
 
 Agent contracts live in `@uagent/shared` so runtime and UI code consume the same payloads. They must not depend on React, desktop-only types, MCP session objects, provider adapters, or product shell/browser/filesystem capabilities.
 
@@ -189,6 +190,40 @@ Provider runtime types and adapters are preparation for MVP4. POST-MVP3 includes
 - `ProviderRegistry` registers and selects adapters by id.
 
 No OpenAI, Anthropic, local model HTTP, API key, credential, Authorization header, or secret-handling path is implemented in POST-MVP3. Real provider adapters, secret handling, streaming UI, cancellation semantics, and model-specific error mapping belong to MVP4.
+
+### Provider Runtime v0.2 Mock-only Events
+
+LONGRUN-002+003 defines provider runtime events for mock adapters:
+
+1. `provider_request_started`
+2. `provider_stream_started`
+3. `provider_stream_delta`
+4. `provider_stream_completed`
+5. `provider_usage_recorded`
+6. `provider_request_completed`
+7. `provider_request_failed`
+8. `provider_request_cancelled`
+
+These events are contracts and test fixtures only. Agent Trace view models may display them from task events, but React components do not call providers and no real provider network path is present.
+
+### Provider Runner Timeout Semantics
+
+`ProviderExecutionOptions.timeoutTicks` is a deterministic chunk-budget counter, not a wall-clock timer:
+
+- `timeoutTicks <= 0` — immediate timeout. The runner emits `provider_request_failed` with `code: "timeout"` and `retryable: true` before calling the adapter, and returns an empty/error response.
+- `timeoutTicks > 0` (stream mode only) — chunk budget. The runner counts successfully yielded stream chunks. When `chunkCount >= timeoutTicks`, the runner stops consuming the stream and emits `provider_request_failed` with `code: "timeout"` and `retryable: true`. Previously accumulated partial text and chunks are returned.
+- `timeoutTicks` undefined — no timeout applied; normal execution proceeds.
+- No wall-clock timer, `setTimeout`, real sleep, or nondeterministic timeout is used. The `timeout` error code always has `retryable: true`.
+
+### ProviderRegistry Duplicate Guardrail
+
+`ProviderRegistry.register()` throws a clear error if a provider with the same `adapter.id` is already registered:
+
+- First `register(new MockTextProvider())` succeeds.
+- Second `register(new MockTextProvider())` throws `Provider adapter is already registered: mock-text`.
+- `get("missing")` continues to throw `Provider adapter is not registered: missing`.
+- `listCapabilities()` only returns capabilities for successfully registered providers.
+- The guardrail prevents silent override of registered adapters.
 
 ## System Events Boundary
 
