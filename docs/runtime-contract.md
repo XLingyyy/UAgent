@@ -35,6 +35,8 @@ Composer input
 - `AgentPlanStep`: auditable Agent step with kind, target, status, guard, and optional action metadata.
 - `AgentObservation`: normalized output from mock runtime, MCP read-only execution, or policy blocking.
 - `AgentReport`: deterministic final report with summary, findings, evidence references, blocked actions, and next steps.
+- `AgentRunTrace`: POST-MVP3 audit/replay projection built from a task's `TaskEvent` stream. It records trace events, step snapshots, observations, evidence references, report summary, blocked actions, and terminal status without becoming runtime state.
+- `ProviderRuntimeRequest`, `ProviderRuntimeResponse`, `ProviderStreamChunk`, `ProviderUsage`, `ProviderRuntimeError`, and `ProviderCapability`: provider-ready interface types for future MVP4 adapters. POST-MVP3 only ships mock adapters and does not read secrets or call provider HTTP APIs.
 
 Agent contracts live in `@uagent/shared` so runtime and UI code consume the same payloads. They must not depend on React, desktop-only types, MCP session objects, provider adapters, or product shell/browser/filesystem capabilities.
 
@@ -155,6 +157,42 @@ The desktop Diagnostics panel is a read-only projection of the `TaskEvent` strea
 - `mcp_tool_blocked` is shown as the policy diagnostic for mutating or unsafe intent. Matching policy observations with the same reason are collapsed so the user sees one blocked cause.
 - `task_cancelled` is shown as the cancellation diagnostic. Later non-terminal events are ignored by the reducer and cannot overwrite the cancelled state.
 - Warning and error events are displayed from the snapshot only; the UI never directly calls `resources/read` or `tools/call`.
+
+## POST-MVP3 Agent Trace / Replay Layer
+
+`AgentRunTrace` is a derived audit object, not a new source of truth. Runtime still owns task state through append-only `TaskEvent` objects and `RuntimeSnapshot`; trace builders consume those events after the fact for debugging, replay fixtures, tests, and UI display.
+
+Trace event types are limited to:
+
+1. `run_started`
+2. `plan_created`
+3. `step_started`
+4. `action_selected`
+5. `observation_recorded`
+6. `evidence_attached`
+7. `report_created`
+8. `run_completed`
+9. `run_failed`
+10. `run_cancelled`
+
+The recorder must tolerate unknown or partial `TaskEvent.payload` values by skipping the missing item rather than throwing. Replay is deterministic: the same task events must produce the same trace summary, event type sequence, step titles, report summary, blocked action count, and terminal event type.
+
+## POST-MVP3 Prompt / Provider Boundary
+
+The prompt builder assembles deterministic text envelopes from `TaskDraft`, `AgentPlan`, MCP discovery summaries, mock provider metadata, and read-only policy summaries. It does not import React, MCP transports, provider SDKs, `fetch`, environment variables, shell/browser/filesystem APIs, or secret storage.
+
+Provider runtime types and adapters are preparation for MVP4. POST-MVP3 includes only mock adapters:
+
+- `MockTextProvider` returns a deterministic complete response.
+- `MockStreamingProvider` returns deterministic chunks.
+- `FailingProvider` returns a deterministic provider runtime error.
+- `ProviderRegistry` registers and selects adapters by id.
+
+No OpenAI, Anthropic, local model HTTP, API key, credential, Authorization header, or secret-handling path is implemented in POST-MVP3. Real provider adapters, secret handling, streaming UI, cancellation semantics, and model-specific error mapping belong to MVP4.
+
+## System Events Boundary
+
+MCP connection lifecycle is currently represented in desktop adapter state plus selected task events where task context exists. Future app-wide lifecycle events should use a separate `SystemEvent` stream so connect/discover/disconnect status does not create artificial task events. POST-MVP3 does not add that stream; it documents the boundary to avoid mixing task replay with app lifecycle telemetry.
 
 ### Snapshot Preservation Across MCP Transitions
 

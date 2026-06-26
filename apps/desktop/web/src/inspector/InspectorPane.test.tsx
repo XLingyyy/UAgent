@@ -73,6 +73,7 @@ describe("InspectorPane", () => {
         "Review",
         "Diagnostics",
         "Runtime",
+        "Agent Trace",
         "Terminal",
         "Browser",
         "Files",
@@ -334,6 +335,35 @@ describe("InspectorPane", () => {
         (screen.getByRole("button", { name: "Cancel mock task" }) as HTMLButtonElement).disabled,
       ).toBe(true);
       expect(screen.queryByText("Task cancelled")).toBeNull();
+    });
+  });
+
+  describe("Agent Trace tab", () => {
+    it("shows the active task trace plan, steps, evidence, report, and blocked action", async () => {
+      renderRuntimeInspectorShell("Delete selected Lyra asset");
+      await flushRuntimeSubmitMicrotasks();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Agent Trace" }));
+
+      expect(screen.getByLabelText("Agent trace panel")).toBeTruthy();
+      expect(screen.getByText("Agent run trace")).toBeTruthy();
+      expect(screen.getAllByText("Delete selected Lyra asset").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText("Block mutating intent")).toBeTruthy();
+      expect(screen.getByText("Evidence refs: evidence-0001")).toBeTruthy();
+      expect(
+        screen.getAllByText("blocked mutating action: no write action was executed.").length,
+      ).toBeGreaterThanOrEqual(1);
+      expect(
+        screen.getAllByText("Mutating intent is outside MVP3 read-only boundaries.").length,
+      ).toBeGreaterThanOrEqual(1);
+    });
+
+    it("shows an empty trace state without an active task", () => {
+      renderInspector();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Agent Trace" }));
+
+      expect(screen.getByText("No active Agent trace")).toBeTruthy();
     });
   });
 

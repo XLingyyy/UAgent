@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ReviewPanel } from "./ReviewPanel";
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { RuntimePanel } from "./RuntimePanel";
+import { AgentTracePanel } from "./AgentTracePanel";
 import { UtilityEvidencePanel, UtilityPlaceholderPanel } from "./UtilityPlaceholderPanel";
 import {
   utilityPlaceholderPanels,
@@ -33,6 +34,10 @@ function renderToolPanel(toolId: UtilityToolId) {
 
   if (toolId === "runtime") {
     return <RuntimePanel />;
+  }
+
+  if (toolId === "agent-trace") {
+    return <AgentTracePanel />;
   }
 
   if (toolId === "evidence") {

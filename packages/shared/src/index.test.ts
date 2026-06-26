@@ -22,6 +22,13 @@ import {
   type AgentPlanStep,
   type AgentReport,
   type AgentRunState,
+  type AgentRunTrace,
+  type AgentTraceEvent,
+  type ProviderCapability,
+  type ProviderRuntimeRequest,
+  type ProviderRuntimeResponse,
+  type ProviderRuntimeError,
+  createAgentTraceSummary,
 } from "./index.js";
 
 describe("@uagent/shared types", () => {
@@ -347,5 +354,165 @@ describe("@uagent/shared types", () => {
     expect(observation.source).toBe("mcp-readonly");
     expect(report.blockedActions[0].toolName).toBe("ue.asset.delete");
     expect(runStates).toContain("cancelled");
+  });
+
+  it("defines the POST-MVP3 Agent Run Trace contract and summary helper", () => {
+    const events: AgentTraceEvent[] = [
+      {
+        id: "trace-event-1",
+        type: "run_started",
+        title: "Run started",
+        createdAt: 4_000,
+      },
+      {
+        id: "trace-event-2",
+        type: "plan_created",
+        title: "Plan created",
+        createdAt: 4_001,
+        planId: "agent-plan-task-0001",
+      },
+      {
+        id: "trace-event-3",
+        type: "step_started",
+        title: "Read current selection",
+        createdAt: 4_002,
+        stepId: "step-read",
+      },
+      {
+        id: "trace-event-4",
+        type: "observation_recorded",
+        title: "Observation recorded",
+        createdAt: 4_003,
+        stepId: "step-read",
+        observationId: "observation-0001",
+      },
+      {
+        id: "trace-event-5",
+        type: "evidence_attached",
+        title: "Evidence attached",
+        createdAt: 4_004,
+        evidenceId: "evidence-0001",
+      },
+      {
+        id: "trace-event-6",
+        type: "report_created",
+        title: "Report created",
+        createdAt: 4_005,
+        reportId: "agent-report-task-0001",
+      },
+      {
+        id: "trace-event-7",
+        type: "run_completed",
+        title: "Run completed",
+        createdAt: 4_006,
+      },
+    ];
+    const trace: AgentRunTrace = {
+      id: "agent-run-trace-task-0001",
+      taskId: "task-0001",
+      goal: "Review current selection",
+      status: "completed",
+      startedAt: 4_000,
+      completedAt: 4_006,
+      events,
+      steps: [
+        {
+          id: "step-read",
+          title: "Read current selection",
+          kind: "read_context",
+          status: "completed",
+          startedAt: 4_002,
+          completedAt: 4_004,
+          observationIds: ["observation-0001"],
+          evidenceIds: ["evidence-0001"],
+        },
+      ],
+      observations: [
+        {
+          id: "observation-0001",
+          taskId: "task-0001",
+          stepId: "step-read",
+          source: "mcp-readonly",
+          summary: "StaticMeshActor_1",
+          createdAt: 4_003,
+        },
+      ],
+      evidenceRefs: ["evidence-0001"],
+      reportSummary: "read-only completed: current selection reviewed.",
+      blockedActions: [
+        {
+          stepId: "step-delete",
+          toolName: "ue.asset.delete",
+          reason: "Mutating UE actions are outside MVP3.",
+          riskLevel: "blocked",
+        },
+      ],
+    };
+
+    const summary = createAgentTraceSummary(trace);
+
+    expect(summary).toEqual({
+      taskId: "task-0001",
+      status: "completed",
+      goal: "Review current selection",
+      eventCount: 7,
+      stepCount: 1,
+      observationCount: 1,
+      evidenceCount: 1,
+      blockedActionCount: 1,
+      reportSummary: "read-only completed: current selection reviewed.",
+      terminalEventType: "run_completed",
+      startedAt: 4_000,
+      completedAt: 4_006,
+    });
+  });
+
+  it("defines the provider-ready runtime contract without real provider credentials", () => {
+    const request: ProviderRuntimeRequest = {
+      id: "provider-request-0001",
+      providerId: "mock-text",
+      modelId: "mock-model",
+      messages: [
+        { role: "system", content: "Read-only UAgent boundary." },
+        { role: "user", content: "Review current selection" },
+      ],
+      temperature: 0,
+      metadata: {
+        taskId: "task-0001",
+        planId: "agent-plan-task-0001",
+      },
+    };
+    const response: ProviderRuntimeResponse = {
+      id: "provider-response-0001",
+      requestId: request.id,
+      providerId: "mock-text",
+      modelId: "mock-model",
+      text: "Deterministic mock provider response.",
+      finishReason: "stop",
+      usage: {
+        inputTokens: 12,
+        outputTokens: 5,
+        totalTokens: 17,
+      },
+      createdAt: 5_000,
+    };
+    const capability: ProviderCapability = {
+      providerId: "mock-text",
+      modelIds: ["mock-model"],
+      supportsStreaming: true,
+      supportsTools: false,
+      isMock: true,
+    };
+    const error: ProviderRuntimeError = {
+      name: "ProviderRuntimeError",
+      providerId: "mock-failing",
+      message: "Deterministic provider failure.",
+      retryable: false,
+    };
+
+    expect(request.messages[0].role).toBe("system");
+    expect(response.usage.totalTokens).toBe(17);
+    expect(capability.isMock).toBe(true);
+    expect(error.retryable).toBe(false);
   });
 });

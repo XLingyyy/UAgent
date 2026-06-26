@@ -80,6 +80,15 @@ export type {
   AgentStepTarget,
 } from "./agent.js";
 export type {
+  AgentRunTrace,
+  AgentTraceEvent,
+  AgentTraceEventType,
+  AgentTraceStatus,
+  AgentTraceStepSnapshot,
+  AgentTraceSummary,
+} from "./agent-trace.js";
+export { createAgentTraceSummary } from "./agent-trace.js";
+export type {
   McpCapabilitySummary,
   McpConnectionProfile,
   McpConnectionState,
@@ -100,3 +109,13 @@ export type {
 } from "./runtime.js";
 export { createEmptyRuntimeSnapshot } from "./runtime.js";
 export type { ApprovalRequest, ApprovalRequestState } from "./approval.js";
+export type {
+  ProviderCapability,
+  ProviderMessageRole,
+  ProviderRuntimeError,
+  ProviderRuntimeMessage,
+  ProviderRuntimeRequest,
+  ProviderRuntimeResponse,
+  ProviderStreamChunk,
+  ProviderUsage,
+} from "./provider-runtime.js";

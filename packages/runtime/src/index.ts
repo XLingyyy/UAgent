@@ -29,6 +29,17 @@ export {
   createAgentReport,
   type CreateAgentReportInput,
 } from "./agent-report.js";
+export { buildAgentRunTrace } from "./agent-run-recorder.js";
+export { replayAgentRunTrace, type AgentRunReplaySummary } from "./agent-run-replay.js";
+export { buildPromptEnvelope, type BuildPromptEnvelopeInput, type PromptEnvelope } from "./prompt/prompt-builder.js";
+export { buildContextPack, buildToolPolicyPack, type PromptProviderMetadata } from "./prompt/context-pack.js";
+export type { ProviderAdapter } from "./provider/provider-adapter.js";
+export {
+  FailingProvider,
+  MockStreamingProvider,
+  MockTextProvider,
+  ProviderRegistry,
+} from "./provider/mock-provider.js";
 export { createMcpReadOnlyRuntime, type McpReadOnlyRuntimeClient, type McpReadOnlyRuntimeOptions } from "./mcp-readonly-runtime.js";
 export { createRuntimeRouter, type RuntimeRouterOptions } from "./runtime-router.js";
 export { applyTaskEvent, reduceTaskEvents } from "./task-event-reducer.js";

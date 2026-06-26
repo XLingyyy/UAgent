@@ -39,6 +39,7 @@ export type UtilityToolId =
   | "review"
   | "diagnostics"
   | "runtime"
+  | "agent-trace"
   | "terminal"
   | "browser"
   | "files"
@@ -49,7 +50,7 @@ export type UtilityToolId =
 
 export type UtilityPlaceholderToolId = Exclude<
   UtilityToolId,
-  "review" | "diagnostics" | "runtime" | "evidence"
+  "review" | "diagnostics" | "runtime" | "agent-trace" | "evidence"
 >;
 
 export interface UtilityToolDefinition {
@@ -184,6 +185,11 @@ export const utilityTools: UtilityToolDefinition[] = [
     id: "runtime",
     label: "Runtime",
     summary: "Task event state",
+  },
+  {
+    id: "agent-trace",
+    label: "Agent Trace",
+    summary: "Trace replay",
   },
   {
     id: "terminal",
