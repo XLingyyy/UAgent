@@ -1,7 +1,21 @@
+import type { PermissionMode } from "@uagent/shared";
 import { DEFAULT_PROVIDERS, formatContextWindow } from "../provider/provider-data";
 import type { ProviderConfig, ProviderReasoningEffort } from "../types/provider";
 
 export type ComposerPermission = "request-approval" | "auto-approve" | "full-access" | "custom";
+
+export function toSharedPermissionMode(p: ComposerPermission): PermissionMode {
+  switch (p) {
+    case "request-approval":
+      return "request_approval";
+    case "auto-approve":
+      return "auto";
+    case "full-access":
+      return "auto";
+    case "custom":
+      return "plan_only";
+  }
+}
 
 export interface ComposerPermissionOption {
   id: ComposerPermission;

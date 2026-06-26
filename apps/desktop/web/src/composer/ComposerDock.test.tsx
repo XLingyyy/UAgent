@@ -53,12 +53,14 @@ describe("ComposerDock", () => {
     expect(within(rightTools).getByLabelText("Send - disabled")).toBeTruthy();
   });
 
-  it("renders the status row with ProjectSelector, local mode, branch, and mock-only warning", () => {
+  it("renders the status row with ProjectSelector, runtime chip, local mode, branch, and mock-only warning", () => {
     renderDock();
 
     const dock = screen.getByLabelText("Composer dock");
 
     expect(within(dock).getByLabelText("Project selector: Lyra_Prototype")).toBeTruthy();
+    expect(within(dock).getByText("Runtime")).toBeTruthy();
+    expect(within(dock).getByText("Mock only")).toBeTruthy();
     expect(within(dock).getByText("Mode")).toBeTruthy();
     expect(within(dock).getByText("Local mode")).toBeTruthy();
     expect(within(dock).getByText("Branch")).toBeTruthy();
@@ -247,5 +249,59 @@ describe("ComposerDock", () => {
       name: "Model and reasoning settings",
     });
     expect(within(dropdown).getByText("Studio / GPT-5.1 Custom")).toBeTruthy();
+  });
+
+  it("shows Runtime Mock only chip when model is configured", () => {
+    const customProviders: ProviderConfig[] = [
+      {
+        providerId: "studio",
+        displayName: "Studio",
+        baseUrl: "https://mock.studio.local/v1",
+        wireApi: "responses",
+        authMode: "env_key",
+        envKey: "STUDIO_KEY",
+        enabled: true,
+        models: [
+          {
+            id: "studio-gpt-5-1",
+            label: "GPT-5.1 Custom",
+            contextWindow: 256000,
+            supportsReasoning: true,
+            reasoningEfforts: ["medium", "high", "xhigh"],
+          },
+        ],
+        defaultModel: "studio-gpt-5-1",
+        defaultReasoningEffort: "high",
+      },
+    ];
+
+    render(
+      <UIProvider
+        initialState={{
+          provider: {
+            providers: customProviders,
+            selectedProviderId: "studio",
+            defaultProviderId: "studio",
+          },
+        }}
+      >
+        <ComposerDock />
+      </UIProvider>,
+    );
+
+    const dock = screen.getByLabelText("Composer dock");
+    expect(within(dock).getByText("Runtime")).toBeTruthy();
+    expect(within(dock).getByText("Mock only")).toBeTruthy();
+    expect(within(dock).queryByText("Model")).toBeNull();
+  });
+
+  it("shows Runtime Mock only chip and Model warning when model is not configured", () => {
+    renderDock();
+
+    const dock = screen.getByLabelText("Composer dock");
+    expect(within(dock).getByText("Runtime")).toBeTruthy();
+    expect(within(dock).getByText("Mock only")).toBeTruthy();
+    expect(within(dock).getByText("Model")).toBeTruthy();
+    expect(within(dock).getByText("Mock runtime / no provider call")).toBeTruthy();
   });
 });

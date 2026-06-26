@@ -6,6 +6,7 @@ import {
   type ChatMessage,
   type Evidence,
   type EvidenceRecord,
+  type PermissionMode,
   type PlanItem,
   type RuntimeClient,
   type RuntimeSnapshot,
@@ -126,6 +127,26 @@ describe("@uagent/shared types", () => {
     expect(planEvent.id).toBe("task-0001-event-0002");
     expect(evidence.source).toBe("mock-runtime");
     expect(snapshot.eventsByTaskId["task-0001"][0].type).toBe("plan_created");
+  });
+
+  it("defines the shared PermissionMode type used by TaskDraft", () => {
+    const auto: PermissionMode = "auto";
+    const req: PermissionMode = "request_approval";
+    const plan: PermissionMode = "plan_only";
+    const draft: TaskDraft = {
+      input: "test",
+      projectId: null,
+      permissionMode: req,
+      modelId: "m1",
+      reasoningEffort: "medium",
+      runMode: "local",
+      branch: "main",
+      contextPercent: 10,
+    };
+    expect(draft.permissionMode).toBe("request_approval");
+    // verify each valid value is assignable
+    const modes: PermissionMode[] = [auto, req, plan];
+    expect(modes).toHaveLength(3);
   });
 
   it("defines a RuntimeClient boundary without exposing runtime internals", async () => {

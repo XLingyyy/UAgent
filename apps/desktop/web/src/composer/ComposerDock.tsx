@@ -3,7 +3,7 @@ import { ContextRing } from "./ContextRing";
 import { ModelSelector } from "./ModelSelector";
 import { PermissionSelector } from "./PermissionSelector";
 import { ProjectSelector } from "./ProjectSelector";
-import { composerMock, createComposerModelOptions, reasoningOptions } from "./composer-data";
+import { composerMock, createComposerModelOptions, reasoningOptions, toSharedPermissionMode } from "./composer-data";
 import { MOCK_PROJECTS } from "../project/project-data";
 import {
   useComposerActions,
@@ -48,7 +48,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
     void submitComposerTask({
       input: trimmedInput,
       projectId: activeProjectId,
-      permissionMode: permission,
+      permissionMode: toSharedPermissionMode(permission),
       modelId: selectedModelId,
       reasoningEffort,
       runMode,
@@ -119,6 +119,13 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
           projects={MOCK_PROJECTS}
           onChange={setActiveProject}
         />
+
+        <span className="ua-composer__status-separator" aria-hidden="true" />
+
+        <span className="ua-composer__status-item">
+          <span className="ua-composer__status-label">Runtime</span>
+          <span className="ua-composer__status-value">Mock only</span>
+        </span>
 
         <span className="ua-composer__status-separator" aria-hidden="true" />
 

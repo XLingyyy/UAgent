@@ -49,6 +49,7 @@ export interface WorkspaceState {
 }
 
 export type {
+  PermissionMode,
   TaskDraft,
   TaskEvent,
   TaskEventLevel,

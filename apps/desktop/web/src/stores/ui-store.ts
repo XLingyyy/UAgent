@@ -19,12 +19,14 @@ import type {
   UIShellState,
 } from "../types/ui";
 import {
-  createDesktopMockRuntimeClient,
-  DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS,
   createRuntimeStoreState,
   type RuntimeStoreActions,
   type RuntimeStoreState,
 } from "../runtime/runtime-store";
+import {
+  createDesktopRuntimeAdapter,
+  type DesktopRuntimeAdapter,
+} from "../runtime/desktop-runtime-adapter";
 import { createInitialComposerState, createDefaultComposerState } from "./composer-store";
 import { createInitialLayoutState } from "./layout-store";
 import { createInitialProjectState } from "./project-store";
@@ -60,44 +62,17 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
   const threadStore = createSliceStore(createInitialThreadState(initialState));
   const composerStore = createSliceStore(createInitialComposerState(initialState, providerState));
   const providerStore = createSliceStore(providerState);
-  const runtimeClient = createDesktopMockRuntimeClient();
-  const pendingRuntimeFlushes = new Map<string, ReturnType<typeof setTimeout>>();
+  const runtimeClient: DesktopRuntimeAdapter = createDesktopRuntimeAdapter();
   const runtimeStore = createSliceStore({
     ...createRuntimeStoreState(runtimeClient.getSnapshot()),
     ...initialState?.runtime,
   });
 
-  const syncRuntimeSnapshot = () => {
-    runtimeStore.setState((previousState) => ({
-      ...previousState,
-      ...runtimeClient.getSnapshot(),
-      mockOnlyWarning: "Mock runtime / no provider call",
-    }));
-  };
-
-  const clearPendingRuntimeFlush = (taskId: string) => {
-    const pendingFlush = pendingRuntimeFlushes.get(taskId);
-    if (!pendingFlush) {
-      return;
-    }
-
-    clearTimeout(pendingFlush);
-    pendingRuntimeFlushes.delete(taskId);
-  };
-
-  const scheduleRuntimeCompletionFlush = (taskId: string) => {
-    clearPendingRuntimeFlush(taskId);
-    const pendingFlush = setTimeout(() => {
-      pendingRuntimeFlushes.delete(taskId);
-      void runtimeClient.flushAll(taskId).then(syncRuntimeSnapshot);
-    }, DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS);
-    pendingRuntimeFlushes.set(taskId, pendingFlush);
-  };
-
   runtimeClient.subscribe((snapshot) => {
     runtimeStore.setState((previousState) => ({
       ...previousState,
       ...snapshot,
+      mockOnlyWarning: "Mock runtime / no provider call",
     }));
   });
 
@@ -243,10 +218,6 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
     submitComposerTask: async (draft) => {
       composerStore.setState((previousState) => ({ ...previousState, input: "" }));
       const record = await runtimeClient.submitTask(draft);
-      await runtimeClient.flushNextEvent(record.id);
-      await runtimeClient.flushNextEvent(record.id);
-      syncRuntimeSnapshot();
-      scheduleRuntimeCompletionFlush(record.id);
       threadStore.setState({ activeThreadId: record.id });
       layoutStore.setState((previousState) => ({
         ...previousState,
@@ -255,9 +226,7 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
       return record.id;
     },
     cancelRuntimeTask: async (taskId) => {
-      clearPendingRuntimeFlush(taskId);
       await runtimeClient.cancelTask(taskId);
-      syncRuntimeSnapshot();
     },
   };
 

@@ -1,3 +1,5 @@
+export type PermissionMode = "auto" | "request_approval" | "plan_only";
+
 export type TaskState =
   | "draft"
   | "submitted"
@@ -28,7 +30,7 @@ export type TaskEventLevel = "info" | "success" | "warning" | "error";
 export interface TaskDraft {
   input: string;
   projectId: string | null;
-  permissionMode: string;
+  permissionMode: PermissionMode;
   modelId: string;
   reasoningEffort: string;
   runMode: "local" | "sandbox";
