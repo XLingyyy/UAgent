@@ -1,4 +1,9 @@
-import { isTerminalTaskState } from "@uagent/shared";
+import {
+  isTerminalTaskState,
+  type AgentPlan,
+  type AgentPlanStep,
+  type TaskEvent,
+} from "@uagent/shared";
 import { useOptionalRuntimeActions, useOptionalRuntimeStore } from "../stores/ui-store";
 import "./UtilityPlaceholderPanel.css";
 
@@ -6,6 +11,35 @@ function mcpRuntimeLabel(status: string, capabilities: unknown): string {
   if (status === "connected" && capabilities) return "MCP read-only";
   if (status === "connected") return "Connected · discovery required";
   return "Mock only";
+}
+
+function payloadRecord(event: TaskEvent): Record<string, unknown> | null {
+  return event.payload && typeof event.payload === "object"
+    ? (event.payload as Record<string, unknown>)
+    : null;
+}
+
+function findLastEvent(events: TaskEvent[], type: TaskEvent["type"]): TaskEvent | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index]?.type === type) {
+      return events[index] ?? null;
+    }
+  }
+  return null;
+}
+
+function extractPlan(events: TaskEvent[]): AgentPlan | null {
+  const planEvent = findLastEvent(events, "agent_plan_created");
+  const payload = planEvent ? payloadRecord(planEvent) : null;
+  return payload?.plan && typeof payload.plan === "object" ? (payload.plan as AgentPlan) : null;
+}
+
+function extractCurrentStep(events: TaskEvent[]): AgentPlanStep | null {
+  const stepEvent = findLastEvent(events, "agent_step_started");
+  const payload = stepEvent ? payloadRecord(stepEvent) : null;
+  return payload?.step && typeof payload.step === "object"
+    ? (payload.step as AgentPlanStep)
+    : null;
 }
 
 export function RuntimePanel() {
@@ -16,6 +50,12 @@ export function RuntimePanel() {
   const events = activeTaskId ? (runtime?.eventsByTaskId[activeTaskId] ?? []) : [];
   const visibleEventCount = events.filter((event) => event.type !== "mcp_fallback_to_mock").length;
   const canCancel = Boolean(activeTaskId && activeTask && runtimeActions && !isTerminalTaskState(activeTask.state));
+  const plan = extractPlan(events);
+  const currentStep = extractCurrentStep(events);
+  const completedSteps = events.filter((event) => event.type === "agent_step_completed").length;
+  const observations = events.filter((event) => event.type === "agent_observation_created").length;
+  const evidence = events.filter((event) => event.type === "evidence_created").length;
+  const blocked = events.filter((event) => event.type === "mcp_tool_blocked").length;
 
   return (
     <section className="ua-utility-placeholder" aria-label="Runtime panel">
@@ -37,6 +77,16 @@ export function RuntimePanel() {
           State: {activeTask?.state ?? "idle"}
         </li>
         <li className="ua-utility-placeholder__item">{visibleEventCount} events</li>
+        <li className="ua-utility-placeholder__item">
+          Plan: {plan?.goal ?? "No active Agent plan"}
+        </li>
+        <li className="ua-utility-placeholder__item">
+          Current step: {currentStep?.title ?? "None"}
+        </li>
+        <li className="ua-utility-placeholder__item">Completed steps: {completedSteps}</li>
+        <li className="ua-utility-placeholder__item">Observations: {observations}</li>
+        <li className="ua-utility-placeholder__item">Evidence: {evidence}</li>
+        <li className="ua-utility-placeholder__item">Blocked: {blocked}</li>
         <li className="ua-utility-placeholder__item">
           {runtime?.mockOnlyWarning ?? "Mock runtime / no provider call"}
         </li>

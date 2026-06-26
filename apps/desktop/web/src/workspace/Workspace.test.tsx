@@ -114,11 +114,13 @@ describe("Workspace", () => {
 
     const viewport = await screen.findByLabelText("Conversation activity");
     expect(screen.getByLabelText("Workspace").getAttribute("data-workspace-mode")).toBe("thread");
-    expect(within(viewport).getByText("Review Lyra asset loading risks")).toBeTruthy();
-    expect(within(viewport).getAllByText("Agent plan").length).toBeGreaterThanOrEqual(1);
-    expect((await within(viewport).findAllByText("Tool completed")).length).toBeGreaterThanOrEqual(
+    expect(within(viewport).getAllByText("Review Lyra asset loading risks").length).toBeGreaterThanOrEqual(
       1,
     );
+    expect(within(viewport).getAllByText("Agent plan").length).toBeGreaterThanOrEqual(1);
+    expect(
+      (await within(viewport).findAllByText("Agent step completed")).length,
+    ).toBeGreaterThanOrEqual(1);
     expect((await within(viewport).findAllByText("Evidence created")).length).toBeGreaterThanOrEqual(
       1,
     );
@@ -141,8 +143,11 @@ describe("Workspace", () => {
     const viewport = await screen.findByLabelText("Conversation activity");
     expect((await within(viewport).findAllByText("Task failed")).length).toBeGreaterThanOrEqual(1);
     expect(
-      await within(viewport).findByText("Mock failure injected by #fail or failAtEvent."),
-    ).toBeTruthy();
+      (await within(viewport).findAllByText("Agent step failed")).length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      (await within(viewport).findAllByText("Mock failure injected by #fail.")).length,
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it("keeps static mock fallback for seeded non-runtime threads", () => {

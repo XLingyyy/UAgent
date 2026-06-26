@@ -17,6 +17,11 @@ import {
   type McpConnectionProfile,
   type McpDiscoverySnapshot,
   type ToolRiskClassification,
+  type AgentObservation,
+  type AgentPlan,
+  type AgentPlanStep,
+  type AgentReport,
+  type AgentRunState,
 } from "./index.js";
 
 describe("@uagent/shared types", () => {
@@ -233,5 +238,114 @@ describe("@uagent/shared types", () => {
     expect(event.type).toBe("mcp_discovery_completed");
     expect(discovery.capabilitySummary.resources).toBe(1);
     expect(risk.level).toBe("read_only");
+  });
+
+  it("defines the MVP3 Agent Core shared contract", () => {
+    const steps: AgentPlanStep[] = [
+      {
+        id: "step-analyze",
+        kind: "analyze_intent",
+        title: "Analyze request",
+        status: "pending",
+        description: "Classify the user request before selecting a capability.",
+      },
+      {
+        id: "step-read",
+        kind: "read_context",
+        title: "Read current selection",
+        status: "pending",
+        description: "Read the current editor selection through MCP read-only context.",
+        target: {
+          type: "mcp_resource",
+          name: "Current selection",
+          uri: "ue://selection/current",
+        },
+        action: {
+          type: "read_resource",
+          resourceUri: "ue://selection/current",
+        },
+      },
+      {
+        id: "step-blocked",
+        kind: "policy_review",
+        title: "Block write intent",
+        status: "blocked",
+        description: "Document why a mutating request is not executed in MVP3.",
+        action: {
+          type: "blocked",
+          toolName: "ue.asset.delete",
+          reason: "Mutating UE actions are outside MVP3.",
+          riskLevel: "blocked",
+        },
+      },
+      {
+        id: "step-report",
+        kind: "report",
+        title: "Report findings",
+        status: "pending",
+        description: "Create the deterministic Agent report.",
+        action: {
+          type: "noop_report",
+        },
+      },
+    ];
+    const plan: AgentPlan = {
+      id: "agent-plan-task-0001",
+      taskId: "task-0001",
+      goal: "Review current selection",
+      state: "planning",
+      steps,
+      createdAt: 3_000,
+      updatedAt: 3_000,
+      metadata: {
+        planner: "deterministic",
+        runtimeMode: "mcp-readonly",
+      },
+    };
+    const observation: AgentObservation = {
+      id: "observation-0001",
+      taskId: "task-0001",
+      stepId: "step-read",
+      source: "mcp-readonly",
+      summary: "Read current selection resource.",
+      payload: { uri: "ue://selection/current", text: "StaticMeshActor_1" },
+      createdAt: 3_001,
+    };
+    const report: AgentReport = {
+      id: "agent-report-task-0001",
+      taskId: "task-0001",
+      planId: plan.id,
+      summary: "read-only completed: current selection reviewed.",
+      findings: ["Selection context was read through the guarded MCP path."],
+      evidenceRefs: ["evidence-0001"],
+      blockedActions: [
+        {
+          stepId: "step-blocked",
+          toolName: "ue.asset.delete",
+          reason: "Mutating UE actions are outside MVP3.",
+        },
+      ],
+      nextSteps: ["Review the evidence before requesting any future write action."],
+      createdAt: 3_002,
+    };
+    const runStates: AgentRunState[] = [
+      "planning",
+      "executing",
+      "observing",
+      "reviewing",
+      "completed",
+      "failed",
+      "cancelled",
+    ];
+
+    expect(plan.steps.map((step) => step.kind)).toEqual([
+      "analyze_intent",
+      "read_context",
+      "policy_review",
+      "report",
+    ]);
+    expect(observation.source).toBe("mcp-readonly");
+    expect(report.blockedActions[0].toolName).toBe("ue.asset.delete");
+    expect(runStates).toContain("cancelled");
   });
 });

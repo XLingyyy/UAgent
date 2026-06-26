@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDesktopRuntimeAdapter } from "./desktop-runtime-adapter";
-import { DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS } from "./runtime-store";
 import { LegacySseTransport, McpTransportError, StreamableHttpTransport } from "@uagent/mcp-client";
 import type { McpTransportClient } from "@uagent/mcp-client";
 import type { TaskDraft } from "@uagent/shared";
@@ -70,7 +69,7 @@ afterEach(() => {
 });
 
 describe("DesktopRuntimeAdapter", () => {
-  it("submit delivers task_submitted and plan_created synchronously", async () => {
+  it("submit routes through AgentLoop and emits plan, observation, evidence, and report events", async () => {
     const adapter = createDesktopRuntimeAdapter();
     const record = await adapter.submitTask(baseDraft);
     const snapshot = adapter.getSnapshot();
@@ -78,60 +77,31 @@ describe("DesktopRuntimeAdapter", () => {
 
     expect(record.id).toBe("task-0001");
     expect(events.map((e) => e.type)).toEqual([
-      "mcp_fallback_to_mock",
       "task_submitted",
-      "plan_created",
-    ]);
-    expect(snapshot.tasksById[record.id].state).toBe("planning");
-  });
-
-  it("delayed flush completes the task", async () => {
-    vi.useFakeTimers();
-    const adapter = createDesktopRuntimeAdapter();
-    const record = await adapter.submitTask(baseDraft);
-
-    await vi.advanceTimersByTimeAsync(DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS);
-
-    const snapshot = adapter.getSnapshot();
-    expect(snapshot.tasksById[record.id].state).toBe("completed");
-    const events = snapshot.eventsByTaskId[record.id];
-    expect(events.map((e) => e.type)).toEqual([
       "mcp_fallback_to_mock",
-      "task_submitted",
-      "plan_created",
-      "tool_started",
-      "tool_completed",
+      "agent_plan_started",
+      "agent_plan_created",
+      "agent_step_started",
+      "agent_step_completed",
+      "agent_step_started",
+      "agent_step_completed",
+      "agent_step_started",
+      "agent_observation_created",
       "evidence_created",
+      "agent_step_completed",
+      "agent_step_started",
+      "agent_step_completed",
+      "agent_report_created",
       "review_created",
       "task_completed",
     ]);
+    expect(snapshot.tasksById[record.id].state).toBe("completed");
   });
 
-  it("cancel before delayed flush stops at cancelled", async () => {
-    vi.useFakeTimers();
+  it("completed AgentLoop task does not add late cancellation event", async () => {
     const adapter = createDesktopRuntimeAdapter();
     const record = await adapter.submitTask(baseDraft);
 
-    await adapter.cancelTask(record.id);
-    await vi.advanceTimersByTimeAsync(DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS);
-
-    const snapshot = adapter.getSnapshot();
-    const events = snapshot.eventsByTaskId[record.id];
-    expect(events.map((e) => e.type)).toEqual([
-      "mcp_fallback_to_mock",
-      "task_submitted",
-      "plan_created",
-      "task_cancelled",
-    ]);
-    expect(snapshot.tasksById[record.id].state).toBe("cancelled");
-  });
-
-  it("cancel after completion does not add late cancellation event", async () => {
-    vi.useFakeTimers();
-    const adapter = createDesktopRuntimeAdapter();
-    const record = await adapter.submitTask(baseDraft);
-
-    await vi.advanceTimersByTimeAsync(DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS);
     await adapter.cancelTask(record.id);
 
     const snapshot = adapter.getSnapshot();
@@ -152,16 +122,13 @@ describe("DesktopRuntimeAdapter", () => {
     expect(listener).toHaveBeenCalled();
     const calls = listener.mock.calls.map((call) => call[0] as { status: string });
     const lastCall = calls[calls.length - 1];
-    expect(lastCall.status).toBe("running");
+    expect(lastCall.status).toBe("completed");
   });
 
   it("handles #fail input and ends in error state", async () => {
-    vi.useFakeTimers();
     const adapter = createDesktopRuntimeAdapter();
     const failDraft: TaskDraft = { ...baseDraft, input: "Review lighting #fail" };
     const record = await adapter.submitTask(failDraft);
-
-    await vi.advanceTimersByTimeAsync(DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS);
 
     const snapshot = adapter.getSnapshot();
     expect(snapshot.tasksById[record.id].state).toBe("failed");
@@ -211,10 +178,11 @@ describe("DesktopRuntimeAdapter", () => {
     await adapter.connectMcp();
     await adapter.discoverMcp();
 
-    const record = await adapter.submitTask({ ...baseDraft, input: "检查当前选择" });
+    const record = await adapter.submitTask({ ...baseDraft, input: "check current selection" });
     const events = adapter.getSnapshot().eventsByTaskId[record.id].map((event) => event.type);
 
-    expect(events).toContain("mcp_discovery_completed");
+    expect(events).toContain("agent_plan_created");
+    expect(events).toContain("agent_step_started");
     expect(events).toContain("mcp_read_completed");
     expect(events).toContain("evidence_created");
     expect(events).toContain("task_completed");
@@ -291,8 +259,64 @@ describe("DesktopRuntimeAdapter", () => {
     );
 
     expect(toolCallCalls).toHaveLength(0);
+    expect(events).toContain("agent_step_failed");
+    expect(events).toContain("agent_report_created");
+    expect(events).toContain("review_created");
+    expect(events.indexOf("agent_report_created")).toBeGreaterThan(events.indexOf("agent_step_failed"));
+    expect(events.indexOf("review_created")).toBeGreaterThan(events.indexOf("agent_report_created"));
+    expect(events.indexOf("task_failed")).toBeGreaterThan(events.indexOf("review_created"));
     expect(events.at(-1)).toBe("task_failed");
     expect(snapshot.tasksById[record.id].state).toBe("failed");
+  });
+
+  it("preserves mock task snapshot through MCP connect+discover cycle", async () => {
+    const adapter = createDesktopRuntimeAdapter();
+    await adapter.submitTask(baseDraft);
+
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+
+    const snapshot = adapter.getSnapshot();
+    expect(snapshot.tasksById["task-0001"]).toBeDefined();
+    expect(snapshot.tasksById["task-0001"].state).toBe("completed");
+  });
+
+  it("preserves old tasks and increments task id after MCP discover", async () => {
+    const adapter = createDesktopRuntimeAdapter();
+    const record1 = await adapter.submitTask(baseDraft);
+
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+
+    const record2 = await adapter.submitTask({ ...baseDraft, input: "check current selection" });
+
+    const snapshot = adapter.getSnapshot();
+    expect(snapshot.tasksById["task-0001"]).toBeDefined();
+    expect(snapshot.tasksById["task-0002"]).toBeDefined();
+    expect(Object.keys(snapshot.tasksById).length).toBe(2);
+    expect(record1.id).not.toBe(record2.id);
+  });
+
+  it("preserves all tasks through disconnect back to mock fallback", async () => {
+    const adapter = createDesktopRuntimeAdapter();
+    await adapter.submitTask(baseDraft);
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+    await adapter.submitTask({ ...baseDraft, input: "check current selection" });
+
+    adapter.disconnectMcp();
+
+    const record3 = await adapter.submitTask(baseDraft);
+
+    const snapshot = adapter.getSnapshot();
+    expect(snapshot.tasksById["task-0001"]).toBeDefined();
+    expect(snapshot.tasksById["task-0002"]).toBeDefined();
+    expect(snapshot.tasksById["task-0003"]).toBeDefined();
+    expect(Object.keys(snapshot.tasksById).length).toBe(3);
+    expect(record3.id).toBe("task-0003");
+    expect(
+      snapshot.eventsByTaskId["task-0003"].map((e) => e.type),
+    ).toContain("mcp_fallback_to_mock");
   });
 
   it("blocks non-localhost endpoints and keeps MockRuntime fallback available", async () => {

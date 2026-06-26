@@ -2,6 +2,33 @@ import type { PlanItem, Evidence, ChatMessage, ToolCall } from "@uagent/shared";
 export { createMockRuntime, type MockRuntimeClient, type MockRuntimeOptions } from "./mock-runtime.js";
 export { classifyMcpToolRisk, isRiskAllowed } from "./mcp-readonly-policy.js";
 export { createSemanticCapabilityIndex, type McpResolvedIntent, type SemanticCapabilityIndex } from "./mcp-semantic-index.js";
+export {
+  DeterministicPlanner,
+  type DeterministicPlannerOptions,
+  type Planner,
+  type PlannerInput,
+} from "./agent-planner.js";
+export {
+  selectAction,
+  type AgentAction,
+  type AgentActionSelectorContext,
+} from "./agent-action-selector.js";
+export {
+  createAgentLoopRuntime,
+  type AgentLoopContextUpdate,
+  type AgentLoopOptions,
+  type AgentLoopRuntimeClient,
+} from "./agent-loop-runtime.js";
+export {
+  createEvidenceFromObservation,
+  normalizeObservation,
+  summarizePayload,
+  type NormalizeObservationInput,
+} from "./agent-observation.js";
+export {
+  createAgentReport,
+  type CreateAgentReportInput,
+} from "./agent-report.js";
 export { createMcpReadOnlyRuntime, type McpReadOnlyRuntimeClient, type McpReadOnlyRuntimeOptions } from "./mcp-readonly-runtime.js";
 export { createRuntimeRouter, type RuntimeRouterOptions } from "./runtime-router.js";
 export { applyTaskEvent, reduceTaskEvents } from "./task-event-reducer.js";

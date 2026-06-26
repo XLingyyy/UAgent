@@ -8,8 +8,13 @@ UAgent routes all task state through shared TypeScript types from `@uagent/share
 Composer input
   -> TaskDraft
   -> RuntimeClient.submitTask()
-  -> RuntimeRouter
-  -> MockRuntime fallback or McpReadOnlyRuntime
+  -> AgentLoopRuntime
+  -> DeterministicPlanner
+  -> AgentPlan
+  -> guarded read-only action selection
+  -> observation
+  -> evidence
+  -> report
   -> TaskEvent stream
   -> RuntimeSnapshot
   -> ConversationViewport / UtilityDrawer / LeftSidebar
@@ -26,6 +31,12 @@ Composer input
 - `ApprovalRequest`: reserved approval contract; no real approval execution is implemented in MVP1.
 - `McpConnectionProfile`, `McpConnectionState`, and `McpDiscoverySnapshot`: MVP2 MCP read-only connection and discovery metadata.
 - `ToolRiskClassification`: MVP2 read-only, blocked, or unknown tool risk result.
+- `AgentPlan`: deterministic MVP3 plan generated from a `TaskDraft`.
+- `AgentPlanStep`: auditable Agent step with kind, target, status, guard, and optional action metadata.
+- `AgentObservation`: normalized output from mock runtime, MCP read-only execution, or policy blocking.
+- `AgentReport`: deterministic final report with summary, findings, evidence references, blocked actions, and next steps.
+
+Agent contracts live in `@uagent/shared` so runtime and UI code consume the same payloads. They must not depend on React, desktop-only types, MCP session objects, provider adapters, or product shell/browser/filesystem capabilities.
 
 ## MVP1 Event Order
 
@@ -85,6 +96,79 @@ MVP2 defines a tight lifecycle event sequence for MCP read-only tasks:
 
 Before discovery completes, the UI must not display or imply MCP read-only execution is active. The runtime router remains on MockRuntime fallback until `discoverMcp()` installs an `mcpRuntime`.
 
+## MVP3 Agent Runtime Events
+
+MVP3 routes Composer submissions through the AgentLoop. It keeps MVP2 MCP read-only constraints but wraps execution in a deterministic planning loop.
+
+| Event | Level | Typical task state | Payload |
+|-------|-------|--------------------|---------|
+| `agent_plan_started` | `info` | `planning` | draft and planner metadata |
+| `agent_plan_created` | `success` | `planning` | `AgentPlan` |
+| `agent_step_started` | `info` | `executing` | `AgentPlanStep` |
+| `agent_observation_created` | `success` | `observing` | `AgentObservation` and optional evidence |
+| `agent_step_completed` | `success` | `executing` | completed `AgentPlanStep` |
+| `agent_step_failed` | `error` | `executing` | failed `AgentPlanStep` and error summary; `task_failed` produces terminal `failed` state |
+| `agent_report_created` | `success` | `reviewing` | `AgentReport` |
+
+### Agent Event Sequences
+
+**Normal read-only flow:**
+1. `task_submitted`
+2. `agent_plan_started`
+3. `agent_plan_created`
+4. `agent_step_started`
+5. guarded `mcp_read_started` / `mcp_read_completed` when MCP read-only execution is selected
+6. `agent_observation_created`
+7. `evidence_created`
+8. `agent_step_completed`
+9. `agent_report_created`
+10. `review_created`
+11. `task_completed`
+
+**Mock fallback flow:**
+1. `task_submitted`
+2. `mcp_fallback_to_mock` when MCP is disconnected or not discovered
+3. Agent plan, mock observation, evidence, report, and task completion events
+
+**Blocked mutating intent:**
+1. Agent plan includes a blocked or policy-review step
+2. Runtime emits `mcp_tool_blocked`
+3. Runtime emits policy observation, evidence, `agent_report_created`, `review_created`, and `task_completed`
+4. No mutating MCP `tools/call` is sent
+
+**Unresolved intent / failure:**
+1. Agent plan may include analysis and capability selection steps
+2. If no safe read-only action can be selected, runtime emits `agent_step_failed`
+3. Runtime creates a failed `AgentReport` with the error reason and emits `agent_report_created` then `review_created`
+4. Runtime emits `task_failed` and the terminal state becomes `failed`
+
+**Cancellation:**
+1. `cancelTask()` emits `task_cancelled`
+2. Later non-terminal Agent events must not overwrite the cancelled terminal state
+3. The AgentLoop stops before starting later steps
+
+### Agent Diagnostics Mapping
+
+The desktop Diagnostics panel is a read-only projection of the `TaskEvent` stream. It does not call MCP sessions, providers, shell commands, browser APIs, or filesystem APIs.
+
+- `task_failed` is shown as the highest-priority failure diagnostic. Duplicate `agent_step_failed` messages with the same reason are collapsed under the terminal task failure.
+- `mcp_tool_blocked` is shown as the policy diagnostic for mutating or unsafe intent. Matching policy observations with the same reason are collapsed so the user sees one blocked cause.
+- `task_cancelled` is shown as the cancellation diagnostic. Later non-terminal events are ignored by the reducer and cannot overwrite the cancelled state.
+- Warning and error events are displayed from the snapshot only; the UI never directly calls `resources/read` or `tools/call`.
+
+### Snapshot Preservation Across MCP Transitions
+
+The desktop adapter preserves `RuntimeSnapshot` task/event history across MCP state transitions:
+
+- `connectMcp()` resets the runtime context to mock mode (clearing stale MCP references) but preserves existing tasks, events, and task id sequence.
+- `discoverMcp()` installs MCP readResource/callTool into the same runtime instance; existing tasks and event history are retained.
+- `disconnectMcp()` reverts to mock context; existing task history and task id sequence are not reset.
+- Subsequent tasks receive monotonically increasing task ids regardless of MCP state transitions.
+
+### MVP3 Boundaries
+
+The deterministic planner does not call MCP, providers, LLMs, shell commands, browsers, or filesystems. The action selector only returns decisions. Runtime execution may call MCP `resources/read` or `tools/call` only after local policy classifies the selected tool as `read_only`; blocked, mutating, unknown, and unresolved actions must not reach `tools/call`.
+
 ## Boundaries
 
-Runtime code must not call real provider APIs, Unreal Editor write actions, browser automation, shell commands, or project filesystem capabilities as product behavior. MVP2 MCP behavior is restricted to localhost connection/discovery and read-only runtime events; MockRuntime remains the fallback.
+Runtime code must not call real provider APIs, read API keys, send provider requests, perform Unreal Editor write actions, run browser automation, execute shell commands, or use project filesystem capabilities as product behavior. MVP3 MCP behavior is restricted to localhost connection/discovery, `resources/read`, and policy-gated read-only `tools/call`; mock observation remains the fallback path.

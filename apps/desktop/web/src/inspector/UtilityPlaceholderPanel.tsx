@@ -1,3 +1,4 @@
+import type { AgentObservation, EvidenceRecord, TaskEvent } from "@uagent/shared";
 import {
   reviewSummary,
   utilityEvidencePanel,
@@ -7,8 +8,62 @@ import { extractRuntimeEvidence } from "../runtime/event-view-models";
 import { useOptionalRuntimeStore } from "../stores/ui-store";
 import "./UtilityPlaceholderPanel.css";
 
+interface EvidenceDisplayItem {
+  id: string;
+  status: string;
+  summary: string;
+  source: string;
+  evidenceId: string;
+}
+
 interface UtilityPlaceholderPanelProps {
   panel: UtilityPlaceholderPanelData;
+}
+
+function payloadRecord(event: TaskEvent): Record<string, unknown> | null {
+  return event.payload && typeof event.payload === "object"
+    ? (event.payload as Record<string, unknown>)
+    : null;
+}
+
+function extractEvidenceItem(event: TaskEvent): EvidenceDisplayItem {
+  const payload = payloadRecord(event);
+  const observation =
+    payload?.observation && typeof payload.observation === "object"
+      ? (payload.observation as AgentObservation)
+      : null;
+  const evidence =
+    payload?.evidence && typeof payload.evidence === "object"
+      ? (payload.evidence as EvidenceRecord)
+      : null;
+  const id = evidence?.id ?? observation?.id ?? event.id;
+  const source = evidence?.source ?? observation?.source ?? "runtime";
+  const summary = evidence?.summary ?? observation?.summary ?? event.body ?? event.title;
+
+  return {
+    id,
+    status: event.level === "warning" ? "pending" : "checked",
+    summary,
+    source,
+    evidenceId: id,
+  };
+}
+
+function uniqueEvidenceItems(events: TaskEvent[]): EvidenceDisplayItem[] {
+  const seen = new Set<string>();
+  const items: EvidenceDisplayItem[] = [];
+
+  for (const event of events) {
+    const item = extractEvidenceItem(event);
+    const key = `${item.evidenceId}:${item.summary}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    items.push(item);
+  }
+
+  return items;
 }
 
 export function UtilityPlaceholderPanel({ panel }: UtilityPlaceholderPanelProps) {
@@ -93,6 +148,7 @@ export function UtilityEvidencePanel() {
   const activeTaskId = runtime?.activeTaskId ?? null;
   const runtimeEvents = activeTaskId ? (runtime?.eventsByTaskId[activeTaskId] ?? []) : [];
   const evidenceEvents = extractRuntimeEvidence(runtimeEvents);
+  const evidenceItems = uniqueEvidenceItems(evidenceEvents);
 
   return (
     <section className="ua-utility-placeholder" aria-label="Evidence placeholder">
@@ -106,10 +162,12 @@ export function UtilityEvidencePanel() {
 
       <ul className="ua-utility-placeholder__list">
         {evidenceEvents.length > 0
-          ? evidenceEvents.map((event) => (
-              <li key={event.id} className="ua-utility-placeholder__item">
-                <span className="ua-utility-placeholder__item-state">checked</span>
-                <span>{event.body ?? event.title}</span>
+          ? evidenceItems.map((item, index) => (
+              <li key={`${item.id}-${index}`} className="ua-utility-placeholder__item">
+                <span className="ua-utility-placeholder__item-state">{item.status}</span>
+                <span>{item.summary}</span>
+                <span className="ua-utility-placeholder__item-state">{item.source}</span>
+                <span className="ua-utility-placeholder__item-state">{item.evidenceId}</span>
               </li>
             ))
           : reviewSummary.evidenceItems.map((item) => (

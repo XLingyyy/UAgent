@@ -1,16 +1,10 @@
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { act } from "react";
 import { InspectorPane } from "./InspectorPane";
 import { reviewFindings, diagnosticSummary } from "./inspector-data";
 import { UIProvider } from "../app/providers";
 import { ComposerDock } from "../composer/ComposerDock";
-import { DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS } from "../runtime/runtime-store";
-
-afterEach(() => {
-  vi.useRealTimers();
-});
-
 function renderInspector(open = true, onClose?: () => void) {
   return render(<InspectorPane open={open} onClose={onClose} />);
 }
@@ -36,12 +30,6 @@ async function flushRuntimeSubmitMicrotasks() {
     for (let index = 0; index < 6; index += 1) {
       await Promise.resolve();
     }
-  });
-}
-
-async function flushRuntimeCompletionTimer() {
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS);
   });
 }
 
@@ -164,6 +152,19 @@ describe("InspectorPane", () => {
         screen.getByRole("button", { name: "Future evidence capture" }).hasAttribute("disabled"),
       ).toBe(true);
     });
+
+    it("shows Agent observation and evidence summaries for the active runtime task", async () => {
+      await renderRuntimeInspector();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Evidence" }));
+
+      expect(
+        (await screen.findAllByText('Mock observation for "Review Lyra asset loading risks".'))
+          .length,
+      ).toBeGreaterThanOrEqual(1);
+      expect(await screen.findByText("mock-runtime")).toBeTruthy();
+      expect(await screen.findByText("evidence-0001")).toBeTruthy();
+    });
   });
 
   describe("ReviewPanel", () => {
@@ -180,8 +181,13 @@ describe("InspectorPane", () => {
 
       expect(await screen.findByText("Review Lyra asset loading risks")).toBeTruthy();
       expect(
-        await screen.findByText("Mock review found no real side effects", { exact: false }),
+        (await screen.findAllByText("read-only completed: Agent loop finished without write actions."))
+          .length,
+      ).toBeGreaterThanOrEqual(1);
+      expect(
+        await screen.findByText('Mock observation for "Review Lyra asset loading risks".'),
       ).toBeTruthy();
+      expect(await screen.findByText("evidence-0001")).toBeTruthy();
     });
 
     it("renders the Findings section with at least 2 findings", () => {
@@ -231,7 +237,17 @@ describe("InspectorPane", () => {
 
       fireEvent.click(screen.getByRole("tab", { name: "Diagnostics" }));
       expect(await screen.findByText("Task failed")).toBeTruthy();
-      expect(await screen.findByText("Mock failure injected by #fail or failAtEvent.")).toBeTruthy();
+      expect((await screen.findAllByText("Mock failure injected by #fail.")).length).toBeGreaterThanOrEqual(
+        1,
+      );
+    });
+
+    it("shows blocked policy diagnostics for mutating runtime intent", async () => {
+      await renderRuntimeInspector("Delete selected Lyra asset");
+
+      fireEvent.click(screen.getByRole("tab", { name: "Diagnostics" }));
+      expect(await screen.findByText("MCP tool blocked")).toBeTruthy();
+      expect(await screen.findByText("Mutating intent is outside MVP3 read-only boundaries.")).toBeTruthy();
     });
 
     it("renders the Runtime health section with diagnostic items", () => {
@@ -268,25 +284,25 @@ describe("InspectorPane", () => {
 
   describe("Runtime tab", () => {
     it("shows active task runtime state and event count", async () => {
-      vi.useFakeTimers();
       renderRuntimeInspectorShell();
       await flushRuntimeSubmitMicrotasks();
-      await flushRuntimeCompletionTimer();
 
       fireEvent.click(screen.getByRole("tab", { name: "Runtime" }));
       expect(screen.getByText("Runtime context")).toBeTruthy();
       expect(screen.getByText("completed")).toBeTruthy();
-      expect(screen.getByText("7 events")).toBeTruthy();
+      expect(screen.getByText("16 events")).toBeTruthy();
+      expect(screen.getByText("Plan: Review Lyra asset loading risks")).toBeTruthy();
+      expect(screen.getByText("Current step: Record evidence")).toBeTruthy();
+      expect(screen.getByText("Completed steps: 4")).toBeTruthy();
+      expect(screen.getByText("Evidence: 1")).toBeTruthy();
       expect(screen.getAllByText("Mock runtime / no provider call").length).toBeGreaterThanOrEqual(
         1,
       );
     });
 
     it("disables cancellation after the active mock task reaches a terminal state", async () => {
-      vi.useFakeTimers();
       renderRuntimeInspectorShell();
       await flushRuntimeSubmitMicrotasks();
-      await flushRuntimeCompletionTimer();
 
       fireEvent.click(screen.getByRole("tab", { name: "Runtime" }));
 
@@ -295,8 +311,7 @@ describe("InspectorPane", () => {
       ).toBe(true);
     });
 
-    it("cancels a running mock task before later runtime events flush", async () => {
-      vi.useFakeTimers();
+    it("does not cancel a terminal AgentLoop task", async () => {
       render(
         <UIProvider>
           <ComposerDock />
@@ -312,19 +327,13 @@ describe("InspectorPane", () => {
       await flushRuntimeSubmitMicrotasks();
 
       fireEvent.click(screen.getByRole("tab", { name: "Runtime" }));
-      expect(screen.getByLabelText("Runtime panel").textContent).toContain("State: planning");
-      expect(screen.getByText("2 events")).toBeTruthy();
+      expect(screen.getByLabelText("Runtime panel").textContent).toContain("State: completed");
+      expect(screen.getByText("16 events")).toBeTruthy();
 
-      fireEvent.click(screen.getByRole("button", { name: "Cancel mock task" }));
-      await act(async () => {
-        await Promise.resolve();
-      });
-
-      expect(screen.getByText("Task cancelled")).toBeTruthy();
-      expect(screen.getByLabelText("Runtime panel").textContent).toContain("cancelled");
-      expect(screen.getByText("3 events")).toBeTruthy();
-      expect(screen.queryByText("Tool started")).toBeNull();
-      expect(screen.queryByText("Task completed")).toBeNull();
+      expect(
+        (screen.getByRole("button", { name: "Cancel mock task" }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      expect(screen.queryByText("Task cancelled")).toBeNull();
     });
   });
 

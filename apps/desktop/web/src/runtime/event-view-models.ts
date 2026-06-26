@@ -13,6 +13,13 @@ const EVENT_LABELS: Record<TaskEvent["type"], string> = {
   task_failed: "Task failed",
   cancel_task_requested: "Cancel requested",
   task_cancelled: "Task cancelled",
+  agent_plan_started: "Agent planning",
+  agent_plan_created: "Agent plan",
+  agent_step_started: "Agent step",
+  agent_step_completed: "Agent step completed",
+  agent_observation_created: "Agent observation",
+  agent_report_created: "Agent report",
+  agent_step_failed: "Agent step failed",
   mcp_connection_started: "MCP connection",
   mcp_connected: "MCP connected",
   mcp_discovery_started: "MCP discovery",
@@ -37,6 +44,13 @@ const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
   task_failed: "review-summary",
   cancel_task_requested: "tool-event",
   task_cancelled: "review-summary",
+  agent_plan_started: "agent-plan",
+  agent_plan_created: "agent-plan",
+  agent_step_started: "tool-event",
+  agent_step_completed: "tool-event",
+  agent_observation_created: "tool-event",
+  agent_report_created: "review-summary",
+  agent_step_failed: "review-summary",
   mcp_connection_started: "tool-event",
   mcp_connected: "tool-event",
   mcp_discovery_started: "tool-event",
@@ -71,7 +85,10 @@ export function mapTaskEventToWorkspaceMessage(event: TaskEvent): WorkspaceMessa
 
 export function extractRuntimeReview(events: TaskEvent[]): TaskEvent[] {
   return events.filter(
-    (event) => event.type === "review_created" || event.type === "task_completed",
+    (event) =>
+      event.type === "review_created" ||
+      event.type === "agent_report_created" ||
+      event.type === "task_completed",
   );
 }
 
@@ -82,6 +99,7 @@ export function extractRuntimeDiagnostics(events: TaskEvent[]): TaskEvent[] {
       event.level === "error" ||
       event.type === "task_failed" ||
       event.type === "task_cancelled" ||
+      event.type === "agent_step_failed" ||
       event.type === "mcp_tool_blocked" ||
       event.type === "mcp_connection_failed" ||
       event.type === "mcp_disconnected",
@@ -89,5 +107,10 @@ export function extractRuntimeDiagnostics(events: TaskEvent[]): TaskEvent[] {
 }
 
 export function extractRuntimeEvidence(events: TaskEvent[]): TaskEvent[] {
-  return events.filter((event) => event.type === "evidence_created" || event.type === "mcp_read_completed");
+  return events.filter(
+    (event) =>
+      event.type === "evidence_created" ||
+      event.type === "agent_observation_created" ||
+      event.type === "mcp_read_completed",
+  );
 }

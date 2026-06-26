@@ -66,6 +66,20 @@ export {
 } from "./task.js";
 export type { EvidenceKind, EvidenceRecord, EvidenceSource } from "./evidence.js";
 export type {
+  AgentActionType,
+  AgentBlockedAction,
+  AgentObservation,
+  AgentObservationSource,
+  AgentPlan,
+  AgentPlanStep,
+  AgentReport,
+  AgentRunState,
+  AgentStepAction,
+  AgentStepKind,
+  AgentStepStatus,
+  AgentStepTarget,
+} from "./agent.js";
+export type {
   McpCapabilitySummary,
   McpConnectionProfile,
   McpConnectionState,

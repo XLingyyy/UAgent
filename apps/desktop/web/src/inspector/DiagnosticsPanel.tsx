@@ -1,3 +1,4 @@
+import type { TaskEvent } from "@uagent/shared";
 import { InspectorSummaryCard } from "./InspectorSummaryCard";
 import { diagnosticSummary } from "./inspector-data";
 import { extractRuntimeDiagnostics } from "../runtime/event-view-models";
@@ -11,11 +12,34 @@ const TONE_LABEL_CLASS: Record<string, string> = {
   success: "ua-diagnostics-item__state--success",
 };
 
+function uniqueDiagnostics(events: TaskEvent[]): TaskEvent[] {
+  const diagnosticsByReason = new Map<string, TaskEvent>();
+
+  for (const event of events) {
+    const key = event.body ?? event.title;
+    const current = diagnosticsByReason.get(key);
+    if (!current || diagnosticPriority(event) > diagnosticPriority(current)) {
+      diagnosticsByReason.set(key, event);
+    }
+  }
+
+  return [...diagnosticsByReason.values()];
+}
+
+function diagnosticPriority(event: TaskEvent): number {
+  if (event.type === "task_failed") return 5;
+  if (event.type === "task_cancelled") return 4;
+  if (event.type === "mcp_tool_blocked") return 3;
+  if (event.type === "agent_step_failed") return 2;
+  if (event.level === "error") return 1;
+  return 0;
+}
+
 export function DiagnosticsPanel() {
   const runtime = useOptionalRuntimeStore((state) => state);
   const activeTaskId = runtime?.activeTaskId ?? null;
   const runtimeEvents = activeTaskId ? (runtime?.eventsByTaskId[activeTaskId] ?? []) : [];
-  const diagnostics = extractRuntimeDiagnostics(runtimeEvents);
+  const diagnostics = uniqueDiagnostics(extractRuntimeDiagnostics(runtimeEvents));
 
   if (diagnostics.length > 0) {
     return (

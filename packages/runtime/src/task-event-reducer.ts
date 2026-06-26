@@ -18,8 +18,12 @@ function stateForEvent(event: TaskEvent): TaskState {
   switch (event.type) {
     case "task_submitted":
       return "submitted";
+    case "agent_plan_started":
+    case "agent_plan_created":
     case "plan_created":
       return "planning";
+    case "agent_step_started":
+    case "agent_step_completed":
     case "tool_started":
     case "tool_completed":
     case "evidence_created":
@@ -31,6 +35,8 @@ function stateForEvent(event: TaskEvent): TaskState {
     case "mcp_read_completed":
     case "mcp_fallback_to_mock":
       return "executing";
+    case "agent_observation_created":
+      return "observing";
     case "mcp_tool_blocked":
       return "reviewing";
     case "mcp_connection_failed":
@@ -39,10 +45,13 @@ function stateForEvent(event: TaskEvent): TaskState {
       return "cancelled";
     case "approval_requested":
       return "awaiting_approval";
+    case "agent_report_created":
     case "review_created":
       return "reviewing";
     case "task_completed":
       return "completed";
+    case "agent_step_failed":
+      return "executing";
     case "task_failed":
       return "failed";
     case "cancel_task_requested":
@@ -77,16 +86,16 @@ function statusForState(state: TaskState): RuntimeStatus {
 
 export function applyTaskEvent(snapshot: RuntimeSnapshot, event: TaskEvent): RuntimeSnapshot {
   const previousTask = snapshot.tasksById[event.taskId];
+  const state = stateForEvent(event);
   if (
     previousTask &&
     isTerminalTaskState(previousTask.state) &&
-    (event.type === "cancel_task_requested" || event.type === "task_cancelled")
+    !(isTerminalTaskState(state) && previousTask.state === state)
   ) {
     return snapshot;
   }
 
   const events = [...(snapshot.eventsByTaskId[event.taskId] ?? []), event];
-  const state = stateForEvent(event);
   const submittedPayload = event.payload as SubmittedPayload | undefined;
   const draft = previousTask?.draft ?? submittedPayload?.draft;
 

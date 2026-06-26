@@ -2,11 +2,11 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows — starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP2 MCP Read-only Runtime
+## Current Stage: MVP3 Agent Core / Runtime Planning Loop
 
-The MVP1 TaskEvent product chain now extends to a read-only MCP runtime path. Composer input still creates a `TaskDraft` and submits through `RuntimeClient.submitTask()`, but the desktop adapter can route read-only intent to an MCP read-only runtime when a localhost MCP profile is connected. If MCP is disconnected or invalid, `MockRuntime` remains the fallback/demo/test runtime.
+The MVP2 read-only MCP runtime remains the transport baseline. Composer input still creates a `TaskDraft` and submits through `RuntimeClient.submitTask()`, but MVP3 routes that draft through a deterministic Agent Core loop: plan, select a guarded read-only action, observe, record evidence, report, and expose every state transition through `TaskEvent` and `RuntimeSnapshot`.
 
-MVP2 supports local MCP connection state, initialize/discovery metadata, Streamable HTTP and legacy HTTP+SSE client transports, session-level `resources/read` and policy-gated `tools/call` JSON-RPC methods, read-only resource/tool intent routing, TaskEvent display, blocked-tool warnings, and diagnostics. It does not perform real UE writes, real LLM/provider API calls, shell/browser/filesystem product behavior, or approval-driven write actions.
+MVP3 supports shared Agent plan/step/observation/report contracts, deterministic planning without an LLM, guarded read-only MCP action selection, mock fallback observations when MCP is unavailable or undiscovered, structured evidence, final Agent reports, and UI display for plan progress and diagnostics. It does not perform real UE writes, real LLM/provider API calls, shell/browser/filesystem product behavior, approval-driven write actions, or provider requests.
 
 ## Technology Stack
 
@@ -71,6 +71,8 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 - [MVP1 Acceptance](docs/mvp1-acceptance.md)
 - [MCP Read-only Plan](docs/mcp-readonly-plan.md)
 - [MVP2 Acceptance](docs/mvp2-acceptance.md)
+- [Agent Core Plan](docs/agent-core-plan.md)
+- [MVP3 Acceptance](docs/mvp3-acceptance.md)
 - [Development Guide](docs/development.md)
 
 ## License

@@ -1,16 +1,16 @@
 # UAgent MVP Roadmap
 
-## MVP0 — Project Foundation
+## MVP0 - Project Foundation
 
 - TypeScript monorepo baseline with pnpm workspaces
-- Shared type definitions (messages, plans, tools, evidence)
+- Shared type definitions for messages, plans, tools, and evidence
 - Runtime state machine placeholder
 - MCP client type stubs
 - Basic quality tooling: ESLint, Prettier, TypeScript, Vitest
 
 Status: complete
 
-## MVP0.5 — UI Shell Foundation
+## MVP0.5 - UI Shell Foundation
 
 - Tauri 2 + React + Vite desktop shell
 - AppShell skeleton: TitleBar, LeftSidebar, Workspace, InspectorPane, GlobalOverlays
@@ -21,7 +21,7 @@ Status: complete
 
 Status: complete
 
-## MVP1 — Mock Product Shell + Runtime Contract
+## MVP1 - Mock Product Shell + Runtime Contract
 
 - Shared contract for `TaskDraft`, `TaskRecord`, `TaskEvent`, `RuntimeSnapshot`, `RuntimeClient`, `EvidenceRecord`, and `ApprovalRequest`
 - Deterministic `MockRuntime` in `packages/runtime`
@@ -34,7 +34,7 @@ Status: complete
 
 Status: complete
 
-## MVP2 — MCP Read-only Runtime (current)
+## MVP2 - MCP Read-only Runtime
 
 - MCP client implementation with Streamable HTTP default and legacy HTTP + SSE compatibility
 - Unreal MCP initialize and discovery
@@ -42,34 +42,40 @@ Status: complete
 - Read-only task events emitted through the MVP1 Runtime Contract
 - `MockRuntime` remains as fallback/demo/test runtime
 
+Status: complete
+
+## MVP3 - Agent Core / Runtime Planning Loop
+
+- Shared Agent contracts for `AgentPlan`, `AgentPlanStep`, `AgentObservation`, and `AgentReport`
+- Deterministic planner that converts a `TaskDraft` into an auditable plan without calling an LLM or provider API
+- Guarded read-only action selection for MCP `resources/read` and policy-approved read-only `tools/call`
+- AgentLoop orchestration for plan -> guarded action -> observe -> evidence -> report
+- Mock observation fallback when MCP is disconnected or connected but not discovered
+- TaskEvent and RuntimeSnapshot display for plan, steps, observations, evidence, report, failures, blocked actions, and cancellation
+
 Status: current
 
-## MVP3 — Agent Core
+Out of scope for MVP3: real LLM/provider calls, API key reads, UE writes, mutating MCP tools, approval write flow, shell/browser/filesystem product behavior, new state management, new routing, or a new design system.
 
-- Agent loop: think -> plan -> act -> observe -> report
-- Task/plan execution engine beyond deterministic mock events
-- Tool registry and dispatch through guarded read-only integrations
-- Evidence recording and artifact storage
+## MVP4 - LLM Provider
 
-## MVP4 — LLM Provider
-
-- Provider adapter interface (OpenAI, Anthropic, local)
+- Provider adapter interface for future OpenAI, Anthropic, and local providers
 - Streaming response handling
 - Token accounting and cost estimation
 - Model selection and fallback
 
-## MVP5 — Workflow & Safety
+## MVP5 - Workflow & Safety
 
 - Approval workflow for tool execution
 - Sandbox execution mode
 - Rollback / promote for workspace state
 - Audit log and session history
 
-## Non-Goals (explicitly out of scope)
+## Non-Goals
 
 - Cloud deployment or SaaS platform
 - Real-time collaboration
 - Plugin marketplace
 - Mobile or web-only client
 - Direct fork or embedding of Codex/Claude Code/Cursor/Aider
-- Real UE/MCP/LLM execution during MVP1
+- Real UE write execution, mutating MCP tools, approval write execution, or LLM/provider API calls during MVP3

@@ -1,14 +1,10 @@
 import {
-  createMcpReadOnlyRuntime,
-  createMockRuntime,
-  createRuntimeRouter,
-  type MockRuntimeClient,
-  type McpReadOnlyRuntimeClient,
+  createAgentLoopRuntime,
+  type AgentLoopRuntimeClient,
 } from "@uagent/runtime";
 import { LegacySseTransport, McpSession, McpTransportError, StreamableHttpTransport } from "@uagent/mcp-client";
-import type { McpConnectionState, RuntimeClient, RuntimeSnapshot, TaskDraft, TaskRecord } from "@uagent/shared";
+import type { McpConnectionState, RuntimeSnapshot, TaskDraft, TaskRecord } from "@uagent/shared";
 import type { McpInitializeResult, McpTransportClient } from "@uagent/mcp-client";
-import { DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS } from "./runtime-store";
 
 export interface DesktopRuntimeAdapter {
   getSnapshot(): RuntimeSnapshot;
@@ -28,10 +24,12 @@ export interface DesktopRuntimeAdapterOptions {
 }
 
 export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptions): DesktopRuntimeAdapter {
-  const client: MockRuntimeClient = createMockRuntime({ clockStart: 1_000, autoFlush: false });
-  let mcpRuntime: McpReadOnlyRuntimeClient | null = null;
   let currentSession: McpSession | null = null;
-  let router: RuntimeClient = createRuntimeRouter({ mockRuntime: client, mcpRuntime: null });
+  const router: AgentLoopRuntimeClient = createAgentLoopRuntime({
+    runtimeMode: "mock",
+    discovery: null,
+    clockStart: 1_000,
+  });
   let mcpState: McpConnectionState = {
     status: "disconnected",
     profile: {
@@ -46,7 +44,6 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     lastError: null,
     legacyMode: false,
   };
-  const pendingFlushes = new Map<string, ReturnType<typeof setTimeout>>();
   const listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
   const mcpListeners = new Set<(state: McpConnectionState) => void>();
 
@@ -61,23 +58,6 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     for (const listener of mcpListeners) {
       listener(mcpState);
     }
-  };
-
-  const clearFlush = (taskId: string) => {
-    const pending = pendingFlushes.get(taskId);
-    if (pending) {
-      clearTimeout(pending);
-      pendingFlushes.delete(taskId);
-    }
-  };
-
-  const scheduleCompletion = (taskId: string) => {
-    clearFlush(taskId);
-    const timer = setTimeout(() => {
-      pendingFlushes.delete(taskId);
-      void client.flushAll(taskId).then(syncSnapshot);
-    }, DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS);
-    pendingFlushes.set(taskId, timer);
   };
 
   return {
@@ -99,19 +79,11 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
 
     submitTask: async (draft) => {
       const record = await router.submitTask(draft);
-      if (!mcpRuntime) {
-        await client.flushNextEvent(record.id);
-        await client.flushNextEvent(record.id);
-      }
       syncSnapshot();
-      if (!mcpRuntime) {
-        scheduleCompletion(record.id);
-      }
       return record;
     },
 
     cancelTask: async (taskId) => {
-      clearFlush(taskId);
       await router.cancelTask(taskId);
       syncSnapshot();
     },
@@ -146,7 +118,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       try {
         await currentSession?.disconnect();
         currentSession = null;
-        mcpRuntime = null;
+        router.updateContext({ runtimeMode: "mock", discovery: null, readResource: undefined, callTool: undefined });
 
         let session: McpSession;
         let initializeResult: McpInitializeResult;
@@ -213,13 +185,12 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
         const discovery = await currentSession.discover();
 
         const session = currentSession!;
-        mcpRuntime = createMcpReadOnlyRuntime({
+        router.updateContext({
+          runtimeMode: "mcp-readonly",
           discovery,
           readResource: async (uri) => session.readResource(uri),
           callTool: async (name, args) => session.callTool(name, args),
-          clockStart: 2_000,
         });
-        router = createRuntimeRouter({ mockRuntime: client, mcpRuntime });
         mcpState = {
           ...mcpState,
           status: "connected",
@@ -239,9 +210,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     disconnectMcp() {
       void currentSession?.disconnect();
       currentSession = null;
-      mcpRuntime?.disconnect();
-      mcpRuntime = null;
-      router = createRuntimeRouter({ mockRuntime: client, mcpRuntime: null });
+      router.updateContext({ runtimeMode: "mock", discovery: null, readResource: undefined, callTool: undefined });
       mcpState = {
         ...mcpState,
         status: "disconnected",
