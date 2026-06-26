@@ -10,16 +10,19 @@ import {
   useLayoutStore,
   useProjectActions,
   useProjectStore,
+  useRuntimeStore,
   useSettingsActions,
   useThreadActions,
   useThreadStore,
 } from "../stores/ui-store";
+import { getRuntimeTaskIds } from "../runtime/runtime-store";
 import "./LeftSidebar.css";
 
 export function LeftSidebar() {
   const activeNav = useLayoutStore((state) => state.sidebar.activeNav);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const activeThreadId = useThreadStore((state) => state.activeThreadId);
+  const runtime = useRuntimeStore((state) => state);
   const { setActiveNav } = useLayoutActions();
   const { setActiveProject } = useProjectActions();
   const { setActiveThread } = useThreadActions();
@@ -29,6 +32,12 @@ export function LeftSidebar() {
   const activeProject = activeProjectId
     ? (MOCK_PROJECTS.find((p) => p.id === activeProjectId) ?? null)
     : null;
+  const runtimeThreads = getRuntimeTaskIds(runtime).map((taskId) => ({
+    id: taskId,
+    title: runtime.tasksById[taskId].title,
+    type: "Runtime" as const,
+    updatedAt: runtime.tasksById[taskId].state === "completed" ? "done" : runtime.tasksById[taskId].state,
+  }));
 
   return (
     <aside
@@ -58,7 +67,7 @@ export function LeftSidebar() {
           <>
             <ProjectSection mode="workspace" project={activeProject} treeNodes={[]} />
             <ThreadSection
-              threads={mockThreads}
+              threads={[...runtimeThreads, ...mockThreads]}
               activeThreadId={activeThreadId}
               onThreadSelect={setActiveThread}
             />

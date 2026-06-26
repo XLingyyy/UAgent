@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { LeftSidebar } from "./LeftSidebar";
 import { UIProvider } from "../app/providers";
+import { ComposerDock } from "../composer/ComposerDock";
 import { useSettingsStore } from "../stores/ui-store";
 import { mockThreads } from "./sidebar-data";
 import { MOCK_PROJECTS } from "../project/project-data";
@@ -295,6 +296,24 @@ describe("LeftSidebar", () => {
       expect(screen.getByText("2h ago")).toBeTruthy();
       expect(screen.getByText("5h ago")).toBeTruthy();
       expect(screen.getByText("1d ago")).toBeTruthy();
+    });
+
+    it("shows runtime threads submitted from Composer", async () => {
+      render(
+        <UIProvider>
+          <ComposerDock />
+          <LeftSidebar />
+        </UIProvider>,
+      );
+
+      fireEvent.change(screen.getByLabelText("Composer input"), {
+        target: { value: "Review Lyra asset loading risks" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send mock task" }));
+
+      const section = screen.getByLabelText("Threads");
+      expect(await within(section).findByText("Review Lyra asset loading risks")).toBeTruthy();
+      expect(within(section).getByText("Runtime")).toBeTruthy();
     });
   });
 

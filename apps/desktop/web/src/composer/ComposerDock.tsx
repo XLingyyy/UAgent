@@ -25,12 +25,38 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const { setActiveProject } = useProjectActions();
   const { openSettings } = useSettingsActions();
-  const { setComposerInput, setComposerPermission, setComposerModel, setComposerReasoning } =
-    useComposerActions();
+  const {
+    setComposerInput,
+    setComposerPermission,
+    setComposerModel,
+    setComposerReasoning,
+    submitComposerTask,
+  } = useComposerActions();
   const providerModelOptions = createComposerModelOptions(provider.providers);
   const { input, permission, selectedModelId, reasoningEffort, runMode, branch, context } =
     composer;
   const { placeholder, addButtonLabel, sendButtonLabel } = composerMock;
+  const trimmedInput = input.trim();
+  const canSubmit = trimmedInput.length > 0;
+  const providerStatus = selectedModelId === "not-configured" ? "not_configured" : "configured";
+
+  const handleSubmit = () => {
+    if (!canSubmit) {
+      return;
+    }
+
+    void submitComposerTask({
+      input: trimmedInput,
+      projectId: activeProjectId,
+      permissionMode: permission,
+      modelId: selectedModelId,
+      reasoningEffort,
+      runMode,
+      branch,
+      contextPercent: context.percent,
+      providerStatus,
+    });
+  };
 
   return (
     <footer className="ua-composer" aria-label="Composer dock" data-composer-mode={mode}>
@@ -78,8 +104,9 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
           <button
             className="ua-composer__send-btn"
             type="button"
-            disabled
-            aria-label="Send - disabled"
+            disabled={!canSubmit}
+            aria-label={canSubmit ? "Send mock task" : "Send - disabled"}
+            onClick={handleSubmit}
           >
             {sendButtonLabel}
           </button>
@@ -106,6 +133,13 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
           <span className="ua-composer__status-label">Branch</span>
           <span className="ua-composer__status-value ua-text-mono">{branch}</span>
         </span>
+
+        {providerStatus === "not_configured" && (
+          <span className="ua-composer__status-item ua-composer__status-item--warning">
+            <span className="ua-composer__status-label">Model</span>
+            <span className="ua-composer__status-value">Mock runtime / no provider call</span>
+          </span>
+        )}
       </div>
     </footer>
   );

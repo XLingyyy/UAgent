@@ -41,9 +41,9 @@ React 18 + Vite 5 frontend. The UI shell is structured as:
 - **AppShell** — composes TitleBar + MainLayout + GlobalOverlays.
 - **TitleBar** — custom window title bar with drag region and inspector toggle.
 - **MainLayout** — three-column flex layout: LeftSidebar | Workspace | InspectorPane.
-- **LeftSidebar** — navigation, project list, and conversation list (placeholder).
-- **Workspace** — central region with ConversationViewport and ComposerDock area (placeholder).
-- **InspectorPane** — right-side review/diagnostics pane with open/close state.
+- **LeftSidebar** — navigation, project list, static fallback threads, and runtime task threads.
+- **Workspace** — central region with ConversationViewport and ComposerDock task submission.
+- **InspectorPane** — right-side UtilityDrawer with Review, Diagnostics, Evidence, and Runtime task context.
 - **GlobalOverlays** — z-indexed overlay layer for future modals, command palette, and toasts.
 
 Layout behavior:
@@ -66,11 +66,11 @@ All visual values are defined as CSS custom properties in `web/src/styles/`:
 
 ### `packages/shared`
 
-Foundation types shared across all packages: messages, commands, plan items, tool calls, evidence records, and workspace state.
+Foundation types shared across all packages: messages, commands, plan items, tool calls, evidence records, workspace state, and the MVP1 Runtime Contract. `TaskDraft`, `TaskRecord`, `TaskEvent`, `RuntimeSnapshot`, `RuntimeClient`, `EvidenceRecord`, and `ApprovalRequest` are defined here so runtime and desktop UI consume the same protocol.
 
 ### `packages/runtime`
 
-Agent runtime state machine and execution logic. Manages agent lifecycle, task planning, evidence collection, and tool orchestration.
+Agent runtime state machine plus the deterministic MVP1 `MockRuntime`. The mock runtime accepts `TaskDraft`, emits ordered `TaskEvent` records, supports `#fail` failure injection, supports cancellation, and reduces events into `RuntimeSnapshot`. It does not import React or desktop UI code.
 
 ### `packages/mcp-client`
 
@@ -84,3 +84,4 @@ MCP (Model Context Protocol) client abstraction layer. Type definitions for serv
 - **Extensible**: Provider-agnostic adapter patterns for LLM backends.
 - **MCP-native**: Protocol alignment with Unreal MCP Server for UE5.8.
 - **Tool-grade UI**: Desktop AI Agent workbench aesthetic — dense, functional, and extensible. No landing-page or marketing styling.
+- **Mock-first runtime boundary**: MVP1 proves the product task flow without real network, MCP, UE, filesystem, or LLM side effects.

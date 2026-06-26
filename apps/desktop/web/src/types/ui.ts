@@ -1,4 +1,5 @@
 import type { ProviderConfig, ProviderState } from "./provider";
+import type { RuntimeStoreActions, RuntimeStoreState } from "../runtime/runtime-store";
 import type {
   ComposerContextUsage,
   ComposerModelId,
@@ -48,7 +49,7 @@ export interface ProjectTreeNode {
 export interface MockThread {
   id: string;
   title: string;
-  type: "Plan" | "Build" | "Review";
+  type: "Plan" | "Build" | "Review" | "Runtime";
   updatedAt: string;
 }
 
@@ -114,6 +115,8 @@ export interface UIShellState {
   composer: ComposerStoreState;
   /** Local-only provider configuration state. */
   provider: ProviderState;
+  /** Mock runtime task/event state. */
+  runtime: RuntimeStoreState;
 }
 
 /** Set the active project id (or null for no project). */
@@ -180,6 +183,8 @@ export interface ComposerStoreActions {
   setComposerPermission: SetComposerPermission;
   setComposerModel: SetComposerModel;
   setComposerReasoning: SetComposerReasoning;
+  submitComposerTask: RuntimeStoreActions["submitComposerTask"];
+  cancelRuntimeTask: RuntimeStoreActions["cancelRuntimeTask"];
 }
 
 export interface ProviderStoreActions {
@@ -212,4 +217,5 @@ export interface UIInitialState {
   thread?: Partial<ThreadStoreState>;
   composer?: Partial<ComposerStoreState>;
   provider?: Partial<ProviderState>;
+  runtime?: Partial<RuntimeStoreState>;
 }

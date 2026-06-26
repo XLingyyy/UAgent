@@ -3,6 +3,8 @@ import {
   utilityEvidencePanel,
   type UtilityPlaceholderPanelData,
 } from "./inspector-data";
+import { extractRuntimeEvidence } from "../runtime/event-view-models";
+import { useOptionalRuntimeStore } from "../stores/ui-store";
 import "./UtilityPlaceholderPanel.css";
 
 interface UtilityPlaceholderPanelProps {
@@ -42,6 +44,11 @@ export function UtilityPlaceholderPanel({ panel }: UtilityPlaceholderPanelProps)
 }
 
 export function UtilityEvidencePanel() {
+  const runtime = useOptionalRuntimeStore((state) => state);
+  const activeTaskId = runtime?.activeTaskId ?? null;
+  const runtimeEvents = activeTaskId ? (runtime?.eventsByTaskId[activeTaskId] ?? []) : [];
+  const evidenceEvents = extractRuntimeEvidence(runtimeEvents);
+
   return (
     <section className="ua-utility-placeholder" aria-label="Evidence placeholder">
       <div className="ua-utility-placeholder__header">
@@ -53,12 +60,19 @@ export function UtilityEvidencePanel() {
       </div>
 
       <ul className="ua-utility-placeholder__list">
-        {reviewSummary.evidenceItems.map((item) => (
-          <li key={item.id} className="ua-utility-placeholder__item">
-            <span className="ua-utility-placeholder__item-state">{item.status}</span>
-            <span>{item.label}</span>
-          </li>
-        ))}
+        {evidenceEvents.length > 0
+          ? evidenceEvents.map((event) => (
+              <li key={event.id} className="ua-utility-placeholder__item">
+                <span className="ua-utility-placeholder__item-state">checked</span>
+                <span>{event.body ?? event.title}</span>
+              </li>
+            ))
+          : reviewSummary.evidenceItems.map((item) => (
+              <li key={item.id} className="ua-utility-placeholder__item">
+                <span className="ua-utility-placeholder__item-state">{item.status}</span>
+                <span>{item.label}</span>
+              </li>
+            ))}
       </ul>
 
       <button className="ua-utility-placeholder__action" type="button" disabled>

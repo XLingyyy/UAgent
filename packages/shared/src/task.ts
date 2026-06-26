@@ -1,0 +1,85 @@
+export type TaskState =
+  | "draft"
+  | "submitted"
+  | "planning"
+  | "executing"
+  | "awaiting_approval"
+  | "observing"
+  | "reviewing"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type TaskEventType =
+  | "task_submitted"
+  | "plan_created"
+  | "tool_started"
+  | "tool_completed"
+  | "approval_requested"
+  | "evidence_created"
+  | "review_created"
+  | "task_completed"
+  | "task_failed"
+  | "cancel_task_requested"
+  | "task_cancelled";
+
+export type TaskEventLevel = "info" | "success" | "warning" | "error";
+
+export interface TaskDraft {
+  input: string;
+  projectId: string | null;
+  permissionMode: string;
+  modelId: string;
+  reasoningEffort: string;
+  runMode: "local" | "sandbox";
+  branch: string;
+  contextPercent: number;
+  providerStatus?: "configured" | "not_configured";
+  createdAt?: number;
+}
+
+export interface TaskRecord {
+  id: string;
+  title: string;
+  state: TaskState;
+  draft: TaskDraft;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+  error: string | null;
+}
+
+export interface TaskEvent<TPayload = unknown> {
+  id: string;
+  taskId: string;
+  type: TaskEventType;
+  title: string;
+  body?: string;
+  level?: TaskEventLevel;
+  createdAt: number;
+  payload?: TPayload;
+}
+
+export function createTaskId(sequence: number): string {
+  return `task-${sequence.toString().padStart(4, "0")}`;
+}
+
+export function createEventId(taskId: string, sequence: number): string {
+  return `${taskId}-event-${sequence.toString().padStart(4, "0")}`;
+}
+
+export function createEvidenceId(sequence: number): string {
+  return `evidence-${sequence.toString().padStart(4, "0")}`;
+}
+
+export function isTerminalTaskState(state: TaskState): boolean {
+  return state === "completed" || state === "failed" || state === "cancelled";
+}
+
+export function createTaskTitle(input: string): string {
+  const normalized = input.trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return "Untitled mock task";
+  }
+  return normalized.length > 72 ? `${normalized.slice(0, 69)}...` : normalized;
+}

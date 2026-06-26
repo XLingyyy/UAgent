@@ -5,6 +5,7 @@ const THREAD_TYPE_VARIANT: Record<MockThread["type"], string> = {
   Plan: "ua-thread-badge--plan",
   Build: "ua-thread-badge--build",
   Review: "ua-thread-badge--review",
+  Runtime: "ua-thread-badge--plan",
 };
 
 export interface ThreadSectionProps {

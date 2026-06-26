@@ -10,7 +10,7 @@
 
 Status: complete
 
-## MVP0.5 — UI Shell Foundation (current)
+## MVP0.5 — UI Shell Foundation
 
 - Tauri 2 + React + Vite desktop shell
 - AppShell skeleton: TitleBar, LeftSidebar, Workspace, InspectorPane, GlobalOverlays
@@ -19,34 +19,33 @@ Status: complete
 - ComposerDock and ConversationViewport placeholders
 - UI smoke tests with Testing Library
 
-## MVP1 — UI Shell Expansion
+Status: complete
 
-- Left Sidebar: PrimaryNav, project list, conversation list
-- UE project tree (static / semi-dynamic)
-- Central Workspace: WelcomeHero, ConversationViewport
-- ComposerDock: permissions, project, mode, model, ContextRing
-- Right InspectorPane: review tab, diagnostics, animations
-- SettingsShell with six settings page skeletons
-- ProviderSettings and Composer model selection
-- ComingSoonGate for disabled feature entries
-- Zustand store layer, Runtime mock event integration
-- Long-list virtualization and performance checks
-- UI regression tests and visual acceptance
+## MVP1 — Mock Product Shell + Runtime Contract (current)
 
-## MVP2 — Agent Core
+- Shared contract for `TaskDraft`, `TaskRecord`, `TaskEvent`, `RuntimeSnapshot`, `RuntimeClient`, `EvidenceRecord`, and `ApprovalRequest`
+- Deterministic `MockRuntime` in `packages/runtime`
+- Composer submit flow: input -> `TaskDraft` -> `RuntimeClient.submitTask()`
+- Runtime event stream: `task_submitted`, `plan_created`, `tool_started`, `tool_completed`, `evidence_created`, `review_created`, `task_completed`
+- Failure injection with `#fail` and cancellation events for UI regression coverage
+- Desktop runtime store adapter inside the existing UIProvider slice-store architecture
+- ConversationViewport, UtilityDrawer, and LeftSidebar rendering from the active task events
+- Provider/model guardrails: model-not-configured does not block mock flow, and no provider call is made
 
-- Agent loop: think → plan → act → observe → report
-- Task/plan execution engine in `packages/runtime`
-- Tool registry and dispatch
-- Evidence recording and artifact storage (SQLite/JSONL)
-- Basic system prompt and instruction following
+## MVP2 — MCP Read-only Runtime
 
-## MVP3 — MCP Integration
+- MCP client implementation with Streamable HTTP default and legacy HTTP + SSE compatibility
+- Unreal MCP initialize and discovery
+- Read-only tool/resource listing
+- Read-only task events emitted through the MVP1 Runtime Contract
+- `MockRuntime` remains as fallback/demo/test runtime
 
-- MCP client implementation with transport layer (Streamable HTTP default, legacy HTTP + SSE compat)
-- Unreal MCP Server connection and profile management
-- Tool discovery from connected MCP servers
-- Resource and prompt listing
+## MVP3 — Agent Core
+
+- Agent loop: think -> plan -> act -> observe -> report
+- Task/plan execution engine beyond deterministic mock events
+- Tool registry and dispatch through guarded read-only integrations
+- Evidence recording and artifact storage
 
 ## MVP4 — LLM Provider
 
@@ -69,3 +68,4 @@ Status: complete
 - Plugin marketplace
 - Mobile or web-only client
 - Direct fork or embedding of Codex/Claude Code/Cursor/Aider
+- Real UE/MCP/LLM execution during MVP1

@@ -1,5 +1,7 @@
 import { ConversationMessage } from "./ConversationMessage";
 import { workspaceMessages, type WorkspaceMessage } from "./workspace-data";
+import { mapTaskEventToWorkspaceMessage } from "../runtime/event-view-models";
+import { useRuntimeStore, useThreadStore } from "../stores/ui-store";
 import "./ConversationViewport.css";
 
 export interface ConversationViewportProps {
@@ -7,6 +9,13 @@ export interface ConversationViewportProps {
 }
 
 export function ConversationViewport({ messages = workspaceMessages }: ConversationViewportProps) {
+  const activeThreadId = useThreadStore((state) => state.activeThreadId);
+  const runtimeEvents = useRuntimeStore((state) =>
+    activeThreadId ? (state.eventsByTaskId[activeThreadId] ?? null) : null,
+  );
+  const runtimeMessages = runtimeEvents?.map(mapTaskEventToWorkspaceMessage);
+  const visibleMessages = runtimeMessages && runtimeMessages.length > 0 ? runtimeMessages : messages;
+
   return (
     <section className="ua-conversation-viewport" aria-label="Conversation activity">
       <div className="ua-conversation-viewport__header">
@@ -19,7 +28,7 @@ export function ConversationViewport({ messages = workspaceMessages }: Conversat
         <span className="ua-conversation-viewport__badge">Mock only</span>
       </div>
       <div className="ua-conversation-viewport__list">
-        {messages.map((message) => (
+        {visibleMessages.map((message) => (
           <ConversationMessage key={message.id} message={message} />
         ))}
       </div>

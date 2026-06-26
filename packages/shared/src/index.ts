@@ -47,3 +47,28 @@ export interface WorkspaceState {
   timeline: ToolCall[];
   evidence: Evidence[];
 }
+
+export type {
+  TaskDraft,
+  TaskEvent,
+  TaskEventLevel,
+  TaskEventType,
+  TaskRecord,
+  TaskState,
+} from "./task.js";
+export {
+  createEventId,
+  createEvidenceId,
+  createTaskId,
+  createTaskTitle,
+  isTerminalTaskState,
+} from "./task.js";
+export type { EvidenceKind, EvidenceRecord, EvidenceSource } from "./evidence.js";
+export type {
+  RuntimeClient,
+  RuntimeCommand,
+  RuntimeSnapshot,
+  RuntimeStatus,
+} from "./runtime.js";
+export { createEmptyRuntimeSnapshot } from "./runtime.js";
+export type { ApprovalRequest, ApprovalRequestState } from "./approval.js";

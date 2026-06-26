@@ -38,6 +38,7 @@ export interface DiagnosticSummary {
 export type UtilityToolId =
   | "review"
   | "diagnostics"
+  | "runtime"
   | "terminal"
   | "browser"
   | "files"
@@ -48,7 +49,7 @@ export type UtilityToolId =
 
 export type UtilityPlaceholderToolId = Exclude<
   UtilityToolId,
-  "review" | "diagnostics" | "evidence"
+  "review" | "diagnostics" | "runtime" | "evidence"
 >;
 
 export interface UtilityToolDefinition {
@@ -178,6 +179,11 @@ export const utilityTools: UtilityToolDefinition[] = [
     id: "diagnostics",
     label: "Diagnostics",
     summary: "Mock diagnostics",
+  },
+  {
+    id: "runtime",
+    label: "Runtime",
+    summary: "Task event state",
   },
   {
     id: "terminal",

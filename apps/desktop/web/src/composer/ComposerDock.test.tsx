@@ -53,7 +53,7 @@ describe("ComposerDock", () => {
     expect(within(rightTools).getByLabelText("Send - disabled")).toBeTruthy();
   });
 
-  it("renders the status row with only ProjectSelector, local mode, and branch", () => {
+  it("renders the status row with ProjectSelector, local mode, branch, and mock-only warning", () => {
     renderDock();
 
     const dock = screen.getByLabelText("Composer dock");
@@ -66,8 +66,8 @@ describe("ComposerDock", () => {
 
     expect(within(dock).queryByText("UE")).toBeNull();
     expect(within(dock).queryByText("Not connected")).toBeNull();
-    expect(within(dock).queryByText("Runtime")).toBeNull();
-    expect(within(dock).queryByText("Mock")).toBeNull();
+    expect(within(dock).getByText("Model")).toBeTruthy();
+    expect(within(dock).getByText("Mock runtime / no provider call")).toBeTruthy();
   });
 
   it("shows a textarea with placeholder and allows local input", () => {
@@ -83,11 +83,26 @@ describe("ComposerDock", () => {
     expect(textarea.closest("form")).toBeNull();
   });
 
-  it("has a disabled send button that submits nothing", () => {
+  it("keeps Send disabled for empty input", () => {
     renderDock();
 
     const sendBtn = screen.getByLabelText("Send - disabled") as HTMLButtonElement;
     expect(sendBtn.disabled).toBe(true);
+  });
+
+  it("enables Send for non-empty input and clears input after mock runtime submit", async () => {
+    renderDock();
+
+    const textarea = screen.getByLabelText("Composer input") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "Review Lyra asset loading risks" } });
+
+    const sendBtn = screen.getByRole("button", { name: "Send mock task" }) as HTMLButtonElement;
+    expect(sendBtn.disabled).toBe(false);
+
+    fireEvent.click(sendBtn);
+
+    expect(await screen.findByText("Mock runtime / no provider call")).toBeTruthy();
+    expect(textarea.value).toBe("");
   });
 
   it("shows Add context through ComingSoonGate", () => {

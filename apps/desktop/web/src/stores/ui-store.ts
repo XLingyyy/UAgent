@@ -18,6 +18,13 @@ import type {
   UIInitialState,
   UIShellState,
 } from "../types/ui";
+import {
+  createDesktopMockRuntimeClient,
+  DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS,
+  createRuntimeStoreState,
+  type RuntimeStoreActions,
+  type RuntimeStoreState,
+} from "../runtime/runtime-store";
 import { createInitialComposerState, createDefaultComposerState } from "./composer-store";
 import { createInitialLayoutState } from "./layout-store";
 import { createInitialProjectState } from "./project-store";
@@ -33,12 +40,14 @@ interface UIStoreBundle {
   threadStore: SliceStore<ThreadStoreState>;
   composerStore: SliceStore<ComposerStoreState>;
   providerStore: SliceStore<ProviderState>;
+  runtimeStore: SliceStore<RuntimeStoreState>;
   layoutActions: LayoutStoreActions;
   settingsActions: SettingsStoreActions;
   projectActions: ProjectStoreActions;
   threadActions: ThreadStoreActions;
   composerActions: ComposerStoreActions;
   providerActions: ProviderStoreActions;
+  runtimeActions: RuntimeStoreActions;
 }
 
 const UIStoreContext = createContext<UIStoreBundle | null>(null);
@@ -51,6 +60,46 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
   const threadStore = createSliceStore(createInitialThreadState(initialState));
   const composerStore = createSliceStore(createInitialComposerState(initialState, providerState));
   const providerStore = createSliceStore(providerState);
+  const runtimeClient = createDesktopMockRuntimeClient();
+  const pendingRuntimeFlushes = new Map<string, ReturnType<typeof setTimeout>>();
+  const runtimeStore = createSliceStore({
+    ...createRuntimeStoreState(runtimeClient.getSnapshot()),
+    ...initialState?.runtime,
+  });
+
+  const syncRuntimeSnapshot = () => {
+    runtimeStore.setState((previousState) => ({
+      ...previousState,
+      ...runtimeClient.getSnapshot(),
+      mockOnlyWarning: "Mock runtime / no provider call",
+    }));
+  };
+
+  const clearPendingRuntimeFlush = (taskId: string) => {
+    const pendingFlush = pendingRuntimeFlushes.get(taskId);
+    if (!pendingFlush) {
+      return;
+    }
+
+    clearTimeout(pendingFlush);
+    pendingRuntimeFlushes.delete(taskId);
+  };
+
+  const scheduleRuntimeCompletionFlush = (taskId: string) => {
+    clearPendingRuntimeFlush(taskId);
+    const pendingFlush = setTimeout(() => {
+      pendingRuntimeFlushes.delete(taskId);
+      void runtimeClient.flushAll(taskId).then(syncRuntimeSnapshot);
+    }, DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS);
+    pendingRuntimeFlushes.set(taskId, pendingFlush);
+  };
+
+  runtimeClient.subscribe((snapshot) => {
+    runtimeStore.setState((previousState) => ({
+      ...previousState,
+      ...snapshot,
+    }));
+  });
 
   const syncComposerSelection = (
     previousProviderState: ProviderState,
@@ -191,6 +240,30 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
           ? previousState
           : { ...previousState, reasoningEffort },
       ),
+    submitComposerTask: async (draft) => {
+      composerStore.setState((previousState) => ({ ...previousState, input: "" }));
+      const record = await runtimeClient.submitTask(draft);
+      await runtimeClient.flushNextEvent(record.id);
+      await runtimeClient.flushNextEvent(record.id);
+      syncRuntimeSnapshot();
+      scheduleRuntimeCompletionFlush(record.id);
+      threadStore.setState({ activeThreadId: record.id });
+      layoutStore.setState((previousState) => ({
+        ...previousState,
+        sidebar: { ...previousState.sidebar, activeNav: "workspace" },
+      }));
+      return record.id;
+    },
+    cancelRuntimeTask: async (taskId) => {
+      clearPendingRuntimeFlush(taskId);
+      await runtimeClient.cancelTask(taskId);
+      syncRuntimeSnapshot();
+    },
+  };
+
+  const runtimeActions: RuntimeStoreActions = {
+    submitComposerTask: composerActions.submitComposerTask,
+    cancelRuntimeTask: composerActions.cancelRuntimeTask,
   };
 
   const providerActions: ProviderStoreActions = {
@@ -267,12 +340,14 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
     threadStore,
     composerStore,
     providerStore,
+    runtimeStore,
     layoutActions,
     settingsActions,
     projectActions,
     threadActions,
     composerActions,
     providerActions,
+    runtimeActions,
   };
 }
 
@@ -336,6 +411,24 @@ export function useProviderStore<TSelected>(
   return useSliceStore(providerStore, selector);
 }
 
+export function useRuntimeStore<TSelected>(
+  selector: (state: RuntimeStoreState) => TSelected,
+): TSelected {
+  const { runtimeStore } = useUIStoreBundle();
+  return useSliceStore(runtimeStore, selector);
+}
+
+export function useOptionalRuntimeStore<TSelected>(
+  selector: (state: RuntimeStoreState) => TSelected,
+): TSelected | null {
+  const context = useContext(UIStoreContext);
+  if (!context) {
+    return null;
+  }
+
+  return useSliceStore(context.runtimeStore, selector);
+}
+
 export function useLayoutActions(): LayoutStoreActions {
   return useUIStoreBundle().layoutActions;
 }
@@ -360,6 +453,15 @@ export function useProviderActions(): ProviderStoreActions {
   return useUIStoreBundle().providerActions;
 }
 
+export function useRuntimeActions(): RuntimeStoreActions {
+  return useUIStoreBundle().runtimeActions;
+}
+
+export function useOptionalRuntimeActions(): RuntimeStoreActions | null {
+  const context = useContext(UIStoreContext);
+  return context?.runtimeActions ?? null;
+}
+
 export function useUI(): UIContextValue {
   const layout = useLayoutStore((state) => state);
   const settings = useSettingsStore((state) => state);
@@ -367,12 +469,14 @@ export function useUI(): UIContextValue {
   const thread = useThreadStore((state) => state);
   const composer = useComposerStore((state) => state);
   const provider = useProviderStore((state) => state);
+  const runtime = useRuntimeStore((state) => state);
   const layoutActions = useLayoutActions();
   const settingsActions = useSettingsActions();
   const projectActions = useProjectActions();
   const threadActions = useThreadActions();
   const composerActions = useComposerActions();
   const providerActions = useProviderActions();
+  const runtimeActions = useRuntimeActions();
 
   return useMemo<UIContextValue>(
     () => ({
@@ -383,6 +487,7 @@ export function useUI(): UIContextValue {
         thread,
         composer,
         provider,
+        runtime,
       } satisfies UIShellState,
       ...layoutActions,
       ...settingsActions,
@@ -390,6 +495,7 @@ export function useUI(): UIContextValue {
       ...threadActions,
       ...composerActions,
       ...providerActions,
+      ...runtimeActions,
     }),
     [
       composer,
@@ -400,6 +506,8 @@ export function useUI(): UIContextValue {
       projectActions,
       provider,
       providerActions,
+      runtime,
+      runtimeActions,
       settings,
       settingsActions,
       thread,

@@ -104,6 +104,55 @@ describe("Workspace", () => {
     expect(screen.getByText("Conversation")).toBeTruthy();
   });
 
+  it("submits a welcome composer request into runtime thread mode", async () => {
+    renderWorkspace();
+
+    fireEvent.change(screen.getByLabelText("Composer input"), {
+      target: { value: "Review Lyra asset loading risks" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send mock task" }));
+
+    const viewport = await screen.findByLabelText("Conversation activity");
+    expect(screen.getByLabelText("Workspace").getAttribute("data-workspace-mode")).toBe("thread");
+    expect(within(viewport).getByText("Review Lyra asset loading risks")).toBeTruthy();
+    expect(within(viewport).getAllByText("Agent plan").length).toBeGreaterThanOrEqual(1);
+    expect((await within(viewport).findAllByText("Tool completed")).length).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect((await within(viewport).findAllByText("Evidence created")).length).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect((await within(viewport).findAllByText("Review summary")).length).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect((await within(viewport).findAllByText("Task completed")).length).toBeGreaterThanOrEqual(
+      1,
+    );
+  });
+
+  it("renders a failed runtime task when input includes #fail", async () => {
+    renderWorkspace();
+
+    fireEvent.change(screen.getByLabelText("Composer input"), {
+      target: { value: "Review lighting #fail" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send mock task" }));
+
+    const viewport = await screen.findByLabelText("Conversation activity");
+    expect((await within(viewport).findAllByText("Task failed")).length).toBeGreaterThanOrEqual(1);
+    expect(
+      await within(viewport).findByText("Mock failure injected by #fail or failAtEvent."),
+    ).toBeTruthy();
+  });
+
+  it("keeps static mock fallback for seeded non-runtime threads", () => {
+    renderWorkspaceWithThread("thread-1");
+
+    const viewport = screen.getByLabelText("Conversation activity");
+    expect(within(viewport).getByText("User request")).toBeTruthy();
+    expect(within(viewport).getByText("Review summary")).toBeTruthy();
+  });
+
   it("renders the standalone ComposerDock input and status rows", () => {
     renderWorkspace();
 

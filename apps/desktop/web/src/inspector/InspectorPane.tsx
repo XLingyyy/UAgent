@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ReviewPanel } from "./ReviewPanel";
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
+import { RuntimePanel } from "./RuntimePanel";
 import { UtilityEvidencePanel, UtilityPlaceholderPanel } from "./UtilityPlaceholderPanel";
 import {
   utilityPlaceholderPanels,
@@ -28,6 +29,10 @@ function renderToolPanel(toolId: UtilityToolId) {
 
   if (toolId === "diagnostics") {
     return <DiagnosticsPanel />;
+  }
+
+  if (toolId === "runtime") {
+    return <RuntimePanel />;
   }
 
   if (toolId === "evidence") {

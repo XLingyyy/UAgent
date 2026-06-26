@@ -1,4 +1,6 @@
 import type { PlanItem, Evidence, ChatMessage, ToolCall } from "@uagent/shared";
+export { createMockRuntime, type MockRuntimeClient, type MockRuntimeOptions } from "./mock-runtime.js";
+export { applyTaskEvent, reduceTaskEvents } from "./task-event-reducer.js";
 
 export type AgentStatus = "idle" | "thinking" | "acting" | "waiting" | "finished" | "error";
 
