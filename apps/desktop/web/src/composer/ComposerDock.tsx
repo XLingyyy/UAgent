@@ -11,6 +11,7 @@ import {
   useProjectActions,
   useProjectStore,
   useProviderStore,
+  useRuntimeStore,
   useSettingsActions,
 } from "../stores/ui-store";
 import "./ComposerDock.css";
@@ -22,6 +23,7 @@ export interface ComposerDockProps {
 export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const composer = useComposerStore((state) => state);
   const provider = useProviderStore((state) => state);
+  const mcpStatus = useRuntimeStore((state) => state.mcp.status);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const { setActiveProject } = useProjectActions();
   const { openSettings } = useSettingsActions();
@@ -124,7 +126,9 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
 
         <span className="ua-composer__status-item">
           <span className="ua-composer__status-label">Runtime</span>
-          <span className="ua-composer__status-value">Mock only</span>
+          <span className="ua-composer__status-value">
+            {mcpStatus === "connected" ? "MCP read-only" : "Mock only"}
+          </span>
         </span>
 
         <span className="ua-composer__status-separator" aria-hidden="true" />

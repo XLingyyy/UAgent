@@ -202,7 +202,8 @@ export interface UIContextValue
     ProjectStoreActions,
     ThreadStoreActions,
     ComposerStoreActions,
-    ProviderStoreActions {
+    ProviderStoreActions,
+    RuntimeStoreActions {
   state: UIShellState;
 }
 

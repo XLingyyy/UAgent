@@ -2,11 +2,11 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows — starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP1 Mock Product Shell + Runtime Contract
+## Current Stage: MVP2 MCP Read-only Runtime
 
-The visual UI foundation is complete. The current product slice turns the shell into an interactive mock task console: Composer input creates a `TaskDraft`, submits it to a deterministic `MockRuntime`, stores `TaskEvent` snapshots, and renders the same task context in ConversationViewport, the left thread list, and the right utility drawer.
+The MVP1 TaskEvent product chain now extends to a read-only MCP runtime path. Composer input still creates a `TaskDraft` and submits through `RuntimeClient.submitTask()`, but the desktop adapter can route read-only intent to an MCP read-only runtime when a localhost MCP profile is connected. If MCP is disconnected or invalid, `MockRuntime` remains the fallback/demo/test runtime.
 
-MVP1 remains mock-only. It does not connect to Unreal Editor, call MCP tools, call LLM/provider APIs, or perform real project filesystem work.
+MVP2 supports local MCP connection state, initialize/discovery metadata, Streamable HTTP and legacy HTTP+SSE client transports, read-only resource/tool intent routing, TaskEvent display, blocked-tool warnings, and diagnostics. It does not perform real UE writes, real LLM/provider API calls, shell/browser/filesystem product behavior, or approval-driven write actions.
 
 ## Technology Stack
 
@@ -46,7 +46,7 @@ apps/desktop/
       types/        UI type definitions
 packages/shared/    Shared types plus MVP1 Task/Runtime/Event contract
 packages/runtime/   Deterministic MockRuntime and TaskEvent reducer
-packages/mcp-client/  MCP server profile and connection types
+packages/mcp-client/  MCP JSON-RPC, Streamable HTTP, legacy SSE, session, and discovery client
 docs/               Architecture, roadmap, development guide
 ```
 
@@ -56,8 +56,8 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 
 ## Non-Goals (current stage)
 
-- Real Unreal Engine connection or Editor launch
-- Real MCP tool calls
+- Real Unreal Engine writes or Editor launch
+- Mutating MCP tool calls
 - Real LLM API calls or provider integration
 - Cloud deployment, auth, or remote services
 - Forking or embedding Codex/Claude Code/Cursor/Aider
@@ -69,6 +69,8 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 - [MVP Roadmap](docs/mvp-roadmap.md)
 - [Runtime Contract](docs/runtime-contract.md)
 - [MVP1 Acceptance](docs/mvp1-acceptance.md)
+- [MCP Read-only Plan](docs/mcp-readonly-plan.md)
+- [MVP2 Acceptance](docs/mvp2-acceptance.md)
 - [Development Guide](docs/development.md)
 
 ## License

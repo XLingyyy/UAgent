@@ -72,7 +72,20 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
     runtimeStore.setState((previousState) => ({
       ...previousState,
       ...snapshot,
-      mockOnlyWarning: "Mock runtime / no provider call",
+      mockOnlyWarning:
+        previousState.mcp.status === "connected"
+          ? "MCP read-only runtime / no provider call"
+          : "Mock runtime / no provider call",
+    }));
+  });
+  runtimeClient.subscribeMcp((mcp) => {
+    runtimeStore.setState((previousState) => ({
+      ...previousState,
+      mcp,
+      mockOnlyWarning:
+        mcp.status === "connected"
+          ? "MCP read-only runtime / no provider call"
+          : "Mock runtime / no provider call",
     }));
   });
 
@@ -233,6 +246,18 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
   const runtimeActions: RuntimeStoreActions = {
     submitComposerTask: composerActions.submitComposerTask,
     cancelRuntimeTask: composerActions.cancelRuntimeTask,
+    setMcpEndpoint: (endpoint) => {
+      runtimeClient.setMcpEndpoint(endpoint);
+    },
+    connectMcp: async () => {
+      await runtimeClient.connectMcp();
+    },
+    discoverMcp: async () => {
+      await runtimeClient.discoverMcp();
+    },
+    disconnectMcp: () => {
+      runtimeClient.disconnectMcp();
+    },
   };
 
   const providerActions: ProviderStoreActions = {

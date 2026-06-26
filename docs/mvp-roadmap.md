@@ -21,7 +21,7 @@ Status: complete
 
 Status: complete
 
-## MVP1 — Mock Product Shell + Runtime Contract (current)
+## MVP1 — Mock Product Shell + Runtime Contract
 
 - Shared contract for `TaskDraft`, `TaskRecord`, `TaskEvent`, `RuntimeSnapshot`, `RuntimeClient`, `EvidenceRecord`, and `ApprovalRequest`
 - Deterministic `MockRuntime` in `packages/runtime`
@@ -32,13 +32,17 @@ Status: complete
 - ConversationViewport, UtilityDrawer, and LeftSidebar rendering from the active task events
 - Provider/model guardrails: model-not-configured does not block mock flow, and no provider call is made
 
-## MVP2 — MCP Read-only Runtime
+Status: complete
+
+## MVP2 — MCP Read-only Runtime (current)
 
 - MCP client implementation with Streamable HTTP default and legacy HTTP + SSE compatibility
 - Unreal MCP initialize and discovery
 - Read-only tool/resource listing
 - Read-only task events emitted through the MVP1 Runtime Contract
 - `MockRuntime` remains as fallback/demo/test runtime
+
+Status: current
 
 ## MVP3 — Agent Core
 

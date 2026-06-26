@@ -1,5 +1,9 @@
 import type { PlanItem, Evidence, ChatMessage, ToolCall } from "@uagent/shared";
 export { createMockRuntime, type MockRuntimeClient, type MockRuntimeOptions } from "./mock-runtime.js";
+export { classifyMcpToolRisk, isRiskAllowed } from "./mcp-readonly-policy.js";
+export { createSemanticCapabilityIndex, type McpResolvedIntent, type SemanticCapabilityIndex } from "./mcp-semantic-index.js";
+export { createMcpReadOnlyRuntime, type McpReadOnlyRuntimeClient, type McpReadOnlyRuntimeOptions } from "./mcp-readonly-runtime.js";
+export { createRuntimeRouter, type RuntimeRouterOptions } from "./runtime-router.js";
 export { applyTaskEvent, reduceTaskEvents } from "./task-event-reducer.js";
 
 export type AgentStatus = "idle" | "thinking" | "acting" | "waiting" | "finished" | "error";

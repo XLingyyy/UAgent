@@ -680,3 +680,10 @@
   color: var(--ua-text-muted);
   line-height: var(--ua-line-height-normal);
 }
+
+.ua-settings-page__mcp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-3);
+  min-width: 0;
+}

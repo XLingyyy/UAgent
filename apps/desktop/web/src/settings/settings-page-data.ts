@@ -172,8 +172,22 @@ export const appearancePageData: SettingsPageData = {
 export const configPageData: SettingsPageData = {
   id: "config",
   title: "Config",
-  description: "Manage approval policy, sandbox permissions, configuration paths, and diagnostics.",
+  description: "Manage MCP read-only runtime, approval policy, sandbox permissions, paths, and diagnostics.",
   sections: [
+    {
+      id: "mcp",
+      title: "MCP read-only runtime",
+      description: "Connect to a localhost MCP endpoint and discover read-only capabilities.",
+      rows: [
+        {
+          id: "mcp-connection",
+          label: "Local MCP endpoint",
+          description:
+            "MVP2 accepts localhost endpoints only. Discovery is read-only and write-like tools are blocked.",
+          disabled: false,
+        },
+      ],
+    },
     {
       id: "approval",
       title: "Approval policy",

@@ -8,13 +8,16 @@ export function RuntimePanel() {
   const activeTaskId = runtime?.activeTaskId ?? null;
   const activeTask = activeTaskId ? runtime?.tasksById[activeTaskId] : null;
   const events = activeTaskId ? (runtime?.eventsByTaskId[activeTaskId] ?? []) : [];
+  const visibleEventCount = events.filter((event) => event.type !== "mcp_fallback_to_mock").length;
   const canCancel = Boolean(activeTaskId && activeTask && runtimeActions && !isTerminalTaskState(activeTask.state));
 
   return (
     <section className="ua-utility-placeholder" aria-label="Runtime panel">
       <div className="ua-utility-placeholder__header">
         <div className="ua-utility-placeholder__title-group">
-          <span className="ua-utility-placeholder__eyebrow">Mock only</span>
+          <span className="ua-utility-placeholder__eyebrow">
+            {runtime?.mcp.status === "connected" ? "MCP read-only" : "Mock only"}
+          </span>
           <h3 className="ua-utility-placeholder__title">Runtime context</h3>
         </div>
         <span className="ua-utility-placeholder__state">{runtime?.status ?? "ready"}</span>
@@ -27,9 +30,18 @@ export function RuntimePanel() {
         <li className="ua-utility-placeholder__item">
           State: {activeTask?.state ?? "idle"}
         </li>
-        <li className="ua-utility-placeholder__item">{events.length} events</li>
+        <li className="ua-utility-placeholder__item">{visibleEventCount} events</li>
         <li className="ua-utility-placeholder__item">
           {runtime?.mockOnlyWarning ?? "Mock runtime / no provider call"}
+        </li>
+        <li className="ua-utility-placeholder__item">
+          MCP: {runtime?.mcp.status ?? "disconnected"}
+        </li>
+        <li className="ua-utility-placeholder__item">
+          Discovery:{" "}
+          {runtime?.mcp.capabilities
+            ? `${runtime.mcp.capabilities.tools} tools / ${runtime.mcp.capabilities.resources} resources / ${runtime.mcp.capabilities.prompts} prompts`
+            : "none"}
         </li>
         {events.slice(-3).map((event) => (
           <li key={event.id} className="ua-utility-placeholder__item">

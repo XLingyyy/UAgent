@@ -35,3 +35,29 @@ export interface DiscoveryConfig {
   pollIntervalMs: number;
   autoConnect: boolean;
 }
+
+export type {
+  JsonRpcError,
+  JsonRpcErrorResponse,
+  JsonRpcId,
+  JsonRpcIdFactory,
+  JsonRpcMessage,
+  JsonRpcNotification,
+  JsonRpcRequest,
+  JsonRpcResponse,
+  JsonRpcSuccessResponse,
+} from "./json-rpc.js";
+export {
+  assertJsonRpcMessage,
+  createJsonRpcNotification,
+  createJsonRpcRequest,
+  isJsonRpcErrorResponse,
+  isJsonRpcResponse,
+} from "./json-rpc.js";
+export { McpClientError, McpProtocolError, McpTransportError } from "./errors.js";
+export type { McpTransport as McpTransportClient, McpTransportOptions } from "./transport.js";
+export { assertLocalMcpEndpoint } from "./transport.js";
+export { StreamableHttpTransport, parseFirstSseJsonMessage } from "./transport-streamable-http.js";
+export { LegacySseTransport, parseLegacyEndpointEvent } from "./transport-legacy-sse.js";
+export { McpDiscoveryService } from "./discovery.js";
+export { McpSession, type McpInitializeResult, type McpSessionOptions } from "./session.js";

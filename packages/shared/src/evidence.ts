@@ -5,7 +5,7 @@ export type EvidenceKind =
   | "diagnostic"
   | "artifact_placeholder";
 
-export type EvidenceSource = "mock-runtime" | "future-mcp" | "future-file-system";
+export type EvidenceSource = "mock-runtime" | "mcp-readonly" | "future-mcp" | "future-file-system";
 
 export interface EvidenceRecord {
   id: string;

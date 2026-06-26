@@ -13,6 +13,16 @@ const EVENT_LABELS: Record<TaskEvent["type"], string> = {
   task_failed: "Task failed",
   cancel_task_requested: "Cancel requested",
   task_cancelled: "Task cancelled",
+  mcp_connection_started: "MCP connection",
+  mcp_connected: "MCP connected",
+  mcp_discovery_started: "MCP discovery",
+  mcp_discovery_completed: "MCP discovery",
+  mcp_read_started: "MCP read",
+  mcp_read_completed: "MCP read",
+  mcp_tool_blocked: "MCP blocked",
+  mcp_connection_failed: "MCP failed",
+  mcp_disconnected: "MCP disconnected",
+  mcp_fallback_to_mock: "Runtime fallback",
 };
 
 const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
@@ -27,6 +37,16 @@ const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
   task_failed: "review-summary",
   cancel_task_requested: "tool-event",
   task_cancelled: "review-summary",
+  mcp_connection_started: "tool-event",
+  mcp_connected: "tool-event",
+  mcp_discovery_started: "tool-event",
+  mcp_discovery_completed: "tool-event",
+  mcp_read_started: "tool-event",
+  mcp_read_completed: "tool-event",
+  mcp_tool_blocked: "tool-event",
+  mcp_connection_failed: "review-summary",
+  mcp_disconnected: "review-summary",
+  mcp_fallback_to_mock: "tool-event",
 };
 
 function formatTimestamp(createdAt: number): string {
@@ -61,10 +81,13 @@ export function extractRuntimeDiagnostics(events: TaskEvent[]): TaskEvent[] {
       event.level === "warning" ||
       event.level === "error" ||
       event.type === "task_failed" ||
-      event.type === "task_cancelled",
+      event.type === "task_cancelled" ||
+      event.type === "mcp_tool_blocked" ||
+      event.type === "mcp_connection_failed" ||
+      event.type === "mcp_disconnected",
   );
 }
 
 export function extractRuntimeEvidence(events: TaskEvent[]): TaskEvent[] {
-  return events.filter((event) => event.type === "evidence_created");
+  return events.filter((event) => event.type === "evidence_created" || event.type === "mcp_read_completed");
 }

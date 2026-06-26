@@ -66,6 +66,19 @@ export {
 } from "./task.js";
 export type { EvidenceKind, EvidenceRecord, EvidenceSource } from "./evidence.js";
 export type {
+  McpCapabilitySummary,
+  McpConnectionProfile,
+  McpConnectionState,
+  McpConnectionStatus,
+  McpDiscoverySnapshot,
+  McpPromptDescriptor,
+  McpResourceDescriptor,
+  McpServerInfo,
+  McpToolDescriptor,
+  McpTransportKind,
+} from "./mcp.js";
+export type { ToolRiskClassification, ToolRiskLevel } from "./risk.js";
+export type {
   RuntimeClient,
   RuntimeCommand,
   RuntimeSnapshot,

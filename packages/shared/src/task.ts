@@ -23,7 +23,17 @@ export type TaskEventType =
   | "task_completed"
   | "task_failed"
   | "cancel_task_requested"
-  | "task_cancelled";
+  | "task_cancelled"
+  | "mcp_connection_started"
+  | "mcp_connected"
+  | "mcp_discovery_started"
+  | "mcp_discovery_completed"
+  | "mcp_read_started"
+  | "mcp_read_completed"
+  | "mcp_tool_blocked"
+  | "mcp_connection_failed"
+  | "mcp_disconnected"
+  | "mcp_fallback_to_mock";
 
 export type TaskEventLevel = "info" | "success" | "warning" | "error";
 

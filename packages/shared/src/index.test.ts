@@ -14,6 +14,9 @@ import {
   type TaskEvent,
   type TaskRecord,
   type ToolCall,
+  type McpConnectionProfile,
+  type McpDiscoverySnapshot,
+  type ToolRiskClassification,
 } from "./index.js";
 
 describe("@uagent/shared types", () => {
@@ -191,5 +194,44 @@ describe("@uagent/shared types", () => {
         contextPercent: 12,
       }),
     ).resolves.toMatchObject({ id: "task-0001", title: "Mock task" });
+  });
+
+  it("defines the MVP2 MCP read-only shared contract", () => {
+    const profile: McpConnectionProfile = {
+      id: "local-ue",
+      name: "Local Unreal MCP",
+      endpoint: "http://127.0.0.1:8765/mcp",
+      transport: "streamable-http",
+    };
+    const risk: ToolRiskClassification = {
+      toolName: "resources/read",
+      level: "read_only",
+      reason: "MCP resource reads are the MVP2 primary read-only path.",
+    };
+    const discovery: McpDiscoverySnapshot = {
+      tools: [{ name: "ue.selection.get", description: "Read current editor selection" }],
+      resources: [{ uri: "ue://selection/current", name: "Current selection" }],
+      prompts: [{ name: "summarize-selection" }],
+      capabilitySummary: {
+        tools: 1,
+        resources: 1,
+        prompts: 1,
+        readOnlyTools: 1,
+        blockedTools: 0,
+      },
+      discoveredAt: 2_000,
+    };
+    const event: TaskEvent = {
+      id: createEventId("task-0001", 3),
+      taskId: "task-0001",
+      type: "mcp_discovery_completed",
+      title: "MCP discovery completed",
+      createdAt: 2_001,
+      payload: { profile, discovery, risk },
+    };
+
+    expect(event.type).toBe("mcp_discovery_completed");
+    expect(discovery.capabilitySummary.resources).toBe(1);
+    expect(risk.level).toBe("read_only");
   });
 });

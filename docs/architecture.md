@@ -74,7 +74,13 @@ Agent runtime state machine plus the deterministic MVP1 `MockRuntime`. The mock 
 
 ### `packages/mcp-client`
 
-MCP (Model Context Protocol) client abstraction layer. Type definitions for server profiles, connection management, capability discovery, and transport configuration. Designed to integrate with UE5.8 Unreal MCP Server over Streamable HTTP (default) with legacy HTTP + SSE compatibility. The `UnrealMcpTransport` type covers the UE official HTTP-based transports (`streamable-http`, `http-sse`); the generic `McpTransport` type adds `stdio` for non-Unreal MCP servers only.
+MCP (Model Context Protocol) client abstraction layer. MVP2 implements JSON-RPC 2.0 message helpers, structured protocol/transport errors, Streamable HTTP transport, legacy HTTP+SSE fallback transport, session lifecycle (`initialize` -> `notifications/initialized`), and discovery (`tools/list`, `resources/list`, `prompts/list`). The UE product path uses localhost HTTP transports only; `stdio` remains a generic non-UE type boundary.
+
+### Runtime Router
+
+`packages/runtime` owns `RuntimeRouter`, `McpReadOnlyRuntime`, read-only risk policy, and semantic capability indexing. Desktop UI submits `TaskDraft` through the same `RuntimeClient` surface. The router sends read-only MCP intent to `McpReadOnlyRuntime` only when connected; otherwise it emits `mcp_fallback_to_mock` and uses `MockRuntime`.
+
+React components do not construct JSON-RPC requests or call `tools/call` directly. UI consumes `RuntimeSnapshot`, `TaskEvent`, MCP connection state, and desktop view models.
 
 ## Design Principles
 

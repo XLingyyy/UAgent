@@ -23,7 +23,20 @@ function stateForEvent(event: TaskEvent): TaskState {
     case "tool_started":
     case "tool_completed":
     case "evidence_created":
+    case "mcp_connection_started":
+    case "mcp_connected":
+    case "mcp_discovery_started":
+    case "mcp_discovery_completed":
+    case "mcp_read_started":
+    case "mcp_read_completed":
+    case "mcp_fallback_to_mock":
       return "executing";
+    case "mcp_tool_blocked":
+      return "reviewing";
+    case "mcp_connection_failed":
+      return "failed";
+    case "mcp_disconnected":
+      return "cancelled";
     case "approval_requested":
       return "awaiting_approval";
     case "review_created":

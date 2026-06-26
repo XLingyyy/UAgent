@@ -15,6 +15,7 @@ export function ConversationViewport({ messages = workspaceMessages }: Conversat
   );
   const runtimeMessages = runtimeEvents?.map(mapTaskEventToWorkspaceMessage);
   const visibleMessages = runtimeMessages && runtimeMessages.length > 0 ? runtimeMessages : messages;
+  const mcpStatus = useRuntimeStore((state) => state.mcp.status);
 
   return (
     <section className="ua-conversation-viewport" aria-label="Conversation activity">
@@ -22,10 +23,12 @@ export function ConversationViewport({ messages = workspaceMessages }: Conversat
         <div>
           <h2 className="ua-conversation-viewport__title">Conversation</h2>
           <p className="ua-conversation-viewport__subtitle">
-            Requests, plans, tool notes, and review summaries for this mock thread.
+            Requests, plans, MCP read-only events, evidence, and review summaries.
           </p>
         </div>
-        <span className="ua-conversation-viewport__badge">Mock only</span>
+        <span className="ua-conversation-viewport__badge">
+          {mcpStatus === "connected" ? "MCP read-only" : "Mock only"}
+        </span>
       </div>
       <div className="ua-conversation-viewport__list">
         {visibleMessages.map((message) => (
