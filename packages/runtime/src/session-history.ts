@@ -99,7 +99,7 @@ function computeReplaySummary(
     };
   }
 
-  const hasSecrets = targetRecord.hasSecrets;
+  const hasSecrets = matchingRecords.some((record) => record.hasSecrets);
   const terminalState =
     targetRecord.kind === "task" && targetRecord.state && isTerminalTaskState(targetRecord.state)
       ? targetRecord.state

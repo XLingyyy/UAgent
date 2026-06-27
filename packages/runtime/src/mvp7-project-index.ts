@@ -21,7 +21,7 @@ import {
   type SafeFilePreviewResult,
   type TaskEvent,
 } from "@uagent/shared";
-import { redactString } from "./secrets/redaction.js";
+import { recursiveRedactValue, redactString } from "./secrets/redaction.js";
 import { buildAuditFromTaskEvents } from "./audit-projection.js";
 import { createSessionHistory } from "./session-history.js";
 import { createApprovalGate } from "./approval-gate.js";
@@ -425,6 +425,31 @@ function decisionForRequest(request: CapabilityRequest): CapabilityDecision {
   return { status: "blocked", reason: "blocked", riskLevel: "high_write", auditRequired: true, adapterMayRun: false };
 }
 
+function redactCapabilityString(text: string): string {
+  const secretRedacted = redactString(text);
+  return secretRedacted
+    .replace(/[A-Za-z]:\/Users\/[^/\s]+(?:\/[^\s]+)*/g, (path) => redactPathForUi(path))
+    .replace(/\/Users\/[^/\s]+(?:\/[^\s]+)*/g, (path) => redactPathForUi(path))
+    .replace(/\/home\/[^/\s]+(?:\/[^\s]+)*/g, (path) => redactPathForUi(path));
+}
+
+function redactCapabilityValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return redactCapabilityString(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactCapabilityValue(item));
+  }
+  if (value !== null && typeof value === "object") {
+    const redacted: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      redacted[key] = redactCapabilityValue(val);
+    }
+    return redacted;
+  }
+  return value;
+}
+
 export interface CapabilityBridge {
   request(request: CapabilityRequest): { decision: CapabilityDecision; result: CapabilityResult };
   getRequestLog(): CapabilityResult[];
@@ -436,9 +461,10 @@ export function createCapabilityBridge(): CapabilityBridge {
     request(request) {
       const decision = decisionForRequest(request);
       const status = decision.status === "allow" ? "completed" : "blocked";
+      const redactedInput = redactCapabilityValue(recursiveRedactValue(request.input)) as Record<string, unknown>;
       const output =
         request.kind === "terminal" && status === "completed"
-          ? { proposedCommand: (request.input as Record<string, unknown>).command, fixtureOutput: "Command proposal only; no shell execution." }
+          ? { proposedCommand: redactedInput.command, fixtureOutput: "Command proposal only; no shell execution." }
           : request.kind === "files" && status === "completed"
             ? { operation: "read", content: "Fixture read-only file result." }
             : { blockedReason: decision.reason };
@@ -451,8 +477,9 @@ export function createCapabilityBridge(): CapabilityBridge {
         output,
         createdAt: request.createdAt,
       };
-      log.push(result);
-      return { decision, result };
+      const redactedResult = redactCapabilityValue(recursiveRedactValue(result)) as CapabilityResult;
+      log.push(redactedResult);
+      return { decision, result: redactedResult };
     },
     getRequestLog() {
       return [...log];
@@ -784,9 +811,26 @@ export async function runMvp7ScenarioMatrix(): Promise<Mvp7ScenarioMatrixResult>
   // 28 - mvp7-terminal-fixture-result
   {
     const b = createCapabilityBridge();
-    const req: CapabilityRequest = { id: "cap-28", kind: "terminal", mode: "fixture", projectId: null, createdAt: FIXTURE_NOW, input: { command: "build" } };
+    const req: CapabilityRequest = {
+      id: "cap-28",
+      kind: "terminal",
+      mode: "fixture",
+      projectId: null,
+      createdAt: FIXTURE_NOW,
+      input: { command: "echo api_key=sk-abcdefghijklmnopqrstuvwxyz123456 && cat C:/Users/Ada/Lyra/.env" },
+    };
     const { result } = b.request(req);
-    push("mvp7-terminal-fixture-result", 2, result.status === "completed" && result.output !== undefined, `fixture: status=${result.status}, output=${JSON.stringify(result.output).length} chars`);
+    const serializedResult = JSON.stringify(result);
+    const serializedLog = JSON.stringify(b.getRequestLog());
+    const noRawSecret = !serializedResult.includes("sk-abcdefghijklmnopqrstuvwxyz123456") && !serializedLog.includes("sk-abcdefghijklmnopqrstuvwxyz123456");
+    const noRawHome = !serializedResult.includes("C:/Users/Ada") && !serializedLog.includes("C:/Users/Ada");
+    const hasRedactionMarkers = serializedResult.includes("[REDACTED]") && serializedResult.includes("[user-home]");
+    push(
+      "mvp7-terminal-fixture-result",
+      5,
+      result.status === "completed" && result.output !== undefined && noRawSecret && noRawHome && hasRedactionMarkers,
+      `fixture: status=${result.status}, redactedSecret=${noRawSecret}, redactedHome=${noRawHome}`,
+    );
   }
 
   // 29 - mvp7-browser-preview-no-window-open

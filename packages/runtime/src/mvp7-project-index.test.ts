@@ -105,6 +105,31 @@ describe("MVP7 project index and capability bridge runtime", () => {
     expect(bridge.request({ id: "live", kind: "provider_live", mode: "manual_live", projectId: "p", createdAt: 5, input: { confirmed: false } }).decision.status).toBe("blocked");
   });
 
+  it("redacts raw secrets and home paths in capability result and request log", () => {
+    const bridge = createCapabilityBridge();
+    const { result } = bridge.request({
+      id: "cap-secret-terminal",
+      kind: "terminal",
+      mode: "fixture",
+      projectId: "project-lyra",
+      createdAt: 1,
+      input: {
+        command:
+          "echo api_key=sk-abcdefghijklmnopqrstuvwxyz123456 && cat C:/Users/Ada/Lyra/.env",
+      },
+    });
+
+    const serializedResult = JSON.stringify(result);
+    const serializedLog = JSON.stringify(bridge.getRequestLog());
+
+    expect(serializedResult).not.toContain("sk-abcdefghijklmnopqrstuvwxyz123456");
+    expect(serializedResult).not.toContain("C:/Users/Ada");
+    expect(serializedLog).not.toContain("sk-abcdefghijklmnopqrstuvwxyz123456");
+    expect(serializedLog).not.toContain("C:/Users/Ada");
+    expect(serializedResult).toContain("[REDACTED]");
+    expect(serializedResult).toContain("[user-home]");
+  });
+
   it("replays redacted project and capability events without scan or adapter execution", () => {
     let tick = 100;
     const scanCalls = 0;
@@ -143,6 +168,26 @@ describe("MVP7 project index and capability bridge runtime", () => {
     });
     expect(JSON.stringify(replay.events)).not.toContain("sk-fixture-secret-1234567890");
     expect(JSON.stringify(replay.events)).not.toContain("C:/Users/Ada");
+  });
+
+  it("marks replay summary redacted when any matching session event was redacted", () => {
+    const history = createSessionHistory(() => 200);
+
+    history.recordProjectEvent(
+      "task-summary-redaction",
+      "project_index_completed",
+      "Indexed token sk-fixture-secret-1234567890",
+      "project-lyra",
+    );
+    history.recordCapabilityEvent(
+      "task-summary-redaction",
+      "capability_blocked",
+      "Files write blocked",
+      "files",
+      "blocked",
+    );
+
+    expect(history.getReplaySummary("task-summary-redaction").redacted).toBe(true);
   });
 
   it("has 50 scenarios with 80+ total assertions", () => {
