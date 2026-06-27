@@ -34,6 +34,14 @@ function stateForEvent(event: TaskEvent): TaskState {
     case "mcp_read_started":
     case "mcp_read_completed":
     case "mcp_fallback_to_mock":
+    case "provider_request_started":
+    case "provider_stream_started":
+    case "provider_stream_delta":
+    case "provider_stream_completed":
+    case "provider_usage_recorded":
+    case "provider_request_completed":
+    case "provider_request_failed":
+    case "provider_request_cancelled":
       return "executing";
     case "agent_observation_created":
       return "observing";

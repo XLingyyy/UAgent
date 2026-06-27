@@ -109,6 +109,74 @@ describe("MVP3 Agent TaskEvent reducer", () => {
     ]);
   });
 
+  describe("MVP4 P1 provider event state mapping", () => {
+    it("keeps state executing after each provider event type without reverting to submitted", () => {
+      const providerEvents: TaskEvent["type"][] = [
+        "provider_request_started",
+        "provider_stream_started",
+        "provider_stream_delta",
+        "provider_stream_completed",
+        "provider_usage_recorded",
+        "provider_request_completed",
+        "provider_request_failed",
+        "provider_request_cancelled",
+      ];
+      const events: TaskEvent[] = [
+        event(1, "task_submitted", { draft }),
+        event(2, "agent_plan_started", { draft }),
+      ];
+      providerEvents.forEach((type, i) => {
+        events.push(event(3 + i, type));
+      });
+      events.push(event(11, "task_completed"));
+
+      const snapshot = reduceTaskEvents(events);
+
+      expect(snapshot.tasksById["task-0001"].state).toBe("completed");
+      expect(snapshot.status).toBe("completed");
+      expect(snapshot.tasksById["task-0001"].draft).toBe(draft);
+      const types = snapshot.eventsByTaskId["task-0001"].map((e) => e.type);
+      expect(types).toEqual([
+        "task_submitted",
+        "agent_plan_started",
+        ...providerEvents,
+        "task_completed",
+      ]);
+    });
+
+    it("provider_request_failed does not set task to failed or clear draft", () => {
+      const snapshot = reduceTaskEvents([
+        event(1, "task_submitted", { draft }),
+        event(2, "agent_plan_started", { draft }),
+        event(3, "provider_request_failed"),
+      ]);
+
+      expect(snapshot.tasksById["task-0001"].state).toBe("executing");
+      expect(snapshot.status).toBe("running");
+      expect(snapshot.tasksById["task-0001"].draft).toBe(draft);
+      expect(snapshot.lastError).toBeNull();
+    });
+
+    it("provider_request_cancelled keeps executing; only explicit task_cancelled transitions to cancelled", () => {
+      const snapshot = reduceTaskEvents([
+        event(1, "task_submitted", { draft }),
+        event(2, "agent_plan_started", { draft }),
+        event(3, "provider_request_cancelled"),
+        event(4, "task_cancelled"),
+      ]);
+
+      expect(snapshot.tasksById["task-0001"].state).toBe("cancelled");
+      expect(snapshot.status).toBe("ready");
+      const types = snapshot.eventsByTaskId["task-0001"].map((e) => e.type);
+      expect(types).toEqual([
+        "task_submitted",
+        "agent_plan_started",
+        "provider_request_cancelled",
+        "task_cancelled",
+      ]);
+    });
+  });
+
   it("maps failed Agent steps to executing state; only task_failed produces terminal failed state", () => {
     const snapshot = reduceTaskEvents([
       event(1, "task_submitted", { draft }),
