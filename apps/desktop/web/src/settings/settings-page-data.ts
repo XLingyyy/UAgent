@@ -93,7 +93,7 @@ export const profilePageData: SettingsPageData = {
     {
       id: "account-status",
       title: "Account status",
-      description: "No remote account is attached in MVP0.",
+      description: "No remote account is attached in MVP6.",
       rows: [],
     },
     {
@@ -261,7 +261,7 @@ export const configPageData: SettingsPageData = {
           description:
             "Remove all local agent state, conversations, and settings. This action cannot be undone.",
           disabled: true,
-          disabledReason: "Not available in MVP0",
+          disabledReason: "Staged disabled in MVP6",
         },
       ],
     },
@@ -371,7 +371,7 @@ export const archivedChatsPageData: SettingsPageData = {
           description:
             "Permanently remove all archived conversations. This action cannot be undone.",
           disabled: true,
-          disabledReason: "Not available in MVP0",
+          disabledReason: "Staged disabled in MVP6",
         },
       ],
     },

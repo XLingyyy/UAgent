@@ -48,7 +48,7 @@ export const permissionOptions: ComposerPermissionOption[] = [
   {
     id: "full-access",
     label: "Full access",
-    description: "MVP0 mock only - no real permissions elevated",
+    description: "MVP6 mock only - no real permissions elevated",
     tone: "warning",
     enabled: true,
     requiresConfirmation: true,

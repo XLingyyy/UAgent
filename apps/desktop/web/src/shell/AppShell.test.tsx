@@ -102,11 +102,11 @@ describe("AppShell", () => {
   });
 
   describe("inspector toggle synchronization", () => {
-    it("defaults with tools closed and the tools button showing Open tools", () => {
+    it("defaults with tools closed and the tools button showing Open utility drawer", () => {
       renderAppShell();
       const toolsBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
       expect(toolsBtn.textContent).toContain("Tools");
-      expect(toolsBtn.getAttribute("aria-label")).toBe("Open tools");
+      expect(toolsBtn.getAttribute("aria-label")).toBe("Open utility drawer");
       expect(toolsBtn.getAttribute("aria-pressed")).toBe("false");
     });
 
@@ -115,7 +115,7 @@ describe("AppShell", () => {
       const toolsBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
       fireEvent.click(toolsBtn);
 
-      expect(toolsBtn.getAttribute("aria-label")).toBe("Close tools");
+      expect(toolsBtn.getAttribute("aria-label")).toBe("Close utility drawer");
       expect(toolsBtn.getAttribute("aria-pressed")).toBe("true");
     });
 
@@ -125,7 +125,7 @@ describe("AppShell", () => {
       fireEvent.click(closeBtn);
 
       const toolsBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
-      expect(toolsBtn.getAttribute("aria-label")).toBe("Open tools");
+      expect(toolsBtn.getAttribute("aria-label")).toBe("Open utility drawer");
     });
 
     it("opens inspector via Tools button and syncs TitleBar", () => {
@@ -133,7 +133,7 @@ describe("AppShell", () => {
       const toolsBtn = document.querySelector(".ua-titlebar__btn") as HTMLButtonElement;
       fireEvent.click(toolsBtn);
 
-      expect(toolsBtn.getAttribute("aria-label")).toBe("Close tools");
+      expect(toolsBtn.getAttribute("aria-label")).toBe("Close utility drawer");
       expect(toolsBtn.getAttribute("aria-pressed")).toBe("true");
     });
 
@@ -234,7 +234,8 @@ describe("AppShell", () => {
 
     it("opens Profile settings from the sidebar account entry", () => {
       const { container } = renderAppShell();
-      fireEvent.click(screen.getByLabelText("Open profile settings"));
+      fireEvent.click(screen.getByLabelText("Open profile menu"));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Open profile" }));
 
       expect(container.querySelector(".ua-app")?.getAttribute("data-shell-mode")).toBe("settings");
       expect(container.querySelector(".ua-main-layout")).toBeNull();

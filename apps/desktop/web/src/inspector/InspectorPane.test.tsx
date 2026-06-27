@@ -216,23 +216,24 @@ describe("InspectorPane", () => {
     });
 
     it.each([
-      ["Terminal", "Session unavailable", "Future terminal bridge"],
-      ["Browser", "Preview unavailable", "Future embedded browser"],
-      ["Files", "Not mounted", "Future file browser"],
-      ["Logs", "Static rows only", "Future log stream"],
-      ["UE", "Not connected", "Future UE connection"],
-      ["Asset Search", "Static placeholder", "Future asset index"],
-    ])("switches %s to a static mock placeholder", (toolName, stateText, actionLabel) => {
+      ["Terminal"],
+      ["Browser"],
+      ["Files"],
+      ["Logs"],
+      ["UE"],
+      ["Asset Search"],
+    ])("keeps %s as a disabled future tool placeholder", (toolName) => {
       renderInspector();
-      fireEvent.click(screen.getByRole("tab", { name: toolName }));
+      const tab = screen.getByRole("tab", { name: toolName });
+      fireEvent.click(tab);
 
-      expect(screen.getByRole("tab", { name: toolName }).getAttribute("aria-selected")).toBe(
+      expect(tab.getAttribute("aria-selected")).toBe("false");
+      expect(tab.getAttribute("aria-disabled")).toBe("true");
+      expect(tab.getAttribute("aria-describedby")).toMatch(/^ua-coming-soon-tooltip-/);
+      expect(screen.getByRole("tab", { name: "Review" }).getAttribute("aria-selected")).toBe(
         "true",
       );
-      expect(screen.getByRole("tabpanel", { name: toolName })).toBeTruthy();
-      expect(screen.getByText(stateText)).toBeTruthy();
-      expect(screen.getByText("Mock only")).toBeTruthy();
-      expect(screen.getByRole("button", { name: actionLabel }).hasAttribute("disabled")).toBe(true);
+      expect(screen.getByRole("tooltip", { name: new RegExp(toolName) })).toBeTruthy();
     });
 
     it("shows runtime-derived safety, audit, and changes panels without active task", () => {

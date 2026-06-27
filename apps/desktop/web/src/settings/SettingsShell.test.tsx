@@ -78,12 +78,12 @@ describe("SettingsShell", () => {
       });
 
     expect(navItems.map((button) => button.textContent)).toEqual([
-      "ProfileMVP0",
-      "GeneralMVP0",
-      "AppearanceMVP0",
-      "PersonalizationMVP0",
-      "ConfigMVP0",
-      "ProviderMVP0",
+      "ProfileMVP6",
+      "GeneralMVP6",
+      "AppearanceMVP6",
+      "PersonalizationMVP6",
+      "ConfigMVP6",
+      "ProviderMVP6",
     ]);
     expect(within(sidebar).queryByText("Archived chats")).toBeNull();
     expect(within(sidebar).queryByText("MCP servers")).toBeNull();
@@ -124,14 +124,16 @@ describe("SettingsShell", () => {
     expect(screen.getByText("Display")).toBeTruthy();
   });
 
-  it("applies Light and Dark from the Appearance page", () => {
+  it("keeps System and Light staged while Dark remains active", () => {
     renderSettingsShellWithThemeProbe();
     const sidebar = screen.getByLabelText("Settings navigation");
     fireEvent.click(within(sidebar).getByText("Appearance"));
 
     expect(screen.getByTestId("theme-state").textContent).toBe("dark");
-    fireEvent.click(screen.getByRole("radio", { name: "Light" }));
-    expect(screen.getByTestId("theme-state").textContent).toBe("light");
+    const system = screen.getByRole("radio", { name: "System (staged)" }) as HTMLButtonElement;
+    const light = screen.getByRole("radio", { name: "Light (staged)" }) as HTMLButtonElement;
+    expect(system.disabled).toBe(true);
+    expect(light.disabled).toBe(true);
     fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
     expect(screen.getByTestId("theme-state").textContent).toBe("dark");
   });
@@ -192,8 +194,8 @@ describe("SettingsShell", () => {
   it("shows phase badges on enabled entries", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
-    const mvp0Badges = within(sidebar).getAllByText("MVP0");
-    expect(mvp0Badges.length).toBe(6);
+    const mvp6Badges = within(sidebar).getAllByText("MVP6");
+    expect(mvp6Badges.length).toBe(6);
   });
 
   it("shows UI-only mock note on each settings page", () => {

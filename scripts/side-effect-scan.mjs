@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * UAgent MVP4 Side-effect Scan
+ * UAgent MVP6 Side-effect Scan
  *
  * Scans the codebase for potential boundary violations:
  * - Provider/secret/Authorization terms in non-contract code
@@ -178,6 +178,28 @@ const CATEGORIES = [
       (rel) => /apps\/desktop\/web\/src\/(composer|settings|workspace|inspector|sidebar|app|components)\//.test(rel),
     ],
   },
+  {
+    id: "mvp6-ui-product-side-effects",
+    title: "MVP6 UI Product Side Effects",
+    description: "React product UI must not directly open browser/storage/clipboard/project side effects",
+    patterns: [
+      { re: /window\.open\s*\(/gi, label: "window.open()" },
+      { re: /location\.href\s*=/gi, label: "location.href assignment" },
+      { re: /localStorage\./gi, label: "localStorage.*" },
+      { re: /sessionStorage\./gi, label: "sessionStorage.*" },
+      { re: /navigator\.clipboard/gi, label: "navigator.clipboard" },
+      { re: /show(Open|Save)FilePicker\s*\(/gi, label: "file picker" },
+      { re: /getDisplayMedia\s*\(/gi, label: "screen capture" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\//.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(composer|settings|workspace|inspector|sidebar|shell|app|components)\//.test(rel),
+    ],
+  },
 ];
 
 // ============================================================
@@ -270,7 +292,7 @@ function main() {
   const hr = "=".repeat(80);
 
   console.log(hr);
-  console.log("  UAgent MVP4 Side-effect Scan Report");
+  console.log("  UAgent MVP6 Side-effect Scan Report");
   console.log(`  ${new Date().toISOString()}`);
   console.log(`  Files scanned: ${fileSet.length}`);
   console.log(hr);

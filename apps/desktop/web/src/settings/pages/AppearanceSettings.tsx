@@ -33,11 +33,16 @@ function ThemeModeControls() {
   }> = [
     {
       id: "system",
-      label: "System",
+      label: "System (staged)",
       disabled: true,
       description: "Future system setting",
     },
-    { id: "light", label: "Light" },
+    {
+      id: "light",
+      label: "Light (staged)",
+      disabled: true,
+      description: "Future light theme setting",
+    },
     { id: "dark", label: "Dark" },
   ];
 
@@ -62,7 +67,7 @@ function ThemeModeControls() {
               .filter(Boolean)
               .join(" ")}
             onClick={() => {
-              if (option.id === "dark" || option.id === "light") {
+              if (option.id === "dark") {
                 setTheme(option.id);
               }
             }}
@@ -89,7 +94,7 @@ function AccentColorControls() {
       >
         <span className="ua-settings-page__accent-fill" />
       </button>
-      <span className="ua-settings-page__accent-label">Pale blue, fixed for MVP0</span>
+      <span className="ua-settings-page__accent-label">Pale blue, fixed for MVP6</span>
     </div>
   );
 }

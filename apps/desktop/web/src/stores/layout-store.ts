@@ -1,4 +1,10 @@
-import type { LayoutStoreState, NavSection, UATheme, UIInitialState } from "../types/ui";
+import type {
+  LayoutStoreState,
+  NavSection,
+  SidebarViewMode,
+  UATheme,
+  UIInitialState,
+} from "../types/ui";
 
 export const DEFAULT_LAYOUT_STATE: LayoutStoreState = {
   theme: "dark" as UATheme,
@@ -7,10 +13,20 @@ export const DEFAULT_LAYOUT_STATE: LayoutStoreState = {
   },
   sidebar: {
     activeNav: "workspace" as NavSection,
+    viewMode: "project" as SidebarViewMode,
+    assetBrowserExpanded: true,
   },
 };
 
 export function createInitialLayoutState(initialState?: UIInitialState): LayoutStoreState {
+  const initialSidebar = {
+    ...DEFAULT_LAYOUT_STATE.sidebar,
+    ...initialState?.layout?.sidebar,
+  };
+  if (initialSidebar.activeNav === "projects" && !initialState?.layout?.sidebar?.viewMode) {
+    initialSidebar.viewMode = "asset-browser";
+  }
+
   return {
     ...DEFAULT_LAYOUT_STATE,
     ...initialState?.layout,
@@ -18,9 +34,6 @@ export function createInitialLayoutState(initialState?: UIInitialState): LayoutS
       ...DEFAULT_LAYOUT_STATE.inspector,
       ...initialState?.layout?.inspector,
     },
-    sidebar: {
-      ...DEFAULT_LAYOUT_STATE.sidebar,
-      ...initialState?.layout?.sidebar,
-    },
+    sidebar: initialSidebar,
   };
 }

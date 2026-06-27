@@ -144,7 +144,7 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
             {isConfirming ? (
               <div className="ua-permission-selector__confirmation">
                 <p className="ua-permission-selector__confirmation-text">
-                  MVP0 mock only. No runtime permission is changed. No filesystem, network, UE/MCP,
+                  MVP6 mock only. No runtime permission is changed. No filesystem, network, UE/MCP,
                   or command execution is enabled.
                 </p>
                 <div className="ua-permission-selector__confirmation-actions">

@@ -60,7 +60,7 @@ function FutureAccountSync() {
         Sync profile
       </button>
       <span className="ua-settings-page__profile-sync-copy">
-        Account sync is unavailable in MVP0. This page does not access a remote account, upload
+        Account sync is unavailable in MVP6. This page does not access a remote account, upload
         profile data, or start an account session flow.
       </span>
     </div>

@@ -9,6 +9,59 @@ export interface ProjectTreeProps {
   ariaLabel?: string;
 }
 
+export interface FlattenedProjectTreeNode {
+  node: ProjectTreeNodeType;
+  depth: number;
+  parentId: string | null;
+}
+
+export function flattenProjectTree(
+  nodes: ProjectTreeNodeType[],
+  expandedIds?: Set<string>,
+): FlattenedProjectTreeNode[] {
+  const result: FlattenedProjectTreeNode[] = [];
+  function walk(list: ProjectTreeNodeType[], depth: number, parentId: string | null) {
+    for (const node of list) {
+      result.push({ node, depth, parentId });
+      if (node.children?.length && (!expandedIds || expandedIds.has(node.id))) {
+        walk(node.children, depth + 1, node.id);
+      }
+    }
+  }
+  walk(nodes, 0, null);
+  return result;
+}
+
+export function filterProjectTree(
+  nodes: ProjectTreeNodeType[],
+  query: string,
+): ProjectTreeNodeType[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return nodes;
+  }
+
+  function filterNode(node: ProjectTreeNodeType): ProjectTreeNodeType | null {
+    const childMatches = node.children?.map(filterNode).filter(Boolean) as
+      | ProjectTreeNodeType[]
+      | undefined;
+    const selfMatches =
+      node.name.toLowerCase().includes(normalizedQuery) ||
+      node.type.toLowerCase().includes(normalizedQuery);
+
+    if (selfMatches || childMatches?.length) {
+      return {
+        ...node,
+        children: childMatches?.length ? childMatches : node.children && selfMatches ? node.children : undefined,
+      };
+    }
+
+    return null;
+  }
+
+  return nodes.map(filterNode).filter(Boolean) as ProjectTreeNodeType[];
+}
+
 function getVisibleNodeIds(nodes: ProjectTreeNodeType[], expandedIds: Set<string>): string[] {
   const result: string[] = [];
   function walk(list: ProjectTreeNodeType[]) {

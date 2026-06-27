@@ -18,6 +18,11 @@
   flex: 1;
 }
 
+.ua-titlebar__left {
+  gap: var(--ua-space-2);
+  min-width: 0;
+}
+
 .ua-titlebar__center {
   justify-content: center;
 }
@@ -32,6 +37,33 @@
   font-weight: var(--ua-font-weight-semibold);
   color: var(--ua-text);
   letter-spacing: 0.02em;
+}
+
+.ua-titlebar__crumb,
+.ua-titlebar__drag-hint,
+.ua-titlebar__status-pill {
+  font-size: var(--ua-font-size-xs);
+  color: var(--ua-text-subtle);
+  white-space: nowrap;
+}
+
+.ua-titlebar__crumb {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ua-titlebar__status {
+  display: flex;
+  align-items: center;
+  gap: var(--ua-space-1);
+  min-width: 0;
+}
+
+.ua-titlebar__status-pill {
+  border: 1px solid var(--ua-border-soft);
+  border-radius: var(--ua-radius-xs);
+  padding: 1px var(--ua-space-2);
+  background: var(--ua-bg-elevated);
 }
 
 .ua-titlebar__btn {

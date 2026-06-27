@@ -18,6 +18,7 @@ export function createDefaultComposerState(providerState: ProviderState): Compos
 
   return {
     input: "",
+    attachMenuOpen: false,
     permission: composerMock.permission,
     selectedModelId: defaultSelection.modelId,
     reasoningEffort: defaultSelection.reasoningEffort,

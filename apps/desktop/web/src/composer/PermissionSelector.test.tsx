@@ -100,7 +100,7 @@ describe("PermissionSelector", () => {
     expect(screen.getByText("Confirm mock mode")).toBeTruthy();
   });
 
-  it("displays MVP0 mock only warning in Full access confirmation", () => {
+  it("displays MVP6 mock only warning in Full access confirmation", () => {
     renderSelector("request-approval");
     openDropdown();
 
@@ -110,7 +110,7 @@ describe("PermissionSelector", () => {
     fireEvent.click(fullOption!);
 
     const confirmation = screen.getByRole("listbox");
-    expect(confirmation.textContent).toContain("MVP0 mock only");
+    expect(confirmation.textContent).toContain("MVP6 mock only");
     expect(confirmation.textContent).toContain("No runtime permission is changed");
     expect(confirmation.textContent).toContain("No filesystem");
   });

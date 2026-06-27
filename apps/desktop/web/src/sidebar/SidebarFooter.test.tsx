@@ -42,12 +42,13 @@ describe("SidebarFooter", () => {
 
   it("opens local Profile settings from the Account entry", () => {
     renderFooter();
-    const accountBtn = screen.getByLabelText("Open profile settings") as HTMLButtonElement;
+    const accountBtn = screen.getByLabelText("Open profile menu") as HTMLButtonElement;
 
     expect(accountBtn).toBeTruthy();
     expect(accountBtn.getAttribute("aria-disabled")).toBeNull();
 
     fireEvent.click(accountBtn);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open profile" }));
 
     expect(screen.getByTestId("settings-open").textContent).toBe("true");
     expect(screen.getByTestId("settings-page").textContent).toBe("profile");
@@ -55,7 +56,7 @@ describe("SidebarFooter", () => {
 
   it("renders version and status", () => {
     renderFooter();
-    expect(screen.getByText("UAgent MVP0")).toBeTruthy();
-    expect(screen.getByText("Local · No UE connected")).toBeTruthy();
+    expect(screen.getByText("UAgent MVP6")).toBeTruthy();
+    expect(screen.getByText("Local / No UE writes")).toBeTruthy();
   });
 });

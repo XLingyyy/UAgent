@@ -65,7 +65,7 @@ describe("LeftSidebar", () => {
       const wsBtn = screen.getByText("Workspace").closest("button")!;
       expect(wsBtn.classList.contains("ua-primary-nav__item--active")).toBe(false);
       expect(container.querySelector(".ua-sidebar")?.getAttribute("data-sidebar-view")).toBe(
-        "projects",
+        "asset-browser",
       );
     });
 
@@ -77,17 +77,17 @@ describe("LeftSidebar", () => {
       expect(settingsBtn.classList.contains("ua-primary-nav__item--active")).toBe(true);
       expect(settingsBtn.getAttribute("aria-current")).toBe("page");
       expect(container.querySelector(".ua-sidebar")?.getAttribute("data-sidebar-view")).toBe(
-        "workspace",
+        "project",
       );
       expect(screen.queryByRole("tree")).toBeNull();
     });
   });
 
   describe("Workspace view", () => {
-    it("exposes the workspace sidebar view by default", () => {
+    it("exposes the project sidebar view by default", () => {
       const { container } = renderSidebar();
       const aside = container.querySelector(".ua-sidebar");
-      expect(aside?.getAttribute("data-sidebar-view")).toBe("workspace");
+      expect(aside?.getAttribute("data-sidebar-view")).toBe("project");
     });
 
     it("renders a lightweight current project summary", () => {
@@ -107,7 +107,6 @@ describe("LeftSidebar", () => {
     it("does not render the full asset tree by default", () => {
       renderSidebar();
       expect(screen.queryByRole("tree")).toBeNull();
-      expect(screen.queryByText("Asset Browser")).toBeNull();
       expect(screen.queryByText("Content")).toBeNull();
     });
 
@@ -238,7 +237,7 @@ describe("LeftSidebar", () => {
       renderSidebar();
       switchToProjects();
 
-      expect(screen.getByText("Asset Browser")).toBeTruthy();
+      expect(screen.getByRole("tree", { name: `${defaultProject.name} asset browser` })).toBeTruthy();
       expect(
         screen.getByRole("tree", { name: `${defaultProject.name} asset browser` }),
       ).toBeTruthy();
@@ -325,10 +324,11 @@ describe("LeftSidebar", () => {
 
     it("opens local Profile settings from the Account entry", () => {
       renderSidebar();
-      const accountBtn = screen.getByLabelText("Open profile settings") as HTMLButtonElement;
+      const accountBtn = screen.getByLabelText("Open profile menu") as HTMLButtonElement;
 
       expect(accountBtn).toBeTruthy();
       fireEvent.click(accountBtn);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Open profile" }));
 
       expect(screen.getByTestId("settings-open").textContent).toBe("true");
       expect(screen.getByTestId("settings-page").textContent).toBe("profile");
@@ -336,12 +336,12 @@ describe("LeftSidebar", () => {
 
     it("renders the version badge", () => {
       renderSidebar();
-      expect(screen.getByText("UAgent MVP0")).toBeTruthy();
+      expect(screen.getByText("UAgent MVP6")).toBeTruthy();
     });
 
     it("renders the local status indicator", () => {
       renderSidebar();
-      expect(screen.getByText("Local · No UE connected")).toBeTruthy();
+      expect(screen.getByText("Local / No UE writes")).toBeTruthy();
     });
   });
 

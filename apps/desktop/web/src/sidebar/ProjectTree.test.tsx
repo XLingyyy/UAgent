@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ProjectTree } from "./ProjectTree";
+import { filterProjectTree, flattenProjectTree, ProjectTree } from "./ProjectTree";
 import type { ProjectTreeNode } from "../types/ui";
 
 const mockNodes: ProjectTreeNode[] = [
@@ -32,6 +32,21 @@ const mockNodes: ProjectTreeNode[] = [
 
 function renderTree(nodes: ProjectTreeNode[] = mockNodes) {
   return render(<ProjectTree nodes={nodes} />);
+}
+
+function createLargeFixtureNodeCount(count: number): ProjectTreeNode[] {
+  return [
+    {
+      id: "content",
+      name: "Content",
+      type: "Folder",
+      children: Array.from({ length: count }, (_, index) => ({
+        id: `asset-${index.toString().padStart(4, "0")}`,
+        name: `FixtureAsset_${index.toString().padStart(4, "0")}.uasset`,
+        type: index % 10 === 0 ? "Material" : "Asset",
+      })),
+    },
+  ];
 }
 
 describe("ProjectTree", () => {
@@ -248,5 +263,42 @@ describe("ProjectTree", () => {
     const configItem = screen.getByText("Config").closest('[role="treeitem"]')!;
     expect(configItem.getAttribute("tabindex")).toBe("0");
     expect(contentItem.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("flattens visible nodes for long-list virtualization handoff", () => {
+    const expandedIds = new Set(["content"]);
+    const flattened = flattenProjectTree(mockNodes, expandedIds);
+
+    expect(flattened.map((item) => item.node.id)).toEqual([
+      "content",
+      "content-maps",
+      "content-characters",
+      "config",
+    ]);
+    expect(flattened[0]).toMatchObject({ depth: 0, parentId: null });
+    expect(flattened[1]).toMatchObject({ depth: 1, parentId: "content" });
+  });
+
+  it("filters project tree nodes while preserving ancestor context", () => {
+    const filtered = filterProjectTree(mockNodes, "hero");
+    const flattened = flattenProjectTree(filtered);
+
+    expect(flattened.map((item) => item.node.name)).toEqual([
+      "Content",
+      "Characters",
+      "Hero.uasset",
+    ]);
+    expect(flattened[2]).toMatchObject({ depth: 2, parentId: "content-characters" });
+  });
+
+  it("handles a 1000-node asset fixture without extra dependencies", () => {
+    const largeTree = createLargeFixtureNodeCount(1000);
+    const flattened = flattenProjectTree(largeTree, new Set(["content"]));
+    const materialMatches = filterProjectTree(largeTree, "Material");
+
+    expect(flattened).toHaveLength(1001);
+    expect(flattened[1]?.node.name).toBe("FixtureAsset_0000.uasset");
+    expect(flattened.at(-1)?.node.name).toBe("FixtureAsset_0999.uasset");
+    expect(flattenProjectTree(materialMatches)).toHaveLength(101);
   });
 });

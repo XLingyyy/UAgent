@@ -18,6 +18,9 @@ import type {
 /** Primary navigation sections in the sidebar. */
 export type NavSection = "workspace" | "projects" | "settings";
 
+/** MVP6 sidebar content modes. */
+export type SidebarViewMode = "project" | "conversation" | "asset-browser";
+
 /** Mock project data shape for the sidebar ProjectSection. */
 export interface MockProject {
   id: string;
@@ -63,6 +66,10 @@ export interface InspectorState {
 export interface SidebarState {
   /** Currently active primary nav section. */
   activeNav: NavSection;
+  /** Current project workspace sidebar mode. */
+  viewMode: SidebarViewMode;
+  /** Whether the static asset browser disclosure area is expanded. */
+  assetBrowserExpanded: boolean;
 }
 
 /** Theme variants supported by the UI shell. */
@@ -93,6 +100,7 @@ export interface ThreadStoreState {
 /** Composer dock local-only UI state. */
 export interface ComposerStoreState {
   input: string;
+  attachMenuOpen: boolean;
   permission: ComposerPermission;
   selectedModelId: ComposerModelId;
   reasoningEffort: ComposerReasoningEffort;
@@ -128,13 +136,16 @@ export type ToggleInspector = () => void;
 /** Set the active primary nav section. */
 export type SetActiveNav = (nav: NavSection) => void;
 
+/** Set the current sidebar content mode. */
+export type SetSidebarViewMode = (viewMode: SidebarViewMode) => void;
+
 /** Set the current UI theme. */
 export type SetTheme = (theme: UATheme) => void;
 
 /** Set the active thread by id. */
 export type SetActiveThread = (threadId: string) => void;
 
-/** Settings page identifiers for the MVP0 page registry. */
+/** Settings page identifiers for the MVP6 page registry. */
 export type SettingsPageId =
   | "general"
   | "profile"
@@ -151,6 +162,8 @@ export interface SettingsShellState {
 
 export type SetComposerInput = (input: string) => void;
 
+export type SetComposerAttachMenuOpen = (open: boolean) => void;
+
 export type SetComposerPermission = (permission: ComposerPermission) => void;
 
 export type SetComposerModel = (modelId: ComposerModelId) => void;
@@ -161,6 +174,8 @@ export interface LayoutStoreActions {
   toggleInspector: ToggleInspector;
   setInspectorOpen: (open: boolean) => void;
   setActiveNav: SetActiveNav;
+  setSidebarViewMode: SetSidebarViewMode;
+  setAssetBrowserExpanded: (expanded: boolean) => void;
   setTheme: SetTheme;
 }
 
@@ -180,6 +195,7 @@ export interface ThreadStoreActions {
 
 export interface ComposerStoreActions {
   setComposerInput: SetComposerInput;
+  setComposerAttachMenuOpen: SetComposerAttachMenuOpen;
   setComposerPermission: SetComposerPermission;
   setComposerModel: SetComposerModel;
   setComposerReasoning: SetComposerReasoning;
@@ -211,7 +227,7 @@ export interface UIContextValue
 
 /** Partial input shape accepted by UIProvider for test/setup seeding. */
 export interface UIInitialState {
-  layout?: Partial<LayoutStoreState> & {
+  layout?: Omit<Partial<LayoutStoreState>, "inspector" | "sidebar"> & {
     inspector?: Partial<InspectorState>;
     sidebar?: Partial<SidebarState>;
   };

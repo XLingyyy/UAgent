@@ -1,12 +1,14 @@
 # UAgent
 
-AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows — starting with Unreal Engine game development tooling.
+AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP5 Workflow & Safety
+## Current Stage: MVP6 UI Productization & Project Workspace Shell
 
-MVP5 extends the MVP4 provider boundary with an institutionalized safety layer: approval workflow, sandbox execution mode, ChangeSet rollback/promote, audit log, and session history. The core flow (`Composer → TaskDraft → RuntimeClient.submitTask() → AgentLoopRuntime → TaskEvent → RuntimeSnapshot → UI`) remains unchanged. MVP5 adds risk classification, approval gates, fixture sandbox execution, ChangeSet state management, and append-only audit projections.
+MVP6 productizes the desktop UI into a project workspace shell while preserving the MVP5 approval, sandbox, ChangeSet, audit, session, provider, and secret-redaction boundaries. The core flow (`Composer -> TaskDraft -> RuntimeClient.submitTask() -> AgentLoopRuntime -> TaskEvent -> RuntimeSnapshot -> UI`) remains mock-first and fixture-first.
 
-MVP5 does not default to live provider network, real UE writes, real mutating MCP tools, or product shell/browser/filesystem behavior. All sandbox execution defaults to `disabled` or `fixture` mode. Approval decisions, sandbox results, ChangeSet operations, and audit events are secret-safe, deterministic, and replayable.
+MVP6 adds a welcome-first workspace, compact Composer with staged attach menu, TitleBar local status summary, three-mode LeftSidebar, Utility Drawer, six-page Settings Center, Provider-to-Composer model sync, and a 30-scenario UI regression matrix.
+
+MVP6 does not default to live provider network, real UE writes, real project filesystem scans, real terminal/browser/filesystem controls, real screenshots, or mutating MCP tools. Future capability entry points are visible only as disabled, tooltip-backed staged controls.
 
 ## Technology Stack
 
@@ -75,6 +77,10 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 - [MVP3 Acceptance](docs/mvp3-acceptance.md)
 - [MVP4 Acceptance](docs/mvp4-acceptance.md)
 - [MVP5 Acceptance](docs/mvp5-acceptance.md)
+- [MVP6 Acceptance](docs/mvp6-acceptance.md)
+- [MVP6 UI Productization Plan](docs/mvp6-ui-productization-plan.md)
+- [MVP6 Baseline Freeze](docs/mvp6-baseline-freeze.md)
+- [MVP6 Manual Smoke](docs/mvp6-manual-smoke.md)
 - [Workflow Safety Plan](docs/workflow-safety-plan.md)
 - [Baseline Freeze](docs/mvp5-baseline-freeze.md)
 - [Development Guide](docs/development.md)

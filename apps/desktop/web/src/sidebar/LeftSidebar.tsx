@@ -16,19 +16,26 @@ import {
   useThreadStore,
 } from "../stores/ui-store";
 import { getRuntimeTaskIds } from "../runtime/runtime-store";
+import type { SidebarViewMode } from "../types/ui";
 import "./LeftSidebar.css";
+
+const SIDEBAR_MODES: Array<{ id: SidebarViewMode; label: string }> = [
+  { id: "project", label: "Project" },
+  { id: "conversation", label: "Conversation" },
+  { id: "asset-browser", label: "Asset Browser" },
+];
 
 export function LeftSidebar() {
   const activeNav = useLayoutStore((state) => state.sidebar.activeNav);
+  const sidebarView = useLayoutStore((state) => state.sidebar.viewMode);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const activeThreadId = useThreadStore((state) => state.activeThreadId);
   const runtime = useRuntimeStore((state) => state);
-  const { setActiveNav } = useLayoutActions();
+  const { setActiveNav, setSidebarViewMode } = useLayoutActions();
   const { setActiveProject } = useProjectActions();
   const { setActiveThread } = useThreadActions();
   const { openSettings } = useSettingsActions();
 
-  const sidebarView = activeNav === "projects" ? "projects" : "workspace";
   const activeProject = activeProjectId
     ? (MOCK_PROJECTS.find((p) => p.id === activeProjectId) ?? null)
     : null;
@@ -53,8 +60,24 @@ export function LeftSidebar() {
           onSettingsOpen={() => openSettings("general")}
         />
       </div>
+      <div className="ua-sidebar__mode-tabs" role="tablist" aria-label="Project workspace sidebar modes">
+        {SIDEBAR_MODES.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            className={`ua-sidebar__mode-tab${
+              sidebarView === item.id ? " ua-sidebar__mode-tab--active" : ""
+            }`}
+            aria-selected={sidebarView === item.id}
+            onClick={() => setSidebarViewMode(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
       <div className={`ua-sidebar__body ua-sidebar__body--${sidebarView}`}>
-        {sidebarView === "projects" ? (
+        {sidebarView === "asset-browser" ? (
           <ProjectSection
             mode="projects"
             project={activeProject}
@@ -63,6 +86,15 @@ export function LeftSidebar() {
             onProjectSelect={setActiveProject}
             treeNodes={activeProject ? mockProjectTree : []}
           />
+        ) : sidebarView === "conversation" ? (
+          <>
+            <ProjectSection mode="workspace" project={activeProject} treeNodes={[]} />
+            <ThreadSection
+              threads={[...runtimeThreads, ...mockThreads]}
+              activeThreadId={activeThreadId}
+              onThreadSelect={setActiveThread}
+            />
+          </>
         ) : (
           <>
             <ProjectSection mode="workspace" project={activeProject} treeNodes={[]} />

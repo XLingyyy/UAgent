@@ -162,7 +162,29 @@ function createUIStateBundle(
           ? previousState
           : {
               ...previousState,
-              sidebar: { ...previousState.sidebar, activeNav: nav },
+              sidebar: {
+                ...previousState.sidebar,
+                activeNav: nav,
+                viewMode: nav === "projects" ? "asset-browser" : previousState.sidebar.viewMode,
+              },
+            },
+      ),
+    setSidebarViewMode: (viewMode) =>
+      layoutStore.setState((previousState) =>
+        previousState.sidebar.viewMode === viewMode
+          ? previousState
+          : {
+              ...previousState,
+              sidebar: { ...previousState.sidebar, viewMode },
+            },
+      ),
+    setAssetBrowserExpanded: (expanded) =>
+      layoutStore.setState((previousState) =>
+        previousState.sidebar.assetBrowserExpanded === expanded
+          ? previousState
+          : {
+              ...previousState,
+              sidebar: { ...previousState.sidebar, assetBrowserExpanded: expanded },
             },
       ),
     setTheme: (theme) =>
@@ -213,6 +235,12 @@ function createUIStateBundle(
     setComposerInput: (input) =>
       composerStore.setState((previousState) =>
         previousState.input === input ? previousState : { ...previousState, input },
+      ),
+    setComposerAttachMenuOpen: (open) =>
+      composerStore.setState((previousState) =>
+        previousState.attachMenuOpen === open
+          ? previousState
+          : { ...previousState, attachMenuOpen: open },
       ),
     setComposerPermission: (permission) =>
       composerStore.setState((previousState) =>

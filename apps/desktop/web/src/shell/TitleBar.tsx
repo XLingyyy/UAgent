@@ -1,4 +1,4 @@
-import { useLayoutActions, useLayoutStore } from "../stores/ui-store";
+import { useLayoutActions, useLayoutStore, useRuntimeStore } from "../stores/ui-store";
 import "./TitleBar.css";
 
 export interface TitleBarProps {
@@ -15,18 +15,32 @@ export interface TitleBarProps {
  */
 export function TitleBar({ title = "UAgent" }: TitleBarProps) {
   const inspectorOpen = useLayoutStore((state) => state.inspector.open);
+  const mcpStatus = useRuntimeStore((state) => state.mcp.status);
   const { toggleInspector } = useLayoutActions();
-  const toolsLabel = inspectorOpen ? "Close tools" : "Open tools";
+  const toolsLabel = inspectorOpen ? "Close utility drawer" : "Open utility drawer";
 
   return (
-    <header className="ua-titlebar" data-tauri-drag-region>
+    <header className="ua-titlebar" data-tauri-drag-region="">
       <div className="ua-titlebar__left" data-tauri-drag-region>
         <span className="ua-titlebar__brand" data-tauri-drag-region>
           {title}
         </span>
+        <span className="ua-titlebar__crumb" data-tauri-drag-region>
+          Project Workspace Shell
+        </span>
       </div>
-      <div className="ua-titlebar__center" data-tauri-drag-region />
+      <div className="ua-titlebar__center" data-tauri-drag-region>
+        <span className="ua-titlebar__drag-hint">Local-first agent workspace</span>
+      </div>
       <div className="ua-titlebar__right">
+        <div className="ua-titlebar__status" aria-label="Connection summary">
+          <span className="ua-titlebar__status-pill">Mock</span>
+          <span className="ua-titlebar__status-pill">
+            {mcpStatus === "connected" ? "MCP read-only" : "MCP read-only"}
+          </span>
+          <span className="ua-titlebar__status-pill">Provider fixture</span>
+          <span className="ua-titlebar__status-pill">No network</span>
+        </div>
         <button
           className="ua-titlebar__btn"
           onClick={toggleInspector}
@@ -36,7 +50,7 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
         >
           <span aria-hidden>Tools</span>
         </button>
-        <span className="ua-titlebar__badge">MVP0</span>
+        <span className="ua-titlebar__badge">MVP6</span>
       </div>
     </header>
   );

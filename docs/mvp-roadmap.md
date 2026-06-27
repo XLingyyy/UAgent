@@ -78,9 +78,27 @@ Status: complete
 - MVP5 scenario matrix: 20 named scenarios with 20+ assertions, secret redaction, provider boundary regression, MCP mutating blocked regression
 - Side-effect and secret scan: repeatable scan script, 0 blocked findings
 
-Status: current
+Status: complete
 
 Out of scope for MVP5: default live provider network access, raw API keys in UI state/events/traces/audit/session, real UE write operations, real mutating MCP tools/call, product shell/browser/filesystem behavior, production-grade OS sandbox, new state management, new routing, or a new design system.
+
+## MVP6 - UI Productization & Project Workspace Shell
+
+- Welcome-first Project Workspace Shell with compact Composer as the default first view
+- TitleBar productization with local mode, MCP read-only, provider fixture, and no-network status
+- LeftSidebar three-mode shell: Project, Conversation, and static Asset Browser
+- Static UE-style asset browser fixture based on in-memory mock project data only
+- Staged attach menu for File, Asset, Screenshot, and Context Pack, all disabled with tooltips
+- Utility Drawer with Review, Diagnostics, Runtime, Agent Trace, Safety, Audit, and Changes panels retained
+- Terminal, Browser, Files, UE, Logs, and Asset Search exposed only as disabled future tools
+- Six-page Settings Center: General, Profile, Appearance, Config, Personalization, Provider
+- Provider-to-Composer model and reasoning sync with secretRef-only provider configuration
+- MVP6 scenario matrix with 30 named scenarios and behavior assertions
+- Side-effect scan remains 0-blocked for live network, filesystem, shell/browser, UE write, mutating MCP, and raw-secret boundaries
+
+Status: current
+
+Out of scope for MVP6: real UE project scanning, real filesystem reads/writes, terminal/browser/filesystem product controls, screenshots, real Asset Registry, default live provider network, raw API key storage, mutating MCP tools, a real light theme, new state management, new routing, or a new design system.
 
 ## Non-Goals
 
@@ -91,3 +109,4 @@ Out of scope for MVP5: default live provider network access, raw API keys in UI 
 - Direct fork or embedding of Codex/Claude Code/Cursor/Aider
 - Real UE write execution, mutating MCP tools, approval write execution, or LLM/provider API calls during MVP3
 - Default live provider network access or raw API keys in UI state/events/traces during MVP4
+- Real project scans, terminal/browser/filesystem controls, screenshots, or UE writes during MVP6

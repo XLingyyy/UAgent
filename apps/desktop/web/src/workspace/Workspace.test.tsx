@@ -100,8 +100,9 @@ describe("Workspace", () => {
     fireEvent.click(screen.getByText(mockThreads[0].title).closest("button")!);
 
     expect(screen.getByLabelText("Workspace").getAttribute("data-workspace-mode")).toBe("thread");
-    expect(screen.getByLabelText("Conversation activity")).toBeTruthy();
-    expect(screen.getByText("Conversation")).toBeTruthy();
+    const viewport = screen.getByLabelText("Conversation activity");
+    expect(viewport).toBeTruthy();
+    expect(within(viewport).getByText("Conversation")).toBeTruthy();
   });
 
   it("submits a welcome composer request into runtime thread mode", async () => {

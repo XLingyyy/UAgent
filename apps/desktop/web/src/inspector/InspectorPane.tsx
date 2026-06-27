@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ComingSoonGate } from "../components/ComingSoonGate";
 import { ReviewPanel } from "./ReviewPanel";
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { RuntimePanel } from "./RuntimePanel";
@@ -66,6 +67,10 @@ function renderToolPanel(toolId: UtilityToolId) {
   return null;
 }
 
+function isFutureTool(toolId: UtilityToolId): boolean {
+  return ["terminal", "browser", "files", "logs", "ue", "asset-search"].includes(toolId);
+}
+
 export function InspectorPane({ open, onClose }: InspectorPaneProps) {
   const [activeToolId, setActiveToolId] = useState<UtilityToolId>("review");
   const activeTool = utilityTools.find((tool) => tool.id === activeToolId) ?? utilityTools[0];
@@ -103,8 +108,7 @@ export function InspectorPane({ open, onClose }: InspectorPaneProps) {
             const selected = activeToolId === tool.id;
             const tabId = `ua-utility-tool-${tool.id}`;
             const panelId = `ua-utility-panel-${tool.id}`;
-
-            return (
+            const tab = (
               <button
                 key={tool.id}
                 id={tabId}
@@ -112,11 +116,27 @@ export function InspectorPane({ open, onClose }: InspectorPaneProps) {
                 role="tab"
                 aria-selected={selected}
                 aria-controls={panelId}
-                onClick={() => setActiveToolId(tool.id)}
+                onClick={() => {
+                  if (!isFutureTool(tool.id)) {
+                    setActiveToolId(tool.id);
+                  }
+                }}
                 type="button"
               >
                 {tool.label}
               </button>
+            );
+
+            return isFutureTool(tool.id) ? (
+              <ComingSoonGate
+                key={tool.id}
+                phase="MVP7"
+                reason={`${tool.label} requires sandboxed product capability and is disabled in MVP6.`}
+              >
+                {tab}
+              </ComingSoonGate>
+            ) : (
+              tab
             );
           })}
         </div>

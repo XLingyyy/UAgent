@@ -8,7 +8,16 @@ import {
 } from "react";
 import "./ComingSoonGate.css";
 
-export type ComingSoonPhase = "MVP1" | "MVP2" | "MVP3" | "MVP4";
+export type ComingSoonPhase =
+  | "MVP1"
+  | "MVP2"
+  | "MVP3"
+  | "MVP4"
+  | "MVP5"
+  | "MVP6"
+  | "MVP7"
+  | "MVP8"
+  | "MVP9";
 
 export interface ComingSoonGateProps {
   phase: ComingSoonPhase;
@@ -37,7 +46,7 @@ export function getComingSoonPhase(disabledReason?: string): ComingSoonPhase | n
     return null;
   }
 
-  const match = disabledReason.match(/MVP[1-4]/)?.[0] as ComingSoonPhase | undefined;
+  const match = disabledReason.match(/MVP[1-9]/)?.[0] as ComingSoonPhase | undefined;
   return match ?? null;
 }
 

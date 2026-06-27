@@ -19,7 +19,7 @@ describe("ComposerDock", () => {
     const dock = screen.getByLabelText("Composer dock");
     expect(dock).toBeTruthy();
 
-    expect(within(dock).getByLabelText("Add context - disabled")).toBeTruthy();
+    expect(within(dock).getByLabelText("Open attach menu")).toBeTruthy();
     expect(within(dock).getByLabelText("Permission mode: Request approval")).toBeTruthy();
     expect(within(dock).getByLabelText("Composer input")).toBeTruthy();
     expect(
@@ -41,7 +41,7 @@ describe("ComposerDock", () => {
     expect(leftTools).toBeTruthy();
     expect(inputZone).toBeTruthy();
     expect(rightTools).toBeTruthy();
-    expect(within(leftTools).getByLabelText("Add context - disabled")).toBeTruthy();
+    expect(within(leftTools).getByLabelText("Open attach menu")).toBeTruthy();
     expect(within(leftTools).getByLabelText("Permission mode: Request approval")).toBeTruthy();
     expect(within(inputZone).getByLabelText("Composer input")).toBeTruthy();
     expect(
@@ -109,14 +109,21 @@ describe("ComposerDock", () => {
     expect(textarea.value).toBe("");
   });
 
-  it("shows Add context through ComingSoonGate", () => {
+  it("shows staged attach menu entries through ComingSoonGate", () => {
     renderDock();
 
-    const addBtn = screen.getByLabelText("Add context - disabled") as HTMLButtonElement;
-    expect(addBtn.getAttribute("aria-disabled")).toBe("true");
-    expect(addBtn.getAttribute("title")).toBe(
-      "Coming in MVP1: Attach project files and asset references as additional context.",
-    );
+    const addBtn = screen.getByLabelText("Open attach menu") as HTMLButtonElement;
+    fireEvent.click(addBtn);
+
+    const menu = screen.getByRole("menu", { name: "Attach context" });
+    expect(within(menu).getByText("File")).toBeTruthy();
+    expect(within(menu).getByText("Asset")).toBeTruthy();
+    expect(within(menu).getByText("Screenshot")).toBeTruthy();
+    expect(within(menu).getByText("Context Pack")).toBeTruthy();
+    for (const item of within(menu).getAllByRole("menuitem")) {
+      expect(item.getAttribute("aria-disabled")).toBe("true");
+      expect(item.getAttribute("title")).toContain("Coming in MVP7");
+    }
   });
 
   it("renders the ContextRing with correct percentage and tooltip", () => {

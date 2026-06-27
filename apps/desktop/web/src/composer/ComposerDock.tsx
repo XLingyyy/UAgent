@@ -30,6 +30,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const { openSettings } = useSettingsActions();
   const {
     setComposerInput,
+    setComposerAttachMenuOpen,
     setComposerPermission,
     setComposerModel,
     setComposerReasoning,
@@ -65,18 +66,34 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
     <footer className="ua-composer" aria-label="Composer dock" data-composer-mode={mode}>
       <div className="ua-composer__input-row">
         <div className="ua-composer__left-tools">
-          <ComingSoonGate
-            phase="MVP1"
-            reason="Attach project files and asset references as additional context."
-          >
+          <div className="ua-composer__attach">
             <button
               className="ua-composer__add-btn"
               type="button"
-              aria-label="Add context - disabled"
+              aria-label="Open attach menu"
+              aria-haspopup="menu"
+              aria-expanded={composer.attachMenuOpen}
+              onClick={() => setComposerAttachMenuOpen(!composer.attachMenuOpen)}
             >
               {addButtonLabel}
             </button>
-          </ComingSoonGate>
+            {composer.attachMenuOpen && (
+              <div className="ua-composer__attach-menu" role="menu" aria-label="Attach context">
+                {[
+                  ["File", "Attach local files after filesystem approval is implemented."],
+                  ["Asset", "Attach UE asset references after asset indexing is implemented."],
+                  ["Screenshot", "Attach screenshots after capture approval is implemented."],
+                  ["Context Pack", "Attach reusable context packs after packaging is implemented."],
+                ].map(([label, reason]) => (
+                  <ComingSoonGate key={label} phase="MVP7" reason={reason}>
+                    <button className="ua-composer__attach-item" type="button" role="menuitem">
+                      {label}
+                    </button>
+                  </ComingSoonGate>
+                ))}
+              </div>
+            )}
+          </div>
 
           <PermissionSelector value={permission} onChange={setComposerPermission} />
         </div>
