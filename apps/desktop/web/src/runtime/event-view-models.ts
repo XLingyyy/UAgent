@@ -59,6 +59,20 @@ const EVENT_LABELS: Record<TaskEvent["type"], string> = {
    session_archived: "Session archived",
    session_replayed: "Session replayed",
    audit_event_recorded: "Audit event",
+  project_root_validated: "Project root validated",
+  project_index_started: "Project index started",
+  project_index_progress: "Project index progress",
+  project_index_completed: "Project index completed",
+  project_index_failed: "Project index failed",
+  project_index_cancelled: "Project index cancelled",
+  file_preview_requested: "File preview requested",
+  file_preview_blocked: "File preview blocked",
+  file_preview_completed: "File preview completed",
+  capability_requested: "Capability requested",
+  capability_blocked: "Capability blocked",
+  capability_completed: "Capability completed",
+  capability_cancelled: "Capability cancelled",
+  capability_timed_out: "Capability timeout",
 };
 
 const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
@@ -119,6 +133,20 @@ const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
    session_archived: "tool-event",
    session_replayed: "tool-event",
    audit_event_recorded: "tool-event",
+  project_root_validated: "tool-event",
+  project_index_started: "tool-event",
+  project_index_progress: "tool-event",
+  project_index_completed: "tool-event",
+  project_index_failed: "review-summary",
+  project_index_cancelled: "review-summary",
+  file_preview_requested: "tool-event",
+  file_preview_blocked: "review-summary",
+  file_preview_completed: "tool-event",
+  capability_requested: "tool-event",
+  capability_blocked: "review-summary",
+  capability_completed: "tool-event",
+  capability_cancelled: "review-summary",
+  capability_timed_out: "review-summary",
 };
 
 function formatTimestamp(createdAt: number): string {

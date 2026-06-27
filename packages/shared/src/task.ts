@@ -69,7 +69,21 @@ export type TaskEventType =
    | "session_resumed"
    | "session_archived"
    | "session_replayed"
-   | "audit_event_recorded";
+   | "audit_event_recorded"
+   | "project_root_validated"
+   | "project_index_started"
+   | "project_index_progress"
+   | "project_index_completed"
+   | "project_index_failed"
+   | "project_index_cancelled"
+   | "file_preview_requested"
+   | "file_preview_blocked"
+   | "file_preview_completed"
+   | "capability_requested"
+   | "capability_blocked"
+   | "capability_completed"
+   | "capability_cancelled"
+   | "capability_timed_out";
 
 export type TaskEventLevel = "info" | "success" | "warning" | "error";
 

@@ -9,6 +9,7 @@ import {
   type TaskState,
   type TaskEventType,
   isTerminalTaskState,
+  redactPathForUi,
 } from "@uagent/shared";
 import { redactString } from "./secrets/redaction.js";
 
@@ -33,29 +34,59 @@ export interface SessionHistoryEngine {
     title: string,
     providerMode: string,
   ): void;
+  recordProjectEvent(
+    taskId: string,
+    eventType: string,
+    title: string,
+    projectId: string,
+  ): void;
+  recordCapabilityEvent(
+    taskId: string,
+    eventType: string,
+    title: string,
+    capabilityKind: string,
+    status: string,
+  ): void;
   getSessionSummary(): SessionSummary;
   getTaskHistory(filter: TaskHistoryFilter): TaskHistoryEntry[];
   replayTask(taskId: string, cursor?: Partial<ReplayCursor>): ReplayResult;
   getReplaySummary(taskId: string): ReplaySummary;
 }
 
-interface TaskRecord {
+interface EventRecord {
+  kind: "task" | "project" | "capability";
   taskId: string;
-  state: TaskState;
+  state?: TaskState;
+  eventType?: string;
   title: string;
-  providerMode: string;
+  providerMode?: string;
+  projectId?: string;
+  capabilityKind?: string;
+  status?: string;
   createdAt: number;
   hasSecrets: boolean;
 }
 
+function redactSessionText(text: string): { text: string; redacted: boolean } {
+  const secretRedacted = redactString(text);
+  const pathRedacted = secretRedacted
+    .replace(/[A-Za-z]:\/Users\/[^/\s]+(?:\/[^\s]+)*/g, (path) => redactPathForUi(path))
+    .replace(/\/Users\/[^/\s]+(?:\/[^\s]+)*/g, (path) => redactPathForUi(path))
+    .replace(/\/home\/[^/\s]+(?:\/[^\s]+)*/g, (path) => redactPathForUi(path));
+  return {
+    text: pathRedacted,
+    redacted: pathRedacted !== text,
+  };
+}
+
 function computeReplaySummary(
-  records: TaskRecord[],
+  records: EventRecord[],
   taskId: string,
   cursor?: Partial<ReplayCursor>,
 ): ReplaySummary {
   const sessionId = cursor?.sessionId ?? "session-default";
-  const taskRecords = records.filter((r) => r.taskId === taskId);
-  const targetRecord = taskRecords[taskRecords.length - 1];
+  const matchingRecords = records.filter((r) => r.taskId === taskId);
+  const targetRecord = matchingRecords[matchingRecords.length - 1];
 
   if (!targetRecord) {
     return {
@@ -69,19 +100,20 @@ function computeReplaySummary(
   }
 
   const hasSecrets = targetRecord.hasSecrets;
-  const terminalState = isTerminalTaskState(targetRecord.state)
-    ? targetRecord.state
-    : null;
+  const terminalState =
+    targetRecord.kind === "task" && targetRecord.state && isTerminalTaskState(targetRecord.state)
+      ? targetRecord.state
+      : null;
 
   const filter = cursor?.filter;
-  let filteredCount = taskRecords.length;
+  let filteredCount = matchingRecords.length;
 
   if (filter) {
-    filteredCount = taskRecords.filter((r) => {
+    filteredCount = matchingRecords.filter((r) => {
       if (filter.taskId && r.taskId !== filter.taskId) return false;
-      if (filter.terminalStates.length > 0 && !filter.terminalStates.includes(r.state))
+      if (r.kind === "task" && filter.terminalStates.length > 0 && r.state && !filter.terminalStates.includes(r.state))
         return false;
-      if (filter.providerModes.length > 0 && !filter.providerModes.includes(r.providerMode))
+      if (r.kind === "task" && filter.providerModes.length > 0 && r.providerMode && !filter.providerModes.includes(r.providerMode))
         return false;
       return true;
     }).length;
@@ -90,15 +122,16 @@ function computeReplaySummary(
   return {
     sessionId,
     taskId,
-    eventCount: taskRecords.length,
+    eventCount: matchingRecords.length,
     terminalState,
     filteredCount,
     redacted: hasSecrets,
   };
 }
 
-export function createSessionHistory(): SessionHistoryEngine {
-  const tasks: TaskRecord[] = [];
+export function createSessionHistory(clock?: () => number): SessionHistoryEngine {
+  const now = clock ?? Date.now;
+  const tasks: EventRecord[] = [];
 
   return {
     recordTaskCompletion(
@@ -107,15 +140,53 @@ export function createSessionHistory(): SessionHistoryEngine {
       title: string,
       providerMode: string,
     ): void {
-      const cleanedTitle = redactString(title);
-      const hasSecrets = cleanedTitle !== title;
+      const redactedTitle = redactSessionText(title);
       tasks.push({
+        kind: "task",
         taskId,
         state,
-        title: cleanedTitle,
+        title: redactedTitle.text,
         providerMode,
-        createdAt: Date.now(),
-        hasSecrets,
+        createdAt: now(),
+        hasSecrets: redactedTitle.redacted,
+      });
+    },
+
+    recordProjectEvent(
+      taskId: string,
+      eventType: string,
+      title: string,
+      projectId: string,
+    ): void {
+      const redactedTitle = redactSessionText(title);
+      tasks.push({
+        kind: "project",
+        taskId,
+        eventType,
+        title: redactedTitle.text,
+        projectId,
+        createdAt: now(),
+        hasSecrets: redactedTitle.redacted,
+      });
+    },
+
+    recordCapabilityEvent(
+      taskId: string,
+      eventType: string,
+      title: string,
+      capabilityKind: string,
+      status: string,
+    ): void {
+      const redactedTitle = redactSessionText(title);
+      tasks.push({
+        kind: "capability",
+        taskId,
+        eventType,
+        title: redactedTitle.text,
+        capabilityKind,
+        status,
+        createdAt: now(),
+        hasSecrets: redactedTitle.redacted,
       });
     },
 
@@ -127,14 +198,15 @@ export function createSessionHistory(): SessionHistoryEngine {
       const changeSetCount = 0;
 
       for (const task of tasks) {
-        terminalStates[task.state] = (terminalStates[task.state] ?? 0) + 1;
-        providerModes.add(task.providerMode);
+        if (task.kind !== "task") continue;
+        if (task.state) terminalStates[task.state] = (terminalStates[task.state] ?? 0) + 1;
+        if (task.providerMode) providerModes.add(task.providerMode);
       }
 
       const lastActivityAt =
-        tasks.length > 0 ? tasks[tasks.length - 1].createdAt : Date.now();
+        tasks.length > 0 ? tasks[tasks.length - 1].createdAt : now();
       const createdAt =
-        tasks.length > 0 ? tasks[0].createdAt : Date.now();
+        tasks.length > 0 ? tasks[0].createdAt : now();
 
       return {
         id: "session-default",
@@ -153,6 +225,7 @@ export function createSessionHistory(): SessionHistoryEngine {
 
     getTaskHistory(filter: TaskHistoryFilter): TaskHistoryEntry[] {
       return tasks
+        .filter((t) => t.kind === "task")
         .filter((t) => {
           if (filter.taskId && t.taskId !== filter.taskId) return false;
           if (filter.terminalState && t.state !== filter.terminalState) return false;
@@ -162,12 +235,12 @@ export function createSessionHistory(): SessionHistoryEngine {
         .map((t) => ({
           taskId: t.taskId,
           title: t.title,
-          state: t.state,
-          providerMode: t.providerMode,
+          state: t.state!,
+          providerMode: t.providerMode!,
           approvalCount: 0,
           changeSetCount: 0,
           createdAt: t.createdAt,
-          completedAt: isTerminalTaskState(t.state) ? t.createdAt : null,
+          completedAt: t.state && isTerminalTaskState(t.state) ? t.createdAt : null,
         }));
     },
 
@@ -186,15 +259,24 @@ export function createSessionHistory(): SessionHistoryEngine {
       const events: TaskEvent[] = matchingRecords.map((r, i) => ({
         id: `replay-${r.taskId}-${i}`,
         taskId: r.taskId,
-        type: (r.state === "completed"
-          ? "task_completed"
-          : r.state === "failed"
-            ? "task_failed"
-            : r.state === "cancelled"
-              ? "task_cancelled"
-              : "task_submitted") as TaskEventType,
+        type: r.kind === "task"
+          ? (r.state === "completed"
+              ? "task_completed"
+              : r.state === "failed"
+                ? "task_failed"
+                : r.state === "cancelled"
+                  ? "task_cancelled"
+                  : "task_submitted") as TaskEventType
+          : (r.eventType ?? "task_submitted") as TaskEventType,
         title: r.title,
         createdAt: r.createdAt,
+        payload: {
+          replayOnly: true,
+          ...(r.projectId ? { projectId: r.projectId } : {}),
+          ...(r.capabilityKind ? { capabilityKind: r.capabilityKind } : {}),
+          ...(r.status ? { status: r.status } : {}),
+          ...(r.providerMode ? { providerMode: r.providerMode } : {}),
+        },
       }));
 
       return {

@@ -108,6 +108,45 @@ export type {
   RuntimeStatus,
 } from "./runtime.js";
 export { createEmptyRuntimeSnapshot } from "./runtime.js";
+export type {
+  AssetIndexEntry,
+  AssetIndexType,
+  IndexLimitReason,
+  IndexScanSummary,
+  ProjectDirectoryEntry,
+  ProjectEngineInfo,
+  ProjectFileEntry,
+  ProjectIndexNodeType,
+  ProjectIndexSnapshot,
+  ProjectIndexStatus,
+  ProjectPathPolicyOptions,
+  ProjectProfile,
+  ProjectRootRef,
+  ProjectRootValidationResult,
+  ProjectTrustState,
+} from "./project.js";
+export {
+  DEFAULT_PROJECT_IGNORES,
+  isInsideProjectRoot,
+  isTextPreviewAllowed,
+  normalizeProjectPath,
+  redactPathForUi,
+  shouldIgnoreProjectPath,
+} from "./project.js";
+export type {
+  CapabilityDecision,
+  CapabilityDecisionStatus,
+  CapabilityKind,
+  CapabilityMode,
+  CapabilityRequest,
+  CapabilityResult,
+  CapabilityRuntimeEvent,
+  ContentRedactionSummary,
+  PreviewStatus,
+  PreviewTruncation,
+  SafeFilePreviewRequest,
+  SafeFilePreviewResult,
+} from "./capability.js";
 export type { ApprovalRequest, ApprovalRequestState, ApprovalDecision, ApprovalDecisionValue, ApprovalState, ApprovalScope } from "./approval.js";
 export type {
   ProviderCapability,

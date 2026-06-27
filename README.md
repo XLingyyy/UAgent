@@ -2,13 +2,13 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP6 UI Productization & Project Workspace Shell
+## Current Stage: MVP7 Real Project Index & Capability Bridge
 
-MVP6 productizes the desktop UI into a project workspace shell while preserving the MVP5 approval, sandbox, ChangeSet, audit, session, provider, and secret-redaction boundaries. The core flow (`Composer -> TaskDraft -> RuntimeClient.submitTask() -> AgentLoopRuntime -> TaskEvent -> RuntimeSnapshot -> UI`) remains mock-first and fixture-first.
+MVP7 turns the MVP6 static project shell into a controlled, read-only Project Registry, Project Index, Asset Index, and Safe File Preview surface. It also introduces a unified Capability Bridge model for Files, Terminal, Browser, Screenshot, and Provider live readiness while preserving MVP5 approval, sandbox, ChangeSet, audit, session, provider, and secret-redaction boundaries.
 
-MVP6 adds a welcome-first workspace, compact Composer with staged attach menu, TitleBar local status summary, three-mode LeftSidebar, Utility Drawer, six-page Settings Center, Provider-to-Composer model sync, and a 30-scenario UI regression matrix.
+The core runtime flow (`Composer -> TaskDraft -> RuntimeClient.submitTask() -> AgentLoopRuntime -> TaskEvent -> RuntimeSnapshot -> UI`) remains mock-first and fixture-first. Project indexing uses deterministic fixture data by default; any future native bridge stays explicit, read-only, allowlisted, auditable, replay-safe, and path/secret redacted.
 
-MVP6 does not default to live provider network, real UE writes, real project filesystem scans, real terminal/browser/filesystem controls, real screenshots, or mutating MCP tools. Future capability entry points are visible only as disabled, tooltip-backed staged controls.
+MVP7 does not enable default live provider network, real UE writes, real shell execution, real browser automation, real screenshot capture, filesystem mutation, workspace mutation, or mutating MCP tools. Terminal, Browser, Screenshot, and Provider live behavior remains disabled, fixture-only, read-only, or manual opt-in depending on policy.
 
 ## Technology Stack
 
@@ -81,6 +81,12 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 - [MVP6 UI Productization Plan](docs/mvp6-ui-productization-plan.md)
 - [MVP6 Baseline Freeze](docs/mvp6-baseline-freeze.md)
 - [MVP6 Manual Smoke](docs/mvp6-manual-smoke.md)
+- [MVP7 Acceptance](docs/mvp7-acceptance.md)
+- [MVP7 Baseline Freeze](docs/mvp7-baseline-freeze.md)
+- [MVP7 Project Index Plan](docs/mvp7-project-index-plan.md)
+- [MVP7 Capability Bridge Plan](docs/mvp7-capability-bridge-plan.md)
+- [MVP7 Manual Smoke](docs/mvp7-manual-smoke.md)
+- [MVP8 Prep](docs/mvp8-prep.md)
 - [Workflow Safety Plan](docs/workflow-safety-plan.md)
 - [Baseline Freeze](docs/mvp5-baseline-freeze.md)
 - [Development Guide](docs/development.md)

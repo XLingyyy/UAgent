@@ -26,7 +26,20 @@ export type AuditEventType =
   | "change_set_rolled_back"
   | "change_set_discarded"
   | "session_started"
-  | "session_archived";
+  | "session_archived"
+  | "project_root_validated"
+  | "project_index_started"
+  | "project_index_completed"
+  | "project_index_failed"
+  | "project_index_cancelled"
+  | "file_preview_requested"
+  | "file_preview_blocked"
+  | "file_preview_completed"
+  | "capability_requested"
+  | "capability_blocked"
+  | "capability_completed"
+  | "capability_cancelled"
+  | "capability_timed_out";
 
 export interface AuditActor {
   type: "user" | "system" | "policy" | "fixture";

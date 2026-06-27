@@ -53,6 +53,20 @@ function stateForEvent(event: TaskEvent): TaskState {
     case "change_set_promoted":
     case "change_set_rolled_back":
     case "change_set_discarded":
+    case "project_root_validated":
+    case "project_index_started":
+    case "project_index_progress":
+    case "project_index_completed":
+    case "project_index_failed":
+    case "project_index_cancelled":
+    case "file_preview_requested":
+    case "file_preview_blocked":
+    case "file_preview_completed":
+    case "capability_requested":
+    case "capability_blocked":
+    case "capability_completed":
+    case "capability_cancelled":
+    case "capability_timed_out":
       return "executing";
     case "agent_observation_created":
       return "observing";

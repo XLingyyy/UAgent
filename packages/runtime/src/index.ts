@@ -103,6 +103,19 @@ export {
   type ReplayResult,
 } from "./session-history.js";
 export { runMvp5ScenarioMatrix, type Mvp5ScenarioMatrixResult, type Mvp5ScenarioResult } from "./mvp5-scenarios.js";
+export {
+  createCapabilityBridge,
+  createFixtureProjectRegistry,
+  createProjectIndexer,
+  createSafeFilePreviewer,
+  runMvp7ScenarioMatrix,
+  type CapabilityBridge,
+  type Mvp7ScenarioMatrixResult,
+  type Mvp7ScenarioResult,
+  type ProjectIndexerService,
+  type ProjectRegistryService,
+  type SafeFilePreviewer,
+} from "./mvp7-project-index.js";
 
 export type AgentStatus = "idle" | "thinking" | "acting" | "waiting" | "finished" | "error";
 

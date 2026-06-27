@@ -1,6 +1,12 @@
 import type { ProviderConfig, ProviderState, ProviderTestStatus } from "./provider";
 import type { RuntimeStoreActions, RuntimeStoreState } from "../runtime/runtime-store";
 import type {
+  ProjectIndexSnapshot,
+  ProjectProfile,
+  ProjectRootValidationResult,
+  SafeFilePreviewResult,
+} from "@uagent/shared";
+import type {
   ComposerContextUsage,
   ComposerModelId,
   ComposerPermission,
@@ -45,6 +51,7 @@ export interface ProjectTreeNode {
   id: string;
   name: string;
   type: ProjectTreeNodeType;
+  rootRelativePath?: string;
   children?: ProjectTreeNode[];
 }
 
@@ -89,6 +96,16 @@ export interface LayoutStoreState {
 export interface ProjectStoreState {
   /** Active project id from the shared mock project list, or null for no project. */
   activeProjectId: string | null;
+  rootInput: string;
+  validation: ProjectRootValidationResult | null;
+  registeredProjects: ProjectProfile[];
+  activeProjectIndex: ProjectIndexSnapshot | null;
+  scanStatus: ProjectIndexSnapshot["status"] | "idle";
+  lastError: string | null;
+  assetFilter: string;
+  selectedAssetPath: string | null;
+  preview: SafeFilePreviewResult | null;
+  auditTrail: string[];
 }
 
 /** Active thread selection state. */
@@ -187,6 +204,13 @@ export interface SettingsStoreActions {
 
 export interface ProjectStoreActions {
   setActiveProject: SetActiveProject;
+  setProjectRootInput: (rootRef: string) => void;
+  validateProjectRoot: () => void;
+  trustProjectRoot: (projectId: string) => void;
+  scanProjectIndex: (projectId: string) => void;
+  cancelProjectScan: (projectId: string) => void;
+  setAssetFilter: (filter: string) => void;
+  previewProjectFile: (rootRelativePath: string) => void;
 }
 
 export interface ThreadStoreActions {

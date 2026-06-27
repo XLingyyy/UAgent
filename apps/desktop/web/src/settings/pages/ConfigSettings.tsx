@@ -1,6 +1,11 @@
 import { SettingsPageLayout, SettingsSection } from "../SettingsPageLayout";
 import { configPageData } from "../settings-page-data";
-import { useRuntimeActions, useRuntimeStore } from "../../stores/ui-store";
+import {
+  useProjectActions,
+  useProjectStore,
+  useRuntimeActions,
+  useRuntimeStore,
+} from "../../stores/ui-store";
 import "../pages/SettingsPages.css";
 
 export function ConfigSettings() {
@@ -13,6 +18,7 @@ export function ConfigSettings() {
           {section.id === "sandbox" && <SandboxDisplay />}
           {section.id === "audit-session" && <AuditSessionDisplay />}
           {section.id === "paths" && <ConfigPathDisplay />}
+          {section.id === "paths" && <ProjectRootsDisplay />}
           {section.id === "diagnostics" && <DiagnosticsDisplay />}
           {section.id === "danger-zone" && <ResetWorkspaceDisplay />}
         </SettingsSection>
@@ -21,6 +27,108 @@ export function ConfigSettings() {
         This is a UI-only mock. No configuration is saved or applied.
       </div>
     </SettingsPageLayout>
+  );
+}
+
+function ProjectRootsDisplay() {
+  const project = useProjectStore((state) => state);
+  const {
+    setProjectRootInput,
+    validateProjectRoot,
+    trustProjectRoot,
+    scanProjectIndex,
+    cancelProjectScan,
+  } = useProjectActions();
+  const activeProject =
+    project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
+    project.registeredProjects[0] ??
+    null;
+  const canTrust = Boolean(activeProject && activeProject.trustState !== "trusted");
+  const canScan = Boolean(activeProject && activeProject.trustState === "trusted");
+
+  return (
+    <div className="ua-settings-page__static-stack" aria-label="Project roots and index">
+      <label className="ua-settings-page__field">
+        <span className="ua-settings-page__field-label">Project root reference</span>
+        <input
+          className="ua-settings-page__input"
+          value={project.rootInput}
+          onChange={(event) => setProjectRootInput(event.target.value)}
+          placeholder="fixture://lyra"
+          aria-label="Project root reference"
+        />
+      </label>
+      <div className="ua-settings-page__provider-actions">
+        <button
+          className="ua-settings-page__action-btn ua-settings-page__action-btn--primary"
+          type="button"
+          onClick={validateProjectRoot}
+        >
+          Validate project root
+        </button>
+        <button
+          className="ua-settings-page__action-btn"
+          type="button"
+          disabled={!canTrust}
+          onClick={() => activeProject && trustProjectRoot(activeProject.id)}
+        >
+          Trust project root
+        </button>
+        <button
+          className="ua-settings-page__action-btn"
+          type="button"
+          disabled={!canScan || project.scanStatus === "scanning"}
+          onClick={() => activeProject && scanProjectIndex(activeProject.id)}
+        >
+          Scan project index
+        </button>
+        <button
+          className="ua-settings-page__action-btn"
+          type="button"
+          disabled={!activeProject || project.scanStatus !== "scanning"}
+          onClick={() => activeProject && cancelProjectScan(activeProject.id)}
+        >
+          Cancel scan
+        </button>
+      </div>
+      <div className="ua-settings-page__provider-summary" role="status">
+        <span className="ua-settings-page__provider-summary-item">
+          <span className="ua-settings-page__provider-summary-label">Validation</span>
+          <span className="ua-settings-page__provider-summary-value">
+            {project.validation?.ok
+              ? `Validation ready: ${project.validation.projectName}`
+              : project.validation?.reason ?? "Not validated"}
+          </span>
+        </span>
+        <span className="ua-settings-page__provider-summary-item">
+          <span className="ua-settings-page__provider-summary-label">Trust</span>
+          <span className="ua-settings-page__provider-summary-value">
+            {activeProject?.trustState ?? "untrusted"}
+          </span>
+        </span>
+        <span className="ua-settings-page__provider-summary-item">
+          <span className="ua-settings-page__provider-summary-label">Index</span>
+          <span className="ua-settings-page__provider-summary-value">
+            {project.activeProjectIndex ? "Index ready" : project.scanStatus}
+          </span>
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Root display</span>
+        <span className="ua-settings-page__static-value">
+          {activeProject?.displayRoot ?? "No project root registered"}
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Index policy</span>
+        <span className="ua-settings-page__static-value">
+          Read-only · ignored dirs: .git, Intermediate, Saved, DerivedDataCache, Binaries, node_modules, .vs
+        </span>
+      </div>
+      {project.lastError && (
+        <p className="ua-settings-page__provider-help-text">{project.lastError}</p>
+      )}
+    </div>
   );
 }
 

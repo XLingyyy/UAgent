@@ -16,7 +16,8 @@ import {
   useThreadStore,
 } from "../stores/ui-store";
 import { getRuntimeTaskIds } from "../runtime/runtime-store";
-import type { SidebarViewMode } from "../types/ui";
+import type { ProjectTreeNode, SidebarViewMode } from "../types/ui";
+import type { AssetIndexEntry } from "@uagent/shared";
 import "./LeftSidebar.css";
 
 const SIDEBAR_MODES: Array<{ id: SidebarViewMode; label: string }> = [
@@ -25,20 +26,86 @@ const SIDEBAR_MODES: Array<{ id: SidebarViewMode; label: string }> = [
   { id: "asset-browser", label: "Asset Browser" },
 ];
 
+function nodeTypeForAsset(asset: AssetIndexEntry) {
+  switch (asset.assetType) {
+    case "map":
+      return "Map" as const;
+    case "material":
+      return "Material" as const;
+    case "config":
+      return "Config" as const;
+    case "project":
+      return "Project" as const;
+    default:
+      return "Asset" as const;
+  }
+}
+
+function buildIndexedTree(assets: AssetIndexEntry[], filter: string) {
+  const normalizedFilter = filter.trim().toLowerCase();
+  const visibleAssets = normalizedFilter
+    ? assets.filter((asset) =>
+        [asset.displayName, asset.assetType, asset.rootRelativePath]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedFilter),
+      )
+    : assets;
+  const children: ProjectTreeNode[] = [];
+  const root: ProjectTreeNode = { id: "indexed:root", name: "Content", type: "Folder", children };
+
+  for (const asset of visibleAssets) {
+    children.push({
+      id: asset.id,
+      name: asset.displayName,
+      type: nodeTypeForAsset(asset),
+      rootRelativePath: asset.rootRelativePath,
+    });
+  }
+
+  children.sort((a, b) => a.name.localeCompare(b.name));
+  return children.length ? [root] : [];
+}
+
 export function LeftSidebar() {
   const activeNav = useLayoutStore((state) => state.sidebar.activeNav);
   const sidebarView = useLayoutStore((state) => state.sidebar.viewMode);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
+  const projectState = useProjectStore((state) => state);
   const activeThreadId = useThreadStore((state) => state.activeThreadId);
   const runtime = useRuntimeStore((state) => state);
   const { setActiveNav, setSidebarViewMode } = useLayoutActions();
-  const { setActiveProject } = useProjectActions();
+  const {
+    setActiveProject,
+    setAssetFilter,
+    scanProjectIndex,
+    cancelProjectScan,
+    previewProjectFile,
+  } = useProjectActions();
   const { setActiveThread } = useThreadActions();
   const { openSettings } = useSettingsActions();
 
-  const activeProject = activeProjectId
+  const registeredProject = projectState.registeredProjects.find((p) => p.id === activeProjectId) ?? null;
+  const mockProject = activeProjectId
     ? (MOCK_PROJECTS.find((p) => p.id === activeProjectId) ?? null)
     : null;
+  const activeProject = registeredProject
+    ? {
+        id: registeredProject.id,
+        name: registeredProject.name,
+        engineVersion: registeredProject.engine.label,
+        connectionStatus: `${registeredProject.trustState} · ${registeredProject.indexStatus}`,
+        path: registeredProject.displayRoot,
+      }
+    : mockProject;
+  const assetTreeNodes = projectState.activeProjectIndex
+    ? buildIndexedTree(projectState.activeProjectIndex.assets, projectState.assetFilter)
+    : activeProject
+      ? mockProjectTree
+      : [];
+  const canScanRegisteredProject = Boolean(
+    registeredProject && registeredProject.trustState === "trusted",
+  );
   const runtimeThreads = getRuntimeTaskIds(runtime).map((taskId) => ({
     id: taskId,
     title: runtime.tasksById[taskId].title,
@@ -84,7 +151,16 @@ export function LeftSidebar() {
             projects={MOCK_PROJECTS}
             activeProjectId={activeProjectId}
             onProjectSelect={setActiveProject}
-            treeNodes={activeProject ? mockProjectTree : []}
+            treeNodes={assetTreeNodes}
+            indexSnapshot={projectState.activeProjectIndex}
+            scanStatus={projectState.scanStatus}
+            assetFilter={projectState.assetFilter}
+            onAssetFilterChange={setAssetFilter}
+            onScanProject={canScanRegisteredProject ? () => scanProjectIndex(registeredProject!.id) : undefined}
+            onCancelScan={registeredProject ? () => cancelProjectScan(registeredProject.id) : undefined}
+            onPreviewFile={previewProjectFile}
+            selectedAssetPath={projectState.selectedAssetPath}
+            preview={projectState.preview}
           />
         ) : sidebarView === "conversation" ? (
           <>

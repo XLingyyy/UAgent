@@ -1,4 +1,5 @@
 import type { MockProject, ProjectTreeNode as ProjectTreeNodeType } from "../types/ui";
+import type { ProjectIndexSnapshot, SafeFilePreviewResult } from "@uagent/shared";
 import { ProjectTree } from "./ProjectTree";
 import "./ProjectSection.css";
 
@@ -9,6 +10,15 @@ export interface ProjectSectionProps {
   projects?: MockProject[];
   activeProjectId?: string | null;
   onProjectSelect?: (projectId: string) => void;
+  indexSnapshot?: ProjectIndexSnapshot | null;
+  scanStatus?: ProjectIndexSnapshot["status"] | "idle";
+  assetFilter?: string;
+  onAssetFilterChange?: (filter: string) => void;
+  onScanProject?: () => void;
+  onCancelScan?: () => void;
+  onPreviewFile?: (rootRelativePath: string) => void;
+  selectedAssetPath?: string | null;
+  preview?: SafeFilePreviewResult | null;
 }
 
 function ProjectSummary({
@@ -67,6 +77,15 @@ export function ProjectSection({
   projects = [],
   activeProjectId,
   onProjectSelect,
+  indexSnapshot = null,
+  scanStatus = "idle",
+  assetFilter = "",
+  onAssetFilterChange,
+  onScanProject,
+  onCancelScan,
+  onPreviewFile,
+  selectedAssetPath = null,
+  preview = null,
 }: ProjectSectionProps) {
   if (mode === "projects") {
     return (
@@ -113,14 +132,77 @@ export function ProjectSection({
               showActions
             />
           </div>
+          <div className="ua-project-index-banner" role="status">
+            <span>{indexSnapshot ? "Index ready" : "No project root registered"}</span>
+            <span>{indexSnapshot ? "Read-only project index" : "Fixture fallback"}</span>
+            <button
+              className="ua-project-card__btn"
+              type="button"
+              disabled={!onScanProject || scanStatus === "scanning"}
+              onClick={onScanProject}
+            >
+              Scan project
+            </button>
+            <button
+              className="ua-project-card__btn"
+              type="button"
+              disabled={scanStatus !== "scanning" || !onCancelScan}
+              onClick={onCancelScan}
+            >
+              Cancel
+            </button>
+          </div>
+          <label className="ua-project-filter">
+            <span>Indexed asset filter</span>
+            <input
+              value={assetFilter}
+              onChange={(event) => onAssetFilterChange?.(event.target.value)}
+              aria-label="Filter indexed assets"
+              placeholder="Filter by name, type, or path"
+            />
+          </label>
+          <span className="ua-project-filter__hint">Filter only; no scan triggered</span>
           {project && (
             <ProjectTree
               key={project.id}
               nodes={treeNodes}
-              label="Asset Browser"
-              ariaLabel={`${project.name} asset browser`}
+              label={indexSnapshot ? "Indexed Asset Browser" : "Asset Browser"}
+              ariaLabel={`${project.name} ${indexSnapshot ? "indexed " : ""}asset browser`}
+              onNodeSelect={(node) => {
+                if (node.rootRelativePath) {
+                  onPreviewFile?.(node.rootRelativePath);
+                }
+              }}
             />
           )}
+          <div className="ua-project-asset-details" aria-label="Asset details region">
+            <span className="ua-project-section__label">Asset details</span>
+            <span>{selectedAssetPath ?? "Select an indexed asset"}</span>
+            <button
+              className="ua-project-card__btn"
+              type="button"
+              disabled={!onPreviewFile}
+              onClick={() => onPreviewFile?.("Config/DefaultGame.ini")}
+            >
+              DefaultGame.ini
+            </button>
+          </div>
+          <div className="ua-project-preview" aria-label="File preview panel">
+            {preview ? (
+              <>
+                <span className="ua-project-section__label">
+                  {preview.status} · {preview.reason}
+                </span>
+                <pre>{preview.content || preview.reason}</pre>
+                <span>
+                  Redaction: {preview.redaction.replacedSecrets} secrets /{" "}
+                  {preview.redaction.replacedPaths} paths
+                </span>
+              </>
+            ) : (
+              <span>No file preview requested</span>
+            )}
+          </div>
         </div>
       </section>
     );

@@ -3,14 +3,19 @@ export type EvidenceKind =
   | "asset_reference"
   | "tool_result"
   | "diagnostic"
-  | "artifact_placeholder";
+  | "artifact_placeholder"
+  | "project_index_summary"
+  | "file_preview_summary"
+  | "capability_decision";
 
 export type EvidenceSource =
   | "mock-runtime"
   | "mcp-readonly"
   | "policy"
   | "future-mcp"
-  | "future-file-system";
+  | "future-file-system"
+  | "project-index"
+  | "capability-bridge";
 
 export interface EvidenceRecord {
   id: string;

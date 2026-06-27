@@ -3,7 +3,8 @@
 /gen/schemas/
 
 # Generated icons
-/icons/
+/icons/*
+!/icons/icon.ico
 
 # Tauri generated
 /gen/

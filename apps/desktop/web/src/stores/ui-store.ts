@@ -1,4 +1,9 @@
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
+import {
+  createFixtureProjectRegistry,
+  createProjectIndexer,
+  createSafeFilePreviewer,
+} from "@uagent/runtime";
 import { getDefaultModelSelection } from "../composer/composer-data";
 import { cloneProviderConfig } from "../provider/provider-data";
 import type { ProviderConfig, ProviderState } from "../types/provider";
@@ -59,6 +64,9 @@ function createUIStateBundle(
   runtimeClient: DesktopRuntimeAdapter = createDesktopRuntimeAdapter(),
 ): UIStoreBundle {
   const providerState = createInitialProviderState(initialState);
+  const projectRegistry = createFixtureProjectRegistry();
+  const projectIndexer = createProjectIndexer(projectRegistry);
+  const safeFilePreviewer = createSafeFilePreviewer(projectRegistry);
   const layoutStore = createSliceStore(createInitialLayoutState(initialState));
   const settingsStore = createSliceStore(createInitialSettingsState(initialState));
   const projectStore = createSliceStore(createInitialProjectState(initialState));
@@ -220,8 +228,104 @@ function createUIStateBundle(
       projectStore.setState((previousState) =>
         previousState.activeProjectId === projectId
           ? previousState
-          : { activeProjectId: projectId },
+          : { ...previousState, activeProjectId: projectId },
       ),
+    setProjectRootInput: (rootRef) =>
+      projectStore.setState((previousState) => ({
+        ...previousState,
+        rootInput: rootRef,
+        validation: null,
+        lastError: null,
+      })),
+    validateProjectRoot: () => {
+      projectStore.setState((previousState) => {
+        const validation = projectRegistry.validateRoot(previousState.rootInput);
+        if (!validation.ok) {
+          return {
+            ...previousState,
+            validation,
+            lastError: validation.reason,
+            auditTrail: [...previousState.auditTrail, `project_root_validated:${validation.reason}`],
+          };
+        }
+        const project =
+          projectRegistry.getProject("project-lyra") ?? projectRegistry.addProject(previousState.rootInput);
+        return {
+          ...previousState,
+          validation,
+          registeredProjects: projectRegistry.listProjects(),
+          activeProjectId: project.id,
+          scanStatus: project.indexStatus,
+          lastError: null,
+          auditTrail: [...previousState.auditTrail, "project_root_validated:valid"],
+        };
+      });
+    },
+    trustProjectRoot: (projectId) =>
+      projectStore.setState((previousState) => {
+        const trusted = projectRegistry.confirmTrust(projectId);
+        return {
+          ...previousState,
+          registeredProjects: projectRegistry.listProjects(),
+          activeProjectId: trusted.id,
+          scanStatus: trusted.indexStatus,
+          auditTrail: [...previousState.auditTrail, "project_trusted"],
+        };
+      }),
+    scanProjectIndex: (projectId) =>
+      projectStore.setState((previousState) => {
+        const result = projectIndexer.scanProject(projectId);
+        return {
+          ...previousState,
+          activeProjectIndex: result.snapshot,
+          scanStatus: result.snapshot.status,
+          registeredProjects: projectRegistry.listProjects(),
+          lastError: null,
+          auditTrail: [...previousState.auditTrail, ...result.events],
+        };
+      }),
+    cancelProjectScan: (projectId) =>
+      projectStore.setState((previousState) => {
+        const result = projectIndexer.cancelScan(projectId);
+        return {
+          ...previousState,
+          activeProjectIndex: result.snapshot,
+          scanStatus: "cancelled",
+          registeredProjects: projectRegistry.listProjects(),
+          auditTrail: [...previousState.auditTrail, ...result.events],
+        };
+      }),
+    setAssetFilter: (filter) =>
+      projectStore.setState((previousState) => ({
+        ...previousState,
+        assetFilter: filter,
+      })),
+    previewProjectFile: (rootRelativePath) =>
+      projectStore.setState((previousState) => {
+        const activeProject = previousState.registeredProjects.find(
+          (project) => project.id === previousState.activeProjectId,
+        );
+        if (!activeProject) {
+          return { ...previousState, lastError: "unknown_project" };
+        }
+        const preview = safeFilePreviewer.previewFile({
+          id: `preview:${rootRelativePath}`,
+          projectId: activeProject.id,
+          rootRef: activeProject.rootRef,
+          rootRelativePath,
+          byteLimit: 4096,
+          lineLimit: 80,
+        });
+        return {
+          ...previousState,
+          selectedAssetPath: rootRelativePath,
+          preview,
+          auditTrail: [
+            ...previousState.auditTrail,
+            preview.status === "blocked" ? "file_preview_blocked" : "file_preview_completed",
+          ],
+        };
+      }),
   };
 
   const threadActions: ThreadStoreActions = {

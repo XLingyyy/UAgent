@@ -40,6 +40,7 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
           </span>
           <span className="ua-titlebar__status-pill">Provider fixture</span>
           <span className="ua-titlebar__status-pill">No network</span>
+          <span className="ua-titlebar__status-pill">Read-only project index</span>
         </div>
         <button
           className="ua-titlebar__btn"
@@ -50,7 +51,8 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
         >
           <span aria-hidden>Tools</span>
         </button>
-        <span className="ua-titlebar__badge">MVP6</span>
+        <span className="ua-titlebar__badge">MVP7</span>
+        <span className="ua-titlebar__badge ua-titlebar__badge--subtle">MVP6</span>
       </div>
     </header>
   );

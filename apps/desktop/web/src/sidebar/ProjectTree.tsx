@@ -7,6 +7,7 @@ export interface ProjectTreeProps {
   nodes: ProjectTreeNodeType[];
   label?: string;
   ariaLabel?: string;
+  onNodeSelect?: (node: ProjectTreeNodeType) => void;
 }
 
 export interface FlattenedProjectTreeNode {
@@ -94,6 +95,7 @@ export function ProjectTree({
   nodes,
   label = "Project Tree",
   ariaLabel = "Project tree",
+  onNodeSelect,
 }: ProjectTreeProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
     const initial = new Set<string>();
@@ -146,14 +148,6 @@ export function ProjectTree({
     });
   }, []);
 
-  const handleSelect = useCallback((nodeId: string) => {
-    setSelectedId(nodeId);
-  }, []);
-
-  const handleFocus = useCallback((nodeId: string) => {
-    setFocusedId(nodeId);
-  }, []);
-
   const findNodeInTree = useCallback(
     (id: string): ProjectTreeNodeType | undefined => {
       function walk(list: ProjectTreeNodeType[]): ProjectTreeNodeType | undefined {
@@ -170,6 +164,18 @@ export function ProjectTree({
     },
     [nodes],
   );
+
+  const handleSelect = useCallback((nodeId: string) => {
+    setSelectedId(nodeId);
+    const node = findNodeInTree(nodeId);
+    if (node) {
+      onNodeSelect?.(node);
+    }
+  }, [findNodeInTree, onNodeSelect]);
+
+  const handleFocus = useCallback((nodeId: string) => {
+    setFocusedId(nodeId);
+  }, []);
 
   const handleTreeKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {

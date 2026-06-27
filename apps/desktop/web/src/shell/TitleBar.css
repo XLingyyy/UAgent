@@ -101,3 +101,7 @@
   letter-spacing: 0;
   opacity: 0.68;
 }
+
+.ua-titlebar__badge--subtle {
+  opacity: 0.44;
+}

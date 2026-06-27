@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * UAgent MVP6 Side-effect Scan
+ * UAgent MVP7 Side-effect Scan
  *
  * Scans the codebase for potential boundary violations:
  * - Provider/secret/Authorization terms in non-contract code
@@ -200,6 +200,52 @@ const CATEGORIES = [
       (rel) => /apps\/desktop\/web\/src\/(composer|settings|workspace|inspector|sidebar|shell|app|components)\//.test(rel),
     ],
   },
+  {
+    id: "mvp7-project-index-boundary",
+    title: "MVP7 Project Index Boundary",
+    description: "React UI must not directly scan local files, call Tauri project commands, or keep raw paths",
+    patterns: [
+      { re: /@tauri-apps\/api/gi, label: "Tauri API import" },
+      { re: /\binvoke\s*\(\s*["'](validate_project_root|scan_project_index|preview_project_file)/gi, label: "Tauri project command" },
+      { re: /\b(fs|path)\s+from\s+["']node:(fs|path)["']/gi, label: "node fs/path import" },
+      { re: /C:\\Users\\/gi, label: "raw Windows home path" },
+      { re: /\/home\/[A-Za-z0-9._-]+\//g, label: "raw Linux home path" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/(shared|runtime)\/src\//.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\//.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\//.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp7-capability-bridge-boundary",
+    title: "MVP7 Capability Bridge Boundary",
+    description: "Capability UI must not execute shell, browser automation, screenshot capture, writes, or live provider fetch",
+    patterns: [
+      { re: /child_process|spawn\s*\(|exec\s*\(/gi, label: "shell execution" },
+      { re: /window\.open\s*\(|location\.href\s*=/gi, label: "browser navigation side effect" },
+      { re: /getDisplayMedia\s*\(/gi, label: "screen capture" },
+      { re: /writeFile|appendFile|unlink|rename|mkdir|rmdir|rm\s*\(/gi, label: "filesystem mutation" },
+      { re: /fetch\s*\([^)]*provider/gi, label: "provider live fetch" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\//.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp7-project-index/.test(rel),
+      (rel) => /packages\/runtime\/src\/mcp-readonly-policy/.test(rel),
+      (rel) => /packages\/runtime\/src\/sandbox-policy/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\//.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp7-project-index)/.test(rel),
+    ],
+  },
 ];
 
 // ============================================================
@@ -292,7 +338,7 @@ function main() {
   const hr = "=".repeat(80);
 
   console.log(hr);
-  console.log("  UAgent MVP6 Side-effect Scan Report");
+  console.log("  UAgent MVP7 Side-effect Scan Report");
   console.log(`  ${new Date().toISOString()}`);
   console.log(`  Files scanned: ${fileSet.length}`);
   console.log(hr);
