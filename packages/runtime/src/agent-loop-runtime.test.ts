@@ -418,6 +418,53 @@ describe("createAgentLoopRuntime", () => {
   });
 });
 
+const RAW_SECRETS = [
+  "sk-abcdefghijklmnopqrstuvwxyz123456",
+  "abcdef1234567890abcdef1234567890",
+];
+
+const SECRET_INPUT = [
+  "api_key=sk-abcdefghijklmnopqrstuvwxyz123456",
+  "Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz123456",
+  "token=abcdef1234567890abcdef1234567890",
+].join(" ");
+
+function expectNoRawSecrets(value: unknown): void {
+  const serialized = JSON.stringify(value);
+  for (const secret of RAW_SECRETS) {
+    expect(serialized, `raw secret "${secret}" must not appear in persisted state`).not.toContain(secret);
+  }
+}
+
+describe("runtime draft redaction", () => {
+  it("writes redacted task title, draft input, event bodies, and payloads to snapshot and events", async () => {
+    const runtime = createAgentLoopRuntime({
+      runtimeMode: "mock",
+      discovery: null,
+      clockStart: 2_000,
+    });
+    const draft: TaskDraft = { ...baseDraft, input: SECRET_INPUT };
+    const record = await runtime.submitTask(draft);
+    const snapshot = runtime.getSnapshot();
+    const events = snapshot.eventsByTaskId[record.id];
+
+    expect(snapshot.tasksById[record.id].state).toBe("completed");
+
+    expectNoRawSecrets(snapshot.tasksById[record.id].title);
+    expectNoRawSecrets(snapshot.tasksById[record.id].draft.input);
+
+    const taskSubmitted = events.find((e) => e.type === "task_submitted")!;
+    expectNoRawSecrets(taskSubmitted.body);
+    expectNoRawSecrets((taskSubmitted.payload as { draft: TaskDraft }).draft.input);
+
+    const planStarted = events.find((e) => e.type === "agent_plan_started")!;
+    expectNoRawSecrets((planStarted.payload as { draft: TaskDraft }).draft.input);
+
+    expectNoRawSecrets(events);
+    expectNoRawSecrets(snapshot);
+  });
+});
+
 function deterministicClock(): () => number {
   let tick = 1;
   return () => {

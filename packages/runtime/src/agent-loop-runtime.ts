@@ -37,6 +37,7 @@ import { createSessionHistory, type SessionHistoryEngine } from "./session-histo
 import { ProviderRuntimeBridge } from "./provider/provider-runtime-bridge.js";
 import { mapProviderRuntimeEvent } from "./provider/provider-event-bridge.js";
 import type { ProviderAdapter } from "./provider/provider-adapter.js";
+import { redactString } from "./secrets/redaction.js";
 
 export interface AgentLoopOptions {
   planner?: Planner;
@@ -547,11 +548,12 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
       const taskId = createTaskId(taskSequence);
       const createdAt = draft.createdAt ?? nextTime();
       const normalizedDraft = { ...draft, createdAt };
+      const redactedDraft = { ...normalizedDraft, input: redactString(normalizedDraft.input) };
       const record: TaskRecord = {
         id: taskId,
-        title: createTaskTitle(draft.input),
+        title: createTaskTitle(redactedDraft.input),
         state: "submitted",
-        draft: normalizedDraft,
+        draft: redactedDraft,
         createdAt,
         updatedAt: createdAt,
         completedAt: null,
@@ -570,7 +572,7 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
 
       const discovery = options.discovery ?? null;
       const runtimeMode = options.runtimeMode ?? (discovery ? "mcp-readonly" : "mock");
-      emit(taskId, "task_submitted", "User request", normalizedDraft.input, "info", { draft: normalizedDraft });
+      emit(taskId, "task_submitted", "User request", redactedDraft.input, "info", { draft: redactedDraft });
       if (!discovery) {
         emit(
           taskId,
@@ -581,11 +583,11 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
         );
       }
       emit(taskId, "agent_plan_started", "Agent planning started", "Creating deterministic Agent plan.", "info", {
-        draft: normalizedDraft,
+        draft: redactedDraft,
       });
       const plan = planner.createPlan({
         taskId,
-        draft: normalizedDraft,
+        draft: redactedDraft,
         runtimeMode,
         discovery,
       });
@@ -627,7 +629,7 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
       const observations: AgentObservation[] = [];
       const errors: string[] = [];
 
-      await processRemainingSteps(taskId, 0, plan.steps, draft, normalizedDraft, plan, evidenceRefs, blockedActions, observations, errors);
+      await processRemainingSteps(taskId, 0, plan.steps, redactedDraft, redactedDraft, plan, evidenceRefs, blockedActions, observations, errors);
 
       return snapshot.tasksById[taskId] ?? record;
     },

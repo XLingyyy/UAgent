@@ -75,4 +75,27 @@ describe("MVP3 Agent event view models", () => {
     expect(mapTaskEventToWorkspaceMessage(event("provider_request_failed")).label).toBe("Provider failed");
     expect(mapTaskEventToWorkspaceMessage(event("provider_usage_recorded")).kind).toBe("tool-event");
   });
+
+  it("maps task_submitted body through to workspace message without leaking raw secrets", () => {
+    const redactedBody = "api_key=[REDACTED] Authorization: Bearer [REDACTED] token=[REDACTED]";
+    const taskSubmitted: TaskEvent = {
+      id: "event-task-submitted",
+      taskId: "task-0001",
+      type: "task_submitted",
+      title: "User request",
+      body: redactedBody,
+      level: "info",
+      createdAt: 65,
+    };
+    const message = mapTaskEventToWorkspaceMessage(taskSubmitted);
+    expect(message.body).toBe(redactedBody);
+    const RAW_SECRETS = [
+      "sk-abcdefghijklmnopqrstuvwxyz123456",
+      "abcdef1234567890abcdef1234567890",
+    ];
+    const serialized = JSON.stringify(message);
+    for (const secret of RAW_SECRETS) {
+      expect(serialized, `raw secret "${secret}" must not appear in workspace message`).not.toContain(secret);
+    }
+  });
 });

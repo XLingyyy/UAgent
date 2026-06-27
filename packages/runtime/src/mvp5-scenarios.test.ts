@@ -122,12 +122,25 @@ describe("MVP5 Scenario Matrix", () => {
     expect(scenario).toBeDefined();
     expect(scenario!.pass).toBe(true);
     expect(scenario!.redactionChecked).toBe(true);
-    expect(scenario!.assertionCount).toBeGreaterThanOrEqual(4);
+    expect(scenario!.assertionCount).toBeGreaterThanOrEqual(5);
     const auditEvents = scenario!.auditEvents;
     for (const ae of auditEvents) {
       expect(ae.title).not.toMatch(/sk-[A-Za-z0-9]{20,}/);
       expect(ae.body).not.toMatch(/sk-[A-Za-z0-9]{20,}/);
       expect(ae.summary).not.toMatch(/sk-[A-Za-z0-9]{20,}/);
+    }
+  });
+
+  it("secret-redaction-audit-session taskEvents must not contain any raw secret", () => {
+    const scenario = matrix.results.find((r) => r.scenarioName === "secret-redaction-audit-session");
+    expect(scenario).toBeDefined();
+    const RAW_SECRETS = [
+      "sk-abcdefghijklmnopqrstuvwxyz123456",
+      "abcdef1234567890abcdef1234567890",
+    ];
+    const serialized = JSON.stringify(scenario!.taskEvents);
+    for (const secret of RAW_SECRETS) {
+      expect(serialized, `raw secret "${secret}" must not appear in scenario taskEvents`).not.toContain(secret);
     }
   });
 

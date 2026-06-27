@@ -467,14 +467,23 @@ export async function runMvp5ScenarioMatrix(): Promise<Mvp5ScenarioMatrixResult>
     const SECRET_API = 'sk-abcdefghijklmnopqrstuvwxyz123456';
     const SECRET_BEARER = 'sk-abcdefghijklmnopqrstuvwxyz123456';
     const SECRET_TOKEN = 'abcdef1234567890abcdef1234567890';
+    const RAW_SECRETS = [SECRET_API, SECRET_BEARER, SECRET_TOKEN];
     let assertions = 0;
 
     const clock = deterministicClock();
     const runtime = createAgentLoopRuntime({ clock, clockStart: 1000 });
-    const draft: TaskDraft = { ...baseDraft, input: `api_key=${SECRET_API}`, permissionMode: "auto" };
+    const draft: TaskDraft = {
+      ...baseDraft,
+      input: `api_key=${SECRET_API} Authorization: Bearer ${SECRET_BEARER} token=${SECRET_TOKEN}`,
+      permissionMode: "auto",
+    };
     const record = await runtime.submitTask(draft);
     const events = runtime.getSnapshot().eventsByTaskId[record.id];
     const audit = buildAuditFromTaskEvents(events, "session-16");
+
+    const taskEventsJson = JSON.stringify(events);
+    const taskEventsNoRawSecrets = RAW_SECRETS.every((s) => !taskEventsJson.includes(s));
+    if (taskEventsNoRawSecrets) assertions += 1;
 
     const auditNoRawSecrets = audit.every((e) => {
       const titleOk = !e.title.includes(SECRET_API) && !e.title.includes(SECRET_BEARER) && !e.title.includes(SECRET_TOKEN);
@@ -517,10 +526,10 @@ export async function runMvp5ScenarioMatrix(): Promise<Mvp5ScenarioMatrixResult>
       scenarioName: "secret-redaction-audit-session",
       taskEvents: events, auditEvents: audit,
       terminalState: "completed",
-      requestLog: ["Redaction verified through audit, session history, replay events, and replay summaries"],
+      requestLog: ["Redaction verified through taskEvents, audit, session history, replay events, and replay summaries"],
       redactionChecked: true, sideEffectChecked: true,
       assertionCount: assertions,
-      pass: auditNoRawSecrets && historyNoRawSecrets && replayNoRawSecrets && summaryRedactedFlags,
+      pass: taskEventsNoRawSecrets && auditNoRawSecrets && historyNoRawSecrets && replayNoRawSecrets && summaryRedactedFlags,
     };
   });
 
