@@ -10,6 +10,7 @@ import {
   type TaskEventType,
   isTerminalTaskState,
 } from "@uagent/shared";
+import { redactString } from "./secrets/redaction.js";
 
 export interface TaskHistoryFilter {
   taskId?: string;
@@ -44,37 +45,7 @@ interface TaskRecord {
   title: string;
   providerMode: string;
   createdAt: number;
-}
-
-const SECRET_PATTERNS = [
-  /api_key[=:_\s]*['"]?\w+['"]?/gi,
-  /secret[=:_\s]*['"]?\w+['"]?/gi,
-  /password[=:_\s]*['"]?\w+['"]?/gi,
-  /token[=:_\s]*['"]?\w+['"]?/gi,
-  /key[=:_\s]*['"]?\w+['"]?/gi,
-];
-
-function containsSecret(input: string): boolean {
-  for (const pattern of SECRET_PATTERNS) {
-    if (pattern.test(input)) return true;
-  }
-  return false;
-}
-
-function redactSecrets(input: string): string {
-  let redacted = input;
-  for (const pattern of SECRET_PATTERNS) {
-    redacted = redacted.replace(pattern, (match) => {
-      const sepIndex = Math.max(
-        match.indexOf("="),
-        match.indexOf(":"),
-        match.indexOf("_"),
-      );
-      if (sepIndex === -1) return "[REDACTED]";
-      return match.slice(0, sepIndex + 1) + "[REDACTED]";
-    });
-  }
-  return redacted;
+  hasSecrets: boolean;
 }
 
 function computeReplaySummary(
@@ -97,7 +68,7 @@ function computeReplaySummary(
     };
   }
 
-  const hasSecrets = containsSecret(targetRecord.title);
+  const hasSecrets = targetRecord.hasSecrets;
   const terminalState = isTerminalTaskState(targetRecord.state)
     ? targetRecord.state
     : null;
@@ -136,12 +107,15 @@ export function createSessionHistory(): SessionHistoryEngine {
       title: string,
       providerMode: string,
     ): void {
+      const cleanedTitle = redactString(title);
+      const hasSecrets = cleanedTitle !== title;
       tasks.push({
         taskId,
         state,
-        title,
+        title: cleanedTitle,
         providerMode,
         createdAt: Date.now(),
+        hasSecrets,
       });
     },
 
@@ -187,7 +161,7 @@ export function createSessionHistory(): SessionHistoryEngine {
         })
         .map((t) => ({
           taskId: t.taskId,
-          title: redactSecrets(t.title),
+          title: t.title,
           state: t.state,
           providerMode: t.providerMode,
           approvalCount: 0,

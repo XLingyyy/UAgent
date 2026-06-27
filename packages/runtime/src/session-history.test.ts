@@ -114,17 +114,49 @@ describe("SessionHistory", () => {
   });
 
   describe("secret-like input is redacted in output", () => {
-    it("should redact api_key in title from task history", () => {
+    const SECRET_API_KEY = 'sk-abcdefghijklmnopqrstuvwxyz123456';
+    const SECRET_BEARER = 'sk-abcdefghijklmnopqrstuvwxyz123456';
+    const SECRET_TOKEN = 'abcdef1234567890abcdef1234567890';
+
+    it("should redact api_key from task history", () => {
       const engine = createSessionHistory();
       engine.recordTaskCompletion(
         "task-001",
         "completed",
-        "Using api_key_secret123",
+        `api_key=${SECRET_API_KEY}`,
         "live",
       );
 
       const history = engine.getTaskHistory({});
-      expect(history[0].title).not.toContain("api_key_secret123");
+      expect(history[0].title).not.toContain(SECRET_API_KEY);
+      expect(history[0].title).toContain("[REDACTED]");
+    });
+
+    it("should redact Authorization Bearer from task history", () => {
+      const engine = createSessionHistory();
+      engine.recordTaskCompletion(
+        "task-001",
+        "completed",
+        `Authorization: Bearer ${SECRET_BEARER}`,
+        "live",
+      );
+
+      const history = engine.getTaskHistory({});
+      expect(history[0].title).not.toContain(SECRET_BEARER);
+      expect(history[0].title).toContain("[REDACTED]");
+    });
+
+    it("should redact token from task history", () => {
+      const engine = createSessionHistory();
+      engine.recordTaskCompletion(
+        "task-001",
+        "completed",
+        `token=${SECRET_TOKEN}`,
+        "live",
+      );
+
+      const history = engine.getTaskHistory({});
+      expect(history[0].title).not.toContain(SECRET_TOKEN);
       expect(history[0].title).toContain("[REDACTED]");
     });
 
@@ -133,7 +165,7 @@ describe("SessionHistory", () => {
       engine.recordTaskCompletion(
         "task-001",
         "completed",
-        "Using api_key_abc123",
+        `api_key=${SECRET_API_KEY}`,
         "live",
       );
 
@@ -152,6 +184,88 @@ describe("SessionHistory", () => {
 
       const summary = engine.getReplaySummary("task-001");
       expect(summary.redacted).toBe(false);
+    });
+
+    it("should redact secrets in replay events", () => {
+      const engine = createSessionHistory();
+      engine.recordTaskCompletion(
+        "task-001",
+        "completed",
+        `api_key=${SECRET_API_KEY}`,
+        "live",
+      );
+
+      const replay = engine.replayTask("task-001");
+      for (const event of replay.events) {
+        expect(event.title).not.toContain(SECRET_API_KEY);
+      }
+    });
+
+    it("should redact secrets in replay summary", () => {
+      const engine = createSessionHistory();
+      engine.recordTaskCompletion(
+        "task-001",
+        "completed",
+        `token=${SECRET_TOKEN}`,
+        "live",
+      );
+
+      const summary = engine.getReplaySummary("task-001");
+      expect(summary.redacted).toBe(true);
+    });
+
+    it("should not leak raw secrets in session summary", () => {
+      const engine = createSessionHistory();
+      engine.recordTaskCompletion(
+        "task-001",
+        "completed",
+        `api_key=${SECRET_API_KEY}`,
+        "live",
+      );
+      engine.recordTaskCompletion(
+        "task-002",
+        "failed",
+        `token=${SECRET_TOKEN}`,
+        "live",
+      );
+
+      const sessionSummary = engine.getSessionSummary();
+      expect(String(sessionSummary.taskCount)).toBe("2");
+      expect(sessionSummary.label).not.toContain(SECRET_API_KEY);
+      expect(String(sessionSummary.terminalStates.completed)).toBe("1");
+    });
+
+    it("should handle all three required secret patterns in getTaskHistory", () => {
+      const engine = createSessionHistory();
+      engine.recordTaskCompletion("t1", "completed", `api_key=${SECRET_API_KEY}`, "live");
+      engine.recordTaskCompletion("t2", "completed", `Authorization: Bearer ${SECRET_BEARER}`, "live");
+      engine.recordTaskCompletion("t3", "completed", `token=${SECRET_TOKEN}`, "live");
+
+      const history = engine.getTaskHistory({});
+      expect(history.length).toBe(3);
+      for (const entry of history) {
+        expect(entry.title).not.toContain(SECRET_API_KEY);
+        expect(entry.title).not.toContain(SECRET_BEARER);
+        expect(entry.title).not.toContain(SECRET_TOKEN);
+        expect(entry.title).toContain("[REDACTED]");
+      }
+    });
+
+    it("should handle all three required secret patterns in replay events", () => {
+      const engine = createSessionHistory();
+      engine.recordTaskCompletion("t1", "completed", `api_key=${SECRET_API_KEY}`, "live");
+      engine.recordTaskCompletion("t2", "failed", `Authorization: Bearer ${SECRET_BEARER}`, "live");
+      engine.recordTaskCompletion("t3", "cancelled", `token=${SECRET_TOKEN}`, "live");
+
+      const replay1 = engine.replayTask("t1");
+      const replay2 = engine.replayTask("t2");
+      const replay3 = engine.replayTask("t3");
+
+      for (const event of [...replay1.events, ...replay2.events, ...replay3.events]) {
+        expect(event.title).not.toContain(SECRET_API_KEY);
+        expect(event.title).not.toContain(SECRET_BEARER);
+        expect(event.title).not.toContain(SECRET_TOKEN);
+      }
     });
   });
 });

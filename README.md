@@ -60,10 +60,8 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 - Real Unreal Engine writes or Editor launch
 - Mutating MCP tool calls
 - Shell/browser/filesystem product behavior
-- Approval write flow
 - Cloud deployment, auth, or remote services
 - Forking or embedding Codex/Claude Code/Cursor/Aider
-- Production-level sandboxing, approval workflow, or promote/rollback
 
 ## Documentation
 

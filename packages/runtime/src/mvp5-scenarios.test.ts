@@ -117,11 +117,18 @@ describe("MVP5 Scenario Matrix", () => {
     expect(scenario!.pass).toBe(true);
   });
 
-  it("secret-redaction-audit-session should redact secrets", () => {
+  it("secret-redaction-audit-session should redact secrets from audit events, session history, replay events, and replay summaries", () => {
     const scenario = matrix.results.find((r) => r.scenarioName === "secret-redaction-audit-session");
     expect(scenario).toBeDefined();
     expect(scenario!.pass).toBe(true);
     expect(scenario!.redactionChecked).toBe(true);
+    expect(scenario!.assertionCount).toBeGreaterThanOrEqual(4);
+    const auditEvents = scenario!.auditEvents;
+    for (const ae of auditEvents) {
+      expect(ae.title).not.toMatch(/sk-[A-Za-z0-9]{20,}/);
+      expect(ae.body).not.toMatch(/sk-[A-Za-z0-9]{20,}/);
+      expect(ae.summary).not.toMatch(/sk-[A-Za-z0-9]{20,}/);
+    }
   });
 
   it("provider-boundary-regression should preserve provider boundary", () => {

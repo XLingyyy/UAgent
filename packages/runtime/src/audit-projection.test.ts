@@ -159,6 +159,174 @@ describe("AuditProjection", () => {
       expect(auditEvents[0].payload?.sourceEventId).toBe(sourceEvent.id);
       expect(auditEvents[0].payload?.sourceEventType).toBe(sourceEvent.type);
     });
+
+    it("should redact api_key from title in audit event", () => {
+      const events: TaskEvent[] = [
+        makeTaskEvent(1, "task_submitted", {
+          title: 'api_key=sk-abcdefghijklmnopqrstuvwxyz123456',
+          body: 'api_key=sk-abcdefghijklmnopqrstuvwxyz123456',
+        }),
+      ];
+
+      const auditEvents = buildAuditFromTaskEvents(events);
+
+      expect(auditEvents[0].title).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+      expect(auditEvents[0].body).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+      expect(auditEvents[0].summary).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+      expect(auditEvents[0].title).toContain('[REDACTED]');
+    });
+
+    it("should redact Authorization Bearer token from audit event", () => {
+      const events: TaskEvent[] = [
+        makeTaskEvent(1, "approval_required", {
+          title: 'Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz123456',
+        }),
+      ];
+
+      const auditEvents = buildAuditFromTaskEvents(events);
+
+      expect(auditEvents[0].title).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+      expect(auditEvents[0].title).toBe('Authorization: Bearer [REDACTED]');
+    });
+
+    it("should redact token= from audit event title and body", () => {
+      const events: TaskEvent[] = [
+        makeTaskEvent(1, "approval_required", {
+          title: 'token=abcdef1234567890abcdef1234567890',
+          body: 'token=abcdef1234567890abcdef1234567890',
+        }),
+      ];
+
+      const auditEvents = buildAuditFromTaskEvents(events);
+
+      expect(auditEvents[0].title).not.toContain('abcdef1234567890abcdef1234567890');
+      expect(auditEvents[0].body).not.toContain('abcdef1234567890abcdef1234567890');
+      expect(auditEvents[0].title).toContain('[REDACTED]');
+    });
+
+    it("should recursively redact payload containing all three required secret patterns", () => {
+      const events: TaskEvent[] = [
+        makeTaskEvent(1, "approval_required", {
+          payload: {
+            config: {
+              apiKey: 'sk-abcdefghijklmnopqrstuvwxyz123456',
+              nestedArray: [
+                'safe',
+                'Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz123456',
+              ],
+              tokenValue: 'token=abcdef1234567890abcdef1234567890',
+            },
+          },
+        }),
+      ];
+
+      const auditEvents = buildAuditFromTaskEvents(events);
+
+      const payload = auditEvents[0].payload as Record<string, unknown>;
+      const config = payload.config as Record<string, unknown>;
+
+      expect(config.apiKey as string).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+      expect(config.apiKey as string).toContain('[REDACTED]');
+
+      const nestedArray = config.nestedArray as unknown[];
+      expect(nestedArray[0]).toBe('safe');
+      expect(nestedArray[1] as string).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+      expect(nestedArray[1] as string).toContain('[REDACTED]');
+
+      expect(config.tokenValue as string).not.toContain('abcdef1234567890abcdef1234567890');
+      expect(config.tokenValue as string).toContain('[REDACTED]');
+    });
+  });
+
+  describe("recordAuditEvent direct write redaction", () => {
+    it("should redact all secret patterns from title, body, and summary", () => {
+      const engine = createAuditProjection();
+      const event = makeAuditEvent(1, "task_submitted", {
+        title: 'api_key=sk-abcdefghijklmnopqrstuvwxyz123456',
+        body: 'Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz123456',
+        summary: 'token=abcdef1234567890abcdef1234567890',
+      });
+
+      engine.recordAuditEvent(event);
+
+      const fromQuery = engine.queryAuditEvents({});
+      expect(fromQuery).toHaveLength(1);
+      expect(fromQuery[0].title).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+      expect(fromQuery[0].body).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+      expect(fromQuery[0].summary).not.toContain('abcdef1234567890abcdef1234567890');
+      expect(fromQuery[0].title).toContain('[REDACTED]');
+      expect(fromQuery[0].body).toContain('[REDACTED]');
+      expect(fromQuery[0].summary).toContain('[REDACTED]');
+
+      const fromProjection = engine.getProjection();
+      expect(fromProjection.events[0].title).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+      expect(fromProjection.events[0].body).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+      expect(fromProjection.events[0].summary).not.toContain('abcdef1234567890abcdef1234567890');
+    });
+
+    it("should set redacted flag to true after direct write", () => {
+      const engine = createAuditProjection();
+      const event = makeAuditEvent(1, "task_submitted", { redacted: false });
+
+      engine.recordAuditEvent(event);
+
+      const result = engine.queryAuditEvents({});
+      expect(result[0].redacted).toBe(true);
+    });
+
+    it("should preserve non-secret metadata fields", () => {
+      const engine = createAuditProjection();
+      const event = makeAuditEvent(1, "task_submitted", {
+        taskId: "task-42",
+        sessionId: "session-99",
+        actor: { type: "user", id: "user-1", label: "Alice" },
+        createdAt: 5_000,
+      });
+
+      engine.recordAuditEvent(event);
+
+      const result = engine.queryAuditEvents({});
+      expect(result[0].id).toBe(event.id);
+      expect(result[0].type).toBe("task_submitted");
+      expect(result[0].taskId).toBe("task-42");
+      expect(result[0].sessionId).toBe("session-99");
+      expect(result[0].actor).toEqual({ type: "user", id: "user-1", label: "Alice" });
+      expect(result[0].createdAt).toBe(5_000);
+    });
+
+    it("should recursively redact nested payload with all three required secret patterns", () => {
+      const engine = createAuditProjection();
+      const event = makeAuditEvent(1, "approval_required", {
+        payload: {
+          credentials: {
+            apiKey: 'sk-abcdefghijklmnopqrstuvwxyz123456',
+          },
+          headers: ['Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz123456'],
+          config: {
+            token: 'token=abcdef1234567890abcdef1234567890',
+          },
+        },
+      });
+
+      engine.recordAuditEvent(event);
+
+      const fromQuery = engine.queryAuditEvents({});
+      const payload = fromQuery[0].payload as Record<string, unknown>;
+      const credentials = payload.credentials as Record<string, unknown>;
+      const headers = payload.headers as unknown[];
+      const config = payload.config as Record<string, unknown>;
+
+      expect(credentials.apiKey as string).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+      expect(credentials.apiKey as string).toContain('[REDACTED]');
+      expect(headers[0] as string).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+      expect(headers[0] as string).toContain('[REDACTED]');
+      expect(config.token as string).not.toContain('abcdef1234567890abcdef1234567890');
+      expect(config.token as string).toContain('[REDACTED]');
+
+      const fromProjection = engine.getProjection();
+      const projPayload = fromProjection.events[0].payload as Record<string, unknown>;
+      expect((projPayload.credentials as Record<string, unknown>).apiKey as string).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+    });
   });
 
   describe("query filters", () => {

@@ -5,6 +5,7 @@ import {
   type AuditProjection,
 } from "@uagent/shared";
 import { type TaskEvent } from "@uagent/shared";
+import { redactString, recursiveRedactValue } from "./secrets/redaction.js";
 
 export interface AuditQuery {
   taskId?: string;
@@ -87,17 +88,17 @@ export function buildAuditFromTaskEvents(
       taskId: event.taskId,
       sessionId: sessionId ?? null,
       actor: defaultActor,
-      title: event.title,
-      body: event.body ?? "",
-      summary: event.title,
+      title: redactString(event.title),
+      body: redactString(event.body ?? ""),
+      summary: redactString(event.title),
       redacted: true,
       createdAt: event.createdAt,
-      payload: {
+      payload: recursiveRedactValue({
         ...(event.payload ?? {}),
         sourceEventId: event.id,
         sourceEventType: event.type,
         ...(providerMode ? { providerMode } : {}),
-      },
+      }) as Record<string, unknown>,
     };
 
     auditEvents.push(auditEvent);
@@ -106,12 +107,26 @@ export function buildAuditFromTaskEvents(
   return auditEvents;
 }
 
+function redactAuditEvent(event: AuditEvent): AuditEvent {
+  return {
+    ...event,
+    title: redactString(event.title),
+    body: redactString(event.body),
+    summary: redactString(event.summary),
+    redacted: true,
+    payload:
+      event.payload !== undefined
+        ? (recursiveRedactValue(event.payload) as Record<string, unknown>)
+        : undefined,
+  };
+}
+
 export function createAuditProjection(): AuditProjectionEngine {
   const events: AuditEvent[] = [];
 
   return {
     recordAuditEvent(event: AuditEvent): void {
-      events.push(event);
+      events.push(redactAuditEvent(event));
     },
 
     queryAuditEvents(filter: AuditQuery): AuditEvent[] {

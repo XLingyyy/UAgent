@@ -464,19 +464,63 @@ export async function runMvp5ScenarioMatrix(): Promise<Mvp5ScenarioMatrixResult>
 
   // 16. secret-redaction-audit-session
   await runScenario("secret-redaction-audit-session", async () => {
+    const SECRET_API = 'sk-abcdefghijklmnopqrstuvwxyz123456';
+    const SECRET_BEARER = 'sk-abcdefghijklmnopqrstuvwxyz123456';
+    const SECRET_TOKEN = 'abcdef1234567890abcdef1234567890';
+    let assertions = 0;
+
     const clock = deterministicClock();
     const runtime = createAgentLoopRuntime({ clock, clockStart: 1000 });
-    const draft: TaskDraft = { ...baseDraft, input: "check config", permissionMode: "auto" };
+    const draft: TaskDraft = { ...baseDraft, input: `api_key=${SECRET_API}`, permissionMode: "auto" };
     const record = await runtime.submitTask(draft);
     const events = runtime.getSnapshot().eventsByTaskId[record.id];
     const audit = buildAuditFromTaskEvents(events, "session-16");
-    const hasRedacted = audit.some((e) => e.redacted === true);
+
+    const auditNoRawSecrets = audit.every((e) => {
+      const titleOk = !e.title.includes(SECRET_API) && !e.title.includes(SECRET_BEARER) && !e.title.includes(SECRET_TOKEN);
+      const summaryOk = !e.summary.includes(SECRET_API) && !e.summary.includes(SECRET_BEARER) && !e.summary.includes(SECRET_TOKEN);
+      const bodyOk = !e.body.includes(SECRET_API) && !e.body.includes(SECRET_BEARER) && !e.body.includes(SECRET_TOKEN);
+      return titleOk && summaryOk && bodyOk;
+    });
+    if (auditNoRawSecrets) assertions += 1;
+
+    const history = createSessionHistory();
+    history.recordTaskCompletion("task-sec-01", "completed", `api_key=${SECRET_API}`, "live");
+    history.recordTaskCompletion("task-sec-02", "completed", `Authorization: Bearer ${SECRET_BEARER}`, "live");
+    history.recordTaskCompletion("task-sec-03", "completed", `token=${SECRET_TOKEN}`, "live");
+
+    const taskHistory = history.getTaskHistory({});
+    const historyNoRawSecrets = taskHistory.every((h) => {
+      return !h.title.includes(SECRET_API) && !h.title.includes(SECRET_BEARER) && !h.title.includes(SECRET_TOKEN);
+    });
+    if (historyNoRawSecrets) assertions += 1;
+
+    const replayEvents = [
+      ...history.replayTask("task-sec-01").events,
+      ...history.replayTask("task-sec-02").events,
+      ...history.replayTask("task-sec-03").events,
+    ];
+    const replayNoRawSecrets = replayEvents.every((e) => {
+      return !e.title.includes(SECRET_API) && !e.title.includes(SECRET_BEARER) && !e.title.includes(SECRET_TOKEN);
+    });
+    if (replayNoRawSecrets) assertions += 1;
+
+    const replaySummaries = [
+      history.getReplaySummary("task-sec-01"),
+      history.getReplaySummary("task-sec-02"),
+      history.getReplaySummary("task-sec-03"),
+    ];
+    const summaryRedactedFlags = replaySummaries.every((s) => s.redacted);
+    if (summaryRedactedFlags) assertions += 1;
+
     return {
       scenarioName: "secret-redaction-audit-session",
       taskEvents: events, auditEvents: audit,
-      terminalState: "completed", requestLog: ["Redaction verified"],
-      redactionChecked: hasRedacted, sideEffectChecked: true,
-      assertionCount: 1, pass: hasRedacted,
+      terminalState: "completed",
+      requestLog: ["Redaction verified through audit, session history, replay events, and replay summaries"],
+      redactionChecked: true, sideEffectChecked: true,
+      assertionCount: assertions,
+      pass: auditNoRawSecrets && historyNoRawSecrets && replayNoRawSecrets && summaryRedactedFlags,
     };
   });
 

@@ -31,3 +31,45 @@ export function redactErrorMessage(message: string): string {
 export function createRedactedString(label: string): string {
   return `${label} [REDACTED]`;
 }
+
+export function redactString(text: string): string {
+  let result = text;
+  result = result.replace(/(Authorization:\s*Bearer\s+)\S+/gi, "$1[REDACTED]");
+  result = result.replace(/(api[_-]?key\s*[=:]\s*)\S+/gi, "$1[REDACTED]");
+  result = result.replace(/((?:\b|_)token\s*[=:]\s*)\S+/gi, "$1[REDACTED]");
+  result = result.replace(/(password\s*[=:]\s*)\S+/gi, "$1[REDACTED]");
+  result = result.replace(/(secret\s*[=:]\s*)\S+/gi, "$1[REDACTED]");
+  for (const pattern of SECRET_PATTERNS) {
+    result = result.replace(pattern, "[REDACTED]");
+  }
+  return result;
+}
+
+export function recursiveRedactValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return redactString(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => recursiveRedactValue(item));
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = recursiveRedactValue(val);
+    }
+    return result;
+  }
+  return value;
+}
+
+export function redactAuditTitle(title: string): string {
+  return redactString(title);
+}
+
+export function redactAuditBody(body: string): string {
+  return redactString(body);
+}
+
+export function redactAuditSummary(summary: string): string {
+  return redactString(summary);
+}
