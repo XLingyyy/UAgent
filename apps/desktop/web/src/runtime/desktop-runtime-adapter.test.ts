@@ -82,6 +82,8 @@ describe("DesktopRuntimeAdapter", () => {
       "agent_plan_started",
       "agent_plan_created",
       "agent_step_started",
+      "agent_observation_created",
+      "evidence_created",
       "agent_step_completed",
       "agent_step_started",
       "agent_step_completed",
@@ -267,6 +269,16 @@ describe("DesktopRuntimeAdapter", () => {
     expect(events.indexOf("task_failed")).toBeGreaterThan(events.indexOf("review_created"));
     expect(events.at(-1)).toBe("task_failed");
     expect(snapshot.tasksById[record.id].state).toBe("failed");
+  });
+
+  it("submitApprovalDecision is exposed and does not throw for valid call shape", async () => {
+    const adapter = createDesktopRuntimeAdapter();
+    const record = await adapter.submitTask(baseDraft);
+    await expect(
+      adapter.submitApprovalDecision(record.id, "step-1", "approved", "test", "test"),
+    ).resolves.toBeUndefined();
+    const snapshot = adapter.getSnapshot();
+    expect(snapshot.tasksById[record.id]).toBeDefined();
   });
 
   it("preserves mock task snapshot through MCP connect+discover cycle", async () => {

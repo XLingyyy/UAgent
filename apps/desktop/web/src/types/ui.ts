@@ -185,6 +185,7 @@ export interface ComposerStoreActions {
   setComposerReasoning: SetComposerReasoning;
   submitComposerTask: RuntimeStoreActions["submitComposerTask"];
   cancelRuntimeTask: RuntimeStoreActions["cancelRuntimeTask"];
+  submitApprovalDecision: RuntimeStoreActions["submitApprovalDecision"];
 }
 
 export interface ProviderStoreActions {

@@ -54,7 +54,10 @@ interface UIStoreBundle {
 
 const UIStoreContext = createContext<UIStoreBundle | null>(null);
 
-function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
+function createUIStateBundle(
+  initialState?: UIInitialState,
+  runtimeClient: DesktopRuntimeAdapter = createDesktopRuntimeAdapter(),
+): UIStoreBundle {
   const providerState = createInitialProviderState(initialState);
   const layoutStore = createSliceStore(createInitialLayoutState(initialState));
   const settingsStore = createSliceStore(createInitialSettingsState(initialState));
@@ -62,7 +65,6 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
   const threadStore = createSliceStore(createInitialThreadState(initialState));
   const composerStore = createSliceStore(createInitialComposerState(initialState, providerState));
   const providerStore = createSliceStore(providerState);
-  const runtimeClient: DesktopRuntimeAdapter = createDesktopRuntimeAdapter();
   const runtimeStore = createSliceStore({
     ...createRuntimeStoreState(runtimeClient.getSnapshot()),
     ...initialState?.runtime,
@@ -241,11 +243,17 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
     cancelRuntimeTask: async (taskId) => {
       await runtimeClient.cancelTask(taskId);
     },
+    submitApprovalDecision: async (taskId, stepId, decision, actor, reason) => {
+      await runtimeClient.submitApprovalDecision(taskId, stepId, decision, actor, reason);
+    },
   };
 
   const runtimeActions: RuntimeStoreActions = {
     submitComposerTask: composerActions.submitComposerTask,
     cancelRuntimeTask: composerActions.cancelRuntimeTask,
+    submitApprovalDecision: async (taskId, stepId, decision, actor, reason) => {
+      await runtimeClient.submitApprovalDecision(taskId, stepId, decision, actor, reason);
+    },
     setMcpEndpoint: (endpoint) => {
       runtimeClient.setMcpEndpoint(endpoint);
     },
@@ -363,10 +371,14 @@ function useUIStoreBundle(): UIStoreBundle {
 export interface UIProviderProps {
   children: ReactNode;
   initialState?: UIInitialState;
+  runtimeClient?: DesktopRuntimeAdapter;
 }
 
-export function UIProvider({ children, initialState }: UIProviderProps) {
-  const storeBundle = useMemo(() => createUIStateBundle(initialState), [initialState]);
+export function UIProvider({ children, initialState, runtimeClient }: UIProviderProps) {
+  const storeBundle = useMemo(
+    () => createUIStateBundle(initialState, runtimeClient),
+    [initialState, runtimeClient],
+  );
   return createElement(UIStoreContext.Provider, { value: storeBundle }, children);
 }
 

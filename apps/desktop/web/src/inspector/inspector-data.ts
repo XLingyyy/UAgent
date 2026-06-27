@@ -40,6 +40,9 @@ export type UtilityToolId =
   | "diagnostics"
   | "runtime"
   | "agent-trace"
+  | "safety"
+  | "audit"
+  | "changes"
   | "terminal"
   | "browser"
   | "files"
@@ -192,6 +195,21 @@ export const utilityTools: UtilityToolDefinition[] = [
     summary: "Trace replay",
   },
   {
+    id: "safety",
+    label: "Safety",
+    summary: "Approval and sandbox state",
+  },
+  {
+    id: "audit",
+    label: "Audit",
+    summary: "Append-only workflow events",
+  },
+  {
+    id: "changes",
+    label: "Changes",
+    summary: "ChangeSet preview",
+  },
+  {
     id: "terminal",
     label: "Terminal",
     summary: "Static transcript",
@@ -303,6 +321,43 @@ export const utilityPlaceholderPanels: Record<
       "Project queries are reserved for a later MVP.",
     ],
     actionLabel: "Future asset index",
+  },
+  safety: {
+    id: "safety",
+    title: "Safety",
+    state: "Fixture boundary",
+    badge: "MVP5",
+    items: [
+      "Default permission: request approval.",
+      "Medium and high risk actions pause before execution.",
+      "Sandbox mode is disabled or fixture only.",
+      "Deny, cancel, and timeout outcomes do not execute sensitive actions.",
+    ],
+    actionLabel: "Runtime gate required",
+  },
+  audit: {
+    id: "audit",
+    title: "Audit",
+    state: "Append-only projection",
+    badge: "MVP5",
+    items: [
+      "TaskEvent remains the source of truth.",
+      "Approval, sandbox, and ChangeSet outcomes are projected into audit rows.",
+      "Payloads are redacted before session replay.",
+    ],
+    actionLabel: "Projection only",
+  },
+  changes: {
+    id: "changes",
+    title: "Changes",
+    state: "Preview only",
+    badge: "MVP5",
+    items: [
+      "ChangeSet states: planned, previewed, applied, promoted, rolled back, discarded.",
+      "Promote and rollback use fixture adapters in MVP5.",
+      "No real project file write is exposed from this drawer.",
+    ],
+    actionLabel: "Fixture ChangeSet only",
   },
 };
 

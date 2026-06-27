@@ -142,6 +142,15 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         </span>
 
         <span className="ua-composer__status-item">
+          <span className="ua-composer__status-label">Safety</span>
+          <span className="ua-composer__status-value">
+            {permission === "request-approval"
+              ? "Approval required / fixture ready"
+              : "Fixture sandbox / no real writes"}
+          </span>
+        </span>
+
+        <span className="ua-composer__status-item">
           <span className="ua-composer__status-label">Branch</span>
           <span className="ua-composer__status-value ua-text-mono">{branch}</span>
         </span>

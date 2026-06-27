@@ -3,7 +3,7 @@ import {
   type AgentLoopRuntimeClient,
 } from "@uagent/runtime";
 import { LegacySseTransport, McpSession, McpTransportError, StreamableHttpTransport } from "@uagent/mcp-client";
-import type { McpConnectionState, RuntimeSnapshot, TaskDraft, TaskRecord } from "@uagent/shared";
+import type { ApprovalDecisionValue, McpConnectionState, RuntimeSnapshot, TaskDraft, TaskRecord } from "@uagent/shared";
 import type { McpInitializeResult, McpTransportClient } from "@uagent/mcp-client";
 
 export interface DesktopRuntimeAdapter {
@@ -13,6 +13,7 @@ export interface DesktopRuntimeAdapter {
   subscribeMcp(listener: (state: McpConnectionState) => void): () => void;
   submitTask(draft: TaskDraft): Promise<TaskRecord>;
   cancelTask(taskId: string): Promise<void>;
+  submitApprovalDecision(taskId: string, stepId: string | null, decision: ApprovalDecisionValue, actor: string, reason: string): Promise<void>;
   setMcpEndpoint(endpoint: string): void;
   connectMcp(): Promise<void>;
   discoverMcp(): Promise<void>;
@@ -85,6 +86,11 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
 
     cancelTask: async (taskId) => {
       await router.cancelTask(taskId);
+      syncSnapshot();
+    },
+
+    submitApprovalDecision: async (taskId, stepId, decision, actor, reason) => {
+      await router.submitApprovalDecision!(taskId, stepId, decision, actor, reason);
       syncSnapshot();
     },
     setMcpEndpoint(endpoint) {

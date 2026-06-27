@@ -1,4 +1,5 @@
 import type { TaskDraft, TaskEvent, TaskRecord } from "./task.js";
+import type { ApprovalDecisionValue } from "./approval.js";
 
 export type RuntimeStatus =
   | "offline"
@@ -24,6 +25,7 @@ export type RuntimeCommand =
 export interface RuntimeClient {
   submitTask(draft: TaskDraft): Promise<TaskRecord>;
   cancelTask(taskId: string): Promise<void>;
+  submitApprovalDecision?(taskId: string, stepId: string | null, decision: ApprovalDecisionValue, actor: string, reason: string): Promise<void>;
   getSnapshot(): RuntimeSnapshot;
   subscribe(listener: (snapshot: RuntimeSnapshot) => void): () => void;
 }

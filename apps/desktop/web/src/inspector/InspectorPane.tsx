@@ -3,6 +3,9 @@ import { ReviewPanel } from "./ReviewPanel";
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { RuntimePanel } from "./RuntimePanel";
 import { AgentTracePanel } from "./AgentTracePanel";
+import { SafetyPanel } from "./SafetyPanel";
+import { AuditPanel } from "./AuditPanel";
+import { ChangesPanel } from "./ChangesPanel";
 import { UtilityEvidencePanel, UtilityPlaceholderPanel } from "./UtilityPlaceholderPanel";
 import {
   utilityPlaceholderPanels,
@@ -38,6 +41,18 @@ function renderToolPanel(toolId: UtilityToolId) {
 
   if (toolId === "agent-trace") {
     return <AgentTracePanel />;
+  }
+
+  if (toolId === "safety") {
+    return <SafetyPanel />;
+  }
+
+  if (toolId === "audit") {
+    return <AuditPanel />;
+  }
+
+  if (toolId === "changes") {
+    return <ChangesPanel />;
   }
 
   if (toolId === "evidence") {

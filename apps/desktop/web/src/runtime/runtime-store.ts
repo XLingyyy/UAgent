@@ -1,5 +1,5 @@
 import { createMockRuntime, type MockRuntimeClient } from "@uagent/runtime";
-import type { McpConnectionState, RuntimeSnapshot, TaskDraft } from "@uagent/shared";
+import type { ApprovalDecisionValue, McpConnectionState, RuntimeSnapshot, TaskDraft } from "@uagent/shared";
 
 export interface RuntimeStoreState extends RuntimeSnapshot {
   mockOnlyWarning: string | null;
@@ -9,6 +9,7 @@ export interface RuntimeStoreState extends RuntimeSnapshot {
 export interface RuntimeStoreActions {
   submitComposerTask: (draft: TaskDraft) => Promise<string>;
   cancelRuntimeTask: (taskId: string) => Promise<void>;
+  submitApprovalDecision: (taskId: string, stepId: string | null, decision: ApprovalDecisionValue, actor: string, reason: string) => Promise<void>;
   setMcpEndpoint: (endpoint: string) => void;
   connectMcp: () => Promise<void>;
   discoverMcp: () => Promise<void>;

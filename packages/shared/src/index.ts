@@ -100,7 +100,7 @@ export type {
   McpToolDescriptor,
   McpTransportKind,
 } from "./mcp.js";
-export type { ToolRiskClassification, ToolRiskLevel } from "./risk.js";
+export type { ToolRiskClassification, ToolRiskLevel, SafetyPolicy, PolicyDecision, RiskAssessment, WorkflowCapability } from "./risk.js";
 export type {
   RuntimeClient,
   RuntimeCommand,
@@ -108,7 +108,7 @@ export type {
   RuntimeStatus,
 } from "./runtime.js";
 export { createEmptyRuntimeSnapshot } from "./runtime.js";
-export type { ApprovalRequest, ApprovalRequestState } from "./approval.js";
+export type { ApprovalRequest, ApprovalRequestState, ApprovalDecision, ApprovalDecisionValue, ApprovalState, ApprovalScope } from "./approval.js";
 export type {
   ProviderCapability,
   ProviderConfig,
@@ -126,3 +126,37 @@ export type {
   ProviderWireApi,
 } from "./provider-runtime.js";
 export { createDefaultProviderConfig, redactProviderConfig } from "./provider-runtime.js";
+
+// MVP5 Workflow & Safety types
+export type { WorkflowEventType, WorkflowEvent, WorkflowPolicy } from "./workflow.js";
+export type {
+  SandboxMode,
+  SandboxExecutionStatus,
+  SandboxPolicy,
+  SandboxExecutionRequest,
+  SandboxExecutionResult,
+  SandboxEvent,
+} from "./sandbox.js";
+export { createDefaultSandboxPolicy } from "./sandbox.js";
+export type {
+  ChangeSetState,
+  ChangeOperationType,
+  ChangeOperation,
+  WorkspaceChangeSet,
+  ChangeSetScope,
+  ChangeSetEvent,
+} from "./change-set.js";
+export type {
+  AuditEventType,
+  AuditActor,
+  AuditEvent,
+  AuditProjection,
+  AuditFilterSummary,
+} from "./audit.js";
+export type {
+  SessionSummary,
+  TaskHistoryEntry,
+  ReplayCursor,
+  ReplayFilter,
+  ReplaySummary,
+} from "./session.js";

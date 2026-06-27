@@ -120,6 +120,26 @@
   opacity: 0.72;
 }
 
+.ua-utility-placeholder__actions {
+  display: flex;
+  gap: var(--ua-space-2);
+  flex-wrap: wrap;
+}
+
+.ua-utility-placeholder__action--primary {
+  background: var(--ua-accent);
+  color: var(--ua-bg-app);
+  cursor: pointer;
+  border-color: var(--ua-accent);
+}
+
+.ua-utility-placeholder__action--danger {
+  background: var(--ua-danger, #d32f2f);
+  color: #fff;
+  cursor: pointer;
+  border-color: var(--ua-danger, #d32f2f);
+}
+
 @media (max-width: 420px) {
   .ua-utility-placeholder__header {
     flex-direction: column;

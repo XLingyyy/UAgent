@@ -2,11 +2,11 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows — starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP4 Provider Adapter Implementation / Real Provider Boundary
+## Current Stage: MVP5 Workflow & Safety
 
-The MVP2 read-only MCP runtime remains the transport baseline. Composer input still creates a `TaskDraft` and submits through `RuntimeClient.submitTask()`, but MVP3 routes that draft through a deterministic Agent Core loop: plan, select a guarded read-only action, observe, record evidence, report, and expose every state transition through `TaskEvent` and `RuntimeSnapshot`.
+MVP5 extends the MVP4 provider boundary with an institutionalized safety layer: approval workflow, sandbox execution mode, ChangeSet rollback/promote, audit log, and session history. The core flow (`Composer → TaskDraft → RuntimeClient.submitTask() → AgentLoopRuntime → TaskEvent → RuntimeSnapshot → UI`) remains unchanged. MVP5 adds risk classification, approval gates, fixture sandbox execution, ChangeSet state management, and append-only audit projections.
 
-MVP3 supports shared Agent plan/step/observation/report contracts, deterministic planning without an LLM, guarded read-only MCP action selection, mock fallback observations when MCP is unavailable or undiscovered, structured evidence, final Agent reports, and UI display for plan progress and diagnostics. It does not perform real UE writes, real LLM/provider API calls, shell/browser/filesystem product behavior, approval-driven write actions, or provider requests.
+MVP5 does not default to live provider network, real UE writes, real mutating MCP tools, or product shell/browser/filesystem behavior. All sandbox execution defaults to `disabled` or `fixture` mode. Approval decisions, sandbox results, ChangeSet operations, and audit events are secret-safe, deterministic, and replayable.
 
 ## Technology Stack
 
@@ -75,6 +75,10 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 - [MVP2 Acceptance](docs/mvp2-acceptance.md)
 - [Agent Core Plan](docs/agent-core-plan.md)
 - [MVP3 Acceptance](docs/mvp3-acceptance.md)
+- [MVP4 Acceptance](docs/mvp4-acceptance.md)
+- [MVP5 Acceptance](docs/mvp5-acceptance.md)
+- [Workflow Safety Plan](docs/workflow-safety-plan.md)
+- [Baseline Freeze](docs/mvp5-baseline-freeze.md)
 - [Development Guide](docs/development.md)
 
 ## License

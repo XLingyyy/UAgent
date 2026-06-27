@@ -42,6 +42,17 @@ function stateForEvent(event: TaskEvent): TaskState {
     case "provider_request_completed":
     case "provider_request_failed":
     case "provider_request_cancelled":
+    case "sandbox_started":
+    case "sandbox_completed":
+    case "sandbox_failed":
+    case "sandbox_blocked":
+    case "sandbox_timed_out":
+    case "change_set_created":
+    case "change_set_previewed":
+    case "change_set_applied":
+    case "change_set_promoted":
+    case "change_set_rolled_back":
+    case "change_set_discarded":
       return "executing";
     case "agent_observation_created":
       return "observing";
@@ -52,7 +63,14 @@ function stateForEvent(event: TaskEvent): TaskState {
     case "mcp_disconnected":
       return "cancelled";
     case "approval_requested":
+    case "approval_required":
       return "awaiting_approval";
+    case "approval_approved":
+      return "executing";
+    case "approval_denied":
+    case "approval_cancelled":
+    case "approval_timed_out":
+      return "reviewing";
     case "agent_report_created":
     case "review_created":
       return "reviewing";

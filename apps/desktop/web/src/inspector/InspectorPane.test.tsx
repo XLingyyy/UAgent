@@ -1,10 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { act } from "react";
 import { InspectorPane } from "./InspectorPane";
 import { reviewFindings, diagnosticSummary } from "./inspector-data";
 import { UIProvider } from "../app/providers";
 import { ComposerDock } from "../composer/ComposerDock";
+import type { DesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
+import type { RuntimeSnapshot, TaskEvent, TaskRecord } from "@uagent/shared";
 function renderInspector(open = true, onClose?: () => void) {
   return render(<InspectorPane open={open} onClose={onClose} />);
 }
@@ -23,6 +25,96 @@ function renderRuntimeInspectorShell(input = "Review Lyra asset loading risks") 
   );
   fireEvent.change(screen.getByLabelText("Composer input"), { target: { value: input } });
   fireEvent.click(screen.getByRole("button", { name: "Send mock task" }));
+}
+
+function createPendingApprovalRuntimeState() {
+  const taskId = "task-approval-0001";
+  const stepId = "step-review-risk";
+  const task: TaskRecord = {
+    id: taskId,
+    title: "Delete selected Lyra asset",
+    state: "awaiting_approval",
+    draft: {
+      input: "Delete selected Lyra asset",
+      projectId: "lyra",
+      permissionMode: "request_approval",
+      modelId: "not-configured",
+      reasoningEffort: "medium",
+      runMode: "local",
+      branch: "main",
+      contextPercent: 12,
+    },
+    createdAt: 1_000,
+    updatedAt: 1_010,
+    completedAt: null,
+    error: null,
+  };
+  const approvalEvent: TaskEvent = {
+    id: "task-approval-0001-event-0001",
+    taskId,
+    type: "approval_required",
+    title: "Approval required",
+    body: "Delete selected Lyra asset requires approval.",
+    level: "warning",
+    createdAt: 1_010,
+    payload: {
+      stepId,
+      riskLevel: "destructive",
+    },
+  };
+
+  return {
+    taskId,
+    stepId,
+    runtime: {
+      status: "waiting_for_approval" as const,
+      activeTaskId: taskId,
+      tasksById: { [taskId]: task },
+      eventsByTaskId: { [taskId]: [approvalEvent] },
+      lastError: null,
+    },
+  };
+}
+
+function createSpyRuntimeAdapter(snapshot: RuntimeSnapshot): DesktopRuntimeAdapter {
+  return {
+    getSnapshot: () => snapshot,
+    getMcpState: () => ({
+      status: "disconnected",
+      profile: {
+        id: "local-unreal-mcp",
+        name: "Local Unreal MCP",
+        endpoint: "http://127.0.0.1:8765/mcp",
+        transport: "streamable-http",
+      },
+      protocolVersion: null,
+      serverInfo: null,
+      capabilities: null,
+      lastError: null,
+      legacyMode: false,
+    }),
+    subscribe: () => () => {},
+    subscribeMcp: () => () => {},
+    submitTask: vi.fn(),
+    cancelTask: vi.fn(),
+    submitApprovalDecision: vi.fn(async () => {}),
+    setMcpEndpoint: vi.fn(),
+    connectMcp: vi.fn(async () => {}),
+    discoverMcp: vi.fn(async () => {}),
+    disconnectMcp: vi.fn(),
+  };
+}
+
+function renderSafetyPanelWithPendingApproval(
+  runtimeClient: DesktopRuntimeAdapter,
+  runtime: RuntimeSnapshot,
+) {
+  render(
+    <UIProvider initialState={{ runtime }} runtimeClient={runtimeClient}>
+      <InspectorPane open />
+    </UIProvider>,
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "Safety" }));
 }
 
 async function flushRuntimeSubmitMicrotasks() {
@@ -74,6 +166,9 @@ describe("InspectorPane", () => {
         "Diagnostics",
         "Runtime",
         "Agent Trace",
+        "Safety",
+        "Audit",
+        "Changes",
         "Terminal",
         "Browser",
         "Files",
@@ -140,6 +235,43 @@ describe("InspectorPane", () => {
       expect(screen.getByRole("button", { name: actionLabel }).hasAttribute("disabled")).toBe(true);
     });
 
+    it("shows runtime-derived safety, audit, and changes panels without active task", () => {
+      renderInspector();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Safety" }));
+      expect(screen.getByText("No active task. Submit a task to see safety state.")).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Audit" }));
+      expect(screen.getByText("No active task. Submit a task to see audit events.")).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Changes" }));
+      expect(screen.getByText("No active task. Submit a task to see change events.")).toBeTruthy();
+    });
+
+    it.each([
+      ["Approve", "approved", "Approved via Safety panel"],
+      ["Deny", "denied", "Denied via Safety panel"],
+      ["Cancel task", "cancelled", "Cancelled via Safety panel"],
+    ] as const)(
+      "submits an approval decision when %s is clicked",
+      (buttonName, decision, reason) => {
+        const { runtime, taskId, stepId } = createPendingApprovalRuntimeState();
+        const runtimeClient = createSpyRuntimeAdapter(runtime);
+
+        renderSafetyPanelWithPendingApproval(runtimeClient, runtime);
+
+        fireEvent.click(screen.getByRole("button", { name: buttonName }));
+
+        expect(runtimeClient.submitApprovalDecision).toHaveBeenCalledWith(
+          taskId,
+          stepId,
+          decision,
+          "user",
+          reason,
+        );
+      },
+    );
+
     it("switches Evidence to review evidence without collecting live evidence", () => {
       renderInspector();
       fireEvent.click(screen.getByRole("tab", { name: "Evidence" }));
@@ -163,7 +295,9 @@ describe("InspectorPane", () => {
         (await screen.findAllByText('Mock observation for "Review Lyra asset loading risks".'))
           .length,
       ).toBeGreaterThanOrEqual(1);
-      expect(await screen.findByText("mock-runtime")).toBeTruthy();
+      expect(
+        (await screen.findAllByText("mock-runtime")).length,
+      ).toBeGreaterThanOrEqual(1);
       expect(await screen.findByText("evidence-0001")).toBeTruthy();
     });
   });
@@ -186,8 +320,9 @@ describe("InspectorPane", () => {
           .length,
       ).toBeGreaterThanOrEqual(1);
       expect(
-        await screen.findByText('Mock observation for "Review Lyra asset loading risks".'),
-      ).toBeTruthy();
+        (await screen.findAllByText('Mock observation for "Review Lyra asset loading risks".'))
+          .length,
+      ).toBeGreaterThanOrEqual(1);
       expect(await screen.findByText("evidence-0001")).toBeTruthy();
     });
 
@@ -291,11 +426,11 @@ describe("InspectorPane", () => {
       fireEvent.click(screen.getByRole("tab", { name: "Runtime" }));
       expect(screen.getByText("Runtime context")).toBeTruthy();
       expect(screen.getByText("completed")).toBeTruthy();
-      expect(screen.getByText("16 events")).toBeTruthy();
+      expect(screen.getByText("18 events")).toBeTruthy();
       expect(screen.getByText("Plan: Review Lyra asset loading risks")).toBeTruthy();
       expect(screen.getByText("Current step: Record evidence")).toBeTruthy();
       expect(screen.getByText("Completed steps: 4")).toBeTruthy();
-      expect(screen.getByText("Evidence: 1")).toBeTruthy();
+      expect(screen.getByText("Evidence: 2")).toBeTruthy();
       expect(screen.getAllByText("Mock runtime / no provider call").length).toBeGreaterThanOrEqual(
         1,
       );
@@ -329,7 +464,7 @@ describe("InspectorPane", () => {
 
       fireEvent.click(screen.getByRole("tab", { name: "Runtime" }));
       expect(screen.getByLabelText("Runtime panel").textContent).toContain("State: completed");
-      expect(screen.getByText("16 events")).toBeTruthy();
+      expect(screen.getByText("18 events")).toBeTruthy();
 
       expect(
         (screen.getByRole("button", { name: "Cancel mock task" }) as HTMLButtonElement).disabled,
@@ -345,16 +480,16 @@ describe("InspectorPane", () => {
 
       fireEvent.click(screen.getByRole("tab", { name: "Agent Trace" }));
 
-      expect(screen.getByLabelText("Agent trace panel")).toBeTruthy();
-      expect(screen.getByText("Agent run trace")).toBeTruthy();
-      expect(screen.getAllByText("Delete selected Lyra asset").length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText("Block mutating intent")).toBeTruthy();
-      expect(screen.getByText("Evidence refs: evidence-0001")).toBeTruthy();
+      expect(await screen.findByLabelText("Agent trace panel")).toBeTruthy();
+      expect(await screen.findByText("Agent run trace")).toBeTruthy();
+      expect((await screen.findAllByText("Delete selected Lyra asset")).length).toBeGreaterThanOrEqual(1);
+      expect(await screen.findByText("Block mutating intent")).toBeTruthy();
+      expect(await screen.findByText("Evidence refs: evidence-0001")).toBeTruthy();
       expect(
-        screen.getAllByText("blocked mutating action: no write action was executed.").length,
+        (await screen.findAllByText("blocked mutating action: no write action was executed.")).length,
       ).toBeGreaterThanOrEqual(1);
       expect(
-        screen.getAllByText("Mutating intent is outside MVP3 read-only boundaries.").length,
+        (await screen.findAllByText("Mutating intent is outside MVP3 read-only boundaries.")).length,
       ).toBeGreaterThanOrEqual(1);
     });
 

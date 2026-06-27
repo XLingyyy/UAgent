@@ -5,6 +5,7 @@ import {
   type TaskDraft,
   type TaskRecord,
 } from "@uagent/shared";
+import type { ApprovalDecisionValue } from "@uagent/shared";
 import type { McpReadOnlyRuntimeClient } from "./mcp-readonly-runtime.js";
 
 export interface RuntimeRouterOptions {
@@ -68,6 +69,13 @@ export function createRuntimeRouter(options: RuntimeRouterOptions): RuntimeClien
       const client = options.mcpRuntime ?? options.mockRuntime;
       await client.cancelTask(taskId);
       snapshot = mergeFallbackEvents(client.getSnapshot());
+    },
+    async submitApprovalDecision(taskId: string, stepId: string | null, decision: ApprovalDecisionValue, actor: string, reason: string): Promise<void> {
+      const client = options.mcpRuntime ?? options.mockRuntime;
+      if (client.submitApprovalDecision) {
+        await client.submitApprovalDecision(taskId, stepId, decision, actor, reason);
+        snapshot = client.getSnapshot();
+      }
     },
     getSnapshot: () => snapshot,
     subscribe(listener) {

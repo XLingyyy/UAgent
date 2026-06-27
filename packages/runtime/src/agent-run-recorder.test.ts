@@ -47,8 +47,8 @@ describe("Agent run recorder and replay", () => {
     expect(trace.status).toBe("completed");
     expect(trace.goal).toBe("Review current selection");
     expect(trace.steps.map((step) => step.title)).toContain("Create mock observation");
-    expect(trace.observations).toHaveLength(1);
-    expect(trace.evidenceRefs).toEqual(["evidence-0001"]);
+    expect(trace.observations).toHaveLength(2);
+    expect(trace.evidenceRefs).toEqual(["evidence-0001", "evidence-0002"]);
     expect(replay.eventTypes.at(0)).toBe("run_started");
     expect(replay.terminalEventType).toBe("run_completed");
     expect(replay.reportSummary).toContain("completed:");

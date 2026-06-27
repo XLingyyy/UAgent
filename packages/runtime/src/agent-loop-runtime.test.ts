@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { McpDiscoverySnapshot, TaskDraft } from "@uagent/shared";
+import { createApprovalGate } from "./approval-gate.js";
 import { createAgentLoopRuntime } from "./agent-loop-runtime.js";
 
 const baseDraft: TaskDraft = {
@@ -48,6 +49,8 @@ describe("createAgentLoopRuntime", () => {
       "agent_plan_started",
       "agent_plan_created",
       "agent_step_started",
+      "agent_observation_created",
+      "evidence_created",
       "agent_step_completed",
       "agent_step_started",
       "agent_step_completed",
@@ -208,7 +211,7 @@ describe("createAgentLoopRuntime", () => {
 
     expect(requestLog.filter((entry) => entry.method === "resources/read")).toHaveLength(1);
     expect(requestLog.filter((entry) => entry.method === "tools/call")).toHaveLength(0);
-    expect(events.find((event) => event.type === "agent_observation_created")?.body).toContain(
+    expect(events.filter((event) => event.type === "agent_observation_created").at(-1)?.body).toContain(
       "Fixture selection data",
     );
     expect(events.map((event) => event.type)).toContain("evidence_created");
@@ -246,4 +249,180 @@ describe("createAgentLoopRuntime", () => {
     });
     expect(runtime.getSnapshot().tasksById[record.id].state).toBe("completed");
   });
+
+  describe("approval decision integration", () => {
+    function getStepIdFromApprovalRequired(events: import("@uagent/shared").TaskEvent[]): string | null {
+      const ev = events.find((e) => e.type === "approval_required");
+      const payload = ev?.payload as Record<string, unknown> | undefined;
+      return (payload?.stepId as string) ?? null;
+    }
+
+    function makeApprovalDraft(input: string, permissionMode: "request_approval" | "auto" = "request_approval"): TaskDraft {
+      return { ...baseDraft, input, permissionMode };
+    }
+
+    it("enters awaiting_approval state when a step requires approval", async () => {
+      const clock = deterministicClock();
+      const gate = createApprovalGate(clock);
+      const runtime = createAgentLoopRuntime({
+        clock,
+        clockStart: 1000,
+        approvalGate: gate,
+        actionSelector: (step) => {
+          if (step.kind === "read_context" || step.kind === "policy_review") {
+            return {
+              type: "blocked" as const,
+              stepId: step.id,
+              toolName: "test.medium_write",
+              reason: "Medium write blocked action for approval test",
+              riskLevel: "medium_write" as const,
+            };
+          }
+          return {
+            type: "mock_observation" as const,
+            stepId: step.id,
+            reason: "Default mock observation",
+          };
+        },
+      });
+
+      const record = await runtime.submitTask(makeApprovalDraft("write test file"));
+      const snapshot = runtime.getSnapshot();
+      const events = snapshot.eventsByTaskId[record.id];
+
+      expect(snapshot.tasksById[record.id].state).toBe("awaiting_approval");
+      expect(events.map((e) => e.type)).toContain("approval_required");
+      expect(events.map((e) => e.type)).not.toContain("sandbox_started");
+      expect(events.map((e) => e.type)).not.toContain("change_set_created");
+    });
+
+    it("approved decision resumes execution through sandbox to completed", async () => {
+      const clock = deterministicClock();
+      const gate = createApprovalGate(clock);
+      const runtime = createAgentLoopRuntime({
+        clock,
+        clockStart: 1000,
+        approvalGate: gate,
+        actionSelector: (step) => {
+          if (step.kind === "read_context" || step.kind === "policy_review") {
+            return {
+              type: "blocked" as const,
+              stepId: step.id,
+              toolName: "test.medium_write",
+              reason: "Medium write blocked action for approval test",
+              riskLevel: "medium_write" as const,
+            };
+          }
+          return {
+            type: "mock_observation" as const,
+            stepId: step.id,
+            reason: "Default mock observation",
+          };
+        },
+      });
+
+      const record = await runtime.submitTask(makeApprovalDraft("write approved file"));
+      const snapshot0 = runtime.getSnapshot();
+      expect(snapshot0.tasksById[record.id].state).toBe("awaiting_approval");
+
+      const stepId = getStepIdFromApprovalRequired(snapshot0.eventsByTaskId[record.id]);
+      expect(stepId).not.toBeNull();
+
+      await runtime.submitApprovalDecision!(record.id, stepId!, "approved", "test", "Approved for test");
+      const snapshot1 = runtime.getSnapshot();
+      const events = snapshot1.eventsByTaskId[record.id];
+
+      expect(snapshot1.tasksById[record.id].state).toMatch(/completed|reviewing/);
+      expect(events.map((e) => e.type)).toContain("approval_approved");
+    });
+
+    it("denied decision terminates without sandbox or change events", async () => {
+      const clock = deterministicClock();
+      const gate = createApprovalGate(clock);
+      const runtime = createAgentLoopRuntime({
+        clock,
+        clockStart: 1000,
+        approvalGate: gate,
+        actionSelector: (step) => {
+          if (step.kind === "read_context" || step.kind === "policy_review") {
+            return {
+              type: "blocked" as const,
+              stepId: step.id,
+              toolName: "test.medium_write",
+              reason: "Medium write blocked action for approval test",
+              riskLevel: "medium_write" as const,
+            };
+          }
+          return {
+            type: "mock_observation" as const,
+            stepId: step.id,
+            reason: "Default mock observation",
+          };
+        },
+      });
+
+      const record = await runtime.submitTask(makeApprovalDraft("write denied file"));
+      const stepId = getStepIdFromApprovalRequired(runtime.getSnapshot().eventsByTaskId[record.id]);
+      expect(stepId).not.toBeNull();
+
+      await runtime.submitApprovalDecision!(record.id, stepId!, "denied", "test", "Denied for test");
+      const snapshot = runtime.getSnapshot();
+      const events = snapshot.eventsByTaskId[record.id];
+      const eventTypes = events.map((e) => e.type);
+
+      expect(snapshot.tasksById[record.id].state).toBe("failed");
+      expect(eventTypes).toContain("approval_denied");
+      expect(eventTypes).not.toContain("sandbox_started");
+      expect(eventTypes).not.toContain("change_set_created");
+    });
+
+    it("cancelled decision results in terminal cancelled state", async () => {
+      const clock = deterministicClock();
+      const gate = createApprovalGate(clock);
+      const runtime = createAgentLoopRuntime({
+        clock,
+        clockStart: 1000,
+        approvalGate: gate,
+        actionSelector: (step) => {
+          if (step.kind === "read_context" || step.kind === "policy_review") {
+            return {
+              type: "blocked" as const,
+              stepId: step.id,
+              toolName: "test.medium_write",
+              reason: "Medium write blocked action for approval test",
+              riskLevel: "medium_write" as const,
+            };
+          }
+          return {
+            type: "mock_observation" as const,
+            stepId: step.id,
+            reason: "Default mock observation",
+          };
+        },
+      });
+
+      const record = await runtime.submitTask(makeApprovalDraft("write cancelled file"));
+      const stepId = getStepIdFromApprovalRequired(runtime.getSnapshot().eventsByTaskId[record.id]);
+      expect(stepId).not.toBeNull();
+
+      await runtime.submitApprovalDecision!(record.id, stepId!, "cancelled", "user", "Cancelled");
+      const snapshot = runtime.getSnapshot();
+      const events = snapshot.eventsByTaskId[record.id];
+      const eventTypes = events.map((e) => e.type);
+
+      expect(snapshot.tasksById[record.id].state).toBe("cancelled");
+      expect(eventTypes).toContain("approval_cancelled");
+      const cancelCount = eventTypes.filter((t) => t === "task_cancelled").length;
+      expect(cancelCount).toBe(1);
+    });
+  });
 });
+
+function deterministicClock(): () => number {
+  let tick = 1;
+  return () => {
+    const t = tick;
+    tick += 1;
+    return t;
+  };
+}

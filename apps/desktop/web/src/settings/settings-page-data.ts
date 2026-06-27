@@ -214,6 +214,19 @@ export const configPageData: SettingsPageData = {
       ],
     },
     {
+      id: "audit-session",
+      title: "Audit and session history",
+      rows: [
+        {
+          id: "audit-session-retention",
+          label: "Retention policy",
+          description:
+            "Controls append-only audit projection and local session history retention.",
+          disabled: false,
+        },
+      ],
+    },
+    {
       id: "paths",
       title: "Configuration paths",
       rows: [

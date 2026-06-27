@@ -144,6 +144,13 @@ describe("SettingsShell", () => {
     expect(content?.getAttribute("data-settings-page")).toBe("config");
     expect(screen.getByText("Approval policy")).toBeTruthy();
     expect(screen.getByText("Sandbox permissions")).toBeTruthy();
+    expect(screen.getByText("Audit and session history")).toBeTruthy();
+    expect(screen.getByLabelText("Approval safety controls")).toBeTruthy();
+    expect(screen.getByText("Pause for approval")).toBeTruthy();
+    expect(screen.getByLabelText("Sandbox mode controls")).toBeTruthy();
+    expect(screen.getByText("Fixture only")).toBeTruthy();
+    expect(screen.getByLabelText("Audit and session controls")).toBeTruthy();
+    expect(screen.getByText("Redacted events only")).toBeTruthy();
   });
 
   it("switches to Personalization page on click and shows sections", () => {

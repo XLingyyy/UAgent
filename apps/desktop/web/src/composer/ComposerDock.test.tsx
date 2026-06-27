@@ -63,6 +63,8 @@ describe("ComposerDock", () => {
     expect(within(dock).getByText("Mock only")).toBeTruthy();
     expect(within(dock).getByText("Mode")).toBeTruthy();
     expect(within(dock).getByText("Local mode")).toBeTruthy();
+    expect(within(dock).getByText("Safety")).toBeTruthy();
+    expect(within(dock).getByText("Approval required / fixture ready")).toBeTruthy();
     expect(within(dock).getByText("Branch")).toBeTruthy();
     expect(within(dock).getByText("main")).toBeTruthy();
 

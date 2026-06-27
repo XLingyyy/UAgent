@@ -53,9 +53,7 @@ Status: complete
 - Mock observation fallback when MCP is disconnected or connected but not discovered
 - TaskEvent and RuntimeSnapshot display for plan, steps, observations, evidence, report, failures, blocked actions, and cancellation
 
-Status: current
-
-Out of scope for MVP3: real LLM/provider calls, API key reads, UE writes, mutating MCP tools, approval write flow, shell/browser/filesystem product behavior, new state management, new routing, or a new design system.
+Status: complete
 
 ## MVP4 - Provider Adapter Implementation / Real Provider Boundary
 
@@ -67,16 +65,22 @@ Out of scope for MVP3: real LLM/provider calls, API key reads, UE writes, mutati
 - ProviderSettings, Composer, Conversation, AgentTrace, RuntimePanel, DiagnosticsPanel secret-safe observability
 - MVP4 scenario matrix, manual smoke suite, side-effect scan hardening, and docs/mvp4-acceptance.md
 
-Status: current
-
-Out of scope for MVP4: default live provider network access, raw API keys in UI state/events/traces, UE write operations, mutating MCP tools, approval write flow, shell/browser/filesystem product behavior, new state management, new routing, or a new design system.
+Status: complete
 
 ## MVP5 - Workflow & Safety
 
-- Approval workflow for tool execution
-- Sandbox execution mode
-- Rollback / promote for workspace state
-- Audit log and session history
+- Risk classification and safety policy (ToolRiskLevel: read_only, low_risk, medium_write, high_write, destructive)
+- Approval workflow: policy/classifier, runtime approval gate with pause/resume, decision API, UI projection
+- Sandbox execution mode: SandboxPolicy, FixtureSandboxAdapter, runtime bridge, evidence mapping, UI projection
+- ChangeSet rollback/promote: shared contracts, reducer, fixture promote/rollback adapter, UI cards, audit mapping
+- Audit log and session history: AuditEvent projection, SessionSummary, replay/filter, secret redaction regression
+- UI integration: Composer readiness, conversation task cards, UtilityDrawer safety/audit/changes tabs, Settings safety controls, FeatureGate a11y
+- MVP5 scenario matrix: 20 named scenarios with 20+ assertions, secret redaction, provider boundary regression, MCP mutating blocked regression
+- Side-effect and secret scan: repeatable scan script, 0 blocked findings
+
+Status: current
+
+Out of scope for MVP5: default live provider network access, raw API keys in UI state/events/traces/audit/session, real UE write operations, real mutating MCP tools/call, product shell/browser/filesystem behavior, production-grade OS sandbox, new state management, new routing, or a new design system.
 
 ## Non-Goals
 

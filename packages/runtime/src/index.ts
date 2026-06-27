@@ -59,14 +59,50 @@ export { OpenAICompatibleAdapter, type OpenAICompatibleAdapterOptions } from "./
 export { createMcpReadOnlyRuntime, type McpReadOnlyRuntimeClient, type McpReadOnlyRuntimeOptions } from "./mcp-readonly-runtime.js";
 export { createProviderHttpTransport, type ProviderHttpRequest, type ProviderHttpResponse, type ProviderHttpTransport, type ProviderHttpTransportOptions } from "./provider/provider-http-transport.js";
 export { createRuntimeRouter, type RuntimeRouterOptions } from "./runtime-router.js";
+export { assessToolRiskLevel, evaluateApprovalPolicy } from "./approval-policy.js";
+export {
+  createApprovalGate,
+  type ApprovalGate,
+  type ApprovalGateState,
+  type ApprovalGateDecisionInput,
+  type ApprovalRequestInput,
+} from "./approval-gate.js";
 export { applyTaskEvent, reduceTaskEvents } from "./task-event-reducer.js";
+export { createChangeSet, applyChangeSetEvent, reduceChangeSetEvents, type CreateChangeSetInput } from "./change-set-reducer.js";
+export { createFixtureChangeSetAdapter, type FixtureChangeSetAdapter, type ChangeSetOperationResult } from "./fixture-changeset.js";
 export { InMemorySecretStore, type SecretStore } from "./secrets/secret-store.js";
 export { redactSecret, redactErrorMessage, createRedactedString } from "./secrets/redaction.js";
 export { createProviderFixtureScenario, type ProviderFixtureScenario } from "./provider/fixtures/index.js";
+export {
+  evaluateSandboxPolicy,
+  createFixtureSandboxPolicy,
+  DEFAULT_BLOCKED_CAPABILITIES,
+} from "./sandbox-policy.js";
+export {
+  createFixtureSandboxAdapter,
+  type FixtureSandboxAdapter,
+  type FixtureSandboxResult,
+  type FixtureResultMode,
+} from "./fixture-sandbox.js";
+export { emitSandboxEvent } from "./sandbox-bridge.js";
 export { AnthropicCompatibleAdapter, type AnthropicCompatibleAdapterOptions } from "./provider/anthropic-compatible-adapter.js";
 export { extractProviderTraceSummary, formatProviderTraceSummary, type ProviderTraceSummary } from "./provider/provider-trace.js";
 export { mapProviderRuntimeEvent, type ProviderEventMappingResult } from "./provider/provider-event-bridge.js";
 export { runProviderScenarioMatrix, type Mvp4ScenarioMatrixResult, type Mvp4ScenarioResult } from "./provider/mvp4-scenarios.js";
+
+export {
+  createAuditProjection,
+  buildAuditFromTaskEvents,
+  type AuditProjectionEngine,
+  type AuditQuery,
+} from "./audit-projection.js";
+export {
+  createSessionHistory,
+  type SessionHistoryEngine,
+  type TaskHistoryFilter,
+  type ReplayResult,
+} from "./session-history.js";
+export { runMvp5ScenarioMatrix, type Mvp5ScenarioMatrixResult, type Mvp5ScenarioResult } from "./mvp5-scenarios.js";
 
 export type AgentStatus = "idle" | "thinking" | "acting" | "waiting" | "finished" | "error";
 

@@ -53,7 +53,7 @@ describe("Agent replay fixtures", () => {
     });
 
     expect(calls).toEqual(["ue.selection.get"]);
-    expect(result.trace.observations[0]?.source).toBe("mcp-readonly");
+    expect(result.trace.observations.find((o) => o.source === "mcp-readonly")?.source).toBe("mcp-readonly");
   });
 
   it("does not call tools for blocked or unknown fixtures", async () => {

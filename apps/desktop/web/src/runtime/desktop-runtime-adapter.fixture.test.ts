@@ -68,11 +68,10 @@ describe("DesktopRuntimeAdapter MCP fixture integration", () => {
     await adapter.discoverMcp();
     const record = await adapter.submitTask(baseDraft);
     const events = adapter.getSnapshot().eventsByTaskId[record.id];
-    const observation = events.find((event) => event.type === "agent_observation_created");
 
     expect(scenario.findRequests("resources/read")).toHaveLength(1);
     expect(scenario.findRequests("resources/read")[0]?.headers?.["Mcp-Session-Id"]).toBe("desktop-session");
-    expect(observation?.body).toContain("Fixture StaticMeshActor");
+    expect(events.filter((event) => event.type === "agent_observation_created").at(-1)?.body).toContain("Fixture StaticMeshActor");
     expect(events.map((event) => event.type)).toContain("agent_report_created");
     expect(adapter.getSnapshot().tasksById[record.id].state).toBe("completed");
   });
@@ -98,7 +97,7 @@ describe("DesktopRuntimeAdapter MCP fixture integration", () => {
     expect(scenario.findRequests("tools/call")).toHaveLength(1);
     expect(scenario.findRequests("tools/call")[0]?.params).toEqual({ name: "ue.selection.get", arguments: {} });
     expect(events.map((event) => event.type)).toContain("mcp_read_completed");
-    expect(events.find((event) => event.type === "agent_observation_created")?.body).toContain("Tool fixture selection");
+    expect(events.filter((event) => event.type === "agent_observation_created").at(-1)?.body).toContain("Tool fixture selection");
     expect(adapter.getSnapshot().tasksById[record.id].state).toBe("completed");
   });
 
@@ -153,7 +152,7 @@ describe("DesktopRuntimeAdapter MCP fixture integration", () => {
     const events = adapter.getSnapshot().eventsByTaskId[record.id];
 
     expect(scenario.findRequests("resources/read")).toHaveLength(1);
-    expect(events.find((event) => event.type === "agent_observation_created")?.body).toContain("Legacy fixture selection");
+    expect(events.filter((event) => event.type === "agent_observation_created").at(-1)?.body).toContain("Legacy fixture selection");
     expect(events.map((event) => event.type)).toContain("agent_report_created");
     expect(adapter.getSnapshot().tasksById[record.id].state).toBe("completed");
   });

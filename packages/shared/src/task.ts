@@ -46,9 +46,30 @@ export type TaskEventType =
   | "provider_stream_delta"
   | "provider_stream_completed"
   | "provider_request_completed"
-  | "provider_request_failed"
-  | "provider_request_cancelled"
-  | "provider_usage_recorded";
+   | "provider_request_failed"
+   | "provider_request_cancelled"
+   | "provider_usage_recorded"
+   | "approval_required"
+   | "approval_approved"
+   | "approval_denied"
+   | "approval_cancelled"
+   | "approval_timed_out"
+   | "sandbox_started"
+   | "sandbox_completed"
+   | "sandbox_failed"
+   | "sandbox_blocked"
+   | "sandbox_timed_out"
+   | "change_set_created"
+   | "change_set_previewed"
+   | "change_set_applied"
+   | "change_set_promoted"
+   | "change_set_rolled_back"
+   | "change_set_discarded"
+   | "session_started"
+   | "session_resumed"
+   | "session_archived"
+   | "session_replayed"
+   | "audit_event_recorded";
 
 export type TaskEventLevel = "info" | "success" | "warning" | "error";
 

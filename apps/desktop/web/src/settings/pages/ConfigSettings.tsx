@@ -11,6 +11,7 @@ export function ConfigSettings() {
           {section.id === "mcp" && <McpConnectionDisplay />}
           {section.id === "approval" && <ApprovalDisplay />}
           {section.id === "sandbox" && <SandboxDisplay />}
+          {section.id === "audit-session" && <AuditSessionDisplay />}
           {section.id === "paths" && <ConfigPathDisplay />}
           {section.id === "diagnostics" && <DiagnosticsDisplay />}
           {section.id === "danger-zone" && <ResetWorkspaceDisplay />}
@@ -116,12 +117,35 @@ function McpConnectionDisplay() {
 }
 
 function ApprovalDisplay() {
-  return <span className="ua-settings-page__static-value">Always ask</span>;
+  return (
+    <div className="ua-settings-page__static-stack" aria-label="Approval safety controls">
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Default policy</span>
+        <span className="ua-settings-page__static-value">Request approval</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Read-only</span>
+        <span className="ua-settings-page__static-value">Allow</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Medium/high write</span>
+        <span className="ua-settings-page__static-value">Pause for approval</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Destructive</span>
+        <span className="ua-settings-page__static-value ua-settings-page__static-value--staged">Blocked</span>
+      </div>
+    </div>
+  );
 }
 
 function SandboxDisplay() {
   return (
-    <div className="ua-settings-page__static-stack">
+    <div className="ua-settings-page__static-stack" aria-label="Sandbox mode controls">
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Mode</span>
+        <span className="ua-settings-page__static-value">Fixture only</span>
+      </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">File system</span>
         <span className="ua-settings-page__static-value ua-settings-page__static-value--staged">Staged · not yet enabled</span>
@@ -133,6 +157,25 @@ function SandboxDisplay() {
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Network</span>
         <span className="ua-settings-page__static-value ua-settings-page__static-value--staged">Staged · not yet enabled</span>
+      </div>
+    </div>
+  );
+}
+
+function AuditSessionDisplay() {
+  return (
+    <div className="ua-settings-page__static-stack" aria-label="Audit and session controls">
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Audit log</span>
+        <span className="ua-settings-page__static-value">Append-only projection</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Retention</span>
+        <span className="ua-settings-page__static-value">Local session history</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Replay</span>
+        <span className="ua-settings-page__static-value">Redacted events only</span>
       </div>
     </div>
   );
