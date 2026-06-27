@@ -124,6 +124,13 @@ export function extractRuntimeDiagnostics(events: TaskEvent[]): TaskEvent[] {
   );
 }
 
+export function extractProviderStreamText(events: TaskEvent[]): string {
+  return events
+    .filter((event) => event.type === "provider_stream_delta")
+    .map((event) => event.body ?? "")
+    .join("");
+}
+
 export function extractRuntimeEvidence(events: TaskEvent[]): TaskEvent[] {
   return events.filter(
     (event) =>

@@ -265,7 +265,7 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
       providerStore.setState((previousState) =>
         previousState.selectedProviderId === providerId
           ? previousState
-          : { ...previousState, selectedProviderId: providerId },
+          : { ...previousState, selectedProviderId: providerId, testStatus: "idle" },
       ),
     saveProvider: (nextProviderConfig: ProviderConfig) => {
       const previousProviderState = providerStore.getState();
@@ -285,6 +285,7 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
         ...previousProviderState,
         providers,
         selectedProviderId: nextProvider.providerId,
+        testStatus: "idle",
       };
 
       providerStore.setState(nextProviderState);
@@ -297,6 +298,7 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
       );
       const fallbackId = providers[0]?.providerId ?? null;
       const nextProviderState: ProviderState = {
+        ...previousProviderState,
         providers,
         selectedProviderId:
           previousProviderState.selectedProviderId === providerId
@@ -306,6 +308,7 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
           previousProviderState.defaultProviderId === providerId
             ? null
             : previousProviderState.defaultProviderId,
+        testStatus: "idle",
       };
 
       providerStore.setState(nextProviderState);
@@ -325,6 +328,10 @@ function createUIStateBundle(initialState?: UIInitialState): UIStoreBundle {
       providerStore.setState(nextProviderState);
       syncComposerSelection(previousProviderState, nextProviderState);
     },
+    setProviderTestStatus: (status) =>
+      providerStore.setState((previousState) =>
+        previousState.testStatus === status ? previousState : { ...previousState, testStatus: status },
+      ),
   };
 
   return {

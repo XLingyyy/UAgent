@@ -162,6 +162,12 @@
   text-overflow: ellipsis;
 }
 
+.ua-model-selector__item-warning {
+  color: var(--ua-color-text-warning);
+  font-size: 0.75em;
+  margin-left: 0.25em;
+}
+
 .ua-model-selector__section-divider {
   height: 1px;
   margin: var(--ua-space-1) var(--ua-space-2);

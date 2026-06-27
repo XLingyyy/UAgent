@@ -58,6 +58,9 @@ export function DiagnosticsPanel() {
                 </span>
               </div>
               <p className="ua-diagnostics-item__description">{event.body}</p>
+              {event.type === "provider_request_failed" && event.payload && typeof event.payload === "object" && "code" in event.payload ? (
+                <span className="ua-diagnostics-item__code">Error code: {String((event.payload as Record<string, unknown>).code)}</span>
+              ) : null}
             </div>
           ))}
         </div>

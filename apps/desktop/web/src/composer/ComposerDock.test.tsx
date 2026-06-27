@@ -210,7 +210,7 @@ describe("ComposerDock", () => {
         baseUrl: "https://mock.studio.local/v1",
         wireApi: "responses",
         authMode: "env_key",
-        envKey: "STUDIO_KEY",
+        secretRef: "STUDIO_KEY",
         enabled: true,
         models: [
           {
@@ -259,7 +259,7 @@ describe("ComposerDock", () => {
         baseUrl: "https://mock.studio.local/v1",
         wireApi: "responses",
         authMode: "env_key",
-        envKey: "STUDIO_KEY",
+        secretRef: "STUDIO_KEY",
         enabled: true,
         models: [
           {

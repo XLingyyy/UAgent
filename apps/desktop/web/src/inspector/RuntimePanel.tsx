@@ -56,6 +56,11 @@ export function RuntimePanel() {
   const observations = events.filter((event) => event.type === "agent_observation_created").length;
   const evidence = events.filter((event) => event.type === "evidence_created").length;
   const blocked = events.filter((event) => event.type === "mcp_tool_blocked").length;
+  const providerRequests = events.filter((event) => event.type === "provider_request_started").length;
+  const providerChunks = events.filter((event) => event.type === "provider_stream_delta").length;
+  const providerFailures = events.filter(
+    (event) => event.type === "provider_request_failed" || event.type === "provider_request_cancelled"
+  ).length;
 
   return (
     <section className="ua-utility-placeholder" aria-label="Runtime panel">
@@ -88,6 +93,15 @@ export function RuntimePanel() {
         <li className="ua-utility-placeholder__item">Evidence: {evidence}</li>
         <li className="ua-utility-placeholder__item">Blocked: {blocked}</li>
         <li className="ua-utility-placeholder__item">
+          Provider requests: {providerRequests}
+        </li>
+        <li className="ua-utility-placeholder__item">
+          Provider stream chunks: {providerChunks}
+        </li>
+        <li className="ua-utility-placeholder__item">
+          Provider failures: {providerFailures}
+        </li>
+        <li className="ua-utility-placeholder__item">
           {runtime?.mockOnlyWarning ?? "Mock runtime / no provider call"}
         </li>
         <li className="ua-utility-placeholder__item">
@@ -104,6 +118,18 @@ export function RuntimePanel() {
             {event.title}
           </li>
         ))}
+        {providerChunks > 0 && (() => {
+          const streamText = events
+            .filter((e) => e.type === "provider_stream_delta")
+            .slice(-5)
+            .map((e) => e.body)
+            .join("");
+          return (
+            <li className="ua-utility-placeholder__item ua-utility-placeholder__item--preview">
+              Stream preview: {streamText.slice(0, 100)}{streamText.length > 100 ? "..." : ""}
+            </li>
+          );
+        })()}
       </ul>
 
       <button

@@ -1,4 +1,4 @@
-import type { ProviderConfig, ProviderState } from "./provider";
+import type { ProviderConfig, ProviderState, ProviderTestStatus } from "./provider";
 import type { RuntimeStoreActions, RuntimeStoreState } from "../runtime/runtime-store";
 import type {
   ComposerContextUsage,
@@ -192,6 +192,7 @@ export interface ProviderStoreActions {
   saveProvider: (provider: ProviderConfig) => void;
   deleteProvider: (providerId: string) => void;
   setDefaultProvider: (providerId: string | null) => void;
+  setProviderTestStatus: (status: ProviderTestStatus) => void;
 }
 
 /** Context value exposed by the UI provider. */

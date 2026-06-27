@@ -2,7 +2,7 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows — starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP3 Agent Core / Runtime Planning Loop
+## Current Stage: MVP4 Provider Adapter Implementation / Real Provider Boundary
 
 The MVP2 read-only MCP runtime remains the transport baseline. Composer input still creates a `TaskDraft` and submits through `RuntimeClient.submitTask()`, but MVP3 routes that draft through a deterministic Agent Core loop: plan, select a guarded read-only action, observe, record evidence, report, and expose every state transition through `TaskEvent` and `RuntimeSnapshot`.
 
@@ -56,9 +56,11 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 
 ## Non-Goals (current stage)
 
+- Default live provider network access (must be opt-in)
 - Real Unreal Engine writes or Editor launch
 - Mutating MCP tool calls
-- Real LLM API calls or provider integration
+- Shell/browser/filesystem product behavior
+- Approval write flow
 - Cloud deployment, auth, or remote services
 - Forking or embedding Codex/Claude Code/Cursor/Aider
 - Production-level sandboxing, approval workflow, or promote/rollback

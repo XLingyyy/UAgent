@@ -77,6 +77,9 @@ export interface ComposerModelOption {
   provider: string;
   contextWindow: string;
   enabled: boolean;
+  networkMode?: string;
+  hasSecret?: boolean;
+  isFixture?: boolean;
 }
 
 export interface ComposerReasoningOption {
@@ -99,6 +102,9 @@ export function createComposerModelOptions(providers: ProviderConfig[]): Compose
       provider: "None",
       contextWindow: "N/A",
       enabled: true,
+      networkMode: "none",
+      hasSecret: false,
+      isFixture: true,
     },
   ];
 
@@ -113,11 +119,23 @@ export function createComposerModelOptions(providers: ProviderConfig[]): Compose
         provider: provider.displayName,
         contextWindow: formatContextWindow(model.contextWindow),
         enabled: true,
+        networkMode: provider.networkMode ?? "disabled",
+        hasSecret: provider.networkMode === "live" ? (provider.secretRef ? true : false) : false,
+        isFixture: provider.networkMode !== "live",
       });
     });
   });
 
   return options;
+}
+
+export function getNetworkModeLabel(networkMode: string): string {
+  switch (networkMode) {
+    case "live": return "Live";
+    case "fixture": return "Fixture";
+    case "disabled": return "Disabled";
+    default: return "Mock";
+  }
 }
 
 export function getDefaultModelSelection(

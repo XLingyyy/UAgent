@@ -295,9 +295,9 @@ describe("ModelSelector", () => {
       name: "Model and reasoning settings",
     });
 
-    const context200k = within(dropdown).getAllByText("Context window: 200k tokens");
+    const context200k = within(dropdown).getAllByText("Context: 200k · Disabled");
     expect(context200k.length).toBe(2);
-    expect(within(dropdown).getByText("Context window: 64k tokens")).toBeTruthy();
+    expect(within(dropdown).getByText("Context: 64k · Disabled")).toBeTruthy();
     expect(within(dropdown).getByText("No model selected")).toBeTruthy();
   });
 

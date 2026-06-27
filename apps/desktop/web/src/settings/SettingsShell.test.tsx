@@ -207,9 +207,12 @@ describe("SettingsShell", () => {
     ).toBeTruthy();
     fireEvent.click(within(sidebar).getByText("Provider"));
     expect(
-      screen.getByText(/Provider values live in memory only. No provider connection is tested./, {
-        exact: false,
-      }),
+      screen.getByText(
+        /Provider config is secret-safe: no raw API keys stored. Network mode controls transport behavior./,
+        {
+          exact: false,
+        },
+      ),
     ).toBeTruthy();
   });
 
@@ -248,7 +251,7 @@ describe("SettingsShell", () => {
     expect(memoryRows.length).toBe(2);
   });
 
-  it("shows Provider add/edit/delete actions and a disabled test connection placeholder", () => {
+  it("shows Provider add/edit/delete actions and a fixture test connection button", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
     fireEvent.click(within(sidebar).getByText("Provider"));
@@ -265,9 +268,9 @@ describe("SettingsShell", () => {
     expect(deleteBtn).toBeTruthy();
     expect(deleteBtn.disabled).toBe(false);
     const testBtn = allButtons.find(
-      (b) => b.textContent === "Test connection",
+      (b) => b.textContent === "Test connection (fixture)",
     ) as HTMLButtonElement;
     expect(testBtn).toBeTruthy();
-    expect(testBtn.disabled).toBe(true);
+    expect(testBtn.disabled).toBe(false);
   });
 });

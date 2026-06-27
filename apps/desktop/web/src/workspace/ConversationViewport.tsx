@@ -1,6 +1,9 @@
 import { ConversationMessage } from "./ConversationMessage";
 import { workspaceMessages, type WorkspaceMessage } from "./workspace-data";
-import { mapTaskEventToWorkspaceMessage } from "../runtime/event-view-models";
+import {
+  mapTaskEventToWorkspaceMessage,
+  extractProviderStreamText,
+} from "../runtime/event-view-models";
 import { useRuntimeStore, useThreadStore } from "../stores/ui-store";
 import "./ConversationViewport.css";
 
@@ -20,6 +23,7 @@ export function ConversationViewport({ messages = workspaceMessages }: Conversat
     activeThreadId ? (state.eventsByTaskId[activeThreadId] ?? null) : null,
   );
   const runtimeMessages = runtimeEvents?.map(mapTaskEventToWorkspaceMessage);
+  const providerStreamText = runtimeEvents ? extractProviderStreamText(runtimeEvents) : null;
   const visibleMessages = runtimeMessages && runtimeMessages.length > 0 ? runtimeMessages : messages;
   const mcpStatus = useRuntimeStore((state) => state.mcp.status);
   const mcpCapabilities = useRuntimeStore((state) => state.mcp.capabilities);
@@ -30,7 +34,7 @@ export function ConversationViewport({ messages = workspaceMessages }: Conversat
         <div>
           <h2 className="ua-conversation-viewport__title">Conversation</h2>
           <p className="ua-conversation-viewport__subtitle">
-            Requests, plans, MCP read-only events, evidence, and review summaries.
+            Requests, plans, MCP read-only events, provider streaming, evidence, and review summaries.
           </p>
         </div>
         <span className="ua-conversation-viewport__badge">
@@ -42,6 +46,12 @@ export function ConversationViewport({ messages = workspaceMessages }: Conversat
           <ConversationMessage key={message.id} message={message} />
         ))}
       </div>
+      {providerStreamText && providerStreamText.length > 0 && (
+        <div className="ua-conversation-viewport__provider-stream">
+          <span className="ua-conversation-viewport__stream-label">Provider stream</span>
+          <p className="ua-conversation-viewport__stream-text">{providerStreamText}</p>
+        </div>
+      )}
     </section>
   );
 }

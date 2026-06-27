@@ -62,6 +62,7 @@ export interface TaskDraft {
   branch: string;
   contextPercent: number;
   providerStatus?: "configured" | "not_configured";
+  networkMode?: string;
   createdAt?: number;
 }
 

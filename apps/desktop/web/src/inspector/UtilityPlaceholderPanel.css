@@ -65,6 +65,15 @@
   margin: 0;
 }
 
+.ua-utility-placeholder__item--preview {
+  display: block;
+  font-family: var(--ua-font-mono);
+  font-size: var(--ua-font-size-xs);
+  line-height: var(--ua-line-height-relaxed);
+  color: var(--ua-text-muted);
+  word-break: break-word;
+}
+
 .ua-utility-placeholder__item {
   display: flex;
   align-items: flex-start;

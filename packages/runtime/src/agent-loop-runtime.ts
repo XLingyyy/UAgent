@@ -20,6 +20,9 @@ import { createEvidenceFromObservation, normalizeObservation, summarizePayload }
 import { DeterministicPlanner, type Planner } from "./agent-planner.js";
 import { createAgentReport } from "./agent-report.js";
 import { applyTaskEvent } from "./task-event-reducer.js";
+import { ProviderRuntimeBridge } from "./provider/provider-runtime-bridge.js";
+import { mapProviderRuntimeEvent } from "./provider/provider-event-bridge.js";
+import type { ProviderAdapter } from "./provider/provider-adapter.js";
 
 export interface AgentLoopOptions {
   planner?: Planner;
@@ -29,6 +32,8 @@ export interface AgentLoopOptions {
   readResource?: (uri: string) => Promise<unknown>;
   callTool?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   mockObserver?: (step: AgentPlanStep, draft: TaskDraft) => Promise<unknown>;
+  providerAdapter?: ProviderAdapter;
+  providerEnabled?: boolean;
   clock?: () => number;
   clockStart?: number;
 }
@@ -39,6 +44,8 @@ export interface AgentLoopContextUpdate {
   readResource?: ((uri: string) => Promise<unknown>) | undefined;
   callTool?: ((name: string, args: Record<string, unknown>) => Promise<unknown>) | undefined;
   mockObserver?: ((step: AgentPlanStep, draft: TaskDraft) => Promise<unknown>) | undefined;
+  providerAdapter?: ProviderAdapter | undefined;
+  providerEnabled?: boolean;
 }
 
 export interface AgentLoopRuntimeClient extends RuntimeClient {
@@ -57,6 +64,13 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
   const listeners = new Set<(nextSnapshot: RuntimeSnapshot) => void>();
   const planner = options.planner ?? new DeterministicPlanner({ clock: nextTime });
   const chooseAction = options.actionSelector ?? selectAction;
+  let providerBridge: ProviderRuntimeBridge | null = null;
+  if (options.providerAdapter) {
+    providerBridge = new ProviderRuntimeBridge({
+      adapter: options.providerAdapter,
+      enabled: options.providerEnabled ?? false,
+    });
+  }
 
   function nextTime(): number {
     if (options.clock) {
@@ -237,6 +251,37 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
       });
       emit(taskId, "agent_plan_created", "Agent plan created", plan.goal, "success", { plan });
 
+      if (providerBridge?.isEnabled()) {
+        emit(taskId, "provider_request_started", "Provider request", "Provider-assisted planning started.", "info");
+        try {
+          const providerResult = await providerBridge.execute(
+            {
+              system: "You are an AI assistant integrated into a development agent loop.",
+              developer: "Analyze the plan, user request, and provide concise analysis.",
+              context: [`Plan goal: ${plan.goal}`, `Plan steps: ${plan.steps.map((s) => s.title).join(", ")}`],
+              constraints: ["Only provide analysis. Do not execute tools or suggest actions."],
+              toolPolicy: ["Read-only analysis only."],
+              user: draft.input,
+              metadata: { providerId: options.providerAdapter?.id ?? "provider", providerModelId: "provider-model" },
+            },
+            normalizedDraft,
+            taskId,
+            plan.id,
+          );
+          for (const pEvent of providerResult.events) {
+            eventSequence += 1;
+            const mapping = mapProviderRuntimeEvent(pEvent, taskId, eventSequence);
+            for (const taskEvent of mapping.taskEvents) {
+              snapshot = applyTaskEvent(snapshot, taskEvent);
+              notify();
+            }
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          emit(taskId, "provider_request_failed", "Provider request failed", message, "error", { error: message });
+        }
+      }
+
       const evidenceRefs: string[] = [];
       const blockedActions: AgentAction[] = [];
       const observations: AgentObservation[] = [];
@@ -331,6 +376,23 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
     },
     updateContext(update: AgentLoopContextUpdate): void {
       Object.assign(options, update);
+      if (update.providerAdapter !== undefined) {
+        if (update.providerAdapter) {
+          providerBridge = new ProviderRuntimeBridge({
+            adapter: update.providerAdapter,
+            enabled: options.providerEnabled ?? false,
+          });
+        } else {
+          providerBridge = null;
+        }
+      }
+      if (update.providerEnabled !== undefined && providerBridge) {
+        if (update.providerEnabled) {
+          providerBridge.enable();
+        } else {
+          providerBridge.disable();
+        }
+      }
     },
     getSnapshot() {
       return snapshot;

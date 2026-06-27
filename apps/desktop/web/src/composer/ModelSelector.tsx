@@ -5,6 +5,7 @@ import {
   type ComposerReasoningEffort,
   type ComposerModelOption,
   type ComposerReasoningOption,
+  getNetworkModeLabel,
 } from "./composer-data";
 import "./ModelSelector.css";
 
@@ -210,8 +211,11 @@ export function ModelSelector({
                   </span>
                   <span className="ua-model-selector__item-desc">
                     {option.contextWindow !== "N/A"
-                      ? `Context window: ${option.contextWindow} tokens`
+                      ? `Context: ${option.contextWindow} · ${getNetworkModeLabel(option.networkMode ?? "mock")}`
                       : "No model selected"}
+                    {option.hasSecret === false && option.networkMode === "live" && (
+                      <span className="ua-model-selector__item-warning"> · No secret</span>
+                    )}
                   </span>
                 </span>
               </div>

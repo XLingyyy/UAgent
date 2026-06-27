@@ -92,7 +92,7 @@ export const DEFAULT_PROVIDERS: ProviderConfig[] = [
     baseUrl: "https://mock.provider-a.local/v1",
     wireApi: "responses",
     authMode: "env_key",
-    envKey: "PROVIDER_A_KEY",
+    secretRef: "PROVIDER_A_KEY",
     models: [
       createModel("openai-gpt-5", "GPT-5 Mock", 200000),
       createModel("anthropic-claude-sonnet", "Claude Sonnet Mock", 200000),
@@ -118,6 +118,7 @@ export const DEFAULT_PROVIDER_STATE: ProviderState = {
   providers: DEFAULT_PROVIDERS.map(cloneProviderConfig),
   selectedProviderId: DEFAULT_PROVIDERS[0]?.providerId ?? null,
   defaultProviderId: null,
+  testStatus: "idle",
 };
 
 export function createProviderDraft(nextIndex: number): ProviderConfig {
@@ -128,7 +129,7 @@ export function createProviderDraft(nextIndex: number): ProviderConfig {
     baseUrl: "http://127.0.0.1:11434/v1",
     wireApi: "openai_compatible",
     authMode: "env_key",
-    envKey: `LOCAL_PROVIDER_${nextIndex}_KEY`,
+    secretRef: `LOCAL_PROVIDER_${nextIndex}_KEY`,
     models,
     defaultModel: models[0]?.id,
     defaultReasoningEffort: models[0]?.reasoningEfforts?.[1] ?? "medium",

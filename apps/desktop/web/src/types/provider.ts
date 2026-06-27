@@ -1,8 +1,12 @@
+export type ProviderNetworkMode = "disabled" | "fixture" | "live";
+
 export type ProviderWireApi = "responses" | "chat_completions" | "anthropic" | "openai_compatible";
 
 export type ProviderAuthMode = "env_key" | "none";
 
 export type ProviderReasoningEffort = "low" | "medium" | "high" | "xhigh";
+
+export type ProviderTestStatus = "idle" | "success" | "failure";
 
 export interface ProviderModel {
   id: string;
@@ -18,15 +22,17 @@ export interface ProviderConfig {
   baseUrl: string;
   wireApi: ProviderWireApi;
   authMode: ProviderAuthMode;
-  envKey?: string;
+  secretRef?: string;
   models: ProviderModel[];
   defaultModel?: string;
   defaultReasoningEffort?: ProviderReasoningEffort;
   enabled: boolean;
+  networkMode?: ProviderNetworkMode;
 }
 
 export interface ProviderState {
   providers: ProviderConfig[];
   selectedProviderId: string | null;
   defaultProviderId: string | null;
+  testStatus: ProviderTestStatus;
 }

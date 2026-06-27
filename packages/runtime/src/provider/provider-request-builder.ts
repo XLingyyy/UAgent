@@ -9,6 +9,7 @@ export interface BuildProviderRuntimeRequestInput {
   idFactory?: () => string;
   temperature?: number;
   maxOutputTokens?: number;
+  networkMode?: string;
 }
 
 export function buildProviderRuntimeRequest(
@@ -29,6 +30,7 @@ export function buildProviderRuntimeRequest(
       taskId: input.taskId,
       planId: input.planId,
       traceId: input.traceId,
+      ...(input.networkMode ? { networkMode: input.networkMode } : {}),
     },
   };
 }

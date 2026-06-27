@@ -24,7 +24,7 @@ const customProviders: ProviderConfig[] = [
     baseUrl: "https://mock.provider-a.local/v1",
     wireApi: "responses",
     authMode: "env_key",
-    envKey: "PROVIDER_A_KEY",
+    secretRef: "PROVIDER_A_KEY",
     enabled: true,
     models: [
       {
@@ -78,6 +78,7 @@ function SliceProbe() {
   const composerReasoning = useComposerStore((state) => state.reasoningEffort);
   const selectedProviderId = useProviderStore((state) => state.selectedProviderId ?? "null");
   const defaultProviderId = useProviderStore((state) => state.defaultProviderId ?? "null");
+  const providerTestStatus = useProviderStore((state) => state.testStatus);
 
   const layoutActions = useLayoutActions();
   const settingsActions = useSettingsActions();
@@ -99,6 +100,7 @@ function SliceProbe() {
       <span data-testid="composer-reasoning">{composerReasoning}</span>
       <span data-testid="selected-provider">{selectedProviderId}</span>
       <span data-testid="default-provider">{defaultProviderId}</span>
+      <span data-testid="provider-test-status">{providerTestStatus}</span>
 
       <button type="button" onClick={layoutActions.toggleInspector}>
         toggle inspector
@@ -142,6 +144,9 @@ function SliceProbe() {
       <button type="button" onClick={() => providerActions.deleteProvider("provider-b")}>
         delete provider b
       </button>
+      <button type="button" onClick={() => providerActions.setProviderTestStatus("success")}>
+        set provider test success
+      </button>
     </div>
   );
 }
@@ -177,6 +182,7 @@ describe("ui-store", () => {
     expect(screen.getByTestId("composer-reasoning").textContent).toBe("high");
     expect(screen.getByTestId("selected-provider").textContent).toBe("provider-a");
     expect(screen.getByTestId("default-provider").textContent).toBe("provider-a");
+    expect(screen.getByTestId("provider-test-status").textContent).toBe("idle");
   });
 
   it("updates each domain through its dedicated slice actions", () => {
@@ -219,5 +225,14 @@ describe("ui-store", () => {
     expect(screen.getByTestId("default-provider").textContent).toBe("null");
     expect(screen.getByTestId("composer-model").textContent).toBe("not-configured");
     expect(screen.getByTestId("composer-reasoning").textContent).toBe("medium");
+  });
+
+  it("tracks provider fixture test status without changing provider config", () => {
+    renderSliceProbe();
+
+    fireEvent.click(screen.getByText("set provider test success"));
+
+    expect(screen.getByTestId("provider-test-status").textContent).toBe("success");
+    expect(screen.getByTestId("selected-provider").textContent).toBe("provider-a");
   });
 });

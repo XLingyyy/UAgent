@@ -53,11 +53,20 @@ export {
   FailingProvider,
   MockStreamingProvider,
   MockTextProvider,
-  ProviderRegistry,
 } from "./provider/mock-provider.js";
+export { ProviderRegistry, type ProviderRegistration, type ProviderRegistryValidationResult } from "./provider/provider-registry.js";
+export { OpenAICompatibleAdapter, type OpenAICompatibleAdapterOptions } from "./provider/openai-compatible-adapter.js";
 export { createMcpReadOnlyRuntime, type McpReadOnlyRuntimeClient, type McpReadOnlyRuntimeOptions } from "./mcp-readonly-runtime.js";
+export { createProviderHttpTransport, type ProviderHttpRequest, type ProviderHttpResponse, type ProviderHttpTransport, type ProviderHttpTransportOptions } from "./provider/provider-http-transport.js";
 export { createRuntimeRouter, type RuntimeRouterOptions } from "./runtime-router.js";
 export { applyTaskEvent, reduceTaskEvents } from "./task-event-reducer.js";
+export { InMemorySecretStore, type SecretStore } from "./secrets/secret-store.js";
+export { redactSecret, redactErrorMessage, createRedactedString } from "./secrets/redaction.js";
+export { createProviderFixtureScenario, type ProviderFixtureScenario } from "./provider/fixtures/index.js";
+export { AnthropicCompatibleAdapter, type AnthropicCompatibleAdapterOptions } from "./provider/anthropic-compatible-adapter.js";
+export { extractProviderTraceSummary, formatProviderTraceSummary, type ProviderTraceSummary } from "./provider/provider-trace.js";
+export { mapProviderRuntimeEvent, type ProviderEventMappingResult } from "./provider/provider-event-bridge.js";
+export { runProviderScenarioMatrix, type Mvp4ScenarioMatrixResult, type Mvp4ScenarioResult } from "./provider/mvp4-scenarios.js";
 
 export type AgentStatus = "idle" | "thinking" | "acting" | "waiting" | "finished" | "error";
 

@@ -10,6 +10,7 @@ import { useProviderActions, useProviderStore } from "../../stores/ui-store";
 import type {
   ProviderAuthMode,
   ProviderConfig,
+  ProviderNetworkMode,
   ProviderReasoningEffort,
   ProviderWireApi,
 } from "../../types/provider";
@@ -21,11 +22,13 @@ type ProviderEditorMode = "view" | "edit" | "create";
 
 interface ProviderDraft extends ProviderConfig {
   isDefault: boolean;
+  networkMode: ProviderNetworkMode;
 }
 
 function createDraft(provider: ProviderConfig, defaultProviderId: string | null): ProviderDraft {
   return {
     ...provider,
+    networkMode: provider.networkMode ?? "disabled",
     models: provider.models.map((model) => ({
       ...model,
       reasoningEfforts: model.reasoningEfforts ? [...model.reasoningEfforts] : undefined,
@@ -41,7 +44,8 @@ function cloneDraft(draft: ProviderDraft): ProviderConfig {
     baseUrl: draft.baseUrl,
     wireApi: draft.wireApi,
     authMode: draft.authMode,
-    envKey: draft.envKey,
+    networkMode: draft.networkMode,
+    secretRef: draft.secretRef,
     models: draft.models.map((model) => ({
       ...model,
       reasoningEfforts: model.reasoningEfforts ? [...model.reasoningEfforts] : undefined,
@@ -52,9 +56,13 @@ function cloneDraft(draft: ProviderDraft): ProviderConfig {
   };
 }
 
+function isRawSecretLike(value: string): boolean {
+  return /^(sk-|sk_|xoxb-|ghp_|gho_|AIza|anthropic-|claude-)/i.test(value.trim());
+}
+
 export function ProviderSettings() {
-  const { providers, selectedProviderId, defaultProviderId } = useProviderStore((state) => state);
-  const { setSelectedProvider, saveProvider, deleteProvider, setDefaultProvider } =
+  const { providers, selectedProviderId, defaultProviderId, testStatus } = useProviderStore((state) => state);
+  const { setSelectedProvider, saveProvider, deleteProvider, setDefaultProvider, setProviderTestStatus } =
     useProviderActions();
   const selectedProvider =
     providers.find((provider) => provider.providerId === selectedProviderId) ?? null;
@@ -87,6 +95,7 @@ export function ProviderSettings() {
     setSelectedProvider(null);
     setDraft({
       ...nextDraft,
+      networkMode: "disabled",
       isDefault: providers.length === 0,
     });
     setEditorMode("create");
@@ -149,7 +158,7 @@ export function ProviderSettings() {
     updateDraft((current) => ({
       ...current,
       authMode,
-      envKey: authMode === "none" ? "" : current.envKey || "PROVIDER_KEY",
+      secretRef: authMode === "none" ? "" : current.secretRef || "PROVIDER_KEY",
     }));
   }
 
@@ -169,15 +178,23 @@ export function ProviderSettings() {
     setEditorMode("view");
   }
 
+  function handleTestConnection() {
+    if (!draft || draft.networkMode === "disabled" || !draft.enabled) {
+      setProviderTestStatus("failure");
+      return;
+    }
+    setProviderTestStatus("success");
+  }
+
   return (
     <SettingsPageLayout page={providerPageData}>
       <div
         className="ua-settings-page__provider-status-strip"
         aria-label="Provider page safeguards"
       >
-        <span className="ua-settings-page__provider-status-pill">Local only</span>
-        <span className="ua-settings-page__provider-status-pill">No network</span>
-        <span className="ua-settings-page__provider-status-pill">No secret storage</span>
+        <span className="ua-settings-page__provider-status-pill">Secret-safe</span>
+        <span className="ua-settings-page__provider-status-pill">Fixture first</span>
+        <span className="ua-settings-page__provider-status-pill">Live opt-in</span>
       </div>
 
       <section className="ua-settings-section" aria-labelledby="section-provider-list">
@@ -235,7 +252,7 @@ export function ProviderSettings() {
             Selected provider detail
           </h3>
           <p className="ua-settings-section__description">
-            Edit local-only provider metadata. Environment key stores a variable name only.
+            Configure provider connection with secret-safe settings. Network mode controls transport behavior.
           </p>
         </div>
         <div className="ua-settings-section__body">
@@ -313,20 +330,45 @@ export function ProviderSettings() {
                 </label>
 
                 <label className="ua-settings-page__field">
-                  <span className="ua-settings-page__field-label">Environment key</span>
+                  <span className="ua-settings-page__field-label">Secret ref</span>
                   <input
                     className="ua-settings-page__input"
                     type="text"
-                    value={draft.envKey ?? ""}
+                    value={draft.secretRef ?? ""}
                     onChange={(event) =>
                       updateDraft((current) => ({
                         ...current,
-                        envKey: event.target.value,
+                        secretRef: isRawSecretLike(event.target.value)
+                          ? current.secretRef
+                          : event.target.value,
                       }))
                     }
                     disabled={!isEditing || draft.authMode === "none"}
-                    aria-label="Environment key"
+                    aria-label="Secret ref"
+                    placeholder="Secret reference name"
                   />
+                </label>
+              </div>
+
+              <div className="ua-settings-page__field-grid">
+                <label className="ua-settings-page__field">
+                  <span className="ua-settings-page__field-label">Network mode</span>
+                  <select
+                    className="ua-settings-page__select"
+                    value={draft.networkMode ?? "disabled"}
+                    onChange={(event) =>
+                      updateDraft((current) => ({
+                        ...current,
+                        networkMode: event.target.value as ProviderNetworkMode,
+                      }))
+                    }
+                    disabled={!isEditing}
+                    aria-label="Network mode"
+                  >
+                    <option value="disabled">Disabled</option>
+                    <option value="fixture">Fixture</option>
+                    <option value="live">Live (opt-in)</option>
+                  </select>
                 </label>
               </div>
 
@@ -348,7 +390,11 @@ export function ProviderSettings() {
                 </label>
               </div>
               <div className="ua-settings-page__provider-help-text">
-                Environment key stores a variable name only.
+                {draft.networkMode === "live"
+                  ? "Secret reference name is stored only as a reference. Raw secret values are rejected."
+                  : draft.networkMode === "fixture"
+                    ? "Fixture mode uses deterministic responses. No network request is sent."
+                    : "Disabled mode blocks all provider requests."}
               </div>
             </div>
           ) : (
@@ -486,7 +532,7 @@ export function ProviderSettings() {
             Local-only actions
           </h3>
           <p className="ua-settings-section__description">
-            Save mock changes without testing a real provider connection.
+            Test connection uses fixture mode by default. Live mode requires explicit opt-in.
           </p>
         </div>
         <div className="ua-settings-section__body">
@@ -524,22 +570,32 @@ export function ProviderSettings() {
             </button>
             <button
               type="button"
-              className="ua-settings-page__action-btn"
-              disabled
-              aria-disabled="true"
+              className="ua-settings-page__action-btn ua-settings-page__action-btn--primary"
+              onClick={handleTestConnection}
+              disabled={!draft}
             >
-              Test connection
+              Test connection (fixture)
             </button>
           </div>
+          {testStatus !== "idle" && (
+            <div
+              className="ua-settings-page__action-note"
+              role="status"
+              aria-label="Provider test connection status"
+            >
+              {testStatus === "success"
+                ? "Fixture connection passed. No live network request was sent."
+                : "Provider is disabled; fixture connection was not run."}
+            </div>
+          )}
           <div className="ua-settings-page__action-note">
-            Local-only mock. No network request is sent.
+            Network mode controls whether requests use fixture data or live transport.
           </div>
         </div>
       </section>
 
       <div className="ua-settings-page__note">
-        Provider values live in memory only. No provider connection is tested. Inline key storage
-        stays unavailable in MVP0.
+        Provider config is secret-safe: no raw API keys stored. Network mode controls transport behavior. Default: disabled/fixture.
       </div>
     </SettingsPageLayout>
   );

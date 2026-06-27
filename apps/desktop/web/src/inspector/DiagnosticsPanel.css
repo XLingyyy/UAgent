@@ -86,3 +86,13 @@
   color: var(--ua-text-muted);
   word-break: break-word;
 }
+
+.ua-diagnostics-item__code {
+  font-size: var(--ua-font-size-xs);
+  font-family: var(--ua-font-mono);
+  color: var(--ua-danger);
+  padding: 1px var(--ua-space-1);
+  background: var(--ua-danger-subtle);
+  border-radius: var(--ua-radius-xs);
+  align-self: flex-start;
+}

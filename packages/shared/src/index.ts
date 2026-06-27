@@ -111,7 +111,10 @@ export { createEmptyRuntimeSnapshot } from "./runtime.js";
 export type { ApprovalRequest, ApprovalRequestState } from "./approval.js";
 export type {
   ProviderCapability,
+  ProviderConfig,
   ProviderMessageRole,
+  ProviderNetworkMode,
+  ProviderRedactedStatus,
   ProviderRuntimeErrorCode,
   ProviderRuntimeEvent,
   ProviderRuntimeError,
@@ -120,4 +123,6 @@ export type {
   ProviderRuntimeResponse,
   ProviderStreamChunk,
   ProviderUsage,
+  ProviderWireApi,
 } from "./provider-runtime.js";
+export { createDefaultProviderConfig, redactProviderConfig } from "./provider-runtime.js";

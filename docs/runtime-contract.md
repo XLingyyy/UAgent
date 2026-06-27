@@ -1,5 +1,7 @@
 # UAgent Runtime Contract
 
+> **This doc is being updated for MVP4 scope.** POST-MVP3 contract sections still describe the MVP3 baseline; MVP4 extends these contracts with secret-safe provider config, ProviderHttpTransport modes, fixture-first adapters, ProviderRuntimeEvent to TaskEvent bridge, and AgentLoop provider-assisted mode. See [MVP4 Acceptance](mvp4-acceptance.md) and [MVP4 Provider Plan](mvp4-provider-plan.md) for current scope.
+
 UAgent routes all task state through shared TypeScript types from `@uagent/shared`.
 
 ## Core Flow
@@ -182,18 +184,18 @@ The recorder must tolerate unknown or partial `TaskEvent.payload` values by skip
 
 The prompt builder assembles deterministic text envelopes from `TaskDraft`, `AgentPlan`, MCP discovery summaries, mock provider metadata, and read-only policy summaries. It does not import React, MCP transports, provider SDKs, `fetch`, environment variables, shell/browser/filesystem APIs, or secret storage.
 
-Provider runtime types and adapters are preparation for MVP4. POST-MVP3 includes only mock adapters:
+Provider runtime types and adapters are part of the current MVP4 scope. The MVP3 baseline included only mock adapters:
 
 - `MockTextProvider` returns a deterministic complete response.
 - `MockStreamingProvider` returns deterministic chunks.
 - `FailingProvider` returns a deterministic provider runtime error.
 - `ProviderRegistry` registers and selects adapters by id.
 
-No OpenAI, Anthropic, local model HTTP, API key, credential, Authorization header, or secret-handling path is implemented in POST-MVP3. Real provider adapters, secret handling, streaming UI, cancellation semantics, and model-specific error mapping belong to MVP4.
+OpenAI-compatible and Anthropic-compatible fixture-first adapters, secret-safe config via secretRef, disabled/fixture/live ProviderHttpTransport, and ProviderRuntimeEvent to TaskEvent bridge are implemented in MVP4. Real provider adapters with live network access require explicit opt-in; raw API keys must never appear in UI state, events, traces, or logs.
 
-### Provider Runtime v0.2 Mock-only Events
+### MVP4 Provider Runtime Events
 
-LONGRUN-002+003 defines provider runtime events for mock adapters:
+MVP4 defines provider runtime events for fixture-first and (opt-in) live adapters:
 
 1. `provider_request_started`
 2. `provider_stream_started`

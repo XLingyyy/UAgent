@@ -73,4 +73,25 @@ describe("buildProviderRuntimeRequest", () => {
     expect(request.id).toBe("provider-request-task-0002-agent-plan-task-0002");
     expect(request.metadata?.traceId).toBeUndefined();
   });
+
+  it("includes networkMode in metadata when provided", () => {
+    const request = buildProviderRuntimeRequest({
+      envelope,
+      taskId: "task-0001",
+      planId: "agent-plan-task-0001",
+      networkMode: "fixture",
+    });
+
+    expect(request.metadata?.networkMode).toBe("fixture");
+  });
+
+  it("does not include networkMode in metadata when not provided", () => {
+    const request = buildProviderRuntimeRequest({
+      envelope,
+      taskId: "task-0001",
+      planId: "agent-plan-task-0001",
+    });
+
+    expect(request.metadata?.networkMode).toBeUndefined();
+  });
 });

@@ -57,12 +57,19 @@ Status: current
 
 Out of scope for MVP3: real LLM/provider calls, API key reads, UE writes, mutating MCP tools, approval write flow, shell/browser/filesystem product behavior, new state management, new routing, or a new design system.
 
-## MVP4 - LLM Provider
+## MVP4 - Provider Adapter Implementation / Real Provider Boundary
 
-- Provider adapter interface for future OpenAI, Anthropic, and local providers
-- Streaming response handling
-- Token accounting and cost estimation
-- Model selection and fallback
+- Secret-safe Provider config model using secretRef and redacted state (no raw secrets in UI/state/event/trace)
+- Disabled / fixture / live opt-in network mode boundary (default and CI do not access real external providers)
+- OpenAI-compatible and Anthropic-compatible fixture-first adapter implementations with protocol matrix
+- ProviderRuntimeEvent to TaskEvent / AgentTrace / Conversation / Diagnostics / Evidence stable mapping
+- AgentLoop provider-assisted mode (default off, provider output never bypasses read-only tool policy)
+- ProviderSettings, Composer, Conversation, AgentTrace, RuntimePanel, DiagnosticsPanel secret-safe observability
+- MVP4 scenario matrix, manual smoke suite, side-effect scan hardening, and docs/mvp4-acceptance.md
+
+Status: current
+
+Out of scope for MVP4: default live provider network access, raw API keys in UI state/events/traces, UE write operations, mutating MCP tools, approval write flow, shell/browser/filesystem product behavior, new state management, new routing, or a new design system.
 
 ## MVP5 - Workflow & Safety
 
@@ -79,3 +86,4 @@ Out of scope for MVP3: real LLM/provider calls, API key reads, UE writes, mutati
 - Mobile or web-only client
 - Direct fork or embedding of Codex/Claude Code/Cursor/Aider
 - Real UE write execution, mutating MCP tools, approval write execution, or LLM/provider API calls during MVP3
+- Default live provider network access or raw API keys in UI state/events/traces during MVP4

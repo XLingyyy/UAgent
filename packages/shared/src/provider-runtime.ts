@@ -17,6 +17,7 @@ export interface ProviderRuntimeRequest {
     taskId?: string;
     planId?: string;
     traceId?: string;
+    networkMode?: string;
   };
 }
 
@@ -120,4 +121,54 @@ export interface ProviderCapability {
   supportsStreaming: boolean;
   supportsTools: boolean;
   isMock: boolean;
+}
+
+export type ProviderNetworkMode = "disabled" | "fixture" | "live";
+
+export type ProviderWireApi = "openai-compatible" | "anthropic-compatible" | "local-openai-compatible" | "mock";
+
+export interface ProviderConfig {
+  providerId: string;
+  displayName: string;
+  baseUrl: string;
+  wireApi: ProviderWireApi;
+  networkMode: ProviderNetworkMode;
+  secretRef: string | null;
+  models: string[];
+  defaultModel: string | null;
+  isFixture: boolean;
+}
+
+export interface ProviderRedactedStatus {
+  providerId: string;
+  displayName: string;
+  wireApi: ProviderWireApi;
+  networkMode: ProviderNetworkMode;
+  hasSecret: boolean;
+  isFixture: boolean;
+}
+
+export function redactProviderConfig(config: ProviderConfig): ProviderRedactedStatus {
+  return {
+    providerId: config.providerId,
+    displayName: config.displayName,
+    wireApi: config.wireApi,
+    networkMode: config.networkMode,
+    hasSecret: config.secretRef !== null,
+    isFixture: config.isFixture,
+  };
+}
+
+export function createDefaultProviderConfig(providerId: string): ProviderConfig {
+  return {
+    providerId,
+    displayName: providerId,
+    baseUrl: "",
+    wireApi: "mock",
+    networkMode: "disabled",
+    secretRef: null,
+    models: [],
+    defaultModel: null,
+    isFixture: true,
+  };
 }

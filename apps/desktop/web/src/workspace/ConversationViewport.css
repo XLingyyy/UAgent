@@ -46,3 +46,28 @@
   min-height: 0;
   overflow-y: auto;
 }
+
+.ua-conversation-viewport__provider-stream {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ua-space-1);
+  padding: var(--ua-space-2) var(--ua-space-4);
+  border-top: 1px solid var(--ua-border-subtle);
+  background: var(--ua-bg-elevated);
+}
+
+.ua-conversation-viewport__stream-label {
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-semibold);
+  color: var(--ua-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ua-conversation-viewport__stream-text {
+  font-size: var(--ua-font-size-xs);
+  line-height: var(--ua-line-height-relaxed);
+  color: var(--ua-text-muted);
+  word-break: break-word;
+  margin: 0;
+}

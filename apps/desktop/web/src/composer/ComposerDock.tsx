@@ -146,10 +146,19 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
           <span className="ua-composer__status-value ua-text-mono">{branch}</span>
         </span>
 
-        {providerStatus === "not_configured" && (
+        {providerStatus === "not_configured" ? (
           <span className="ua-composer__status-item ua-composer__status-item--warning">
             <span className="ua-composer__status-label">Model</span>
             <span className="ua-composer__status-value">Mock runtime / no provider call</span>
+          </span>
+        ) : (
+          <span className="ua-composer__status-item">
+            <span className="ua-composer__status-label">Provider</span>
+            <span className="ua-composer__status-value">
+              {selectedModelId !== "not-configured"
+                ? `Fixture / no network`
+                : "Not configured"}
+            </span>
           </span>
         )}
       </div>

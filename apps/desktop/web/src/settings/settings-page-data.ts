@@ -368,7 +368,7 @@ export const archivedChatsPageData: SettingsPageData = {
 export const providerPageData: SettingsPageData = {
   id: "provider",
   title: "Provider",
-  description: "Manage local mock provider defaults and model selection.",
+  description: "Manage provider connections, network modes, and secret-safe configuration.",
   sections: [
     {
       id: "provider-list",
@@ -379,7 +379,7 @@ export const providerPageData: SettingsPageData = {
     {
       id: "provider-detail",
       title: "Selected provider detail",
-      description: "Edit local-only provider metadata.",
+      description: "Configure provider connection with secret-safe settings.",
       rows: [
         {
           id: "basic-info",
