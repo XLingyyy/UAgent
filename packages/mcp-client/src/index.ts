@@ -64,7 +64,16 @@ export { McpSession, type McpInitializeResult, type McpSessionOptions } from "./
 export { createMcpFixtureScenario } from "./fixtures/mcp-fixture-engine.js";
 export { createStreamableHttpFixtureFetch } from "./fixtures/streamable-http-fixture.js";
 export { createLegacySseFixtureFetch } from "./fixtures/legacy-sse-fixture.js";
-export { createLongrunMcpScenarioCorpus } from "./fixtures/scenarios.js";
+export {
+  createLongrunMcpScenarioCorpus,
+  runLongrunMcpScenario,
+  runLongrunMcpScenarioMatrix,
+} from "./fixtures/scenarios.js";
+export type {
+  LongrunMcpScenarioResult,
+  LongrunMcpScenarioTerminalState,
+  NamedMcpFixtureScenario,
+} from "./fixtures/scenarios.js";
 export type {
   McpFixtureRequestLogEntry,
   McpFixtureRouteHandler,

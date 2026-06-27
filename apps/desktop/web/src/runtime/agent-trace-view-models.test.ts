@@ -66,6 +66,47 @@ describe("createAgentTraceViewModel", () => {
     ]);
     expect(model.rows.find((row) => row.label === "Provider request completed")?.tone).toBe("success");
   });
+
+  it("uses stable readable labels, details, and tones for provider stream lifecycle rows", () => {
+    const task = createTask("completed");
+    const events: TaskEvent[] = [
+      event("task_submitted", 1, "User request", "Stream provider response"),
+      event("provider_request_started", 2, "Provider request started", "mock-streaming / mock-model"),
+      event("provider_stream_started", 3, "Provider stream started", "request provider-request-1"),
+      event("provider_stream_delta", 4, "Provider stream delta", "delta: hello"),
+      event("provider_stream_completed", 5, "Provider stream completed", "hello world"),
+      event("provider_usage_recorded", 6, "Provider usage recorded", "input 3 / output 2 / total 5"),
+      event("provider_request_completed", 7, "Provider request completed", "finish: stop"),
+      event("task_completed", 8, "Task completed", "Agent loop completed."),
+    ];
+
+    const model = createAgentTraceViewModel(events, task);
+
+    expect(model.rows.find((row) => row.label === "Provider stream started")?.detail).toBe("request provider-request-1");
+    expect(model.rows.find((row) => row.label === "Provider stream delta")?.detail).toBe("delta: hello");
+    expect(model.rows.find((row) => row.label === "Provider stream completed")?.tone).toBe("success");
+    expect(model.rows.find((row) => row.label === "Provider usage recorded")?.tone).toBe("default");
+    expect(model.rows.find((row) => row.label === "Provider request completed")?.tone).toBe("success");
+  });
+
+  it("marks provider failures and cancellations without hiding partial stream rows", () => {
+    const task = createTask("failed");
+    const events: TaskEvent[] = [
+      event("task_submitted", 1, "User request", "Stream provider response"),
+      event("provider_request_started", 2, "Provider request started", "mock-streaming / mock-model"),
+      event("provider_stream_delta", 3, "Provider stream delta", "partial text"),
+      event("provider_request_failed", 4, "Provider request failed", "timeout"),
+      event("provider_request_cancelled", 5, "Provider request cancelled", "user cancelled"),
+      event("task_failed", 6, "Task failed", "timeout"),
+    ];
+
+    const model = createAgentTraceViewModel(events, task);
+
+    expect(model.rows.map((row) => row.label)).toContain("Provider stream delta");
+    expect(model.rows.find((row) => row.label === "Provider request failed")?.tone).toBe("error");
+    expect(model.rows.find((row) => row.label === "Provider request cancelled")?.tone).toBe("warning");
+    expect(model.rows.find((row) => row.label === "Provider stream delta")?.tone).toBe("default");
+  });
 });
 
 function createTask(state: TaskState): TaskRecord {

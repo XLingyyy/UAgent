@@ -77,6 +77,10 @@ describe("buildPromptEnvelope", () => {
         "resources/read is allowed after MCP discovery.",
         "Read-only MCP resources: ue://selection/current",
         "Read-only MCP tools: ue.selection.get",
+        "Blocked MCP tools: none",
+        "Unknown MCP tools: none",
+        "Blocked and mutating MCP tools must not execute.",
+        "Unknown MCP tools must not execute until explicitly classified.",
       ],
       metadata: {
         modelId: "mock-provider",
@@ -97,5 +101,40 @@ describe("buildPromptEnvelope", () => {
     expect(envelope.user).toBe("delete current selection");
     expect(envelope.constraints.join("\n")).toContain("UE write actions must not execute");
     expect(envelope.toolPolicy.join("\n")).toContain("Read-only MCP tools: ue.selection.get");
+  });
+
+  it("classifies read-only, blocked, and unknown discovered tools into separate policy groups", () => {
+    const mixedDiscovery: McpDiscoverySnapshot = {
+      tools: [
+        { name: "ue.selection.get", description: "Read current editor selection" },
+        { name: "ue.asset.delete", description: "Delete an asset" },
+        { name: "ue.magic.optimize", description: "Unclassified capability" },
+      ],
+      resources: [{ uri: "ue://selection/current", name: "Current selection" }],
+      prompts: [],
+      capabilitySummary: {
+        tools: 3,
+        resources: 1,
+        prompts: 0,
+        readOnlyTools: 1,
+        blockedTools: 1,
+      },
+      discoveredAt: 1_002,
+    };
+
+    const envelope = buildPromptEnvelope({
+      draft,
+      plan,
+      discovery: mixedDiscovery,
+    });
+    const policyText = envelope.toolPolicy.join("\n");
+
+    expect(envelope.toolPolicy).toContain("Read-only MCP tools: ue.selection.get");
+    expect(envelope.toolPolicy).toContain("Blocked MCP tools: ue.asset.delete");
+    expect(envelope.toolPolicy).toContain("Unknown MCP tools: ue.magic.optimize");
+    expect(policyText).toContain("Blocked and mutating MCP tools must not execute.");
+    expect(policyText).toContain("Unknown MCP tools must not execute until explicitly classified.");
+    expect(policyText).not.toContain("Read-only MCP tools: ue.selection.get, ue.asset.delete");
+    expect(policyText).not.toContain("Read-only MCP tools: ue.selection.get, ue.magic.optimize");
   });
 });

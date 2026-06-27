@@ -112,6 +112,6 @@ function toneForTraceEvent(type: string): AgentTraceRowViewModel["tone"] {
 function toneForProviderEvent(type: string): AgentTraceRowViewModel["tone"] {
   if (type === "provider_request_failed") return "error";
   if (type === "provider_request_cancelled") return "warning";
-  if (type === "provider_request_completed" || type === "provider_usage_recorded") return "success";
+  if (type === "provider_request_completed" || type === "provider_stream_completed") return "success";
   return "default";
 }

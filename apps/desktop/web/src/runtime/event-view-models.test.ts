@@ -51,4 +51,28 @@ describe("MVP3 Agent event view models", () => {
       "task_cancelled",
     ]);
   });
+
+  it("bridges provider events into diagnostics and evidence without over-classifying success events", () => {
+    const events = [
+      event("provider_request_started"),
+      event("provider_stream_started"),
+      event("provider_stream_delta"),
+      event("provider_stream_completed"),
+      event("provider_usage_recorded"),
+      event("provider_request_completed"),
+      event("provider_request_failed", "error"),
+      event("provider_request_cancelled", "warning"),
+    ];
+
+    expect(extractRuntimeDiagnostics(events).map((item) => item.type)).toEqual([
+      "provider_request_failed",
+      "provider_request_cancelled",
+    ]);
+    expect(extractRuntimeEvidence(events).map((item) => item.type)).toEqual([
+      "provider_stream_delta",
+      "provider_usage_recorded",
+    ]);
+    expect(mapTaskEventToWorkspaceMessage(event("provider_request_failed")).label).toBe("Provider failed");
+    expect(mapTaskEventToWorkspaceMessage(event("provider_usage_recorded")).kind).toBe("tool-event");
+  });
 });

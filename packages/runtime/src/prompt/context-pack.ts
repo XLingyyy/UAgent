@@ -1,4 +1,5 @@
 import type { AgentPlan, McpDiscoverySnapshot, TaskDraft } from "@uagent/shared";
+import { classifyMcpToolRisk } from "../mcp-readonly-policy.js";
 
 export interface PromptProviderMetadata {
   id: string;
@@ -34,11 +35,22 @@ export function buildToolPolicyPack(
   policySummary: string[] = [],
 ): string[] {
   const resourceUris = discovery?.resources.map((resource) => resource.uri) ?? [];
-  const toolNames = discovery?.tools.map((tool) => tool.name) ?? [];
+  const classifiedTools =
+    discovery?.tools.map((tool) => ({
+      name: tool.name,
+      risk: classifyMcpToolRisk(tool).level,
+    })) ?? [];
+  const readOnlyToolNames = classifiedTools.filter((tool) => tool.risk === "read_only").map((tool) => tool.name);
+  const blockedToolNames = classifiedTools.filter((tool) => tool.risk === "blocked").map((tool) => tool.name);
+  const unknownToolNames = classifiedTools.filter((tool) => tool.risk === "unknown").map((tool) => tool.name);
 
   return [
     ...policySummary,
     `Read-only MCP resources: ${resourceUris.length > 0 ? resourceUris.join(", ") : "none"}`,
-    `Read-only MCP tools: ${toolNames.length > 0 ? toolNames.join(", ") : "none"}`,
+    `Read-only MCP tools: ${readOnlyToolNames.length > 0 ? readOnlyToolNames.join(", ") : "none"}`,
+    `Blocked MCP tools: ${blockedToolNames.length > 0 ? blockedToolNames.join(", ") : "none"}`,
+    `Unknown MCP tools: ${unknownToolNames.length > 0 ? unknownToolNames.join(", ") : "none"}`,
+    "Blocked and mutating MCP tools must not execute.",
+    "Unknown MCP tools must not execute until explicitly classified.",
   ];
 }
