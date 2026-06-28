@@ -2,13 +2,13 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP7 Real Project Index & Capability Bridge
+## Current Stage: MVP8 Native Read-Only Filesystem Bridge
 
-MVP7 turns the MVP6 static project shell into a controlled, read-only Project Registry, Project Index, Asset Index, and Safe File Preview surface. It also introduces a unified Capability Bridge model for Files, Terminal, Browser, Screenshot, and Provider live readiness while preserving MVP5 approval, sandbox, ChangeSet, audit, session, provider, and secret-redaction boundaries.
+MVP8 turns the MVP7 static fixture-first project index into a controlled native read-only filesystem bridge and real project scan flow. The system can validate, trust, scan, index, and preview files from real local project directories selected by the user - all read-only, all audited, all redacted.
 
-The core runtime flow (`Composer -> TaskDraft -> RuntimeClient.submitTask() -> AgentLoopRuntime -> TaskEvent -> RuntimeSnapshot -> UI`) remains mock-first and fixture-first. Project indexing uses deterministic fixture data by default; any future native bridge stays explicit, read-only, allowlisted, auditable, replay-safe, and path/secret redacted.
+The core runtime flow (`Composer -> TaskDraft -> RuntimeClient.submitTask() -> AgentLoopRuntime -> TaskEvent -> RuntimeSnapshot -> UI`) remains unchanged. Real filesystem interactions go through a `NativeProjectAdapter` bridge layer, with fixture fallback in non-Tauri environments.
 
-MVP7 does not enable default live provider network, real UE writes, real shell execution, real browser automation, real screenshot capture, filesystem mutation, workspace mutation, or mutating MCP tools. Terminal, Browser, Screenshot, and Provider live behavior remains disabled, fixture-only, read-only, or manual opt-in depending on policy.
+MVP8 does not enable default live provider network, real UE writes, real shell execution, real browser automation, real screenshot capture, filesystem mutation, workspace mutation, or mutating MCP tools. All real capabilities remain gated behind Capability Bridge, policy, and explicit user trust actions.
 
 ## Technology Stack
 
@@ -22,8 +22,8 @@ MVP7 does not enable default live provider network, real UE writes, real shell e
 
 ```bash
 pnpm install
-pnpm --filter @uagent/desktop web:dev   # Start Vite dev server (browser preview)
-pnpm --filter @uagent/desktop dev        # Start Tauri native dev (requires Rust)
+pnpm --filter @uagent/desktop web:dev   # Start Vite dev server (browser preview, fixture fallback)
+pnpm --filter @uagent/desktop dev        # Start Tauri native dev (real FS bridge available, requires Rust)
 pnpm typecheck    # TypeScript checking
 pnpm lint         # Static analysis
 pnpm test         # Run test suite
@@ -87,6 +87,13 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 - [MVP7 Capability Bridge Plan](docs/mvp7-capability-bridge-plan.md)
 - [MVP7 Manual Smoke](docs/mvp7-manual-smoke.md)
 - [MVP8 Prep](docs/mvp8-prep.md)
+- [MVP8 Baseline Freeze](docs/mvp8-baseline-freeze.md)
+- [MVP8 Native FS Bridge Plan](docs/mvp8-native-fs-bridge-plan.md)
+- [MVP8 Real Project Scan Plan](docs/mvp8-real-project-scan-plan.md)
+- [MVP8 Acceptance](docs/mvp8-acceptance.md)
+- [MVP8 Manual Smoke](docs/mvp8-manual-smoke.md)
+- [MVP8 Risk Register](docs/mvp8-risk-register.md)
+- [MVP9 Prep](docs/mvp9-prep.md)
 - [Workflow Safety Plan](docs/workflow-safety-plan.md)
 - [Baseline Freeze](docs/mvp5-baseline-freeze.md)
 - [Development Guide](docs/development.md)

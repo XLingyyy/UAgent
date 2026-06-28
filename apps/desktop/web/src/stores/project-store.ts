@@ -12,6 +12,9 @@ export const DEFAULT_PROJECT_STATE: ProjectStoreState = {
   selectedAssetPath: null,
   preview: null,
   auditTrail: [],
+  nativeSource: "fixture",
+  capabilityStatus: [],
+  fsPolicy: null,
 };
 
 export function createInitialProjectState(initialState?: UIInitialState): ProjectStoreState {

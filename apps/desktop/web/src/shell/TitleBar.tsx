@@ -1,4 +1,4 @@
-import { useLayoutActions, useLayoutStore, useRuntimeStore } from "../stores/ui-store";
+import { useLayoutActions, useLayoutStore, useProjectStore, useRuntimeStore } from "../stores/ui-store";
 import "./TitleBar.css";
 
 export interface TitleBarProps {
@@ -16,6 +16,7 @@ export interface TitleBarProps {
 export function TitleBar({ title = "UAgent" }: TitleBarProps) {
   const inspectorOpen = useLayoutStore((state) => state.inspector.open);
   const mcpStatus = useRuntimeStore((state) => state.mcp.status);
+  const nativeSource = useProjectStore((state) => state.nativeSource);
   const { toggleInspector } = useLayoutActions();
   const toolsLabel = inspectorOpen ? "Close utility drawer" : "Open utility drawer";
 
@@ -40,7 +41,9 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
           </span>
           <span className="ua-titlebar__status-pill">Provider fixture</span>
           <span className="ua-titlebar__status-pill">No network</span>
-          <span className="ua-titlebar__status-pill">Read-only project index</span>
+          <span className="ua-titlebar__status-pill">
+            {nativeSource === "native" ? "Native FS: read-only" : nativeSource === "fixture" ? "Native FS: fixture" : "Native FS: offline"}
+          </span>
         </div>
         <button
           className="ua-titlebar__btn"

@@ -5,6 +5,7 @@ import type {
   ProjectProfile,
   ProjectRootValidationResult,
   SafeFilePreviewResult,
+  ReadOnlyFilesystemPolicy,
 } from "@uagent/shared";
 import type {
   ComposerContextUsage,
@@ -106,6 +107,9 @@ export interface ProjectStoreState {
   selectedAssetPath: string | null;
   preview: SafeFilePreviewResult | null;
   auditTrail: string[];
+  nativeSource: "fixture" | "native" | "unknown";
+  capabilityStatus: { kind: string; mode: string; status: string }[];
+  fsPolicy: ReadOnlyFilesystemPolicy | null;
 }
 
 /** Active thread selection state. */
@@ -205,12 +209,14 @@ export interface SettingsStoreActions {
 export interface ProjectStoreActions {
   setActiveProject: SetActiveProject;
   setProjectRootInput: (rootRef: string) => void;
-  validateProjectRoot: () => void;
-  trustProjectRoot: (projectId: string) => void;
-  scanProjectIndex: (projectId: string) => void;
-  cancelProjectScan: (projectId: string) => void;
+  validateProjectRoot: () => Promise<void>;
+  trustProjectRoot: (projectId: string) => Promise<void>;
+  scanProjectIndex: (projectId: string) => Promise<void>;
+  cancelProjectScan: (projectId: string) => Promise<void>;
   setAssetFilter: (filter: string) => void;
-  previewProjectFile: (rootRelativePath: string) => void;
+  previewProjectFile: (rootRelativePath: string) => Promise<void>;
+  refreshCapabilityStatus: () => void;
+  refreshFsPolicy: () => void;
 }
 
 export interface ThreadStoreActions {

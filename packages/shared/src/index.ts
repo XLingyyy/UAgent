@@ -113,6 +113,9 @@ export type {
   AssetIndexType,
   IndexLimitReason,
   IndexScanSummary,
+  NativeRootKind,
+  NativeRootTrustRecord,
+  PathErrorCode,
   ProjectDirectoryEntry,
   ProjectEngineInfo,
   ProjectFileEntry,
@@ -124,9 +127,12 @@ export type {
   ProjectRootRef,
   ProjectRootValidationResult,
   ProjectTrustState,
+  ReadOnlyFilesystemPolicy,
+  ScanProgressEvent,
 } from "./project.js";
 export {
   DEFAULT_PROJECT_IGNORES,
+  createDefaultReadOnlyFsPolicy,
   isInsideProjectRoot,
   isTextPreviewAllowed,
   normalizeProjectPath,

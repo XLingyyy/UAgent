@@ -111,9 +111,37 @@ Out of scope for MVP6: real UE project scanning, real filesystem reads/writes, t
 - MVP7 scenario matrix covers 50 named scenarios and 80+ behavior assertions while preserving MVP5/MVP6 regressions.
 - Side-effect scan includes project-index and capability-bridge categories with 0 blocked findings expected.
 
-Status: current
+Status: complete
 
 Out of scope for MVP7: real file writes, deletes, renames, mkdir, workspace mutation, true terminal execution, browser automation, screen capture, default live provider network, raw secrets or raw home paths in UI/runtime/audit/session, UE write pipelines, and mutating MCP calls.
+
+## MVP8 - Native Read-Only Filesystem Bridge
+
+- Shared contracts for `NativeProjectRoot`, `NativeRootTrustRecord`, `NativeRootRef`, `NativeRootKind`, and `ReadOnlyFilesystemPolicy`.
+- Tauri 2 native Rust commands for `validate_native_project_root`, `trust_native_project_root`, `scan_native_project_index`, `cancel_native_project_scan`, and `preview_native_project_file`.
+- `NativeProjectAdapter` bridge layer with fixture fallback in non-Tauri environments.
+- Real project scanner with deterministic breadth-first traversal, policy-constrained limits, file classification, and error handling.
+- Safe file preview with extension allowlist, binary detection, line/byte limits, and secret/home-path redaction.
+- Path redaction, root containment, symlink escape blocking, and dangerous root rejection at the bridge boundary.
+- Scan progress events streamed through the runtime event contract.
+- Capability Bridge Files mode extended with `native_read_only`; all write/exec/capture/browser capabilities remain blocked by default.
+- MVP8 scenario matrix and side-effect scan with 0 blocked findings expected.
+
+Status: current
+
+Out of scope for MVP8: real filesystem writes/deletes/renames/moves, terminal execution beyond proposals, browser automation, screenshot capture, UE Editor launch, default live provider network, automatic file watchers, incremental rescan, raw absolute path or raw secret leakage into UI/DOM/audit/tests.
+
+## MVP9 - Controlled Terminal, Browser/Screenshot Preview & Incremental Watching
+
+- **Controlled Terminal Dry-run & Approval-bound Execution**: Real command proposal with explicit user approval before execution. Sandbox-bounded shell execution for build commands and automation scripts.
+- **Browser/Screenshot Preview**: Local browser preview of HTML/UE output. Screenshot capture of UE Editor viewport. Both user-initiated, approval-gated, and read-only.
+- **Incremental File Watcher**: Watch project root for file changes and emit index update events. No automatic rescan; user-initiated diff-based update.
+- All new MVP9 capabilities pass through Capability Bridge policy gate.
+- Approval/Sandbox/Audit/Session/Redaction boundaries remain non-negotiable.
+- Provider live remains manual opt-in with secret management.
+- No automatic side effects without explicit user action.
+
+Status: planned
 
 ## Non-Goals
 

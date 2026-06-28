@@ -116,6 +116,15 @@ export {
   type ProjectRegistryService,
   type SafeFilePreviewer,
 } from "./mvp7-project-index.js";
+export {
+  createMvp8FixtureProjectRegistry,
+  createMvp8ProjectIndexer,
+  createMvp8SafeFilePreviewer,
+  createMvp8CapabilityBridge,
+  runMvp8ScenarioMatrix,
+  type Mvp8ScenarioMatrixResult,
+  type Mvp8ScenarioResult,
+} from "./mvp8-project-index.js";
 
 export type AgentStatus = "idle" | "thinking" | "acting" | "waiting" | "finished" | "error";
 

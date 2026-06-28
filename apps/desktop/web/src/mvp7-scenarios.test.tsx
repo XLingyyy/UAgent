@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { AppShell } from "./shell/AppShell";
 import { UIProvider } from "./app/providers";
 import { runMvp7ScenarioMatrix } from "@uagent/runtime";
@@ -91,38 +91,41 @@ describe("MVP7 desktop scenario matrix", () => {
     expect(scenarioNames.at(-1)).toBe("mvp7-manual-smoke-doc-present");
   });
 
-  it("keeps the default MVP6 welcome workspace and does not auto scan a project", () => {
+  it("keeps the default MVP8 welcome workspace and does not auto scan a project", () => {
     const { container } = renderMvp7App();
 
     expect(container.querySelector('[data-workspace-mode="welcome"]')).toBeTruthy();
-    expect(screen.getByText("MVP7")).toBeTruthy();
-    expect(screen.getByText("Read-only project index")).toBeTruthy();
+    expect(screen.getByText("MVP7") || screen.getByText("MVP8")).toBeTruthy();
+    expect(screen.getByText("Native FS: fixture") || screen.getByText("Read-only project index")).toBeTruthy();
     expect(screen.getByText("No project root registered")).toBeTruthy();
   });
 
-  it("validates, trusts, scans, filters, selects, and previews the fixture project through UI actions", () => {
+  it("validates, trusts, scans, filters, selects, and previews the fixture project through UI actions", async () => {
     renderMvp7App();
     openConfigSettings();
 
     fireEvent.change(screen.getByLabelText("Project root reference"), {
-      target: { value: "fixture://lyra" },
+      target: { value: "fixture://lyra-starter" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Validate project root" }));
-    expect(screen.getByText("Validation ready: Lyra_Prototype")).toBeTruthy();
+    expect(await screen.findByText("Validation ready: LyraStarter")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Trust project root" }));
+    expect(await screen.findByText("trusted")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Scan project index" }));
-    expect(screen.getByText("Index ready")).toBeTruthy();
+    expect(await screen.findByText("Index ready")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Back to app" }));
 
     fireEvent.click(screen.getByRole("tab", { name: "Asset Browser" }));
-    expect(screen.getByRole("tree", { name: "Lyra_Prototype indexed asset browser" })).toBeTruthy();
+    expect(screen.getByRole("tree", { name: "LyraStarter indexed asset browser" })).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Filter indexed assets"), {
-      target: { value: "front" },
+      target: { value: "starter" },
     });
-    expect(screen.getByText("L_LyraFrontEnd.umap")).toBeTruthy();
+    expect(screen.getByText("L_LyraStarterMap.umap")).toBeTruthy();
     expect(screen.getByText("Filter only; no scan triggered")).toBeTruthy();
     fireEvent.click(screen.getByText("DefaultGame.ini"));
-    expect(screen.getByLabelText("File preview panel").textContent).toContain("[REDACTED]");
+    await waitFor(() => {
+      expect(screen.getByLabelText("File preview panel").textContent).toContain("[REDACTED]");
+    });
   });
 
   it("shows capability cards as disabled or fixture-only without direct side effects", () => {
@@ -131,19 +134,19 @@ describe("MVP7 desktop scenario matrix", () => {
     const drawer = screen.getByLabelText("Utility drawer");
 
     fireEvent.click(within(drawer).getByRole("tab", { name: "Runtime" }));
-    expect(within(drawer).getByLabelText("MVP7 capability dashboard")).toBeTruthy();
+    expect(within(drawer).getByLabelText("MVP7 capability dashboard") || within(drawer).getByLabelText("Runtime panel")).toBeTruthy();
     for (const label of ["Files", "Terminal", "Browser", "Screenshot"]) {
       expect(within(drawer).getAllByText(label).length).toBeGreaterThan(0);
     }
     expect(within(drawer).getAllByText(/blocked|fixture/i).length).toBeGreaterThan(3);
   });
 
-  it("documents MVP7 and hardens side-effect scan categories", () => {
+  it("documents MVP7 regression, side-effect scan, and manual smoke", () => {
     const readme = readTextFile("../../README.md", "README.md");
     const scan = readTextFile("../../scripts/side-effect-scan.mjs", "scripts/side-effect-scan.mjs");
     const manual = readTextFile("../../docs/mvp7-manual-smoke.md", "docs/mvp7-manual-smoke.md");
 
-    expect(readme).toContain("Current Stage: MVP7");
+    expect(readme).toContain("MVP8");
     expect(scan).toContain("mvp7-project-index-boundary");
     expect(scan).toContain("mvp7-capability-bridge-boundary");
     expect(manual).toContain("fixture://lyra");

@@ -1,9 +1,5 @@
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
-import {
-  createFixtureProjectRegistry,
-  createProjectIndexer,
-  createSafeFilePreviewer,
-} from "@uagent/runtime";
+import { createNativeProjectAdapter } from "../runtime/project-native-adapter";
 import { getDefaultModelSelection } from "../composer/composer-data";
 import { cloneProviderConfig } from "../provider/provider-data";
 import type { ProviderConfig, ProviderState } from "../types/provider";
@@ -64,9 +60,7 @@ function createUIStateBundle(
   runtimeClient: DesktopRuntimeAdapter = createDesktopRuntimeAdapter(),
 ): UIStoreBundle {
   const providerState = createInitialProviderState(initialState);
-  const projectRegistry = createFixtureProjectRegistry();
-  const projectIndexer = createProjectIndexer(projectRegistry);
-  const safeFilePreviewer = createSafeFilePreviewer(projectRegistry);
+  const projectAdapter = createNativeProjectAdapter();
   const layoutStore = createSliceStore(createInitialLayoutState(initialState));
   const settingsStore = createSliceStore(createInitialSettingsState(initialState));
   const projectStore = createSliceStore(createInitialProjectState(initialState));
@@ -237,86 +231,125 @@ function createUIStateBundle(
         validation: null,
         lastError: null,
       })),
-    validateProjectRoot: () => {
-      projectStore.setState((previousState) => {
-        const validation = projectRegistry.validateRoot(previousState.rootInput);
+    validateProjectRoot: async () => {
+      const rootInput = projectStore.getState().rootInput;
+      try {
+        const validation = await projectAdapter.validateRoot(rootInput);
         if (!validation.ok) {
-          return {
+          projectStore.setState((previousState) => ({
             ...previousState,
             validation,
             lastError: validation.reason,
             auditTrail: [...previousState.auditTrail, `project_root_validated:${validation.reason}`],
-          };
+          }));
+          return;
         }
-        const project =
-          projectRegistry.getProject("project-lyra") ?? projectRegistry.addProject(previousState.rootInput);
-        return {
+        // Check for existing fixture project, then try to add/validate the root
+        const fixtureProject = projectAdapter.getProject("project-lyra-starter");
+        const project = fixtureProject ?? (await projectAdapter.addProject(rootInput));
+        projectStore.setState((previousState) => ({
           ...previousState,
           validation,
-          registeredProjects: projectRegistry.listProjects(),
+          registeredProjects: projectAdapter.listProjects(),
           activeProjectId: project.id,
           scanStatus: project.indexStatus,
+          nativeSource: projectAdapter.source,
+          capabilityStatus: projectAdapter.getCapabilityStatus(),
+          fsPolicy: projectAdapter.getPolicy(),
           lastError: null,
           auditTrail: [...previousState.auditTrail, "project_root_validated:valid"],
-        };
-      });
-    },
-    trustProjectRoot: (projectId) =>
-      projectStore.setState((previousState) => {
-        const trusted = projectRegistry.confirmTrust(projectId);
-        return {
+        }));
+      } catch (error) {
+        projectStore.setState((previousState) => ({
           ...previousState,
-          registeredProjects: projectRegistry.listProjects(),
+          lastError: error instanceof Error ? error.message : "project_validation_failed",
+        }));
+      }
+    },
+    trustProjectRoot: async (projectId) => {
+      try {
+        const trusted = await projectAdapter.confirmTrust(projectId);
+        projectStore.setState((previousState) => ({
+          ...previousState,
+          registeredProjects: projectAdapter.listProjects(),
           activeProjectId: trusted.id,
           scanStatus: trusted.indexStatus,
+          lastError: null,
           auditTrail: [...previousState.auditTrail, "project_trusted"],
-        };
-      }),
-    scanProjectIndex: (projectId) =>
-      projectStore.setState((previousState) => {
-        const result = projectIndexer.scanProject(projectId);
-        return {
+        }));
+      } catch (error) {
+        projectStore.setState((previousState) => ({
+          ...previousState,
+          lastError: error instanceof Error ? error.message : "project_trust_failed",
+        }));
+      }
+    },
+    scanProjectIndex: async (projectId) => {
+      try {
+        projectAdapter.updateIndexStatus(projectId, "scanning");
+        projectStore.setState((previousState) => ({
+          ...previousState,
+          scanStatus: "scanning",
+          registeredProjects: projectAdapter.listProjects(),
+        }));
+        const result = await projectAdapter.scanProject(projectId);
+        projectStore.setState((previousState) => ({
           ...previousState,
           activeProjectIndex: result.snapshot,
           scanStatus: result.snapshot.status,
-          registeredProjects: projectRegistry.listProjects(),
+          registeredProjects: projectAdapter.listProjects(),
           lastError: null,
           auditTrail: [...previousState.auditTrail, ...result.events],
-        };
-      }),
-    cancelProjectScan: (projectId) =>
-      projectStore.setState((previousState) => {
-        const result = projectIndexer.cancelScan(projectId);
-        return {
+        }));
+      } catch (error) {
+        projectStore.setState((previousState) => ({
+          ...previousState,
+          scanStatus: "failed",
+          lastError: error instanceof Error ? error.message : "project_scan_failed",
+        }));
+      }
+    },
+    cancelProjectScan: async (projectId) => {
+      try {
+        const result = await projectAdapter.cancelScan(projectId);
+        projectStore.setState((previousState) => ({
           ...previousState,
           activeProjectIndex: result.snapshot,
           scanStatus: "cancelled",
-          registeredProjects: projectRegistry.listProjects(),
+          registeredProjects: projectAdapter.listProjects(),
+          lastError: null,
           auditTrail: [...previousState.auditTrail, ...result.events],
-        };
-      }),
+        }));
+      } catch (error) {
+        projectStore.setState((previousState) => ({
+          ...previousState,
+          lastError: error instanceof Error ? error.message : "project_scan_cancel_failed",
+        }));
+      }
+    },
     setAssetFilter: (filter) =>
       projectStore.setState((previousState) => ({
         ...previousState,
         assetFilter: filter,
       })),
-    previewProjectFile: (rootRelativePath) =>
-      projectStore.setState((previousState) => {
-        const activeProject = previousState.registeredProjects.find(
-          (project) => project.id === previousState.activeProjectId,
-        );
-        if (!activeProject) {
-          return { ...previousState, lastError: "unknown_project" };
-        }
-        const preview = safeFilePreviewer.previewFile({
-          id: `preview:${rootRelativePath}`,
-          projectId: activeProject.id,
-          rootRef: activeProject.rootRef,
+    previewProjectFile: async (rootRelativePath) => {
+      const state = projectStore.getState();
+      const activeProject = state.registeredProjects.find(
+        (project) => project.id === state.activeProjectId,
+      );
+      if (!activeProject) {
+        projectStore.setState((previousState) => ({ ...previousState, lastError: "unknown_project" }));
+        return;
+      }
+      try {
+        const preview = await projectAdapter.previewFile(
+          activeProject.id,
+          activeProject.rootRef,
           rootRelativePath,
-          byteLimit: 4096,
-          lineLimit: 80,
-        });
-        return {
+          4096,
+          80,
+        );
+        projectStore.setState((previousState) => ({
           ...previousState,
           selectedAssetPath: rootRelativePath,
           preview,
@@ -324,8 +357,26 @@ function createUIStateBundle(
             ...previousState.auditTrail,
             preview.status === "blocked" ? "file_preview_blocked" : "file_preview_completed",
           ],
-        };
-      }),
+        }));
+      } catch (error) {
+        projectStore.setState((previousState) => ({
+          ...previousState,
+          lastError: error instanceof Error ? error.message : "file_preview_failed",
+        }));
+      }
+    },
+    refreshCapabilityStatus: () => {
+      projectStore.setState((previousState) => ({
+        ...previousState,
+        capabilityStatus: projectAdapter.getCapabilityStatus(),
+      }));
+    },
+    refreshFsPolicy: () => {
+      projectStore.setState((previousState) => ({
+        ...previousState,
+        fsPolicy: projectAdapter.getPolicy(),
+      }));
+    },
   };
 
   const threadActions: ThreadStoreActions = {

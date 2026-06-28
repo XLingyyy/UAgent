@@ -6,7 +6,11 @@ export type EvidenceKind =
   | "artifact_placeholder"
   | "project_index_summary"
   | "file_preview_summary"
-  | "capability_decision";
+  | "capability_decision"
+  | "native_root_validation"
+  | "native_scan_summary"
+  | "native_preview_summary"
+  | "native_policy_block";
 
 export type EvidenceSource =
   | "mock-runtime"

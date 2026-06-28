@@ -132,6 +132,64 @@ export interface ProjectPathPolicyOptions {
   textExtensions?: string[];
 }
 
+export type NativeRootKind = "local" | "fixture";
+
+export interface NativeRootTrustRecord {
+  rootId: string;
+  rootRef: string;
+  displayRoot: string;
+  kind: NativeRootKind;
+  trustedAt: number;
+}
+
+export interface ReadOnlyFilesystemPolicy {
+  allowedRoots: string[];
+  ignoredDirs: string[];
+  maxDepth: number;
+  maxNodes: number;
+  maxFiles: number;
+  maxPreviewBytes: number;
+  previewAllowlist: string[];
+  binaryDetectBytes: number;
+  redactionLevel: "full" | "partial" | "none";
+}
+
+export function createDefaultReadOnlyFsPolicy(): ReadOnlyFilesystemPolicy {
+  return {
+    allowedRoots: [],
+    ignoredDirs: [...DEFAULT_PROJECT_IGNORES, "Build"],
+    maxDepth: 10,
+    maxNodes: 5000,
+    maxFiles: 2000,
+    maxPreviewBytes: 1024 * 1024,
+    previewAllowlist: [...DEFAULT_TEXT_EXTENSIONS],
+    binaryDetectBytes: 2048,
+    redactionLevel: "full",
+  };
+}
+
+export type PathErrorCode =
+  | "empty_path"
+  | "dangerous_root"
+  | "network_path"
+  | "relative_path"
+  | "outside_root"
+  | "symlink_escape"
+  | "permission_denied"
+  | "too_large"
+  | "missing_uproject"
+  | "unsupported_root";
+
+export interface ScanProgressEvent {
+  projectId: string;
+  rootRef: string;
+  visitedNodes: number;
+  indexedFiles: number;
+  ignoredCount: number;
+  elapsedMs: number;
+  status: "in_progress" | "completed" | "cancelled" | "failed";
+}
+
 export const DEFAULT_PROJECT_IGNORES = [
   ".git",
   "Intermediate",

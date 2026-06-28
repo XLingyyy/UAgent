@@ -42,6 +42,32 @@ export function redactString(text: string): string {
   for (const pattern of SECRET_PATTERNS) {
     result = result.replace(pattern, "[REDACTED]");
   }
+  result = redactPathsInString(result);
+  return result;
+}
+
+const PATH_PATTERNS = [
+  /[A-Za-z]:\/Users\/[^/\s]+(?:\/[^\s]*)*/g,
+  /\/Users\/[^/\s]+(?:\/[^\s]*)*/g,
+  /\/home\/[^/\s]+(?:\/[^\s]*)*/g,
+];
+
+export function redactPathsInString(text: string): string {
+  let result = text;
+  for (const pattern of PATH_PATTERNS) {
+    result = result.replace(pattern, (match) => {
+      if (match.startsWith("C:/Users/") || match.startsWith("D:/Users/")) {
+        return match.replace(/^([A-Za-z]:\/Users\/)([^/]+)/, "$1[user-home]");
+      }
+      if (match.startsWith("/Users/")) {
+        return match.replace(/^(\/Users\/)([^/]+)/, "$1[user-home]");
+      }
+      if (match.startsWith("/home/")) {
+        return match.replace(/^(\/home\/)([^/]+)/, "$1[user-home]");
+      }
+      return match;
+    });
+  }
   return result;
 }
 

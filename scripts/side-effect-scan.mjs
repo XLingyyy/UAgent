@@ -246,6 +246,54 @@ const CATEGORIES = [
       (rel) => /packages\/runtime\/src\/(?!mvp7-project-index)/.test(rel),
     ],
   },
+  {
+    id: "mvp8-native-fs-boundary",
+    title: "MVP8 Native FS Bridge Boundary",
+    description: "React UI must not directly invoke Tauri native FS commands",
+    patterns: [
+      { re: /invoke\s*\(\s*["'](trust_native_project_root|cancel_native_project_scan|validate_native_project_root|scan_native_project_index|preview_native_project_file)/gi, label: "Tauri native FS command" },
+      { re: /@tauri-apps\/api/gi, label: "Tauri API import" },
+      { re: /node:fs\s*\(/gi, label: "direct fs access" },
+      { re: /\bRawFsAdapter/gi, label: "RawFsAdapter" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/(shared|runtime)\/src\//.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/runtime\//.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\//.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\//.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp8-real-scan-boundary",
+    title: "MVP8 Real Scan Boundary",
+    description: "Real scan/preview operations must not produce raw paths or execute side effects",
+    patterns: [
+      { re: /writeFile|appendFile|unlink|rename|mkdir|rmdir|rm\s*\(/gi, label: "filesystem mutation" },
+      { re: /child_process|spawn\s*\(|exec\s*\(/gi, label: "shell execution" },
+      { re: /window\.open\s*\(/gi, label: "window.open()" },
+      { re: /getDisplayMedia\s*\(/gi, label: "screen capture" },
+      { re: /C:\\Users\\[^/]+\\/gi, label: "raw Windows home path" },
+      { re: /\/home\/[A-Za-z0-9._-]+\//g, label: "raw Linux home path" },
+    ],
+  allowWhen: [
+    (rel) => /docs\//.test(rel),
+    (rel) => /\.test\./.test(rel),
+    (rel) => /scripts\//.test(rel),
+    (rel) => /apps\/desktop\/src-tauri\//.test(rel),
+    (rel) => /packages\/runtime\/src\/mvp8-project-index/.test(rel),
+    (rel) => /packages\/shared\/src\/project/.test(rel),
+    (rel) => /mcp-readonly-policy/.test(rel),
+  ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp8-project-index)/.test(rel),
+    ],
+  },
 ];
 
 // ============================================================
@@ -338,7 +386,7 @@ function main() {
   const hr = "=".repeat(80);
 
   console.log(hr);
-  console.log("  UAgent MVP7 Side-effect Scan Report");
+  console.log("  UAgent MVP8 Side-effect Scan Report");
   console.log(`  ${new Date().toISOString()}`);
   console.log(`  Files scanned: ${fileSet.length}`);
   console.log(hr);

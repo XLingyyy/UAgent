@@ -4,7 +4,7 @@ import {
   type AgentPlanStep,
   type TaskEvent,
 } from "@uagent/shared";
-import { useOptionalRuntimeActions, useOptionalRuntimeStore } from "../stores/ui-store";
+import { useOptionalRuntimeActions, useOptionalRuntimeStore, useProjectStore } from "../stores/ui-store";
 import "./UtilityPlaceholderPanel.css";
 
 const CAPABILITY_EVENT_TYPES = new Set([
@@ -99,6 +99,9 @@ export function RuntimePanel() {
   }));
   const fullSummary = capabilityStatuses.map((cs) => `${cs.kind} ${cs.status.summary}`).join(", ");
 
+  const projectState = useProjectStore((state) => state);
+  const nativeStatuses = projectState.capabilityStatus;
+
   return (
     <section className="ua-utility-placeholder" aria-label="Runtime panel">
       <div className="ua-utility-placeholder__header">
@@ -120,6 +123,17 @@ export function RuntimePanel() {
               <span>{kind}</span>
               <span>{status.label}</span>
             </li>
+        ))}
+        {nativeStatuses.length > 0 && (
+          <li className="ua-utility-placeholder__item" aria-label="Native FS bridge status">
+            Native FS bridge: {projectState.nativeSource} · {nativeStatuses.length} capabilities
+          </li>
+        )}
+        {nativeStatuses.map((cap) => (
+          <li key={`native-${cap.kind}`} className="ua-utility-placeholder__item">
+            <span>{cap.kind}</span>
+            <span>{cap.mode} · {cap.status}</span>
+          </li>
         ))}
         <li className="ua-utility-placeholder__item">
           Task: {activeTask?.title ?? "No active runtime task"}

@@ -38,6 +38,7 @@ function ProjectRootsDisplay() {
     trustProjectRoot,
     scanProjectIndex,
     cancelProjectScan,
+    refreshCapabilityStatus,
   } = useProjectActions();
   const activeProject =
     project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
@@ -125,6 +126,53 @@ function ProjectRootsDisplay() {
           Read-only · ignored dirs: .git, Intermediate, Saved, DerivedDataCache, Binaries, node_modules, .vs
         </span>
       </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Source</span>
+        <span className="ua-settings-page__static-value">{project.nativeSource}</span>
+      </div>
+      <div className="ua-settings-page__provider-actions">
+        <button
+          className="ua-settings-page__action-btn"
+          type="button"
+          onClick={refreshCapabilityStatus}
+        >
+          Refresh capability status
+        </button>
+      </div>
+      {project.capabilityStatus.length > 0 && (
+        <div className="ua-settings-page__provider-summary" aria-label="Capability status">
+          {project.capabilityStatus.map((cap) => (
+            <span key={cap.kind} className="ua-settings-page__provider-summary-item">
+              <span className="ua-settings-page__provider-summary-label">{cap.kind}</span>
+              <span className="ua-settings-page__provider-summary-value">
+                {cap.mode} · {cap.status}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+      {project.fsPolicy && (
+        <div className="ua-settings-page__static-stack" aria-label="Filesystem policy">
+          <div className="ua-settings-page__static-row">
+            <span className="ua-settings-page__static-label">Ignored dirs</span>
+            <span className="ua-settings-page__static-value">
+              {project.fsPolicy.ignoredDirs.join(", ")}
+            </span>
+          </div>
+          <div className="ua-settings-page__static-row">
+            <span className="ua-settings-page__static-label">Max depth</span>
+            <span className="ua-settings-page__static-value">{project.fsPolicy.maxDepth}</span>
+          </div>
+          <div className="ua-settings-page__static-row">
+            <span className="ua-settings-page__static-label">Max nodes</span>
+            <span className="ua-settings-page__static-value">{project.fsPolicy.maxNodes}</span>
+          </div>
+          <div className="ua-settings-page__static-row">
+            <span className="ua-settings-page__static-label">Redaction</span>
+            <span className="ua-settings-page__static-value">{project.fsPolicy.redactionLevel}</span>
+          </div>
+        </div>
+      )}
       {project.lastError && (
         <p className="ua-settings-page__provider-help-text">{project.lastError}</p>
       )}

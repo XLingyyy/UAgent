@@ -5,7 +5,7 @@ export type CapabilityKind =
   | "screenshot"
   | "provider_live";
 
-export type CapabilityMode = "disabled" | "fixture" | "read_only" | "manual_live";
+export type CapabilityMode = "disabled" | "fixture" | "read_only" | "native_read_only" | "manual_live";
 
 export type CapabilityDecisionStatus = "allow" | "requires_approval" | "blocked";
 

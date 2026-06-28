@@ -133,4 +133,42 @@ describe("recursiveRedactValue", () => {
     expect(result[2]).toBeNull();
     expect(result[3] as string).toContain('[REDACTED]');
   });
+
+  it("redacts C:/Users/ windows home paths from strings", () => {
+    const result = redactString('Path: C:/Users/Dev/LyraStarter/Config');
+    expect(result).not.toContain('C:/Users/Dev');
+    expect(result).toContain('C:/Users/[user-home]');
+  });
+
+  it("redacts /Users/ macOS home paths from strings", () => {
+    const result = redactString('Path: /Users/alice/project/file.ini');
+    expect(result).not.toContain('/Users/alice');
+    expect(result).toContain('/Users/[user-home]');
+  });
+
+  it("redacts /home/ linux home paths from strings", () => {
+    const result = redactString('Path: /home/bob/dev/project/config.ini');
+    expect(result).not.toContain('/home/bob');
+    expect(result).toContain('/home/[user-home]');
+  });
+
+  it("redacts paths in nested recursiveRedactValue objects", () => {
+    const input = {
+      title: 'Home is C:/Users/Dev/LyraStarter',
+      config: { iniPath: '/Users/alice/project/config.ini' },
+    };
+    const result = recursiveRedactValue(input) as Record<string, unknown>;
+    expect(result.title as string).not.toContain('C:/Users/Dev');
+    expect(result.title as string).toContain('[user-home]');
+    expect((result.config as Record<string, unknown>).iniPath as string).not.toContain('/Users/alice');
+    expect((result.config as Record<string, unknown>).iniPath as string).toContain('[user-home]');
+  });
+
+  it("redacts both secrets and paths in the same string", () => {
+    const result = redactString('api_key=sk-abcdefghijklmnopqrstuvwxyz123456 at C:/Users/Dev/file.ini');
+    expect(result).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+    expect(result).not.toContain('C:/Users/Dev');
+    expect(result).toContain('[REDACTED]');
+    expect(result).toContain('[user-home]');
+  });
 });
