@@ -97,7 +97,6 @@ export interface LayoutStoreState {
 export interface ProjectStoreState {
   /** Active project id from the shared mock project list, or null for no project. */
   activeProjectId: string | null;
-  rootInput: string;
   validation: ProjectRootValidationResult | null;
   registeredProjects: ProjectProfile[];
   activeProjectIndex: ProjectIndexSnapshot | null;
@@ -208,8 +207,7 @@ export interface SettingsStoreActions {
 
 export interface ProjectStoreActions {
   setActiveProject: SetActiveProject;
-  setProjectRootInput: (rootRef: string) => void;
-  validateProjectRoot: () => Promise<void>;
+  validateProjectRoot: (rootRef: string) => Promise<void>;
   trustProjectRoot: (projectId: string) => Promise<void>;
   scanProjectIndex: (projectId: string) => Promise<void>;
   cancelProjectScan: (projectId: string) => Promise<void>;

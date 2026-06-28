@@ -27,11 +27,18 @@ fn is_trusted_root(normalized: &str) -> bool {
 }
 
 fn mark_cancelled(scan_id: &str) {
-    cancel_flags().lock().unwrap().insert(scan_id.to_string(), true);
+    cancel_flags()
+        .lock()
+        .unwrap()
+        .insert(scan_id.to_string(), true);
 }
 
 fn is_cancelled(scan_id: &str) -> bool {
-    *cancel_flags().lock().unwrap().get(scan_id).unwrap_or(&false)
+    *cancel_flags()
+        .lock()
+        .unwrap()
+        .get(scan_id)
+        .unwrap_or(&false)
 }
 
 fn clear_cancel(scan_id: &str) {
@@ -66,7 +73,13 @@ fn redact_scan_warnings(warnings: Vec<String>, root_normalized: &str) -> Vec<Str
                     if !before.ends_with("[project-root]") && !before.ends_with("[outside-root]") {
                         result.push_str(before);
                         let path_end = (i + 3..bytes.len())
-                            .find(|&j| bytes[j] == b' ' || bytes[j] == b')' || bytes[j] == b'\n' || bytes[j] == b',' || bytes[j] == b'\r')
+                            .find(|&j| {
+                                bytes[j] == b' '
+                                    || bytes[j] == b')'
+                                    || bytes[j] == b'\n'
+                                    || bytes[j] == b','
+                                    || bytes[j] == b'\r'
+                            })
                             .unwrap_or(bytes.len());
                         result.push_str("[outside-root]");
                         last = path_end;
@@ -85,14 +98,18 @@ fn redact_scan_warnings(warnings: Vec<String>, root_normalized: &str) -> Vec<Str
             let bytes = after_win.as_bytes();
             let mut i = 0usize;
             while i < bytes.len() {
-                if bytes[i] == b'/'
-                    && (i == 0 || bytes[i - 1] == b' ')
-                {
+                if bytes[i] == b'/' && (i == 0 || bytes[i - 1] == b' ') {
                     let before = &after_win[last..i];
                     if !before.ends_with("[project-root]") && !before.ends_with("[outside-root]") {
                         result.push_str(before);
                         let path_end = (i + 1..bytes.len())
-                            .find(|&j| bytes[j] == b' ' || bytes[j] == b')' || bytes[j] == b'\n' || bytes[j] == b',' || bytes[j] == b'\r')
+                            .find(|&j| {
+                                bytes[j] == b' '
+                                    || bytes[j] == b')'
+                                    || bytes[j] == b'\n'
+                                    || bytes[j] == b','
+                                    || bytes[j] == b'\r'
+                            })
                             .unwrap_or(bytes.len());
                         result.push_str("[outside-root]");
                         last = path_end;
@@ -103,7 +120,11 @@ fn redact_scan_warnings(warnings: Vec<String>, root_normalized: &str) -> Vec<Str
                 i += 1;
             }
             result.push_str(&after_win[last..]);
-            if result == after_win { after_win } else { result }
+            if result == after_win {
+                after_win
+            } else {
+                result
+            }
         })
         .collect()
 }
@@ -223,9 +244,14 @@ pub struct TrustRootResult {
 
 #[tauri::command]
 fn trust_native_project_root(input: TrustRootInput) -> Result<TrustRootResult, String> {
-    let validation = validate_native_project_root(ProjectRootValidationInput { root_ref: input.root_ref.clone() });
+    let validation = validate_native_project_root(ProjectRootValidationInput {
+        root_ref: input.root_ref.clone(),
+    });
     if !validation.ok {
-        return Err(format!("Cannot trust unvalidated root: {}", validation.reason));
+        return Err(format!(
+            "Cannot trust unvalidated root: {}",
+            validation.reason
+        ));
     }
     let normalized = normalize_project_path(&input.root_ref);
     let display = redact_path_for_ui(&normalized);
@@ -272,6 +298,63 @@ pub struct ScanProjectIndexInput {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProjectDirectoryEntry {
+    pub id: String,
+    pub display_name: String,
+    pub node_type: String,
+    pub root_relative_path: String,
+    pub display_path: String,
+    pub children_count: u32,
+    pub is_ignored: bool,
+    pub limit_reason: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFileEntry {
+    pub id: String,
+    pub display_name: String,
+    pub node_type: String,
+    pub root_relative_path: String,
+    pub display_path: String,
+    pub extension: String,
+    pub byte_size: u64,
+    pub is_ignored: bool,
+    pub limit_reason: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetIndexEntry {
+    pub id: String,
+    pub display_name: String,
+    pub root_relative_path: String,
+    pub display_path: String,
+    pub asset_type: String,
+    pub extension: String,
+    pub source: String,
+    pub indexed_at: u64,
+    pub tags: Vec<String>,
+    pub preview_status: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexScanSummary {
+    pub project_id: String,
+    pub scanned_at: u64,
+    pub status: String,
+    pub directory_count: u32,
+    pub file_count: u32,
+    pub asset_count: u32,
+    pub ignored_count: u32,
+    pub limit_reasons: Vec<String>,
+    pub warnings: Vec<String>,
+    pub redacted_root: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScanProjectIndexResult {
     pub id: String,
     pub project_id: String,
@@ -282,10 +365,16 @@ pub struct ScanProjectIndexResult {
     pub ignored_count: u32,
     pub warnings: Vec<String>,
     pub scanned_at: u64,
+    pub directories: Vec<ProjectDirectoryEntry>,
+    pub files: Vec<ProjectFileEntry>,
+    pub assets: Vec<AssetIndexEntry>,
+    pub summary: IndexScanSummary,
 }
 
 #[tauri::command]
-fn scan_native_project_index(input: ScanProjectIndexInput) -> Result<ScanProjectIndexResult, String> {
+fn scan_native_project_index(
+    input: ScanProjectIndexInput,
+) -> Result<ScanProjectIndexResult, String> {
     if input.project_id.is_empty() {
         return Err("Unknown project".to_string());
     }
@@ -294,21 +383,7 @@ fn scan_native_project_index(input: ScanProjectIndexInput) -> Result<ScanProject
         return Err("Root not trusted. Trust the project root before scanning.".to_string());
     }
     if normalized_root.starts_with("fixture://") {
-        Ok(ScanProjectIndexResult {
-            id: format!("index:{}:fixture", input.project_id),
-            project_id: input.project_id,
-            status: "ready".to_string(),
-            directory_count: 5,
-            file_count: 7,
-            asset_count: 6,
-            ignored_count: 1,
-            warnings: vec![
-                "node_cap limit reached after fixture scan budget".to_string(),
-                "symlink_escape fixture blocked before file read".to_string(),
-                "malformed_uproject warning ignored; ready snapshot kept stable".to_string(),
-            ],
-            scanned_at: deterministic_scanned_at(&normalized_root),
-        })
+        Ok(fixture_scan_result(&input.project_id, &normalized_root))
     } else {
         match resolve_canonical_path(&normalized_root) {
             Ok(canonical) => {
@@ -355,7 +430,9 @@ pub struct PreviewProjectFileResult {
 }
 
 #[tauri::command]
-fn preview_native_project_file(input: PreviewProjectFileInput) -> Result<PreviewProjectFileResult, String> {
+fn preview_native_project_file(
+    input: PreviewProjectFileInput,
+) -> Result<PreviewProjectFileResult, String> {
     if input.project_id.is_empty() {
         return Ok(blocked_preview("unknown_project"));
     }
@@ -379,16 +456,14 @@ fn preview_native_project_file(input: PreviewProjectFileInput) -> Result<Preview
     if input.root_relative_path.contains("..") {
         return Ok(blocked_preview("root_escape"));
     }
-    let is_traversal = input.root_relative_path.starts_with('/')
-        || input.root_relative_path.starts_with("\\");
+    let is_traversal =
+        input.root_relative_path.starts_with('/') || input.root_relative_path.starts_with("\\");
     if is_traversal {
         return Ok(blocked_preview("root_escape"));
     }
     if normalized_root.starts_with("fixture://") {
-        let normalized_candidate = normalize_project_path(&format!(
-            "{}/{}",
-            normalized_root, input.root_relative_path
-        ));
+        let normalized_candidate =
+            normalize_project_path(&format!("{}/{}", normalized_root, input.root_relative_path));
         if !is_inside_project_root(&normalized_root, &normalized_candidate) {
             return Ok(blocked_preview("root_escape"));
         }
@@ -405,10 +480,19 @@ fn preview_native_project_file(input: PreviewProjectFileInput) -> Result<Preview
                 let sliced = sliced_lines.join("\n");
                 let truncated_slice: String = sliced.chars().take(byte_limit).collect();
                 let redacted = redact_preview_content(&truncated_slice);
-                let truncated = truncated_slice.len() < fc.content.len() || lines.len() > line_limit;
+                let truncated =
+                    truncated_slice.len() < fc.content.len() || lines.len() > line_limit;
                 Ok(PreviewProjectFileResult {
-                    status: if truncated { "truncated".to_string() } else { "ready".to_string() },
-                    reason: if truncated { "line_or_byte_limit".to_string() } else { "allowed_text_preview".to_string() },
+                    status: if truncated {
+                        "truncated".to_string()
+                    } else {
+                        "ready".to_string()
+                    },
+                    reason: if truncated {
+                        "line_or_byte_limit".to_string()
+                    } else {
+                        "allowed_text_preview".to_string()
+                    },
                     content: redacted.content,
                     truncated,
                     original_bytes: fc.bytes,
@@ -432,7 +516,8 @@ fn preview_native_project_file(input: PreviewProjectFileInput) -> Result<Preview
         if !is_text_extension(&input.root_relative_path) {
             return Ok(blocked_preview("binary_or_extension_blocked"));
         }
-        let root = resolve_canonical_path(&normalized_root).map_err(|_| "invalid_root".to_string())?;
+        let root =
+            resolve_canonical_path(&normalized_root).map_err(|_| "invalid_root".to_string())?;
         let candidate = root.join(&input.root_relative_path);
         let canonical_candidate = candidate
             .canonicalize()
@@ -454,10 +539,19 @@ fn preview_native_project_file(input: PreviewProjectFileInput) -> Result<Preview
                     let sliced = sliced_lines.join("\n");
                     let truncated_slice: String = sliced.chars().take(byte_limit).collect();
                     let redacted = redact_preview_content(&truncated_slice);
-                    let truncated = truncated_slice.len() < content.len() || lines.len() > line_limit;
+                    let truncated =
+                        truncated_slice.len() < content.len() || lines.len() > line_limit;
                     Ok(PreviewProjectFileResult {
-                        status: if truncated { "truncated".to_string() } else { "ready".to_string() },
-                        reason: if truncated { "line_or_byte_limit".to_string() } else { "allowed_text_preview".to_string() },
+                        status: if truncated {
+                            "truncated".to_string()
+                        } else {
+                            "ready".to_string()
+                        },
+                        reason: if truncated {
+                            "line_or_byte_limit".to_string()
+                        } else {
+                            "allowed_text_preview".to_string()
+                        },
                         content: redacted.content,
                         truncated,
                         original_bytes: bytes,
@@ -493,7 +587,9 @@ fn scan_project_index(input: ScanProjectIndexInput) -> Result<ScanProjectIndexRe
 }
 
 #[tauri::command]
-fn preview_project_file(input: PreviewProjectFileInput) -> Result<PreviewProjectFileResult, String> {
+fn preview_project_file(
+    input: PreviewProjectFileInput,
+) -> Result<PreviewProjectFileResult, String> {
     preview_native_project_file(input)
 }
 
@@ -532,7 +628,11 @@ fn normalize_project_path(path: &str) -> String {
     let unix_absolute = raw.starts_with('/');
     let trimmed: Vec<&str> = raw.split('/').filter(|s| !s.is_empty()).collect();
     if trimmed.is_empty() {
-        return if unix_absolute { "/".to_string() } else { String::new() };
+        return if unix_absolute {
+            "/".to_string()
+        } else {
+            String::new()
+        };
     }
     let drive = if trimmed[0].len() == 2 && trimmed[0].as_bytes()[1] == b':' {
         Some(trimmed[0])
@@ -572,14 +672,11 @@ fn is_dangerous_root(normalized: &str) -> bool {
     normalized == "/"
         || normalized == "."
         || normalized == ".."
-        || (normalized.len() >= 2
-            && normalized.as_bytes()[1] == b':'
-            && normalized.len() <= 3)
+        || (normalized.len() >= 2 && normalized.as_bytes()[1] == b':' && normalized.len() <= 3)
 }
 
 fn is_absolute_path(normalized: &str) -> bool {
-    normalized.starts_with('/')
-        || (normalized.len() >= 2 && normalized.as_bytes()[1] == b':')
+    normalized.starts_with('/') || (normalized.len() >= 2 && normalized.as_bytes()[1] == b':')
 }
 
 fn is_inside_project_root(root: &str, candidate: &str) -> bool {
@@ -600,7 +697,9 @@ fn resolve_canonical_path(path_str: &str) -> Result<PathBuf, String> {
     if !path.exists() {
         return Err("path_not_found".to_string());
     }
-    let canonical = path.canonicalize().map_err(|_| "canonicalization_failed".to_string())?;
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| "canonicalization_failed".to_string())?;
     Ok(canonical)
 }
 
@@ -614,6 +713,242 @@ fn parse_uproject_content(content: &str) -> (Option<String>, Option<String>) {
     (project_name, engine_association)
 }
 
+fn display_name_for_path(path: &str) -> String {
+    path.rsplit('/').next().unwrap_or(path).to_string()
+}
+
+fn display_path_for_project(root_relative_path: &str) -> String {
+    format!("[project-root]/{}", root_relative_path)
+}
+
+fn extension_for_path(path: &Path) -> String {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| format!(".{}", ext.to_lowercase()))
+        .unwrap_or_default()
+}
+
+fn root_relative_path(root_path: &Path, path: &Path) -> Option<String> {
+    path.strip_prefix(root_path)
+        .ok()
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        .filter(|relative| !relative.is_empty())
+}
+
+fn child_count(path: &Path, ignored_dirs: &[&str]) -> u32 {
+    match fs::read_dir(path) {
+        Ok(entries) => entries
+            .flatten()
+            .filter(|entry| {
+                let name = entry
+                    .path()
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                !ignored_dirs.contains(&name.as_str())
+            })
+            .count() as u32,
+        Err(_) => 0,
+    }
+}
+
+fn classify_asset(root_relative_path: &str, extension: &str) -> String {
+    let display_name = display_name_for_path(root_relative_path);
+    match extension {
+        ".umap" => "map".to_string(),
+        ".uasset" if display_name.starts_with("M_") => "material".to_string(),
+        ".uasset" => "binary_asset".to_string(),
+        ".ini" => "config".to_string(),
+        ".cpp" | ".h" | ".hpp" | ".cs" => "source".to_string(),
+        ".uproject" => "project".to_string(),
+        _ => "unknown".to_string(),
+    }
+}
+
+fn preview_status_for_asset(extension: &str) -> String {
+    if matches!(extension, ".umap" | ".uasset") {
+        "blocked".to_string()
+    } else {
+        "allowed".to_string()
+    }
+}
+
+fn asset_from_file(file: &ProjectFileEntry, scanned_at: u64) -> AssetIndexEntry {
+    let asset_type = classify_asset(&file.root_relative_path, &file.extension);
+    let extension_tag = file.extension.trim_start_matches('.');
+    let mut tags = vec![asset_type.clone()];
+    if !extension_tag.is_empty() {
+        tags.push(extension_tag.to_string());
+    }
+    AssetIndexEntry {
+        id: format!("asset:{}", file.root_relative_path),
+        display_name: file.display_name.clone(),
+        root_relative_path: file.root_relative_path.clone(),
+        display_path: file.display_path.clone(),
+        asset_type,
+        extension: file.extension.clone(),
+        source: "project_index".to_string(),
+        indexed_at: scanned_at,
+        tags,
+        preview_status: preview_status_for_asset(&file.extension),
+    }
+}
+
+fn make_summary(
+    project_id: &str,
+    status: &str,
+    scanned_at: u64,
+    directories: &[ProjectDirectoryEntry],
+    files: &[ProjectFileEntry],
+    assets: &[AssetIndexEntry],
+    ignored_count: u32,
+    warnings: &[String],
+    redacted_root: &str,
+) -> IndexScanSummary {
+    IndexScanSummary {
+        project_id: project_id.to_string(),
+        scanned_at,
+        status: status.to_string(),
+        directory_count: directories.len() as u32,
+        file_count: files.len() as u32,
+        asset_count: assets.len() as u32,
+        ignored_count,
+        limit_reasons: Vec::new(),
+        warnings: warnings.to_vec(),
+        redacted_root: redacted_root.to_string(),
+    }
+}
+
+fn fixture_scan_result(project_id: &str, normalized_root: &str) -> ScanProjectIndexResult {
+    let scanned_at = deterministic_scanned_at(normalized_root);
+    let directories = vec![
+        ProjectDirectoryEntry {
+            id: "dir:Config".to_string(),
+            display_name: "Config".to_string(),
+            node_type: "directory".to_string(),
+            root_relative_path: "Config".to_string(),
+            display_path: "[project-root]/Config".to_string(),
+            children_count: 1,
+            is_ignored: false,
+            limit_reason: "none".to_string(),
+        },
+        ProjectDirectoryEntry {
+            id: "dir:Source".to_string(),
+            display_name: "Source".to_string(),
+            node_type: "directory".to_string(),
+            root_relative_path: "Source".to_string(),
+            display_path: "[project-root]/Source".to_string(),
+            children_count: 1,
+            is_ignored: false,
+            limit_reason: "none".to_string(),
+        },
+        ProjectDirectoryEntry {
+            id: "dir:Content".to_string(),
+            display_name: "Content".to_string(),
+            node_type: "directory".to_string(),
+            root_relative_path: "Content".to_string(),
+            display_path: "[project-root]/Content".to_string(),
+            children_count: 2,
+            is_ignored: false,
+            limit_reason: "none".to_string(),
+        },
+    ];
+    let files = vec![
+        ProjectFileEntry {
+            id: "file:LyraStarter.uproject".to_string(),
+            display_name: "LyraStarter.uproject".to_string(),
+            node_type: "file".to_string(),
+            root_relative_path: "LyraStarter.uproject".to_string(),
+            display_path: "[project-root]/LyraStarter.uproject".to_string(),
+            extension: ".uproject".to_string(),
+            byte_size: 42,
+            is_ignored: false,
+            limit_reason: "none".to_string(),
+        },
+        ProjectFileEntry {
+            id: "file:Config/DefaultGame.ini".to_string(),
+            display_name: "DefaultGame.ini".to_string(),
+            node_type: "file".to_string(),
+            root_relative_path: "Config/DefaultGame.ini".to_string(),
+            display_path: "[project-root]/Config/DefaultGame.ini".to_string(),
+            extension: ".ini".to_string(),
+            byte_size: 85,
+            is_ignored: false,
+            limit_reason: "none".to_string(),
+        },
+        ProjectFileEntry {
+            id: "file:Source/LyraGame/LyraCharacter.cpp".to_string(),
+            display_name: "LyraCharacter.cpp".to_string(),
+            node_type: "file".to_string(),
+            root_relative_path: "Source/LyraGame/LyraCharacter.cpp".to_string(),
+            display_path: "[project-root]/Source/LyraGame/LyraCharacter.cpp".to_string(),
+            extension: ".cpp".to_string(),
+            byte_size: 38,
+            is_ignored: false,
+            limit_reason: "none".to_string(),
+        },
+        ProjectFileEntry {
+            id: "file:Content/Materials/M_Hero.uasset".to_string(),
+            display_name: "M_Hero.uasset".to_string(),
+            node_type: "file".to_string(),
+            root_relative_path: "Content/Materials/M_Hero.uasset".to_string(),
+            display_path: "[project-root]/Content/Materials/M_Hero.uasset".to_string(),
+            extension: ".uasset".to_string(),
+            byte_size: 4096,
+            is_ignored: false,
+            limit_reason: "none".to_string(),
+        },
+        ProjectFileEntry {
+            id: "file:Content/Maps/L_LyraStarterMap.umap".to_string(),
+            display_name: "L_LyraStarterMap.umap".to_string(),
+            node_type: "file".to_string(),
+            root_relative_path: "Content/Maps/L_LyraStarterMap.umap".to_string(),
+            display_path: "[project-root]/Content/Maps/L_LyraStarterMap.umap".to_string(),
+            extension: ".umap".to_string(),
+            byte_size: 8192,
+            is_ignored: false,
+            limit_reason: "none".to_string(),
+        },
+    ];
+    let assets: Vec<AssetIndexEntry> = files
+        .iter()
+        .map(|file| asset_from_file(file, scanned_at))
+        .collect();
+    let warnings = vec![
+        "node_cap limit reached after fixture scan budget".to_string(),
+        "symlink_escape fixture blocked before file read".to_string(),
+        "malformed_uproject warning ignored; ready snapshot kept stable".to_string(),
+    ];
+    let summary = make_summary(
+        project_id,
+        "ready",
+        scanned_at,
+        &directories,
+        &files,
+        &assets,
+        1,
+        &warnings,
+        &redact_path_for_ui(normalized_root),
+    );
+
+    ScanProjectIndexResult {
+        id: format!("index:{}:fixture", project_id),
+        project_id: project_id.to_string(),
+        status: "ready".to_string(),
+        directory_count: directories.len() as u32,
+        file_count: files.len() as u32,
+        asset_count: assets.len() as u32,
+        ignored_count: 1,
+        warnings,
+        scanned_at,
+        directories,
+        files,
+        assets,
+        summary,
+    }
+}
+
 fn scan_real_directory(
     project_id: &str,
     root: &str,
@@ -622,14 +957,28 @@ fn scan_real_directory(
     max_files: u32,
     normalized_root: &str,
 ) -> ScanProjectIndexResult {
-    let root_path = Path::new(root);
-    let ignored_dirs = [".git", "Intermediate", "Saved", "DerivedDataCache", "Binaries", "node_modules", ".vs", "Build"];
+    let root_path_buf = Path::new(root)
+        .canonicalize()
+        .unwrap_or_else(|_| Path::new(root).to_path_buf());
+    let root_path = root_path_buf.as_path();
+    let ignored_dirs = [
+        ".git",
+        "Intermediate",
+        "Saved",
+        "DerivedDataCache",
+        "Binaries",
+        "node_modules",
+        ".vs",
+        "Build",
+    ];
     let mut dir_count = 0u32;
     let mut file_count = 0u32;
     let mut ignored = 0u32;
     let mut total_nodes = 0u32;
     let mut warnings: Vec<String> = Vec::new();
     let mut cancelled = false;
+    let mut directories: Vec<ProjectDirectoryEntry> = Vec::new();
+    let mut files: Vec<ProjectFileEntry> = Vec::new();
 
     fn scan_dir(
         dir: &Path,
@@ -646,9 +995,16 @@ fn scan_real_directory(
         root_path: &Path,
         project_id: &str,
         cancelled: &mut bool,
+        directories: &mut Vec<ProjectDirectoryEntry>,
+        files: &mut Vec<ProjectFileEntry>,
     ) {
-        if depth > max_depth || *total_nodes >= max_nodes || *file_count >= max_files { return; }
-        if is_cancelled(project_id) { *cancelled = true; return; }
+        if depth > max_depth || *total_nodes >= max_nodes || *file_count >= max_files {
+            return;
+        }
+        if is_cancelled(project_id) {
+            *cancelled = true;
+            return;
+        }
         let entries = match fs::read_dir(dir) {
             Ok(e) => {
                 let collected: Vec<_> = e.flatten().collect();
@@ -662,53 +1018,151 @@ fn scan_real_directory(
         let mut sorted_entries: Vec<_> = entries;
         sorted_entries.sort_by_key(|entry| entry.path());
         for entry in sorted_entries {
-            if *cancelled { return; }
-            if *total_nodes >= max_nodes || *file_count >= max_files { return; }
+            if *cancelled {
+                return;
+            }
+            if *total_nodes >= max_nodes || *file_count >= max_files {
+                return;
+            }
             let entry_path = entry.path();
-            let name = entry_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if ignored_dirs.contains(&name) { *ignored += 1; *total_nodes += 1; continue; }
+            let name = entry_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            if ignored_dirs.contains(&name) {
+                *ignored += 1;
+                *total_nodes += 1;
+                continue;
+            }
             *total_nodes += 1;
             let canonical = match entry_path.canonicalize() {
                 Ok(c) => c,
                 Err(_) => {
-                    warnings.push(format!("permission_denied on entry: {}", entry_path.display()));
+                    warnings.push(format!(
+                        "permission_denied on entry: {}",
+                        entry_path.display()
+                    ));
                     continue;
                 }
             };
             if !canonical.starts_with(root_path) {
-                warnings.push(format!("symlink_escape blocked: {} -> {}", entry_path.display(), canonical.display()));
+                warnings.push(format!(
+                    "symlink_escape blocked: {} -> {}",
+                    entry_path.display(),
+                    canonical.display()
+                ));
                 continue;
             }
             if canonical.is_dir() {
                 *dir_count += 1;
-                scan_dir(&canonical, depth + 1, max_depth, ignored_dirs, dir_count, file_count, ignored, total_nodes, max_nodes, max_files, warnings, root_path, project_id, cancelled);
+                if let Some(relative) = root_relative_path(root_path, &canonical) {
+                    directories.push(ProjectDirectoryEntry {
+                        id: format!("dir:{}", relative),
+                        display_name: name.to_string(),
+                        node_type: "directory".to_string(),
+                        root_relative_path: relative.clone(),
+                        display_path: display_path_for_project(&relative),
+                        children_count: child_count(&canonical, ignored_dirs),
+                        is_ignored: false,
+                        limit_reason: "none".to_string(),
+                    });
+                }
+                scan_dir(
+                    &canonical,
+                    depth + 1,
+                    max_depth,
+                    ignored_dirs,
+                    dir_count,
+                    file_count,
+                    ignored,
+                    total_nodes,
+                    max_nodes,
+                    max_files,
+                    warnings,
+                    root_path,
+                    project_id,
+                    cancelled,
+                    directories,
+                    files,
+                );
             } else {
                 *file_count += 1;
+                if let Some(relative) = root_relative_path(root_path, &canonical) {
+                    let extension = extension_for_path(&canonical);
+                    let byte_size = canonical
+                        .metadata()
+                        .map(|metadata| metadata.len())
+                        .unwrap_or(0);
+                    files.push(ProjectFileEntry {
+                        id: format!("file:{}", relative),
+                        display_name: name.to_string(),
+                        node_type: "file".to_string(),
+                        root_relative_path: relative.clone(),
+                        display_path: display_path_for_project(&relative),
+                        extension,
+                        byte_size,
+                        is_ignored: false,
+                        limit_reason: "none".to_string(),
+                    });
+                }
             }
         }
     }
 
     scan_dir(
-        root_path, 0, max_depth, &ignored_dirs,
-        &mut dir_count, &mut file_count, &mut ignored,
-        &mut total_nodes, max_nodes, max_files,
-        &mut warnings, root_path, project_id, &mut cancelled,
+        root_path,
+        0,
+        max_depth,
+        &ignored_dirs,
+        &mut dir_count,
+        &mut file_count,
+        &mut ignored,
+        &mut total_nodes,
+        max_nodes,
+        max_files,
+        &mut warnings,
+        root_path,
+        project_id,
+        &mut cancelled,
+        &mut directories,
+        &mut files,
     );
 
     let status = if cancelled { "cancelled" } else { "ready" };
 
     let redacted_warnings = redact_scan_warnings(warnings, normalized_root);
+    let scanned_at = deterministic_scanned_at(normalized_root);
+    let assets: Vec<AssetIndexEntry> = files
+        .iter()
+        .map(|file| asset_from_file(file, scanned_at))
+        .collect();
+    let redacted_root = redact_path_for_ui(normalized_root);
+    let summary = make_summary(
+        project_id,
+        status,
+        scanned_at,
+        &directories,
+        &files,
+        &assets,
+        ignored,
+        &redacted_warnings,
+        &redacted_root,
+    );
 
     ScanProjectIndexResult {
         id: format!("index:{}:real", project_id),
         project_id: project_id.to_string(),
         status: status.to_string(),
-        directory_count: dir_count,
-        file_count,
-        asset_count: file_count,
+        directory_count: directories.len() as u32,
+        file_count: files.len() as u32,
+        asset_count: assets.len() as u32,
         ignored_count: ignored,
         warnings: redacted_warnings,
-        scanned_at: deterministic_scanned_at(normalized_root),
+        scanned_at,
+        directories,
+        files,
+        assets,
+        summary,
     }
 }
 
@@ -871,37 +1325,65 @@ mod tests {
         let raw_warnings = vec![
             "permission_denied on directory: C:/Users/Dev/LyraStarter/SomeDir".to_string(),
             "permission_denied on entry: C:/Users/Dev/LyraStarter/SomeFile.cpp".to_string(),
-            "symlink_escape blocked: C:/Users/Dev/LyraStarter/SubDir/Symlink -> C:/Outside/Target".to_string(),
+            "symlink_escape blocked: C:/Users/Dev/LyraStarter/SubDir/Symlink -> C:/Outside/Target"
+                .to_string(),
         ];
         let root = "C:/Users/Dev/LyraStarter";
         let redacted = redact_scan_warnings(raw_warnings, root);
 
         // Every warning should have the root redacted
         for w in &redacted {
-            assert!(!w.contains("C:/Users/Dev/LyraStarter"), "warning contains raw root: {}", w);
-            assert!(!w.contains("C:\\Users\\Dev\\LyraStarter"), "warning contains raw root (backslash): {}", w);
+            assert!(
+                !w.contains("C:/Users/Dev/LyraStarter"),
+                "warning contains raw root: {}",
+                w
+            );
+            assert!(
+                !w.contains("C:\\Users\\Dev\\LyraStarter"),
+                "warning contains raw root (backslash): {}",
+                w
+            );
         }
 
         // The symlink escape target should be redacted to [outside-root]
-        let symlink_warning = redacted.iter().find(|w| w.contains("symlink_escape")).expect("should have symlink warning");
-        assert!(symlink_warning.contains("[outside-root]"), "symlink escape target not redacted: {}", symlink_warning);
+        let symlink_warning = redacted
+            .iter()
+            .find(|w| w.contains("symlink_escape"))
+            .expect("should have symlink warning");
+        assert!(
+            symlink_warning.contains("[outside-root]"),
+            "symlink escape target not redacted: {}",
+            symlink_warning
+        );
 
         // Permission denied warnings should reference [project-root]
-        let perm_warnings: Vec<&String> = redacted.iter().filter(|w| w.contains("permission_denied")).collect();
-        assert_eq!(perm_warnings.len(), 2, "should have 2 permission denied warnings");
+        let perm_warnings: Vec<&String> = redacted
+            .iter()
+            .filter(|w| w.contains("permission_denied"))
+            .collect();
+        assert_eq!(
+            perm_warnings.len(),
+            2,
+            "should have 2 permission denied warnings"
+        );
         for w in &perm_warnings {
-            assert!(w.contains("[project-root]"), "permission warning missing [project-root]: {}", w);
+            assert!(
+                w.contains("[project-root]"),
+                "permission warning missing [project-root]: {}",
+                w
+            );
         }
     }
 
     #[test]
     fn scan_fixture_warnings_preserved() {
-        let raw_warnings = vec![
-            "node_cap limit reached after fixture scan budget".to_string(),
-        ];
+        let raw_warnings = vec!["node_cap limit reached after fixture scan budget".to_string()];
         let redacted = redact_scan_warnings(raw_warnings, "fixture://lyra-starter");
         assert_eq!(redacted.len(), 1);
-        assert_eq!(redacted[0], "node_cap limit reached after fixture scan budget");
+        assert_eq!(
+            redacted[0],
+            "node_cap limit reached after fixture scan budget"
+        );
     }
 
     #[test]
@@ -916,20 +1398,46 @@ mod tests {
         let redacted = redact_scan_warnings(raw_warnings, root);
 
         for w in &redacted {
-            assert!(!w.contains("/Users/alice/LyraStarter"), "warning contains raw root: {}", w);
+            assert!(
+                !w.contains("/Users/alice/LyraStarter"),
+                "warning contains raw root: {}",
+                w
+            );
         }
 
-        let perm_warnings: Vec<&String> = redacted.iter().filter(|w| w.contains("permission_denied")).collect();
-        assert_eq!(perm_warnings.len(), 2, "should have 2 permission denied warnings");
+        let perm_warnings: Vec<&String> = redacted
+            .iter()
+            .filter(|w| w.contains("permission_denied"))
+            .collect();
+        assert_eq!(
+            perm_warnings.len(),
+            2,
+            "should have 2 permission denied warnings"
+        );
         for w in &perm_warnings {
-            assert!(w.contains("[project-root]"), "permission warning missing [project-root]: {}", w);
+            assert!(
+                w.contains("[project-root]"),
+                "permission warning missing [project-root]: {}",
+                w
+            );
         }
 
-        let symlink_warnings: Vec<&String> = redacted.iter().filter(|w| w.contains("symlink_escape")).collect();
+        let symlink_warnings: Vec<&String> = redacted
+            .iter()
+            .filter(|w| w.contains("symlink_escape"))
+            .collect();
         assert_eq!(symlink_warnings.len(), 2, "should have 2 symlink warnings");
         for w in &symlink_warnings {
-            assert!(w.contains("[outside-root]"), "symlink warning missing [outside-root]: {}", w);
-            assert!(!w.contains("/Users/alice"), "symlink warning contains home path: {}", w);
+            assert!(
+                w.contains("[outside-root]"),
+                "symlink warning missing [outside-root]: {}",
+                w
+            );
+            assert!(
+                !w.contains("/Users/alice"),
+                "symlink warning contains home path: {}",
+                w
+            );
         }
     }
 
@@ -945,21 +1453,129 @@ mod tests {
         let redacted = redact_scan_warnings(raw_warnings, root);
 
         for w in &redacted {
-            assert!(!w.contains("/home/bob/LyraStarter"), "warning contains raw root: {}", w);
+            assert!(
+                !w.contains("/home/bob/LyraStarter"),
+                "warning contains raw root: {}",
+                w
+            );
         }
 
-        let perm_warnings: Vec<&String> = redacted.iter().filter(|w| w.contains("permission_denied")).collect();
-        assert_eq!(perm_warnings.len(), 2, "should have 2 permission denied warnings");
+        let perm_warnings: Vec<&String> = redacted
+            .iter()
+            .filter(|w| w.contains("permission_denied"))
+            .collect();
+        assert_eq!(
+            perm_warnings.len(),
+            2,
+            "should have 2 permission denied warnings"
+        );
         for w in &perm_warnings {
-            assert!(w.contains("[project-root]"), "permission warning missing [project-root]: {}", w);
+            assert!(
+                w.contains("[project-root]"),
+                "permission warning missing [project-root]: {}",
+                w
+            );
         }
 
-        let symlink_warnings: Vec<&String> = redacted.iter().filter(|w| w.contains("symlink_escape")).collect();
+        let symlink_warnings: Vec<&String> = redacted
+            .iter()
+            .filter(|w| w.contains("symlink_escape"))
+            .collect();
         assert_eq!(symlink_warnings.len(), 2, "should have 2 symlink warnings");
         for w in &symlink_warnings {
-            assert!(w.contains("[outside-root]"), "symlink warning missing [outside-root]: {}", w);
-            assert!(!w.contains("/home/bob"), "symlink warning contains home path: {}", w);
-            assert!(!w.contains("/tmp/Target"), "symlink warning contains raw target: {}", w);
+            assert!(
+                w.contains("[outside-root]"),
+                "symlink warning missing [outside-root]: {}",
+                w
+            );
+            assert!(
+                !w.contains("/home/bob"),
+                "symlink warning contains home path: {}",
+                w
+            );
+            assert!(
+                !w.contains("/tmp/Target"),
+                "symlink warning contains raw target: {}",
+                w
+            );
         }
+    }
+
+    #[test]
+    fn real_directory_scan_returns_redacted_project_index_entries() {
+        let unique = format!(
+            "uagent-real-index-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let root = std::env::temp_dir().join(unique);
+        fs::create_dir_all(root.join("Config")).unwrap();
+        fs::create_dir_all(root.join("Source").join("LyraGame")).unwrap();
+        fs::create_dir_all(root.join("Content").join("Materials")).unwrap();
+        fs::write(
+            root.join("LyraStarter.uproject"),
+            "{\"EngineAssociation\":\"5.8\"}",
+        )
+        .unwrap();
+        fs::write(
+            root.join("Config").join("DefaultGame.ini"),
+            "ProjectName=LyraStarter",
+        )
+        .unwrap();
+        fs::write(
+            root.join("Source")
+                .join("LyraGame")
+                .join("LyraCharacter.cpp"),
+            "void ALyraCharacter::BeginPlay() {}",
+        )
+        .unwrap();
+        fs::write(
+            root.join("Content").join("Materials").join("M_Hero.uasset"),
+            [0u8, 1, 2, 3],
+        )
+        .unwrap();
+
+        let root_str = root.to_str().unwrap();
+        let result = scan_real_directory("project:test", root_str, 10, 5000, 2000, root_str);
+
+        assert_eq!(result.status, "ready");
+        assert!(
+            result.directories.len() > 0,
+            "directories should not be empty"
+        );
+        assert!(result.files.len() > 0, "files should not be empty");
+        assert!(result.assets.len() > 0, "assets should not be empty");
+        assert!(result
+            .directories
+            .iter()
+            .any(|entry| entry.root_relative_path == "Config"));
+        assert!(result
+            .directories
+            .iter()
+            .any(|entry| entry.root_relative_path == "Source"));
+        assert!(result
+            .files
+            .iter()
+            .any(|entry| entry.root_relative_path == "LyraStarter.uproject"));
+        assert!(result
+            .assets
+            .iter()
+            .any(|entry| entry.asset_type == "material"));
+        assert!(result
+            .assets
+            .iter()
+            .any(|entry| entry.root_relative_path == "Content/Materials/M_Hero.uasset"));
+
+        let serialized = serde_json::to_string(&result).unwrap();
+        assert!(serialized.contains("[project-root]/Config"));
+        assert!(
+            !serialized.contains(root_str),
+            "scan result contains raw root: {}",
+            serialized
+        );
+
+        fs::remove_dir_all(root).unwrap();
     }
 }

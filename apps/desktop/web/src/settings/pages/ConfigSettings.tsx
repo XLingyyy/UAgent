@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { SettingsPageLayout, SettingsSection } from "../SettingsPageLayout";
 import { configPageData } from "../settings-page-data";
 import {
@@ -31,9 +32,9 @@ export function ConfigSettings() {
 }
 
 function ProjectRootsDisplay() {
+  const [projectRootDraft, setProjectRootDraft] = useState("");
   const project = useProjectStore((state) => state);
   const {
-    setProjectRootInput,
     validateProjectRoot,
     trustProjectRoot,
     scanProjectIndex,
@@ -46,6 +47,10 @@ function ProjectRootsDisplay() {
     null;
   const canTrust = Boolean(activeProject && activeProject.trustState !== "trusted");
   const canScan = Boolean(activeProject && activeProject.trustState === "trusted");
+  const handleValidateProjectRoot = async () => {
+    await validateProjectRoot(projectRootDraft);
+    setProjectRootDraft("");
+  };
 
   return (
     <div className="ua-settings-page__static-stack" aria-label="Project roots and index">
@@ -53,8 +58,8 @@ function ProjectRootsDisplay() {
         <span className="ua-settings-page__field-label">Project root reference</span>
         <input
           className="ua-settings-page__input"
-          value={project.rootInput}
-          onChange={(event) => setProjectRootInput(event.target.value)}
+          value={projectRootDraft}
+          onChange={(event) => setProjectRootDraft(event.target.value)}
           placeholder="fixture://lyra"
           aria-label="Project root reference"
         />
@@ -63,7 +68,7 @@ function ProjectRootsDisplay() {
         <button
           className="ua-settings-page__action-btn ua-settings-page__action-btn--primary"
           type="button"
-          onClick={validateProjectRoot}
+          onClick={() => void handleValidateProjectRoot()}
         >
           Validate project root
         </button>

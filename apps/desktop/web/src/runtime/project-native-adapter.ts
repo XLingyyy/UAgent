@@ -140,19 +140,28 @@ function normalizeTrust(raw: NativeTrustResult, previous: ProjectProfile, now: n
 }
 
 function emptySnapshot(project: ProjectProfile, raw: NativeScanResult, now: number): ProjectIndexSnapshot {
+  const status = raw.status ?? "ready";
+  const directories = raw.directories ?? [];
+  const files = raw.files ?? [];
+  const assets = raw.assets ?? [];
+
+  if (status === "ready" && (!raw.summary || directories.length === 0 || files.length === 0 || assets.length === 0)) {
+    throw new Error("Native scan did not return project index entries");
+  }
+
   return {
     id: raw.id ?? `index:${project.id}:native`,
     projectId: raw.projectId ?? project.id,
     rootRef: project.rootRef,
-    status: raw.status ?? "ready",
-    directories: raw.directories ?? [],
-    files: raw.files ?? [],
-    assets: raw.assets ?? [],
+    status,
+    directories,
+    files,
+    assets,
     summary:
       raw.summary ?? {
         projectId: raw.projectId ?? project.id,
         scannedAt: raw.scanned_at ?? now,
-        status: raw.status ?? "ready",
+        status,
         directoryCount: raw.directory_count ?? 0,
         fileCount: raw.file_count ?? 0,
         assetCount: raw.asset_count ?? 0,

@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { UIProvider } from "../app/providers";
+import { ConfigSettings } from "../settings/pages/ConfigSettings";
 import {
   useComposerActions,
   useComposerStore,
@@ -16,6 +17,16 @@ import {
   useThreadStore,
 } from "./ui-store";
 import type { ProviderConfig } from "../types/provider";
+
+const tauriGlobal = globalThis as typeof globalThis & {
+  __TAURI_INTERNALS__?: { invoke?: (command: string, payload?: unknown) => Promise<unknown> };
+};
+const previousTauriInternals = tauriGlobal.__TAURI_INTERNALS__;
+
+afterEach(() => {
+  tauriGlobal.__TAURI_INTERNALS__ = previousTauriInternals;
+  vi.restoreAllMocks();
+});
 
 const customProviders: ProviderConfig[] = [
   {
@@ -167,6 +178,12 @@ function renderSliceProbe() {
   );
 }
 
+function ProjectStateJsonProbe() {
+  const project = useProjectStore((state) => state);
+
+  return <pre data-testid="project-json">{JSON.stringify(project)}</pre>;
+}
+
 describe("ui-store", () => {
   it("starts each slice with its expected seeded defaults", () => {
     renderSliceProbe();
@@ -234,5 +251,46 @@ describe("ui-store", () => {
 
     expect(screen.getByTestId("provider-test-status").textContent).toBe("success");
     expect(screen.getByTestId("selected-provider").textContent).toBe("provider-a");
+  });
+
+  it("keeps raw native project root input out of project store and DOM after validation", async () => {
+    const rawRoot = "C:/Users/Ada/LyraStarter";
+    const invoke = vi.fn(async (command: string) => {
+      if (command === "validate_native_project_root") {
+        return {
+          ok: true,
+          reason: "valid",
+          displayRoot: "[user-home]/LyraStarter",
+          projectName: "LyraStarter",
+          engine: { label: "UE 5.8", association: "5.8", source: "uproject" },
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    tauriGlobal.__TAURI_INTERNALS__ = { invoke };
+
+    render(
+      <UIProvider>
+        <ConfigSettings />
+        <ProjectStateJsonProbe />
+      </UIProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText("Project root reference"), {
+      target: { value: rawRoot },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Validate project root" }));
+
+    expect(await screen.findByText("Validation ready: LyraStarter")).toBeTruthy();
+    expect(screen.getByText("[user-home]/LyraStarter")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledWith("validate_native_project_root", {
+      input: { rootRef: rawRoot },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("project-json").textContent).not.toContain("C:/Users/Ada");
+    });
+    expect(screen.queryByDisplayValue(rawRoot)).toBeNull();
+    expect(document.body.textContent).not.toContain("C:/Users/Ada");
   });
 });

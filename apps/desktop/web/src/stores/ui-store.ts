@@ -224,17 +224,9 @@ function createUIStateBundle(
           ? previousState
           : { ...previousState, activeProjectId: projectId },
       ),
-    setProjectRootInput: (rootRef) =>
-      projectStore.setState((previousState) => ({
-        ...previousState,
-        rootInput: rootRef,
-        validation: null,
-        lastError: null,
-      })),
-    validateProjectRoot: async () => {
-      const rootInput = projectStore.getState().rootInput;
+    validateProjectRoot: async (rootRef) => {
       try {
-        const validation = await projectAdapter.validateRoot(rootInput);
+        const validation = await projectAdapter.validateRoot(rootRef);
         if (!validation.ok) {
           projectStore.setState((previousState) => ({
             ...previousState,
@@ -246,7 +238,7 @@ function createUIStateBundle(
         }
         // Check for existing fixture project, then try to add/validate the root
         const fixtureProject = projectAdapter.getProject("project-lyra-starter");
-        const project = fixtureProject ?? (await projectAdapter.addProject(rootInput));
+        const project = fixtureProject ?? (await projectAdapter.addProject(rootRef));
         projectStore.setState((previousState) => ({
           ...previousState,
           validation,

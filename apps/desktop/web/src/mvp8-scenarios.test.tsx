@@ -1,9 +1,19 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { AppShell } from "./shell/AppShell";
 import { UIProvider } from "./app/providers";
 import { runMvp8ScenarioMatrix } from "@uagent/runtime";
+
+const tauriGlobal = globalThis as typeof globalThis & {
+  __TAURI_INTERNALS__?: { invoke?: (command: string, payload?: unknown) => Promise<unknown> };
+};
+const previousTauriInternals = tauriGlobal.__TAURI_INTERNALS__;
+
+afterEach(() => {
+  tauriGlobal.__TAURI_INTERNALS__ = previousTauriInternals;
+  vi.restoreAllMocks();
+});
 
 function renderMvp8App() {
   return render(
@@ -147,6 +157,136 @@ describe("MVP8 desktop scenario matrix", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("File preview panel").textContent).toContain("[REDACTED]");
     });
+  });
+
+  it("uses mock native scan index entries in the Asset Browser without fixture fallback", async () => {
+    const rawRoot = "C:/Users/Ada/LyraStarter";
+    const invoke = vi.fn(async (command: string) => {
+      if (command === "validate_native_project_root") {
+        return {
+          ok: true,
+          reason: "valid",
+          displayRoot: "[user-home]/LyraStarter",
+          projectName: "NativeLyra",
+          engine: { label: "UE 5.8", association: "5.8", source: "uproject" },
+        };
+      }
+      if (command === "trust_native_project_root") {
+        return { displayRoot: "[user-home]/LyraStarter", trustState: "trusted" };
+      }
+      if (command === "scan_native_project_index") {
+        return {
+          id: "index:native-lyra",
+          projectId: "native:lyra",
+          status: "ready",
+          directories: [
+            {
+              id: "dir:Config",
+              displayName: "Config",
+              nodeType: "directory",
+              rootRelativePath: "Config",
+              displayPath: "[project-root]/Config",
+              childrenCount: 1,
+              isIgnored: false,
+              limitReason: "none",
+            },
+            {
+              id: "dir:Source",
+              displayName: "Source",
+              nodeType: "directory",
+              rootRelativePath: "Source",
+              displayPath: "[project-root]/Source",
+              childrenCount: 1,
+              isIgnored: false,
+              limitReason: "none",
+            },
+          ],
+          files: [
+            {
+              id: "file:LyraStarter.uproject",
+              displayName: "LyraStarter.uproject",
+              nodeType: "file",
+              rootRelativePath: "LyraStarter.uproject",
+              displayPath: "[project-root]/LyraStarter.uproject",
+              extension: ".uproject",
+              byteSize: 42,
+              isIgnored: false,
+              limitReason: "none",
+            },
+            {
+              id: "file:Config/DefaultGame.ini",
+              displayName: "DefaultGame.ini",
+              nodeType: "file",
+              rootRelativePath: "Config/DefaultGame.ini",
+              displayPath: "[project-root]/Config/DefaultGame.ini",
+              extension: ".ini",
+              byteSize: 128,
+              isIgnored: false,
+              limitReason: "none",
+            },
+            {
+              id: "file:Content/Materials/M_Hero.uasset",
+              displayName: "M_Hero.uasset",
+              nodeType: "file",
+              rootRelativePath: "Content/Materials/M_Hero.uasset",
+              displayPath: "[project-root]/Content/Materials/M_Hero.uasset",
+              extension: ".uasset",
+              byteSize: 2048,
+              isIgnored: false,
+              limitReason: "none",
+            },
+          ],
+          assets: [
+            {
+              id: "asset:Content/Materials/M_Hero.uasset",
+              displayName: "M_Hero.uasset",
+              rootRelativePath: "Content/Materials/M_Hero.uasset",
+              displayPath: "[project-root]/Content/Materials/M_Hero.uasset",
+              assetType: "material",
+              extension: ".uasset",
+              source: "project_index",
+              indexedAt: 8100,
+              tags: ["material", "uasset"],
+              previewStatus: "blocked",
+            },
+          ],
+          summary: {
+            projectId: "native:lyra",
+            scannedAt: 8100,
+            status: "ready",
+            directoryCount: 2,
+            fileCount: 3,
+            assetCount: 1,
+            ignoredCount: 0,
+            limitReasons: [],
+            warnings: [],
+            redactedRoot: "[user-home]/LyraStarter",
+          },
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    tauriGlobal.__TAURI_INTERNALS__ = { invoke };
+
+    renderMvp8App();
+    openConfigSettings();
+
+    fireEvent.change(screen.getByLabelText("Project root reference"), {
+      target: { value: rawRoot },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Validate project root" }));
+    expect(await screen.findByText("Validation ready: NativeLyra")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Trust project root" }));
+    expect(await screen.findByText("trusted")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Scan project index" }));
+    expect(await screen.findByText("Index ready")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back to app" }));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Asset Browser" }));
+    expect(screen.getByRole("tree", { name: "NativeLyra indexed asset browser" })).toBeTruthy();
+    expect(screen.getByText("M_Hero.uasset")).toBeTruthy();
+    expect(screen.queryByText("L_LyraStarterMap.umap")).toBeNull();
+    expect(document.body.textContent).not.toContain("C:/Users/Ada");
   });
 
   it("shows capability cards, native FS fixture mode, and TitleBar status", () => {

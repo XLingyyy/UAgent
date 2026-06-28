@@ -4,6 +4,89 @@ import { createNativeProjectAdapter } from "./project-native-adapter";
 const RAW_PATH = "C:/Users/Dev/LyraStarter";
 
 describe("project-native-adapter", () => {
+  const nativeDirectories = [
+    {
+      id: "dir:Config",
+      displayName: "Config",
+      nodeType: "directory",
+      rootRelativePath: "Config",
+      displayPath: "[project-root]/Config",
+      childrenCount: 1,
+      isIgnored: false,
+      limitReason: "none",
+    },
+    {
+      id: "dir:Source",
+      displayName: "Source",
+      nodeType: "directory",
+      rootRelativePath: "Source",
+      displayPath: "[project-root]/Source",
+      childrenCount: 1,
+      isIgnored: false,
+      limitReason: "none",
+    },
+  ] as const;
+  const nativeFiles = [
+    {
+      id: "file:LyraStarter.uproject",
+      displayName: "LyraStarter.uproject",
+      nodeType: "file",
+      rootRelativePath: "LyraStarter.uproject",
+      displayPath: "[project-root]/LyraStarter.uproject",
+      extension: ".uproject",
+      byteSize: 42,
+      isIgnored: false,
+      limitReason: "none",
+    },
+    {
+      id: "file:Config/DefaultGame.ini",
+      displayName: "DefaultGame.ini",
+      nodeType: "file",
+      rootRelativePath: "Config/DefaultGame.ini",
+      displayPath: "[project-root]/Config/DefaultGame.ini",
+      extension: ".ini",
+      byteSize: 128,
+      isIgnored: false,
+      limitReason: "none",
+    },
+    {
+      id: "file:Source/LyraGame/LyraCharacter.cpp",
+      displayName: "LyraCharacter.cpp",
+      nodeType: "file",
+      rootRelativePath: "Source/LyraGame/LyraCharacter.cpp",
+      displayPath: "[project-root]/Source/LyraGame/LyraCharacter.cpp",
+      extension: ".cpp",
+      byteSize: 256,
+      isIgnored: false,
+      limitReason: "none",
+    },
+    {
+      id: "file:Content/Materials/M_Hero.uasset",
+      displayName: "M_Hero.uasset",
+      nodeType: "file",
+      rootRelativePath: "Content/Materials/M_Hero.uasset",
+      displayPath: "[project-root]/Content/Materials/M_Hero.uasset",
+      extension: ".uasset",
+      byteSize: 2048,
+      isIgnored: false,
+      limitReason: "none",
+    },
+  ] as const;
+  const nativeAssets = [
+    {
+      id: "asset:Content/Materials/M_Hero.uasset",
+      displayName: "M_Hero.uasset",
+      rootRelativePath: "Content/Materials/M_Hero.uasset",
+      displayPath: "[project-root]/Content/Materials/M_Hero.uasset",
+      assetType: "material",
+      extension: ".uasset",
+      source: "project_index",
+      indexedAt: 8100,
+      tags: ["material", "uasset"],
+      previewStatus: "blocked",
+    },
+  ] as const;
+
   it("routes trusted real project operations through the MVP8 Tauri commands", async () => {
     const calls: { command: string; payload: unknown }[] = [];
     const adapter = createNativeProjectAdapter({
@@ -30,16 +113,16 @@ describe("project-native-adapter", () => {
             projectId: "root:native-lyra",
             status: "ready",
             rootRef: RAW_PATH,
-            directories: [],
-            files: [],
-            assets: [],
+            directories: nativeDirectories,
+            files: nativeFiles,
+            assets: nativeAssets,
             summary: {
               projectId: "root:native-lyra",
               scannedAt: 8100,
               status: "ready",
-              directoryCount: 0,
-              fileCount: 0,
-              assetCount: 0,
+              directoryCount: nativeDirectories.length,
+              fileCount: nativeFiles.length,
+              assetCount: nativeAssets.length,
               ignoredCount: 0,
               limitReasons: [],
               warnings: [],
@@ -96,6 +179,13 @@ describe("project-native-adapter", () => {
     );
 
     expect(scan.snapshot.status).toBe("ready");
+    expect(scan.snapshot.directories).toHaveLength(nativeDirectories.length);
+    expect(scan.snapshot.files).toHaveLength(nativeFiles.length);
+    expect(scan.snapshot.assets).toHaveLength(nativeAssets.length);
+    expect(scan.snapshot.files.some((file) => file.rootRelativePath === "LyraStarter.uproject")).toBe(true);
+    expect(scan.snapshot.directories.some((dir) => dir.rootRelativePath === "Config")).toBe(true);
+    expect(scan.snapshot.directories.some((dir) => dir.rootRelativePath === "Source")).toBe(true);
+    expect(scan.snapshot.assets[0]?.source).toBe("project_index");
     expect(preview.status).toBe("ready");
 
     // Snapshot rootRef must be opaque token, never raw path
@@ -139,7 +229,26 @@ describe("project-native-adapter", () => {
           return { displayRoot: "[user-home]/LyraStarter", trustState: "trusted" } as T;
         }
         if (command === "scan_native_project_index") {
-          return { id: "index:native-lyra", projectId: "test", status: "ready", directory_count: 2, file_count: 3, asset_count: 1, ignored_count: 0, scanned_at: 8100, warnings: [] } as T;
+          return {
+            id: "index:native-lyra",
+            projectId: "test",
+            status: "ready",
+            directories: nativeDirectories,
+            files: nativeFiles,
+            assets: nativeAssets,
+            summary: {
+              projectId: "test",
+              scannedAt: 8100,
+              status: "ready",
+              directoryCount: nativeDirectories.length,
+              fileCount: nativeFiles.length,
+              assetCount: nativeAssets.length,
+              ignoredCount: 0,
+              limitReasons: [],
+              warnings: [],
+              redactedRoot: "[user-home]/LyraStarter",
+            },
+          } as T;
         }
         throw new Error(`Unexpected command: ${command}`);
       },
@@ -175,7 +284,26 @@ describe("project-native-adapter", () => {
           return { displayRoot: "[user-home]/LyraStarter", trustState: "trusted" } as T;
         }
         if (command === "scan_native_project_index") {
-          return { id: "index:native-lyra", projectId: "test", status: "ready", directory_count: 0, file_count: 0, asset_count: 0, ignored_count: 0, scanned_at: 8100, warnings: [] } as T;
+          return {
+            id: "index:native-lyra",
+            projectId: "test",
+            status: "ready",
+            directories: nativeDirectories,
+            files: nativeFiles,
+            assets: nativeAssets,
+            summary: {
+              projectId: "test",
+              scannedAt: 8100,
+              status: "ready",
+              directoryCount: nativeDirectories.length,
+              fileCount: nativeFiles.length,
+              assetCount: nativeAssets.length,
+              ignoredCount: 0,
+              limitReasons: [],
+              warnings: [],
+              redactedRoot: "[user-home]/LyraStarter",
+            },
+          } as T;
         }
         throw new Error(`Unexpected command: ${command}`);
       },
@@ -208,5 +336,45 @@ describe("project-native-adapter", () => {
       },
     );
     expect(trustPayload).toBeDefined();
+  });
+
+  it("rejects legacy native scan results that contain counts without index entries", async () => {
+    const adapter = createNativeProjectAdapter({
+      invoke: async <T,>(command: string): Promise<T> => {
+        if (command === "validate_native_project_root") {
+          return {
+            ok: true,
+            reason: "valid",
+            displayRoot: "[user-home]/LyraStarter",
+            projectName: "LyraStarter",
+            engine: { label: "UE 5.8", association: "5.8", source: "uproject" },
+          } as T;
+        }
+        if (command === "trust_native_project_root") {
+          return { displayRoot: "[user-home]/LyraStarter", trustState: "trusted" } as T;
+        }
+        if (command === "scan_native_project_index") {
+          return {
+            id: "index:native-lyra",
+            projectId: "test",
+            status: "ready",
+            directory_count: 2,
+            file_count: 3,
+            asset_count: 1,
+            ignored_count: 0,
+            scanned_at: 8100,
+            warnings: [],
+          } as T;
+        }
+        throw new Error(`Unexpected command: ${command}`);
+      },
+    });
+
+    const project = await adapter.addProject(RAW_PATH);
+    const trusted = await adapter.confirmTrust(project.id);
+
+    await expect(adapter.scanProject(trusted.id)).rejects.toThrow(
+      "Native scan did not return project index entries",
+    );
   });
 });
