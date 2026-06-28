@@ -1659,41 +1659,99 @@ mod tests {
         assert_eq!(policy, "local_only");
     }
 
-    // --- Screenshot Capture skeleton tests ---
+        // --- Screenshot Capture skeleton tests ---
 
     #[test]
-    fn screenshot_without_approval_no_artifact() {
-        let result = screenshot::request_screenshot_capture(
+    fn screenshot_request_disabled_returns_blocked() {
+        let result = screenshot::request_screenshot_capture_with_feature(
             screenshot::ScreenshotCaptureInput {
                 scope: "viewport".to_string(),
                 reason: "testing".to_string(),
                 task_id: None,
             },
+            false,
         )
         .unwrap();
-        // Without approval, artifact_id should be None
-        assert!(result.artifact_id.is_none());
+        assert!(result.blocked, "request should be blocked when feature disabled");
+        assert_eq!(result.status, "blocked");
+        assert!(result.artifact_id.is_none(), "no artifact when feature disabled");
+        assert_eq!(result.reason, "feature_disabled");
     }
 
     #[test]
-    fn screenshot_approve_creates_artifact() {
+    fn screenshot_approve_disabled_returns_blocked() {
+        let result = screenshot::approve_screenshot_with_feature(
+            screenshot::ApproveScreenshotInput {
+                request_id: "req:test".to_string(),
+                approved: true,
+            },
+            false,
+        )
+        .unwrap();
+        assert!(result.blocked, "approve should be blocked when feature disabled");
+        assert_eq!(result.status, "blocked");
+        assert!(result.artifact_id.is_none(), "no artifact when feature disabled");
+        assert_eq!(result.reason, "feature_disabled");
+    }
+
+    #[test]
+    fn screenshot_approve_enabled_approved_returns_captured() {
+        let request = screenshot::request_screenshot_capture_with_feature(
+            screenshot::ScreenshotCaptureInput {
+                scope: "debug".to_string(),
+                reason: "unit-test".to_string(),
+                task_id: None,
+            },
+            true,
+        )
+        .unwrap();
+        assert!(!request.blocked);
+        assert_eq!(request.status, "pending");
+
+        let result = screenshot::approve_screenshot_with_feature(
+            screenshot::ApproveScreenshotInput {
+                request_id: request.request_id,
+                approved: true,
+            },
+            true,
+        )
+        .unwrap();
+        assert!(!result.blocked, "approve should succeed when feature enabled");
+        assert_eq!(result.status, "captured");
+        assert!(result.artifact_id.is_some(), "should produce artifact when feature enabled");
+        assert_eq!(result.reason, "approved_and_captured");
+    }
+
+    #[test]
+    fn screenshot_metadata_contains_no_raw_paths_or_secrets() {
         let request = screenshot::request_screenshot_capture(
             screenshot::ScreenshotCaptureInput {
                 scope: "viewport".to_string(),
                 reason: "testing".to_string(),
-                task_id: None,
+                task_id: Some("task-sec-1".to_string()),
             },
         )
         .unwrap();
-        let result = screenshot::approve_screenshot(
+        let serialized = serde_json::to_string(&request).unwrap();
+        assert!(!serialized.contains("C:/Users/"), "metadata leaks raw path");
+        assert!(!serialized.contains("/Users/"), "metadata leaks macOS path");
+        assert!(!serialized.contains("/home/"), "metadata leaks Linux path");
+        assert!(!serialized.contains("sk-"), "metadata leaks secret pattern");
+        assert!(!serialized.contains("Bearer"), "metadata leaks Bearer token");
+
+        let approved = screenshot::approve_screenshot(
             screenshot::ApproveScreenshotInput {
-                request_id: request.request_id.clone(),
+                request_id: request.request_id,
                 approved: true,
             },
         )
         .unwrap();
-        assert!(result.artifact_id.is_some());
-        assert_eq!(result.status, "captured");
+        let serialized_approved = serde_json::to_string(&approved).unwrap();
+        assert!(!serialized_approved.contains("C:/Users/"), "approve metadata leaks raw path");
+        assert!(!serialized_approved.contains("/Users/"), "approve metadata leaks macOS path");
+        assert!(!serialized_approved.contains("/home/"), "approve metadata leaks Linux path");
+        assert!(!serialized_approved.contains("sk-"), "approve metadata leaks secret pattern");
+        assert!(!serialized_approved.contains("Bearer"), "approve metadata leaks Bearer token");
     }
 
     // --- Watcher skeleton tests ---

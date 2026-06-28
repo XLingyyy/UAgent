@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { useRuntimeStore, useRuntimeActions } from "../stores/ui-store";
 
 const QUICK_ACTIONS = ["pnpm typecheck", "pnpm lint", "pnpm test"] as const;
-const FIXTURE_CWD = "/repo";
+const FIXTURE_CWD = "[project-root]";
 
 function getRiskClass(risk: string): string {
   if (risk === "allowlisted") return "ua-inspector-terminal__risk--low";

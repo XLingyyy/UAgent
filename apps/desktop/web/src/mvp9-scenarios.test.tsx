@@ -89,7 +89,7 @@ describe("MVP9 Store-Backed Runtime Service", () => {
   it("proposes terminal command through runtime service", () => {
     const adapter = createDesktopRuntimeAdapter();
     const mvp9 = adapter.getMvp9();
-    mvp9.terminal.propose("pnpm test", "/repo", null);
+    mvp9.terminal.propose("pnpm test", "[project-root]", null);
     const state = mvp9.terminal.getState();
     expect(state.stage).toBe("proposed");
     expect(state.activeProposal).toBeTruthy();
@@ -99,7 +99,7 @@ describe("MVP9 Store-Backed Runtime Service", () => {
   it("rejects terminal proposal through runtime service", () => {
     const adapter = createDesktopRuntimeAdapter();
     const mvp9 = adapter.getMvp9();
-    mvp9.terminal.propose("pnpm lint", "/repo", "task-reject");
+    mvp9.terminal.propose("pnpm lint", "[project-root]", "task-reject");
     const proposal = mvp9.terminal.getState().activeProposal!;
     mvp9.terminal.reject(proposal.id, "user", "not needed");
     expect(mvp9.terminal.getState().stage).toBe("rejected");
@@ -108,7 +108,7 @@ describe("MVP9 Store-Backed Runtime Service", () => {
   it("approves and executes terminal proposal through runtime service", async () => {
     const adapter = createDesktopRuntimeAdapter();
     const mvp9 = adapter.getMvp9();
-    mvp9.terminal.propose("pnpm build", "/repo", "task-approve");
+    mvp9.terminal.propose("pnpm build", "[project-root]", "task-approve");
     const proposal = mvp9.terminal.getState().activeProposal!;
     await mvp9.terminal.approve(proposal.id, "user", "go ahead");
     const state = mvp9.terminal.getState();
@@ -183,7 +183,7 @@ describe("MVP9 Store-Backed Runtime Service", () => {
   it("session replay reads state without calling adapter", () => {
     const adapter = createDesktopRuntimeAdapter();
     const mvp9 = adapter.getMvp9();
-    mvp9.terminal.propose("pnpm rerun", "/repo", "task-replay");
+    mvp9.terminal.propose("pnpm rerun", "[project-root]", "task-replay");
     const replayState = mvp9.replayTask("task-replay");
     expect(replayState.terminal.stage).toBe("proposed");
   });

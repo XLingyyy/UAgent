@@ -71,7 +71,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
 
     const terminalCmd = detectTerminalIntent(trimmedInput);
     if (terminalCmd) {
-      proposeTerminalCommand(terminalCmd, "/repo", null);
+      proposeTerminalCommand(terminalCmd, "[project-root]", null);
     }
 
     void submitComposerTask({

@@ -10,7 +10,7 @@ import { createFixtureScreenshotAdapter } from "./mvp9-browser-screenshot.js";
 describe("P0-1: Terminal Output And Evidence", () => {
   it("approve allowlisted command produces terminal_started, terminal_output, terminal_completed in session", async () => {
     const runtime = createMvp9RuntimeService();
-    runtime.terminal.propose("pnpm typecheck", "/repo", "task-terminal-output-1");
+    runtime.terminal.propose("pnpm typecheck", "[project-root]", "task-terminal-output-1");
     await runtime.terminal.approve("fixture-proposal-1", "test", "verify output");
 
     const session = runtime.getSessionEngine();
@@ -23,7 +23,7 @@ describe("P0-1: Terminal Output And Evidence", () => {
 
   it("audit contains terminal_output event with redacted output summary", async () => {
     const runtime = createMvp9RuntimeService();
-    runtime.terminal.propose("pnpm lint", "/repo", "task-terminal-audit-1");
+    runtime.terminal.propose("pnpm lint", "[project-root]", "task-terminal-audit-1");
     await runtime.terminal.approve("fixture-proposal-2", "test", "verify audit");
 
     const audit = runtime.getAuditEngine();
@@ -37,7 +37,7 @@ describe("P0-1: Terminal Output And Evidence", () => {
 
   it("reject produces no terminal_output or terminal_completed", async () => {
     const runtime = createMvp9RuntimeService();
-    runtime.terminal.propose("pnpm build", "/repo", "task-terminal-reject-1");
+    runtime.terminal.propose("pnpm build", "[project-root]", "task-terminal-reject-1");
     runtime.terminal.reject("fixture-proposal-3", "test", "no need");
 
     const session = runtime.getSessionEngine();
@@ -54,7 +54,7 @@ describe("P0-1: Terminal Output And Evidence", () => {
     const audit = createAuditProjection();
     const session = createSessionHistory();
     const terminalService = createTerminalService(audit, session, adapter);
-    terminalService.propose("pnpm build", "/repo", "task-replay-no-exec-1");
+    terminalService.propose("pnpm build", "[project-root]", "task-replay-no-exec-1");
     await terminalService.approve("fixture-proposal-4", "test", "go");
 
     executeSpy.mockClear();
@@ -212,7 +212,7 @@ describe("P0-3: Watcher Apply/Rescan Action", () => {
 describe("P0-4: Terminal Evidence Projection", () => {
   it("approved terminal execution evidence appears in session replay payload", async () => {
     const runtime = createMvp9RuntimeService();
-    runtime.terminal.propose("pnpm typecheck", "/repo", "task-terminal-evidence-1");
+    runtime.terminal.propose("pnpm typecheck", "[project-root]", "task-terminal-evidence-1");
     await runtime.terminal.approve("fixture-proposal-5", "test", "verify evidence");
 
     const session = runtime.getSessionEngine();
@@ -227,7 +227,7 @@ describe("P0-4: Terminal Evidence Projection", () => {
 
   it("evidence item summary includes terminal output metadata", async () => {
     const runtime = createMvp9RuntimeService();
-    runtime.terminal.propose("pnpm build", "/repo", "task-terminal-evidence-2");
+    runtime.terminal.propose("pnpm build", "[project-root]", "task-terminal-evidence-2");
     await runtime.terminal.approve("fixture-proposal-6", "test", "verify summary");
 
     const session = runtime.getSessionEngine();
@@ -246,7 +246,7 @@ describe("P0-4: Terminal Evidence Projection", () => {
 
   it("reject produces no terminal evidence", async () => {
     const runtime = createMvp9RuntimeService();
-    runtime.terminal.propose("pnpm build", "/repo", "task-terminal-evidence-reject-1");
+    runtime.terminal.propose("pnpm build", "[project-root]", "task-terminal-evidence-reject-1");
     runtime.terminal.reject("fixture-proposal-7", "test", "no need");
 
     const session = runtime.getSessionEngine();
@@ -262,7 +262,7 @@ describe("P0-4: Terminal Evidence Projection", () => {
     const audit = createAuditProjection();
     const session = createSessionHistory();
     const terminalService = createTerminalService(audit, session, adapter);
-    terminalService.propose("pnpm build", "/repo", "task-terminal-evidence-replay-1");
+    terminalService.propose("pnpm build", "[project-root]", "task-terminal-evidence-replay-1");
     await terminalService.approve("fixture-proposal-8", "test", "go");
 
     executeSpy.mockClear();
@@ -272,7 +272,7 @@ describe("P0-4: Terminal Evidence Projection", () => {
 
   it("evidence JSON does not contain raw absolute paths or secret patterns", async () => {
     const runtime = createMvp9RuntimeService();
-    runtime.terminal.propose("pnpm typecheck", "/repo", "task-terminal-evidence-redact-1");
+    runtime.terminal.propose("pnpm typecheck", "[project-root]", "task-terminal-evidence-redact-1");
     await runtime.terminal.approve("fixture-proposal-9", "test", "verify redaction");
 
     const session = runtime.getSessionEngine();
@@ -280,6 +280,7 @@ describe("P0-4: Terminal Evidence Projection", () => {
     const outputEvent = replay.events.find((e) => e.type === "terminal_output");
     expect(outputEvent).toBeDefined();
     const serialized = JSON.stringify(outputEvent);
+    expect(serialized).not.toContain("/repo");
     expect(serialized).not.toContain("C:/Users/");
     expect(serialized).not.toContain("/Users/");
     expect(serialized).not.toContain("/home/");

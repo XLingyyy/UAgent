@@ -18,12 +18,16 @@
 
 - Terminal policy: unit tests for classifier (allowlisted, dangerous, shell metachar, root escape)
 - Browser policy: unit tests for URL classification (local vs external)
-- Screenshot: unit tests for approve/deny flow
+- Screenshot: unit tests for request/approve/deny flow and feature flag guard
 - Watcher: unit tests for start/stop, change events, diff computation, root rejection
-- Scenario matrix: 17 MVP9 scenarios covering all capabilities
-- Side-effect scan: 5 new MVP9 categories with 0 blocked findings expected
+- Scenario matrix: 96 MVP9 scenarios covering all capabilities
+- Side-effect scan: 5 new MVP9 categories with 0 blocked findings
+- Terminal cwd redaction: tests prove `/repo`, `C:/Users/`, `/Users/`, `/home/` absent from evidence
+- Screenshot metadata: tests prove no raw path or secret leakage
+- Rust tests: 18 native skeleton tests passing serially
 
 ## Residual Risk
 
-- Native terminal/browser/screenshot/watcher skeletons are feature-flagged and not wired to real OS APIs in this MVP9 delivery; real execution requires explicit feature flag enablement and additional testing
-- Composer command proposal flow (MVP9-05-05) is defined at the policy level but full UI integration requires additional work
+- Native terminal/browser/screenshot/watcher skeletons are feature-flagged and default-off; real OS API execution requires explicit feature flag enablement and additional testing in a future MVP
+- Composer terminal intent integration is complete (build/test/lint pattern detection); remaining UI refinement is future work
+- Side-effect scan review findings (non-blocking) are tracked and will be resolved iteratively

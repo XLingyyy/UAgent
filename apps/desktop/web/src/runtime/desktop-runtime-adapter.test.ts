@@ -405,12 +405,12 @@ describe("DesktopRuntimeAdapter", () => {
     const listener = vi.fn();
     const unsub = adapter.subscribeMvp9(listener);
 
-    adapter.getMvp9().terminal.propose("pnpm test", "/repo", null);
+    adapter.getMvp9().terminal.propose("pnpm test", "[project-root]", null);
     expect(listener).toHaveBeenCalledTimes(1);
 
     unsub();
     listener.mockClear();
-    adapter.getMvp9().terminal.propose("pnpm lint", "/repo", null);
+    adapter.getMvp9().terminal.propose("pnpm lint", "[project-root]", null);
     expect(listener).not.toHaveBeenCalled();
   });
 
@@ -420,7 +420,7 @@ describe("DesktopRuntimeAdapter", () => {
     const unsub = adapter.subscribeMvp9(listener);
 
     unsub();
-    adapter.getMvp9().terminal.propose("pnpm build", "/repo", null);
+    adapter.getMvp9().terminal.propose("pnpm build", "[project-root]", null);
     expect(listener).not.toHaveBeenCalled();
   });
 });

@@ -34,11 +34,11 @@ fn hash_input(val: &str) -> String {
     format!("{:x}", hasher.finish())
 }
 
-#[tauri::command]
-pub fn request_screenshot_capture(
+pub fn request_screenshot_capture_with_feature(
     input: ScreenshotCaptureInput,
+    enabled: bool,
 ) -> Result<ScreenshotCaptureResult, String> {
-    if !SCREENSHOT_FEATURE_ENABLED {
+    if !enabled {
         return Ok(ScreenshotCaptureResult {
             request_id: String::new(),
             status: "blocked".to_string(),
@@ -57,9 +57,25 @@ pub fn request_screenshot_capture(
 }
 
 #[tauri::command]
-pub fn approve_screenshot(
-    input: ApproveScreenshotInput,
+pub fn request_screenshot_capture(
+    input: ScreenshotCaptureInput,
 ) -> Result<ScreenshotCaptureResult, String> {
+    request_screenshot_capture_with_feature(input, SCREENSHOT_FEATURE_ENABLED)
+}
+
+pub fn approve_screenshot_with_feature(
+    input: ApproveScreenshotInput,
+    enabled: bool,
+) -> Result<ScreenshotCaptureResult, String> {
+    if !enabled {
+        return Ok(ScreenshotCaptureResult {
+            request_id: String::new(),
+            status: "blocked".to_string(),
+            artifact_id: None,
+            blocked: true,
+            reason: "feature_disabled".to_string(),
+        });
+    }
     if input.approved {
         Ok(ScreenshotCaptureResult {
             request_id: input.request_id.clone(),
@@ -77,4 +93,11 @@ pub fn approve_screenshot(
             reason: "user_denied".to_string(),
         })
     }
+}
+
+#[tauri::command]
+pub fn approve_screenshot(
+    input: ApproveScreenshotInput,
+) -> Result<ScreenshotCaptureResult, String> {
+    approve_screenshot_with_feature(input, SCREENSHOT_FEATURE_ENABLED)
 }
