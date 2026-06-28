@@ -164,7 +164,7 @@ const scenarios: Mvp6Scenario[] = [
     run: () => {
       const { container } = renderMvp6App();
 
-      expect(screen.getByText("MVP6")).toBeTruthy();
+      expect(screen.getByText("MVP9 Prep")).toBeTruthy();
       expect(container.querySelector('[data-utility-pane-state="closed"]')).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "Open utility drawer" }));
       expect(screen.getByRole("button", { name: "Close utility drawer" })).toBeTruthy();
@@ -396,16 +396,21 @@ const scenarios: Mvp6Scenario[] = [
   },
   {
     name: "mvp6-placeholder-tools-disabled",
-    assertionCount: 12,
+    assertionCount: 6,
     run: () => {
       renderMvp6App();
       const drawer = openUtilityDrawer();
 
       expect(within(drawer).getByRole("tablist", { name: "Utility tools" })).toBeTruthy();
-      for (const label of ["Terminal", "Browser", "Files", "UE", "Logs", "Asset Search"]) {
+      for (const label of ["UE", "Logs", "Asset Search"]) {
         const tab = within(drawer).getByRole("tab", { name: label });
         expect(tab.getAttribute("aria-disabled")).toBe("true");
         expect(tab.getAttribute("aria-describedby")).toMatch(/^ua-coming-soon-tooltip-/);
+      }
+      // Terminal, Browser, Screenshot, and Files are now active MVP9 panels
+      for (const label of ["Terminal", "Browser", "Screenshot", "Files"]) {
+        const tab = within(drawer).getByRole("tab", { name: label });
+        expect(tab.getAttribute("aria-disabled")).toBeNull();
       }
     },
   },
@@ -541,7 +546,7 @@ const scenarios: Mvp6Scenario[] = [
       expect(animationsCss).toContain("@media (prefers-reduced-motion: reduce)");
       expect(animationsCss).toContain("animation-duration: 1ms !important");
       expect(animationsCss).toContain("transition-duration: 1ms !important");
-      expect(screen.getByText("MVP6")).toBeTruthy();
+      expect(screen.getByText("MVP9 Prep")).toBeTruthy();
     },
   },
   {

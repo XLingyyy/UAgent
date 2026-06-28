@@ -102,6 +102,8 @@ function createSpyRuntimeAdapter(snapshot: RuntimeSnapshot): DesktopRuntimeAdapt
     connectMcp: vi.fn(async () => {}),
     discoverMcp: vi.fn(async () => {}),
     disconnectMcp: vi.fn(),
+    getMvp9: () => ({ getState: () => ({ terminal: { proposals: [], activeProposal: null, approvalState: null, executionResult: null, stage: "idle" }, browser: { request: null, session: null, artifact: null, stage: "idle", blockedReason: null }, screenshot: { request: null, result: null, stage: "idle", evidence: null }, watcher: { session: null, events: [], diff: null, stage: "idle", stopReason: null, overflowed: false } }), terminal: { getState: () => ({ proposals: [], activeProposal: null, approvalState: null, executionResult: null, stage: "idle" }), propose: vi.fn(), approve: vi.fn(), reject: vi.fn(), cancel: vi.fn(), reset: vi.fn(), subscribe: () => () => {}, replayTask: vi.fn() }, browser: { getState: () => ({ request: null, session: null, artifact: null, stage: "idle", blockedReason: null }), requestPreview: vi.fn(), launchPreview: vi.fn(), reset: vi.fn(), subscribe: () => () => {}, replayTask: vi.fn() }, screenshot: { getState: () => ({ request: null, result: null, stage: "idle", evidence: null }), requestCapture: vi.fn(), approve: vi.fn(), deny: vi.fn(), reset: vi.fn(), subscribe: () => () => {}, replayTask: vi.fn() }, watcher: { getState: () => ({ session: null, events: [], diff: null, stage: "idle", stopReason: null, overflowed: false }), start: vi.fn(), generateChanges: vi.fn(), computeDiff: vi.fn(), applyChanges: vi.fn(), rescan: vi.fn(), stop: vi.fn(), reset: vi.fn(), subscribe: () => () => {}, replayTask: vi.fn() }, subscribe: () => () => {}, getAuditEngine: vi.fn(), getSessionEngine: vi.fn(), replayTask: vi.fn() }),
+    subscribeMvp9: () => () => {},
   };
 }
 
@@ -171,6 +173,7 @@ describe("InspectorPane", () => {
         "Changes",
         "Terminal",
         "Browser",
+        "Screenshot",
         "Files",
         "Evidence",
         "Logs",
@@ -216,9 +219,6 @@ describe("InspectorPane", () => {
     });
 
     it.each([
-      ["Terminal"],
-      ["Browser"],
-      ["Files"],
       ["Logs"],
       ["UE"],
       ["Asset Search"],

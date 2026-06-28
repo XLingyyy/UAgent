@@ -67,6 +67,27 @@ function stateForEvent(event: TaskEvent): TaskState {
     case "capability_completed":
     case "capability_cancelled":
     case "capability_timed_out":
+    case "terminal_proposed":
+    case "terminal_approved":
+    case "terminal_rejected":
+    case "terminal_started":
+    case "terminal_output":
+    case "terminal_completed":
+    case "terminal_failed":
+    case "terminal_cancelled":
+    case "terminal_blocked":
+    case "browser_preview_created":
+    case "browser_preview_blocked":
+    case "browser_preview_completed":
+    case "screenshot_captured":
+    case "screenshot_denied":
+    case "screenshot_failed":
+    case "watcher_started":
+    case "watcher_changed":
+    case "watcher_diff_generated":
+    case "watcher_overflow":
+    case "watcher_stopped":
+    case "watcher_error":
       return "executing";
     case "agent_observation_created":
       return "observing";

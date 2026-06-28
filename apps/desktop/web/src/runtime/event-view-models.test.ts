@@ -76,6 +76,16 @@ describe("MVP3 Agent event view models", () => {
     expect(mapTaskEventToWorkspaceMessage(event("provider_usage_recorded")).kind).toBe("tool-event");
   });
 
+  it("extracts terminal_output events as evidence", () => {
+    const events = [
+      event("terminal_output"),
+      event("terminal_completed"),
+      event("terminal_proposed"),
+    ];
+    const evidence = extractRuntimeEvidence(events);
+    expect(evidence.map((item) => item.type)).toEqual(["terminal_output"]);
+  });
+
   it("maps task_submitted body through to workspace message without leaking raw secrets", () => {
     const redactedBody = "api_key=[REDACTED] Authorization: Bearer [REDACTED] token=[REDACTED]";
     const taskSubmitted: TaskEvent = {

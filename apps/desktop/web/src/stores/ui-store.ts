@@ -92,6 +92,12 @@ function createUIStateBundle(
           : "Mock runtime / no provider call",
     }));
   });
+  runtimeClient.subscribeMvp9((mvp9State) => {
+    runtimeStore.setState((previousState) => ({
+      ...previousState,
+      mvp9: mvp9State,
+    }));
+  });
 
   const syncComposerSelection = (
     previousProviderState: ProviderState,
@@ -440,6 +446,63 @@ function createUIStateBundle(
     },
     disconnectMcp: () => {
       runtimeClient.disconnectMcp();
+    },
+    proposeTerminalCommand: (command, cwd, taskId) => {
+      runtimeClient.getMvp9().terminal.propose(command, cwd, taskId);
+    },
+    approveTerminalProposal: async (proposalId, actor, reason) => {
+      await runtimeClient.getMvp9().terminal.approve(proposalId, actor, reason);
+    },
+    rejectTerminalProposal: (proposalId, actor, reason) => {
+      runtimeClient.getMvp9().terminal.reject(proposalId, actor, reason);
+    },
+    cancelTerminalExecution: (executionId) => {
+      runtimeClient.getMvp9().terminal.cancel(executionId);
+    },
+    resetTerminal: () => {
+      runtimeClient.getMvp9().terminal.reset();
+    },
+    requestBrowserPreview: (url, taskId) => {
+      runtimeClient.getMvp9().browser.requestPreview(url, taskId);
+    },
+    launchBrowserPreview: () => {
+      runtimeClient.getMvp9().browser.launchPreview();
+    },
+    resetBrowser: () => {
+      runtimeClient.getMvp9().browser.reset();
+    },
+    requestScreenshotCapture: (scope, reason, taskId) => {
+      runtimeClient.getMvp9().screenshot.requestCapture(scope, reason, taskId);
+    },
+    approveScreenshot: () => {
+      runtimeClient.getMvp9().screenshot.approve();
+    },
+    denyScreenshot: (reason) => {
+      runtimeClient.getMvp9().screenshot.deny(reason);
+    },
+    resetScreenshot: () => {
+      runtimeClient.getMvp9().screenshot.reset();
+    },
+    startWatcher: (projectId, rootRef) => {
+      runtimeClient.getMvp9().watcher.start(projectId, rootRef);
+    },
+    generateWatcherChanges: (count) => {
+      runtimeClient.getMvp9().watcher.generateChanges(count);
+    },
+    computeWatcherDiff: () => {
+      runtimeClient.getMvp9().watcher.computeDiff();
+    },
+    applyWatcherChanges: () => {
+      runtimeClient.getMvp9().watcher.applyChanges();
+    },
+    rescanWatcher: () => {
+      runtimeClient.getMvp9().watcher.rescan();
+    },
+    stopWatcher: () => {
+      runtimeClient.getMvp9().watcher.stop();
+    },
+    resetWatcher: () => {
+      runtimeClient.getMvp9().watcher.reset();
     },
   };
 

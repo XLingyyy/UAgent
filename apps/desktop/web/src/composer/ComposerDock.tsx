@@ -11,6 +11,7 @@ import {
   useProjectActions,
   useProjectStore,
   useProviderStore,
+  useRuntimeActions,
   useRuntimeStore,
   useSettingsActions,
 } from "../stores/ui-store";
@@ -36,6 +37,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
     setComposerReasoning,
     submitComposerTask,
   } = useComposerActions();
+  const { proposeTerminalCommand } = useRuntimeActions();
   const providerModelOptions = createComposerModelOptions(provider.providers);
   const { input, permission, selectedModelId, reasoningEffort, runMode, branch, context } =
     composer;
@@ -44,9 +46,32 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const canSubmit = trimmedInput.length > 0;
   const providerStatus = selectedModelId === "not-configured" ? "not_configured" : "configured";
 
+  function detectTerminalIntent(input: string): string | null {
+    const patterns: [RegExp, string][] = [
+      [/\b(pnpm|npm|yarn)\s+(build|test|lint|typecheck)\b/i, "pnpm $2"],
+      [/\b(build|compile|bundle)\s+(project|app|all)\b/i, "pnpm build"],
+      [/\brun\s+lint\b/i, "pnpm lint"],
+      [/\brun\s+test\b/i, "pnpm test"],
+      [/\bcheck\s+types?\b/i, "pnpm typecheck"],
+    ];
+    for (const [re, cmd] of patterns) {
+      if (re.test(input)) {
+        return cmd
+          .replace("$2", (input.match(re)?.[2] ?? "build"))
+          .replace("$1", (input.match(re)?.[1] ?? "pnpm"));
+      }
+    }
+    return null;
+  }
+
   const handleSubmit = () => {
     if (!canSubmit) {
       return;
+    }
+
+    const terminalCmd = detectTerminalIntent(trimmedInput);
+    if (terminalCmd) {
+      proposeTerminalCommand(terminalCmd, "/repo", null);
     }
 
     void submitComposerTask({

@@ -399,6 +399,30 @@ describe("DesktopRuntimeAdapter", () => {
     expect(adapter.getMcpState().status).toBe("error");
     expect(adapter.getMcpState().lastError).toContain("Connection refused");
   });
+
+  it("subscribeMvp9 does not double-notify (P1 subscription cleanup)", () => {
+    const adapter = createDesktopRuntimeAdapter();
+    const listener = vi.fn();
+    const unsub = adapter.subscribeMvp9(listener);
+
+    adapter.getMvp9().terminal.propose("pnpm test", "/repo", null);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    unsub();
+    listener.mockClear();
+    adapter.getMvp9().terminal.propose("pnpm lint", "/repo", null);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("subscribeMvp9 unsubscribe prevents further listener calls (P1 subscription cleanup)", () => {
+    const adapter = createDesktopRuntimeAdapter();
+    const listener = vi.fn();
+    const unsub = adapter.subscribeMvp9(listener);
+
+    unsub();
+    adapter.getMvp9().terminal.propose("pnpm build", "/repo", null);
+    expect(listener).not.toHaveBeenCalled();
+  });
 });
 
 const initializeFixture = {

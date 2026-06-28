@@ -10,7 +10,8 @@ export type EvidenceKind =
   | "native_root_validation"
   | "native_scan_summary"
   | "native_preview_summary"
-  | "native_policy_block";
+  | "native_policy_block"
+  | "terminal_output";
 
 export type EvidenceSource =
   | "mock-runtime"

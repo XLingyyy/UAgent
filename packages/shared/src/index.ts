@@ -153,6 +153,44 @@ export type {
   SafeFilePreviewRequest,
   SafeFilePreviewResult,
 } from "./capability.js";
+export type {
+  TerminalCommandRisk,
+  TerminalCommandClassification,
+  TerminalCommandProposal,
+  TerminalProposalStatus,
+  TerminalApprovalState,
+  TerminalExecutionRequest,
+  TerminalExitCode,
+  TerminalExitState,
+  TerminalOutputChunk,
+  TerminalExecutionResult,
+  TerminalProposalAction,
+} from "./terminal.js";
+export type {
+  BrowserPreviewUrlPolicy,
+  BrowserPreviewStatus,
+  BrowserPreviewRequest,
+  BrowserPreviewSession,
+  ScreenshotCaptureStatus,
+  ScreenshotCaptureRequest,
+  ScreenshotCaptureResult,
+  ScreenshotMetadata,
+  PreviewArtifact,
+  BrowserScreenshotAction,
+} from "./browser-preview.js";
+export type {
+  WatcherStatus,
+  WatcherStopReason,
+  WatcherPolicy,
+  ProjectWatchSession,
+  ChangeKind,
+  ChangeSource,
+  ProjectChangeEvent,
+  ProjectIndexDiffEntry,
+  ProjectIndexDiff,
+  WatcherEventBatch,
+  WatcherAction,
+} from "./project-watcher.js";
 export type { ApprovalRequest, ApprovalRequestState, ApprovalDecision, ApprovalDecisionValue, ApprovalState, ApprovalScope } from "./approval.js";
 export type {
   ProviderCapability,

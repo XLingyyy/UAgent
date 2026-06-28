@@ -1,6 +1,9 @@
 import {
   createAgentLoopRuntime,
+  createMvp9RuntimeService,
   type AgentLoopRuntimeClient,
+  type Mvp9RuntimeService,
+  type Mvp9RuntimeState,
 } from "@uagent/runtime";
 import { LegacySseTransport, McpSession, McpTransportError, StreamableHttpTransport } from "@uagent/mcp-client";
 import type { ApprovalDecisionValue, McpConnectionState, RuntimeSnapshot, TaskDraft, TaskRecord } from "@uagent/shared";
@@ -18,6 +21,8 @@ export interface DesktopRuntimeAdapter {
   connectMcp(): Promise<void>;
   discoverMcp(): Promise<void>;
   disconnectMcp(): void;
+  getMvp9(): Mvp9RuntimeService;
+  subscribeMvp9(listener: (state: Mvp9RuntimeState) => void): () => void;
 }
 
 export interface DesktopRuntimeAdapterOptions {
@@ -31,6 +36,18 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     discovery: null,
     clockStart: 1_000,
   });
+  const mvp9Service = createMvp9RuntimeService();
+  const mvp9Listeners = new Set<(state: Mvp9RuntimeState) => void>();
+
+  function syncMvp9() {
+    const state = mvp9Service.getState();
+    for (const listener of mvp9Listeners) {
+      listener(state);
+    }
+  }
+
+  mvp9Service.subscribe(() => syncMvp9());
+
   let mcpState: McpConnectionState = {
     status: "disconnected",
     profile: {
@@ -228,6 +245,13 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       };
       syncMcp();
       syncSnapshot();
+    },
+    getMvp9: () => mvp9Service,
+    subscribeMvp9: (listener: (state: Mvp9RuntimeState) => void) => {
+      mvp9Listeners.add(listener);
+      return () => {
+        mvp9Listeners.delete(listener);
+      };
     },
   };
 }

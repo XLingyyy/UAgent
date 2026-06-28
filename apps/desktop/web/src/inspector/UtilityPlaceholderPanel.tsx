@@ -36,9 +36,20 @@ function extractEvidenceItem(event: TaskEvent): EvidenceDisplayItem {
     payload?.evidence && typeof payload.evidence === "object"
       ? (payload.evidence as EvidenceRecord)
       : null;
-  const id = evidence?.id ?? observation?.id ?? event.id;
-  const source = evidence?.source ?? observation?.source ?? "runtime";
-  const summary = evidence?.summary ?? observation?.summary ?? event.body ?? event.title;
+
+  let id: string;
+  let source: string;
+  let summary: string;
+
+  if (event.type === "terminal_output" && payload?.kind === "terminal_output") {
+    id = (payload.id as string) ?? event.id;
+    source = (payload.source as string) ?? "capability-bridge";
+    summary = (payload.summary as string) ?? event.body ?? event.title;
+  } else {
+    id = evidence?.id ?? observation?.id ?? event.id;
+    source = evidence?.source ?? observation?.source ?? "runtime";
+    summary = evidence?.summary ?? observation?.summary ?? event.body ?? event.title;
+  }
 
   return {
     id,

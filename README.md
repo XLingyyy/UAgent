@@ -2,13 +2,15 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP8 Native Read-Only Filesystem Bridge
+## Current Stage: MVP9 Controlled Terminal / Browser Preview / Incremental Watcher
 
-MVP8 turns the MVP7 static fixture-first project index into a controlled native read-only filesystem bridge and real project scan flow. The system can validate, trust, scan, index, and preview files from real local project directories selected by the user - all read-only, all audited, all redacted.
+MVP9 adds three controlled real capabilities on top of the MVP8 native read-only filesystem bridge:
 
-The core runtime flow (`Composer -> TaskDraft -> RuntimeClient.submitTask() -> AgentLoopRuntime -> TaskEvent -> RuntimeSnapshot -> UI`) remains unchanged. Real filesystem interactions go through a `NativeProjectAdapter` bridge layer, with fixture fallback in non-Tauri environments.
+1. **Controlled Terminal**: Command proposal with risk classification, approval-bound execution, sandbox-bounded shell, and redacted output. No arbitrary shell execution without explicit user approval.
+2. **Browser/Screenshot Preview**: Local-only browser preview of HTML/UE output. User-initiated screenshot capture with approval gating. No background capture or navigation.
+3. **Incremental File Watcher**: Trusted root only, debounced change events, diff computation, user-initiated apply/rescan. No auto-rescan or side effects.
 
-MVP8 does not enable default live provider network, real UE writes, real shell execution, real browser automation, real screenshot capture, filesystem mutation, workspace mutation, or mutating MCP tools. All real capabilities remain gated behind Capability Bridge, policy, and explicit user trust actions.
+All new capabilities pass through Capability Bridge policy gate. MVP5-MVP8 approval, sandbox, audit, session, redaction, and native read-only FS boundaries remain inviolable. Provider live remains manual opt-in.
 
 ## Technology Stack
 

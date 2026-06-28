@@ -46,6 +46,7 @@ export interface SessionHistoryEngine {
     title: string,
     capabilityKind: string,
     status: string,
+    payload?: unknown,
   ): void;
   getSessionSummary(): SessionSummary;
   getTaskHistory(filter: TaskHistoryFilter): TaskHistoryEntry[];
@@ -65,6 +66,7 @@ interface EventRecord {
   status?: string;
   createdAt: number;
   hasSecrets: boolean;
+  payload?: unknown;
 }
 
 function redactSessionText(text: string): { text: string; redacted: boolean } {
@@ -176,6 +178,7 @@ export function createSessionHistory(clock?: () => number): SessionHistoryEngine
       title: string,
       capabilityKind: string,
       status: string,
+      payload?: unknown,
     ): void {
       const redactedTitle = redactSessionText(title);
       tasks.push({
@@ -187,6 +190,7 @@ export function createSessionHistory(clock?: () => number): SessionHistoryEngine
         status,
         createdAt: now(),
         hasSecrets: redactedTitle.redacted,
+        payload,
       });
     },
 
@@ -276,6 +280,7 @@ export function createSessionHistory(clock?: () => number): SessionHistoryEngine
           ...(r.capabilityKind ? { capabilityKind: r.capabilityKind } : {}),
           ...(r.status ? { status: r.status } : {}),
           ...(r.providerMode ? { providerMode: r.providerMode } : {}),
+          ...(r.payload ? { ...(r.payload as Record<string, unknown>) } : {}),
         },
       }));
 

@@ -1,3 +1,8 @@
+pub(crate) mod browser;
+pub(crate) mod screenshot;
+pub(crate) mod terminal;
+pub(crate) mod watcher;
+
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -15,13 +20,13 @@ fn cancel_flags() -> &'static Mutex<HashMap<String, bool>> {
     FLAGS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn hash_path(path: &str) -> String {
+pub(crate) fn hash_path(path: &str) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     path.hash(&mut hasher);
     format!("root:{:x}", hasher.finish())
 }
 
-fn is_trusted_root(normalized: &str) -> bool {
+pub(crate) fn is_trusted_root(normalized: &str) -> bool {
     let hash = hash_path(normalized);
     trusted_roots().lock().unwrap().contains(&hash)
 }
@@ -620,7 +625,7 @@ fn blocked_preview(reason: &str) -> PreviewProjectFileResult {
     }
 }
 
-fn normalize_project_path(path: &str) -> String {
+pub(crate) fn normalize_project_path(path: &str) -> String {
     let raw = path.trim().replace('\\', "/");
     if raw.starts_with("fixture://") {
         return raw.trim_end_matches('/').to_string();
@@ -1174,7 +1179,7 @@ fn contains_fixture_uproject(normalized: &str) -> bool {
             || normalized.starts_with("fixture://lyra-starter/"))
 }
 
-fn redact_path_for_ui(path: &str) -> String {
+pub(crate) fn redact_path_for_ui(path: &str) -> String {
     let norm = normalize_project_path(path);
     if norm.starts_with("fixture://") {
         return norm.replacen("fixture://", "[fixture-root]/", 1);
@@ -1293,6 +1298,15 @@ pub fn run() {
             preview_native_project_file,
             trust_native_project_root,
             cancel_native_project_scan,
+            terminal::propose_terminal_command,
+            terminal::execute_terminal_command,
+            terminal::cancel_terminal_execution,
+            browser::browser_preview,
+            screenshot::request_screenshot_capture,
+            screenshot::approve_screenshot,
+            watcher::start_watcher,
+            watcher::stop_watcher,
+            watcher::read_watcher_diff,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1577,5 +1591,167 @@ mod tests {
         );
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    // --- Terminal skeleton tests ---
+
+    #[test]
+    fn terminal_feature_flag_off_returns_blocked() {
+        let result = terminal::propose_terminal_command(
+            terminal::TerminalProposeCommandInput {
+                command: "npm install".to_string(),
+                cwd: "/project".to_string(),
+                project_id: "proj1".to_string(),
+            },
+        )
+        .unwrap();
+        if cfg!(test) {
+            assert_eq!(result.risk, "allowlisted");
+            assert!(!result.requires_approval);
+        } else {
+            assert_eq!(result.risk, "blocked");
+            assert_eq!(result.reason, "feature_disabled");
+        }
+    }
+
+    #[test]
+    fn terminal_execute_without_approval_rejected() {
+        let result = terminal::execute_terminal_command(
+            terminal::TerminalExecuteCommandInput {
+                proposal_id: "proposal:abc".to_string(),
+                approved_token: String::new(),
+            },
+        );
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("missing approval token"),
+            "should reject empty token"
+        );
+    }
+
+    #[test]
+    fn terminal_dangerous_command_blocked() {
+        let (risk, requires_approval) = terminal::classify_command("rm -rf /");
+        assert_eq!(risk, "dangerous");
+        assert!(requires_approval);
+    }
+
+    #[test]
+    fn terminal_allowlisted_command_proposal() {
+        let (risk, requires_approval) = terminal::classify_command("npm install");
+        assert_eq!(risk, "allowlisted");
+        assert!(!requires_approval);
+    }
+
+    // --- Browser Preview skeleton tests ---
+
+    #[test]
+    fn browser_external_url_blocked() {
+        let (policy, blocked, _reason) = browser::classify_url("https://example.com");
+        assert!(blocked);
+        assert_eq!(policy, "blocked_external");
+    }
+
+    #[test]
+    fn browser_local_url_allowed() {
+        let (policy, blocked, _reason) = browser::classify_url("http://localhost:3000");
+        assert!(!blocked);
+        assert_eq!(policy, "local_only");
+    }
+
+    // --- Screenshot Capture skeleton tests ---
+
+    #[test]
+    fn screenshot_without_approval_no_artifact() {
+        let result = screenshot::request_screenshot_capture(
+            screenshot::ScreenshotCaptureInput {
+                scope: "viewport".to_string(),
+                reason: "testing".to_string(),
+                task_id: None,
+            },
+        )
+        .unwrap();
+        // Without approval, artifact_id should be None
+        assert!(result.artifact_id.is_none());
+    }
+
+    #[test]
+    fn screenshot_approve_creates_artifact() {
+        let request = screenshot::request_screenshot_capture(
+            screenshot::ScreenshotCaptureInput {
+                scope: "viewport".to_string(),
+                reason: "testing".to_string(),
+                task_id: None,
+            },
+        )
+        .unwrap();
+        let result = screenshot::approve_screenshot(
+            screenshot::ApproveScreenshotInput {
+                request_id: request.request_id.clone(),
+                approved: true,
+            },
+        )
+        .unwrap();
+        assert!(result.artifact_id.is_some());
+        assert_eq!(result.status, "captured");
+    }
+
+    // --- Watcher skeleton tests ---
+
+    #[test]
+    fn watcher_untrusted_root_blocked() {
+        trusted_roots().lock().unwrap().clear();
+        let result = watcher::start_watcher(watcher::WatcherStartInput {
+            project_id: "proj1".to_string(),
+            root_ref: "C:/Untrusted".to_string(),
+        })
+        .unwrap();
+        assert!(result.blocked);
+        assert_eq!(result.reason, "untrusted_root");
+    }
+
+    #[test]
+    fn watcher_start_stop_read() {
+        // Trust a fixture root for this test
+        let root = "fixture://lyra-starter";
+        let normalized = normalize_project_path(root);
+        let hash = hash_path(&normalized);
+        trusted_roots().lock().unwrap().insert(hash);
+
+        let start = watcher::start_watcher(watcher::WatcherStartInput {
+            project_id: "proj1".to_string(),
+            root_ref: root.to_string(),
+        })
+        .unwrap();
+        if cfg!(test) {
+            assert!(!start.blocked, "start should not be blocked in test mode");
+            assert_eq!(start.status, "watching");
+            assert!(
+                start.display_root.contains("[fixture-root]"),
+                "display_root should be redacted: {}",
+                start.display_root
+            );
+        }
+
+        let diff = watcher::read_watcher_diff(watcher::WatcherReadDiffInput {
+            session_id: start.session_id.clone(),
+        })
+        .unwrap();
+        assert_eq!(diff.entries.len(), 2);
+        for entry in &diff.entries {
+            assert!(
+                entry.display_path.starts_with("[project-root]/"),
+                "display_path should be redacted: {}",
+                entry.display_path
+            );
+        }
+
+        let stop = watcher::stop_watcher(watcher::WatcherStopInput {
+            session_id: start.session_id,
+        })
+        .unwrap();
+        assert_eq!(stop.status, "stopped");
+
+        trusted_roots().lock().unwrap().clear();
     }
 }

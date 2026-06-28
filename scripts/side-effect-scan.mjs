@@ -238,12 +238,13 @@ const CATEGORIES = [
       (rel) => /\.test\./.test(rel),
       (rel) => /scripts\//.test(rel),
       (rel) => /packages\/runtime\/src\/mvp7-project-index/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp9-terminal-policy/.test(rel),
       (rel) => /packages\/runtime\/src\/mcp-readonly-policy/.test(rel),
       (rel) => /packages\/runtime\/src\/sandbox-policy/.test(rel),
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\//.test(rel),
-      (rel) => /packages\/runtime\/src\/(?!mvp7-project-index)/.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp7-project-index|mvp9-terminal-policy)/.test(rel),
     ],
   },
   {
@@ -269,6 +270,114 @@ const CATEGORIES = [
     ],
   },
   {
+    id: "mvp9-terminal-exec-boundary",
+    title: "MVP9 Terminal Exec Boundary",
+    description: "React UI must not directly execute shell commands or terminal operations",
+    patterns: [
+      { re: /child_process/gi, label: "child_process" },
+      { re: /\bspawn(Sync)?\s*\(/gi, label: "spawn()" },
+      { re: /\bexec(Sync|File)?\s*\(/gi, label: "exec()" },
+      { re: /\.execCommand\s*\(/gi, label: "execCommand()" },
+      { re: /\bterminal\s*\.\s*execute\s*\(/gi, label: "terminal.execute()" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/runtime\/src\/mvp9-terminal/.test(rel),
+      (rel) => /packages\/shared\/src\/terminal/.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\//.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\//.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp9-browser-preview-boundary",
+    title: "MVP9 Browser Preview Boundary",
+    description: "React UI must not directly open browser windows or navigate to URLs",
+    patterns: [
+      { re: /window\.open\s*\(/gi, label: "window.open()" },
+      { re: /location\.href\s*=/gi, label: "location.href assignment" },
+      { re: /\.open\(/gi, label: ".open()" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/runtime\/src\/mvp9-browser/.test(rel),
+      (rel) => /packages\/shared\/src\/browser-preview/.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\//.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp9-screenshot-capture-boundary",
+    title: "MVP9 Screenshot Capture Boundary",
+    description: "React UI must not directly invoke screen capture APIs",
+    patterns: [
+      { re: /getDisplayMedia\s*\(/gi, label: "getDisplayMedia()" },
+      { re: /screen\.capture\s*\(/gi, label: "screen.capture()" },
+      { re: /desktopCapture/gi, label: "desktopCapture" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/runtime\/src\/mvp9-browser/.test(rel),
+      (rel) => /packages\/shared\/src\/browser-preview/.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\//.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp9-watcher-boundary",
+    title: "MVP9 Watcher Boundary",
+    description: "React UI must not directly watch filesystem or trigger auto-rescan",
+    patterns: [
+      { re: /fs\.watch\s*\(/gi, label: "fs.watch()" },
+      { re: /fs\.watchFile\s*\(/gi, label: "fs.watchFile()" },
+      { re: /chokidar/gi, label: "chokidar" },
+      { re: /FileWatcher/gi, label: "FileWatcher" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/runtime\/src\/mvp9-project-watcher/.test(rel),
+      (rel) => /packages\/shared\/src\/project-watcher/.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\//.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\//.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp9-raw-output-boundary",
+    title: "MVP9 Raw Output Boundary",
+    description: "Terminal output, URLs, screenshot metadata, and watcher paths must be redacted",
+    patterns: [
+      { re: /C:\\Users\\[^/]+\\/gi, label: "raw Windows home path" },
+      { re: /\/home\/[A-Za-z0-9._-]+\//g, label: "raw Linux home path" },
+      { re: /Bearer\s+[A-Za-z0-9]{8,}/g, label: "Bearer token literal" },
+      { re: /sk-[A-Za-z0-9]{8,}/g, label: "sk-* API key literal" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/shared\/src\//.test(rel),
+      (rel) => /packages\/runtime\/src\/(mvp9-|mvp5-scenarios|mvp7-project-index|mvp8-project-index)/.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\//.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\//.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp9-|mvp5-scenarios|mvp7-project-index|mvp8-project-index)/.test(rel),
+    ],
+  },
+  {
     id: "mvp8-real-scan-boundary",
     title: "MVP8 Real Scan Boundary",
     description: "Real scan/preview operations must not produce raw paths or execute side effects",
@@ -280,18 +389,19 @@ const CATEGORIES = [
       { re: /C:\\Users\\[^/]+\\/gi, label: "raw Windows home path" },
       { re: /\/home\/[A-Za-z0-9._-]+\//g, label: "raw Linux home path" },
     ],
-  allowWhen: [
-    (rel) => /docs\//.test(rel),
-    (rel) => /\.test\./.test(rel),
-    (rel) => /scripts\//.test(rel),
-    (rel) => /apps\/desktop\/src-tauri\//.test(rel),
-    (rel) => /packages\/runtime\/src\/mvp8-project-index/.test(rel),
-    (rel) => /packages\/shared\/src\/project/.test(rel),
-    (rel) => /mcp-readonly-policy/.test(rel),
-  ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\//.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\//.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp8-project-index/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp9-terminal-policy/.test(rel),
+      (rel) => /packages\/shared\/src\/project/.test(rel),
+      (rel) => /mcp-readonly-policy/.test(rel),
+    ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
-      (rel) => /packages\/runtime\/src\/(?!mvp8-project-index)/.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp8-project-index|mvp9-terminal-policy)/.test(rel),
     ],
   },
 ];
@@ -386,7 +496,7 @@ function main() {
   const hr = "=".repeat(80);
 
   console.log(hr);
-  console.log("  UAgent MVP8 Side-effect Scan Report");
+  console.log("  UAgent MVP9 Side-effect Scan Report");
   console.log(`  ${new Date().toISOString()}`);
   console.log(`  Files scanned: ${fileSet.length}`);
   console.log(hr);

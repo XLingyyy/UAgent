@@ -45,6 +45,7 @@ export type UtilityToolId =
   | "changes"
   | "terminal"
   | "browser"
+  | "screenshot"
   | "files"
   | "evidence"
   | "logs"
@@ -53,7 +54,7 @@ export type UtilityToolId =
 
 export type UtilityPlaceholderToolId = Exclude<
   UtilityToolId,
-  "review" | "diagnostics" | "runtime" | "agent-trace" | "evidence"
+  "review" | "diagnostics" | "runtime" | "agent-trace" | "evidence" | "terminal" | "browser" | "screenshot" | "files"
 >;
 
 export interface UtilityToolDefinition {
@@ -212,17 +213,22 @@ export const utilityTools: UtilityToolDefinition[] = [
   {
     id: "terminal",
     label: "Terminal",
-    summary: "Static transcript",
+    summary: "Command proposal and execution",
   },
   {
     id: "browser",
     label: "Browser",
-    summary: "Preview placeholder",
+    summary: "URL preview policy",
+  },
+  {
+    id: "screenshot",
+    label: "Screenshot",
+    summary: "Capture approval",
   },
   {
     id: "files",
     label: "Files",
-    summary: "Mock project references",
+    summary: "Watcher and changes",
   },
   {
     id: "evidence",
@@ -250,42 +256,6 @@ export const utilityPlaceholderPanels: Record<
   UtilityPlaceholderToolId,
   UtilityPlaceholderPanelData
 > = {
-  terminal: {
-    id: "terminal",
-    title: "Terminal",
-    state: "Session unavailable",
-    badge: "Mock only",
-    items: [
-      "Transcript preview is static.",
-      "No executable prompt is rendered.",
-      "Session controls are reserved for a later MVP.",
-    ],
-    actionLabel: "Future terminal bridge",
-  },
-  browser: {
-    id: "browser",
-    title: "Browser",
-    state: "Preview unavailable",
-    badge: "Mock only",
-    items: [
-      "Page preview is not mounted.",
-      "No address entry or navigation control is rendered.",
-      "External content loading is outside this UI task.",
-    ],
-    actionLabel: "Future embedded browser",
-  },
-  files: {
-    id: "files",
-    title: "Files",
-    state: "Not mounted",
-    badge: "Mock only",
-    items: [
-      "Project references are static labels.",
-      "No local project mount is attached.",
-      "File operations stay outside this drawer mock.",
-    ],
-    actionLabel: "Future file browser",
-  },
   logs: {
     id: "logs",
     title: "Logs",

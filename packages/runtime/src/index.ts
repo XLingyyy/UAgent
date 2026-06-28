@@ -90,6 +90,20 @@ export { extractProviderTraceSummary, formatProviderTraceSummary, type ProviderT
 export { mapProviderRuntimeEvent, type ProviderEventMappingResult } from "./provider/provider-event-bridge.js";
 export { runProviderScenarioMatrix, type Mvp4ScenarioMatrixResult, type Mvp4ScenarioResult } from "./provider/mvp4-scenarios.js";
 
+export { classifyTerminalCommandRisk, isProposalExecutable, createAllowlistTerminalPolicy } from "./mvp9-terminal-policy.js";
+export type { TerminalCommandClassification } from "@uagent/shared";
+export { createFixtureTerminalAdapter, type FixtureTerminalAdapter } from "./mvp9-terminal-adapter.js";
+export { classifyBrowserUrl, createFixtureBrowserPreviewAdapter, createFixtureScreenshotAdapter } from "./mvp9-browser-screenshot.js";
+export type { FixtureBrowserPreviewAdapter, FixtureScreenshotAdapter } from "./mvp9-browser-screenshot.js";
+export { createDefaultWatcherPolicy, isRootAllowedForWatch, computeProjectIndexDiff, createFixtureWatcherAdapter, debounceWatcherEvents } from "./mvp9-project-watcher.js";
+export type { FixtureWatcherAdapter } from "./mvp9-project-watcher.js";
+export { runMvp9ScenarioMatrix, type Mvp9ScenarioMatrixResult, type Mvp9ScenarioResult } from "./mvp9-scenarios.js";
+export { createTerminalService, type TerminalService, type TerminalServiceState, type TerminalStage } from "./mvp9-terminal-service.js";
+export { createBrowserService, type BrowserService, type BrowserServiceState, type BrowserStage } from "./mvp9-browser-service.js";
+export { createScreenshotService, type ScreenshotService, type ScreenshotServiceState, type ScreenshotStage } from "./mvp9-screenshot-service.js";
+export { createWatcherService, type WatcherService, type WatcherServiceState, type WatcherStage } from "./mvp9-watcher-service.js";
+export { createMvp9RuntimeService, type Mvp9RuntimeService, type Mvp9RuntimeState } from "./mvp9-runtime-service.js";
+
 export {
   createAuditProjection,
   buildAuditFromTaskEvents,

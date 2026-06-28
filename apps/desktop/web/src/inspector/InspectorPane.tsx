@@ -7,6 +7,10 @@ import { AgentTracePanel } from "./AgentTracePanel";
 import { SafetyPanel } from "./SafetyPanel";
 import { AuditPanel } from "./AuditPanel";
 import { ChangesPanel } from "./ChangesPanel";
+import { TerminalPanel } from "./TerminalPanel";
+import { BrowserPanel } from "./BrowserPanel";
+import { ScreenshotPanel } from "./ScreenshotPanel";
+import { WatcherPanel } from "./WatcherPanel";
 import { UtilityEvidencePanel, UtilityPlaceholderPanel } from "./UtilityPlaceholderPanel";
 import {
   utilityPlaceholderPanels,
@@ -56,6 +60,22 @@ function renderToolPanel(toolId: UtilityToolId) {
     return <ChangesPanel />;
   }
 
+  if (toolId === "terminal") {
+    return <TerminalPanel />;
+  }
+
+  if (toolId === "browser") {
+    return <BrowserPanel />;
+  }
+
+  if (toolId === "screenshot") {
+    return <ScreenshotPanel />;
+  }
+
+  if (toolId === "files") {
+    return <WatcherPanel />;
+  }
+
   if (toolId === "evidence") {
     return <UtilityEvidencePanel />;
   }
@@ -68,7 +88,7 @@ function renderToolPanel(toolId: UtilityToolId) {
 }
 
 function isFutureTool(toolId: UtilityToolId): boolean {
-  return ["terminal", "browser", "files", "logs", "ue", "asset-search"].includes(toolId);
+  return ["logs", "ue", "asset-search"].includes(toolId);
 }
 
 export function InspectorPane({ open, onClose }: InspectorPaneProps) {

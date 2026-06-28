@@ -95,7 +95,7 @@ describe("MVP7 desktop scenario matrix", () => {
     const { container } = renderMvp7App();
 
     expect(container.querySelector('[data-workspace-mode="welcome"]')).toBeTruthy();
-    expect(screen.getByText("MVP7") || screen.getByText("MVP8")).toBeTruthy();
+    expect(screen.getByText("MVP9 Prep")).toBeTruthy();
     expect(screen.getByText("Native FS: fixture") || screen.getByText("Read-only project index")).toBeTruthy();
     expect(screen.getByText("No project root registered")).toBeTruthy();
   });
@@ -146,7 +146,7 @@ describe("MVP7 desktop scenario matrix", () => {
     const scan = readTextFile("../../scripts/side-effect-scan.mjs", "scripts/side-effect-scan.mjs");
     const manual = readTextFile("../../docs/mvp7-manual-smoke.md", "docs/mvp7-manual-smoke.md");
 
-    expect(readme).toContain("MVP8");
+    expect(readme).toContain("MVP9");
     expect(scan).toContain("mvp7-project-index-boundary");
     expect(scan).toContain("mvp7-capability-bridge-boundary");
     expect(manual).toContain("fixture://lyra");

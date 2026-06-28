@@ -127,7 +127,7 @@ Out of scope for MVP7: real file writes, deletes, renames, mkdir, workspace muta
 - Capability Bridge Files mode extended with `native_read_only`; all write/exec/capture/browser capabilities remain blocked by default.
 - MVP8 scenario matrix and side-effect scan with 0 blocked findings expected.
 
-Status: current
+Status: complete
 
 Out of scope for MVP8: real filesystem writes/deletes/renames/moves, terminal execution beyond proposals, browser automation, screenshot capture, UE Editor launch, default live provider network, automatic file watchers, incremental rescan, raw absolute path or raw secret leakage into UI/DOM/audit/tests.
 
@@ -140,8 +140,16 @@ Out of scope for MVP8: real filesystem writes/deletes/renames/moves, terminal ex
 - Approval/Sandbox/Audit/Session/Redaction boundaries remain non-negotiable.
 - Provider live remains manual opt-in with secret management.
 - No automatic side effects without explicit user action.
+- Shared contracts: TerminalCommandProposal, BrowserPreviewSession, ProjectWatchSession, ProjectIndexDiff
+- Terminal policy: command risk classifier, allowlist/denylist, proposal generation, fixture dry-run adapter
+- Browser/Screenshot policy: local-only URL policy, blocked external URLs, fixture adapters
+- Watcher policy: trusted root reuse, debounce, diff computation, overflow detection
+- Capability Bridge extended with terminal_exec, browser_preview, screenshot_capture, project_watcher
+- TaskEvent/AuditEvent/Session extended with MVP9 event types
+- Side-effect scan extended with 5 MVP9 categories: terminal-exec, browser-preview, screenshot-capture, watcher, raw-output boundaries
+- MVP9 scenario matrix: 17 scenarios covering terminal, browser, screenshot, watcher, capability defaults
 
-Status: planned
+Status: current
 
 ## Non-Goals
 

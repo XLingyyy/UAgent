@@ -1,9 +1,17 @@
 import { createMockRuntime, type MockRuntimeClient } from "@uagent/runtime";
+import type {
+  Mvp9RuntimeState,
+  TerminalServiceState,
+  BrowserServiceState,
+  ScreenshotServiceState,
+  WatcherServiceState,
+} from "@uagent/runtime";
 import type { ApprovalDecisionValue, McpConnectionState, RuntimeSnapshot, TaskDraft } from "@uagent/shared";
 
 export interface RuntimeStoreState extends RuntimeSnapshot {
   mockOnlyWarning: string | null;
   mcp: McpConnectionState;
+  mvp9: Mvp9RuntimeState;
 }
 
 export interface RuntimeStoreActions {
@@ -14,9 +22,44 @@ export interface RuntimeStoreActions {
   connectMcp: () => Promise<void>;
   discoverMcp: () => Promise<void>;
   disconnectMcp: () => void;
+  proposeTerminalCommand: (command: string, cwd: string, taskId: string | null) => void;
+  approveTerminalProposal: (proposalId: string, actor: string, reason: string) => Promise<void>;
+  rejectTerminalProposal: (proposalId: string, actor: string, reason: string) => void;
+  cancelTerminalExecution: (executionId: string) => void;
+  resetTerminal: () => void;
+  requestBrowserPreview: (url: string, taskId: string | null) => void;
+  launchBrowserPreview: () => void;
+  resetBrowser: () => void;
+  requestScreenshotCapture: (scope: string, reason: string, taskId: string | null) => void;
+  approveScreenshot: () => void;
+  denyScreenshot: (reason: string) => void;
+  resetScreenshot: () => void;
+  startWatcher: (projectId: string, rootRef: string) => void;
+  generateWatcherChanges: (count: number) => void;
+  computeWatcherDiff: () => void;
+  applyWatcherChanges: () => void;
+  rescanWatcher: () => void;
+  stopWatcher: () => void;
+  resetWatcher: () => void;
 }
 
 export const DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS = 500;
+
+function createEmptyMvp9State(): Mvp9RuntimeState {
+  const emptyTerminal: TerminalServiceState = {
+    proposals: [], activeProposal: null, approvalState: null, executionResult: null, stage: "idle",
+  };
+  const emptyBrowser: BrowserServiceState = {
+    request: null, session: null, artifact: null, stage: "idle", blockedReason: null,
+  };
+  const emptyScreenshot: ScreenshotServiceState = {
+    request: null, result: null, stage: "idle", evidence: null,
+  };
+  const emptyWatcher: WatcherServiceState = {
+    session: null, events: [], diff: null, stage: "idle", stopReason: null, overflowed: false,
+  };
+  return { terminal: emptyTerminal, browser: emptyBrowser, screenshot: emptyScreenshot, watcher: emptyWatcher };
+}
 
 export function createRuntimeStoreState(snapshot: RuntimeSnapshot): RuntimeStoreState {
   return {
@@ -36,6 +79,7 @@ export function createRuntimeStoreState(snapshot: RuntimeSnapshot): RuntimeStore
       lastError: null,
       legacyMode: false,
     },
+    mvp9: createEmptyMvp9State(),
   };
 }
 

@@ -3,11 +3,20 @@ export type CapabilityKind =
   | "terminal"
   | "browser"
   | "screenshot"
-  | "provider_live";
+  | "provider_live"
+  | "project_watcher";
 
-export type CapabilityMode = "disabled" | "fixture" | "read_only" | "native_read_only" | "manual_live";
+export type CapabilityMode =
+  | "disabled"
+  | "fixture"
+  | "read_only"
+  | "native_read_only"
+  | "manual_live"
+  | "proposal_only"
+  | "approval_bound"
+  | "capture_gated";
 
-export type CapabilityDecisionStatus = "allow" | "requires_approval" | "blocked";
+export type CapabilityDecisionStatus = "allow" | "requires_approval" | "blocked" | "proposal_only";
 
 export interface CapabilityDecision {
   status: CapabilityDecisionStatus;
@@ -20,7 +29,10 @@ export interface CapabilityDecision {
     | "out_of_scope"
     | "limit_exceeded"
     | "missing_secret"
-    | "manual_confirmation_required";
+    | "manual_confirmation_required"
+    | "proposal_only"
+    | "denied_by_classifier"
+    | "capture_gated";
   riskLevel: "read_only" | "low_risk" | "medium_write" | "high_write" | "destructive";
   auditRequired: boolean;
   adapterMayRun: boolean;
