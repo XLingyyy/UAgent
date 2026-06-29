@@ -1,3 +1,13 @@
+export interface BrowserPreviewCapabilityStatus {
+  enabled: boolean;
+  mode: "native" | "fixture" | "disabled";
+  reason: string | null;
+  localhostAllowed: boolean;
+  loopbackAllowed: boolean;
+  fileAllowed: boolean;
+  externalBlocked: boolean;
+}
+
 export type BrowserPreviewUrlPolicy =
   | "local_only"
   | "approved_external"
@@ -10,10 +20,22 @@ export type BrowserPreviewStatus =
   | "completed"
   | "failed";
 
+export interface BrowserPreviewTargetSummary {
+  targetId: string;
+  displayTarget: string;
+  policy: BrowserPreviewUrlPolicy;
+  blocked: boolean;
+  reason: string;
+  needsTrustedRoot: boolean;
+}
+
 export interface BrowserPreviewRequest {
   id: string;
   taskId: string | null;
   url: string;
+  targetId: string;
+  displayTarget: string;
+  target: BrowserPreviewTargetSummary;
   policy: BrowserPreviewUrlPolicy;
   policyReason: string;
   requestedAt: number;
@@ -24,6 +46,9 @@ export interface BrowserPreviewSession {
   requestId: string;
   url: string;
   displayUrl: string;
+  targetId: string;
+  displayTarget: string;
+  target: BrowserPreviewTargetSummary;
   status: BrowserPreviewStatus;
   policy: BrowserPreviewUrlPolicy;
   blockedReason: string | null;
@@ -68,6 +93,23 @@ export interface ScreenshotMetadata {
   byteSize: number;
   redacted: boolean;
   redactionSummary: { replacedSecrets: number; replacedWindowsPaths: number };
+}
+
+export interface BrowserPreviewResult {
+  sessionId: string;
+  session_id: string;
+  url: string;
+  targetId?: string;
+  target_id?: string;
+  policy: string;
+  blocked: boolean;
+  reason: string;
+  displayTarget?: string | null;
+  display_target?: string | null;
+  displayUrl: string | null;
+  display_url: string | null;
+  needsTrustedRoot: boolean;
+  needs_trusted_root: boolean;
 }
 
 export interface PreviewArtifact {

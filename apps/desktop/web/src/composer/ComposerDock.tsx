@@ -15,10 +15,44 @@ import {
   useRuntimeStore,
   useSettingsActions,
 } from "../stores/ui-store";
+import { useState } from "react";
 import "./ComposerDock.css";
 
 export interface ComposerDockProps {
   mode?: "welcome" | "thread";
+}
+
+interface CommandSuggestion {
+  command: string;
+  label: string;
+  risk: "allowlisted" | "blocked";
+  reason: string;
+}
+
+function detectTerminalIntent(input: string): CommandSuggestion | null {
+  const trimmed = input.trim().toLowerCase();
+  if (/[;&|`$()<>{}!^]/.test(trimmed)) {
+    return { command: trimmed, label: trimmed, risk: "blocked", reason: "Shell metacharacters are not supported" };
+  }
+  const suggestions: [RegExp, string, string][] = [
+    [/\b(pnpm\s+)?typecheck\b/, "pnpm typecheck", "Run TypeScript type checking"],
+    [/\b(pnpm\s+)?lint\b/, "pnpm lint", "Run ESLint"],
+    [/\b(pnpm\s+)?test\b/, "pnpm test", "Run test suite"],
+    [/\b(build|compile|bundle)\s/, "pnpm --filter @uagent/desktop web:build", "Build desktop web frontend"],
+    [/\b(check|validate)\s+types?\b/, "pnpm typecheck", "Check TypeScript types"],
+    [/\bgit\s+status\b/, "git status", "Check repository status"],
+    [/\bgit\s+diff\b/, "git diff", "Show working tree diff"],
+    [/\bcargo\s+test\b/, "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml", "Run Rust tests"],
+  ];
+  for (const [re, command, label] of suggestions) {
+    if (re.test(trimmed)) {
+      return { command, label, risk: "allowlisted", reason: "Command is in the allowlist" };
+    }
+  }
+  if (trimmed.includes("rm ") || trimmed.includes("curl ") || trimmed.includes("wget ") || trimmed.includes("sudo ")) {
+    return { command: trimmed, label: trimmed, risk: "blocked", reason: "Dangerous or network command" };
+  }
+  return null;
 }
 
 export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
@@ -27,6 +61,9 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const mcpStatus = useRuntimeStore((state) => state.mcp.status);
   const mcpCapabilities = useRuntimeStore((state) => state.mcp.capabilities);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
+  const activeProject = useProjectStore((state) =>
+    state.activeProjectId ? state.registeredProjects.find((p) => p.id === state.activeProjectId) ?? null : null,
+  );
   const { setActiveProject } = useProjectActions();
   const { openSettings } = useSettingsActions();
   const {
@@ -37,7 +74,9 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
     setComposerReasoning,
     submitComposerTask,
   } = useComposerActions();
-  const { proposeTerminalCommand } = useRuntimeActions();
+  const { proposeMvp10TerminalCommand } = useRuntimeActions();
+  const [suggestionCard, setSuggestionCard] = useState<CommandSuggestion | null>(null);
+
   const providerModelOptions = createComposerModelOptions(provider.providers);
   const { input, permission, selectedModelId, reasoningEffort, runMode, branch, context } =
     composer;
@@ -45,35 +84,20 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const trimmedInput = input.trim();
   const canSubmit = trimmedInput.length > 0;
   const providerStatus = selectedModelId === "not-configured" ? "not_configured" : "configured";
+  const nativeRoot = activeProject?.rootRef ?? null;
+  const displayRoot = activeProject?.displayRoot ?? "[project-root]";
 
-  function detectTerminalIntent(input: string): string | null {
-    const patterns: [RegExp, string][] = [
-      [/\b(pnpm|npm|yarn)\s+(build|test|lint|typecheck)\b/i, "pnpm $2"],
-      [/\b(build|compile|bundle)\s+(project|app|all)\b/i, "pnpm build"],
-      [/\brun\s+lint\b/i, "pnpm lint"],
-      [/\brun\s+test\b/i, "pnpm test"],
-      [/\bcheck\s+types?\b/i, "pnpm typecheck"],
-    ];
-    for (const [re, cmd] of patterns) {
-      if (re.test(input)) {
-        return cmd
-          .replace("$2", (input.match(re)?.[2] ?? "build"))
-          .replace("$1", (input.match(re)?.[1] ?? "pnpm"));
-      }
-    }
-    return null;
-  }
+  const handleInputChange = (value: string) => {
+    setComposerInput(value);
+    const suggestion = detectTerminalIntent(value);
+    setSuggestionCard(suggestion);
+  };
 
   const handleSubmit = () => {
     if (!canSubmit) {
       return;
     }
-
-    const terminalCmd = detectTerminalIntent(trimmedInput);
-    if (terminalCmd) {
-      proposeTerminalCommand(terminalCmd, "[project-root]", null);
-    }
-
+    setSuggestionCard(null);
     void submitComposerTask({
       input: trimmedInput,
       projectId: activeProjectId,
@@ -128,7 +152,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
             className="ua-composer__textarea"
             placeholder={placeholder}
             value={input}
-            onChange={(e) => setComposerInput(e.target.value)}
+            onChange={(e) => handleInputChange(e.target.value)}
             aria-label="Composer input"
           />
         </div>
@@ -157,6 +181,49 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
           </button>
         </div>
       </div>
+
+      {suggestionCard && (
+        <div
+          className={`ua-composer__suggestion ${suggestionCard.risk === "blocked" ? "ua-composer__suggestion--blocked" : ""}`}
+          role="status"
+          aria-label="Command suggestion"
+        >
+          <div className="ua-composer__suggestion-info">
+            <span className="ua-composer__suggestion-command">
+              <code>{suggestionCard.command}</code>
+            </span>
+            <span className="ua-composer__suggestion-label">{suggestionCard.label}</span>
+          </div>
+          <div className="ua-composer__suggestion-actions">
+            {suggestionCard.risk === "allowlisted" ? (
+              <button
+                className="ua-btn ua-btn--primary"
+                type="button"
+                onClick={() => {
+                  if (!nativeRoot) {
+                    return;
+                  }
+                  void proposeMvp10TerminalCommand(
+                    suggestionCard.command,
+                    nativeRoot,
+                    null,
+                    nativeRoot,
+                    activeProject?.id ?? activeProjectId,
+                  );
+                  setSuggestionCard(null);
+                }}
+                disabled={!nativeRoot}
+                aria-label={`Propose command: ${suggestionCard.command}`}
+                title={nativeRoot ? `Working directory: ${displayRoot}` : "Select and trust a project before proposing a command"}
+              >
+                Propose command
+              </button>
+            ) : (
+              <span className="ua-composer__suggestion-blocked">{suggestionCard.reason}</span>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="ua-composer__status-row">
         <ProjectSelector

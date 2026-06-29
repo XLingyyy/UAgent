@@ -18,9 +18,21 @@ describe("classifyBrowserUrl", () => {
     expect(policy).toBe("blocked_external");
   });
 
-  it("allows file:// URLs", () => {
-    const { policy } = classifyBrowserUrl("file:///tmp/preview.html", ALLOWED_LOCAL);
-    expect(policy).toBe("local_only");
+  it("blocks IPv6 loopback outside the MVP10 G8 browser boundary", () => {
+    const { policy } = classifyBrowserUrl("http://[::1]:3000/preview", ALLOWED_LOCAL);
+    expect(policy).toBe("blocked_external");
+  });
+
+  it("blocks URL userinfo tricks even when the host is localhost", () => {
+    const { policy } = classifyBrowserUrl("http://example.com@localhost:3000", ALLOWED_LOCAL);
+    expect(policy).toBe("blocked_external");
+  });
+
+  it("blocks file:// URLs without an explicit trusted root", () => {
+    const { policy } = classifyBrowserUrl("file:///tmp/preview.html", ALLOWED_LOCAL, {
+      requireTrustedRootForFile: true,
+    });
+    expect(policy).toBe("blocked_external");
   });
 });
 

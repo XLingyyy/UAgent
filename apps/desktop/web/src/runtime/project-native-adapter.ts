@@ -88,6 +88,18 @@ function hashPath(path: string): string {
   return `root:${Math.abs(hash).toString(16)}`;
 }
 
+const trustedRootRefs = new Map<string, string>();
+
+function registerTrustedRootRef(ref: string | null | undefined, rawRoot: string): void {
+  if (!ref) return;
+  trustedRootRefs.set(ref, rawRoot);
+}
+
+export function resolveTrustedNativeRootRef(ref: string | null | undefined): string | undefined {
+  if (!ref) return undefined;
+  return trustedRootRefs.get(ref);
+}
+
 function getGlobalInvoke(): NativeInvoke | null {
   const tauriInternals = (globalThis as { __TAURI_INTERNALS__?: { invoke?: NativeInvoke } })
     .__TAURI_INTERNALS__;
@@ -243,6 +255,8 @@ export function createNativeProjectAdapter(
         const normalized = normalizeProjectPath(ref);
         rawPaths.set(project.id, normalized);
         rawPaths.set(project.rootRef, normalized);
+        registerTrustedRootRef(project.id, normalized);
+        registerTrustedRootRef(project.rootRef, normalized);
         projects.set(project.id, project);
         return project;
       },
@@ -259,11 +273,15 @@ export function createNativeProjectAdapter(
           const stored = rawPaths.get(id)!;
           rawPaths.delete(id);
           rawPaths.set(trusted.id, stored);
+          registerTrustedRootRef(trusted.id, stored);
+          registerTrustedRootRef(trusted.rootRef, stored);
         }
         if (trusted.id !== project.rootRef && rawPaths.has(project.rootRef)) {
           const stored = rawPaths.get(project.rootRef)!;
           rawPaths.delete(project.rootRef);
           rawPaths.set(trusted.id, stored);
+          registerTrustedRootRef(trusted.id, stored);
+          registerTrustedRootRef(trusted.rootRef, stored);
         }
         projects.set(trusted.id, trusted);
         return trusted;

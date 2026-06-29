@@ -21,13 +21,27 @@ export interface TerminalCommandClassification {
 export interface TerminalCommandProposal {
   id: string;
   taskId: string | null;
+  projectId?: string | null;
   command: string;
   cwd: string;
+  expiresAt?: number;
   classification: TerminalCommandClassification;
   outputLimitBytes: number;
   outputLimitLines: number;
   timeoutMs: number;
   proposedAt: number;
+}
+
+export interface TerminalExecutionCapabilityStatus {
+  enabled: boolean;
+  mode: "native" | "fixture" | "disabled";
+  reason: string | null;
+  allowlistSummary: string;
+  trustedRootRequired: boolean;
+  approvalRequired: boolean;
+  timeoutMs: number;
+  outputLimitBytes: number;
+  outputLimitLines: number;
 }
 
 export type TerminalProposalStatus =

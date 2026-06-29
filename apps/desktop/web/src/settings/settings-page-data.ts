@@ -240,6 +240,47 @@ export const configPageData: SettingsPageData = {
       ],
     },
     {
+      id: "terminal-execution",
+      title: "Terminal Execution",
+      description: "MVP10 controlled real terminal execution status. Commands are allowlisted, approval-bound, and cwd-contained.",
+      rows: [
+        {
+          id: "terminal-real-enabled",
+          label: "Real terminal execution",
+          description: "When disabled, commands are proposed but not executed. Enable to allow allowlisted commands to run after approval.",
+          disabled: false,
+        },
+        {
+          id: "terminal-allowlist",
+          label: "Allowlist summary",
+          description: "12 allowlisted commands: typecheck, lint, test, web:build, cargo test, git status/diff/diff --check",
+          disabled: true,
+          disabledReason: "Read-only allowlist",
+        },
+        {
+          id: "terminal-trusted-root",
+          label: "Trusted root required",
+          description: "Commands execute within the trusted project root only. CWD escape is blocked.",
+          disabled: true,
+          disabledReason: "Enforced by policy",
+        },
+        {
+          id: "terminal-approval",
+          label: "Approval required",
+          description: "Every command requires explicit approval. Tokens are one-time use with expiry.",
+          disabled: true,
+          disabledReason: "Enforced by policy",
+        },
+        {
+          id: "terminal-timeout",
+          label: "Timeout / Output limits",
+          description: "Default 60s timeout, max 300s. Output limited to 1 MB / 5000 lines.",
+          disabled: true,
+          disabledReason: "Read-only policy limits",
+        },
+      ],
+    },
+    {
       id: "diagnostics",
       title: "Diagnostics",
       rows: [

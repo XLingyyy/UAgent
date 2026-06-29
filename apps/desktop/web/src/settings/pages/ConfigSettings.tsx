@@ -20,6 +20,7 @@ export function ConfigSettings() {
           {section.id === "audit-session" && <AuditSessionDisplay />}
           {section.id === "paths" && <ConfigPathDisplay />}
           {section.id === "paths" && <ProjectRootsDisplay />}
+          {section.id === "terminal-execution" && <TerminalExecutionDisplay />}
           {section.id === "diagnostics" && <DiagnosticsDisplay />}
           {section.id === "danger-zone" && <ResetWorkspaceDisplay />}
         </SettingsSection>
@@ -361,6 +362,74 @@ function DiagnosticsDisplay() {
         <span className="ua-settings-page__static-label">Enabled probes</span>
         <span className="ua-settings-page__static-value">Runtime, Verifier</span>
       </div>
+    </div>
+  );
+}
+
+function TerminalExecutionDisplay() {
+  const runtimeStore = useRuntimeStore((state) => state);
+  const projectStore = useProjectStore((state) => state);
+
+  const mvp10Terminal = runtimeStore.mvp9.mvp10?.terminal;
+  const hasProposals = mvp10Terminal && mvp10Terminal.proposals.length > 0;
+  const latestStage = mvp10Terminal?.stage ?? "idle";
+  const trustedRoot = projectStore.registeredProjects.find((p) => p.id === projectStore.activeProjectId)?.displayRoot;
+  const capability = mvp10Terminal?.capability;
+  const currentMode: { mode: string; tone: string } = {
+    mode: capability?.enabled ? "real-enabled" : "fixture",
+    tone: capability?.enabled ? "success" : "",
+  };
+
+  return (
+    <div className="ua-settings-page__static-stack" aria-label="MVP10 Terminal Execution status">
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Real terminal</span>
+        <span className={`ua-settings-page__static-value${currentMode.tone ? ` ua-settings-page__static-value--${currentMode.tone}` : ""}`}>
+          {capability?.enabled ? "Enabled" : "Disabled"} &middot; {capability?.reason ?? capability?.mode ?? "native"} &middot; {latestStage}
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Allowlist</span>
+        <span className="ua-settings-page__static-value">
+          {capability?.allowlistSummary ?? "MVP10 verification commands only"}
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Trusted root</span>
+        <span className="ua-settings-page__static-value">
+          {trustedRoot ?? "Not configured"} &middot; {capability?.trustedRootRequired ? "required for execution" : "not required"}
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Approval</span>
+        <span className="ua-settings-page__static-value ua-settings-page__static-value--accent">
+          {capability?.approvalRequired ? "Required" : "Not required"} &middot; one-time token
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Timeout</span>
+        <span className="ua-settings-page__static-value">Default {Math.round((capability?.timeoutMs ?? 60_000) / 1000)}s &middot; max 300s</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Output limit</span>
+        <span className="ua-settings-page__static-value">
+          {Math.round((capability?.outputLimitBytes ?? 1_048_576) / 1024 / 1024)} MB / {capability?.outputLimitLines ?? 5000} lines
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Current mode</span>
+        <span className="ua-settings-page__static-value">
+          {currentMode.mode === "fixture" ? "Fixture mode — proposals only, no execution" :
+           currentMode.mode === "real-gated" ? "Real-gated — approved, awaiting execution" :
+           "Real-enabled — execution active"}
+        </span>
+      </div>
+      {hasProposals && (
+        <div className="ua-settings-page__static-row">
+          <span className="ua-settings-page__static-label">Recent proposals</span>
+          <span className="ua-settings-page__static-value">{mvp10Terminal!.proposals.length} total</span>
+        </div>
+      )}
     </div>
   );
 }

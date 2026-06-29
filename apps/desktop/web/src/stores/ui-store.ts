@@ -69,6 +69,7 @@ function createUIStateBundle(
   const providerStore = createSliceStore(providerState);
   const runtimeStore = createSliceStore({
     ...createRuntimeStoreState(runtimeClient.getSnapshot()),
+    mvp9: runtimeClient.getMvp9().getState(),
     ...initialState?.runtime,
   });
 
@@ -462,8 +463,24 @@ function createUIStateBundle(
     resetTerminal: () => {
       runtimeClient.getMvp9().terminal.reset();
     },
-    requestBrowserPreview: (url, taskId) => {
-      runtimeClient.getMvp9().browser.requestPreview(url, taskId);
+    proposeMvp10TerminalCommand: async (command, cwd, taskId, trustedRoot, projectId) => {
+      await runtimeClient.getMvp9().mvp10.terminal.propose(command, cwd, taskId, trustedRoot, projectId);
+    },
+    approveMvp10TerminalProposal: async (proposalId, actor, reason) => {
+      const token = await runtimeClient.getMvp9().mvp10.terminal.approve(proposalId, actor, reason);
+      return token?.id ?? null;
+    },
+    rejectMvp10TerminalProposal: (proposalId, actor, reason) => {
+      runtimeClient.getMvp9().mvp10.terminal.reject(proposalId, actor, reason);
+    },
+    cancelMvp10TerminalExecution: (executionId) => {
+      runtimeClient.getMvp9().mvp10.terminal.cancel(executionId);
+    },
+    resetMvp10Terminal: () => {
+      runtimeClient.getMvp9().mvp10.terminal.reset();
+    },
+    requestBrowserPreview: (url, taskId, trustedRootRef) => {
+      runtimeClient.getMvp9().browser.requestPreview(url, taskId, trustedRootRef);
     },
     launchBrowserPreview: () => {
       runtimeClient.getMvp9().browser.launchPreview();
@@ -485,6 +502,12 @@ function createUIStateBundle(
     },
     startWatcher: (projectId, rootRef) => {
       runtimeClient.getMvp9().watcher.start(projectId, rootRef);
+    },
+    refreshWatcherCapability: async () => {
+      await runtimeClient.getMvp9().watcher.refreshCapability?.();
+    },
+    refreshWatcherSession: async () => {
+      await runtimeClient.getMvp9().watcher.refreshNativeSession?.();
     },
     generateWatcherChanges: (count) => {
       runtimeClient.getMvp9().watcher.generateChanges(count);

@@ -11,7 +11,10 @@ export type EvidenceKind =
   | "native_scan_summary"
   | "native_preview_summary"
   | "native_policy_block"
-  | "terminal_output";
+  | "terminal_output"
+  | "build_run_summary"
+  | "mutation_violation"
+  | "terminal_real_output";
 
 export type EvidenceSource =
   | "mock-runtime"

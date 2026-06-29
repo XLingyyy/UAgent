@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { ComposerDock } from "./ComposerDock";
 import { UIProvider } from "../app/providers";
 import type { ProviderConfig } from "../types/provider";
+import { createDesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
+import type { NativeInvoke } from "../runtime/project-native-adapter";
 
 function renderDock() {
   return render(
@@ -11,6 +13,18 @@ function renderDock() {
     </UIProvider>,
   );
 }
+
+const nativeProject = {
+  id: "lyra",
+  name: "Lyra_Prototype",
+  rootRef: "G:\\UAgent",
+  displayRoot: "[project-root]",
+  trustState: "trusted" as const,
+  indexStatus: "ready" as const,
+  engine: { label: "UE 5.8", association: "5.8", source: "uproject" as const },
+  createdAt: 1,
+  updatedAt: 1,
+};
 
 describe("ComposerDock", () => {
   it("renders the composer dock with an input row and status row", () => {
@@ -312,5 +326,67 @@ describe("ComposerDock", () => {
     expect(within(dock).getByText("Mock only")).toBeTruthy();
     expect(within(dock).getByText("Model")).toBeTruthy();
     expect(within(dock).getByText("Mock runtime / no provider call")).toBeTruthy();
+  });
+
+  it("creates MVP10 native terminal proposals with canonical rootRef while showing only redacted root", async () => {
+    const calls: Array<{ command: string; payload: unknown }> = [];
+    const nativeInvoke: NativeInvoke = async <T,>(command: string, payload: unknown): Promise<T> => {
+      calls.push({ command, payload });
+      if (command === "terminal_capability_status") {
+        return {
+          enabled: true,
+          mode: "native",
+          reason: null,
+          allowlistSummary: "typecheck, lint, test, desktop web build, cargo test, git status/diff",
+          trustedRootRequired: true,
+          approvalRequired: true,
+          timeoutMs: 60_000,
+          outputLimitBytes: 1_048_576,
+          outputLimitLines: 5_000,
+        } as T;
+      }
+      return {
+        proposalId: "native-proposal-composer",
+        command: "pnpm test",
+        risk: "allowlisted",
+        reason: "command classified as allowlisted",
+        requiresApproval: true,
+        featureFlag: "terminal",
+        canonicalCwd: "G:\\UAgent",
+        redactedCwd: "[project-root]",
+        expiresAt: 1_700_000_300_000,
+        timeoutMs: 60_000,
+        outputLimitBytes: 1_048_576,
+        outputLimitLines: 5_000,
+      } as T;
+    };
+    const runtimeClient = createDesktopRuntimeAdapter({ nativeInvoke });
+
+    render(
+      <UIProvider
+        runtimeClient={runtimeClient}
+        initialState={{ project: { activeProjectId: "lyra", registeredProjects: [nativeProject] } }}
+      >
+        <ComposerDock />
+      </UIProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText("Composer input"), { target: { value: "pnpm test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Propose command: pnpm test" }));
+
+    await waitFor(() => {
+      expect(calls.map((call) => call.command)).toEqual([
+        "terminal_capability_status",
+        "browser_capability_status",
+        "propose_terminal_command",
+      ]);
+    });
+    const proposeIdx = calls.findIndex((c) => c.command === "propose_terminal_command");
+    expect(calls[proposeIdx]).toEqual({
+      command: "propose_terminal_command",
+      payload: { input: { command: "pnpm test", cwd: "G:\\UAgent", projectId: "lyra" } },
+    });
+    expect(JSON.stringify(runtimeClient.getMvp9().mvp10.terminal.getState())).not.toContain("G:\\UAgent");
+    expect(runtimeClient.getMvp9().mvp10.terminal.getState().activeProposal?.cwd).toBe("[project-root]");
   });
 });

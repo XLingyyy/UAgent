@@ -1,31 +1,30 @@
-import { useCallback } from "react";
-import { useRuntimeStore, useRuntimeActions } from "../stores/ui-store";
+import { useCallback, useEffect } from "react";
+import { useRuntimeStore, useRuntimeActions, useProjectStore } from "../stores/ui-store";
 
 export function WatcherPanel() {
   const watcherState = useRuntimeStore((s) => s.mvp9.watcher);
-  const { startWatcher, generateWatcherChanges, computeWatcherDiff, applyWatcherChanges, rescanWatcher, stopWatcher, resetWatcher } = useRuntimeActions();
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const registeredProjects = useProjectStore((s) => s.registeredProjects);
+  const { startWatcher, refreshWatcherCapability, refreshWatcherSession, computeWatcherDiff, stopWatcher, resetWatcher } = useRuntimeActions();
 
-  const { stage, session, events, diff, stopReason, overflowed } = watcherState;
+  const { stage, session, diff, stopReason, overflowed, capability, lastError } = watcherState;
+  const dirty = watcherState.dirty ?? false;
+  const queuedCount = watcherState.queuedCount ?? 0;
+
+  const activeProject = registeredProjects.find(
+    (p) => p.id === activeProjectId,
+  );
 
   const handleStart = useCallback(() => {
-    startWatcher("project-id", "[project-root]");
-  }, [startWatcher]);
-
-  const handleGenerateChanges = useCallback(() => {
-    generateWatcherChanges(3);
-  }, [generateWatcherChanges]);
+    if (capability?.mode === "disabled") return;
+    const pid = activeProject?.id ?? activeProjectId ?? "project-id";
+    const ref = activeProject?.rootRef ?? "[project-root]";
+    startWatcher(pid, ref);
+  }, [startWatcher, activeProject, activeProjectId, capability?.mode]);
 
   const handleComputeDiff = useCallback(() => {
     computeWatcherDiff();
   }, [computeWatcherDiff]);
-
-  const handleApplyChanges = useCallback(() => {
-    applyWatcherChanges();
-  }, [applyWatcherChanges]);
-
-  const handleRescan = useCallback(() => {
-    rescanWatcher();
-  }, [rescanWatcher]);
 
   const handleStop = useCallback(() => {
     stopWatcher();
@@ -35,6 +34,24 @@ export function WatcherPanel() {
     resetWatcher();
   }, [resetWatcher]);
 
+  const displayRoot = session?.displayRoot ?? activeProject?.displayRoot ?? "[project-root]";
+  const watcherDisabled = capability?.mode === "disabled";
+
+  useEffect(() => {
+    if (!capability || capability.reason === "native_capability_status_pending") {
+      void refreshWatcherCapability();
+    }
+  }, [refreshWatcherCapability, capability]);
+
+  useEffect(() => {
+    if (stage !== "active" || !session?.id) return;
+    void refreshWatcherSession();
+    const id = window.setInterval(() => {
+      void refreshWatcherSession();
+    }, Math.max(500, capability?.debounceMs ?? 500));
+    return () => window.clearInterval(id);
+  }, [stage, session?.id, refreshWatcherSession, capability?.debounceMs]);
+
   return (
     <div
       className="ua-inspector-watcher"
@@ -43,7 +60,7 @@ export function WatcherPanel() {
     >
       <div className="ua-inspector-watcher__header">
         <span>File Watcher</span>
-        <span className="ua-inspector__badge">MVP9</span>
+        <span className="ua-inspector__badge">MVP10</span>
       </div>
 
       {stage === "idle" && (
@@ -52,17 +69,34 @@ export function WatcherPanel() {
             <span className="ua-inspector-watcher__status-value">Idle</span>
           </div>
           <div className="ua-inspector-watcher__info">
-            <p>
-              File watcher monitors the project root for changes. It produces
-              dirty state and a diff summary. No automatic rescan or side
-              effects.
-            </p>
+            {watcherDisabled ? (
+              <>
+                <p>Real watcher disabled: {capability?.reason ?? "feature_disabled"}</p>
+                <p>
+                  Trusted root required. Debounce {capability?.debounceMs ?? 500}ms,
+                  queue limit {capability?.maxQueueSize ?? 10000}, overflow {capability?.overflowAction ?? "warn"},
+                  read diff only.
+                </p>
+              </>
+            ) : (
+              <p>
+                File watcher monitors the project root for changes. It produces
+                dirty state and a diff summary. No automatic rescan or side
+                effects.
+              </p>
+            )}
+            {activeProject && (
+              <p className="ua-inspector-watcher__root">
+                Project root: {activeProject.displayRoot}
+              </p>
+            )}
           </div>
           <div className="ua-inspector-watcher__actions">
             <button
               className="ua-btn ua-btn--primary"
               type="button"
               onClick={handleStart}
+              disabled={watcherDisabled}
               aria-label="Start watching project root"
             >
               Start Watching
@@ -97,7 +131,7 @@ export function WatcherPanel() {
           <div className="ua-inspector-watcher__status">
             <span className="ua-inspector-watcher__status-value">Active</span>
             <span className="ua-inspector-watcher__status-detail">
-              Root: {session.displayRoot}
+              Root: {displayRoot}
             </span>
           </div>
 
@@ -109,23 +143,18 @@ export function WatcherPanel() {
             </div>
           )}
 
-          {events.length > 0 && (
-            <div className="ua-inspector-watcher__events">
-              <div className="ua-inspector-watcher__events-header">
-                Change Events ({events.length})
-              </div>
-              <ul className="ua-inspector-watcher__events-list">
-                {events.map((ev) => (
-                  <li key={ev.id} className="ua-inspector-watcher__event">
-                    <span className="ua-inspector-watcher__event-kind">
-                      {ev.kind}
-                    </span>
-                    <span className="ua-inspector-watcher__event-path">
-                      {ev.displayPath}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+          <div className="ua-inspector-watcher__dirty-state">
+            <span className="ua-inspector-watcher__dirty-label">
+              {dirty ? "Dirty" : "Not dirty"}
+            </span>
+            <span className="ua-inspector-watcher__status-detail">
+              Queued changes: {queuedCount}
+            </span>
+          </div>
+
+          {lastError && (
+            <div className="ua-inspector-watcher__info">
+              <p>Watcher error: {lastError}</p>
             </div>
           )}
 
@@ -144,7 +173,8 @@ export function WatcherPanel() {
                 <ul className="ua-inspector-watcher__diff-entries">
                   {diff.entries.map((entry, idx) => (
                     <li key={idx} className="ua-inspector-watcher__diff-entry">
-                      {entry.kind}: {entry.displayPath}
+                      <span className="ua-inspector-watcher__diff-entry-kind">{entry.kind}:</span>
+                      <span className="ua-inspector-watcher__diff-entry-path">{entry.displayPath}</span>
                     </li>
                   ))}
                 </ul>
@@ -156,36 +186,10 @@ export function WatcherPanel() {
             <button
               className="ua-btn ua-btn--secondary"
               type="button"
-              onClick={handleGenerateChanges}
-              aria-label="Generate change events"
-            >
-              Generate Changes
-            </button>
-            <button
-              className="ua-btn ua-btn--secondary"
-              type="button"
               onClick={handleComputeDiff}
-              aria-label="Compute diff"
-              disabled={events.length === 0}
+              aria-label="Read diff"
             >
-              Compute Diff
-            </button>
-            <button
-              className="ua-btn ua-btn--primary"
-              type="button"
-              onClick={handleApplyChanges}
-              aria-label="Apply changes"
-              disabled={!diff}
-            >
-              Apply Changes
-            </button>
-            <button
-              className="ua-btn ua-btn--primary"
-              type="button"
-              onClick={handleRescan}
-              aria-label="Rescan"
-            >
-              Rescan
+              Read Diff
             </button>
             <button
               className="ua-btn ua-btn--danger"

@@ -1,6 +1,9 @@
 import type {
+  BrowserPreviewCapabilityStatus,
   BrowserPreviewRequest,
+  BrowserPreviewResult,
   BrowserPreviewSession,
+  BrowserPreviewTargetSummary,
   BrowserPreviewUrlPolicy,
   ScreenshotCaptureRequest,
   ScreenshotCaptureResult,
@@ -11,10 +14,39 @@ import type {
 export function classifyBrowserUrl(
   url: string,
   allowedLocalPatterns: string[],
+  options: { requireTrustedRootForFile?: boolean } = {},
 ): { policy: BrowserPreviewUrlPolicy; reason: string } {
-  const isLocal = allowedLocalPatterns.some((p) => url.startsWith(p));
-  if (isLocal) {
-    return { policy: "local_only", reason: "URL matches allowed local pattern" };
+  try {
+    const parsed = new URL(url);
+    if (parsed.username || parsed.password) {
+      return {
+        policy: "blocked_external",
+        reason: "URL userinfo is blocked by browser preview policy",
+      };
+    }
+    if (parsed.protocol === "file:" && options.requireTrustedRootForFile) {
+      return {
+        policy: "blocked_external",
+        reason: "file:// preview requires an explicit trusted root",
+      };
+    }
+    if (parsed.protocol === "file:" && allowedLocalPatterns.includes("file://")) {
+      return { policy: "local_only", reason: "URL matches allowed local file pattern" };
+    }
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      const host = parsed.hostname.toLowerCase();
+      if (
+        (host === "localhost" && allowedLocalPatterns.includes(`${parsed.protocol}//localhost`)) ||
+        (host === "127.0.0.1" && allowedLocalPatterns.includes(`${parsed.protocol}//127.0.0.1`))
+      ) {
+        return { policy: "local_only", reason: "URL matches allowed local host policy" };
+      }
+    }
+  } catch {
+    return {
+      policy: "blocked_external",
+      reason: "Malformed URL blocked by browser preview policy",
+    };
   }
   return {
     policy: "blocked_external",
@@ -22,10 +54,63 @@ export function classifyBrowserUrl(
   };
 }
 
+function hashTarget(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return `browser-target:${Math.abs(hash).toString(16)}`;
+}
+
+export function displayBrowserTarget(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "file:") {
+      const parts = decodeURIComponent(parsed.pathname).split(/[/\\]/).filter(Boolean);
+      return `[local file] ${parts.pop() ?? "file"}`;
+    }
+    if (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")
+    ) {
+      return `${parsed.protocol}//${parsed.host}`;
+    }
+    return "[blocked external]";
+  } catch {
+    return "[blocked target]";
+  }
+}
+
+export function summarizeBrowserTarget(
+  url: string,
+  policy: BrowserPreviewUrlPolicy,
+  reason: string,
+  blocked = policy === "blocked_external",
+  needsTrustedRoot = false,
+): BrowserPreviewTargetSummary {
+  const displayTarget = displayBrowserTarget(url);
+  return {
+    targetId: hashTarget(`${displayTarget}:${policy}:${reason}`),
+    displayTarget,
+    policy,
+    blocked,
+    reason,
+    needsTrustedRoot,
+  };
+}
+
 export interface FixtureBrowserPreviewAdapter {
   requestPreview(url: string, taskId: string | null): BrowserPreviewRequest;
   getSession(requestId: string): BrowserPreviewSession | null;
   createArtifact(sessionId: string): PreviewArtifact;
+}
+
+export interface NativeBrowserAdapter {
+  getCapability(): BrowserPreviewCapabilityStatus;
+  refreshCapability(): Promise<BrowserPreviewCapabilityStatus>;
+  classifyUrl(url: string, rootRef?: string): Promise<BrowserPreviewResult>;
+  openPreview(url: string, sessionId: string, rootRef?: string): Promise<string>;
 }
 
 let previewCounter = 0;
@@ -40,10 +125,14 @@ export function createFixtureBrowserPreviewAdapter(
     requestPreview(url: string, taskId: string | null): BrowserPreviewRequest {
       previewCounter++;
       const { policy, reason } = classifyBrowserUrl(url, allowedLocalPatterns);
+      const target = summarizeBrowserTarget(url, policy, reason);
       const request: BrowserPreviewRequest = {
         id: `fixture-browser-req-${previewCounter}`,
         taskId,
         url,
+        targetId: target.targetId,
+        displayTarget: target.displayTarget,
+        target,
         policy,
         policyReason: reason,
         requestedAt: Date.now(),
@@ -55,7 +144,10 @@ export function createFixtureBrowserPreviewAdapter(
           id: `fixture-browser-session-${sessionCounter}`,
           requestId: request.id,
           url,
-          displayUrl: url,
+          displayUrl: target.displayTarget,
+          targetId: target.targetId,
+          displayTarget: target.displayTarget,
+          target,
           status: "active",
           policy,
           blockedReason: null,

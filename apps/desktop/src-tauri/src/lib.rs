@@ -1301,12 +1301,19 @@ pub fn run() {
             terminal::propose_terminal_command,
             terminal::execute_terminal_command,
             terminal::cancel_terminal_execution,
+            terminal::terminal_capability_status,
+            terminal::execute_terminal_command_real,
+            terminal::approve_terminal_proposal,
+            browser::browser_capability_status,
             browser::browser_preview,
+            browser::open_browser_preview,
             screenshot::request_screenshot_capture,
             screenshot::approve_screenshot,
+            watcher::watcher_capability_status,
             watcher::start_watcher,
             watcher::stop_watcher,
             watcher::read_watcher_diff,
+            watcher::get_watcher_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1599,8 +1606,8 @@ mod tests {
     fn terminal_feature_flag_off_returns_blocked() {
         let result = terminal::propose_terminal_command(
             terminal::TerminalProposeCommandInput {
-                command: "npm install".to_string(),
-                cwd: "/project".to_string(),
+                command: "git status".to_string(),
+                cwd: ".".to_string(),
                 project_id: "proj1".to_string(),
             },
         )
@@ -1643,20 +1650,56 @@ mod tests {
         assert!(!requires_approval);
     }
 
-    // --- Browser Preview skeleton tests ---
+    // --- Browser Preview tests ---
 
     #[test]
     fn browser_external_url_blocked() {
-        let (policy, blocked, _reason) = browser::classify_url("https://example.com");
+        let (policy, blocked, _reason, _) = browser::classify_url("https://example.com");
         assert!(blocked);
         assert_eq!(policy, "blocked_external");
     }
 
     #[test]
     fn browser_local_url_allowed() {
-        let (policy, blocked, _reason) = browser::classify_url("http://localhost:3000");
+        let (policy, blocked, _reason, _) = browser::classify_url("http://localhost:3000");
         assert!(!blocked);
         assert_eq!(policy, "local_only");
+    }
+
+    #[test]
+    fn browser_https_localhost_allowed() {
+        let (policy, blocked, _, _) = browser::classify_url("https://localhost:5173");
+        assert!(!blocked);
+        assert_eq!(policy, "local_only");
+    }
+
+    #[test]
+    fn browser_loopback_allowed() {
+        let (policy, blocked, _, _) = browser::classify_url("http://127.0.0.1:8765");
+        assert!(!blocked);
+        assert_eq!(policy, "local_only");
+    }
+
+    #[test]
+    fn browser_file_url_without_trusted_root_blocked() {
+        let (policy, blocked, _, needs_root) = browser::classify_url("file:///C:/output/report.html");
+        assert!(blocked);
+        assert_eq!(policy, "blocked_external");
+        assert!(needs_root, "file:// should indicate trusted root requirement");
+    }
+
+    #[test]
+    fn browser_lan_blocked() {
+        let (policy, blocked, _reason, _) = browser::classify_url("http://192.168.1.100");
+        assert!(blocked);
+        assert_eq!(policy, "blocked_external");
+    }
+
+    #[test]
+    fn browser_capability_enabled_under_test() {
+        let status = browser::browser_capability_status();
+        assert!(status.enabled);
+        assert_eq!(status.mode, "native");
     }
 
         // --- Screenshot Capture skeleton tests ---
@@ -1754,52 +1797,54 @@ mod tests {
         assert!(!serialized_approved.contains("Bearer"), "approve metadata leaks Bearer token");
     }
 
-    // --- Watcher skeleton tests ---
+    // --- Watcher integration tests (unit tests in watcher.rs) ---
 
     #[test]
-    fn watcher_untrusted_root_blocked() {
-        trusted_roots().lock().unwrap().clear();
-        let result = watcher::start_watcher(watcher::WatcherStartInput {
-            project_id: "proj1".to_string(),
-            root_ref: "C:/Untrusted".to_string(),
-        })
-        .unwrap();
-        assert!(result.blocked);
-        assert_eq!(result.reason, "untrusted_root");
-    }
-
-    #[test]
-    fn watcher_start_stop_read() {
-        // Trust a fixture root for this test
-        let root = "fixture://lyra-starter";
-        let normalized = normalize_project_path(root);
+    fn watcher_integration_real_diff() {
+        // Integration test: start watcher on temp dir, create file, read diff
+        let unique = format!(
+            "uagent-watcher-int-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let root = std::env::temp_dir().join(&unique);
+        std::fs::create_dir_all(&root).unwrap();
+        let root_str = root.to_str().unwrap().to_string();
+        let normalized = normalize_project_path(&root_str);
         let hash = hash_path(&normalized);
         trusted_roots().lock().unwrap().insert(hash);
 
         let start = watcher::start_watcher(watcher::WatcherStartInput {
-            project_id: "proj1".to_string(),
-            root_ref: root.to_string(),
+            project_id: "proj-int-1".to_string(),
+            root_ref: root_str.clone(),
         })
         .unwrap();
         if cfg!(test) {
-            assert!(!start.blocked, "start should not be blocked in test mode");
-            assert_eq!(start.status, "watching");
-            assert!(
-                start.display_root.contains("[fixture-root]"),
-                "display_root should be redacted: {}",
-                start.display_root
-            );
+            assert!(!start.blocked, "start should not be blocked: {:?}", start.reason);
         }
+
+        // Wait briefly for watcher to settle
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Create a file to trigger a change
+        std::fs::write(root.join("integration_test.txt"), b"integration test").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
 
         let diff = watcher::read_watcher_diff(watcher::WatcherReadDiffInput {
             session_id: start.session_id.clone(),
         })
         .unwrap();
-        assert_eq!(diff.entries.len(), 2);
         for entry in &diff.entries {
             assert!(
                 entry.display_path.starts_with("[project-root]/"),
                 "display_path should be redacted: {}",
+                entry.display_path
+            );
+            assert!(
+                !entry.display_path.contains(&normalized),
+                "display_path should not contain raw root: {}",
                 entry.display_path
             );
         }
@@ -1810,6 +1855,7 @@ mod tests {
         .unwrap();
         assert_eq!(stop.status, "stopped");
 
+        std::fs::remove_dir_all(&root).unwrap();
         trusted_roots().lock().unwrap().clear();
     }
 }

@@ -6,6 +6,7 @@ import { createAuditProjection } from "./audit-projection.js";
 import { createSessionHistory } from "./session-history.js";
 import { createFixtureTerminalAdapter } from "./mvp9-terminal-adapter.js";
 import { createFixtureScreenshotAdapter } from "./mvp9-browser-screenshot.js";
+import type { NativeWatcherAdapter } from "./mvp9-project-watcher.js";
 
 describe("P0-1: Terminal Output And Evidence", () => {
   it("approve allowlisted command produces terminal_started, terminal_output, terminal_completed in session", async () => {
@@ -206,6 +207,188 @@ describe("P0-3: Watcher Apply/Rescan Action", () => {
 
     const replayed = runtime.replayTask("project-w-6");
     expect(replayed.watcher.stage).toBe("active");
+  });
+
+  it("native watcher dirty/queued state is refreshed without serializing raw roots", async () => {
+    const rawRoot = "C:/Users/Alice/UAgent";
+    let dirty = true;
+    const nativeAdapter: NativeWatcherAdapter = {
+      getCapability: () => ({
+        enabled: true,
+        mode: "native",
+        reason: null,
+        trustedRootRequired: true,
+        debounceMs: 500,
+        maxQueueSize: 10000,
+        overflowAction: "warn",
+        readDiffOnly: true,
+      }),
+      async startSession(projectId) {
+        return {
+          id: "native-watch-1",
+          projectId,
+          rootRef: rawRoot,
+          displayRoot: "[project-root]",
+          status: "active",
+          policy: {
+            allowedRoots: [rawRoot],
+            ignoredDirs: [".git"],
+            ignorePatterns: ["*.log"],
+            maxQueueSize: 10000,
+            debounceMs: 500,
+            overflowAction: "warn",
+          },
+          startedAt: Date.now(),
+          stoppedAt: null,
+          stopReason: null,
+          totalChanges: 0,
+          overflowed: false,
+        };
+      },
+      async stopSession(sessionId) {
+        return {
+          id: sessionId,
+          projectId: "project-native-watch",
+          rootRef: rawRoot,
+          displayRoot: "[project-root]",
+          status: "stopped",
+          policy: {
+            allowedRoots: [],
+            ignoredDirs: [],
+            ignorePatterns: [],
+            maxQueueSize: 10000,
+            debounceMs: 500,
+            overflowAction: "warn",
+          },
+          startedAt: Date.now(),
+          stoppedAt: Date.now(),
+          stopReason: "user_stopped",
+          totalChanges: 0,
+          overflowed: false,
+        };
+      },
+      async readDiff(sessionId) {
+        dirty = false;
+        return {
+          sessionId,
+          projectId: "project-native-watch",
+          entries: [
+            {
+              kind: "modified",
+              rootRelativePath: "Source/Game.cpp",
+              displayPath: "[project-root]/Source/Game.cpp",
+              previousEntry: null,
+              currentEntry: null,
+            },
+          ],
+          summary: { added: 0, modified: 1, deleted: 0, ignored: 0, rootEscapes: 0 },
+          generatedAt: Date.now(),
+        };
+      },
+      async getSession(sessionId) {
+        return {
+          sessionId,
+          projectId: "project-native-watch",
+          displayRoot: "[project-root]",
+          status: "watching",
+          startedAt: 1,
+          stoppedAt: null,
+          overflowed: dirty,
+          queuedCount: dirty ? 7 : 0,
+          dirty,
+        };
+      },
+    };
+
+    const runtime = createMvp9RuntimeService({ nativeWatcherAdapter: nativeAdapter });
+    runtime.watcher.start("project-native-watch", rawRoot);
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().watcher.stage).toBe("active");
+    });
+    await runtime.watcher.refreshNativeSession!();
+
+    expect(runtime.getState().watcher.dirty).toBe(true);
+    expect(runtime.getState().watcher.queuedCount).toBe(7);
+    expect(runtime.getState().watcher.overflowed).toBe(true);
+
+    runtime.watcher.computeDiff();
+    await vi.waitFor(() => {
+      expect(runtime.getState().watcher.diff?.summary.modified).toBe(1);
+    });
+
+    expect(runtime.getState().watcher.dirty).toBe(false);
+    expect(runtime.getState().watcher.queuedCount).toBe(0);
+
+    const serialized = JSON.stringify({
+      state: runtime.getState().watcher,
+      audit: runtime.getAuditEngine().queryAuditEvents({ taskId: "project-native-watch" }),
+      replay: runtime.getSessionEngine().replayTask("project-native-watch"),
+    });
+    expect(serialized).not.toContain(rawRoot);
+    expect(serialized).not.toContain("C:/Users/");
+    expect(serialized).not.toContain("/Users/");
+    expect(serialized).not.toContain("/home/");
+  });
+
+  it("native watcher read diff failures become visible blocked state", async () => {
+    const nativeAdapter: NativeWatcherAdapter = {
+      getCapability: () => ({
+        enabled: true,
+        mode: "native",
+        reason: null,
+        trustedRootRequired: true,
+        debounceMs: 500,
+        maxQueueSize: 10000,
+        overflowAction: "warn",
+        readDiffOnly: true,
+      }),
+      async startSession(projectId) {
+        return {
+          id: "native-watch-error",
+          projectId,
+          rootRef: "root:native",
+          displayRoot: "[project-root]",
+          status: "active",
+          policy: {
+            allowedRoots: [],
+            ignoredDirs: [],
+            ignorePatterns: [],
+            maxQueueSize: 10000,
+            debounceMs: 500,
+            overflowAction: "warn",
+          },
+          startedAt: Date.now(),
+          stoppedAt: null,
+          stopReason: null,
+          totalChanges: 0,
+          overflowed: false,
+        };
+      },
+      async stopSession() {
+        throw new Error("not used");
+      },
+      async readDiff() {
+        throw new Error("native read failed");
+      },
+      async getSession() {
+        return null;
+      },
+    };
+
+    const runtime = createMvp9RuntimeService({ nativeWatcherAdapter: nativeAdapter });
+    runtime.watcher.start("project-native-error", "G:/UAgent");
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().watcher.stage).toBe("active");
+    });
+    runtime.watcher.computeDiff();
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().watcher.stage).toBe("blocked");
+    });
+    expect(runtime.getState().watcher.stopReason).toContain("native read failed");
+    expect(runtime.getState().watcher.lastError).toContain("native read failed");
   });
 });
 

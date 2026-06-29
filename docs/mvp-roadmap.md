@@ -149,7 +149,24 @@ Out of scope for MVP8: real filesystem writes/deletes/renames/moves, terminal ex
 - Side-effect scan extended with 5 MVP9 categories: terminal-exec, browser-preview, screenshot-capture, watcher, raw-output boundaries
 - MVP9 scenario matrix: 17 scenarios covering terminal, browser, screenshot, watcher, capability defaults
 
-Status: current
+Status: complete
+
+## MVP10 - Controlled Real Local Execution & Build Loop (Final Acceptance Complete)
+
+- **Real Terminal Execution** (COMPLETE): Default disabled, allowlisted commands only, approval-bound, cwd-contained, output redacted, no-shell wrapper.
+- **Build Loop** (COMPLETE): 12 verification command templates with risk classification and one-time approval tokens.
+- **Approval Token System** (COMPLETE): One-time tokens issued only from stored native proposals and bound to proposal + command + cwd; prevents replay and unauthorized execution.
+- **Terminal Classifier Hardening** (COMPLETE): No-shell parser, exact allowlist, denylist with dangerous pattern detection, env sanitization, mutation detection.
+- **Native Real Terminal Adapter** (COMPLETE): Rust Command with timeout, cancel, redaction, feature-gated. Uses native proposal registry approval (not raw token minting).
+- **Real Incremental Watcher** (COMPLETE): Native `notify` watcher behind `UAGENT_ENABLE_REAL_WATCHER=1`, dirty/queued state, read-diff only, debounce/backpressure limits, redacted/root-relative paths, and no auto-rescan/write behavior.
+- **Local Browser Preview** (COMPLETE): Native classifier/open path behind `UAGENT_ENABLE_REAL_BROWSER=1`, localhost/127.0.0.1 policy, trusted-root `file://` containment, redirect guard, redacted target summaries, active project root propagation, async Tauri WebviewWindow launch, runtime timeout fallback, and replay no-navigation coverage.
+- **Runtime Integration** (COMPLETE): Approval token lifecycle, terminal policy, build templates, watcher state/diff, browser preview service, redacted audit/session/evidence, and replay no-execution/no-navigation paths are wired.
+- **UI Integration** (COMPLETE): TerminalPanel proposal/approval UI, Composer command suggestions, Settings gate status, WatcherPanel dirty/diff controls, BrowserPanel policy/status controls, and runtime store bridges are wired.
+- **Final Acceptance** (COMPLETE): G7/G8/G9/G10/G11 are accepted complete, final verification commands pass, side-effect scan remains 0 blocked / 137 review, and boundary review confirms no terminal, watcher, browser, replay, or redaction rule was weakened.
+
+Status: complete
+
+Out of scope for MVP10: UE Editor writes, mutating MCP tools, default live provider network, arbitrary shell execution, external browser automation, real screenshot capture, automatic watcher rescan, automatic code fixes, dependency installation.
 
 ## Non-Goals
 

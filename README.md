@@ -2,15 +2,18 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP9 Controlled Terminal / Browser Preview / Incremental Watcher
+## Current Stage: MVP10 Controlled Real Local Execution & Build Loop (Final Acceptance Complete)
 
-MVP9 adds three controlled real capabilities on top of the MVP8 native read-only filesystem bridge:
+MVP10 moves MVP9's fixture-gated capabilities into controlled real local execution. Current status: **G7-G12 complete after final verification, boundary review, and supervisor checkpoint review**:
 
-1. **Controlled Terminal**: Command proposal with risk classification, approval-bound execution, sandbox-bounded shell, and redacted output. No arbitrary shell execution without explicit user approval.
-2. **Browser/Screenshot Preview**: Local-only browser preview of HTML/UE output. User-initiated screenshot capture with approval gating. No background capture or navigation.
-3. **Incremental File Watcher**: Trusted root only, debounced change events, diff computation, user-initiated apply/rescan. No auto-rescan or side effects.
+1. **Real Terminal Execution** (COMPLETE): Default disabled, allowlisted commands only (typecheck, lint, test, build, git status/diff), approval-bound through a native proposal registry, cwd-contained, output redacted. No-shell wrapper with args array prevents injection. Approval token is bound to a stored proposal + command + cwd (one-time use).
+2. **Build Loop** (COMPLETE): Verification command templates (typecheck, lint, test, web:build, cargo test, git status/diff/diff --check) with risk classification and one-time approval tokens.
+3. **Terminal Classifier Hardening** (COMPLETE): No-shell parser, exact allowlist + denylist, dangerous pattern detection, env sanitization, mutation detection.
+4. **Real Incremental Watcher** (COMPLETE): Default disabled, native `notify` watcher behind `UAGENT_ENABLE_REAL_WATCHER=1`, dirty/queued state, read-diff only, debounce/backpressure limits, redacted/root-relative paths, and no auto-rescan/write behavior.
+5. **Local Browser Preview** (COMPLETE): Default disabled behind `UAGENT_ENABLE_REAL_BROWSER=1`; policy allows only localhost/127.0.0.1 and trusted in-root `file://` targets with redacted display. Native WebviewWindow launch now uses an async Tauri command, navigates allowed local/trusted-file targets, blocks external redirects, and BrowserPanel reaches completed or clear failed state.
+6. **Final Acceptance** (COMPLETE): `pnpm typecheck`, `pnpm lint`, `pnpm test`, desktop web build, Rust `cargo check`/`cargo test`, side-effect scan, and `git diff --check` pass. Boundary review confirms terminal proposal/approval-token flow, trusted-root-only watcher, local-only browser preview, replay no-side-effect behavior, and redacted audit/session/evidence summaries.
 
-All new capabilities pass through Capability Bridge policy gate. MVP5-MVP8 approval, sandbox, audit, session, redaction, and native read-only FS boundaries remain inviolable. Provider live remains manual opt-in.
+All real capabilities default disabled behind feature gates. Approval/Sandbox/Audit/Session/Redaction boundaries remain non-negotiable. Provider live remains manual opt-in. UE write, mutating MCP, arbitrary shell remain non-goals.
 
 ## Technology Stack
 

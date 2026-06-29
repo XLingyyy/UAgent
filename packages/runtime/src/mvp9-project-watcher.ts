@@ -104,6 +104,26 @@ export interface FixtureWatcherAdapter {
   getSession(sessionId: string): ProjectWatchSession | null;
 }
 
+export interface NativeWatcherAdapter {
+  getCapability(): WatcherCapabilityStatus;
+  refreshCapability?: () => Promise<WatcherCapabilityStatus>;
+  startSession(projectId: string, rootRef: string): Promise<ProjectWatchSession>;
+  stopSession(sessionId: string): Promise<ProjectWatchSession>;
+  readDiff(sessionId: string): Promise<ProjectIndexDiff>;
+  getSession(sessionId: string): Promise<{ sessionId: string; rootId?: string; projectId: string; displayRoot: string; status: string; startedAt: number; stoppedAt: number | null; overflowed: boolean; queuedCount: number; dirty: boolean } | null>;
+}
+
+export interface WatcherCapabilityStatus {
+  enabled: boolean;
+  mode: "native" | "fixture" | "disabled";
+  reason: string | null;
+  trustedRootRequired: boolean;
+  debounceMs: number;
+  maxQueueSize: number;
+  overflowAction: "warn" | "stop";
+  readDiffOnly: boolean;
+}
+
 let watcherSessionCounter = 0;
 let watcherEventCounter = 0;
 

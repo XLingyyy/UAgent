@@ -164,12 +164,16 @@ export type {
   TerminalExitState,
   TerminalOutputChunk,
   TerminalExecutionResult,
+  TerminalExecutionCapabilityStatus,
   TerminalProposalAction,
 } from "./terminal.js";
 export type {
+  BrowserPreviewCapabilityStatus,
   BrowserPreviewUrlPolicy,
   BrowserPreviewStatus,
+  BrowserPreviewTargetSummary,
   BrowserPreviewRequest,
+  BrowserPreviewResult,
   BrowserPreviewSession,
   ScreenshotCaptureStatus,
   ScreenshotCaptureRequest,
@@ -191,6 +195,29 @@ export type {
   WatcherEventBatch,
   WatcherAction,
 } from "./project-watcher.js";
+
+// MVP10 Terminal Execution Policy
+export type {
+  CommandAllowlistEntry,
+  CommandDenyReason,
+  CommandDenyResult,
+  CommandAllowlistMatch,
+  TerminalExecutionPolicy,
+  MutationDetectionResult,
+  MutationProof,
+  BuildRunSummary,
+  BuildCommandResult,
+  ExecutionFeatureGate,
+} from "./terminal-policy.js";
+
+// MVP10 Approval Token
+export type {
+  ApprovalToken,
+  ApprovalTokenStatus,
+  ApprovalTokenRequest,
+  ApprovalTokenValidator,
+  ApprovalTokenAction,
+} from "./approval-token.js";
 export type { ApprovalRequest, ApprovalRequestState, ApprovalDecision, ApprovalDecisionValue, ApprovalState, ApprovalScope } from "./approval.js";
 export type {
   ProviderCapability,

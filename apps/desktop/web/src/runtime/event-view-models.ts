@@ -96,7 +96,16 @@ const EVENT_LABELS: Record<TaskEvent["type"], string> = {
     watcher_rescanned: "Watcher rescanned",
     watcher_overflow: "Watcher overflow",
    watcher_stopped: "Watcher stopped",
-   watcher_error: "Watcher error",
+    watcher_error: "Watcher error",
+     terminal_real_started: "Real terminal started",
+     terminal_real_chunk: "Terminal output chunk",
+     terminal_real_completed: "Real terminal completed",
+     mutation_violation: "Mutation violation",
+     build_loop_review: "Build loop review",
+     approval_token_issued: "Approval token issued",
+     approval_token_used: "Approval token used",
+     approval_token_expired: "Approval token expired",
+     approval_token_revoked: "Approval token revoked",
 };
 
 const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
@@ -194,7 +203,16 @@ const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
     watcher_rescanned: "tool-event",
     watcher_overflow: "review-summary",
    watcher_stopped: "tool-event",
-   watcher_error: "review-summary",
+    watcher_error: "review-summary",
+    terminal_real_started: "tool-event",
+    terminal_real_chunk: "tool-event",
+    terminal_real_completed: "review-summary",
+    mutation_violation: "review-summary",
+    build_loop_review: "review-summary",
+    approval_token_issued: "tool-event",
+    approval_token_used: "tool-event",
+    approval_token_expired: "review-summary",
+    approval_token_revoked: "review-summary",
 };
 
 function formatTimestamp(createdAt: number): string {

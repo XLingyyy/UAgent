@@ -20,12 +20,21 @@ import {
 } from "./mvp9-watcher-service.js";
 import { createAuditProjection, type AuditProjectionEngine } from "./audit-projection.js";
 import { createSessionHistory, type SessionHistoryEngine } from "./session-history.js";
+import type { NativeBrowserAdapter } from "./mvp9-browser-screenshot.js";
+import type { NativeWatcherAdapter } from "./mvp9-project-watcher.js";
+import {
+  createMvp10RuntimeService,
+  type Mvp10RuntimeService,
+  type Mvp10RuntimeServiceState,
+  type Mvp10RuntimeServiceOptions,
+} from "./mvp10-runtime-service.js";
 
 export interface Mvp9RuntimeState {
   terminal: TerminalServiceState;
   browser: BrowserServiceState;
   screenshot: ScreenshotServiceState;
   watcher: WatcherServiceState;
+  mvp10: Mvp10RuntimeServiceState;
 }
 
 export interface Mvp9RuntimeService {
@@ -34,21 +43,29 @@ export interface Mvp9RuntimeService {
   browser: BrowserService;
   screenshot: ScreenshotService;
   watcher: WatcherService;
+  mvp10: Mvp10RuntimeService;
   subscribe(listener: (state: Mvp9RuntimeState) => void): () => void;
   getAuditEngine(): AuditProjectionEngine;
   getSessionEngine(): SessionHistoryEngine;
   replayTask(taskId: string): Mvp9RuntimeState;
 }
 
-export function createMvp9RuntimeService(): Mvp9RuntimeService {
+export interface Mvp9RuntimeServiceOptions {
+  mvp10?: Mvp10RuntimeServiceOptions;
+  nativeWatcherAdapter?: NativeWatcherAdapter;
+  nativeBrowserAdapter?: NativeBrowserAdapter;
+}
+
+export function createMvp9RuntimeService(options: Mvp9RuntimeServiceOptions = {}): Mvp9RuntimeService {
   const auditEngine = createAuditProjection();
   const sessionEngine = createSessionHistory();
   const listeners = new Set<(state: Mvp9RuntimeState) => void>();
 
   const terminalService = createTerminalService(auditEngine, sessionEngine);
-  const browserService = createBrowserService(auditEngine, sessionEngine);
+  const browserService = createBrowserService(auditEngine, sessionEngine, undefined, options.nativeBrowserAdapter);
   const screenshotService = createScreenshotService(auditEngine, sessionEngine);
-  const watcherService = createWatcherService(auditEngine, sessionEngine);
+  const watcherService = createWatcherService(auditEngine, sessionEngine, undefined, options.nativeWatcherAdapter);
+  const mvp10Service = createMvp10RuntimeService(options.mvp10);
 
   function getCombinedState(): Mvp9RuntimeState {
     return {
@@ -56,6 +73,7 @@ export function createMvp9RuntimeService(): Mvp9RuntimeService {
       browser: browserService.getState(),
       screenshot: screenshotService.getState(),
       watcher: watcherService.getState(),
+      mvp10: mvp10Service.getState(),
     };
   }
 
@@ -70,6 +88,7 @@ export function createMvp9RuntimeService(): Mvp9RuntimeService {
   browserService.subscribe(() => notify());
   screenshotService.subscribe(() => notify());
   watcherService.subscribe(() => notify());
+  mvp10Service.subscribe(() => notify());
 
   return {
     getState: getCombinedState,
@@ -78,6 +97,7 @@ export function createMvp9RuntimeService(): Mvp9RuntimeService {
     browser: browserService,
     screenshot: screenshotService,
     watcher: watcherService,
+    mvp10: mvp10Service,
 
     subscribe(listener: (state: Mvp9RuntimeState) => void) {
       listeners.add(listener);
@@ -100,6 +120,7 @@ export function createMvp9RuntimeService(): Mvp9RuntimeService {
         browser: browserService.replayTask(taskId),
         screenshot: screenshotService.replayTask(taskId),
         watcher: watcherService.replayTask(taskId),
+        mvp10: mvp10Service.replayTask(taskId),
       };
     },
   };

@@ -8,6 +8,10 @@ import {
 import { LegacySseTransport, McpSession, McpTransportError, StreamableHttpTransport } from "@uagent/mcp-client";
 import type { ApprovalDecisionValue, McpConnectionState, RuntimeSnapshot, TaskDraft, TaskRecord } from "@uagent/shared";
 import type { McpInitializeResult, McpTransportClient } from "@uagent/mcp-client";
+import type { NativeInvoke } from "./project-native-adapter";
+import { createDesktopTerminalAdapterFromEnvironment } from "./terminal-native-adapter";
+import { createDesktopWatcherAdapterFromEnvironment } from "./watcher-native-adapter";
+import { createDesktopBrowserAdapterFromEnvironment } from "./browser-native-adapter";
 
 export interface DesktopRuntimeAdapter {
   getSnapshot(): RuntimeSnapshot;
@@ -27,6 +31,7 @@ export interface DesktopRuntimeAdapter {
 
 export interface DesktopRuntimeAdapterOptions {
   createTransport?: (endpoint: string, transportKind: string) => McpTransportClient;
+  nativeInvoke?: NativeInvoke | null;
 }
 
 export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptions): DesktopRuntimeAdapter {
@@ -36,7 +41,14 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     discovery: null,
     clockStart: 1_000,
   });
-  const mvp9Service = createMvp9RuntimeService();
+  const terminalAdapter = createDesktopTerminalAdapterFromEnvironment(options?.nativeInvoke);
+  const watcherAdapter = createDesktopWatcherAdapterFromEnvironment(options?.nativeInvoke);
+  const browserAdapter = createDesktopBrowserAdapterFromEnvironment(options?.nativeInvoke);
+  const mvp9Service = createMvp9RuntimeService({
+    mvp10: { terminalAdapter },
+    nativeWatcherAdapter: watcherAdapter ?? undefined,
+    nativeBrowserAdapter: browserAdapter ?? undefined,
+  });
   const mvp9Listeners = new Set<(state: Mvp9RuntimeState) => void>();
 
   function syncMvp9() {
@@ -47,6 +59,12 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
   }
 
   mvp9Service.subscribe(() => syncMvp9());
+  if (terminalAdapter) {
+    void mvp9Service.mvp10.terminal.refreshCapability().then(() => syncMvp9());
+  }
+  if (browserAdapter) {
+    void mvp9Service.browser.refreshCapability().then(() => syncMvp9());
+  }
 
   let mcpState: McpConnectionState = {
     status: "disconnected",

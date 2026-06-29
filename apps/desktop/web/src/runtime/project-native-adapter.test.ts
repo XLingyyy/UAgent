@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createNativeProjectAdapter } from "./project-native-adapter";
+import { createDesktopBrowserAdapter } from "./browser-native-adapter";
+import { createDesktopTerminalAdapter } from "./terminal-native-adapter";
 
 const RAW_PATH = "C:/Users/Dev/LyraStarter";
 
@@ -336,6 +338,119 @@ describe("project-native-adapter", () => {
       },
     );
     expect(trustPayload).toBeDefined();
+  });
+
+  it("resolves trusted opaque root refs before terminal native invoke", async () => {
+    const projectAdapter = createNativeProjectAdapter({
+      invoke: async <T,>(command: string): Promise<T> => {
+        if (command === "validate_native_project_root") {
+          return {
+            ok: true,
+            reason: "valid",
+            displayRoot: "[user-home]/LyraStarter",
+            projectName: "LyraStarter",
+            engine: { label: "UE 5.8", association: "5.8", source: "uproject" },
+          } as T;
+        }
+        if (command === "trust_native_project_root") {
+          return { displayRoot: "[user-home]/LyraStarter", trustState: "trusted" } as T;
+        }
+        throw new Error(`Unexpected project command: ${command}`);
+      },
+    });
+
+    const project = await projectAdapter.addProject(RAW_PATH);
+    const trusted = await projectAdapter.confirmTrust(project.id);
+    expect(trusted.rootRef).toMatch(/^root:/);
+
+    let terminalPayload: unknown = null;
+    const terminalAdapter = createDesktopTerminalAdapter(async <T,>(
+      command: string,
+      payload: unknown,
+    ): Promise<T> => {
+      if (command === "propose_terminal_command") {
+        terminalPayload = payload;
+        return {
+          proposalId: "native-proposal-root-resolution",
+          command: "git status",
+          risk: "allowlisted",
+          reason: "allowed",
+          canonicalCwd: RAW_PATH,
+          redactedCwd: "[project-root]",
+          timeoutMs: 60000,
+          outputLimitBytes: 1024,
+          outputLimitLines: 100,
+        } as T;
+      }
+      throw new Error(`Unexpected terminal command: ${command}`);
+    });
+
+    await terminalAdapter.propose("git status", trusted.rootRef, null, trusted.rootRef, trusted.id);
+
+    const input = (terminalPayload as { input?: { cwd?: string } }).input;
+    expect(input?.cwd).toBe(RAW_PATH);
+  });
+
+  it("uses camelCase trusted root payloads for native browser preview", async () => {
+    const projectAdapter = createNativeProjectAdapter({
+      invoke: async <T,>(command: string): Promise<T> => {
+        if (command === "validate_native_project_root") {
+          return {
+            ok: true,
+            reason: "valid",
+            displayRoot: "[user-home]/LyraStarter",
+            projectName: "LyraStarter",
+            engine: { label: "UE 5.8", association: "5.8", source: "uproject" },
+          } as T;
+        }
+        if (command === "trust_native_project_root") {
+          return { displayRoot: "[user-home]/LyraStarter", trustState: "trusted" } as T;
+        }
+        throw new Error(`Unexpected project command: ${command}`);
+      },
+    });
+
+    const project = await projectAdapter.addProject(RAW_PATH);
+    const trusted = await projectAdapter.confirmTrust(project.id);
+    const browserPayloads: { command: string; payload: unknown }[] = [];
+    const browserAdapter = createDesktopBrowserAdapter(async <T,>(
+      command: string,
+      payload: unknown,
+    ): Promise<T> => {
+      browserPayloads.push({ command, payload });
+      if (command === "browser_preview") {
+        return {
+          sessionId: "session-browser",
+          url: "[local file] report.html",
+          targetId: "browser-target:file",
+          policy: "local_only",
+          blocked: false,
+          reason: "",
+          displayTarget: "[local file] report.html",
+          displayUrl: "[local file] report.html",
+          needsTrustedRoot: true,
+        } as T;
+      }
+      if (command === "open_browser_preview") {
+        return { windowId: "browser-preview-session-browser", status: "opened" } as T;
+      }
+      throw new Error(`Unexpected browser command: ${command}`);
+    });
+
+    await browserAdapter.classifyUrl("file:///C:/Users/Dev/LyraStarter/report.html", trusted.rootRef);
+    await browserAdapter.openPreview("file:///C:/Users/Dev/LyraStarter/report.html", "session-browser", trusted.rootRef);
+
+    const classifyInput = (browserPayloads[0].payload as { input?: Record<string, unknown> }).input;
+    expect(classifyInput?.rootRef).toBe(RAW_PATH);
+    expect(classifyInput?.taskId).toBeNull();
+    expect(classifyInput).not.toHaveProperty("root_ref");
+    expect(classifyInput).not.toHaveProperty("task_id");
+
+    const openInput = (browserPayloads[1].payload as { input?: Record<string, unknown> }).input;
+    expect(openInput?.rootRef).toBe(RAW_PATH);
+    expect(openInput?.sessionId).toBe("session-browser");
+    expect(openInput).not.toHaveProperty("root_ref");
+    expect(openInput).not.toHaveProperty("session_id");
   });
 
   it("rejects legacy native scan results that contain counts without index entries", async () => {

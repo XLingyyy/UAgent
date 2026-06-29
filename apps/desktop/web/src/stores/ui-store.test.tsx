@@ -11,12 +11,14 @@ import {
   useProjectStore,
   useProviderActions,
   useProviderStore,
+  useRuntimeActions,
   useSettingsActions,
   useSettingsStore,
   useThreadActions,
   useThreadStore,
 } from "./ui-store";
 import type { ProviderConfig } from "../types/provider";
+import { createDesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
 
 const tauriGlobal = globalThis as typeof globalThis & {
   __TAURI_INTERNALS__?: { invoke?: (command: string, payload?: unknown) => Promise<unknown> };
@@ -184,6 +186,25 @@ function ProjectStateJsonProbe() {
   return <pre data-testid="project-json">{JSON.stringify(project)}</pre>;
 }
 
+function RuntimeActionProbe() {
+  const { requestBrowserPreview } = useRuntimeActions();
+
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        requestBrowserPreview(
+          "file:///[project-root]/Saved/Automation/report.html",
+          "task-browser",
+          "root:active-project",
+        )
+      }
+    >
+      request trusted file preview
+    </button>
+  );
+}
+
 describe("ui-store", () => {
   it("starts each slice with its expected seeded defaults", () => {
     renderSliceProbe();
@@ -292,5 +313,26 @@ describe("ui-store", () => {
     });
     expect(screen.queryByDisplayValue(rawRoot)).toBeNull();
     expect(document.body.textContent).not.toContain("C:/Users/Ada");
+  });
+
+  it("forwards trusted browser preview root to the runtime service", () => {
+    const runtimeClient = createDesktopRuntimeAdapter();
+    const requestPreview = vi
+      .spyOn(runtimeClient.getMvp9().browser, "requestPreview")
+      .mockResolvedValue(undefined);
+
+    render(
+      <UIProvider runtimeClient={runtimeClient}>
+        <RuntimeActionProbe />
+      </UIProvider>,
+    );
+
+    fireEvent.click(screen.getByText("request trusted file preview"));
+
+    expect(requestPreview).toHaveBeenCalledWith(
+      "file:///[project-root]/Saved/Automation/report.html",
+      "task-browser",
+      "root:active-project",
+    );
   });
 });

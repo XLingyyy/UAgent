@@ -90,19 +90,56 @@ export { extractProviderTraceSummary, formatProviderTraceSummary, type ProviderT
 export { mapProviderRuntimeEvent, type ProviderEventMappingResult } from "./provider/provider-event-bridge.js";
 export { runProviderScenarioMatrix, type Mvp4ScenarioMatrixResult, type Mvp4ScenarioResult } from "./provider/mvp4-scenarios.js";
 
+export {
+  BUILD_TEMPLATES,
+  findBuildTemplate,
+  getBuildTemplatesByCategory,
+  getAcceptanceChecklistTemplates,
+  createBuildRun,
+  nextBuildRunId,
+  type BuildCommandTemplate,
+  type BuildRun,
+  type BuildCommandRun,
+  type BuildRunRequest,
+} from "./mvp10-build-templates.js";
 export { classifyTerminalCommandRisk, isProposalExecutable, createAllowlistTerminalPolicy } from "./mvp9-terminal-policy.js";
+export {
+  parseCommand,
+  classifyMvp10TerminalCommand,
+  isAllowlistedCommand,
+  detectDeniedCommand,
+  sanitizeTerminalEnv,
+  detectMutation,
+  getDefaultExecutionLimits,
+  MVP10_ALLOWLIST,
+  MVP10_DENYLIST_COMMANDS,
+} from "./mvp10-terminal-policy.js";
 export type { TerminalCommandClassification } from "@uagent/shared";
+export { createApprovalTokenService, issueApprovalToken, validateApprovalToken, useApprovalToken, revokeApprovalToken, getApprovalToken } from "./mvp10-approval-token.js";
+export {
+  createRealTerminalService,
+  createRealTerminalServiceWithOptions,
+  type RealTerminalAdapter,
+  type RealTerminalService,
+  type RealTerminalServiceState,
+  type RealTerminalStage,
+} from "./mvp10-terminal-service.js";
+export {
+  runMvp10ScenarioMatrix,
+  type Mvp10Scenario,
+} from "./mvp10-scenarios.js";
 export { createFixtureTerminalAdapter, type FixtureTerminalAdapter } from "./mvp9-terminal-adapter.js";
 export { classifyBrowserUrl, createFixtureBrowserPreviewAdapter, createFixtureScreenshotAdapter } from "./mvp9-browser-screenshot.js";
-export type { FixtureBrowserPreviewAdapter, FixtureScreenshotAdapter } from "./mvp9-browser-screenshot.js";
+export type { FixtureBrowserPreviewAdapter, FixtureScreenshotAdapter, NativeBrowserAdapter } from "./mvp9-browser-screenshot.js";
 export { createDefaultWatcherPolicy, isRootAllowedForWatch, computeProjectIndexDiff, createFixtureWatcherAdapter, debounceWatcherEvents } from "./mvp9-project-watcher.js";
-export type { FixtureWatcherAdapter } from "./mvp9-project-watcher.js";
+export type { FixtureWatcherAdapter, NativeWatcherAdapter, WatcherCapabilityStatus } from "./mvp9-project-watcher.js";
 export { runMvp9ScenarioMatrix, type Mvp9ScenarioMatrixResult, type Mvp9ScenarioResult } from "./mvp9-scenarios.js";
 export { createTerminalService, type TerminalService, type TerminalServiceState, type TerminalStage } from "./mvp9-terminal-service.js";
 export { createBrowserService, type BrowserService, type BrowserServiceState, type BrowserStage } from "./mvp9-browser-service.js";
 export { createScreenshotService, type ScreenshotService, type ScreenshotServiceState, type ScreenshotStage } from "./mvp9-screenshot-service.js";
 export { createWatcherService, type WatcherService, type WatcherServiceState, type WatcherStage } from "./mvp9-watcher-service.js";
-export { createMvp9RuntimeService, type Mvp9RuntimeService, type Mvp9RuntimeState } from "./mvp9-runtime-service.js";
+export { createMvp9RuntimeService, type Mvp9RuntimeService, type Mvp9RuntimeServiceOptions, type Mvp9RuntimeState } from "./mvp9-runtime-service.js";
+export { createMvp10RuntimeService, type Mvp10RuntimeService, type Mvp10RuntimeServiceOptions, type Mvp10RuntimeServiceState } from "./mvp10-runtime-service.js";
 
 export {
   createAuditProjection,

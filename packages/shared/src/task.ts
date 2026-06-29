@@ -106,8 +106,17 @@ export type TaskEventType =
     | "watcher_applied"
     | "watcher_rescanned"
     | "watcher_overflow"
-    | "watcher_stopped"
-    | "watcher_error";
+     | "watcher_stopped"
+     | "watcher_error"
+     | "terminal_real_started"
+     | "terminal_real_chunk"
+     | "terminal_real_completed"
+     | "mutation_violation"
+     | "build_loop_review"
+     | "approval_token_issued"
+     | "approval_token_used"
+     | "approval_token_expired"
+     | "approval_token_revoked";
 
 export type TaskEventLevel = "info" | "success" | "warning" | "error";
 

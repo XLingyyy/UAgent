@@ -3,10 +3,13 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { SettingsShell } from "./SettingsShell";
 import { UIProvider } from "../app/providers";
 import { useLayoutStore } from "../stores/ui-store";
+import { createDesktopRuntimeAdapter, type DesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
+import type { NativeInvoke } from "../runtime/project-native-adapter";
 
-function renderSettingsShell(initialPage?: string) {
+function renderSettingsShell(initialPage?: string, runtimeClient?: DesktopRuntimeAdapter) {
   return render(
     <UIProvider
+      runtimeClient={runtimeClient}
       initialState={{
         settings: {
           open: true,
@@ -250,6 +253,31 @@ describe("SettingsShell", () => {
     expect(resetBtn).toBeTruthy();
     expect(resetBtn.disabled).toBe(true);
     expect(resetBtn.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("shows Config terminal status from native capability state", async () => {
+    const nativeInvoke = (async <T,>(command: string): Promise<T> => {
+      if (command === "terminal_capability_status") {
+        return {
+          enabled: true,
+          mode: "native",
+          reason: null,
+          allowlistSummary: "typecheck, lint, test, desktop web build, cargo test, git status/diff",
+          trustedRootRequired: true,
+          approvalRequired: true,
+          timeoutMs: 60_000,
+          outputLimitBytes: 1_048_576,
+          outputLimitLines: 5_000,
+        } as T;
+      }
+      throw new Error(`unexpected native command ${command}`);
+    }) as NativeInvoke;
+    const runtimeClient = createDesktopRuntimeAdapter({ nativeInvoke });
+
+    renderSettingsShell("config", runtimeClient);
+
+    expect(await screen.findByText(/Enabled .* native .* idle/)).toBeTruthy();
+    expect(screen.getByText("Real-enabled \u2014 execution active")).toBeTruthy();
   });
 
   it("shows Personalization memory rows as disabled with future phase labels", () => {

@@ -3,6 +3,7 @@ import { createDesktopRuntimeAdapter } from "./desktop-runtime-adapter";
 import { LegacySseTransport, McpTransportError, StreamableHttpTransport } from "@uagent/mcp-client";
 import type { McpTransportClient } from "@uagent/mcp-client";
 import type { TaskDraft } from "@uagent/shared";
+import type { NativeInvoke } from "./project-native-adapter";
 
 vi.mock("@uagent/mcp-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@uagent/mcp-client")>();
@@ -422,6 +423,199 @@ describe("DesktopRuntimeAdapter", () => {
     unsub();
     adapter.getMvp9().terminal.propose("pnpm build", "[project-root]", null);
     expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("routes MVP10 terminal proposal, approval, and execution through native invoke without exposing raw token or cwd", async () => {
+    const calls: Array<{ command: string; payload: unknown }> = [];
+    const nativeInvoke = vi.fn(async <T,>(command: string, payload: unknown): Promise<T> => {
+      calls.push({ command, payload });
+      if (command === "terminal_capability_status") {
+        return {
+          enabled: true,
+          mode: "native",
+          reason: null,
+          allowlistSummary: "typecheck, lint, test, desktop web build, cargo test, git status/diff",
+          trustedRootRequired: true,
+          approvalRequired: true,
+          timeoutMs: 60_000,
+          outputLimitBytes: 1_048_576,
+          outputLimitLines: 5_000,
+        } as T;
+      }
+      if (command === "watcher_capability_status") {
+        return {
+          enabled: false,
+          mode: "disabled",
+          reason: "feature_disabled",
+          trustedRootRequired: true,
+          debounceMs: 500,
+          maxQueueSize: 10000,
+          overflowAction: "warn",
+          readDiffOnly: true,
+        } as T;
+      }
+      if (command === "propose_terminal_command") {
+        return {
+          proposalId: "native-proposal-1",
+          command: "pnpm test",
+          risk: "allowlisted",
+          reason: "command classified as allowlisted",
+          requiresApproval: true,
+          featureFlag: "terminal",
+          canonicalCwd: "G:\\UAgent",
+          redactedCwd: "[project-root]",
+          expiresAt: 1_700_000_300_000,
+          timeoutMs: 60_000,
+          outputLimitBytes: 1_048_576,
+          outputLimitLines: 5_000,
+        } as T;
+      }
+      if (command === "approve_terminal_proposal") {
+        return { token: "raw-native-token:native-proposal-1", status: "approved" } as T;
+      }
+      if (command === "execute_terminal_command_real") {
+        return {
+          status: "completed",
+          chunks: [
+            { index: 0, stream: "stdout", text: "ok\n", truncated: false, timestamp: 1_700_000_000_001 },
+          ],
+          exitCode: 0,
+          durationMs: 25,
+          outputSummary: "ok\n",
+          outputTruncated: false,
+          totalBytes: 3,
+          totalLines: 1,
+          redactionSummary: { replacedSecrets: 0, replacedPaths: 1 },
+        } as T;
+      }
+      throw new Error(`unexpected native command ${command}`);
+    }) as unknown as NativeInvoke;
+
+    const adapter = createDesktopRuntimeAdapter({ nativeInvoke });
+    const terminal = adapter.getMvp9().mvp10.terminal;
+    await vi.waitFor(() => {
+      expect(terminal.getState().capability?.enabled).toBe(true);
+    });
+
+    const proposal = await terminal.propose("pnpm test", "G:\\UAgent", "task-native-1", "G:\\UAgent", "lyra");
+    const token = await terminal.approve(proposal.id, "user", "approve");
+    const state = terminal.getState();
+
+    expect(calls.map((call) => call.command)).toEqual([
+      "terminal_capability_status",
+      "browser_capability_status",
+      "propose_terminal_command",
+      "approve_terminal_proposal",
+      "execute_terminal_command_real",
+    ]);
+    const proposeIdx = calls.findIndex((c) => c.command === "propose_terminal_command");
+    expect(calls[proposeIdx].payload).toEqual({
+      input: { command: "pnpm test", cwd: "G:\\UAgent", projectId: "lyra" },
+    });
+    const executeIdx = calls.findIndex((c) => c.command === "execute_terminal_command_real");
+    expect(calls[executeIdx].payload).toEqual({
+      input: {
+        command: "pnpm test",
+        cwd: "G:\\UAgent",
+        approvedToken: "raw-native-token:native-proposal-1",
+        timeoutSecs: 60,
+      },
+    });
+    expect(proposal.id).toBe("native-proposal-1");
+    expect(proposal.cwd).toBe("[project-root]");
+    expect(state.stage).toBe("completed");
+    expect(state.executionResult?.exitState?.code).toBe(0);
+    expect(state.executionResult?.chunks[0]?.text).toBe("ok\n");
+    expect(token?.id).not.toContain("raw-native-token");
+    expect(JSON.stringify(state)).not.toContain("raw-native-token");
+    expect(JSON.stringify(state)).not.toContain("G:\\UAgent");
+  });
+
+  it("reports native terminal disabled from capability status even when native invoke exists", async () => {
+    const nativeInvoke = vi.fn(async <T,>(command: string): Promise<T> => {
+      if (command === "terminal_capability_status") {
+        return {
+          enabled: false,
+          mode: "disabled",
+          reason: "feature_disabled",
+          allowlistSummary: "typecheck, lint, test, desktop web build, cargo test, git status/diff",
+          trustedRootRequired: true,
+          approvalRequired: true,
+          timeoutMs: 60_000,
+          outputLimitBytes: 1_048_576,
+          outputLimitLines: 5_000,
+        } as T;
+      }
+      if (command === "watcher_capability_status") {
+        return {
+          enabled: false,
+          mode: "disabled",
+          reason: "feature_disabled",
+          trustedRootRequired: true,
+          debounceMs: 500,
+          maxQueueSize: 10000,
+          overflowAction: "warn",
+          readDiffOnly: true,
+        } as T;
+      }
+      throw new Error(`unexpected native command ${command}`);
+    }) as unknown as NativeInvoke;
+
+    const adapter = createDesktopRuntimeAdapter({ nativeInvoke });
+    const terminal = adapter.getMvp9().mvp10.terminal;
+
+    await vi.waitFor(() => {
+      expect(terminal.getState().capability).toMatchObject({
+        enabled: false,
+        mode: "disabled",
+        reason: "feature_disabled",
+      });
+    });
+    expect(nativeInvoke).toHaveBeenCalledWith("terminal_capability_status");
+  });
+
+  it("reports native watcher disabled from capability status even when native invoke exists", async () => {
+    const nativeInvoke = vi.fn(async <T,>(command: string): Promise<T> => {
+      if (command === "terminal_capability_status") {
+        return {
+          enabled: false,
+          mode: "disabled",
+          reason: "feature_disabled",
+          allowlistSummary: "typecheck, lint, test, desktop web build, cargo test, git status/diff",
+          trustedRootRequired: true,
+          approvalRequired: true,
+          timeoutMs: 60_000,
+          outputLimitBytes: 1_048_576,
+          outputLimitLines: 5_000,
+        } as T;
+      }
+      if (command === "watcher_capability_status") {
+        return {
+          enabled: false,
+          mode: "disabled",
+          reason: "feature_disabled",
+          trustedRootRequired: true,
+          debounceMs: 500,
+          maxQueueSize: 10000,
+          overflowAction: "warn",
+          readDiffOnly: true,
+        } as T;
+      }
+      throw new Error(`unexpected native command ${command}`);
+    }) as unknown as NativeInvoke;
+
+    const adapter = createDesktopRuntimeAdapter({ nativeInvoke });
+    const watcher = adapter.getMvp9().watcher;
+    await watcher.refreshCapability?.();
+
+    expect(watcher.getState().capability).toMatchObject({
+      enabled: false,
+      mode: "disabled",
+      reason: "feature_disabled",
+      trustedRootRequired: true,
+      readDiffOnly: true,
+    });
+    expect(nativeInvoke).toHaveBeenCalledWith("watcher_capability_status");
   });
 });
 

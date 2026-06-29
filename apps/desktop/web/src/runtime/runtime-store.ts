@@ -5,6 +5,7 @@ import type {
   BrowserServiceState,
   ScreenshotServiceState,
   WatcherServiceState,
+  RealTerminalServiceState,
 } from "@uagent/runtime";
 import type { ApprovalDecisionValue, McpConnectionState, RuntimeSnapshot, TaskDraft } from "@uagent/shared";
 
@@ -27,7 +28,18 @@ export interface RuntimeStoreActions {
   rejectTerminalProposal: (proposalId: string, actor: string, reason: string) => void;
   cancelTerminalExecution: (executionId: string) => void;
   resetTerminal: () => void;
-  requestBrowserPreview: (url: string, taskId: string | null) => void;
+  proposeMvp10TerminalCommand: (
+    command: string,
+    cwd: string,
+    taskId: string | null,
+    trustedRoot: string,
+    projectId: string | null,
+  ) => Promise<void>;
+  approveMvp10TerminalProposal: (proposalId: string, actor: string, reason: string) => Promise<string | null>;
+  rejectMvp10TerminalProposal: (proposalId: string, actor: string, reason: string) => void;
+  cancelMvp10TerminalExecution: (executionId: string) => void;
+  resetMvp10Terminal: () => void;
+  requestBrowserPreview: (url: string, taskId: string | null, trustedRootRef?: string | null) => void;
   launchBrowserPreview: () => void;
   resetBrowser: () => void;
   requestScreenshotCapture: (scope: string, reason: string, taskId: string | null) => void;
@@ -35,6 +47,8 @@ export interface RuntimeStoreActions {
   denyScreenshot: (reason: string) => void;
   resetScreenshot: () => void;
   startWatcher: (projectId: string, rootRef: string) => void;
+  refreshWatcherCapability: () => Promise<void>;
+  refreshWatcherSession: () => Promise<void>;
   generateWatcherChanges: (count: number) => void;
   computeWatcherDiff: () => void;
   applyWatcherChanges: () => void;
@@ -51,14 +65,67 @@ function createEmptyMvp9State(): Mvp9RuntimeState {
   };
   const emptyBrowser: BrowserServiceState = {
     request: null, session: null, artifact: null, stage: "idle", blockedReason: null,
+    capability: {
+      enabled: false,
+      mode: "disabled",
+      reason: "native_browser_unavailable",
+      localhostAllowed: true,
+      loopbackAllowed: true,
+      fileAllowed: true,
+      externalBlocked: true,
+    },
+    lastError: null,
   };
   const emptyScreenshot: ScreenshotServiceState = {
     request: null, result: null, stage: "idle", evidence: null,
   };
   const emptyWatcher: WatcherServiceState = {
-    session: null, events: [], diff: null, stage: "idle", stopReason: null, overflowed: false,
+    session: null,
+    events: [],
+    diff: null,
+    stage: "idle",
+    stopReason: null,
+    overflowed: false,
+    dirty: false,
+    queuedCount: 0,
+    lastError: null,
+    capability: {
+      enabled: false,
+      mode: "fixture",
+      reason: "native_watcher_unavailable",
+      trustedRootRequired: true,
+      debounceMs: 500,
+      maxQueueSize: 10000,
+      overflowAction: "warn",
+      readDiffOnly: true,
+    },
   };
-  return { terminal: emptyTerminal, browser: emptyBrowser, screenshot: emptyScreenshot, watcher: emptyWatcher };
+  const emptyMvp10Terminal: RealTerminalServiceState = {
+    proposals: [],
+    activeProposal: null,
+    approvalState: null,
+    token: null,
+    executionResult: null,
+    stage: "idle",
+    capability: {
+      enabled: false,
+      mode: "disabled",
+      reason: "native_terminal_unavailable",
+      allowlistSummary: "MVP10 verification commands only",
+      trustedRootRequired: true,
+      approvalRequired: true,
+      timeoutMs: 60_000,
+      outputLimitBytes: 1_048_576,
+      outputLimitLines: 5_000,
+    },
+  };
+  return {
+    terminal: emptyTerminal,
+    browser: emptyBrowser,
+    screenshot: emptyScreenshot,
+    watcher: emptyWatcher,
+    mvp10: { terminal: emptyMvp10Terminal },
+  };
 }
 
 export function createRuntimeStoreState(snapshot: RuntimeSnapshot): RuntimeStoreState {
