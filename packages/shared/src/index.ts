@@ -218,6 +218,27 @@ export type {
   ApprovalTokenValidator,
   ApprovalTokenAction,
 } from "./approval-token.js";
+export type {
+  BuildDiagnostic,
+  ContextPack,
+  ContextPackRedactionSummary,
+  ContextPackSection,
+  ContextPackSectionKind,
+  ContextPackSource,
+  ContextPackSourceKind,
+  DiagnosticEvidenceLink,
+  DiagnosticKind,
+  DiagnosticObservation,
+  DiagnosticSeverity,
+  ProjectDiagnostic,
+  UEBuildDescriptor,
+  UEConfigSectionSummary,
+  UEConfigSummary,
+  UEModuleDescriptor,
+  UEPluginDescriptor,
+  UEProjectMetadata,
+  UETargetDescriptor,
+} from "./ue-diagnostics.js";
 export type { ApprovalRequest, ApprovalRequestState, ApprovalDecision, ApprovalDecisionValue, ApprovalState, ApprovalScope } from "./approval.js";
 export type {
   ProviderCapability,

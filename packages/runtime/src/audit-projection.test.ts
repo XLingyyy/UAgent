@@ -160,6 +160,26 @@ describe("AuditProjection", () => {
       expect(auditEvents[0].payload?.sourceEventType).toBe(sourceEvent.type);
     });
 
+    it("should map MVP11 diagnostic and context pack task events", () => {
+      const events: TaskEvent[] = [
+        makeTaskEvent(1, "diagnostic_started", { payload: { diagnosticKind: "ue_project_metadata", severity: "info" } }),
+        makeTaskEvent(2, "diagnostic_completed", { payload: { diagnosticKind: "build_failure_summary", severity: "error" } }),
+        makeTaskEvent(3, "diagnostic_failed", { payload: { diagnosticKind: "mcp_warning", severity: "warning" } }),
+        makeTaskEvent(4, "context_pack_created", { payload: { diagnosticKind: "context_pack", severity: "info" } }),
+      ];
+
+      const auditEvents = buildAuditFromTaskEvents(events);
+
+      expect(auditEvents.map((event) => event.type)).toEqual([
+        "diagnostic_started",
+        "diagnostic_completed",
+        "diagnostic_failed",
+        "context_pack_created",
+      ]);
+      expect(auditEvents[1].payload?.diagnosticKind).toBe("build_failure_summary");
+      expect(auditEvents[1].payload?.severity).toBe("error");
+    });
+
     it("should redact api_key from title in audit event", () => {
       const events: TaskEvent[] = [
         makeTaskEvent(1, "task_submitted", {

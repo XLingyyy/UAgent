@@ -235,7 +235,7 @@ export const configPageData: SettingsPageData = {
           label: "Config path",
           description: "Path to the active UAgent configuration file.",
           disabled: true,
-          disabledReason: "Read-only",
+          disabledReason: "Read-only guard",
         },
       ],
     },

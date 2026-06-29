@@ -352,8 +352,48 @@ function ConfigPathDisplay() {
 }
 
 function DiagnosticsDisplay() {
+  const mvp11 = useRuntimeStore((state) => state.mvp11);
+  const mcp = useRuntimeStore((state) => state.mcp);
+  const diagnosticCounts = `${mvp11.diagnosticCounts.error} ${
+    mvp11.diagnosticCounts.error === 1 ? "error" : "errors"
+  } / ${mvp11.diagnosticCounts.warning} ${
+    mvp11.diagnosticCounts.warning === 1 ? "warning" : "warnings"
+  }`;
+
   return (
     <div className="ua-settings-page__static-stack">
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Diagnostic Engine</span>
+        <span className="ua-settings-page__static-value ua-settings-page__static-value--success">
+          {mvp11.metadataStatus === "failed" || mvp11.contextPackStatus === "failed"
+            ? "Attention"
+            : "Enabled"}
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Mode</span>
+        <span className="ua-settings-page__static-value">Read-only diagnostics</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">MVP11 status</span>
+        <span className="ua-settings-page__static-value">{mvp11.metadataStatus}</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">MVP11 counts</span>
+        <span className="ua-settings-page__static-value">{diagnosticCounts}</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Provider</span>
+        <span className="ua-settings-page__static-value">Provider live off</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">MCP</span>
+        <span className="ua-settings-page__static-value">
+          {mcp.capabilities
+            ? `${mcp.status} / ${mcp.capabilities.readOnlyTools} read-only / ${mcp.capabilities.blockedTools} blocked`
+            : `${mcp.status} / MCP read-only`}
+        </span>
+      </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Log level</span>
         <span className="ua-settings-page__static-value">Info</span>

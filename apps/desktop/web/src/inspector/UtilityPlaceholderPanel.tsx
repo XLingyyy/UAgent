@@ -160,6 +160,54 @@ export function UtilityEvidencePanel() {
   const runtimeEvents = activeTaskId ? (runtime?.eventsByTaskId[activeTaskId] ?? []) : [];
   const evidenceEvents = extractRuntimeEvidence(runtimeEvents);
   const evidenceItems = uniqueEvidenceItems(evidenceEvents);
+  const mvp11 = runtime?.mvp11;
+  const mvp11EvidenceItems = mvp11
+    ? [
+        ...(mvp11.metadata
+          ? [
+              {
+                id: "mvp11-ue-metadata",
+                status: mvp11.metadataStatus,
+                summary: `UE metadata: ${mvp11.metadata.modules.length} modules, ${mvp11.metadata.targets.length} targets, UE ${mvp11.metadata.engineAssociation ?? "unknown"}`,
+                source: "ue_project_metadata",
+                evidenceId: mvp11.metadata.projectId,
+              },
+            ]
+          : []),
+        ...(mvp11.buildAnalysis
+          ? [
+              {
+                id: "mvp11-build-failure",
+                status: mvp11.buildAnalysisStatus,
+                summary: `Build diagnostics: ${mvp11.buildAnalysis.errorCount} errors, ${mvp11.buildAnalysis.warningCount} warnings`,
+                source: "build_failure_summary",
+                evidenceId: "recorded_terminal_output",
+              },
+            ]
+          : []),
+        ...(mvp11.contextPack
+          ? [
+              {
+                id: "mvp11-context-pack",
+                status: mvp11.contextPackStatus,
+                summary: `Context Pack: ${mvp11.contextPack.title}`,
+                source: "context_pack_summary",
+                evidenceId: mvp11.contextPack.id,
+              },
+            ]
+          : []),
+      ]
+    : [];
+  const fallbackEvidenceItems = [
+    ...reviewSummary.evidenceItems.map((item) => ({
+      id: item.id,
+      status: item.status,
+      label: item.label,
+    })),
+    { id: "mvp11-ue-metadata", status: "ready", label: "UE metadata evidence" },
+    { id: "mvp11-build-failure", status: "ready", label: "Build failure evidence" },
+    { id: "mvp11-context-pack", status: "ready", label: "Context pack evidence" },
+  ];
 
   return (
     <section className="ua-utility-placeholder" aria-label="Evidence placeholder">
@@ -172,16 +220,25 @@ export function UtilityEvidencePanel() {
       </div>
 
       <ul className="ua-utility-placeholder__list">
-        {evidenceEvents.length > 0
-          ? evidenceItems.map((item, index) => (
-              <li key={`${item.id}-${index}`} className="ua-utility-placeholder__item">
+        {mvp11EvidenceItems.length > 0
+          ? mvp11EvidenceItems.map((item) => (
+              <li key={item.id} className="ua-utility-placeholder__item">
                 <span className="ua-utility-placeholder__item-state">{item.status}</span>
                 <span>{item.summary}</span>
                 <span className="ua-utility-placeholder__item-state">{item.source}</span>
                 <span className="ua-utility-placeholder__item-state">{item.evidenceId}</span>
               </li>
             ))
-          : reviewSummary.evidenceItems.map((item) => (
+          : evidenceEvents.length > 0
+            ? evidenceItems.map((item, index) => (
+                <li key={`${item.id}-${index}`} className="ua-utility-placeholder__item">
+                  <span className="ua-utility-placeholder__item-state">{item.status}</span>
+                <span>{item.summary}</span>
+                <span className="ua-utility-placeholder__item-state">{item.source}</span>
+                <span className="ua-utility-placeholder__item-state">{item.evidenceId}</span>
+              </li>
+            ))
+          : fallbackEvidenceItems.map((item) => (
               <li key={item.id} className="ua-utility-placeholder__item">
                 <span className="ua-utility-placeholder__item-state">{item.status}</span>
                 <span>{item.label}</span>

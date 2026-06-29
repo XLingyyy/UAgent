@@ -176,6 +176,23 @@ export {
   type Mvp8ScenarioMatrixResult,
   type Mvp8ScenarioResult,
 } from "./mvp8-project-index.js";
+export {
+  createContextPackV1,
+  createMcpDiagnosticBridge,
+  createUEProjectDiagnosticsEngine,
+  parseBuildOutputToDiagnostics,
+  parseUEProjectMetadata,
+  runMvp11ScenarioMatrix,
+  type BuildOutputDiagnosticSummary,
+  type BuildOutputParseInput,
+  type CreateContextPackV1Input,
+  type McpDiagnosticBridgeOptions,
+  type McpDiagnosticCollection,
+  type Mvp11ScenarioMatrixResult,
+  type Mvp11ScenarioResult,
+  type ParseUEProjectMetadataInput,
+  type ProjectDiagnosticsInput,
+} from "./ue-diagnostics.js";
 
 export type AgentStatus = "idle" | "thinking" | "acting" | "waiting" | "finished" | "error";
 

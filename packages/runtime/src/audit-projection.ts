@@ -105,6 +105,10 @@ const TASK_TO_AUDIT_MAP: Partial<Record<string, AuditEventType>> = {
   watcher_overflow: "watcher_overflow",
   watcher_stopped: "watcher_stopped",
   watcher_error: "watcher_error",
+  diagnostic_started: "diagnostic_started",
+  diagnostic_completed: "diagnostic_completed",
+  diagnostic_failed: "diagnostic_failed",
+  context_pack_created: "context_pack_created",
 };
 
 let _eventCounter = 0;
@@ -133,6 +137,17 @@ export function buildAuditFromTaskEvents(
 
     const payload = (event.payload ?? {}) as Record<string, unknown>;
     const providerMode = payload.providerMode as string | undefined;
+    const diagnosticKind = payload.diagnosticKind as string | undefined;
+    const severity = payload.severity as string | undefined;
+    const redactedPayload = recursiveRedactValue({
+      ...(event.payload ?? {}),
+      sourceEventId: event.id,
+      sourceEventType: event.type,
+      ...(providerMode ? { providerMode } : {}),
+    }) as Record<string, unknown>;
+    if (diagnosticKind) redactedPayload.diagnosticKind = diagnosticKind;
+    if (severity) redactedPayload.severity = severity;
+    if (providerMode) redactedPayload.providerMode = providerMode;
 
     const auditEvent: AuditEvent = {
       id: nextAuditId(),
@@ -145,12 +160,7 @@ export function buildAuditFromTaskEvents(
       summary: redactString(event.title),
       redacted: true,
       createdAt: event.createdAt,
-      payload: recursiveRedactValue({
-        ...(event.payload ?? {}),
-        sourceEventId: event.id,
-        sourceEventType: event.type,
-        ...(providerMode ? { providerMode } : {}),
-      }) as Record<string, unknown>,
+      payload: redactedPayload,
     };
 
     auditEvents.push(auditEvent);

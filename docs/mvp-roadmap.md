@@ -168,6 +168,21 @@ Status: complete
 
 Out of scope for MVP10: UE Editor writes, mutating MCP tools, default live provider network, arbitrary shell execution, external browser automation, real screenshot capture, automatic watcher rescan, automatic code fixes, dependency installation.
 
+## MVP11 - UE Read-only Diagnostics & Build Failure Analysis
+
+- **UE Metadata Parser**: Parses `.uproject`, `.uplugin`, `Target.cs`, `Build.cs`, and Config INI summaries from indexed/read-only previews only.
+- **Project Diagnostics**: Reports missing module source, missing plugin descriptor, target missing module, suspicious dependencies, redacted config keys, binary preview blocks, and permission denied as diagnostics.
+- **Build Failure Analysis**: Parses recorded terminal output summaries for UBT/MSBuild/MSVC/Clang/TypeScript/Rust/Vite/ESLint-like errors without re-running commands or storing raw stdout.
+- **MCP Read-only Diagnostics**: Converts discovery and `resources/read` observations into diagnostic context while mutating tools remain policy-blocked.
+- **Context Pack v1**: Produces local redacted sections for project overview, diagnostics summary, build failures, important files, MCP observations, and safety boundaries.
+- **UI Integration**: DiagnosticsPanel, ReviewPanel, Evidence panel, Config settings, and TerminalPanel expose MVP11 summaries through existing UIProvider/slice-store patterns.
+- **Audit/Session/Replay**: Diagnostic/context pack events are recorded as redacted summaries; replay does not re-read native files, access MCP, restart watcher/browser, or re-execute terminal commands.
+- **Security Regression**: Side-effect scan includes MVP11 diagnostics, redaction, terminal-entry, native UI import, and no auto-fix/provider-live categories.
+
+Status: implemented
+
+Out of scope for MVP11: UE writes, automatic fixes, mutating MCP `tools/call`, provider live defaults, arbitrary shell expansion, automatic git operations, GitHub Actions/CI workflow files. MVP12 may plan controlled UE write workflows, but MVP11 does not implement them.
+
 ## Non-Goals
 
 - Cloud deployment or SaaS platform

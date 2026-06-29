@@ -1,4 +1,9 @@
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
+import {
+  createContextPackV1,
+  createUEProjectDiagnosticsEngine,
+  parseUEProjectMetadata,
+} from "@uagent/runtime";
 import { createNativeProjectAdapter } from "../runtime/project-native-adapter";
 import { getDefaultModelSelection } from "../composer/composer-data";
 import { cloneProviderConfig } from "../provider/provider-data";
@@ -20,7 +25,10 @@ import type {
   UIShellState,
 } from "../types/ui";
 import {
+  analyzeRecordedBuildOutput,
+  createEmptyMvp11State,
   createRuntimeStoreState,
+  refreshMvp11DerivedState,
   type RuntimeStoreActions,
   type RuntimeStoreState,
 } from "../runtime/runtime-store";
@@ -35,6 +43,23 @@ import { createInitialProviderState } from "./provider-store";
 import { createInitialSettingsState, DEFAULT_SETTINGS_STATE } from "./settings-store";
 import { createSliceStore, type SliceStore, useSliceStore } from "./store-utils";
 import { createInitialThreadState } from "./thread-store";
+
+function buildMcpObservations(runtimeState: RuntimeStoreState) {
+  const capabilities = runtimeState.mcp.capabilities;
+  if (!capabilities) {
+    return [];
+  }
+
+  return [
+    {
+      id: "mcp-observation-ui-summary",
+      kind: "mcp_discovery" as const,
+      source: runtimeState.mcp.profile?.endpoint ?? "mcp",
+      summary: `${capabilities.resources} resources, ${capabilities.readOnlyTools} read-only tools, ${capabilities.blockedTools} blocked tools.`,
+      createdAt: Date.now(),
+    },
+  ];
+}
 
 interface UIStoreBundle {
   layoutStore: SliceStore<LayoutStoreState>;
@@ -478,6 +503,147 @@ function createUIStateBundle(
     },
     resetMvp10Terminal: () => {
       runtimeClient.getMvp9().mvp10.terminal.reset();
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp11: refreshMvp11DerivedState({
+          ...previousState.mvp11,
+          buildAnalysis: null,
+          buildAnalysisStatus: "idle",
+          terminalEvidenceSummary: null,
+          analysisRequested: false,
+        }),
+      }));
+    },
+    analyzeBuildOutputEvidence: () => {
+      runtimeStore.setState((previousState) => analyzeRecordedBuildOutput(previousState));
+    },
+    analyzeActiveProjectDiagnostics: async () => {
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp11: { ...previousState.mvp11, metadataStatus: "running", lastError: null },
+      }));
+
+      try {
+        const project = projectStore.getState();
+        const snapshot = project.activeProjectIndex;
+        const activeProject =
+          project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
+          project.registeredProjects.find((item) => item.id === snapshot?.projectId) ??
+          null;
+
+        if (!snapshot || !activeProject) {
+          throw new Error("No active indexed project is available for MVP11 diagnostics.");
+        }
+
+        const previewPaths = snapshot.files
+          .filter((file) =>
+            file.extension === ".uproject" ||
+            file.extension === ".uplugin" ||
+            file.extension === ".ini" ||
+            file.displayName.endsWith(".Target.cs") ||
+            file.displayName.endsWith(".Build.cs"),
+          )
+          .map((file) => file.rootRelativePath);
+        const previews = new Map(
+          await Promise.all(
+            previewPaths.map(async (rootRelativePath) => {
+              const preview = await projectAdapter.previewFile(
+                activeProject.id,
+                activeProject.rootRef,
+                rootRelativePath,
+                4096,
+                80,
+              );
+              return [rootRelativePath, preview] as const;
+            }),
+          ),
+        );
+
+        const metadata = parseUEProjectMetadata({
+          snapshot,
+          previewFile: (rootRelativePath) => {
+            const preview = previews.get(rootRelativePath);
+            return {
+              status: preview?.status ?? "missing",
+              content: preview?.content ?? "",
+            };
+          },
+          createdAt: Date.now(),
+        });
+        const projectDiagnostics = createUEProjectDiagnosticsEngine().analyze({
+          snapshot,
+          metadata,
+          createdAt: Date.now(),
+        });
+        const mcpObservations = buildMcpObservations(runtimeStore.getState());
+
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp11: refreshMvp11DerivedState({
+            ...previousState.mvp11,
+            metadataStatus: "completed",
+            metadata,
+            projectDiagnostics,
+            mcpObservations,
+            mcpDiagnostics: [],
+            analysisRequested: true,
+            lastError: null,
+          }),
+        }));
+      } catch (error) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp11: {
+            ...previousState.mvp11,
+            metadataStatus: "failed",
+            analysisRequested: true,
+            lastError: error instanceof Error ? error.message : "mvp11_project_diagnostics_failed",
+          },
+        }));
+      }
+    },
+    createMvp11ContextPack: () => {
+      const project = projectStore.getState();
+      runtimeStore.setState((previousState) => {
+        const { mvp11 } = previousState;
+        if (!project.activeProjectIndex || !mvp11.metadata) {
+          return {
+            ...previousState,
+            mvp11: {
+              ...mvp11,
+              contextPackStatus: "failed",
+              lastError: "MVP11 Context Pack requires project metadata diagnostics first.",
+            },
+          };
+        }
+
+        const contextPack = createContextPackV1({
+          snapshot: project.activeProjectIndex,
+          metadata: mvp11.metadata,
+          projectDiagnostics: [...mvp11.projectDiagnostics, ...mvp11.mcpDiagnostics],
+          buildDiagnostics: mvp11.buildAnalysis?.diagnostics ?? [],
+          mcpObservations: mvp11.mcpObservations,
+          terminalEvidenceSummary: mvp11.terminalEvidenceSummary ?? undefined,
+          createdAt: Date.now(),
+        });
+
+        return {
+          ...previousState,
+          mvp11: refreshMvp11DerivedState({
+            ...mvp11,
+            contextPackStatus: "completed",
+            contextPack,
+            analysisRequested: true,
+            lastError: null,
+          }),
+        };
+      });
+    },
+    resetMvp11Diagnostics: () => {
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp11: createEmptyMvp11State(),
+      }));
     },
     requestBrowserPreview: (url, taskId, trustedRootRef) => {
       runtimeClient.getMvp9().browser.requestPreview(url, taskId, trustedRootRef);

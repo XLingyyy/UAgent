@@ -19,6 +19,7 @@ export interface ProjectSectionProps {
   onPreviewFile?: (rootRelativePath: string) => void;
   selectedAssetPath?: string | null;
   preview?: SafeFilePreviewResult | null;
+  diagnosticCounts?: Record<string, number>;
 }
 
 function ProjectSummary({
@@ -86,6 +87,7 @@ export function ProjectSection({
   onPreviewFile,
   selectedAssetPath = null,
   preview = null,
+  diagnosticCounts = {},
 }: ProjectSectionProps) {
   if (mode === "projects") {
     return (
@@ -134,7 +136,11 @@ export function ProjectSection({
           </div>
           <div className="ua-project-index-banner" role="status">
             <span>{indexSnapshot ? "Index ready" : "No project root registered"}</span>
-            <span>{indexSnapshot ? "Read-only project index" : "Fixture fallback"}</span>
+            <span>
+              {indexSnapshot
+                ? `Read-only project index / ${Object.values(diagnosticCounts).reduce((sum, count) => sum + count, 0)} diagnostics`
+                : "Fixture fallback"}
+            </span>
             <button
               className="ua-project-card__btn"
               type="button"
@@ -168,6 +174,7 @@ export function ProjectSection({
               nodes={treeNodes}
               label={indexSnapshot ? "Indexed Asset Browser" : "Asset Browser"}
               ariaLabel={`${project.name} ${indexSnapshot ? "indexed " : ""}asset browser`}
+              diagnosticCounts={diagnosticCounts}
               onNodeSelect={(node) => {
                 if (node.rootRelativePath) {
                   onPreviewFile?.(node.rootRelativePath);

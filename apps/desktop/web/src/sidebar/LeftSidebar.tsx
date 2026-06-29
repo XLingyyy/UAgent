@@ -103,6 +103,9 @@ export function LeftSidebar() {
     : activeProject
       ? mockProjectTree
       : [];
+  const diagnosticCounts = Object.fromEntries(
+    Object.entries(runtime.mvp11.affectedFiles).map(([path, summary]) => [path, summary.total]),
+  );
   const canScanRegisteredProject = Boolean(
     registeredProject && registeredProject.trustState === "trusted",
   );
@@ -161,6 +164,7 @@ export function LeftSidebar() {
             onPreviewFile={previewProjectFile}
             selectedAssetPath={projectState.selectedAssetPath}
             preview={projectState.preview}
+            diagnosticCounts={diagnosticCounts}
           />
         ) : sidebarView === "conversation" ? (
           <>

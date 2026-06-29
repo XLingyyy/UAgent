@@ -38,6 +38,7 @@ function getRiskLabel(risk: string): string {
 
 export function TerminalPanel() {
   const terminalState = useRuntimeStore((s) => s.mvp9.mvp10.terminal);
+  const buildAnalysis = useRuntimeStore((s) => s.mvp11.buildAnalysis);
   const activeProject = useProjectStore((s) =>
     s.activeProjectId ? s.registeredProjects.find((p) => p.id === s.activeProjectId) ?? null : null,
   );
@@ -47,6 +48,7 @@ export function TerminalPanel() {
     rejectMvp10TerminalProposal,
     cancelMvp10TerminalExecution,
     resetMvp10Terminal,
+    analyzeBuildOutputEvidence,
   } = useRuntimeActions();
 
   const [input, setInput] = useState("");
@@ -259,11 +261,34 @@ export function TerminalPanel() {
               Cancel
             </button>
           ) : (
-            <button className="ua-btn ua-btn--secondary" type="button" onClick={handleReset} aria-label="Clear terminal">
-              Clear
-            </button>
+            <>
+              <button className="ua-btn ua-btn--primary" type="button" onClick={analyzeBuildOutputEvidence} aria-label="Analyze output">
+                Analyze output
+              </button>
+              <button className="ua-btn ua-btn--secondary" type="button" onClick={handleReset} aria-label="Clear terminal">
+                Clear
+              </button>
+            </>
           )}
         </div>
+        {buildAnalysis && (
+          <div className="ua-inspector-terminal__body" aria-label="Build failure analysis">
+            <div className="ua-inspector-terminal__field">
+              <label>Build diagnostics</label>
+              <span>{buildAnalysis.errorCount} errors, {buildAnalysis.warningCount} warnings</span>
+            </div>
+            {buildAnalysis.topIssues.slice(0, 3).map((issue) => (
+              <div key={issue} className="ua-inspector-terminal__field">
+                <label>Issue</label>
+                <span>{issue}</span>
+              </div>
+            ))}
+            <div className="ua-inspector-terminal__field">
+              <label>Next checks</label>
+              <span>{buildAnalysis.nextChecks.join(" ")}</span>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

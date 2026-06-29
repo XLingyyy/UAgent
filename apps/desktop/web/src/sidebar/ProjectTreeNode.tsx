@@ -18,6 +18,7 @@ export interface ProjectTreeNodeProps {
   expandedIds: Set<string>;
   selectedId: string | null;
   focusedId: string | null;
+  diagnosticCounts: Record<string, number>;
   onToggle: (nodeId: string) => void;
   onSelect: (nodeId: string) => void;
   onFocus: (nodeId: string) => void;
@@ -29,6 +30,7 @@ export function ProjectTreeNode({
   expandedIds,
   selectedId,
   focusedId,
+  diagnosticCounts,
   onToggle,
   onSelect,
   onFocus,
@@ -41,6 +43,10 @@ export function ProjectTreeNode({
   const classNames = ["ua-tree-node", isSelected ? "ua-tree-node--selected" : ""]
     .filter(Boolean)
     .join(" ");
+  const displayPath = node.rootRelativePath
+    ? `[project-root]/${node.rootRelativePath.replace(/\\/g, "/")}`
+    : null;
+  const diagnosticCount = displayPath ? diagnosticCounts[displayPath] ?? 0 : 0;
 
   const toggleClassNames = [
     "ua-tree-node__toggle",
@@ -125,6 +131,15 @@ export function ProjectTreeNode({
         <span className="ua-tree-node__name" title={node.name}>
           {node.name}
         </span>
+        {diagnosticCount > 0 && (
+          <span
+            className="ua-tree-node__diagnostics"
+            aria-label={`${diagnosticCount} diagnostics for ${node.name}`}
+            title={`${diagnosticCount} diagnostics`}
+          >
+            {diagnosticCount}
+          </span>
+        )}
         <span className="ua-tree-node__type">{TYPE_LABEL[node.type] ?? node.type}</span>
       </div>
       {hasChildren && isExpanded && (
@@ -137,6 +152,7 @@ export function ProjectTreeNode({
               expandedIds={expandedIds}
               selectedId={selectedId}
               focusedId={focusedId}
+              diagnosticCounts={diagnosticCounts}
               onToggle={onToggle}
               onSelect={onSelect}
               onFocus={onFocus}

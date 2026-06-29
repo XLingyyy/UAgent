@@ -40,6 +40,8 @@ export interface ReplayFilter {
   riskLevels: ToolRiskLevel[];
   terminalStates: TaskState[];
   providerModes: string[];
+  diagnosticKinds?: string[];
+  diagnosticSeverities?: string[];
 }
 
 export interface ReplaySummary {

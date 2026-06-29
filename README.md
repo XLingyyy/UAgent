@@ -2,18 +2,18 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP10 Controlled Real Local Execution & Build Loop (Final Acceptance Complete)
+## Current Stage: MVP11 UE Read-only Diagnostics & Build Failure Analysis (Implemented)
 
-MVP10 moves MVP9's fixture-gated capabilities into controlled real local execution. Current status: **G7-G12 complete after final verification, boundary review, and supervisor checkpoint review**:
+MVP10 final acceptance is complete. MVP11 adds read-only UE diagnostics and build failure analysis while preserving all MVP10 approval, feature-gate, redaction, and replay boundaries. Current MVP11 implementation includes:
 
-1. **Real Terminal Execution** (COMPLETE): Default disabled, allowlisted commands only (typecheck, lint, test, build, git status/diff), approval-bound through a native proposal registry, cwd-contained, output redacted. No-shell wrapper with args array prevents injection. Approval token is bound to a stored proposal + command + cwd (one-time use).
-2. **Build Loop** (COMPLETE): Verification command templates (typecheck, lint, test, web:build, cargo test, git status/diff/diff --check) with risk classification and one-time approval tokens.
-3. **Terminal Classifier Hardening** (COMPLETE): No-shell parser, exact allowlist + denylist, dangerous pattern detection, env sanitization, mutation detection.
-4. **Real Incremental Watcher** (COMPLETE): Default disabled, native `notify` watcher behind `UAGENT_ENABLE_REAL_WATCHER=1`, dirty/queued state, read-diff only, debounce/backpressure limits, redacted/root-relative paths, and no auto-rescan/write behavior.
-5. **Local Browser Preview** (COMPLETE): Default disabled behind `UAGENT_ENABLE_REAL_BROWSER=1`; policy allows only localhost/127.0.0.1 and trusted in-root `file://` targets with redacted display. Native WebviewWindow launch now uses an async Tauri command, navigates allowed local/trusted-file targets, blocks external redirects, and BrowserPanel reaches completed or clear failed state.
-6. **Final Acceptance** (COMPLETE): `pnpm typecheck`, `pnpm lint`, `pnpm test`, desktop web build, Rust `cargo check`/`cargo test`, side-effect scan, and `git diff --check` pass. Boundary review confirms terminal proposal/approval-token flow, trusted-root-only watcher, local-only browser preview, replay no-side-effect behavior, and redacted audit/session/evidence summaries.
+1. **UE Metadata Parser**: Read-only `.uproject`, `.uplugin`, Target.cs, Build.cs, and Config INI summaries with malformed-file diagnostics and redaction.
+2. **Project Diagnostics Engine**: Missing modules/plugins, target/module mismatches, suspicious dependencies, redacted config keys, binary preview blocks, and permission-denied diagnostics.
+3. **Build Failure Parser**: Recorded terminal output analysis for common build tools with bounded summaries and path/secret redaction.
+4. **MCP Read-only Diagnostics**: Discovery and `resources/read` observations only; mutating tools remain blocked as policy diagnostics.
+5. **Context Pack v1**: Local in-memory redacted project overview, diagnostics, build failures, important files, MCP observations, and safety boundaries.
+6. **UI / Audit / Replay**: Existing panels and slice stores show diagnostic summaries; replay displays recorded summaries only.
 
-All real capabilities default disabled behind feature gates. Approval/Sandbox/Audit/Session/Redaction boundaries remain non-negotiable. Provider live remains manual opt-in. UE write, mutating MCP, arbitrary shell remain non-goals.
+All real capabilities remain default disabled behind feature gates. Approval/Sandbox/Audit/Session/Redaction boundaries remain non-negotiable. Provider live remains manual opt-in. UE writes, mutating MCP, automatic fixes, arbitrary shell expansion, automatic git operations, and GitHub Actions/CI workflow files remain non-goals for MVP11.
 
 ## Technology Stack
 
@@ -100,6 +100,9 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 - [MVP8 Risk Register](docs/mvp8-risk-register.md)
 - [MVP9 Prep](docs/mvp9-prep.md)
 - [Workflow Safety Plan](docs/workflow-safety-plan.md)
+- [MVP11 Acceptance](docs/mvp11-acceptance.md)
+- [MVP11 Manual Smoke](docs/mvp11-manual-smoke.md)
+- [MVP11 Final Handoff](docs/mvp11-final-handoff.md)
 - [Baseline Freeze](docs/mvp5-baseline-freeze.md)
 - [Development Guide](docs/development.md)
 

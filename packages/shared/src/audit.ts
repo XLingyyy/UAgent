@@ -63,7 +63,11 @@ export type AuditEventType =
     | "watcher_rescanned"
     | "watcher_overflow"
     | "watcher_stopped"
-    | "watcher_error";
+    | "watcher_error"
+    | "diagnostic_started"
+    | "diagnostic_completed"
+    | "diagnostic_failed"
+    | "context_pack_created";
 
 export interface AuditActor {
   type: "user" | "system" | "policy" | "fixture";

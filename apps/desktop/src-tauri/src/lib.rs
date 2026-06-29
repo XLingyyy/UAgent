@@ -1299,7 +1299,7 @@ pub fn run() {
             trust_native_project_root,
             cancel_native_project_scan,
             terminal::propose_terminal_command,
-            terminal::execute_terminal_command,
+            terminal::execute_terminal_command_fixture,
             terminal::cancel_terminal_execution,
             terminal::terminal_capability_status,
             terminal::execute_terminal_command_real,
@@ -1623,7 +1623,7 @@ mod tests {
 
     #[test]
     fn terminal_execute_without_approval_rejected() {
-        let result = terminal::execute_terminal_command(
+        let result = terminal::execute_terminal_command_fixture(
             terminal::TerminalExecuteCommandInput {
                 proposal_id: "proposal:abc".to_string(),
                 approved_token: String::new(),

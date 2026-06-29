@@ -1,0 +1,14 @@
+{
+  "FileVersion": 3,
+  "VersionName": "1.0.0",
+  "FriendlyName": "Read Only Plugin",
+  "EnabledByDefault": true,
+  "SupportedTargetPlatforms": ["Win64"],
+  "Modules": [
+    {
+      "Name": "ReadOnlyPlugin",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    }
+  ]
+}

@@ -111,6 +111,50 @@ describe("SessionHistory", () => {
       expect(summary.eventCount).toBe(0);
       expect(summary.terminalState).toBeNull();
     });
+
+    it("should replay MVP11 diagnostic events with kind and severity filters only from recorded summaries", () => {
+      const engine = createSessionHistory(() => 11_000);
+      engine.recordDiagnosticEvent(
+        "task-011",
+        "diagnostic_started",
+        "Diagnostic started C:/Users/Alice/Lyra token=abcdef1234567890abcdef1234567890",
+        "ue_project_metadata",
+        "info",
+      );
+      engine.recordDiagnosticEvent(
+        "task-011",
+        "diagnostic_completed",
+        "Build output analyzed",
+        "build_failure_summary",
+        "error",
+        { displayPath: "C:/Users/Alice/Lyra/Source/Foo.cpp" },
+      );
+      engine.recordDiagnosticEvent(
+        "task-011",
+        "context_pack_created",
+        "Context Pack v1",
+        "context_pack",
+        "info",
+      );
+
+      const replay = engine.replayTask("task-011", {
+        filter: {
+          taskId: "task-011",
+          eventTypes: [],
+          riskLevels: [],
+          terminalStates: [],
+          providerModes: [],
+          diagnosticKinds: ["build_failure_summary"],
+          diagnosticSeverities: ["error"],
+        },
+      });
+
+      expect(replay.summary.eventCount).toBe(3);
+      expect(replay.summary.filteredCount).toBe(1);
+      expect(replay.events.every((event) => (event.payload as { replayOnly?: boolean } | undefined)?.replayOnly === true)).toBe(true);
+      expect(JSON.stringify(replay)).not.toContain("C:/Users/Alice");
+      expect(JSON.stringify(replay)).not.toContain("abcdef1234567890abcdef1234567890");
+    });
   });
 
   describe("secret-like input is redacted in output", () => {

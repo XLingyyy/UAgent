@@ -306,7 +306,7 @@ pub fn propose_terminal_command(
 }
 
 #[tauri::command]
-pub fn execute_terminal_command(
+pub fn execute_terminal_command_fixture(
     input: TerminalExecuteCommandInput,
 ) -> Result<TerminalExecuteCommandResult, String> {
     if input.approved_token.is_empty() {

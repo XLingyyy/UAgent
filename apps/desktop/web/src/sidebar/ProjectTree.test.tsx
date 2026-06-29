@@ -113,6 +113,32 @@ describe("ProjectTree", () => {
     expect(badges.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("shows affected-file diagnostic marker counts from MVP11 state", () => {
+    render(
+      <ProjectTree
+        nodes={[
+          {
+            id: "source",
+            name: "Source",
+            type: "Folder",
+            children: [
+              {
+                id: "source-game",
+                name: "Game.cpp",
+                type: "Asset",
+                rootRelativePath: "Source/Game.cpp",
+              },
+            ],
+          },
+        ]}
+        diagnosticCounts={{ "[project-root]/Source/Game.cpp": 2 }}
+      />,
+    );
+
+    expect(screen.getByLabelText("2 diagnostics for Game.cpp")).toBeTruthy();
+    expect(screen.getByText("2")).toBeTruthy();
+  });
+
   it("renders leaf node type badges", () => {
     renderTree();
     fireEvent.click(screen.getByLabelText("Expand Maps"));

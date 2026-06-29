@@ -472,6 +472,99 @@ const CATEGORIES = [
       (rel) => /apps\/desktop\/web\/src\/(composer|settings|workspace)\//.test(rel),
     ],
   },
+  {
+    id: "mvp11-ui-native-diagnostics-boundary",
+    title: "MVP11 UI Native Diagnostics Boundary",
+    description: "React UI must not directly import Tauri, Node fs/path, child_process, or native diagnostic capabilities",
+    patterns: [
+      { re: /@tauri-apps\/api/gi, label: "@tauri-apps/api import" },
+      { re: /node:fs|from\s+["']fs["']/gi, label: "fs import" },
+      { re: /node:path|from\s+["']path["']/gi, label: "path import" },
+      { re: /child_process/gi, label: "child_process" },
+      { re: /invoke\s*\(\s*["'](?!terminal_capability_status|propose_terminal_command|approve_terminal_proposal|execute_terminal_command_real|browser_capability_status|browser_preview|open_browser_preview|watcher_capability_status|start_watcher|stop_watcher|watcher_diff|validate_native_project_root|scan_native_project_index|preview_native_project_file|trust_native_project_root|cancel_native_project_scan)/gi, label: "direct invoke()" },
+    ],
+    allowWhen: [
+      (rel) => /apps\/desktop\/web\/src\/runtime\/.*-native-adapter/.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel) => /\.test\./.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp11-terminal-command-entry",
+    title: "MVP11 Terminal Command Entry",
+    description: "The only real terminal execution path is execute_terminal_command_real behind proposal approval and one-time token",
+    patterns: [
+      { re: /\bexecute_terminal_command\b/g, label: "old ambiguous execute_terminal_command" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\//.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
+      (rel) => /packages\/runtime\/src\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp11-diagnostic-redaction",
+    title: "MVP11 Diagnostic Redaction",
+    description: "Diagnostic payloads must not leak raw home paths, raw file URLs, Bearer tokens, sk- keys, token=, api_key, or Authorization values",
+    patterns: [
+      { re: /[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s"'`]+/g, label: "Windows home path" },
+      { re: /\/Users\/[^/\s"'`]+/g, label: "macOS home path" },
+      { re: /\/home\/[^/\s"'`]+/g, label: "Linux home path" },
+      { re: /file:\/\/\/?[^\s"'`]+/gi, label: "raw file URL" },
+      { re: /Bearer\s+[A-Za-z0-9._-]+/g, label: "Bearer literal" },
+      { re: /sk-[A-Za-z0-9][A-Za-z0-9._-]{7,}/g, label: "sk key literal" },
+      { re: /token\s*=\s*[^&\s"'`]+/gi, label: "token= literal" },
+      { re: /api_key\s*=\s*[^&\s"'`]+/gi, label: "api_key= literal" },
+      { re: /Authorization\s*[:=]\s*[^,\n]+/gi, label: "Authorization literal" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel) => /packages\/shared\/src\/project/.test(rel),
+      (rel) => /packages\/runtime\/src\/(secrets\/redaction|ue-diagnostics|mvp8-project-index|mvp10-scenarios)/.test(rel),
+      (rel) => /packages\/runtime\/src\/provider\/mvp4-scenarios/.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+      (rel) => /packages\/runtime\/src\/provider\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp11-no-auto-fix-or-provider-live",
+    title: "MVP11 No Auto Fix Or Provider Live",
+    description: "Diagnostics must not add automatic fixes, installs, commits, pushes, or default provider live network calls",
+    patterns: [
+      { re: /--fix/gi, label: "--fix" },
+      { re: /npm\s+install|pnpm\s+install/gi, label: "install command" },
+      { re: /git\s+commit|git\s+push/gi, label: "git write command" },
+      { re: /networkMode\s*:\s*["']live["']/gi, label: "provider live default" },
+      { re: /fetch\s*\(/gi, label: "fetch()" },
+      { re: /tools\/call/gi, label: "MCP tools/call" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel) => /packages\/runtime\/src\/provider\//.test(rel),
+      (rel) => /packages\/runtime\/src\/provider\/mvp4-scenarios/.test(rel),
+      (rel) => /packages\/mcp-client\/src\//.test(rel),
+      (rel) => /packages\/runtime\/src\/mcp-readonly-policy/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+      (rel) => /packages\/runtime\/src\/ue-diagnostics/.test(rel),
+    ],
+  },
 ];
 
 // ============================================================

@@ -85,3 +85,19 @@ button.ua-tree-node__toggle {
   background: var(--ua-bg-panel);
   margin-left: var(--ua-space-1);
 }
+
+.ua-tree-node__diagnostics {
+  flex-shrink: 0;
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: var(--ua-space-1);
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: var(--ua-font-weight-semibold);
+  color: var(--ua-warning);
+  background: var(--ua-warning-soft);
+}

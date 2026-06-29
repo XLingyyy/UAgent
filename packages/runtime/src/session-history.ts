@@ -48,6 +48,14 @@ export interface SessionHistoryEngine {
     status: string,
     payload?: unknown,
   ): void;
+  recordDiagnosticEvent(
+    taskId: string,
+    eventType: string,
+    title: string,
+    diagnosticKind: string,
+    severity: string,
+    payload?: unknown,
+  ): void;
   getSessionSummary(): SessionSummary;
   getTaskHistory(filter: TaskHistoryFilter): TaskHistoryEntry[];
   replayTask(taskId: string, cursor?: Partial<ReplayCursor>): ReplayResult;
@@ -55,7 +63,7 @@ export interface SessionHistoryEngine {
 }
 
 interface EventRecord {
-  kind: "task" | "project" | "capability";
+  kind: "task" | "project" | "capability" | "diagnostic";
   taskId: string;
   state?: TaskState;
   eventType?: string;
@@ -64,6 +72,8 @@ interface EventRecord {
   projectId?: string;
   capabilityKind?: string;
   status?: string;
+  diagnosticKind?: string;
+  severity?: string;
   createdAt: number;
   hasSecrets: boolean;
   payload?: unknown;
@@ -79,6 +89,23 @@ function redactSessionText(text: string): { text: string; redacted: boolean } {
     text: pathRedacted,
     redacted: pathRedacted !== text,
   };
+}
+
+function redactSessionPayload(value: unknown): unknown {
+  if (typeof value === "string") {
+    return redactSessionText(value).text;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactSessionPayload(item));
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = redactSessionPayload(val);
+    }
+    return result;
+  }
+  return value;
 }
 
 function computeReplaySummary(
@@ -116,6 +143,12 @@ function computeReplaySummary(
       if (r.kind === "task" && filter.terminalStates.length > 0 && r.state && !filter.terminalStates.includes(r.state))
         return false;
       if (r.kind === "task" && filter.providerModes.length > 0 && r.providerMode && !filter.providerModes.includes(r.providerMode))
+        return false;
+      if (filter.eventTypes.length > 0 && r.eventType && !filter.eventTypes.includes(r.eventType))
+        return false;
+      if (filter.diagnosticKinds && filter.diagnosticKinds.length > 0 && r.diagnosticKind && !filter.diagnosticKinds.includes(r.diagnosticKind))
+        return false;
+      if (filter.diagnosticSeverities && filter.diagnosticSeverities.length > 0 && r.severity && !filter.diagnosticSeverities.includes(r.severity))
         return false;
       return true;
     }).length;
@@ -190,7 +223,29 @@ export function createSessionHistory(clock?: () => number): SessionHistoryEngine
         status,
         createdAt: now(),
         hasSecrets: redactedTitle.redacted,
-        payload,
+        payload: redactSessionPayload(payload),
+      });
+    },
+
+    recordDiagnosticEvent(
+      taskId: string,
+      eventType: string,
+      title: string,
+      diagnosticKind: string,
+      severity: string,
+      payload?: unknown,
+    ): void {
+      const redactedTitle = redactSessionText(title);
+      tasks.push({
+        kind: "diagnostic",
+        taskId,
+        eventType,
+        title: redactedTitle.text,
+        diagnosticKind,
+        severity,
+        createdAt: now(),
+        hasSecrets: redactedTitle.redacted,
+        payload: redactSessionPayload(payload),
       });
     },
 
@@ -279,6 +334,8 @@ export function createSessionHistory(clock?: () => number): SessionHistoryEngine
           ...(r.projectId ? { projectId: r.projectId } : {}),
           ...(r.capabilityKind ? { capabilityKind: r.capabilityKind } : {}),
           ...(r.status ? { status: r.status } : {}),
+          ...(r.diagnosticKind ? { diagnosticKind: r.diagnosticKind } : {}),
+          ...(r.severity ? { severity: r.severity } : {}),
           ...(r.providerMode ? { providerMode: r.providerMode } : {}),
           ...(r.payload ? { ...(r.payload as Record<string, unknown>) } : {}),
         },

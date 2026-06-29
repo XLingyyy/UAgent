@@ -106,6 +106,10 @@ const EVENT_LABELS: Record<TaskEvent["type"], string> = {
      approval_token_used: "Approval token used",
      approval_token_expired: "Approval token expired",
      approval_token_revoked: "Approval token revoked",
+     diagnostic_started: "Diagnostic started",
+     diagnostic_completed: "Diagnostic completed",
+     diagnostic_failed: "Diagnostic failed",
+     context_pack_created: "Context Pack created",
 };
 
 const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
@@ -213,6 +217,10 @@ const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
     approval_token_used: "tool-event",
     approval_token_expired: "review-summary",
     approval_token_revoked: "review-summary",
+    diagnostic_started: "tool-event",
+    diagnostic_completed: "review-summary",
+    diagnostic_failed: "review-summary",
+    context_pack_created: "review-summary",
 };
 
 function formatTimestamp(createdAt: number): string {
@@ -256,7 +264,8 @@ export function extractRuntimeDiagnostics(events: TaskEvent[]): TaskEvent[] {
       event.type === "provider_request_cancelled" ||
       event.type === "mcp_tool_blocked" ||
       event.type === "mcp_connection_failed" ||
-      event.type === "mcp_disconnected",
+      event.type === "mcp_disconnected" ||
+      event.type === "diagnostic_failed",
   );
 }
 
@@ -275,6 +284,8 @@ export function extractRuntimeEvidence(events: TaskEvent[]): TaskEvent[] {
       event.type === "mcp_read_completed" ||
       event.type === "provider_stream_delta" ||
       event.type === "provider_usage_recorded" ||
-      event.type === "terminal_output",
+      event.type === "terminal_output" ||
+      event.type === "diagnostic_completed" ||
+      event.type === "context_pack_created",
   );
 }

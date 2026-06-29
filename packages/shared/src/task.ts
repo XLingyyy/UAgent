@@ -116,7 +116,11 @@ export type TaskEventType =
      | "approval_token_issued"
      | "approval_token_used"
      | "approval_token_expired"
-     | "approval_token_revoked";
+     | "approval_token_revoked"
+     | "diagnostic_started"
+     | "diagnostic_completed"
+     | "diagnostic_failed"
+     | "context_pack_created";
 
 export type TaskEventLevel = "info" | "success" | "warning" | "error";
 
