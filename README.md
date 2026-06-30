@@ -2,17 +2,17 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP13 Controlled UE Editor / MCP Mutation Pilot (Implemented)
+## Current Stage: MVP14 Real UE Attach / Status / Safe Editor Observation (In Progress)
 
-MVP12 final acceptance is complete. MVP13 adds a controlled UE Editor / MCP mutation pilot while preserving MVP12 ChangeSet v2, trusted root, native approval registry, hash binding, rollback binding, redaction, and replay boundaries. Current MVP13 implementation includes:
+MVP12 final acceptance and MVP13 controlled UE Editor / MCP mutation pilot are complete. MVP14 advances the editor path from fixture-only pilot behavior toward safe real UE Editor observation while preserving MVP12 ChangeSet v2, MVP13 approval binding, trusted roots, redaction, and replay boundaries. Current MVP14 implementation focus includes:
 
-1. **Editor / MCP Contracts**: UE Editor session, operation proposal/result/risk, MCP mutation policy, dry-run, proposal, execution decision, and asset plan contracts.
-2. **Policy Classifiers**: Editor read-only/state-only/text-backed/asset-risk classification and MCP default-blocked exact allowlist with schema/dry-run requirement.
-3. **Native UE Editor Bridge Skeleton**: Feature-gated Tauri commands for capability/config/session/operation lifecycle, disabled unless `UAGENT_ENABLE_UE_EDITOR_BRIDGE=1`.
-4. **Approval Registries**: Runtime/native editor proposal approval is one-time and bound to proposal, session, root, operation kind, args hash, and expiry.
-5. **ChangeSet v2 Bridge**: Text-backed MCP/editor mutation intent maps into MVP12 ChangeSet v2 preview/approve/apply/rollback instead of a second write path.
-6. **Desktop UI / Store**: Editor and MCP mutation panels plus Changes, Review, Evidence, and ProjectTree summaries show disabled, blocked, approval-required, executed, and replay-only states.
-7. **Scenario Matrix / Side-effect Scan / Docs**: MVP13 matrix covers 32 scenarios / 128 assertions and side-effect scan adds editor/MCP/asset/replay boundaries.
+1. **Observation Contracts**: UE Editor process descriptors, attach requests, heartbeat, snapshots, process state, launch policy, status reasons, evidence, and audit event types.
+2. **Process Policy**: Trusted root, `.uproject`, root containment, network root, shell metacharacter, executable allowlist, raw env, and session/root/project mismatch checks.
+3. **Native Observation Commands**: Feature-gated Tauri commands for capability, process discovery, attach validation, attach, status, snapshot, launch policy, and local session stop.
+4. **Runtime Observation Service**: Fixture/native-compatible service for capability, process discovery, attach, status, snapshot, stop, and recorded replay summary.
+5. **MCP Schema Adapters**: Read-only/status/resource, state-only, text-backed ChangeSet intent, and blocked asset-plan classification without broad mutating `tools/call`.
+6. **Desktop UI / Store**: Editor, Review, Evidence, Settings, and TitleBar surfaces expose observation status, heartbeat, snapshot, and safety boundaries.
+7. **Scenario Matrix / Side-effect Scan / Docs**: MVP14 matrix target is at least 40 scenarios / 160 assertions; side-effect scan covers editor process kill/save/launch/raw args/replay boundaries.
 
 Controlled text writes remain approval-gated and limited to trusted fixture/temp roots or explicitly trusted project roots. Binary UE assets, generated directories, arbitrary shell expansion, mutating MCP `tools/call`, provider live defaults, automatic git operations, replay re-execute, and raw secret/path leakage remain blocked.
 

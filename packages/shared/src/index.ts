@@ -332,6 +332,16 @@ export type {
   UEEditorSession,
   UEEditorSessionMode,
   UEEditorSessionStatus,
+  UEEditorAttachRequest,
+  UEEditorHeartbeat,
+  UEEditorLaunchPolicy,
+  UEEditorObservationEvent,
+  UEEditorObservationEventType,
+  UEEditorObservationPayload,
+  UEEditorObservationSnapshot,
+  UEEditorProcessDescriptor,
+  UEEditorProcessState,
+  UEEditorStatusReason,
 } from "./ue-editor.js";
 export { UE_EDITOR_OPERATION_RISKS } from "./ue-editor.js";
 export type {

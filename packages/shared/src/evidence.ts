@@ -22,6 +22,10 @@ export type EvidenceKind =
   | "editor_session_summary"
   | "editor_operation_summary"
   | "mcp_mutation_summary"
+  | "editor_process_observation"
+  | "editor_heartbeat"
+  | "editor_snapshot"
+  | "editor_state_operation"
   | "asset_mutation_plan";
 
 export type EvidenceSource =
@@ -34,6 +38,7 @@ export type EvidenceSource =
   | "capability-bridge"
   | "diagnostics-engine"
   | "editor-policy"
+  | "editor-observation"
   | "mcp-mutation-policy";
 
 export interface EvidenceRecord {

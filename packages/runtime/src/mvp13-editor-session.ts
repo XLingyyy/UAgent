@@ -23,6 +23,7 @@ export interface EditorSessionAttachResult {
 export interface EditorSessionRegistry {
   attach(input: EditorSessionAttachInput): EditorSessionAttachResult;
   launch(input: EditorSessionAttachInput): EditorSessionAttachResult;
+  bindObservationSession(session: UEEditorSession): EditorSessionAttachResult;
   stop(sessionId: string): EditorSessionAttachResult;
   get(sessionId: string): UEEditorSession | null;
   isActive(sessionId: string): boolean;
@@ -61,6 +62,17 @@ export function createEditorSessionRegistry(options: EditorSessionRegistryOption
   return {
     attach: (input) => create(input, input.mode === "fixture" ? "fixture" : "attached"),
     launch: (input) => create(input, "launched"),
+    bindObservationSession(session) {
+      if (!options.featureEnabled) return { status: "blocked", reason: "feature_disabled", session: null };
+      if (session.status !== "attached" && session.status !== "launched") {
+        return { status: "blocked", reason: "observation_session_required", session: null };
+      }
+      if (!session.uprojectDisplayPath.startsWith("[project-root]/") || !session.uprojectDisplayPath.endsWith(".uproject")) {
+        return { status: "blocked", reason: "missing_uproject", session: null };
+      }
+      sessions.set(session.sessionId, session);
+      return { status: "attached", reason: null, session };
+    },
     stop(sessionId) {
       const session = sessions.get(sessionId);
       if (!session) return { status: "blocked", reason: "session_not_found", session: null };

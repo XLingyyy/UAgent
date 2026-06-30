@@ -226,6 +226,30 @@ export { classifyMcpMutationTool, type McpMutationAllowlistEntry, type McpMutati
 export { mapMcpDryRunToOperation, type Mvp13MappedOperation } from "./mvp13-dry-run-adapter.js";
 export { createMcpMutationService, type McpMutationDryRunActionResult, type McpMutationDryRunInput, type McpMutationServiceOptions } from "./mvp13-mcp-mutation-service.js";
 export { runMvp13ScenarioMatrix, type Mvp13ScenarioMatrixResult, type Mvp13ScenarioResult } from "./mvp13-scenarios.js";
+export {
+  evaluateEditorProcessPolicy,
+  type Mvp14EditorProcessPolicyInput,
+  type Mvp14EditorProcessPolicyReason,
+  type Mvp14EditorProcessPolicyResult,
+} from "./mvp14-editor-process-policy.js";
+export {
+  createEditorObservationService,
+  type EditorObservationAttachResult,
+  type EditorObservationDiscoveryInput,
+  type EditorObservationDiscoveryResult,
+  type EditorObservationReplaySummary,
+  type EditorObservationService,
+  type EditorObservationServiceOptions,
+  type EditorObservationSnapshotResult,
+  type EditorObservationStatusResult,
+} from "./mvp14-editor-observation-service.js";
+export {
+  classifyMvp14McpSchema,
+  type Mvp14McpSchemaAdapterInput,
+  type Mvp14McpSchemaAdapterResult,
+  type Mvp14McpSchemaClassification,
+} from "./mvp14-mcp-schema-adapters.js";
+export { runMvp14ScenarioMatrix, type Mvp14ScenarioMatrixResult, type Mvp14ScenarioResult } from "./mvp14-scenarios.js";
 
 export type AgentStatus = "idle" | "thinking" | "acting" | "waiting" | "finished" | "error";
 

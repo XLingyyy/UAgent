@@ -3,6 +3,7 @@ pub(crate) mod screenshot;
 pub(crate) mod terminal;
 pub(crate) mod text_mutation;
 pub(crate) mod ue_editor;
+pub(crate) mod ue_editor_process;
 pub(crate) mod watcher;
 
 use serde::{Deserialize, Serialize};
@@ -1332,6 +1333,14 @@ pub fn run() {
             ue_editor::approve_editor_operation,
             ue_editor::execute_editor_operation,
             ue_editor::cancel_editor_operation,
+            ue_editor_process::editor_observation_capability_status,
+            ue_editor_process::discover_editor_processes,
+            ue_editor_process::validate_editor_attach_config,
+            ue_editor_process::attach_editor_process,
+            ue_editor_process::read_editor_process_status,
+            ue_editor_process::read_editor_observation_snapshot,
+            ue_editor_process::launch_editor_process,
+            ue_editor_process::stop_editor_observation_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

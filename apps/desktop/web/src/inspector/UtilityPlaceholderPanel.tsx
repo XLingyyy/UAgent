@@ -117,6 +117,7 @@ export function UtilityEvidencePanel() {
   const evidenceItems = uniqueEvidenceItems(evidenceEvents);
   const mvp11 = runtime?.mvp11;
   const mvp12 = runtime?.mvp12;
+  const mvp14 = runtime?.mvp14;
   const mvp11EvidenceItems = mvp11
     ? [
         ...(mvp11.metadata
@@ -179,6 +180,44 @@ export function UtilityEvidencePanel() {
         },
       ]
     : [];
+  const mvp14EvidenceItems =
+    mvp14 && (mvp14.status?.heartbeat || mvp14.snapshot?.snapshot || mvp14.replaySummary)
+      ? [
+          ...(mvp14.status?.heartbeat
+            ? [
+                {
+                  id: "mvp14-heartbeat",
+                  status: mvp14.status.status,
+                  summary: `Editor heartbeat: ${mvp14.status.heartbeat.statusReason}`,
+                  source: "editor_heartbeat",
+                  evidenceId: mvp14.status.heartbeat.sessionId,
+                },
+              ]
+            : []),
+          ...(mvp14.snapshot?.snapshot
+            ? [
+                {
+                  id: "mvp14-snapshot",
+                  status: mvp14.snapshot.status,
+                  summary: `Editor snapshot: ${mvp14.snapshot.snapshot.editorState} / ${mvp14.snapshot.snapshot.displayProject}`,
+                  source: "editor_snapshot",
+                  evidenceId: mvp14.snapshot.snapshot.sessionId,
+                },
+              ]
+            : []),
+          ...(mvp14.replaySummary
+            ? [
+                {
+                  id: "mvp14-replay",
+                  status: "recorded",
+                  summary: `Replay: ${mvp14.replaySummary.recordedOnlyActions.join(", ")}`,
+                  source: "editor_process_observation",
+                  evidenceId: mvp14.replaySummary.sessionId,
+                },
+              ]
+            : []),
+        ]
+      : [];
   const fallbackEvidenceItems = [
     ...reviewSummary.evidenceItems.map((item) => ({
       id: item.id,
@@ -201,8 +240,8 @@ export function UtilityEvidencePanel() {
       </div>
 
       <ul className="ua-utility-placeholder__list">
-        {[...mvp12EvidenceItems, ...mvp11EvidenceItems].length > 0
-          ? [...mvp12EvidenceItems, ...mvp11EvidenceItems].map((item) => (
+        {[...mvp14EvidenceItems, ...mvp12EvidenceItems, ...mvp11EvidenceItems].length > 0
+          ? [...mvp14EvidenceItems, ...mvp12EvidenceItems, ...mvp11EvidenceItems].map((item) => (
               <li key={item.id} className="ua-utility-placeholder__item">
                 <span className="ua-utility-placeholder__item-state">{item.status}</span>
                 <span>{item.summary}</span>

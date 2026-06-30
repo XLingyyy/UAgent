@@ -117,8 +117,7 @@ describe("MVP13 desktop store and panels", () => {
     expect(screen.getByText(/Proposal: select_asset \/ approved \/ state_only/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Execute editor operation" }));
-    expect(screen.getByText(/Result: executed \/ recorded/)).toBeTruthy();
-    expect(screen.getByText(/Evidence: evidence:/)).toBeTruthy();
+    expect(screen.getByText(/Result: blocked \/ recorded/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Run MCP mutation dry-run" }));
     expect(screen.getByText(/Dry-runs: 1 \/ proposals 0 \/ blocked asset plans 1/)).toBeTruthy();

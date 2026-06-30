@@ -243,11 +243,12 @@ const CATEGORIES = [
       (rel) => /packages\/runtime\/src\/mvp10-scenarios/.test(rel),
       (rel) => /packages\/runtime\/src\/mcp-readonly-policy/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp13-/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp14-/.test(rel),
       (rel) => /packages\/runtime\/src\/sandbox-policy/.test(rel),
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\//.test(rel),
-      (rel) => /packages\/runtime\/src\/(?!mvp7-project-index|mvp9-terminal-policy|mvp10-terminal-policy|mvp10-scenarios|mvp13-)/.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp7-project-index|mvp9-terminal-policy|mvp10-terminal-policy|mvp10-scenarios|mvp13-|mvp14-)/.test(rel),
     ],
   },
   {
@@ -377,7 +378,7 @@ const CATEGORIES = [
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
-      (rel) => /packages\/runtime\/src\/(?!mvp9-|mvp5-scenarios|mvp7-project-index|mvp8-project-index)/.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp9-|mvp5-scenarios|mvp7-project-index|mvp8-project-index|mvp14-)/.test(rel),
     ],
   },
   {
@@ -402,12 +403,13 @@ const CATEGORIES = [
       (rel) => /packages\/runtime\/src\/mvp10-terminal-policy/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp10-scenarios/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp13-/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp14-/.test(rel),
       (rel) => /packages\/shared\/src\/project/.test(rel),
       (rel) => /mcp-readonly-policy/.test(rel),
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
-      (rel) => /packages\/runtime\/src\/(?!mvp8-project-index|mvp9-terminal-policy|mvp10-terminal-policy|mvp13-)/.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp8-project-index|mvp9-terminal-policy|mvp10-terminal-policy|mvp13-|mvp14-)/.test(rel),
     ],
   },
   {
@@ -641,6 +643,7 @@ const CATEGORIES = [
       (rel) => /docs\//.test(rel),
       (rel) => /\.test\./.test(rel),
       (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel, line) => /apps\/desktop\/web\/src\/inspector\/UtilityPlaceholderPanel/.test(rel) && /recordedOnlyActions/.test(line),
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
@@ -679,6 +682,8 @@ const CATEGORIES = [
       (rel) => /docs\//.test(rel),
       (rel) => /\.test\./.test(rel),
       (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel, line) => /apps\/desktop\/web\/src\/runtime\/runtime-store/.test(rel) && /Save All blocked/.test(line),
+      (rel, line) => /packages\/runtime\/src\/mvp14-(editor-observation-service|scenarios)/.test(rel) && /Save All blocked/.test(line),
     ],
     blockWhen: [
       (rel) => /packages\/runtime\/src\/mvp12-change-set/.test(rel),
@@ -806,6 +811,8 @@ const CATEGORIES = [
       (rel) => /docs\//.test(rel),
       (rel) => /\.test\./.test(rel),
       (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel, line) => /apps\/desktop\/web\/src\/runtime\/runtime-store/.test(rel) && /Save All blocked/.test(line),
+      (rel, line) => /packages\/runtime\/src\/mvp14-(editor-observation-service|scenarios)/.test(rel) && /Save All blocked/.test(line),
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\//.test(rel),
@@ -870,12 +877,134 @@ const CATEGORIES = [
       (rel, line) => /apps\/desktop\/web\/src\/runtime\/runtime-store/.test(rel) && /replayOnly/.test(line),
       (rel, line) => /apps\/desktop\/web\/src\/stores\/ui-store/.test(rel) && /replayOnly:\s*true/.test(line),
       (rel, line) => /apps\/desktop\/web\/src\/inspector\/(EditorPanel|McpMutationPanel)/.test(rel) && /replayOnly|Replay: recorded summaries only/.test(line),
+      (rel, line) => /apps\/desktop\/web\/src\/inspector\/UtilityPlaceholderPanel/.test(rel) && /recordedOnlyActions/.test(line),
+      (rel, line) => /apps\/desktop\/web\/src\/runtime\/editor-observation-native-adapter/.test(rel) && /replayOnly/.test(line),
     ],
     blockWhen: [
       (rel) => /packages\/runtime\/src\/mvp13-/.test(rel),
       (rel) => /apps\/desktop\/web\/src\/(runtime|stores|inspector)\//.test(rel),
       (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "editor_process_kill_boundary",
+    title: "MVP14 Editor Process Kill Boundary",
+    description: "Editor observation may stop UAgent sessions but must not kill, taskkill, or terminate UE processes",
+    patterns: [
+      { re: /taskkill|TerminateProcess|kill_process|\.kill\s*\(/gi, label: "process kill" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel, line) => /apps\/desktop\/web\/src\/runtime\/runtime-store/.test(rel) && /Save All blocked/.test(line),
+      (rel, line) => /packages\/runtime\/src\/mvp14-(editor-observation-service|scenarios)/.test(rel) && /Save All blocked/.test(line),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/src-tauri\/src\/ue_editor_process/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp14-/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\//.test(rel),
+    ],
+  },
+  {
+    id: "editor_save_boundary",
+    title: "MVP14 Editor Save Boundary",
+    description: "Editor observation/status/snapshot paths must not save UE assets",
+    patterns: [
+      { re: /Save\s+All|save_all|SavePackage|EditorAssetLibrary\.save|UEditorLoadingAndSavingUtils/gi, label: "editor save path" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel, line) => /apps\/desktop\/web\/src\/runtime\/runtime-store/.test(rel) && /Save All blocked/.test(line),
+      (rel, line) => /packages\/runtime\/src\/mvp14-(editor-observation-service|scenarios)/.test(rel) && /Save All blocked/.test(line),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
+      (rel) => /packages\/runtime\/src\//.test(rel),
+      (rel) => /apps\/desktop\/web\/src\//.test(rel),
+    ],
+  },
+  {
+    id: "editor_launch_shell_boundary",
+    title: "MVP14 Editor Launch Shell Boundary",
+    description: "Launch must use allowlisted Command::new paths and must not shell out",
+    patterns: [
+      { re: /Command::new|cmd\s*\/c|powershell|sh\s+-c|shell\s*:\s*true/gi, label: "launch shell boundary" },
+    ],
+    allowWhen: [
+      (rel, line) => /apps\/desktop\/src-tauri\/src\/ue_editor_process/.test(rel) && /Command::new/.test(line),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp10-terminal-policy/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/src-tauri\/src\/(?!ue_editor_process)/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\//.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp14-/.test(rel),
+    ],
+  },
+  {
+    id: "mcp_tools_call_boundary",
+    title: "MVP14 MCP Tools Call Boundary",
+    description: "MVP14 MCP adapters classify schemas and dry-run summaries but do not execute broad tools/call",
+    patterns: [
+      { re: /tools\/call|callTool\s*\(/gi, label: "MCP tools/call" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/(mcp-client|runtime)\/src\/(mcp-readonly-runtime|runtime-router|agent-loop-runtime|ue-diagnostics|prompt\/)/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/runtime\/desktop-runtime-adapter/.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /packages\/runtime\/src\/mvp14-/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "raw_process_args_boundary",
+    title: "MVP14 Raw Process Args Boundary",
+    description: "Observation payloads must not persist raw process args, raw executable paths, tokens, or secrets",
+    patterns: [
+      { re: /rawArgs|raw_args|rawExecutable|raw_executable|approval-token:|editor-approval-token:/gi, label: "raw process args or token" },
+      { re: /Bearer\s+[A-Za-z0-9._-]+|sk-[A-Za-z0-9][A-Za-z0-9._-]{7,}/g, label: "secret literal" },
+      { re: /[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s"'`]+|\/Users\/[^/\s"'`]+|\/home\/[^/\s"'`]+/g, label: "raw user path" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel) => /packages\/runtime\/src\/(mvp12-change-set|mvp13-editor-operation-service|mvp13-mcp-mutation-service|mvp14-mcp-schema-adapters)/.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\/ue_editor/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+      (rel) => /packages\/shared\/src\//.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp14-editor-observation-service/.test(rel),
+    ],
+  },
+  {
+    id: "replay_reexecute_boundary",
+    title: "MVP14 Replay Re-execute Boundary",
+    description: "Replay may show recorded summaries only and must not attach, launch, execute, call MCP, apply, or rollback",
+    patterns: [
+      { re: /replay.*(?:attach|launch|execute|tools\/call|apply|rollback)/gi, label: "replay side effect marker" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel, line) => /packages\/runtime\/src\/mvp14-(editor-observation-service|scenarios)/.test(rel) && /recordedOnlyActions|replay/.test(line),
+    ],
+    blockWhen: [
+      (rel) => /packages\/runtime\/src\/mvp14-/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\//.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
     ],
   },
 ];
@@ -948,6 +1077,26 @@ function runScanSelfTests() {
   );
   if (!unsafe.some((finding) => finding.severity === "BLOCKED")) {
     throw new Error("mvp13 replay re-execute self-test did not block unsafe runtime sample");
+  }
+  const killCategory = CATEGORIES.find((cat) => cat.id === "editor_process_kill_boundary");
+  if (!killCategory) throw new Error("mvp14 kill scan category missing");
+  const unsafeKill = scanContent(
+    "apps/desktop/src-tauri/src/ue_editor_process.rs",
+    "pub fn stop_editor_observation_session() { taskkill(); }",
+    [killCategory],
+  );
+  if (!unsafeKill.some((finding) => finding.severity === "BLOCKED")) {
+    throw new Error("mvp14 process kill self-test did not block unsafe sample");
+  }
+  const rawArgsCategory = CATEGORIES.find((cat) => cat.id === "raw_process_args_boundary");
+  if (!rawArgsCategory) throw new Error("mvp14 raw args scan category missing");
+  const unsafeArgs = scanContent(
+    "packages/shared/src/ue-editor.ts",
+    "export interface Leak { rawArgs: string[]; token: 'sk-secret123'; }",
+    [rawArgsCategory],
+  );
+  if (!unsafeArgs.some((finding) => finding.severity === "BLOCKED")) {
+    throw new Error("mvp14 raw args self-test did not block unsafe sample");
   }
 }
 

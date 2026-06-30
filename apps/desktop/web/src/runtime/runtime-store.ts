@@ -11,6 +11,10 @@ import type {
   ScreenshotServiceState,
   WatcherServiceState,
   RealTerminalServiceState,
+  EditorObservationDiscoveryResult,
+  EditorObservationReplaySummary,
+  EditorObservationSnapshotResult,
+  EditorObservationStatusResult,
 } from "@uagent/runtime";
 import type {
   ApprovalDecisionValue,
@@ -138,6 +142,17 @@ export interface Mvp13RuntimeState {
   lastError: string | null;
 }
 
+export interface Mvp14RuntimeState {
+  capability: UEEditorCapabilityStatus;
+  discovery: EditorObservationDiscoveryResult | null;
+  session: UEEditorSession | null;
+  status: EditorObservationStatusResult | null;
+  snapshot: EditorObservationSnapshotResult | null;
+  replaySummary: EditorObservationReplaySummary | null;
+  safetyBoundaries: string[];
+  lastError: string | null;
+}
+
 export interface RuntimeStoreState extends RuntimeSnapshot {
   mockOnlyWarning: string | null;
   mcp: McpConnectionState;
@@ -145,6 +160,7 @@ export interface RuntimeStoreState extends RuntimeSnapshot {
   mvp11: Mvp11RuntimeState;
   mvp12: Mvp12RuntimeState;
   mvp13: Mvp13RuntimeState;
+  mvp14: Mvp14RuntimeState;
 }
 
 export interface RuntimeStoreActions {
@@ -205,6 +221,12 @@ export interface RuntimeStoreActions {
   executeMvp13EditorOperation: () => void;
   cancelMvp13EditorOperation: () => void;
   runMvp13McpMutationDryRun: () => void;
+  refreshMvp14ObservationCapability: () => void;
+  discoverMvp14EditorProcesses: () => void;
+  attachMvp14EditorProcess: () => void;
+  readMvp14EditorStatus: () => void;
+  readMvp14EditorSnapshot: () => void;
+  stopMvp14ObservationSession: () => void;
 }
 
 export const DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS = 500;
@@ -291,6 +313,30 @@ export function createEmptyMvp13State(): Mvp13RuntimeState {
       affectedFile: null,
     },
     fileMarkers: {},
+    lastError: null,
+  };
+}
+
+export function createEmptyMvp14State(): Mvp14RuntimeState {
+  return {
+    capability: {
+      enabled: false,
+      mode: "disabled",
+      reason: "feature_disabled",
+      trustedRootRequired: true,
+      mutationExecution: "blocked",
+    },
+    discovery: null,
+    session: null,
+    status: null,
+    snapshot: null,
+    replaySummary: null,
+    safetyBoundaries: [
+      "Save All blocked",
+      "MCP mutation default blocked",
+      "Replay recorded summaries only",
+      "Trusted root required",
+    ],
     lastError: null,
   };
 }
@@ -534,6 +580,7 @@ export function createRuntimeStoreState(snapshot: RuntimeSnapshot): RuntimeStore
     mvp11: createEmptyMvp11State(),
     mvp12: createEmptyMvp12State(),
     mvp13: createEmptyMvp13State(),
+    mvp14: createEmptyMvp14State(),
   };
 }
 

@@ -308,8 +308,8 @@ describe("MVP8 desktop scenario matrix", () => {
     const scan = readTextFile("../../scripts/side-effect-scan.mjs", "scripts/side-effect-scan.mjs");
     const manual = readTextFile("../../docs/mvp8-manual-smoke.md", "docs/mvp8-manual-smoke.md");
 
-    expect(readme).toContain("Current Stage: MVP13");
-    expect(readme).toContain("MVP12 final acceptance is complete");
+    expect(readme).toContain("Current Stage: MVP14");
+    expect(readme).toContain("MVP12 final acceptance and MVP13 controlled UE Editor / MCP mutation pilot are complete");
     expect(scan).toContain("mvp8-native-fs-boundary");
     expect(scan).toContain("mvp8-real-scan-boundary");
     expect(manual).toContain("fixture://lyra");

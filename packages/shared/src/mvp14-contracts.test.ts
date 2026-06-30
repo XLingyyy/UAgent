@@ -1,0 +1,110 @@
+import { describe, expect, it } from "vitest";
+import type {
+  AuditEventType,
+  EvidenceKind,
+  UEEditorAttachRequest,
+  UEEditorHeartbeat,
+  UEEditorLaunchPolicy,
+  UEEditorObservationEvent,
+  UEEditorObservationSnapshot,
+  UEEditorProcessDescriptor,
+  UEEditorProcessState,
+  UEEditorStatusReason,
+} from "./index.js";
+
+describe("MVP14 editor observation shared contracts", () => {
+  it("models process descriptors without raw executable paths or raw args", () => {
+    const descriptor: UEEditorProcessDescriptor = {
+      id: "process:fixture",
+      pidHash: "pid:abc123",
+      displayName: "UnrealEditor.exe",
+      displayExecutableHash: "exe:abc123",
+      displayProjectHint: "[project-root]/Game.uproject",
+      processState: "running",
+      discoveredAt: 1,
+      expiresAt: 120_001,
+      source: "fixture",
+    };
+
+    const serialized = JSON.stringify(descriptor);
+
+    expect(descriptor.displayProjectHint).toBe("[project-root]/Game.uproject");
+    expect(serialized).not.toContain("C:/Users/");
+    expect(serialized).not.toContain("rawArgs");
+    expect(serialized).not.toContain("token");
+  });
+
+  it("binds attach requests, heartbeat, snapshots, and events to redacted process state", () => {
+    const request: UEEditorAttachRequest = {
+      projectId: "project:fixture",
+      rootId: "root:trusted",
+      uprojDisplayPath: "[project-root]/Game.uproject",
+      processId: "process:fixture",
+      mode: "fixture",
+    };
+    const heartbeat: UEEditorHeartbeat = {
+      sessionId: "editor-session:1",
+      processState: "running",
+      statusReason: "heartbeat_ok",
+      processAlive: true,
+      projectMatched: true,
+      checkedAt: 2,
+    };
+    const snapshot: UEEditorObservationSnapshot = {
+      sessionId: "editor-session:1",
+      editorState: "attached",
+      sessionState: "active",
+      projectMatched: true,
+      processAlive: true,
+      lastHeartbeatAt: heartbeat.checkedAt,
+      displayProject: request.uprojDisplayPath,
+      displayProcess: "UnrealEditor.exe",
+      readOnlyDiagnostics: ["process metadata only"],
+      createdAt: 3,
+    };
+    const event: UEEditorObservationEvent = {
+      type: "editor_observation_snapshot",
+      sessionId: "editor-session:1",
+      summary: "Snapshot recorded for [project-root]/Game.uproject",
+      payload: {
+        id: snapshot.sessionId,
+        displayPath: snapshot.displayProject,
+        summary: snapshot.readOnlyDiagnostics.join("; "),
+        hash: "snapshot:hash",
+      },
+      createdAt: snapshot.createdAt,
+    };
+
+    expect(heartbeat.statusReason satisfies UEEditorStatusReason).toBe("heartbeat_ok");
+    expect(snapshot.editorState satisfies UEEditorProcessState).toBe("attached");
+    expect(event.payload.displayPath).toBe("[project-root]/Game.uproject");
+  });
+
+  it("extends evidence and audit unions for MVP14 observation records", () => {
+    const evidenceKinds: EvidenceKind[] = [
+      "editor_process_observation",
+      "editor_heartbeat",
+      "editor_snapshot",
+      "editor_state_operation",
+      "asset_mutation_plan",
+    ];
+    const auditTypes: AuditEventType[] = [
+      "editor_process_discovered",
+      "editor_attached",
+      "editor_heartbeat",
+      "editor_observation_snapshot",
+      "editor_session_expired",
+      "editor_process_exited",
+    ];
+    const launchPolicy: UEEditorLaunchPolicy = {
+      enabled: false,
+      reason: "launch_feature_disabled",
+      allowlistedArgs: [".uproject", "-Project=", "-NoSound", "-Unattended=false"],
+      blockedArgs: ["-ExecCmds", "-run=pythonscript", "-run=automation"],
+    };
+
+    expect(evidenceKinds).toContain("editor_snapshot");
+    expect(auditTypes).toContain("editor_process_exited");
+    expect(launchPolicy.enabled).toBe(false);
+  });
+});

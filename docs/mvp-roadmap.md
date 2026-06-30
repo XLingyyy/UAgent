@@ -214,12 +214,31 @@ Status: implemented
 
 Out of scope for MVP13: default real UE launch, Save All, asset save/delete/rename/move/compile, generic mutating MCP `tools/call`, provider live defaults, automatic provider-output apply, automatic git operations, dependency installs, and CI workflow changes.
 
-## MVP14 - Controlled Real UE Adapter Hardening (Reserved)
+## MVP14 - Real UE Attach / Status / Safe Editor Observation
 
 - Real UE attach/status smoke hardening across supported local UE versions.
 - Process lifecycle observation and cancellation without project save side effects.
 - Narrow Unreal MCP schema adapters for selected dry-run-capable tools.
 - Asset mutation planning UX that remains blocked until a later explicit write approval design.
+
+Status: in progress
+
+Goals:
+
+- Discover, attach, and observe UE Editor process metadata under `UAGENT_ENABLE_UE_EDITOR_BRIDGE=1` and trusted root binding.
+- Keep real launch behind `UAGENT_ENABLE_UE_EDITOR_LAUNCH=1` with allowlisted arguments and no shell string execution.
+- Record heartbeat, snapshot, evidence, audit, and replay summaries without raw paths, raw args, approval tokens, secrets, or native re-execution during replay.
+- Keep state-only editor operations on the MVP13 proposal/approval/execute path.
+
+Non-goals:
+
+- UE asset writes, Save All, SavePackage, binary asset mutation, or Blueprint compile execution.
+- Broad mutating MCP `tools/call`.
+- Provider live defaults, automatic provider-output apply, automatic git operations, dependency installs, or CI workflow changes.
+
+MVP15 reserved direction:
+
+- Blocked-by-default asset mutation approval design and Blueprint compile planning, with explicit policy, evidence, rollback, and supervisor-local smoke requirements before any write execution.
 
 ## Non-Goals
 

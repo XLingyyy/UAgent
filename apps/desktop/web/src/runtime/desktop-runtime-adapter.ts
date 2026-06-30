@@ -13,6 +13,7 @@ import { createDesktopTerminalAdapterFromEnvironment } from "./terminal-native-a
 import { createDesktopWatcherAdapterFromEnvironment } from "./watcher-native-adapter";
 import { createDesktopBrowserAdapterFromEnvironment } from "./browser-native-adapter";
 import { createDesktopTextMutationAdapterFromEnvironment, type NativeTextMutationAdapter } from "./text-mutation-native-adapter";
+import { createEditorObservationNativeAdapterFromEnvironment, type NativeEditorObservationAdapter } from "./editor-observation-native-adapter";
 
 export interface DesktopRuntimeAdapter {
   getSnapshot(): RuntimeSnapshot;
@@ -29,6 +30,7 @@ export interface DesktopRuntimeAdapter {
   getMvp9(): Mvp9RuntimeService;
   subscribeMvp9(listener: (state: Mvp9RuntimeState) => void): () => void;
   getTextMutationAdapter(): NativeTextMutationAdapter | null;
+  getEditorObservationAdapter(): NativeEditorObservationAdapter | null;
 }
 
 export interface DesktopRuntimeAdapterOptions {
@@ -47,6 +49,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
   const watcherAdapter = createDesktopWatcherAdapterFromEnvironment(options?.nativeInvoke);
   const browserAdapter = createDesktopBrowserAdapterFromEnvironment(options?.nativeInvoke);
   const textMutationAdapter = createDesktopTextMutationAdapterFromEnvironment(options?.nativeInvoke);
+  const editorObservationAdapter = createEditorObservationNativeAdapterFromEnvironment(options?.nativeInvoke);
   const mvp9Service = createMvp9RuntimeService({
     mvp10: { terminalAdapter },
     nativeWatcherAdapter: watcherAdapter ?? undefined,
@@ -269,6 +272,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     },
     getMvp9: () => mvp9Service,
     getTextMutationAdapter: () => textMutationAdapter,
+    getEditorObservationAdapter: () => editorObservationAdapter,
     subscribeMvp9: (listener: (state: Mvp9RuntimeState) => void) => {
       mvp9Listeners.add(listener);
       return () => {

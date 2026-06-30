@@ -72,6 +72,12 @@ export type AuditEventType =
     | "editor_operation_proposed"
     | "editor_operation_approved"
     | "editor_operation_executed"
+    | "editor_process_discovered"
+    | "editor_attached"
+    | "editor_heartbeat"
+    | "editor_observation_snapshot"
+    | "editor_session_expired"
+    | "editor_process_exited"
     | "mcp_mutation_proposed"
     | "mcp_mutation_blocked"
     | "mcp_dry_run_completed";
@@ -113,6 +119,8 @@ export interface AuditFilterSummary {
   changeSetId?: string | null;
   toolName?: string | null;
   affectedFile?: string | null;
+  processState?: string | null;
+  affectedAsset?: string | null;
   fromTick: number | null;
   toTick: number | null;
 }

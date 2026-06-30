@@ -16,6 +16,7 @@ export interface TitleBarProps {
 export function TitleBar({ title = "UAgent" }: TitleBarProps) {
   const inspectorOpen = useLayoutStore((state) => state.inspector.open);
   const mcpStatus = useRuntimeStore((state) => state.mcp.status);
+  const editorStatus = useRuntimeStore((state) => state.mvp14.session?.status ?? state.mvp14.capability.reason);
   const nativeSource = useProjectStore((state) => state.nativeSource);
   const { toggleInspector } = useLayoutActions();
   const toolsLabel = inspectorOpen ? "Close utility drawer" : "Open utility drawer";
@@ -44,6 +45,7 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
           <span className="ua-titlebar__status-pill">
             {nativeSource === "native" ? "Native FS: read-only" : nativeSource === "fixture" ? "Native FS: fixture" : "Native FS: offline"}
           </span>
+          <span className="ua-titlebar__status-pill">UE Editor: {editorStatus}</span>
         </div>
         <button
           className="ua-titlebar__btn"
@@ -54,7 +56,7 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
         >
           <span aria-hidden>Tools</span>
         </button>
-        <span className="ua-titlebar__badge">MVP9 Prep</span>
+        <span className="ua-titlebar__badge">MVP14 In Progress</span>
         <span className="ua-titlebar__badge ua-titlebar__badge--subtle">Native FS OK</span>
       </div>
     </header>

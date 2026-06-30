@@ -354,6 +354,7 @@ function ConfigPathDisplay() {
 function DiagnosticsDisplay() {
   const mvp11 = useRuntimeStore((state) => state.mvp11);
   const mvp12 = useRuntimeStore((state) => state.mvp12);
+  const mvp14 = useRuntimeStore((state) => state.mvp14);
   const mcp = useRuntimeStore((state) => state.mcp);
   const diagnosticCounts = `${mvp11.diagnosticCounts.error} ${
     mvp11.diagnosticCounts.error === 1 ? "error" : "errors"
@@ -408,6 +409,16 @@ function DiagnosticsDisplay() {
             ? `${mcp.status} / ${mcp.capabilities.readOnlyTools} read-only / ${mcp.capabilities.blockedTools} blocked`
             : `${mcp.status} / MCP read-only`}
         </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">UE Editor Observation</span>
+        <span className="ua-settings-page__static-value">
+          {mvp14.capability.enabled ? mvp14.capability.mode : "disabled"} / launch gate separate / trusted root required
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Editor safety</span>
+        <span className="ua-settings-page__static-value">{mvp14.safetyBoundaries.join(", ")}</span>
       </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Log level</span>

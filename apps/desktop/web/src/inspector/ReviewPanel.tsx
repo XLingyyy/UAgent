@@ -90,6 +90,37 @@ export function ReviewPanel() {
   const findings = runtimeFindings(reviewEvents);
   const mvp11 = runtime?.mvp11;
   const mvp13 = runtime?.mvp13;
+  const mvp14 = runtime?.mvp14;
+
+  if (mvp14 && (mvp14.session || mvp14.snapshot || mvp14.discovery)) {
+    return (
+      <section className="ua-review-panel" aria-label="Review panel">
+        <div className="ua-review-panel__summary">
+          <InspectorSummaryCard label="Editor" value={mvp14.session?.status ?? mvp14.capability.reason} />
+          <InspectorSummaryCard label="Snapshot" value={mvp14.snapshot?.snapshot?.editorState ?? "not recorded"} />
+        </div>
+        <div className="ua-review-panel__findings">
+          <h3 className="ua-review-panel__section-title">MVP14 observation chain</h3>
+          <InspectorFinding
+            id="mvp14-observation-snapshot"
+            severity="info"
+            title="Observation snapshot"
+            description="UE Editor discovery, attach, heartbeat, and snapshot are recorded as read-only summaries."
+            scope="Editor observation"
+            evidenceRef="editor_snapshot"
+          />
+          <InspectorFinding
+            id="mvp14-state-only-boundary"
+            severity="info"
+            title="State-only operation boundary"
+            description="State-only editor operation flow remains proposal/approval/execute; asset mutation is still blocked."
+            scope="Editor operation"
+            evidenceRef="editor_state_operation"
+          />
+        </div>
+      </section>
+    );
+  }
 
   if (mvp13 && (mvp13.editorProposals.length > 0 || mvp13.mcpDryRuns.length > 0 || mvp13.assetPlans.length > 0)) {
     return (

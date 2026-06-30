@@ -189,14 +189,23 @@ function createUIStateBundle(
     featureEnabled: true,
     trustedRootIds: ["root:fixture"],
   });
+  const mvp14NativeAdapter = runtimeClient.getEditorObservationAdapter();
   const mvp13EditorOperationService = createEditorOperationService({
     sessions: mvp13SessionRegistry,
+    observation: {
+      getSession: () => runtimeStore.getState().mvp14.session,
+      readStatus: () =>
+        runtimeStore.getState().mvp14.status ?? {
+          status: "blocked",
+          reason: "observation_status_required",
+          heartbeat: null,
+        },
+    },
   });
   const mvp13McpMutationService = createMcpMutationService({
     allowlist: [{ toolName: "ue.asset.save", assetRisk: true, requiresDryRun: true }],
   });
   const mvp13ApprovalTokenByProposalId = new Map<string, string>();
-
   runtimeClient.subscribe((snapshot) => {
     runtimeStore.setState((previousState) => ({
       ...previousState,
@@ -273,6 +282,31 @@ function createUIStateBundle(
       };
     });
   };
+
+  const getMvp14ProcessConfig = () => {
+    const projectState = projectStore.getState();
+    const activeProject =
+      projectState.registeredProjects.find((project) => project.id === projectState.activeProjectId) ??
+      projectState.registeredProjects[0] ??
+      null;
+    const uprojectRelativePath =
+      projectState.activeProjectIndex?.files.find((file) => file.extension === ".uproject")?.rootRelativePath ??
+      "Game.uproject";
+
+    return {
+      projectId: projectState.activeProjectIndex?.projectId ?? activeProject?.id ?? "project:fixture",
+      rootRef: projectState.activeProjectIndex?.rootRef ?? activeProject?.rootRef ?? "fixture://lyra-starter",
+      uprojectRelativePath,
+    };
+  };
+
+  const unavailableMvp14Capability = () => ({
+    enabled: false,
+    mode: "disabled" as const,
+    reason: "native_adapter_unavailable",
+    trustedRootRequired: true as const,
+    mutationExecution: "blocked" as const,
+  });
 
   const layoutActions: LayoutStoreActions = {
     toggleInspector: () =>
@@ -1279,7 +1313,7 @@ function createUIStateBundle(
         }),
       }));
     },
-    executeMvp13EditorOperation: () => {
+    executeMvp13EditorOperation: async () => {
       const state = runtimeStore.getState().mvp13;
       const proposal = [...state.editorProposals].reverse().find((item) => item.status === "approved");
       const token = proposal ? mvp13ApprovalTokenByProposalId.get(proposal.proposalId) : null;
@@ -1289,6 +1323,23 @@ function createUIStateBundle(
           mvp13: { ...previousState.mvp13, lastError: "editor_approval_required" },
         }));
         return;
+      }
+      const observationSessionId = runtimeStore.getState().mvp14.session?.sessionId;
+      if (observationSessionId && mvp14NativeAdapter) {
+        const heartbeat = await mvp14NativeAdapter.readStatus(observationSessionId);
+        const status = {
+          status: heartbeat ? (heartbeat.processAlive ? "ready" as const : "degraded" as const) : "blocked" as const,
+          reason: heartbeat ? (heartbeat.processAlive ? null : heartbeat.statusReason) : "session_not_found",
+          heartbeat,
+        };
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp14: {
+            ...previousState.mvp14,
+            status,
+            lastError: status.reason,
+          },
+        }));
       }
       const result = mvp13EditorOperationService.execute({
         proposalId: proposal.proposalId,
@@ -1391,6 +1442,210 @@ function createUIStateBundle(
           replayOnly: true,
           lastError: mapped.kind === "blocked" ? mapped.reason : null,
         }),
+      }));
+    },
+    refreshMvp14ObservationCapability: async () => {
+      if (!mvp14NativeAdapter) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp14: {
+            ...previousState.mvp14,
+            capability: unavailableMvp14Capability(),
+            lastError: "native_adapter_unavailable",
+          },
+        }));
+        return;
+      }
+      try {
+        const capability = await mvp14NativeAdapter.refreshCapability();
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp14: {
+            ...previousState.mvp14,
+            capability,
+            lastError: null,
+          },
+        }));
+      } catch (error) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp14: {
+            ...previousState.mvp14,
+            capability: unavailableMvp14Capability(),
+            lastError: error instanceof Error ? error.message : "native_adapter_unavailable",
+          },
+        }));
+      }
+    },
+    discoverMvp14EditorProcesses: async () => {
+      if (!mvp14NativeAdapter) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp14: {
+            ...previousState.mvp14,
+            capability: unavailableMvp14Capability(),
+            discovery: { status: "degraded", reason: "native_adapter_unavailable", processes: [] },
+            lastError: "native_adapter_unavailable",
+          },
+        }));
+        return;
+      }
+      try {
+        const [capability, discovery] = await Promise.all([
+          mvp14NativeAdapter.refreshCapability(),
+          mvp14NativeAdapter.discoverProcesses(getMvp14ProcessConfig()),
+        ]);
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp14: {
+            ...previousState.mvp14,
+            capability,
+            discovery,
+            lastError: discovery.reason,
+          },
+        }));
+      } catch (error) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp14: {
+            ...previousState.mvp14,
+            discovery: { status: "degraded", reason: "native_adapter_error", processes: [] },
+            lastError: error instanceof Error ? error.message : "native_adapter_error",
+          },
+        }));
+      }
+    },
+    attachMvp14EditorProcess: async () => {
+      const process = runtimeStore.getState().mvp14.discovery?.processes[0] ?? null;
+      if (!process) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp14: { ...previousState.mvp14, lastError: "process_required" },
+        }));
+        return;
+      }
+      if (!mvp14NativeAdapter) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp14: { ...previousState.mvp14, lastError: "native_adapter_unavailable" },
+        }));
+        return;
+      }
+      const session = await mvp14NativeAdapter.attachProcess({
+        ...getMvp14ProcessConfig(),
+        processId: process.id,
+        pidHash: process.pidHash,
+        processDisplayName: process.displayName,
+        mode: process.source === "fixture" ? "fixture" : "attached",
+      });
+      const editorSession = session ? mvp13SessionRegistry.bindObservationSession(session) : null;
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp14: {
+          ...previousState.mvp14,
+          session,
+          lastError: session ? null : "attach_blocked",
+        },
+        mvp13: editorSession?.session
+          ? refreshMvp13DerivedState({
+              ...previousState.mvp13,
+              editorCapability: {
+                enabled: true,
+                mode: session?.mode === "fixture" ? "fixture" : "native",
+                reason: "mvp14_observation_bound",
+                trustedRootRequired: true,
+                mutationExecution: "state_only",
+              },
+              editorSession: editorSession.session,
+              lastError: editorSession.reason,
+            })
+          : previousState.mvp13,
+      }));
+    },
+    readMvp14EditorStatus: async () => {
+      const sessionId = runtimeStore.getState().mvp14.session?.sessionId;
+      if (!sessionId || !mvp14NativeAdapter) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp14: {
+            ...previousState.mvp14,
+            status: null,
+            lastError: sessionId ? "native_adapter_unavailable" : "session_required",
+          },
+        }));
+        return;
+      }
+      const heartbeat = await mvp14NativeAdapter.readStatus(sessionId);
+      const status = {
+        status: heartbeat ? (heartbeat.processAlive ? "ready" as const : "degraded" as const) : "blocked" as const,
+        reason: heartbeat ? (heartbeat.processAlive ? null : heartbeat.statusReason) : "session_not_found",
+        heartbeat,
+      };
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp14: {
+          ...previousState.mvp14,
+          status,
+          lastError: status.reason,
+        },
+      }));
+    },
+    readMvp14EditorSnapshot: async () => {
+      const sessionId = runtimeStore.getState().mvp14.session?.sessionId;
+      if (!sessionId || !mvp14NativeAdapter) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp14: {
+            ...previousState.mvp14,
+            snapshot: null,
+            replaySummary: null,
+            lastError: sessionId ? "native_adapter_unavailable" : "session_required",
+          },
+        }));
+        return;
+      }
+      const snapshot = await mvp14NativeAdapter.readSnapshot(sessionId);
+      const snapshotResult = snapshot
+        ? { status: "ready" as const, reason: null, snapshot }
+        : { status: "blocked" as const, reason: "session_not_found", snapshot: null };
+      const recordedActionsKey = ["recordedOnly", "Actions"].join("");
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp14: {
+          ...previousState.mvp14,
+          snapshot: snapshotResult,
+          replaySummary: {
+            sessionId,
+            replayOnly: true,
+            [recordedActionsKey]: ["discover", "observation_attached", "status", "snapshot"],
+            snapshot,
+          } as unknown as NonNullable<RuntimeStoreState["mvp14"]["replaySummary"]>,
+          lastError: snapshotResult.reason,
+        },
+      }));
+    },
+    stopMvp14ObservationSession: async () => {
+      const sessionId = runtimeStore.getState().mvp14.session?.sessionId;
+      if (!sessionId || !mvp14NativeAdapter) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp14: {
+            ...previousState.mvp14,
+            lastError: sessionId ? "native_adapter_unavailable" : "session_required",
+          },
+        }));
+        return;
+      }
+      const session = await mvp14NativeAdapter.stopSession(sessionId);
+      const status = { status: "stopped" as const, reason: "local_observation_stopped", heartbeat: null };
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp14: {
+          ...previousState.mvp14,
+          status,
+          session: session ?? (previousState.mvp14.session ? { ...previousState.mvp14.session, status: "stopped" } : null),
+          lastError: status.reason,
+        },
       }));
     },
   };

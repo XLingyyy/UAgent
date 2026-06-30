@@ -1,10 +1,15 @@
-import type { UEEditorOperationApproval, UEEditorOperationKind, UEEditorOperationProposal, UEEditorOperationResult } from "@uagent/shared";
+import type { UEEditorOperationApproval, UEEditorOperationKind, UEEditorOperationProposal, UEEditorOperationResult, UEEditorSession } from "@uagent/shared";
 import { createSha256Hash, redactMvp12Text } from "./mvp12-change-set.js";
 import { classifyEditorOperation } from "./mvp13-editor-policy.js";
 import type { EditorSessionRegistry } from "./mvp13-editor-session.js";
+import type { EditorObservationStatusResult } from "./mvp14-editor-observation-service.js";
 
 export interface EditorOperationServiceOptions {
   sessions: EditorSessionRegistry;
+  observation?: {
+    getSession: () => UEEditorSession | null;
+    readStatus: (sessionId: string) => EditorObservationStatusResult;
+  };
   now?: () => number;
   ttlMs?: number;
 }
@@ -49,6 +54,24 @@ export function createEditorOperationService(options: EditorOperationServiceOpti
       executedAt: now(),
       replayOnly: false,
     };
+  }
+
+  function validateObservationBinding(proposal: UEEditorOperationProposal): string | null {
+    if (!options.observation) return null;
+    const observationSession = options.observation.getSession();
+    if (!observationSession) return "observation_session_required";
+    if (observationSession.projectId !== proposal.projectId) return "project_mismatch";
+    if (observationSession.rootId !== proposal.rootId) return "root_mismatch";
+    if (now() > observationSession.expiresAt || observationSession.status === "expired") return "session_expired";
+    if (observationSession.status === "stopped") return "local_observation_stopped";
+    if (observationSession.status !== "attached" && observationSession.status !== "launched") return "observation_session_required";
+    const status = options.observation.readStatus(observationSession.sessionId);
+    if (status.status === "expired") return "session_expired";
+    if (status.status === "stopped" || status.reason === "local_observation_stopped") return "local_observation_stopped";
+    if (!status.heartbeat) return status.reason ?? "process_unavailable";
+    if (!status.heartbeat.projectMatched) return "project_mismatch";
+    if (!status.heartbeat.processAlive) return status.heartbeat.statusReason === "process_exited" ? "process_exited" : "process_unavailable";
+    return null;
   }
 
   return {
@@ -117,6 +140,8 @@ export function createEditorOperationService(options: EditorOperationServiceOpti
       }
       if (proposal.status !== "approved") return blocked(input.proposalId, "proposal_not_executable");
       if (!options.sessions.isActive(proposal.sessionId)) return blocked(input.proposalId, "session_expired");
+      const observationBlockReason = validateObservationBinding(proposal);
+      if (observationBlockReason) return blocked(input.proposalId, observationBlockReason);
       if (approval.token !== input.approvalToken) return blocked(input.proposalId, "forged_token");
       if (usedTokens.has(approval.token)) return blocked(input.proposalId, "approval_replay");
       if (now() > approval.expiresAt) return blocked(input.proposalId, "approval_expired");
