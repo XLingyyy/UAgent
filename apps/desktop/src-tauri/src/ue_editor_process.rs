@@ -2,7 +2,7 @@ use crate::{hash_path, is_trusted_root, normalize_project_path, redact_path_for_
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 
@@ -23,6 +23,7 @@ fn process_registry() -> &'static Mutex<HashMap<String, DiscoveredProcessRecord>
 #[derive(Debug, Clone)]
 struct ObservationSessionRecord {
     session_id: String,
+    process_id: String,
     project_id: String,
     root_id: String,
     uproject_display_path: String,
@@ -40,9 +41,12 @@ struct ObservationSessionRecord {
 struct DiscoveredProcessRecord {
     process_id: String,
     pid_hash: String,
+    pid: Option<u32>,
     project_id: String,
     root_id: String,
     uproject_display_path: String,
+    canonical_root: Option<String>,
+    canonical_uproject: Option<String>,
     display_project_hint: String,
     display_executable_hash: String,
     display_name: String,
@@ -50,6 +54,36 @@ struct DiscoveredProcessRecord {
     source: String,
     discovered_at: u64,
     expires_at: u64,
+}
+
+#[derive(Debug, Clone)]
+struct ValidatedEditorConfig {
+    public: EditorAttachValidationResult,
+    root_id: String,
+    uproject_display_path: String,
+    canonical_root: Option<String>,
+    canonical_uproject: Option<String>,
+    fixture: bool,
+}
+
+#[derive(Debug, Clone)]
+struct NativeProcessCandidate {
+    pid: u32,
+    executable_name: String,
+    executable_path: Option<String>,
+    command_line: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct NativeDiscoveryBuild {
+    result: EditorProcessDiscoveryResult,
+    records: Vec<DiscoveredProcessRecord>,
+}
+
+#[derive(Debug, Clone)]
+struct NativeLifecycleCheck {
+    alive: bool,
+    reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,19 +148,27 @@ pub fn discover_editor_processes(input: EditorProcessConfigInput) -> Result<Edit
     if !bridge_enabled() {
         return Ok(blocked_discovery("feature_disabled"));
     }
-    let validation = validate_editor_attach_config(input.clone())?;
-    if !validation.ok {
-        return Ok(blocked_discovery(&validation.reason));
-    }
-    if !normalize_project_path(&input.root_ref).starts_with("fixture://") {
-        return Ok(degraded_discovery("native_discovery_unavailable"));
+    let validation = match validate_config_details(input.clone()) {
+        Ok(validation) => validation,
+        Err(validation) => return Ok(blocked_discovery(&validation.reason)),
+    };
+    if !validation.fixture {
+        let candidates = match enumerate_native_processes() {
+            Ok(candidates) => candidates,
+            Err(reason) => return Ok(degraded_discovery(&reason)),
+        };
+        let built = build_native_discovery_from_candidates(&input, &validation, &candidates, now_millis());
+        if !built.records.is_empty() {
+            let mut registry = process_registry().lock().unwrap();
+            for record in &built.records {
+                registry.insert(record.process_id.clone(), record.clone());
+            }
+        }
+        return Ok(built.result);
     }
     let now = now_millis();
-    let root_id = validation.root_id.clone().unwrap_or_else(|| hash_path(&normalize_project_path(&input.root_ref)));
-    let uproject_display_path = validation
-        .uproject_display_path
-        .clone()
-        .unwrap_or_else(|| "[project-root]/Game.uproject".to_string());
+    let root_id = validation.root_id.clone();
+    let uproject_display_path = validation.uproject_display_path.clone();
     let process_id = format!("process:{}", stable_hash(&format!("{}:{}:{}", input.project_id, root_id, uproject_display_path)));
     let pid_hash = format!("pid:{}", stable_hash(&format!("{}:{}", input.project_id, process_id)));
     let source = "fixture".to_string();
@@ -134,9 +176,12 @@ pub fn discover_editor_processes(input: EditorProcessConfigInput) -> Result<Edit
     let record = DiscoveredProcessRecord {
         process_id,
         pid_hash,
+        pid: None,
         project_id: input.project_id,
         root_id,
         uproject_display_path: uproject_display_path.clone(),
+        canonical_root: None,
+        canonical_uproject: None,
         display_project_hint: uproject_display_path,
         display_executable_hash: "exe:unreal-editor".to_string(),
         display_name: "UnrealEditor.exe".to_string(),
@@ -200,19 +245,19 @@ pub struct EditorObservationSessionResult {
 
 #[tauri::command]
 pub fn attach_editor_process(input: EditorAttachInput) -> Result<EditorObservationSessionResult, String> {
-    let validation = validate_config(EditorProcessConfigInput {
+    let validation = match validate_config_details(EditorProcessConfigInput {
         project_id: input.project_id.clone(),
         root_ref: input.root_ref.clone(),
         uproject_relative_path: input.uproject_relative_path.clone(),
         editor_executable: None,
         args: None,
-    });
-    if !validation.ok {
-        return Ok(blocked_session(&input.project_id, &input.mode, &validation.reason));
-    }
+    }) {
+        Ok(validation) => validation,
+        Err(validation) => return Ok(blocked_session(&input.project_id, &input.mode, &validation.reason)),
+    };
     let now = now_millis();
-    let root_id = validation.root_id.unwrap_or_else(|| hash_path(&normalize_project_path(&input.root_ref)));
-    let uproject_display_path = validation.uproject_display_path.unwrap_or_else(|| "[project-root]/Game.uproject".to_string());
+    let root_id = validation.root_id;
+    let uproject_display_path = validation.uproject_display_path;
     let process = {
         let registry = process_registry().lock().unwrap();
         registry.get(&input.process_id).cloned()
@@ -232,8 +277,15 @@ pub fn attach_editor_process(input: EditorAttachInput) -> Result<EditorObservati
     if process.process_state != "running" {
         return Ok(blocked_session(&input.project_id, &input.mode, "process_unavailable"));
     }
+    if process.source == "native" {
+        let check = check_native_record_current(&process);
+        if !check.alive {
+            return Ok(blocked_session(&input.project_id, &input.mode, &check.reason));
+        }
+    }
     let record = ObservationSessionRecord {
         session_id: format!("editor-observation:{}", stable_hash(&format!("{}:{}:{}", process.project_id, process.root_id, process.pid_hash))),
+        process_id: process.process_id,
         project_id: input.project_id,
         root_id,
         uproject_display_path,
@@ -284,18 +336,39 @@ pub struct EditorObservationSessionIdInput {
 
 #[tauri::command]
 pub fn read_editor_process_status(input: EditorObservationSessionIdInput) -> Result<EditorObservationSessionResult, String> {
+    let session = {
+        let mut registry = observation_registry().lock().unwrap();
+        let Some(record) = registry.get_mut(&input.session_id) else {
+            return Ok(blocked_session("", "unknown", "session_not_found"));
+        };
+        if now_millis() > record.expires_at && record.status != "stopped" {
+            record.status = "expired".to_string();
+            return Ok(session_result(record, "session_expired", false));
+        }
+        record.clone()
+    };
+    if session.source != "fixture" {
+        let process = process_registry().lock().unwrap().get(&session.process_id).cloned();
+        let check = process
+            .as_ref()
+            .map(check_native_record_current)
+            .unwrap_or_else(|| NativeLifecycleCheck { alive: false, reason: "process_unavailable".to_string() });
+        let mut registry = observation_registry().lock().unwrap();
+        let Some(record) = registry.get_mut(&input.session_id) else {
+            return Ok(blocked_session("", "unknown", "session_not_found"));
+        };
+        if check.alive {
+            record.status = "attached".to_string();
+            record.last_heartbeat_at = Some(now_millis());
+        } else {
+            record.status = "degraded".to_string();
+        }
+        return Ok(session_result(record, &check.reason, false));
+    }
     let mut registry = observation_registry().lock().unwrap();
     let Some(record) = registry.get_mut(&input.session_id) else {
         return Ok(blocked_session("", "unknown", "session_not_found"));
     };
-    if now_millis() > record.expires_at && record.status != "stopped" {
-        record.status = "expired".to_string();
-        return Ok(session_result(record, "session_expired", false));
-    }
-    if record.source != "fixture" {
-        record.status = "degraded".to_string();
-        return Ok(session_result(record, "native_process_observation_unavailable", false));
-    }
     record.last_heartbeat_at = Some(now_millis());
     Ok(session_result(record, "heartbeat_ok", false))
 }
@@ -317,33 +390,41 @@ pub struct EditorObservationSnapshotResult {
 
 #[tauri::command]
 pub fn read_editor_observation_snapshot(input: EditorObservationSessionIdInput) -> Result<EditorObservationSnapshotResult, String> {
-    let registry = observation_registry().lock().unwrap();
-    let Some(record) = registry.get(&input.session_id) else {
-        return Ok(EditorObservationSnapshotResult {
-            session_id: input.session_id,
-            editor_state: "degraded".to_string(),
-            session_state: "blocked".to_string(),
-            project_matched: false,
-            process_alive: false,
-            last_heartbeat_at: None,
-            display_project: "[project-root]/unknown.uproject".to_string(),
-            display_process: "unknown".to_string(),
-            read_only_diagnostics: vec!["session_not_found".to_string()],
-            created_at: now_millis(),
-        });
+    let session = {
+        let registry = observation_registry().lock().unwrap();
+        let Some(record) = registry.get(&input.session_id) else {
+            return Ok(EditorObservationSnapshotResult {
+                session_id: input.session_id,
+                editor_state: "degraded".to_string(),
+                session_state: "blocked".to_string(),
+                project_matched: false,
+                process_alive: false,
+                last_heartbeat_at: None,
+                display_project: "[project-root]/unknown.uproject".to_string(),
+                display_process: "unknown".to_string(),
+                read_only_diagnostics: vec!["session_not_found".to_string()],
+                created_at: now_millis(),
+            });
+        };
+        record.clone()
     };
-    if record.source != "fixture" {
+    if session.source != "fixture" {
+        let process = process_registry().lock().unwrap().get(&session.process_id).cloned();
+        let check = process
+            .as_ref()
+            .map(check_native_record_current)
+            .unwrap_or_else(|| NativeLifecycleCheck { alive: false, reason: "process_unavailable".to_string() });
         return Ok(EditorObservationSnapshotResult {
-            session_id: record.session_id.clone(),
-            editor_state: "degraded".to_string(),
-            session_state: "degraded".to_string(),
-            project_matched: true,
-            process_alive: false,
-            last_heartbeat_at: record.last_heartbeat_at,
-            display_project: record.uproject_display_path.clone(),
-            display_process: record.process_display_name.clone(),
+            session_id: session.session_id,
+            editor_state: if check.alive { "attached".to_string() } else { "degraded".to_string() },
+            session_state: if check.reason == "process_exited" { "exited".to_string() } else if check.alive { "active".to_string() } else { "degraded".to_string() },
+            project_matched: check.alive,
+            process_alive: check.alive,
+            last_heartbeat_at: session.last_heartbeat_at,
+            display_project: session.uproject_display_path,
+            display_process: session.process_display_name,
             read_only_diagnostics: vec![
-                "native_process_observation_unavailable".to_string(),
+                check.reason,
                 "Save All blocked".to_string(),
                 "MCP mutation default blocked".to_string(),
             ],
@@ -351,14 +432,14 @@ pub fn read_editor_observation_snapshot(input: EditorObservationSessionIdInput) 
         });
     }
     Ok(EditorObservationSnapshotResult {
-        session_id: record.session_id.clone(),
+        session_id: session.session_id.clone(),
         editor_state: "attached".to_string(),
-        session_state: record.status.clone(),
+        session_state: session.status.clone(),
         project_matched: true,
-        process_alive: record.status != "expired" && record.status != "stopped",
-        last_heartbeat_at: record.last_heartbeat_at,
-        display_project: record.uproject_display_path.clone(),
-        display_process: record.process_display_name.clone(),
+        process_alive: session.status != "expired" && session.status != "stopped",
+        last_heartbeat_at: session.last_heartbeat_at,
+        display_project: session.uproject_display_path.clone(),
+        display_process: session.process_display_name.clone(),
         read_only_diagnostics: vec![
             "process metadata only".to_string(),
             "Save All blocked".to_string(),
@@ -379,60 +460,267 @@ pub fn stop_editor_observation_session(input: EditorObservationSessionIdInput) -
 }
 
 fn validate_config(input: EditorProcessConfigInput) -> EditorAttachValidationResult {
+    match validate_config_details(input) {
+        Ok(details) => details.public,
+        Err(validation) => validation,
+    }
+}
+
+fn validate_config_details(input: EditorProcessConfigInput) -> Result<ValidatedEditorConfig, EditorAttachValidationResult> {
     if !bridge_enabled() {
-        return blocked_validation("feature_disabled", &input.root_ref);
+        return Err(blocked_validation("feature_disabled", &input.root_ref));
     }
     let raw = input.root_ref.trim();
     if raw.starts_with("//") || raw.starts_with("\\\\") {
-        return blocked_validation("network_root", raw);
+        return Err(blocked_validation("network_root", raw));
     }
     let normalized = normalize_project_path(&input.root_ref);
     if !is_trusted_root(&normalized) {
-        return blocked_validation("untrusted_root", &normalized);
+        return Err(blocked_validation("untrusted_root", &normalized));
     }
     if input.uproject_relative_path.contains("..")
         || input.uproject_relative_path.starts_with('/')
         || input.uproject_relative_path.starts_with('\\')
     {
-        return blocked_validation("root_escape", &normalized);
+        return Err(blocked_validation("root_escape", &normalized));
     }
     if !input.uproject_relative_path.ends_with(".uproject") {
-        return blocked_validation("missing_uproject", &normalized);
+        return Err(blocked_validation("missing_uproject", &normalized));
     }
     if normalized.starts_with("fixture://") {
         if !is_allowed_fixture_root(&normalized) {
-            return blocked_validation("untrusted_root", &normalized);
+            return Err(blocked_validation("untrusted_root", &normalized));
         }
-        return EditorAttachValidationResult {
+        let public = EditorAttachValidationResult {
             ok: true,
             reason: "valid".to_string(),
             root_id: Some(hash_path(&normalized)),
             display_root: redact_path_for_ui(&normalized),
             uproject_display_path: Some(format!("[project-root]/{}", normalize_project_path(&input.uproject_relative_path))),
         };
+        return Ok(ValidatedEditorConfig {
+            root_id: public.root_id.clone().unwrap(),
+            uproject_display_path: public.uproject_display_path.clone().unwrap(),
+            public,
+            canonical_root: None,
+            canonical_uproject: None,
+            fixture: true,
+        });
     }
     let root_path = Path::new(&normalized);
     let Ok(canonical_root) = root_path.canonicalize() else {
-        return blocked_validation("missing_uproject", &normalized);
+        return Err(blocked_validation("missing_uproject", &normalized));
     };
     let target = root_path.join(&input.uproject_relative_path);
     let Ok(canonical_target) = target.canonicalize() else {
-        return blocked_validation("missing_uproject", &normalized);
+        return Err(blocked_validation("missing_uproject", &normalized));
     };
     if !canonical_target.starts_with(&canonical_root) {
-        return blocked_validation("root_escape", &normalized);
+        return Err(blocked_validation("root_escape", &normalized));
     }
     if !canonical_target.is_file()
         || canonical_target.extension().and_then(|ext| ext.to_str()).map(|ext| ext.eq_ignore_ascii_case("uproject")) != Some(true)
     {
-        return blocked_validation("missing_uproject", &normalized);
+        return Err(blocked_validation("missing_uproject", &normalized));
     }
-    EditorAttachValidationResult {
+    let public = EditorAttachValidationResult {
         ok: true,
         reason: "valid".to_string(),
         root_id: Some(hash_path(&normalized)),
         display_root: redact_path_for_ui(&normalized),
         uproject_display_path: Some(format!("[project-root]/{}", normalize_project_path(&input.uproject_relative_path))),
+    };
+    Ok(ValidatedEditorConfig {
+        root_id: public.root_id.clone().unwrap(),
+        uproject_display_path: public.uproject_display_path.clone().unwrap(),
+        public,
+        canonical_root: Some(normalize_pathbuf(&canonical_root)),
+        canonical_uproject: Some(normalize_pathbuf(&canonical_target)),
+        fixture: false,
+    })
+}
+
+fn build_native_discovery_from_candidates(
+    input: &EditorProcessConfigInput,
+    validation: &ValidatedEditorConfig,
+    candidates: &[NativeProcessCandidate],
+    now: u64,
+) -> NativeDiscoveryBuild {
+    let mut records = Vec::new();
+    let mut saw_ue_process = false;
+    let Some(canonical_uproject) = validation.canonical_uproject.as_ref() else {
+        return NativeDiscoveryBuild { result: degraded_discovery("native_discovery_unavailable"), records };
+    };
+    for candidate in candidates {
+        let Some(display_name) = allowed_editor_display_name(&candidate.executable_name) else {
+            continue;
+        };
+        saw_ue_process = true;
+        if !candidate_matches_uproject(candidate, canonical_uproject) {
+            continue;
+        }
+        let executable_identity = candidate
+            .executable_path
+            .as_deref()
+            .map(normalize_project_path)
+            .unwrap_or_else(|| display_name.clone());
+        let display_executable_hash = format!("exe:{}", stable_hash(&executable_identity));
+        let process_id = format!(
+            "process:{}",
+            stable_hash(&format!("{}:{}:{}:{}", input.project_id, validation.root_id, canonical_uproject, candidate.pid))
+        );
+        let pid_hash = format!(
+            "pid:{}",
+            stable_hash(&format!("{}:{}:{}:{}", validation.root_id, canonical_uproject, candidate.pid, display_executable_hash))
+        );
+        records.push(DiscoveredProcessRecord {
+            process_id,
+            pid_hash,
+            pid: Some(candidate.pid),
+            project_id: input.project_id.clone(),
+            root_id: validation.root_id.clone(),
+            uproject_display_path: validation.uproject_display_path.clone(),
+            canonical_root: validation.canonical_root.clone(),
+            canonical_uproject: validation.canonical_uproject.clone(),
+            display_project_hint: validation.uproject_display_path.clone(),
+            display_executable_hash,
+            display_name,
+            process_state: "running".to_string(),
+            source: "native".to_string(),
+            discovered_at: now,
+            expires_at: now + DEFAULT_OBSERVATION_TTL_MILLIS,
+        });
+    }
+    if records.is_empty() {
+        let reason = if saw_ue_process { "project_mismatch" } else { "process_not_found" };
+        return NativeDiscoveryBuild { result: degraded_discovery(reason), records };
+    }
+    NativeDiscoveryBuild {
+        result: EditorProcessDiscoveryResult {
+            status: "ready".to_string(),
+            reason: "native_process_matched".to_string(),
+            processes: records.iter().map(descriptor_from_record).collect(),
+        },
+        records,
+    }
+}
+
+fn check_native_record_current(record: &DiscoveredProcessRecord) -> NativeLifecycleCheck {
+    match enumerate_native_processes() {
+        Ok(candidates) => check_native_record_against_candidates(record, &candidates),
+        Err(reason) => NativeLifecycleCheck { alive: false, reason },
+    }
+}
+
+fn check_native_record_against_candidates(
+    record: &DiscoveredProcessRecord,
+    candidates: &[NativeProcessCandidate],
+) -> NativeLifecycleCheck {
+    let Some(pid) = record.pid else {
+        return NativeLifecycleCheck { alive: false, reason: "process_unavailable".to_string() };
+    };
+    let Some(candidate) = candidates.iter().find(|candidate| candidate.pid == pid) else {
+        return NativeLifecycleCheck { alive: false, reason: "process_exited".to_string() };
+    };
+    if allowed_editor_display_name(&candidate.executable_name).is_none() {
+        return NativeLifecycleCheck { alive: false, reason: "process_unavailable".to_string() };
+    }
+    let Some(canonical_root) = record.canonical_root.as_ref() else {
+        return NativeLifecycleCheck { alive: false, reason: "native_process_observation_unavailable".to_string() };
+    };
+    let Some(canonical_uproject) = record.canonical_uproject.as_ref() else {
+        return NativeLifecycleCheck { alive: false, reason: "native_process_observation_unavailable".to_string() };
+    };
+    if !path_is_inside_root(canonical_root, canonical_uproject) {
+        return NativeLifecycleCheck { alive: false, reason: "project_mismatch".to_string() };
+    }
+    if !candidate_matches_uproject(candidate, canonical_uproject) {
+        return NativeLifecycleCheck { alive: false, reason: "project_mismatch".to_string() };
+    }
+    NativeLifecycleCheck { alive: true, reason: "heartbeat_ok".to_string() }
+}
+
+#[cfg(windows)]
+fn enumerate_native_processes() -> Result<Vec<NativeProcessCandidate>, String> {
+    use sysinfo::System;
+
+    let mut system = System::new_all();
+    system.refresh_processes();
+    Ok(system
+        .processes()
+        .iter()
+        .map(|(pid, process)| NativeProcessCandidate {
+            pid: pid.as_u32(),
+            executable_name: process.name().to_string(),
+            executable_path: process.exe().map(|path| path.to_string_lossy().to_string()),
+            command_line: process.cmd().to_vec(),
+        })
+        .collect())
+}
+
+#[cfg(not(windows))]
+fn enumerate_native_processes() -> Result<Vec<NativeProcessCandidate>, String> {
+    Err("platform_unsupported".to_string())
+}
+
+fn allowed_editor_display_name(name: &str) -> Option<String> {
+    if name.eq_ignore_ascii_case("UnrealEditor.exe") {
+        Some("UnrealEditor.exe".to_string())
+    } else if name.eq_ignore_ascii_case("UnrealEditor-Cmd.exe") {
+        Some("UnrealEditor-Cmd.exe".to_string())
+    } else {
+        None
+    }
+}
+
+fn candidate_matches_uproject(candidate: &NativeProcessCandidate, canonical_uproject: &str) -> bool {
+    candidate.command_line.iter().any(|arg| {
+        let value = normalize_uproject_arg(arg);
+        if !value.to_ascii_lowercase().ends_with(".uproject") {
+            return false;
+        }
+        canonicalize_maybe(&value)
+            .map(|candidate_path| paths_equivalent(&candidate_path, canonical_uproject))
+            .unwrap_or(false)
+    })
+}
+
+fn normalize_uproject_arg(arg: &str) -> String {
+    let trimmed = arg.trim().trim_matches('"').trim_matches('\'');
+    let value = trimmed.strip_prefix("-Project=").unwrap_or(trimmed);
+    value.trim_matches('"').trim_matches('\'').to_string()
+}
+
+fn canonicalize_maybe(path: &str) -> Option<String> {
+    let path = Path::new(path);
+    path.canonicalize().ok().map(|path| normalize_pathbuf(&path))
+}
+
+fn normalize_pathbuf(path: &PathBuf) -> String {
+    normalize_project_path(&path.to_string_lossy())
+}
+
+fn paths_equivalent(left: &str, right: &str) -> bool {
+    if cfg!(windows) {
+        left.eq_ignore_ascii_case(right)
+    } else {
+        left == right
+    }
+}
+
+fn path_is_inside_root(root: &str, candidate: &str) -> bool {
+    if paths_equivalent(root, candidate) {
+        return true;
+    }
+    let root_with_slash = if root.ends_with('/') {
+        root.to_string()
+    } else {
+        format!("{}/", root)
+    };
+    if cfg!(windows) {
+        candidate.to_ascii_lowercase().starts_with(&root_with_slash.to_ascii_lowercase())
+    } else {
+        candidate.starts_with(&root_with_slash)
     }
 }
 
@@ -725,9 +1013,126 @@ mod tests {
         let discovery = discover_editor_processes(input).unwrap();
 
         assert_eq!(discovery.status, "degraded");
-        assert_eq!(discovery.reason, "native_discovery_unavailable");
+        assert!(
+            discovery.reason == "native_discovery_unavailable"
+                || discovery.reason == "platform_unsupported"
+                || discovery.reason == "process_not_found",
+            "unexpected discovery reason: {}",
+            discovery.reason
+        );
         assert!(discovery.processes.is_empty());
         assert!(process_registry().lock().unwrap().is_empty());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ue_editor_process_native_candidate_matching_redacts_raw_paths() {
+        reset();
+        let (input, root) = real_project_config();
+        let validation = validate_config_details(input.clone()).expect("real config should validate");
+        let raw_uproject = root.join("Game.uproject").canonicalize().unwrap();
+        let raw_executable = "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe";
+        let candidates = vec![
+            NativeProcessCandidate {
+                pid: 42,
+                executable_name: "UnrealEditor.exe".to_string(),
+                executable_path: Some(raw_executable.to_string()),
+                command_line: vec![
+                    raw_executable.to_string(),
+                    raw_uproject.to_string_lossy().to_string(),
+                    "-NoSound".to_string(),
+                ],
+            },
+            NativeProcessCandidate {
+                pid: 43,
+                executable_name: "NotUnrealEditor.exe".to_string(),
+                executable_path: Some("C:\\Tools\\NotUnrealEditor.exe".to_string()),
+                command_line: vec!["C:\\Tools\\NotUnrealEditor.exe".to_string(), raw_uproject.to_string_lossy().to_string()],
+            },
+        ];
+
+        let built = build_native_discovery_from_candidates(&input, &validation, &candidates, 123);
+        let serialized = serde_json::to_string(&built.result).unwrap();
+
+        assert_eq!(built.result.status, "ready");
+        assert_eq!(built.result.reason, "native_process_matched");
+        assert_eq!(built.records.len(), 1);
+        assert_eq!(built.result.processes[0].display_name, "UnrealEditor.exe");
+        assert_eq!(built.result.processes[0].source, "native");
+        assert_eq!(built.result.processes[0].display_project_hint, "[project-root]/Game.uproject");
+        assert!(!serialized.contains(&raw_uproject.to_string_lossy().to_string()));
+        assert!(!serialized.contains("Program Files"));
+        assert!(!serialized.contains("command"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ue_editor_process_native_candidate_project_mismatch_returns_no_descriptor() {
+        reset();
+        let (input, root) = real_project_config();
+        let validation = validate_config_details(input.clone()).expect("real config should validate");
+        let other_root = std::env::temp_dir().join(format!("uagent-mvp14-other-{}", now_millis()));
+        std::fs::create_dir_all(&other_root).unwrap();
+        std::fs::write(other_root.join("Other.uproject"), "{}").unwrap();
+        let other_uproject = other_root.join("Other.uproject").canonicalize().unwrap();
+        let candidates = vec![NativeProcessCandidate {
+            pid: 50,
+            executable_name: "UnrealEditor-Cmd.exe".to_string(),
+            executable_path: None,
+            command_line: vec![
+                "UnrealEditor-Cmd.exe".to_string(),
+                format!("-Project={}", other_uproject.to_string_lossy()),
+            ],
+        }];
+
+        let built = build_native_discovery_from_candidates(&input, &validation, &candidates, 456);
+        let serialized = serde_json::to_string(&built.result).unwrap();
+
+        assert_eq!(built.result.status, "degraded");
+        assert_eq!(built.result.reason, "project_mismatch");
+        assert!(built.result.processes.is_empty());
+        assert!(built.records.is_empty());
+        assert!(!serialized.contains(&other_uproject.to_string_lossy().to_string()));
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(other_root);
+    }
+
+    #[test]
+    fn ue_editor_process_native_lifecycle_rechecks_candidate_metadata() {
+        reset();
+        let (input, root) = real_project_config();
+        let validation = validate_config_details(input.clone()).expect("real config should validate");
+        let raw_uproject = root.join("Game.uproject").canonicalize().unwrap();
+        let candidates = vec![NativeProcessCandidate {
+            pid: 77,
+            executable_name: "UnrealEditor.exe".to_string(),
+            executable_path: None,
+            command_line: vec!["UnrealEditor.exe".to_string(), raw_uproject.to_string_lossy().to_string()],
+        }];
+        let built = build_native_discovery_from_candidates(&input, &validation, &candidates, 789);
+        let record = built.records.first().expect("matched record");
+
+        let alive = check_native_record_against_candidates(record, &candidates);
+        let exited = check_native_record_against_candidates(record, &[]);
+        let mismatched = check_native_record_against_candidates(
+            record,
+            &[NativeProcessCandidate {
+                pid: 77,
+                executable_name: "UnrealEditor.exe".to_string(),
+                executable_path: None,
+                command_line: vec!["UnrealEditor.exe".to_string(), "C:\\Other\\Other.uproject".to_string()],
+            }],
+        );
+
+        assert!(alive.alive);
+        assert_eq!(alive.reason, "heartbeat_ok");
+        assert!(!exited.alive);
+        assert_eq!(exited.reason, "process_exited");
+        assert!(!mismatched.alive);
+        assert_eq!(mismatched.reason, "project_mismatch");
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -744,6 +1149,7 @@ mod tests {
             session_id.clone(),
             ObservationSessionRecord {
                 session_id: session_id.clone(),
+                process_id: "process:missing-lifecycle".to_string(),
                 project_id: input.project_id,
                 root_id,
                 uproject_display_path,
@@ -762,13 +1168,13 @@ mod tests {
         let snapshot = read_editor_observation_snapshot(EditorObservationSessionIdInput { session_id }).unwrap();
 
         assert_eq!(status.status, "degraded");
-        assert_eq!(status.reason, "native_process_observation_unavailable");
+        assert_eq!(status.reason, "process_unavailable");
         assert_eq!(status.last_heartbeat_at, None);
         assert_eq!(snapshot.editor_state, "degraded");
         assert!(!snapshot.process_alive);
         assert!(snapshot
             .read_only_diagnostics
-            .contains(&"native_process_observation_unavailable".to_string()));
+            .contains(&"process_unavailable".to_string()));
 
         let _ = std::fs::remove_dir_all(root);
     }

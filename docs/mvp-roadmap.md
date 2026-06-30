@@ -221,7 +221,7 @@ Out of scope for MVP13: default real UE launch, Save All, asset save/delete/rena
 - Narrow Unreal MCP schema adapters for selected dry-run-capable tools.
 - Asset mutation planning UX that remains blocked until a later explicit write approval design.
 
-Status: in progress
+Status: implemented; minimal real Windows process discovery is implemented and supervisor-local real UE smoke passed.
 
 Goals:
 

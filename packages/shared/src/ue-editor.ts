@@ -111,8 +111,13 @@ export type UEEditorStatusReason =
   | "heartbeat_ok"
   | "process_unavailable"
   | "process_exited"
+  | "process_not_found"
+  | "process_descriptor_expired"
+  | "pid_hash_mismatch"
+  | "pid_session_root_project_mismatch"
   | "native_discovery_unavailable"
   | "native_process_observation_unavailable"
+  | "platform_unsupported"
   | "session_not_found"
   | "session_expired"
   | "project_mismatch"
@@ -151,7 +156,7 @@ export interface UEEditorHeartbeat {
 export interface UEEditorObservationSnapshot {
   sessionId: string;
   editorState: UEEditorProcessState;
-  sessionState: "active" | "blocked" | "expired" | "stopped" | "degraded";
+  sessionState: "active" | "blocked" | "expired" | "stopped" | "degraded" | "exited";
   projectMatched: boolean;
   processAlive: boolean;
   lastHeartbeatAt: number | null;

@@ -80,6 +80,28 @@ describe("MVP14 editor observation shared contracts", () => {
     expect(event.payload.displayPath).toBe("[project-root]/Game.uproject");
   });
 
+  it("models native process discovery and lifecycle fallback reasons without raw paths", () => {
+    const unavailableReason: UEEditorStatusReason = "process_not_found";
+    const exitedSnapshot: UEEditorObservationSnapshot = {
+      sessionId: "editor-session:native",
+      editorState: "degraded",
+      sessionState: "exited",
+      projectMatched: false,
+      processAlive: false,
+      lastHeartbeatAt: null,
+      displayProject: "[project-root]/Game.uproject",
+      displayProcess: "UnrealEditor.exe",
+      readOnlyDiagnostics: ["process_exited", "Save All blocked"],
+      createdAt: 4,
+    };
+
+    const serialized = JSON.stringify(exitedSnapshot);
+
+    expect(unavailableReason).toBe("process_not_found");
+    expect(serialized).not.toContain("C:/Users/");
+    expect(serialized).not.toContain("Program Files");
+  });
+
   it("extends evidence and audit unions for MVP14 observation records", () => {
     const evidenceKinds: EvidenceKind[] = [
       "editor_process_observation",

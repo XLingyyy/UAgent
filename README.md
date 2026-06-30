@@ -2,9 +2,11 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP14 Real UE Attach / Status / Safe Editor Observation (In Progress)
+## Current Stage: MVP14 Real UE Attach / Status / Safe Editor Observation (Implemented / Final Acceptance Complete)
 
 MVP12 final acceptance and MVP13 controlled UE Editor / MCP mutation pilot are complete. MVP14 advances the editor path from fixture-only pilot behavior toward safe real UE Editor observation while preserving MVP12 ChangeSet v2, MVP13 approval binding, trusted roots, redaction, and replay boundaries. Current MVP14 implementation focus includes:
+
+Current MVP14 code includes minimal real Windows UE process discovery and native attach/status/snapshot lifecycle rechecks. Final acceptance is complete after a supervisor-local real UE smoke confirmed discovery, attach, heartbeat, snapshot, and stop observation without closing Unreal Editor.
 
 1. **Observation Contracts**: UE Editor process descriptors, attach requests, heartbeat, snapshots, process state, launch policy, status reasons, evidence, and audit event types.
 2. **Process Policy**: Trusted root, `.uproject`, root containment, network root, shell metacharacter, executable allowlist, raw env, and session/root/project mismatch checks.
