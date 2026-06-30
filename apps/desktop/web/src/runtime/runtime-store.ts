@@ -22,10 +22,14 @@ import type {
   DiagnosticSeverity,
   McpConnectionState,
   ProjectDiagnostic,
+  RepairProposal,
   RuntimeSnapshot,
   TaskDraft,
+  TextMutationPolicy,
   UEProjectMetadata,
+  WorkspaceChangeSetV2,
 } from "@uagent/shared";
+import { createDefaultTextMutationPolicy } from "@uagent/shared";
 
 export type Mvp11ActionStatus = "idle" | "running" | "completed" | "failed";
 
@@ -65,11 +69,51 @@ export interface Mvp11RuntimeState {
   lastError: string | null;
 }
 
+export type Mvp12ActionStatus = "idle" | "running" | "completed" | "failed" | "blocked";
+export type Mvp12FileMarker = "diagnostic" | "proposed" | "modified" | "verified" | "rollback_available";
+
+export interface Mvp12CapabilityStatus {
+  enabled: boolean;
+  mode: "disabled" | "approval_required" | "fixture_only" | "native";
+  reason: string;
+  approvalRequired: boolean;
+  allowedExtensions: string[];
+  blockedDirectories: string[];
+}
+
+export interface Mvp12ChangedFileSummary {
+  path: string;
+  diagnosticCount: number;
+  proposed: boolean;
+  modified: boolean;
+  verified: boolean;
+  rollbackAvailable: boolean;
+}
+
+export interface Mvp12RuntimeState {
+  capability: Mvp12CapabilityStatus;
+  proposals: RepairProposal[];
+  activeChangeSet: WorkspaceChangeSetV2 | null;
+  applyStatus: Mvp12ActionStatus;
+  verifyStatus: Mvp12ActionStatus;
+  rollbackStatus: Mvp12ActionStatus;
+  lastError: string | null;
+  changedFiles: Record<string, Mvp12ChangedFileSummary>;
+  fileMarkers: Record<string, Mvp12FileMarker[]>;
+  evidenceIds: string[];
+  auditFilters: {
+    changeSetId: string | null;
+    file: string | null;
+    diagnosticId: string | null;
+  };
+}
+
 export interface RuntimeStoreState extends RuntimeSnapshot {
   mockOnlyWarning: string | null;
   mcp: McpConnectionState;
   mvp9: Mvp9RuntimeState;
   mvp11: Mvp11RuntimeState;
+  mvp12: Mvp12RuntimeState;
 }
 
 export interface RuntimeStoreActions {
@@ -100,6 +144,13 @@ export interface RuntimeStoreActions {
   analyzeActiveProjectDiagnostics: () => Promise<void>;
   createMvp11ContextPack: () => void;
   resetMvp11Diagnostics: () => void;
+  proposeRepairForDiagnostic: (diagnosticId: string) => Promise<void>;
+  previewChangeSet: (proposalId: string) => Promise<void>;
+  approveChangeSet: (changeSetId: string) => void;
+  applyChangeSet: (changeSetId: string) => Promise<void>;
+  runVerification: (changeSetId: string) => void;
+  rollbackChangeSet: (changeSetId: string) => Promise<void>;
+  discardChangeSet: (changeSetId: string) => void;
   requestBrowserPreview: (url: string, taskId: string | null, trustedRootRef?: string | null) => void;
   launchBrowserPreview: () => void;
   resetBrowser: () => void;
@@ -147,6 +198,60 @@ export function createEmptyMvp11State(): Mvp11RuntimeState {
     terminalEvidenceSummary: null,
     analysisRequested: false,
     lastError: null,
+  };
+}
+
+function createMvp12Capability(policy: TextMutationPolicy = createDefaultTextMutationPolicy()): Mvp12CapabilityStatus {
+  return {
+    enabled: false,
+    mode: "approval_required",
+    reason: "controlled_text_mutation_requires_explicit_approval",
+    approvalRequired: policy.approvalRequired,
+    allowedExtensions: [...policy.allowedExtensions],
+    blockedDirectories: [...policy.blockedDirectories],
+  };
+}
+
+export function createEmptyMvp12State(): Mvp12RuntimeState {
+  return {
+    capability: createMvp12Capability(),
+    proposals: [],
+    activeChangeSet: null,
+    applyStatus: "idle",
+    verifyStatus: "idle",
+    rollbackStatus: "idle",
+    lastError: null,
+    changedFiles: {},
+    fileMarkers: {},
+    evidenceIds: [],
+    auditFilters: { changeSetId: null, file: null, diagnosticId: null },
+  };
+}
+
+export function createMvp12FileMarkers(state: Mvp12RuntimeState): Record<string, Mvp12FileMarker[]> {
+  const markers: Record<string, Mvp12FileMarker[]> = {};
+  for (const [path, summary] of Object.entries(state.changedFiles)) {
+    const fileMarkers: Mvp12FileMarker[] = [];
+    if (summary.diagnosticCount > 0) fileMarkers.push("diagnostic");
+    if (summary.proposed) fileMarkers.push("proposed");
+    if (summary.modified) fileMarkers.push("modified");
+    if (summary.verified) fileMarkers.push("verified");
+    if (summary.rollbackAvailable) fileMarkers.push("rollback_available");
+    markers[path] = fileMarkers;
+  }
+  return markers;
+}
+
+export function refreshMvp12DerivedState(state: Mvp12RuntimeState): Mvp12RuntimeState {
+  return {
+    ...state,
+    fileMarkers: createMvp12FileMarkers(state),
+    evidenceIds: [
+      ...new Set([
+        ...state.evidenceIds,
+        ...(state.activeChangeSet?.evidenceIds ?? []),
+      ]),
+    ],
   };
 }
 
@@ -324,6 +429,7 @@ export function createRuntimeStoreState(snapshot: RuntimeSnapshot): RuntimeStore
     },
     mvp9: createEmptyMvp9State(),
     mvp11: createEmptyMvp11State(),
+    mvp12: createEmptyMvp12State(),
   };
 }
 

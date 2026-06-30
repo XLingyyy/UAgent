@@ -278,6 +278,36 @@ export type {
   ChangeSetEvent,
 } from "./change-set.js";
 export type {
+  AllowedTextMutationExtension,
+  ApplyChangeSetRequest,
+  ApplyChangeSetResult,
+  BlockedMutationReason,
+  ChangeOperationKind,
+  ChangeOperationTargetV2,
+  ChangeOperationV2,
+  ChangeRiskLevel,
+  ChangeSetStateV2,
+  Mvp12AuditEventType,
+  Mvp12EvidencePayload,
+  Mvp12TaskEventType,
+  RepairIntent,
+  RepairProposal,
+  RepairRecipe,
+  RepairSourceDiagnosticLink,
+  RollbackChangeSetRequest,
+  RollbackChangeSetResult,
+  RollbackSnapshotV2,
+  TextMutationPolicy,
+  VerificationRunResult,
+  WorkspaceChangeSetV2,
+} from "./mvp12-change-set.js";
+export {
+  CHANGE_OPERATION_KINDS,
+  CHANGE_RISK_LEVELS,
+  createDefaultTextMutationPolicy,
+  isRepairableDiagnostic,
+} from "./mvp12-change-set.js";
+export type {
   AuditEventType,
   AuditActor,
   AuditEvent,

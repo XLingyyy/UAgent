@@ -161,6 +161,7 @@ export function UtilityEvidencePanel() {
   const evidenceEvents = extractRuntimeEvidence(runtimeEvents);
   const evidenceItems = uniqueEvidenceItems(evidenceEvents);
   const mvp11 = runtime?.mvp11;
+  const mvp12 = runtime?.mvp12;
   const mvp11EvidenceItems = mvp11
     ? [
         ...(mvp11.metadata
@@ -198,6 +199,31 @@ export function UtilityEvidencePanel() {
           : []),
       ]
     : [];
+  const mvp12EvidenceItems = mvp12?.activeChangeSet
+    ? [
+        {
+          id: "mvp12-change-set",
+          status: mvp12.activeChangeSet.state,
+          summary: `ChangeSet: ${mvp12.activeChangeSet.diffSummary}`,
+          source: "change_set_v2",
+          evidenceId: mvp12.activeChangeSet.id,
+        },
+        {
+          id: "mvp12-rollback",
+          status: mvp12.activeChangeSet.rollback?.available ? "available" : "unavailable",
+          summary: `Rollback: ${mvp12.activeChangeSet.rollback?.id ?? "none"}`,
+          source: "rollback_snapshot",
+          evidenceId: mvp12.activeChangeSet.rollback?.id ?? "rollback_unavailable",
+        },
+        {
+          id: "mvp12-redaction",
+          status: mvp12.activeChangeSet.redaction.redacted ? "redacted" : "clean",
+          summary: `Redaction: ${mvp12.activeChangeSet.redaction.replacedPaths} paths / ${mvp12.activeChangeSet.redaction.replacedSecrets} secrets`,
+          source: "diff_summary",
+          evidenceId: mvp12.activeChangeSet.id,
+        },
+      ]
+    : [];
   const fallbackEvidenceItems = [
     ...reviewSummary.evidenceItems.map((item) => ({
       id: item.id,
@@ -220,8 +246,8 @@ export function UtilityEvidencePanel() {
       </div>
 
       <ul className="ua-utility-placeholder__list">
-        {mvp11EvidenceItems.length > 0
-          ? mvp11EvidenceItems.map((item) => (
+        {[...mvp12EvidenceItems, ...mvp11EvidenceItems].length > 0
+          ? [...mvp12EvidenceItems, ...mvp11EvidenceItems].map((item) => (
               <li key={item.id} className="ua-utility-placeholder__item">
                 <span className="ua-utility-placeholder__item-state">{item.status}</span>
                 <span>{item.summary}</span>

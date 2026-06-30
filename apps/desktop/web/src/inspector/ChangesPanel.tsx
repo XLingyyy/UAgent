@@ -8,6 +8,8 @@ export function ChangesPanel() {
   const changeSetEvents = events.filter((e) => e.type.startsWith("change_set_"));
   const sandboxEvents = events.filter((e) => e.type.startsWith("sandbox_"));
   const lastChangeSet = changeSetEvents[changeSetEvents.length - 1];
+  const mvp12 = runtime?.mvp12;
+  const activeChangeSet = mvp12?.activeChangeSet ?? null;
 
   return (
     <section className="ua-utility-placeholder" aria-label="Changes panel">
@@ -17,11 +19,34 @@ export function ChangesPanel() {
           <h3 className="ua-utility-placeholder__title">Changes</h3>
         </div>
         <span className="ua-utility-placeholder__state">
-          {activeTaskId ? `${changeSetEvents.length} change events` : "idle"}
+          {activeChangeSet ? activeChangeSet.state : activeTaskId ? `${changeSetEvents.length} change events` : "idle"}
         </span>
       </div>
 
       <ul className="ua-utility-placeholder__list">
+        {mvp12 && (
+          <>
+            <li className="ua-utility-placeholder__item">
+              MVP12 proposals: {mvp12.proposals.length} / apply {mvp12.applyStatus} / verify{" "}
+              {mvp12.verifyStatus} / rollback {mvp12.rollbackStatus}
+            </li>
+            {activeChangeSet && (
+              <>
+                <li className="ua-utility-placeholder__item">
+                  Active ChangeSet: {activeChangeSet.title} ({activeChangeSet.risk})
+                </li>
+                <li className="ua-utility-placeholder__item">Diff: {activeChangeSet.diffSummary}</li>
+                <li className="ua-utility-placeholder__item">
+                  Approval: {activeChangeSet.state === "approval_required" ? "Required" : activeChangeSet.state}
+                </li>
+                <li className="ua-utility-placeholder__item">
+                  Rollback: {activeChangeSet.rollback?.available ? activeChangeSet.rollback.id : "Unavailable"}
+                </li>
+              </>
+            )}
+          </>
+        )}
+
         {!activeTaskId && (
           <li className="ua-utility-placeholder__item">No active task. Submit a task to see change events.</li>
         )}

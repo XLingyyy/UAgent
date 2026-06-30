@@ -193,6 +193,24 @@ export {
   type ParseUEProjectMetadataInput,
   type ProjectDiagnosticsInput,
 } from "./ue-diagnostics.js";
+export {
+  classifyTextMutationTarget,
+  createChangeSetServiceV2,
+  createRepairProposalEngine,
+  createSha256Hash,
+  redactMvp12Text,
+  renderUnifiedDiff,
+  runMvp12ScenarioMatrix,
+  type ChangeSetServiceV2Options,
+  type DiffInput,
+  type DiffResult,
+  type Mvp12ScenarioMatrixResult,
+  type Mvp12ScenarioResult,
+  type ReplayChangeSetSummary,
+  type RepairProposalEngineInput,
+  type TextMutationTargetClassification,
+  type VerifyChangeSetInput,
+} from "./mvp12-change-set.js";
 
 export type AgentStatus = "idle" | "thinking" | "acting" | "waiting" | "finished" | "error";
 

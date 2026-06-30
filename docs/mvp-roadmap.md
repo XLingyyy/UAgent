@@ -183,6 +183,21 @@ Status: implemented
 
 Out of scope for MVP11: UE writes, automatic fixes, mutating MCP `tools/call`, provider live defaults, arbitrary shell expansion, automatic git operations, GitHub Actions/CI workflow files. MVP12 may plan controlled UE write workflows, but MVP11 does not implement them.
 
+## MVP12 - Controlled UE Text Repair Loop
+
+- **ChangeSet v2 Contracts**: Adds repair proposal, text mutation policy, operation kinds, lifecycle states, apply/rollback requests, verification results, and redacted evidence payload contracts.
+- **Policy / Diff / Redaction**: Classifies allowed UE text targets, blocks binaries/generated dirs/root escapes/stale hashes, renders unified/display diffs, and redacts raw roots, home paths, secrets, and approval tokens.
+- **Deterministic Repair Engine**: Generates deterministic proposals for Build.cs dependencies, Target.cs missing modules, missing plugin disabling, config redaction, malformed descriptors, and build-error location notes.
+- **Native Text Mutation Bridge**: Tauri commands preview/apply/rollback/status controlled text mutations with backup snapshots, atomic write, and hash-checked rollback.
+- **Runtime / Store / UI**: Desktop runtime state, ChangesPanel, DiagnosticsPanel, Settings, Evidence, and ProjectTree markers expose proposal, approval, apply, verification, rollback, and file marker state.
+- **Verification and Rollback**: Verification is user-triggered and allowlist-only; failed verification suggests rollback but does not auto-rollback.
+- **Security Regression**: Side-effect scan includes MVP12 text mutation, binary write, root containment, replay, git/install, provider live, MCP mutation, and redaction boundaries.
+- **Scenario Matrix and Smoke Docs**: Runtime matrix covers 24 scenarios / 96 assertions; manual smoke S1-S15 is documented, with native app steps left for supervisor local复核.
+
+Status: implemented
+
+Out of scope for MVP12: binary UE asset writes, generated/cache directory writes, mutating MCP, provider live defaults, automatic LLM repair, arbitrary shell expansion, automatic git operations, dependency installs, replay re-apply, and GitHub Actions/CI workflow changes.
+
 ## Non-Goals
 
 - Cloud deployment or SaaS platform

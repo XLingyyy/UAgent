@@ -106,6 +106,9 @@ export function LeftSidebar() {
   const diagnosticCounts = Object.fromEntries(
     Object.entries(runtime.mvp11.affectedFiles).map(([path, summary]) => [path, summary.total]),
   );
+  for (const [path, markers] of Object.entries(runtime.mvp12.fileMarkers)) {
+    diagnosticCounts[path] = (diagnosticCounts[path] ?? 0) + markers.length;
+  }
   const canScanRegisteredProject = Boolean(
     registeredProject && registeredProject.trustState === "trusted",
   );

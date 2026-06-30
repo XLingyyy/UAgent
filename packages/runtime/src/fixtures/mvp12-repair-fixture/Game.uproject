@@ -1,0 +1,19 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.8",
+  "Category": "Games",
+  "Description": "MVP12 controlled repair fixture",
+  "Modules": [
+    {
+      "Name": "Game",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    }
+  ],
+  "Plugins": [
+    {
+      "Name": "MissingPlugin",
+      "Enabled": true
+    }
+  ]
+}

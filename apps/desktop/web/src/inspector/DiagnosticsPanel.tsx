@@ -3,7 +3,7 @@ import { InspectorSummaryCard } from "./InspectorSummaryCard";
 import { diagnosticSummary } from "./inspector-data";
 import { extractRuntimeDiagnostics } from "../runtime/event-view-models";
 import type { RuntimeStoreState } from "../runtime/runtime-store";
-import { useOptionalRuntimeStore } from "../stores/ui-store";
+import { useOptionalRuntimeStore, useOptionalRuntimeActions } from "../stores/ui-store";
 import "./DiagnosticsPanel.css";
 
 const TONE_LABEL_CLASS: Record<string, string> = {
@@ -61,6 +61,7 @@ export function DiagnosticsPanel() {
   const runtimeEvents = activeTaskId ? (runtime?.eventsByTaskId[activeTaskId] ?? []) : [];
   const diagnostics = uniqueDiagnostics(extractRuntimeDiagnostics(runtimeEvents));
   const mvp11 = runtime?.mvp11;
+  const actions = useOptionalRuntimeActions();
 
   if (hasMvp11State(runtime) && mvp11) {
     const affectedFiles = Object.values(mvp11.affectedFiles).sort((left, right) =>
@@ -108,6 +109,37 @@ export function DiagnosticsPanel() {
               </div>
             </div>
           ))}
+          {[...mvp11.projectDiagnostics, ...mvp11.mcpDiagnostics, ...(mvp11.buildAnalysis?.diagnostics ?? [])]
+            .filter((diagnostic) =>
+              [
+                "suspicious_build_dependency",
+                "target_missing_module",
+                "plugin_descriptor_missing",
+                "config_secret_redacted",
+                "malformed_descriptor",
+                "compiler_error",
+              ].includes(diagnostic.kind),
+            )
+            .slice(0, 6)
+            .map((diagnostic) => (
+              <div key={`repair-${diagnostic.id}`} className="ua-diagnostics-item" aria-label={`Repair ${diagnostic.id}`}>
+                <div className="ua-diagnostics-item__header">
+                  <span className="ua-diagnostics-item__label">
+                    {"title" in diagnostic ? diagnostic.title : diagnostic.message}
+                  </span>
+                  <button
+                    className="ua-diagnostics-item__state ua-diagnostics-item__state--accent"
+                    type="button"
+                    onClick={() => actions?.proposeRepairForDiagnostic(diagnostic.id)}
+                  >
+                    Propose fix
+                  </button>
+                </div>
+                <p className="ua-diagnostics-item__description">
+                  {diagnostic.displayPath ?? "No affected file"} · {diagnostic.kind}
+                </p>
+              </div>
+            ))}
         </div>
 
         <h3 className="ua-diagnostics-panel__section-title">Affected files</h3>

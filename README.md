@@ -2,18 +2,18 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP11 UE Read-only Diagnostics & Build Failure Analysis (Implemented)
+## Current Stage: MVP12 Controlled UE Text Repair Loop (Implemented)
 
-MVP10 final acceptance is complete. MVP11 adds read-only UE diagnostics and build failure analysis while preserving all MVP10 approval, feature-gate, redaction, and replay boundaries. Current MVP11 implementation includes:
+MVP11 final acceptance is complete. MVP12 adds an approval-gated text repair loop for UE-like project files while preserving MVP10/MVP11 approval, feature-gate, redaction, and replay boundaries. Current MVP12 implementation includes:
 
-1. **UE Metadata Parser**: Read-only `.uproject`, `.uplugin`, Target.cs, Build.cs, and Config INI summaries with malformed-file diagnostics and redaction.
-2. **Project Diagnostics Engine**: Missing modules/plugins, target/module mismatches, suspicious dependencies, redacted config keys, binary preview blocks, and permission-denied diagnostics.
-3. **Build Failure Parser**: Recorded terminal output analysis for common build tools with bounded summaries and path/secret redaction.
-4. **MCP Read-only Diagnostics**: Discovery and `resources/read` observations only; mutating tools remain blocked as policy diagnostics.
-5. **Context Pack v1**: Local in-memory redacted project overview, diagnostics, build failures, important files, MCP observations, and safety boundaries.
-6. **UI / Audit / Replay**: Existing panels and slice stores show diagnostic summaries; replay displays recorded summaries only.
+1. **ChangeSet v2 Contracts**: Repair proposals, operation kinds, lifecycle states, risk levels, apply/rollback requests, verification results, and redacted evidence payloads.
+2. **Text Mutation Policy**: Allowed UE text extensions, generated-dir/binary/root-escape/stale-hash blocking, unified diff rendering, and content redaction.
+3. **Deterministic Repair Engine**: Recipes for Build.cs dependencies, Target.cs modules, plugin disabling, config redaction, malformed descriptors, and build-error location.
+4. **Native Text Mutation Bridge**: Tauri preview/apply/rollback/status commands with backup snapshots and hash-checked rollback.
+5. **Desktop UI / Store**: Changes, Diagnostics, Settings, Evidence, and ProjectTree surfaces show proposals, approval state, verification, rollback availability, and file markers.
+6. **Scenario Matrix / Side-effect Scan / Docs**: MVP12 scenario matrix, UE-like fixture, manual smoke docs, and side-effect scan categories for mutation boundaries.
 
-All real capabilities remain default disabled behind feature gates. Approval/Sandbox/Audit/Session/Redaction boundaries remain non-negotiable. Provider live remains manual opt-in. UE writes, mutating MCP, automatic fixes, arbitrary shell expansion, automatic git operations, and GitHub Actions/CI workflow files remain non-goals for MVP11.
+Controlled text writes remain approval-gated and limited to trusted fixture/temp roots or explicitly trusted project roots. Binary UE assets, generated directories, arbitrary shell expansion, mutating MCP, provider live defaults, automatic git operations, replay re-apply, and raw secret/path leakage remain blocked.
 
 ## Technology Stack
 
@@ -103,6 +103,12 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 - [MVP11 Acceptance](docs/mvp11-acceptance.md)
 - [MVP11 Manual Smoke](docs/mvp11-manual-smoke.md)
 - [MVP11 Final Handoff](docs/mvp11-final-handoff.md)
+- [MVP12 Prep](docs/mvp12-prep.md)
+- [MVP12 Acceptance](docs/mvp12-acceptance.md)
+- [MVP12 Manual Smoke](docs/mvp12-manual-smoke.md)
+- [MVP12 Risk Register](docs/mvp12-risk-register.md)
+- [MVP12 Final Verification](docs/mvp12-final-verification.md)
+- [MVP12 Final Handoff](docs/mvp12-final-handoff.md)
 - [Baseline Freeze](docs/mvp5-baseline-freeze.md)
 - [Development Guide](docs/development.md)
 

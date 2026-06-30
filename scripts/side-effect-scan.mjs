@@ -565,6 +565,166 @@ const CATEGORIES = [
       (rel) => /packages\/runtime\/src\/ue-diagnostics/.test(rel),
     ],
   },
+  {
+    id: "mvp12-text-mutation-boundary",
+    title: "MVP12 Text Mutation Boundary",
+    description: "Controlled text mutation must stay in shared/runtime services, desktop runtime adapters, native bridge, docs, and tests",
+    patterns: [
+      { re: /apply_workspace_change|rollback_workspace_change|preview_workspace_change/gi, label: "native text mutation command" },
+      { re: /applyChangeSet|rollbackChangeSet|previewChangeSet/gi, label: "change set UI action" },
+      { re: /TextMutation|WorkspaceChangeSetV2|ChangeSetServiceV2/gi, label: "MVP12 text mutation type/service" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/(shared|runtime)\/src\//.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/(runtime|stores)\//.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp12-binary-write-boundary",
+    title: "MVP12 Binary Write Boundary",
+    description: "Binary UE assets and executable/generated artifacts must remain blocked from text mutation",
+    patterns: [
+      { re: /\.uasset|\.umap|\.ubulk|\.uexp|\.dll|\.exe/gi, label: "blocked binary extension" },
+      { re: /blocked_binary/gi, label: "blocked_binary reason" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/(shared|runtime)\/src\//.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/sidebar\/project-tree-data/.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp12-root-containment-boundary",
+    title: "MVP12 Root Containment Boundary",
+    description: "Text mutation targets must check trusted root containment and stale hashes",
+    patterns: [
+      { re: /root_escape|stale_hash|trustedRootId|rootRelativePath/gi, label: "root containment or hash guard" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/(shared|runtime)\/src\//.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/(runtime|stores|sidebar)\//.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/inspector\/TerminalPanel/.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp12-replay-reapply-boundary",
+    title: "MVP12 Replay Reapply Boundary",
+    description: "Session replay may show recorded summaries only and must not reapply preview/apply/rollback",
+    patterns: [
+      { re: /recordedOnlyActions|replaySafe|session_replay_never_reapplies/gi, label: "recorded-only replay marker" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/runtime\/src\//.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp12-no-auto-git-or-install",
+    title: "MVP12 No Auto Git Or Install",
+    description: "MVP12 repair and verification must not auto-install, auto-fix, commit, push, reset, checkout, clean, or create CI",
+    patterns: [
+      { re: /git\s+(commit|push|reset|checkout|clean)/gi, label: "git write command" },
+      { re: /npm\s+install|pnpm\s+install|--fix/gi, label: "install or --fix" },
+      { re: /\.github\/workflows/gi, label: "GitHub workflow path" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp10-terminal-policy/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp10-build-templates/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\//.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp12-change-set/.test(rel),
+    ],
+  },
+  {
+    id: "mvp12-provider-live-boundary",
+    title: "MVP12 Provider Live Boundary",
+    description: "Repair proposals must be deterministic and must not call live providers by default",
+    patterns: [
+      { re: /networkMode\s*:\s*["']live["']|fetch\s*\(|ProviderRunner|runProvider/gi, label: "provider live path" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/runtime\/src\/provider\//.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /packages\/runtime\/src\/mvp12-change-set/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp12-mcp-mutation-boundary",
+    title: "MVP12 MCP Mutation Boundary",
+    description: "MCP remains read-only diagnostic context; mutating tools/call must not be introduced for repair apply",
+    patterns: [
+      { re: /tools\/call|callTool\s*\(/gi, label: "MCP tool call" },
+      { re: /mutating MCP|mutating_tool/gi, label: "mutating MCP marker" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/(mcp-client|runtime)\/src\/(mcp-readonly|ue-diagnostics|runtime-router|agent-loop-runtime)/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/runtime\/desktop-runtime-adapter/.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /packages\/runtime\/src\/mvp12-change-set/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp12-redaction-boundary",
+    title: "MVP12 Redaction Boundary",
+    description: "Diff, evidence, audit, session, and status payloads must redact raw roots, home paths, secrets, and approval tokens",
+    patterns: [
+      { re: /[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s"'`]+/g, label: "Windows home path" },
+      { re: /\/Users\/[^/\s"'`]+/g, label: "macOS home path" },
+      { re: /\/home\/[^/\s"'`]+/g, label: "Linux home path" },
+      { re: /Bearer\s+[A-Za-z0-9._-]+|sk-[A-Za-z0-9][A-Za-z0-9._-]{7,}/g, label: "secret literal" },
+      { re: /approval-token:[A-Za-z0-9._-]+/g, label: "approval token literal" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/(shared|runtime)\/src\//.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
 ];
 
 // ============================================================

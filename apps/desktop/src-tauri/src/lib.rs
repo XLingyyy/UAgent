@@ -1,6 +1,7 @@
 pub(crate) mod browser;
 pub(crate) mod screenshot;
 pub(crate) mod terminal;
+pub(crate) mod text_mutation;
 pub(crate) mod watcher;
 
 use serde::{Deserialize, Serialize};
@@ -1314,6 +1315,11 @@ pub fn run() {
             watcher::stop_watcher,
             watcher::read_watcher_diff,
             watcher::get_watcher_session,
+            text_mutation::mutation_capability_status,
+            text_mutation::preview_workspace_change,
+            text_mutation::apply_workspace_change,
+            text_mutation::rollback_workspace_change,
+            text_mutation::get_change_set_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

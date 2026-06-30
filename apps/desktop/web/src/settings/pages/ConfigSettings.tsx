@@ -353,6 +353,7 @@ function ConfigPathDisplay() {
 
 function DiagnosticsDisplay() {
   const mvp11 = useRuntimeStore((state) => state.mvp11);
+  const mvp12 = useRuntimeStore((state) => state.mvp12);
   const mcp = useRuntimeStore((state) => state.mcp);
   const diagnosticCounts = `${mvp11.diagnosticCounts.error} ${
     mvp11.diagnosticCounts.error === 1 ? "error" : "errors"
@@ -372,7 +373,21 @@ function DiagnosticsDisplay() {
       </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Mode</span>
-        <span className="ua-settings-page__static-value">Read-only diagnostics</span>
+        <span className="ua-settings-page__static-value">Read-only diagnostics + controlled text mutation</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Text Mutation</span>
+        <span className="ua-settings-page__static-value ua-settings-page__static-value--accent">
+          {mvp12.capability.mode} / approval {mvp12.capability.approvalRequired ? "required" : "not required"}
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Allowed extensions</span>
+        <span className="ua-settings-page__static-value">{mvp12.capability.allowedExtensions.join(", ")}</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Blocked dirs</span>
+        <span className="ua-settings-page__static-value">{mvp12.capability.blockedDirectories.join(", ")}</span>
       </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">MVP11 status</span>

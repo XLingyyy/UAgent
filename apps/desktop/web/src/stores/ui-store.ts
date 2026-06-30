@@ -1,9 +1,11 @@
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
 import {
   createContextPackV1,
+  createRepairProposalEngine,
   createUEProjectDiagnosticsEngine,
   parseUEProjectMetadata,
 } from "@uagent/runtime";
+import type { ChangeOperationV2, ProjectDiagnostic, WorkspaceChangeSetV2 } from "@uagent/shared";
 import { createNativeProjectAdapter } from "../runtime/project-native-adapter";
 import { getDefaultModelSelection } from "../composer/composer-data";
 import { cloneProviderConfig } from "../provider/provider-data";
@@ -29,6 +31,7 @@ import {
   createEmptyMvp11State,
   createRuntimeStoreState,
   refreshMvp11DerivedState,
+  refreshMvp12DerivedState,
   type RuntimeStoreActions,
   type RuntimeStoreState,
 } from "../runtime/runtime-store";
@@ -36,6 +39,11 @@ import {
   createDesktopRuntimeAdapter,
   type DesktopRuntimeAdapter,
 } from "../runtime/desktop-runtime-adapter";
+import type {
+  NativeApplyTextMutationOperation,
+  NativeBoundChangeSetApproval,
+  NativePreviewedTextMutationOperation,
+} from "../runtime/text-mutation-native-adapter";
 import { createInitialComposerState, createDefaultComposerState } from "./composer-store";
 import { createInitialLayoutState } from "./layout-store";
 import { createInitialProjectState } from "./project-store";
@@ -59,6 +67,95 @@ function buildMcpObservations(runtimeState: RuntimeStoreState) {
       createdAt: Date.now(),
     },
   ];
+}
+
+function isMvp12PreviewableTextPath(rootRelativePath: string): boolean {
+  const lower = rootRelativePath.toLowerCase();
+  return (
+    lower.endsWith(".ini") ||
+    lower.endsWith(".build.cs") ||
+    lower.endsWith(".target.cs") ||
+    lower.endsWith(".cs") ||
+    lower.endsWith(".cpp") ||
+    lower.endsWith(".h") ||
+    lower.endsWith(".hpp") ||
+    lower.endsWith(".uproject") ||
+    lower.endsWith(".uplugin")
+  );
+}
+
+function stripProjectRoot(displayPath: string | null | undefined): string | null {
+  if (!displayPath) return null;
+  return displayPath.replace(/^\[project-root\]\//, "");
+}
+
+function getMvp12OperationAfterContent(operation: ChangeOperationV2): string | null {
+  const symbol = Object.getOwnPropertySymbols(operation).find((item) => String(item) === "Symbol(mvp12.operation.afterContent)");
+  if (!symbol) return null;
+  const value = (operation as unknown as Record<symbol, unknown>)[symbol];
+  return typeof value === "string" ? value : null;
+}
+
+function copyMvp12OperationAfterContent(source: ChangeOperationV2, target: ChangeOperationV2): ChangeOperationV2 {
+  const symbol = Object.getOwnPropertySymbols(source).find((item) => String(item) === "Symbol(mvp12.operation.afterContent)");
+  const afterContent = getMvp12OperationAfterContent(source);
+  if (symbol && afterContent !== null) {
+    Object.defineProperty(target, symbol, {
+      configurable: false,
+      enumerable: false,
+      value: afterContent,
+      writable: false,
+    });
+  }
+  return target;
+}
+
+function bindOperationToNativePreview(
+  operation: ChangeOperationV2,
+  preview: NativePreviewedTextMutationOperation | undefined,
+): ChangeOperationV2 {
+  if (!preview) return operation;
+  return copyMvp12OperationAfterContent(operation, {
+    ...operation,
+    target: {
+      ...operation.target,
+      rootRelativePath: preview.rootRelativePath,
+      displayPath: preview.displayPath,
+    },
+    beforeHash: preview.beforeHash,
+    afterHash: preview.afterHash,
+    unifiedDiff: preview.unifiedDiff,
+    displayDiff: preview.unifiedDiff,
+  });
+}
+
+function createBoundMvp12Approval(changeSet: WorkspaceChangeSetV2): NativeBoundChangeSetApproval {
+  const approvedAt = Date.now();
+  return {
+    token: `approval-token:${changeSet.id}:${approvedAt}`,
+    changeSetId: changeSet.id,
+    operationIds: changeSet.operations.map((operation) => operation.id),
+    beforeHashes: Object.fromEntries(changeSet.operations.map((operation) => [operation.id, operation.beforeHash])),
+    afterHashes: Object.fromEntries(changeSet.operations.map((operation) => [operation.id, operation.afterHash])),
+    actor: "desktop-user",
+    reason: "Approved controlled MVP12 text repair from desktop action.",
+    approvedAt,
+    expiresAt: approvedAt + 10 * 60 * 1000,
+  };
+}
+
+function toNativeApplyOperation(operation: ChangeOperationV2): NativeApplyTextMutationOperation | null {
+  const afterContent = getMvp12OperationAfterContent(operation);
+  if (afterContent === null) return null;
+  return {
+    operationId: operation.id,
+    rootRelativePath: operation.target.rootRelativePath,
+    displayPath: operation.target.displayPath,
+    beforeHash: operation.beforeHash,
+    afterHash: operation.afterHash,
+    unifiedDiff: operation.unifiedDiff,
+    afterContent,
+  };
 }
 
 interface UIStoreBundle {
@@ -97,6 +194,7 @@ function createUIStateBundle(
     mvp9: runtimeClient.getMvp9().getState(),
     ...initialState?.runtime,
   });
+  const mvp12ApprovalByChangeSetId = new Map<string, NativeBoundChangeSetApproval>();
 
   runtimeClient.subscribe((snapshot) => {
     runtimeStore.setState((previousState) => ({
@@ -644,6 +742,363 @@ function createUIStateBundle(
         ...previousState,
         mvp11: createEmptyMvp11State(),
       }));
+    },
+    proposeRepairForDiagnostic: async (diagnosticId) => {
+      const project = projectStore.getState();
+      const snapshot = project.activeProjectIndex;
+      const activeProject =
+        project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
+        project.registeredProjects.find((item) => item.indexStatus === "ready");
+      const runtime = runtimeStore.getState();
+      const diagnostic = [...runtime.mvp11.projectDiagnostics, ...(runtime.mvp11.buildAnalysis?.diagnostics ?? [])]
+        .find((item) => item.id === diagnosticId);
+      if (!snapshot || !activeProject || !diagnostic) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: { ...previousState.mvp12, lastError: "mvp12_requires_active_project_index_and_diagnostic" },
+        }));
+        return;
+      }
+      const directPath = stripProjectRoot(diagnostic.displayPath);
+      const previewPaths = [
+        ...new Set([
+          ...(directPath ? [directPath] : []),
+          ...snapshot.files
+            .filter((file) => isMvp12PreviewableTextPath(file.rootRelativePath))
+            .map((file) => file.rootRelativePath),
+        ]),
+      ];
+      const files: Record<string, string> = {};
+      await Promise.all(
+        previewPaths.map(async (rootRelativePath) => {
+          const preview = await projectAdapter.previewFile(
+            activeProject.id,
+            activeProject.rootRef,
+            rootRelativePath,
+            64 * 1024,
+            2_000,
+          );
+          if (preview.status === "ready" || preview.status === "truncated") {
+            files[rootRelativePath] = preview.content;
+          }
+        }),
+      );
+      const proposals = createRepairProposalEngine().propose({
+        diagnostics: [diagnostic as ProjectDiagnostic],
+        files,
+        projectId: activeProject.id,
+        rootId: activeProject.id,
+        createdAt: Date.now(),
+      });
+      const changedFiles = { ...runtimeStore.getState().mvp12.changedFiles };
+      for (const proposal of proposals) {
+        for (const operation of proposal.operations) {
+          changedFiles[operation.target.displayPath] = {
+            path: operation.target.displayPath,
+            diagnosticCount: 1,
+            proposed: true,
+            modified: false,
+            verified: false,
+            rollbackAvailable: false,
+          };
+        }
+      }
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp12: refreshMvp12DerivedState({
+          ...previousState.mvp12,
+          proposals: [...previousState.mvp12.proposals.filter((proposal) => proposal.diagnosticId !== diagnosticId), ...proposals],
+          changedFiles,
+          lastError: proposals.some((proposal) => proposal.operations.length > 0) ? null : "no_concrete_repair_operations",
+        }),
+      }));
+    },
+    previewChangeSet: async (proposalId) => {
+      const adapter = runtimeClient.getTextMutationAdapter();
+      if (!adapter) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: refreshMvp12DerivedState({
+            ...previousState.mvp12,
+            activeChangeSet: null,
+            applyStatus: "blocked",
+            capability: { ...previousState.mvp12.capability, enabled: false, mode: "disabled", reason: "native_text_mutation_unavailable" },
+            lastError: "native_text_mutation_unavailable",
+          }),
+        }));
+        return;
+      }
+      const project = projectStore.getState();
+      const activeProject =
+        project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
+        project.registeredProjects.find((item) => item.indexStatus === "ready");
+      const proposal = runtimeStore.getState().mvp12.proposals.find((item) => item.id === proposalId);
+      if (!proposal || !activeProject) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: { ...previousState.mvp12, lastError: proposal ? "unknown_project" : "unknown_proposal" },
+        }));
+        return;
+      }
+      const nativeOperations = proposal.operations.map((operation) => ({
+        operationId: operation.id,
+        rootRelativePath: operation.target.rootRelativePath,
+        beforeHash: operation.beforeHash,
+        afterContent: getMvp12OperationAfterContent(operation) ?? "",
+      }));
+      if (nativeOperations.some((operation) => !operation.afterContent)) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: { ...previousState.mvp12, applyStatus: "blocked", lastError: "missing_internal_after_content" },
+        }));
+        return;
+      }
+      const capability = await adapter.capabilityStatus();
+      if (!capability.enabled) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: refreshMvp12DerivedState({
+            ...previousState.mvp12,
+            activeChangeSet: null,
+            capability,
+            applyStatus: "blocked",
+            lastError: capability.reason || "native_text_mutation_disabled",
+          }),
+        }));
+        return;
+      }
+      const changeSetId = `changeset:${proposalId.replace(/^proposal:/, "")}`;
+      const preview = await adapter.preview({
+        changeSetId,
+        rootRef: activeProject.rootRef,
+        operations: nativeOperations,
+      });
+      if (preview.status !== "previewed") {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: refreshMvp12DerivedState({
+            ...previousState.mvp12,
+            capability,
+            applyStatus: "blocked",
+            lastError: preview.reason,
+          }),
+        }));
+        return;
+      }
+      const changedFiles = { ...runtimeStore.getState().mvp12.changedFiles };
+      for (const operation of proposal.operations) {
+        changedFiles[operation.target.displayPath] = {
+          path: operation.target.displayPath,
+          diagnosticCount: operation.sourceDiagnosticIds.length,
+          proposed: true,
+          modified: false,
+          verified: false,
+          rollbackAvailable: false,
+        };
+      }
+      const previewByOperationId = new Map(preview.operations.map((operation) => [operation.operationId, operation]));
+      const previewBoundOperations = proposal.operations.map((operation) =>
+        bindOperationToNativePreview(operation, previewByOperationId.get(operation.id)),
+      );
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp12: refreshMvp12DerivedState({
+          ...previousState.mvp12,
+          capability,
+          activeChangeSet: {
+            id: preview.changeSetId,
+            projectId: activeProject.id,
+            state: "approval_required",
+            title: proposal.title,
+            operations: previewBoundOperations,
+            proposalIds: [proposal.id],
+            risk: proposal.risk,
+            diffSummary: preview.diffSummary,
+            rollback: null,
+            evidenceIds: [],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            redaction: { redacted: true, replacedPaths: 1, replacedSecrets: 0 },
+          },
+          changedFiles,
+          lastError: null,
+        }),
+      }));
+    },
+    approveChangeSet: (changeSetId) => {
+      runtimeStore.setState((previousState) => {
+        if (previousState.mvp12.activeChangeSet?.id !== changeSetId) return previousState;
+        const approval = createBoundMvp12Approval(previousState.mvp12.activeChangeSet);
+        mvp12ApprovalByChangeSetId.set(changeSetId, approval);
+        return {
+          ...previousState,
+          mvp12: refreshMvp12DerivedState({
+            ...previousState.mvp12,
+            activeChangeSet: { ...previousState.mvp12.activeChangeSet, state: "approved", updatedAt: Date.now() },
+          }),
+        };
+      });
+    },
+    applyChangeSet: async (changeSetId) => {
+      const adapter = runtimeClient.getTextMutationAdapter();
+      const state = runtimeStore.getState();
+      const changeSet = state.mvp12.activeChangeSet;
+      const approval = mvp12ApprovalByChangeSetId.get(changeSetId);
+      const project = projectStore.getState();
+      const activeProject =
+        project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
+        project.registeredProjects.find((item) => item.indexStatus === "ready");
+      if (!adapter || !changeSet || changeSet.id !== changeSetId || !approval || !activeProject) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: refreshMvp12DerivedState({
+            ...previousState.mvp12,
+            applyStatus: "blocked",
+            lastError: !adapter ? "native_text_mutation_unavailable" : "approval_or_change_set_missing",
+          }),
+        }));
+        return;
+      }
+      const operations = changeSet.operations.map(toNativeApplyOperation);
+      if (operations.some((operation) => operation === null)) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: { ...previousState.mvp12, applyStatus: "blocked", lastError: "missing_internal_after_content" },
+        }));
+        return;
+      }
+      const result = await adapter.apply({
+        changeSetId,
+        approval,
+        rootRef: activeProject.rootRef,
+        operations: operations as NativeApplyTextMutationOperation[],
+      });
+      if (result.status !== "applied") {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: { ...previousState.mvp12, applyStatus: "blocked", lastError: result.reason },
+        }));
+        return;
+      }
+      runtimeStore.setState((previousState) => {
+        const currentChangeSet = previousState.mvp12.activeChangeSet;
+        if (currentChangeSet?.id !== changeSetId) return previousState;
+        const changedFiles = { ...previousState.mvp12.changedFiles };
+        for (const operation of currentChangeSet.operations) {
+          changedFiles[operation.target.displayPath] = {
+            ...(changedFiles[operation.target.displayPath] ?? {
+              path: operation.target.displayPath,
+              diagnosticCount: operation.sourceDiagnosticIds.length,
+              proposed: true,
+            }),
+            modified: true,
+            verified: false,
+            rollbackAvailable: true,
+          };
+        }
+        return {
+          ...previousState,
+          mvp12: refreshMvp12DerivedState({
+            ...previousState.mvp12,
+            applyStatus: "completed",
+            activeChangeSet: {
+              ...currentChangeSet,
+              state: "rollback_available",
+              rollback: {
+                id: result.backupId ?? `rollback:${currentChangeSet.id}`,
+                available: true,
+                beforeHashes: Object.fromEntries(currentChangeSet.operations.map((operation) => [operation.id, operation.beforeHash])),
+                appliedHashes: result.afterHashes,
+                createdAt: Date.now(),
+              },
+              evidenceIds: [...currentChangeSet.evidenceIds, `evidence:${currentChangeSet.id}:apply`],
+              updatedAt: Date.now(),
+            },
+            changedFiles,
+            lastError: null,
+          }),
+        };
+      });
+    },
+    runVerification: (changeSetId) => {
+      runtimeStore.setState((previousState) => {
+        const changeSet = previousState.mvp12.activeChangeSet;
+        if (changeSet?.id !== changeSetId) return previousState;
+        const changedFiles = Object.fromEntries(
+          Object.entries(previousState.mvp12.changedFiles).map(([path, summary]) => [path, { ...summary, verified: true }]),
+        );
+        return {
+          ...previousState,
+          mvp12: refreshMvp12DerivedState({
+            ...previousState.mvp12,
+            verifyStatus: "completed",
+            activeChangeSet: { ...changeSet, state: "verified", updatedAt: Date.now() },
+            changedFiles,
+          }),
+        };
+      });
+    },
+    rollbackChangeSet: async (changeSetId) => {
+      const adapter = runtimeClient.getTextMutationAdapter();
+      const state = runtimeStore.getState();
+      const changeSet = state.mvp12.activeChangeSet;
+      const project = projectStore.getState();
+      const activeProject =
+        project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
+        project.registeredProjects.find((item) => item.indexStatus === "ready");
+      if (!adapter || !changeSet?.rollback?.id || changeSet.id !== changeSetId || !activeProject) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: { ...previousState.mvp12, rollbackStatus: "blocked", lastError: "rollback_unavailable" },
+        }));
+        return;
+      }
+      const result = await adapter.rollback({
+        changeSetId,
+        rootRef: activeProject.rootRef,
+        backupId: changeSet.rollback.id,
+        expectedCurrentHashes: changeSet.rollback.appliedHashes,
+      });
+      if (result.status !== "rolled_back") {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: { ...previousState.mvp12, rollbackStatus: "blocked", lastError: result.reason },
+        }));
+        return;
+      }
+      runtimeStore.setState((previousState) => {
+        const currentChangeSet = previousState.mvp12.activeChangeSet;
+        if (currentChangeSet?.id !== changeSetId) return previousState;
+        const changedFiles = Object.fromEntries(
+          Object.entries(previousState.mvp12.changedFiles).map(([path, summary]) => [
+            path,
+            { ...summary, modified: false, verified: false, rollbackAvailable: false },
+          ]),
+        );
+        return {
+          ...previousState,
+          mvp12: refreshMvp12DerivedState({
+            ...previousState.mvp12,
+            rollbackStatus: "completed",
+            activeChangeSet: { ...currentChangeSet, state: "rolled_back", updatedAt: Date.now() },
+            changedFiles,
+            lastError: null,
+          }),
+        };
+      });
+    },
+    discardChangeSet: (changeSetId) => {
+      runtimeStore.setState((previousState) => {
+        const changeSet = previousState.mvp12.activeChangeSet;
+        if (changeSet?.id !== changeSetId) return previousState;
+        return {
+          ...previousState,
+          mvp12: refreshMvp12DerivedState({
+            ...previousState.mvp12,
+            activeChangeSet: { ...changeSet, state: "discarded", updatedAt: Date.now() },
+          }),
+        };
+      });
     },
     requestBrowserPreview: (url, taskId, trustedRootRef) => {
       runtimeClient.getMvp9().browser.requestPreview(url, taskId, trustedRootRef);
