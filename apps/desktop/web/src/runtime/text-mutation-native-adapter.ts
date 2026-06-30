@@ -57,6 +57,13 @@ export interface NativeApplyTextMutationResult {
   afterHashes: Record<string, string>;
 }
 
+export interface NativeApproveTextMutationResult {
+  changeSetId: string;
+  status: "approved" | "blocked";
+  reason: string;
+  approval: NativeBoundChangeSetApproval | null;
+}
+
 export interface NativeRollbackTextMutationResult {
   changeSetId: string;
   status: "rolled_back" | "blocked";
@@ -71,6 +78,13 @@ export interface NativeTextMutationAdapter {
     rootRef: string;
     operations: NativeTextMutationOperation[];
   }): Promise<NativePreviewTextMutationResult>;
+  approve(input: {
+    changeSetId: string;
+    rootRef: string;
+    actor: string;
+    reason: string;
+    expiresInMillis?: number;
+  }): Promise<NativeApproveTextMutationResult>;
   apply(input: {
     changeSetId: string;
     approval: NativeBoundChangeSetApproval;
@@ -142,6 +156,17 @@ export function createDesktopTextMutationAdapterFromEnvironment(
           changeSetId: input.changeSetId,
           rootRef: input.rootRef,
           operations: input.operations.map(snakeOperation),
+        },
+      });
+    },
+    approve(input) {
+      return invoke("approve_workspace_change", {
+        input: {
+          changeSetId: input.changeSetId,
+          rootRef: input.rootRef,
+          actor: input.actor,
+          reason: input.reason,
+          expiresInMillis: input.expiresInMillis,
         },
       });
     },

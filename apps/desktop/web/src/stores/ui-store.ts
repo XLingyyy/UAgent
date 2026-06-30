@@ -5,7 +5,7 @@ import {
   createUEProjectDiagnosticsEngine,
   parseUEProjectMetadata,
 } from "@uagent/runtime";
-import type { ChangeOperationV2, ProjectDiagnostic, WorkspaceChangeSetV2 } from "@uagent/shared";
+import type { ChangeOperationV2, ProjectDiagnostic } from "@uagent/shared";
 import { createNativeProjectAdapter } from "../runtime/project-native-adapter";
 import { getDefaultModelSelection } from "../composer/composer-data";
 import { cloneProviderConfig } from "../provider/provider-data";
@@ -127,21 +127,6 @@ function bindOperationToNativePreview(
     unifiedDiff: preview.unifiedDiff,
     displayDiff: preview.unifiedDiff,
   });
-}
-
-function createBoundMvp12Approval(changeSet: WorkspaceChangeSetV2): NativeBoundChangeSetApproval {
-  const approvedAt = Date.now();
-  return {
-    token: `approval-token:${changeSet.id}:${approvedAt}`,
-    changeSetId: changeSet.id,
-    operationIds: changeSet.operations.map((operation) => operation.id),
-    beforeHashes: Object.fromEntries(changeSet.operations.map((operation) => [operation.id, operation.beforeHash])),
-    afterHashes: Object.fromEntries(changeSet.operations.map((operation) => [operation.id, operation.afterHash])),
-    actor: "desktop-user",
-    reason: "Approved controlled MVP12 text repair from desktop action.",
-    approvedAt,
-    expiresAt: approvedAt + 10 * 60 * 1000,
-  };
 }
 
 function toNativeApplyOperation(operation: ChangeOperationV2): NativeApplyTextMutationOperation | null {
@@ -925,16 +910,50 @@ function createUIStateBundle(
         }),
       }));
     },
-    approveChangeSet: (changeSetId) => {
+    approveChangeSet: async (changeSetId) => {
+      const adapter = runtimeClient.getTextMutationAdapter();
+      const changeSet = runtimeStore.getState().mvp12.activeChangeSet;
+      const project = projectStore.getState();
+      const activeProject =
+        project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
+        project.registeredProjects.find((item) => item.indexStatus === "ready");
+      if (!adapter || !changeSet || changeSet.id !== changeSetId || !activeProject) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: refreshMvp12DerivedState({
+            ...previousState.mvp12,
+            applyStatus: "blocked",
+            lastError: !adapter ? "native_text_mutation_unavailable" : "approval_or_change_set_missing",
+          }),
+        }));
+        return;
+      }
+      const result = await adapter.approve({
+        changeSetId,
+        rootRef: activeProject.rootRef,
+        actor: "desktop-user",
+        reason: "Approved controlled MVP12 text repair from desktop action.",
+      });
+      if (result.status !== "approved" || !result.approval) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp12: refreshMvp12DerivedState({
+            ...previousState.mvp12,
+            applyStatus: "blocked",
+            lastError: result.reason,
+          }),
+        }));
+        return;
+      }
+      mvp12ApprovalByChangeSetId.set(changeSetId, result.approval);
       runtimeStore.setState((previousState) => {
         if (previousState.mvp12.activeChangeSet?.id !== changeSetId) return previousState;
-        const approval = createBoundMvp12Approval(previousState.mvp12.activeChangeSet);
-        mvp12ApprovalByChangeSetId.set(changeSetId, approval);
         return {
           ...previousState,
           mvp12: refreshMvp12DerivedState({
             ...previousState.mvp12,
             activeChangeSet: { ...previousState.mvp12.activeChangeSet, state: "approved", updatedAt: Date.now() },
+            lastError: null,
           }),
         };
       });

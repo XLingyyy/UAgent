@@ -204,7 +204,8 @@ describe("MVP12 desktop runtime store helpers", () => {
         };
       }
       if (command === "apply_workspace_change") {
-        const input = (payload as { input: { changeSetId: string; approval: { afterHashes: Record<string, string> }; operations: Array<{ operationId: string }> } }).input;
+        const input = (payload as { input: { changeSetId: string; approval: { token: string; afterHashes: Record<string, string> }; operations: Array<{ operationId: string }> } }).input;
+        expect(input.approval.token).toBe("native-approval:test");
         expect(input.approval.afterHashes).toEqual(Object.fromEntries(input.operations.map((operation) => [operation.operationId, "native-after-hash"])));
         return {
           changeSetId: input.changeSetId,
@@ -212,6 +213,25 @@ describe("MVP12 desktop runtime store helpers", () => {
           reason: "ok",
           backupId: "backup:native",
           afterHashes: Object.fromEntries(input.operations.map((operation) => [operation.operationId, "native-after-hash"])),
+        };
+      }
+      if (command === "approve_workspace_change") {
+        const input = (payload as { input: { changeSetId: string } }).input;
+        return {
+          changeSetId: input.changeSetId,
+          status: "approved",
+          reason: "ok",
+          approval: {
+            token: "native-approval:test",
+            changeSetId: input.changeSetId,
+            operationIds: ["operation:diag-plugin:0"],
+            beforeHashes: { "operation:diag-plugin:0": "e6a92718708f3565c47dca43b7be23ee4db51f1d3314768154f7ae4dc58dbe2a" },
+            afterHashes: { "operation:diag-plugin:0": "native-after-hash" },
+            actor: "desktop-user",
+            reason: "Approved controlled MVP12 text repair from desktop action.",
+            approvedAt: 12_000,
+            expiresAt: 612_000,
+          },
         };
       }
       if (command === "rollback_workspace_change") {
@@ -282,6 +302,7 @@ describe("MVP12 desktop runtime store helpers", () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("preview_workspace_change", expect.anything()));
 
     fireEvent.click(screen.getByRole("button", { name: "approve change" }));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("approve_workspace_change", expect.anything()));
     fireEvent.click(screen.getByRole("button", { name: "apply change" }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("apply_workspace_change", expect.anything()));
 

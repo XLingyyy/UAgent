@@ -1317,6 +1317,7 @@ pub fn run() {
             watcher::get_watcher_session,
             text_mutation::mutation_capability_status,
             text_mutation::preview_workspace_change,
+            text_mutation::approve_workspace_change,
             text_mutation::apply_workspace_change,
             text_mutation::rollback_workspace_change,
             text_mutation::get_change_set_status,
