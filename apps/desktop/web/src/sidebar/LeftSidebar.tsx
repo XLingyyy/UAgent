@@ -109,6 +109,7 @@ export function LeftSidebar() {
   for (const [path, markers] of Object.entries(runtime.mvp12.fileMarkers)) {
     diagnosticCounts[path] = (diagnosticCounts[path] ?? 0) + markers.length;
   }
+  const mutationMarkers = runtime.mvp13.fileMarkers;
   const canScanRegisteredProject = Boolean(
     registeredProject && registeredProject.trustState === "trusted",
   );
@@ -168,6 +169,7 @@ export function LeftSidebar() {
             selectedAssetPath={projectState.selectedAssetPath}
             preview={projectState.preview}
             diagnosticCounts={diagnosticCounts}
+            mutationMarkers={mutationMarkers}
           />
         ) : sidebarView === "conversation" ? (
           <>

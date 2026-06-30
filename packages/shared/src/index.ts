@@ -321,3 +321,25 @@ export type {
   ReplayFilter,
   ReplaySummary,
 } from "./session.js";
+export type {
+  UEEditorCapabilityStatus,
+  UEEditorOperationApproval,
+  UEEditorOperationKind,
+  UEEditorOperationProposal,
+  UEEditorOperationProposalStatus,
+  UEEditorOperationResult,
+  UEEditorOperationRisk,
+  UEEditorSession,
+  UEEditorSessionMode,
+  UEEditorSessionStatus,
+} from "./ue-editor.js";
+export { UE_EDITOR_OPERATION_RISKS } from "./ue-editor.js";
+export type {
+  AssetMutationPlan,
+  McpMutationDryRunResult,
+  McpMutationExecutionDecision,
+  McpMutationProposal,
+  McpMutationToolClassification,
+  McpMutationToolPolicy,
+} from "./mcp-mutation.js";
+export { MCP_MUTATION_EXECUTION_DECISIONS } from "./mcp-mutation.js";

@@ -402,13 +402,13 @@ const scenarios: Mvp6Scenario[] = [
       const drawer = openUtilityDrawer();
 
       expect(within(drawer).getByRole("tablist", { name: "Utility tools" })).toBeTruthy();
-      for (const label of ["UE", "Logs", "Asset Search"]) {
+      for (const label of ["Logs", "Asset Search"]) {
         const tab = within(drawer).getByRole("tab", { name: label });
         expect(tab.getAttribute("aria-disabled")).toBe("true");
         expect(tab.getAttribute("aria-describedby")).toMatch(/^ua-coming-soon-tooltip-/);
       }
-      // Terminal, Browser, Screenshot, and Files are now active MVP9 panels
-      for (const label of ["Terminal", "Browser", "Screenshot", "Files"]) {
+      // Terminal, Browser, Screenshot, Files, and UE are now active later-MVP panels
+      for (const label of ["Terminal", "Browser", "Screenshot", "Files", "UE"]) {
         const tab = within(drawer).getByRole("tab", { name: label });
         expect(tab.getAttribute("aria-disabled")).toBeNull();
       }

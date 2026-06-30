@@ -177,8 +177,9 @@ describe("InspectorPane", () => {
         "Screenshot",
         "Files",
         "Evidence",
-        "Logs",
         "UE",
+        "MCP",
+        "Logs",
         "Asset Search",
       ]);
     });
@@ -221,7 +222,6 @@ describe("InspectorPane", () => {
 
     it.each([
       ["Logs"],
-      ["UE"],
       ["Asset Search"],
     ])("keeps %s as a disabled future tool placeholder", (toolName) => {
       renderInspector();
@@ -235,6 +235,16 @@ describe("InspectorPane", () => {
         "true",
       );
       expect(screen.getByRole("tooltip", { name: new RegExp(toolName) })).toBeTruthy();
+    });
+
+    it("switches to the active UE editor panel", () => {
+      renderInspector();
+      const tab = screen.getByRole("tab", { name: "UE" });
+      fireEvent.click(tab);
+
+      expect(tab.getAttribute("aria-selected")).toBe("true");
+      expect(tab.getAttribute("aria-disabled")).toBeNull();
+      expect(screen.getByLabelText("Editor panel")).toBeTruthy();
     });
 
     it("shows runtime-derived safety, audit, and changes panels without active task", () => {

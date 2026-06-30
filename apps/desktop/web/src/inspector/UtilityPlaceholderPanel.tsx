@@ -78,51 +78,6 @@ function uniqueEvidenceItems(events: TaskEvent[]): EvidenceDisplayItem[] {
 }
 
 export function UtilityPlaceholderPanel({ panel }: UtilityPlaceholderPanelProps) {
-  const runtime = useOptionalRuntimeStore((state) => state);
-  if (panel.id === "ue" && runtime) {
-    const capabilities = runtime.mcp.capabilities;
-    const mcpLabel =
-      runtime.mcp.status === "connected" && capabilities
-        ? "MCP read-only"
-        : runtime.mcp.status === "connected"
-          ? "Discovery required"
-          : "Mock only";
-    return (
-      <section className="ua-utility-placeholder" aria-label="UE runtime context">
-        <div className="ua-utility-placeholder__header">
-          <div className="ua-utility-placeholder__title-group">
-            <span className="ua-utility-placeholder__eyebrow">{mcpLabel}</span>
-            <h3 className="ua-utility-placeholder__title">UE</h3>
-          </div>
-          <span
-            className={`ua-utility-placeholder__state${
-              runtime.mcp.status !== "connected" ? " ua-utility-placeholder__state--warning" : ""
-            }`}
-          >
-            {runtime.mcp.status}
-          </span>
-        </div>
-        <ul className="ua-utility-placeholder__list">
-          <li className="ua-utility-placeholder__item">
-            Server: {runtime.mcp.serverInfo?.name ?? "Not connected"}
-          </li>
-          <li className="ua-utility-placeholder__item">
-            Protocol: {runtime.mcp.protocolVersion ?? "Not initialized"}
-          </li>
-          <li className="ua-utility-placeholder__item">
-            Capabilities:{" "}
-            {capabilities
-              ? `${capabilities.resources} resources, ${capabilities.readOnlyTools} read-only tools, ${capabilities.blockedTools} blocked`
-              : "No discovery snapshot"}
-          </li>
-        </ul>
-        <button className="ua-utility-placeholder__action" type="button" disabled>
-          Read-only MCP context
-        </button>
-      </section>
-    );
-  }
-
   return (
     <section className="ua-utility-placeholder" aria-label={`${panel.title} placeholder`}>
       <div className="ua-utility-placeholder__header">

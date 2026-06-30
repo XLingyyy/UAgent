@@ -89,6 +89,37 @@ export function ReviewPanel() {
   const reviewEvents = extractRuntimeReview(runtimeEvents);
   const findings = runtimeFindings(reviewEvents);
   const mvp11 = runtime?.mvp11;
+  const mvp13 = runtime?.mvp13;
+
+  if (mvp13 && (mvp13.editorProposals.length > 0 || mvp13.mcpDryRuns.length > 0 || mvp13.assetPlans.length > 0)) {
+    return (
+      <section className="ua-review-panel" aria-label="Review panel">
+        <div className="ua-review-panel__summary">
+          <InspectorSummaryCard label="Editor" value={mvp13.editorSession?.status ?? mvp13.editorCapability.reason} />
+          <InspectorSummaryCard label="MCP" value={mvp13.assetPlans.length > 0 ? "blocked plan" : "dry-run"} />
+        </div>
+        <div className="ua-review-panel__findings">
+          <h3 className="ua-review-panel__section-title">MVP13 chain</h3>
+          <InspectorFinding
+            id="mvp13-editor-chain"
+            severity="info"
+            title="Operation proposal path"
+            description="Editor state changes move through proposal, approval, execution, evidence, and replay summaries."
+            scope="Editor"
+            evidenceRef={mvp13.evidenceIds[0] ?? "editor_operation_summary"}
+          />
+          <InspectorFinding
+            id="mvp13-mcp-chain"
+            severity={mvp13.assetPlans.length > 0 ? "warning" : "info"}
+            title="MCP mutation mapping"
+            description="Mutating MCP tools are dry-run/proposal only; text-backed changes map to ChangeSet v2 and asset writes stay blocked."
+            scope="MCP"
+            evidenceRef="mcp_mutation_summary"
+          />
+        </div>
+      </section>
+    );
+  }
 
   if (mvp11?.analysisRequested || (mvp11 && mvp11.diagnosticCounts.total > 0)) {
     const diagnosticSummary = formatCounts(mvp11.diagnosticCounts.error, mvp11.diagnosticCounts.warning);

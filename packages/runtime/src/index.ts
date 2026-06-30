@@ -196,6 +196,7 @@ export {
 export {
   classifyTextMutationTarget,
   createChangeSetServiceV2,
+  createTextBackedOperation,
   createRepairProposalEngine,
   createSha256Hash,
   redactMvp12Text,
@@ -211,6 +212,20 @@ export {
   type TextMutationTargetClassification,
   type VerifyChangeSetInput,
 } from "./mvp12-change-set.js";
+export { createMvp13TextBackedChangeSetBridge, type Mvp13TextBackedBridgeOptions, type Mvp13TextBackedSource, type Mvp13TextChangeIntent } from "./mvp13-changeset-bridge.js";
+export { classifyEditorOperation, type EditorOperationPolicyDecision, type EditorOperationPolicyInput } from "./mvp13-editor-policy.js";
+export {
+  createEditorSessionRegistry,
+  type EditorSessionAttachInput,
+  type EditorSessionAttachResult,
+  type EditorSessionRegistry,
+  type EditorSessionRegistryOptions,
+} from "./mvp13-editor-session.js";
+export { createEditorOperationService, type EditorOperationServiceOptions, type ProposeEditorOperationInput } from "./mvp13-editor-operation-service.js";
+export { classifyMcpMutationTool, type McpMutationAllowlistEntry, type McpMutationPolicyOptions } from "./mvp13-mcp-mutation-policy.js";
+export { mapMcpDryRunToOperation, type Mvp13MappedOperation } from "./mvp13-dry-run-adapter.js";
+export { createMcpMutationService, type McpMutationDryRunActionResult, type McpMutationDryRunInput, type McpMutationServiceOptions } from "./mvp13-mcp-mutation-service.js";
+export { runMvp13ScenarioMatrix, type Mvp13ScenarioMatrixResult, type Mvp13ScenarioResult } from "./mvp13-scenarios.js";
 
 export type AgentStatus = "idle" | "thinking" | "acting" | "waiting" | "finished" | "error";
 

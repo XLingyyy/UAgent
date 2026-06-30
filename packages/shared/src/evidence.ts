@@ -18,7 +18,11 @@ export type EvidenceKind =
   | "ue_project_metadata"
   | "ue_project_diagnostic"
   | "build_failure_summary"
-  | "context_pack_summary";
+  | "context_pack_summary"
+  | "editor_session_summary"
+  | "editor_operation_summary"
+  | "mcp_mutation_summary"
+  | "asset_mutation_plan";
 
 export type EvidenceSource =
   | "mock-runtime"
@@ -28,7 +32,9 @@ export type EvidenceSource =
   | "future-file-system"
   | "project-index"
   | "capability-bridge"
-  | "diagnostics-engine";
+  | "diagnostics-engine"
+  | "editor-policy"
+  | "mcp-mutation-policy";
 
 export interface EvidenceRecord {
   id: string;

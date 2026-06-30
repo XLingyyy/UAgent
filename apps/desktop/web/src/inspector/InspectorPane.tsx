@@ -11,6 +11,8 @@ import { TerminalPanel } from "./TerminalPanel";
 import { BrowserPanel } from "./BrowserPanel";
 import { ScreenshotPanel } from "./ScreenshotPanel";
 import { WatcherPanel } from "./WatcherPanel";
+import { EditorPanel } from "./EditorPanel";
+import { McpMutationPanel } from "./McpMutationPanel";
 import { UtilityEvidencePanel, UtilityPlaceholderPanel } from "./UtilityPlaceholderPanel";
 import {
   utilityPlaceholderPanels,
@@ -80,6 +82,14 @@ function renderToolPanel(toolId: UtilityToolId) {
     return <UtilityEvidencePanel />;
   }
 
+  if (toolId === "ue") {
+    return <EditorPanel />;
+  }
+
+  if (toolId === "mcp-mutation") {
+    return <McpMutationPanel />;
+  }
+
   if (isUtilityPlaceholderTool(toolId)) {
     return <UtilityPlaceholderPanel panel={utilityPlaceholderPanels[toolId]} />;
   }
@@ -88,7 +98,7 @@ function renderToolPanel(toolId: UtilityToolId) {
 }
 
 function isFutureTool(toolId: UtilityToolId): boolean {
-  return ["logs", "ue", "asset-search"].includes(toolId);
+  return ["logs", "asset-search"].includes(toolId);
 }
 
 export function InspectorPane({ open, onClose }: InspectorPaneProps) {

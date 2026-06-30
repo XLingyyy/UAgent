@@ -54,6 +54,18 @@ export interface ChangeSetServiceV2Options {
   now?: () => number;
 }
 
+export interface TextBackedOperationInput {
+  id: string;
+  rootId: string;
+  rootRelativePath: string;
+  before: string;
+  after: string;
+  intent: RepairIntent;
+  summary: string;
+  sourceDiagnosticIds?: string[];
+  projectRoot?: string;
+}
+
 export interface VerifyChangeSetInput {
   command: string;
   exitCode: number;
@@ -168,6 +180,37 @@ function attachInternalAfterContent(operation: ChangeOperationV2, afterContent: 
     writable: false,
   });
   return operation;
+}
+
+export function createTextBackedOperation(input: TextBackedOperationInput): ChangeOperationV2 {
+  const classification = classifyTextMutationTarget(input.rootId, input.rootRelativePath, {
+    byteSize: input.before.length,
+    lineCount: input.before.split(/\r?\n/).length,
+  });
+  const diff = renderUnifiedDiff({
+    displayPath: classification.displayPath,
+    before: input.before,
+    after: input.after,
+    projectRoot: input.projectRoot,
+  });
+  return attachInternalAfterContent({
+    id: input.id,
+    kind: "replace_range",
+    target: {
+      rootId: input.rootId,
+      rootRelativePath: input.rootRelativePath,
+      displayPath: classification.displayPath,
+      extension: classification.extension,
+    },
+    beforeHash: createSha256Hash(input.before),
+    afterHash: createSha256Hash(input.after),
+    risk: classification.risk,
+    intent: input.intent,
+    sourceDiagnosticIds: input.sourceDiagnosticIds ?? [],
+    summary: redactMvp12Text(input.summary).text,
+    unifiedDiff: diff.unifiedDiff,
+    displayDiff: diff.displayDiff,
+  }, input.after);
 }
 
 export function getChangeOperationInternalAfterContent(operation: ChangeOperationV2): string | null {
@@ -474,6 +517,10 @@ export function createChangeSetServiceV2(options: ChangeSetServiceV2Options) {
         return proposal;
       });
       return createChangeSetFromProposals(selected);
+    },
+    previewExternalProposal(proposal: RepairProposal): WorkspaceChangeSetV2 {
+      proposals.set(proposal.id, proposal);
+      return createChangeSetFromProposals([proposal]);
     },
     approve(changeSetId: string, approval: BoundChangeSetApproval): WorkspaceChangeSetV2 {
       const changeSet = changeSets.get(changeSetId);

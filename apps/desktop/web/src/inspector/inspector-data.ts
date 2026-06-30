@@ -48,6 +48,7 @@ export type UtilityToolId =
   | "screenshot"
   | "files"
   | "evidence"
+  | "mcp-mutation"
   | "logs"
   | "ue"
   | "asset-search";
@@ -55,6 +56,8 @@ export type UtilityToolId =
 export type UtilityPlaceholderToolId = Exclude<
   UtilityToolId,
   "review" | "diagnostics" | "runtime" | "agent-trace" | "evidence" | "terminal" | "browser" | "screenshot" | "files"
+  | "ue"
+  | "mcp-mutation"
 >;
 
 export interface UtilityToolDefinition {
@@ -236,14 +239,19 @@ export const utilityTools: UtilityToolDefinition[] = [
     summary: "Evidence bundle",
   },
   {
+    id: "ue",
+    label: "UE",
+    summary: "Editor session",
+  },
+  {
+    id: "mcp-mutation",
+    label: "MCP",
+    summary: "Mutation dry-run",
+  },
+  {
     id: "logs",
     label: "Logs",
     summary: "Static rows",
-  },
-  {
-    id: "ue",
-    label: "UE",
-    summary: "UE connection",
   },
   {
     id: "asset-search",
@@ -267,18 +275,6 @@ export const utilityPlaceholderPanels: Record<
       "09:43 Placeholder row selected",
     ],
     actionLabel: "Future log stream",
-  },
-  ue: {
-    id: "ue",
-    title: "UE",
-    state: "Not connected",
-    badge: "Mock only",
-    items: [
-      "MCP profile is not attached.",
-      "Editor session status is not inspected.",
-      "Connection controls remain disabled.",
-    ],
-    actionLabel: "Future UE connection",
   },
   "asset-search": {
     id: "asset-search",

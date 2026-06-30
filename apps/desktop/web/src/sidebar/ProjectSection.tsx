@@ -20,6 +20,7 @@ export interface ProjectSectionProps {
   selectedAssetPath?: string | null;
   preview?: SafeFilePreviewResult | null;
   diagnosticCounts?: Record<string, number>;
+  mutationMarkers?: Record<string, string[]>;
 }
 
 function ProjectSummary({
@@ -88,6 +89,7 @@ export function ProjectSection({
   selectedAssetPath = null,
   preview = null,
   diagnosticCounts = {},
+  mutationMarkers = {},
 }: ProjectSectionProps) {
   if (mode === "projects") {
     return (
@@ -175,6 +177,7 @@ export function ProjectSection({
               label={indexSnapshot ? "Indexed Asset Browser" : "Asset Browser"}
               ariaLabel={`${project.name} ${indexSnapshot ? "indexed " : ""}asset browser`}
               diagnosticCounts={diagnosticCounts}
+              mutationMarkers={mutationMarkers}
               onNodeSelect={(node) => {
                 if (node.rootRelativePath) {
                   onPreviewFile?.(node.rootRelativePath);

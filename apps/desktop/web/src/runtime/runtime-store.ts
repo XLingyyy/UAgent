@@ -26,6 +26,13 @@ import type {
   RuntimeSnapshot,
   TaskDraft,
   TextMutationPolicy,
+  UEEditorCapabilityStatus,
+  UEEditorOperationProposal,
+  UEEditorOperationResult,
+  UEEditorSession,
+  McpMutationDryRunResult,
+  McpMutationProposal,
+  AssetMutationPlan,
   UEProjectMetadata,
   WorkspaceChangeSetV2,
 } from "@uagent/shared";
@@ -108,12 +115,36 @@ export interface Mvp12RuntimeState {
   };
 }
 
+export type Mvp13FileMarker = "affected" | "proposed" | "editor_opened" | "mutation_blocked";
+
+export interface Mvp13RuntimeState {
+  editorCapability: UEEditorCapabilityStatus;
+  editorSession: UEEditorSession | null;
+  editorProposals: UEEditorOperationProposal[];
+  editorResults: UEEditorOperationResult[];
+  mcpDryRuns: McpMutationDryRunResult[];
+  mcpProposals: McpMutationProposal[];
+  assetPlans: AssetMutationPlan[];
+  replayOnly: boolean;
+  evidenceIds: string[];
+  auditFilters: {
+    sessionId: string | null;
+    operationId: string | null;
+    changeSetId: string | null;
+    toolName: string | null;
+    affectedFile: string | null;
+  };
+  fileMarkers: Record<string, Mvp13FileMarker[]>;
+  lastError: string | null;
+}
+
 export interface RuntimeStoreState extends RuntimeSnapshot {
   mockOnlyWarning: string | null;
   mcp: McpConnectionState;
   mvp9: Mvp9RuntimeState;
   mvp11: Mvp11RuntimeState;
   mvp12: Mvp12RuntimeState;
+  mvp13: Mvp13RuntimeState;
 }
 
 export interface RuntimeStoreActions {
@@ -167,6 +198,13 @@ export interface RuntimeStoreActions {
   rescanWatcher: () => void;
   stopWatcher: () => void;
   resetWatcher: () => void;
+  refreshMvp13EditorCapability: () => void;
+  attachMvp13FixtureEditorSession: () => void;
+  proposeMvp13StateOnlyEditorOperation: () => void;
+  approveMvp13EditorOperation: () => void;
+  executeMvp13EditorOperation: () => void;
+  cancelMvp13EditorOperation: () => void;
+  runMvp13McpMutationDryRun: () => void;
 }
 
 export const DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS = 500;
@@ -228,6 +266,35 @@ export function createEmptyMvp12State(): Mvp12RuntimeState {
   };
 }
 
+export function createEmptyMvp13State(): Mvp13RuntimeState {
+  return {
+    editorCapability: {
+      enabled: false,
+      mode: "disabled",
+      reason: "feature_disabled",
+      trustedRootRequired: true,
+      mutationExecution: "blocked",
+    },
+    editorSession: null,
+    editorProposals: [],
+    editorResults: [],
+    mcpDryRuns: [],
+    mcpProposals: [],
+    assetPlans: [],
+    replayOnly: false,
+    evidenceIds: [],
+    auditFilters: {
+      sessionId: null,
+      operationId: null,
+      changeSetId: null,
+      toolName: null,
+      affectedFile: null,
+    },
+    fileMarkers: {},
+    lastError: null,
+  };
+}
+
 export function createMvp12FileMarkers(state: Mvp12RuntimeState): Record<string, Mvp12FileMarker[]> {
   const markers: Record<string, Mvp12FileMarker[]> = {};
   for (const [path, summary] of Object.entries(state.changedFiles)) {
@@ -242,6 +309,29 @@ export function createMvp12FileMarkers(state: Mvp12RuntimeState): Record<string,
   return markers;
 }
 
+export function createMvp13FileMarkers(state: Mvp13RuntimeState): Record<string, Mvp13FileMarker[]> {
+  const markers: Record<string, Mvp13FileMarker[]> = {};
+  for (const dryRun of state.mcpDryRuns) {
+    for (const path of dryRun.affectedFiles) {
+      const current = markers[path] ?? [];
+      if (!current.includes("affected")) current.push("affected");
+      if (dryRun.blockedReason || dryRun.assetRisk) current.push("mutation_blocked");
+      markers[path] = [...new Set(current)];
+    }
+  }
+  for (const proposal of state.editorProposals) {
+    const current = markers[proposal.summary] ?? [];
+    if (!current.includes("proposed")) current.push("proposed");
+    markers[proposal.summary] = current;
+  }
+  for (const result of state.editorResults) {
+    const current = markers[result.proposalId] ?? [];
+    if (result.status === "executed" && !current.includes("editor_opened")) current.push("editor_opened");
+    markers[result.proposalId] = current;
+  }
+  return markers;
+}
+
 export function refreshMvp12DerivedState(state: Mvp12RuntimeState): Mvp12RuntimeState {
   return {
     ...state,
@@ -250,6 +340,19 @@ export function refreshMvp12DerivedState(state: Mvp12RuntimeState): Mvp12Runtime
       ...new Set([
         ...state.evidenceIds,
         ...(state.activeChangeSet?.evidenceIds ?? []),
+      ]),
+    ],
+  };
+}
+
+export function refreshMvp13DerivedState(state: Mvp13RuntimeState): Mvp13RuntimeState {
+  return {
+    ...state,
+    fileMarkers: createMvp13FileMarkers(state),
+    evidenceIds: [
+      ...new Set([
+        ...state.evidenceIds,
+        ...state.editorResults.flatMap((result) => (result.evidenceId ? [result.evidenceId] : [])),
       ]),
     ],
   };
@@ -430,6 +533,7 @@ export function createRuntimeStoreState(snapshot: RuntimeSnapshot): RuntimeStore
     mvp9: createEmptyMvp9State(),
     mvp11: createEmptyMvp11State(),
     mvp12: createEmptyMvp12State(),
+    mvp13: createEmptyMvp13State(),
   };
 }
 

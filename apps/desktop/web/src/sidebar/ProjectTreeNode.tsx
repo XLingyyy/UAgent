@@ -19,6 +19,7 @@ export interface ProjectTreeNodeProps {
   selectedId: string | null;
   focusedId: string | null;
   diagnosticCounts: Record<string, number>;
+  mutationMarkers?: Record<string, string[]>;
   onToggle: (nodeId: string) => void;
   onSelect: (nodeId: string) => void;
   onFocus: (nodeId: string) => void;
@@ -31,6 +32,7 @@ export function ProjectTreeNode({
   selectedId,
   focusedId,
   diagnosticCounts,
+  mutationMarkers = {},
   onToggle,
   onSelect,
   onFocus,
@@ -47,6 +49,7 @@ export function ProjectTreeNode({
     ? `[project-root]/${node.rootRelativePath.replace(/\\/g, "/")}`
     : null;
   const diagnosticCount = displayPath ? diagnosticCounts[displayPath] ?? 0 : 0;
+  const markers = displayPath ? mutationMarkers[displayPath] ?? mutationMarkers[node.rootRelativePath ?? ""] ?? [] : [];
 
   const toggleClassNames = [
     "ua-tree-node__toggle",
@@ -140,6 +143,15 @@ export function ProjectTreeNode({
             {diagnosticCount}
           </span>
         )}
+        {markers.length > 0 && (
+          <span
+            className="ua-tree-node__diagnostics"
+            aria-label={`${markers.join(", ")} marker for ${node.name}`}
+            title={markers.join(", ")}
+          >
+            {markers.includes("mutation_blocked") ? "!" : "*"}
+          </span>
+        )}
         <span className="ua-tree-node__type">{TYPE_LABEL[node.type] ?? node.type}</span>
       </div>
       {hasChildren && isExpanded && (
@@ -153,6 +165,7 @@ export function ProjectTreeNode({
               selectedId={selectedId}
               focusedId={focusedId}
               diagnosticCounts={diagnosticCounts}
+              mutationMarkers={mutationMarkers}
               onToggle={onToggle}
               onSelect={onSelect}
               onFocus={onFocus}

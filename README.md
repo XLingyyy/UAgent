@@ -2,18 +2,19 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP12 Controlled UE Text Repair Loop (Implemented)
+## Current Stage: MVP13 Controlled UE Editor / MCP Mutation Pilot (Implemented)
 
-MVP11 final acceptance is complete. MVP12 adds an approval-gated text repair loop for UE-like project files while preserving MVP10/MVP11 approval, feature-gate, redaction, and replay boundaries. Current MVP12 implementation includes:
+MVP12 final acceptance is complete. MVP13 adds a controlled UE Editor / MCP mutation pilot while preserving MVP12 ChangeSet v2, trusted root, native approval registry, hash binding, rollback binding, redaction, and replay boundaries. Current MVP13 implementation includes:
 
-1. **ChangeSet v2 Contracts**: Repair proposals, operation kinds, lifecycle states, risk levels, apply/rollback requests, verification results, and redacted evidence payloads.
-2. **Text Mutation Policy**: Allowed UE text extensions, generated-dir/binary/root-escape/stale-hash blocking, unified diff rendering, and content redaction.
-3. **Deterministic Repair Engine**: Recipes for Build.cs dependencies, Target.cs modules, plugin disabling, config redaction, malformed descriptors, and build-error location.
-4. **Native Text Mutation Bridge**: Tauri preview/apply/rollback/status commands with backup snapshots and hash-checked rollback.
-5. **Desktop UI / Store**: Changes, Diagnostics, Settings, Evidence, and ProjectTree surfaces show proposals, approval state, verification, rollback availability, and file markers.
-6. **Scenario Matrix / Side-effect Scan / Docs**: MVP12 scenario matrix, UE-like fixture, manual smoke docs, and side-effect scan categories for mutation boundaries.
+1. **Editor / MCP Contracts**: UE Editor session, operation proposal/result/risk, MCP mutation policy, dry-run, proposal, execution decision, and asset plan contracts.
+2. **Policy Classifiers**: Editor read-only/state-only/text-backed/asset-risk classification and MCP default-blocked exact allowlist with schema/dry-run requirement.
+3. **Native UE Editor Bridge Skeleton**: Feature-gated Tauri commands for capability/config/session/operation lifecycle, disabled unless `UAGENT_ENABLE_UE_EDITOR_BRIDGE=1`.
+4. **Approval Registries**: Runtime/native editor proposal approval is one-time and bound to proposal, session, root, operation kind, args hash, and expiry.
+5. **ChangeSet v2 Bridge**: Text-backed MCP/editor mutation intent maps into MVP12 ChangeSet v2 preview/approve/apply/rollback instead of a second write path.
+6. **Desktop UI / Store**: Editor and MCP mutation panels plus Changes, Review, Evidence, and ProjectTree summaries show disabled, blocked, approval-required, executed, and replay-only states.
+7. **Scenario Matrix / Side-effect Scan / Docs**: MVP13 matrix covers 32 scenarios / 128 assertions and side-effect scan adds editor/MCP/asset/replay boundaries.
 
-Controlled text writes remain approval-gated and limited to trusted fixture/temp roots or explicitly trusted project roots. Binary UE assets, generated directories, arbitrary shell expansion, mutating MCP, provider live defaults, automatic git operations, replay re-apply, and raw secret/path leakage remain blocked.
+Controlled text writes remain approval-gated and limited to trusted fixture/temp roots or explicitly trusted project roots. Binary UE assets, generated directories, arbitrary shell expansion, mutating MCP `tools/call`, provider live defaults, automatic git operations, replay re-execute, and raw secret/path leakage remain blocked.
 
 ## Technology Stack
 
@@ -109,6 +110,12 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 - [MVP12 Risk Register](docs/mvp12-risk-register.md)
 - [MVP12 Final Verification](docs/mvp12-final-verification.md)
 - [MVP12 Final Handoff](docs/mvp12-final-handoff.md)
+- [MVP13 Prep](docs/mvp13-prep.md)
+- [MVP13 Acceptance](docs/mvp13-acceptance.md)
+- [MVP13 Manual Smoke](docs/mvp13-manual-smoke.md)
+- [MVP13 Risk Register](docs/mvp13-risk-register.md)
+- [MVP13 Final Verification](docs/mvp13-final-verification.md)
+- [MVP13 Final Handoff](docs/mvp13-final-handoff.md)
 - [Baseline Freeze](docs/mvp5-baseline-freeze.md)
 - [Development Guide](docs/development.md)
 

@@ -42,6 +42,11 @@ export interface ReplayFilter {
   providerModes: string[];
   diagnosticKinds?: string[];
   diagnosticSeverities?: string[];
+  editorSessionIds?: string[];
+  operationIds?: string[];
+  changeSetIds?: string[];
+  toolNames?: string[];
+  affectedFiles?: string[];
 }
 
 export interface ReplaySummary {
@@ -51,4 +56,6 @@ export interface ReplaySummary {
   terminalState: string | null;
   filteredCount: number;
   redacted: boolean;
+  replayOnly?: boolean;
+  recordedOnlyActions?: string[];
 }

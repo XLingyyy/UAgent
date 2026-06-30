@@ -1,8 +1,12 @@
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
 import {
   createContextPackV1,
+  createEditorOperationService,
+  createEditorSessionRegistry,
+  createMcpMutationService,
   createRepairProposalEngine,
   createUEProjectDiagnosticsEngine,
+  mapMcpDryRunToOperation,
   parseUEProjectMetadata,
 } from "@uagent/runtime";
 import type { ChangeOperationV2, ProjectDiagnostic } from "@uagent/shared";
@@ -32,6 +36,7 @@ import {
   createRuntimeStoreState,
   refreshMvp11DerivedState,
   refreshMvp12DerivedState,
+  refreshMvp13DerivedState,
   type RuntimeStoreActions,
   type RuntimeStoreState,
 } from "../runtime/runtime-store";
@@ -180,6 +185,17 @@ function createUIStateBundle(
     ...initialState?.runtime,
   });
   const mvp12ApprovalByChangeSetId = new Map<string, NativeBoundChangeSetApproval>();
+  const mvp13SessionRegistry = createEditorSessionRegistry({
+    featureEnabled: true,
+    trustedRootIds: ["root:fixture"],
+  });
+  const mvp13EditorOperationService = createEditorOperationService({
+    sessions: mvp13SessionRegistry,
+  });
+  const mvp13McpMutationService = createMcpMutationService({
+    allowlist: [{ toolName: "ue.asset.save", assetRisk: true, requiresDryRun: true }],
+  });
+  const mvp13ApprovalTokenByProposalId = new Map<string, string>();
 
   runtimeClient.subscribe((snapshot) => {
     runtimeStore.setState((previousState) => ({
@@ -1166,6 +1182,216 @@ function createUIStateBundle(
     },
     resetWatcher: () => {
       runtimeClient.getMvp9().watcher.reset();
+    },
+    refreshMvp13EditorCapability: () => {
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp13: refreshMvp13DerivedState({
+          ...previousState.mvp13,
+          editorCapability: {
+            enabled: true,
+            mode: "fixture",
+            reason: "fixture_enabled",
+            trustedRootRequired: true,
+            mutationExecution: "state_only",
+          },
+          lastError: null,
+        }),
+      }));
+    },
+    attachMvp13FixtureEditorSession: () => {
+      const attached = mvp13SessionRegistry.attach({
+        projectId: "project:fixture",
+        rootId: "root:fixture",
+        uprojectDisplayPath: "[project-root]/Game.uproject",
+        mode: "fixture",
+      });
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp13: refreshMvp13DerivedState({
+          ...previousState.mvp13,
+          editorCapability: {
+            enabled: true,
+            mode: "fixture",
+            reason: "fixture_enabled",
+            trustedRootRequired: true,
+            mutationExecution: "state_only",
+          },
+          editorSession: attached.session ?? previousState.mvp13.editorSession,
+          lastError: attached.reason,
+        }),
+      }));
+    },
+    proposeMvp13StateOnlyEditorOperation: () => {
+      const session = runtimeStore.getState().mvp13.editorSession;
+      if (!session) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp13: { ...previousState.mvp13, lastError: "editor_session_required" },
+        }));
+        return;
+      }
+      const proposed = mvp13EditorOperationService.propose({
+        sessionId: session.sessionId,
+        operationKind: "select_asset",
+        args: { asset: "/Game/Hero" },
+      });
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp13: refreshMvp13DerivedState({
+          ...previousState.mvp13,
+          editorProposals: proposed.proposal
+            ? [...previousState.mvp13.editorProposals, proposed.proposal]
+            : previousState.mvp13.editorProposals,
+          lastError: proposed.reason,
+        }),
+      }));
+    },
+    approveMvp13EditorOperation: () => {
+      const state = runtimeStore.getState().mvp13;
+      const proposal = [...state.editorProposals].reverse().find((item) => item.status === "approval_required" || item.status === "proposed");
+      if (!proposal) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp13: { ...previousState.mvp13, lastError: "editor_proposal_required" },
+        }));
+        return;
+      }
+      const approval = mvp13EditorOperationService.approve({
+        proposalId: proposal.proposalId,
+        actor: "desktop-fixture",
+        reason: "state-only fixture approval",
+      });
+      if (approval.approval) {
+        mvp13ApprovalTokenByProposalId.set(proposal.proposalId, approval.approval.token);
+      }
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp13: refreshMvp13DerivedState({
+          ...previousState.mvp13,
+          editorProposals:
+            approval.status === "approved"
+              ? previousState.mvp13.editorProposals.map((item) =>
+                  item.proposalId === proposal.proposalId ? { ...item, status: "approved" } : item,
+                )
+              : previousState.mvp13.editorProposals,
+          lastError: approval.reason,
+        }),
+      }));
+    },
+    executeMvp13EditorOperation: () => {
+      const state = runtimeStore.getState().mvp13;
+      const proposal = [...state.editorProposals].reverse().find((item) => item.status === "approved");
+      const token = proposal ? mvp13ApprovalTokenByProposalId.get(proposal.proposalId) : null;
+      if (!proposal || !token) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp13: { ...previousState.mvp13, lastError: "editor_approval_required" },
+        }));
+        return;
+      }
+      const result = mvp13EditorOperationService.execute({
+        proposalId: proposal.proposalId,
+        approvalToken: token,
+        operationKind: proposal.operationKind,
+        args: { asset: "/Game/Hero" },
+      });
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp13: refreshMvp13DerivedState({
+          ...previousState.mvp13,
+          editorProposals:
+            result.status === "executed"
+              ? previousState.mvp13.editorProposals.map((item) =>
+                  item.proposalId === proposal.proposalId ? { ...item, status: "executed" } : item,
+                )
+              : previousState.mvp13.editorProposals,
+          editorResults: [...previousState.mvp13.editorResults, result],
+          lastError: result.reason ?? null,
+        }),
+      }));
+    },
+    cancelMvp13EditorOperation: () => {
+      const state = runtimeStore.getState().mvp13;
+      const proposal = [...state.editorProposals]
+        .reverse()
+        .find((item) => item.status === "approval_required" || item.status === "proposed" || item.status === "approved");
+      if (!proposal) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp13: { ...previousState.mvp13, lastError: "editor_proposal_required" },
+        }));
+        return;
+      }
+      const cancelled = mvp13EditorOperationService.cancel(proposal.proposalId);
+      mvp13ApprovalTokenByProposalId.delete(proposal.proposalId);
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp13: refreshMvp13DerivedState({
+          ...previousState.mvp13,
+          editorProposals:
+            cancelled.status === "cancelled"
+              ? previousState.mvp13.editorProposals.map((item) =>
+                  item.proposalId === proposal.proposalId ? { ...item, status: "cancelled" } : item,
+                )
+              : previousState.mvp13.editorProposals,
+          lastError: cancelled.reason,
+        }),
+      }));
+    },
+    runMvp13McpMutationDryRun: () => {
+      const state = runtimeStore.getState().mvp13;
+      const dryRun = mvp13McpMutationService.dryRun({
+        tool: {
+          name: "ue.asset.save",
+          annotations: { mutating: true, destructiveHint: true },
+          inputSchema: { type: "object" },
+        },
+        args: { asset: "[project-root]/Content/Hero.uasset", token: "sk-secret" },
+        sessionId: state.editorSession?.sessionId ?? null,
+        projectId: state.editorSession?.projectId ?? "project:fixture",
+        rootId: state.editorSession?.rootId ?? "root:fixture",
+      });
+      if (!dryRun.result) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp13: { ...previousState.mvp13, lastError: dryRun.reason },
+        }));
+        return;
+      }
+      const mapped = mapMcpDryRunToOperation(dryRun.result);
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp13: refreshMvp13DerivedState({
+          ...previousState.mvp13,
+          mcpDryRuns: [...previousState.mvp13.mcpDryRuns, dryRun.result],
+          mcpProposals:
+            mapped.kind === "changeset_v2" || mapped.kind === "editor_operation"
+              ? [
+                  ...previousState.mvp13.mcpProposals,
+                  {
+                    proposalId: `mcp-proposal:${dryRun.result.id}`,
+                    toolName: dryRun.result.toolName,
+                    sessionId: state.editorSession?.sessionId ?? null,
+                    projectId: state.editorSession?.projectId ?? "project:fixture",
+                    rootId: state.editorSession?.rootId ?? "root:fixture",
+                    dryRunId: dryRun.result.id,
+                    operationKind: dryRun.result.operationKind,
+                    status: mapped.kind === "changeset_v2" ? "mapped_to_changeset" : "mapped_to_editor_operation",
+                    summary: dryRun.result.summary,
+                    redaction: dryRun.result.redaction,
+                    createdAt: dryRun.result.createdAt,
+                  },
+                ]
+              : previousState.mvp13.mcpProposals,
+          assetPlans:
+            mapped.kind === "asset_plan_blocked"
+              ? [...previousState.mvp13.assetPlans, mapped.plan]
+              : previousState.mvp13.assetPlans,
+          replayOnly: true,
+          lastError: mapped.kind === "blocked" ? mapped.reason : null,
+        }),
+      }));
     },
   };
 

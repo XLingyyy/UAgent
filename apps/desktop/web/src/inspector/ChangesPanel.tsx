@@ -9,6 +9,7 @@ export function ChangesPanel() {
   const sandboxEvents = events.filter((e) => e.type.startsWith("sandbox_"));
   const lastChangeSet = changeSetEvents[changeSetEvents.length - 1];
   const mvp12 = runtime?.mvp12;
+  const mvp13 = runtime?.mvp13;
   const activeChangeSet = mvp12?.activeChangeSet ?? null;
 
   return (
@@ -44,6 +45,20 @@ export function ChangesPanel() {
                 </li>
               </>
             )}
+          </>
+        )}
+
+        {mvp13 && (
+          <>
+            <li className="ua-utility-placeholder__item">
+              MVP13 editor proposals: {mvp13.editorProposals.length} / MCP dry-runs {mvp13.mcpDryRuns.length} / asset plans{" "}
+              {mvp13.assetPlans.length}
+            </li>
+            {mvp13.mcpDryRuns.slice(-2).map((dryRun) => (
+              <li key={dryRun.id} className="ua-utility-placeholder__item">
+                MCP dry-run: {dryRun.toolName} / {dryRun.textBacked ? "ChangeSet v2" : dryRun.assetRisk ? "blocked asset plan" : "state-only"}
+              </li>
+            ))}
           </>
         )}
 

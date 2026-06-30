@@ -198,6 +198,29 @@ Status: implemented
 
 Out of scope for MVP12: binary UE asset writes, generated/cache directory writes, mutating MCP, provider live defaults, automatic LLM repair, arbitrary shell expansion, automatic git operations, dependency installs, replay re-apply, and GitHub Actions/CI workflow changes.
 
+## MVP13 - Controlled UE Editor / MCP Mutation Pilot
+
+- **Editor Session Contracts**: UE Editor capability, session, state, operation proposal/result/risk, and replay-only summary contracts.
+- **Operation Policy**: Editor operations classify as read-only, state-only, text-backed ChangeSet, blocked asset write, or blocked unknown.
+- **Native UE Bridge Skeleton**: Tauri commands for capability, config validation, attach/launch/stop/status, propose/approve/execute/cancel; disabled by default behind `UAGENT_ENABLE_UE_EDITOR_BRIDGE=1`.
+- **Operation Approval Registry**: Proposal/session/root/kind/args-hash/expiry-bound one-time approvals for state-only editor execution.
+- **MCP Mutation Pilot**: Mutating MCP tools default blocked; exact allowlist with schema and dry-run required before proposal.
+- **Dry-run Mapping**: State-only dry-runs map to editor operation proposals, text-backed dry-runs map to ChangeSet v2, and asset-risk dry-runs map to blocked asset plans.
+- **UI Integration**: Editor and MCP mutation panels plus Changes/Review/ProjectTree runtime summaries expose disabled, blocked, approval-required, executed, and replay-only states.
+- **Security Regression**: Side-effect scan includes MVP13 UI native editor, MCP tools/call, asset mutation, editor save, provider live, raw args/secrets, and replay re-execute boundaries.
+- **Scenario Matrix**: Runtime matrix covers 32 scenarios / 128 assertions.
+
+Status: implemented
+
+Out of scope for MVP13: default real UE launch, Save All, asset save/delete/rename/move/compile, generic mutating MCP `tools/call`, provider live defaults, automatic provider-output apply, automatic git operations, dependency installs, and CI workflow changes.
+
+## MVP14 - Controlled Real UE Adapter Hardening (Reserved)
+
+- Real UE attach/status smoke hardening across supported local UE versions.
+- Process lifecycle observation and cancellation without project save side effects.
+- Narrow Unreal MCP schema adapters for selected dry-run-capable tools.
+- Asset mutation planning UX that remains blocked until a later explicit write approval design.
+
 ## Non-Goals
 
 - Cloud deployment or SaaS platform

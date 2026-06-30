@@ -242,11 +242,12 @@ const CATEGORIES = [
       (rel) => /packages\/runtime\/src\/mvp10-terminal-policy/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp10-scenarios/.test(rel),
       (rel) => /packages\/runtime\/src\/mcp-readonly-policy/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp13-/.test(rel),
       (rel) => /packages\/runtime\/src\/sandbox-policy/.test(rel),
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\//.test(rel),
-      (rel) => /packages\/runtime\/src\/(?!mvp7-project-index|mvp9-terminal-policy|mvp10-terminal-policy|mvp10-scenarios)/.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp7-project-index|mvp9-terminal-policy|mvp10-terminal-policy|mvp10-scenarios|mvp13-)/.test(rel),
     ],
   },
   {
@@ -400,12 +401,13 @@ const CATEGORIES = [
       (rel) => /packages\/runtime\/src\/mvp9-terminal-policy/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp10-terminal-policy/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp10-scenarios/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp13-/.test(rel),
       (rel) => /packages\/shared\/src\/project/.test(rel),
       (rel) => /mcp-readonly-policy/.test(rel),
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
-      (rel) => /packages\/runtime\/src\/(?!mvp8-project-index|mvp9-terminal-policy|mvp10-terminal-policy)/.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp8-project-index|mvp9-terminal-policy|mvp10-terminal-policy|mvp13-)/.test(rel),
     ],
   },
   {
@@ -693,6 +695,7 @@ const CATEGORIES = [
     ],
     allowWhen: [
       (rel) => /packages\/(mcp-client|runtime)\/src\/(mcp-readonly|ue-diagnostics|runtime-router|agent-loop-runtime)/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/inspector\/ReviewPanel/.test(rel),
       (rel) => /apps\/desktop\/web\/src\/runtime\/desktop-runtime-adapter/.test(rel),
       (rel) => /docs\//.test(rel),
       (rel) => /\.test\./.test(rel),
@@ -725,6 +728,156 @@ const CATEGORIES = [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
     ],
   },
+  {
+    id: "mvp13-ui-direct-native-editor-boundary",
+    title: "MVP13 UI Direct Native Editor Boundary",
+    description: "React UI must not invoke UE Editor native commands directly; runtime adapters/services own that boundary",
+    patterns: [
+      { re: /@tauri-apps\/api|invoke\s*\(\s*["'](?:editor_|ue_editor|launch_editor|attach_editor)/gi, label: "direct native editor invoke" },
+      { re: /attach_editor_session|launch_editor_session|execute_editor_operation/gi, label: "native editor command name" },
+    ],
+    allowWhen: [
+      (rel) => /apps\/desktop\/web\/src\/runtime\//.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\/ue_editor/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp13-/.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp13-mcp-tools-call-boundary",
+    title: "MVP13 MCP Tools Call Boundary",
+    description: "MCP mutation pilot may classify and dry-run mutating tools, but must not add broad tools/call execution",
+    patterns: [
+      { re: /tools\/call|callTool\s*\(/gi, label: "MCP tools/call" },
+      { re: /mutating\s+MCP|McpMutation/gi, label: "MCP mutation marker" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/shared\/src\/mcp-mutation/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp13-mcp-mutation/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp13-dry-run-adapter/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp13-scenarios/.test(rel),
+      (rel) => /packages\/runtime\/src\/index/.test(rel),
+      (rel) => /packages\/runtime\/src\/(mcp-readonly-runtime|ue-diagnostics|prompt\/context-pack|prompt\/prompt-builder)/.test(rel),
+      (rel) => /packages\/runtime\/src\/provider\/mvp4-scenarios/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/inspector\/McpMutationPanel/.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|settings|shell|sidebar|workspace)\//.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp13-mcp-mutation|mvp13-dry-run-adapter|mvp13-scenarios|index|mcp-readonly-runtime|ue-diagnostics|prompt\/context-pack|prompt\/prompt-builder|provider\/mvp4-scenarios)/.test(rel),
+    ],
+  },
+  {
+    id: "mvp13-asset-mutation-boundary",
+    title: "MVP13 Asset Mutation Boundary",
+    description: "UE asset save/delete/rename/move and Blueprint compile remain blocked in MVP13",
+    patterns: [
+      { re: /save_asset|delete_asset|rename_asset|move_asset|compile_blueprint/gi, label: "asset write operation" },
+      { re: /asset_mutation_blocked|blocked_asset_write/gi, label: "asset mutation blocked marker" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/shared\/src\/(ue-editor|mcp-mutation)/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp13-/.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\/ue_editor/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/(runtime|stores|inspector|sidebar)\//.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|settings|shell|workspace)\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp13-editor-save-boundary",
+    title: "MVP13 Editor Save Boundary",
+    description: "Editor operation execution must not call Save All or persist UE assets",
+    patterns: [
+      { re: /Save\s+All|save_all|SavePackage|EditorAssetLibrary\.save|UEditorLoadingAndSavingUtils/gi, label: "editor save path" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\//.test(rel),
+      (rel) => /packages\/runtime\/src\//.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp13-provider-live-boundary",
+    title: "MVP13 Provider Live Boundary",
+    description: "Editor/MCP mutation pilot must not enable provider live mode by default or auto-apply provider output",
+    patterns: [
+      { re: /networkMode\s*:\s*["']live["']|autoApply|runProvider|ProviderRunner/gi, label: "provider live or auto apply" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/runtime\/src\/provider\//.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /packages\/runtime\/src\/mvp13-/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp13-raw-args-secret-boundary",
+    title: "MVP13 Raw Args Secret Boundary",
+    description: "Editor/MCP evidence and replay payloads must not store raw MCP args, secrets, tokens, or absolute paths",
+    patterns: [
+      { re: /rawArgs|raw_args|approval-token:|editor-approval-token:/gi, label: "raw args or token marker" },
+      { re: /Bearer\s+[A-Za-z0-9._-]+|sk-[A-Za-z0-9][A-Za-z0-9._-]{7,}/g, label: "secret literal" },
+      { re: /[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s"'`]+|\/Users\/[^/\s"'`]+|\/home\/[^/\s"'`]+/g, label: "raw user path" },
+    ],
+    allowWhen: [
+      (rel) => /packages\/runtime\/src\/(mvp13-editor-operation-service|mvp13-mcp-mutation-service|mvp12-change-set)/.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\/ue_editor/.test(rel),
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+      (rel) => /packages\/shared\/src\//.test(rel),
+    ],
+  },
+  {
+    id: "mvp13-replay-reexecute-boundary",
+    title: "MVP13 Replay Re-execute Boundary",
+    description: "Session replay may show editor/MCP/ChangeSet summaries only and must not execute operations, tools, apply, or rollback",
+    patterns: [
+      { re: /replayOnly|recordedOnlyActions/gi, label: "replay-only marker" },
+      { re: /replay.*(?:execute|tools\/call|apply|rollback)/gi, label: "replay execution marker" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel, line) => /packages\/shared\/src\/(ue-editor|session)/.test(rel) && /replayOnly|recordedOnlyActions/.test(line),
+      (rel, line) => /packages\/runtime\/src\/mvp13-(editor-operation-service|editor-session|mcp-mutation-service)/.test(rel) && /replayOnly|recordedOnlyActions/.test(line),
+      (rel, line) => /packages\/runtime\/src\/mvp13-scenarios/.test(rel) && /session-replay-only|approval-replay-blocked|mcp-replay-recorded/.test(line),
+      (rel, line) => /apps\/desktop\/web\/src\/runtime\/runtime-store/.test(rel) && /replayOnly/.test(line),
+      (rel, line) => /apps\/desktop\/web\/src\/stores\/ui-store/.test(rel) && /replayOnly:\s*true/.test(line),
+      (rel, line) => /apps\/desktop\/web\/src\/inspector\/(EditorPanel|McpMutationPanel)/.test(rel) && /replayOnly|Replay: recorded summaries only/.test(line),
+    ],
+    blockWhen: [
+      (rel) => /packages\/runtime\/src\/mvp13-/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/(runtime|stores|inspector)\//.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
 ];
 
 // ============================================================
@@ -739,23 +892,15 @@ function getRelativePath(absPath) {
   return normalizePath(absPath).replace(normalizePath(ROOT) + "/", "");
 }
 
-function isAllowed(relPath, allowWhen) {
-  return allowWhen.some((fn) => fn(relPath));
+function isAllowed(relPath, allowWhen, lineText, pattern) {
+  return allowWhen.some((fn) => fn(relPath, lineText, pattern));
 }
 
 function isBlocked(relPath, blockWhen) {
   return blockWhen.some((fn) => fn(relPath));
 }
 
-function scanFile(absPath, categories) {
-  const relPath = getRelativePath(absPath);
-  let content;
-  try {
-    content = readFileSync(absPath, "utf-8");
-  } catch {
-    return [];
-  }
-
+function scanContent(relPath, content, categories) {
   const lines = content.split("\n");
   const findings = [];
 
@@ -765,15 +910,14 @@ function scanFile(absPath, categories) {
       while ((match = pat.re.exec(content)) !== null) {
         const lineNum = content.slice(0, match.index).split("\n").length;
         const lineText = lines[lineNum - 1]?.trim() ?? "";
-        const severity = isAllowed(relPath, cat.allowWhen) ? "ALLOWED"
-          : isBlocked(relPath, cat.blockWhen) ? "BLOCKED"
-          : "REVIEW";
 
         findings.push({
           category: cat.id,
           catTitle: cat.title,
           pattern: pat.label,
-          severity,
+          severity: isAllowed(relPath, cat.allowWhen, lineText, pat) ? "ALLOWED"
+            : isBlocked(relPath, cat.blockWhen) ? "BLOCKED"
+            : "REVIEW",
           file: relPath,
           line: lineNum,
           content: lineText.slice(0, 140),
@@ -785,11 +929,34 @@ function scanFile(absPath, categories) {
   return findings;
 }
 
+function scanFile(absPath, categories) {
+  const relPath = getRelativePath(absPath);
+  try {
+    return scanContent(relPath, readFileSync(absPath, "utf-8"), categories);
+  } catch {
+    return [];
+  }
+}
+
+function runScanSelfTests() {
+  const replayCategory = CATEGORIES.find((cat) => cat.id === "mvp13-replay-reexecute-boundary");
+  if (!replayCategory) throw new Error("mvp13 replay scan category missing");
+  const unsafe = scanContent(
+    "apps/desktop/web/src/runtime/replay-danger.ts",
+    "export function replayExecuteOperation() { return executeEditorOperation(); }",
+    [replayCategory],
+  );
+  if (!unsafe.some((finding) => finding.severity === "BLOCKED")) {
+    throw new Error("mvp13 replay re-execute self-test did not block unsafe runtime sample");
+  }
+}
+
 // ============================================================
 // Main
 // ============================================================
 
 function main() {
+  runScanSelfTests();
   const fileSet = getFileList().sort();
 
   // Scan

@@ -9,6 +9,7 @@ export interface ProjectTreeProps {
   ariaLabel?: string;
   onNodeSelect?: (node: ProjectTreeNodeType) => void;
   diagnosticCounts?: Record<string, number>;
+  mutationMarkers?: Record<string, string[]>;
 }
 
 export interface FlattenedProjectTreeNode {
@@ -98,6 +99,7 @@ export function ProjectTree({
   ariaLabel = "Project tree",
   onNodeSelect,
   diagnosticCounts = {},
+  mutationMarkers = {},
 }: ProjectTreeProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
     const initial = new Set<string>();
@@ -263,6 +265,7 @@ export function ProjectTree({
             selectedId={selectedId}
             focusedId={activeFocusedId}
             diagnosticCounts={diagnosticCounts}
+            mutationMarkers={mutationMarkers}
             onToggle={handleToggle}
             onSelect={handleSelect}
             onFocus={handleFocus}

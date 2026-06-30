@@ -67,7 +67,14 @@ export type AuditEventType =
     | "diagnostic_started"
     | "diagnostic_completed"
     | "diagnostic_failed"
-    | "context_pack_created";
+    | "context_pack_created"
+    | "editor_session_started"
+    | "editor_operation_proposed"
+    | "editor_operation_approved"
+    | "editor_operation_executed"
+    | "mcp_mutation_proposed"
+    | "mcp_mutation_blocked"
+    | "mcp_dry_run_completed";
 
 export interface AuditActor {
   type: "user" | "system" | "policy" | "fixture";
@@ -101,6 +108,11 @@ export interface AuditFilterSummary {
   riskLevels: string[];
   terminalStates: string[];
   providerModes: string[];
+  editorSessionId?: string | null;
+  operationId?: string | null;
+  changeSetId?: string | null;
+  toolName?: string | null;
+  affectedFile?: string | null;
   fromTick: number | null;
   toTick: number | null;
 }

@@ -110,6 +110,13 @@ const EVENT_LABELS: Record<TaskEvent["type"], string> = {
      diagnostic_completed: "Diagnostic completed",
      diagnostic_failed: "Diagnostic failed",
      context_pack_created: "Context Pack created",
+     editor_session_started: "Editor session",
+     editor_operation_proposed: "Editor operation proposed",
+     editor_operation_approved: "Editor operation approved",
+     editor_operation_executed: "Editor operation executed",
+     mcp_mutation_proposed: "MCP mutation proposed",
+     mcp_mutation_blocked: "MCP mutation blocked",
+     mcp_dry_run_completed: "MCP dry-run completed",
 };
 
 const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
@@ -221,6 +228,13 @@ const EVENT_KIND: Record<TaskEvent["type"], WorkspaceMessageKind> = {
     diagnostic_completed: "review-summary",
     diagnostic_failed: "review-summary",
     context_pack_created: "review-summary",
+    editor_session_started: "tool-event",
+    editor_operation_proposed: "tool-event",
+    editor_operation_approved: "tool-event",
+    editor_operation_executed: "tool-event",
+    mcp_mutation_proposed: "tool-event",
+    mcp_mutation_blocked: "review-summary",
+    mcp_dry_run_completed: "tool-event",
 };
 
 function formatTimestamp(createdAt: number): string {
