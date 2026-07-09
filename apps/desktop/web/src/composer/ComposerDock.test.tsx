@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { ComposerDock } from "./ComposerDock";
 import { UIProvider } from "../app/providers";
 import type { ProviderConfig } from "../types/provider";
@@ -388,5 +389,51 @@ describe("ComposerDock", () => {
     });
     expect(JSON.stringify(runtimeClient.getMvp9().mvp10.terminal.getState())).not.toContain("G:\\UAgent");
     expect(runtimeClient.getMvp9().mvp10.terminal.getState().activeProposal?.cwd).toBe("[project-root]");
+  });
+
+  it("keeps ContextRing, ModelSelector and Send button in a stable order inside right-tools", () => {
+    const { container } = renderDock();
+
+    const rightTools = container.querySelector(".ua-composer__right-tools") as HTMLElement;
+    expect(rightTools).toBeTruthy();
+
+    const ring = within(rightTools).getByText("12%").closest(".ua-context-ring") as HTMLElement;
+    const modelTrigger = within(rightTools).getByLabelText(
+      "Model selector: Model not configured, reasoning medium",
+    );
+    const send = within(rightTools).getByLabelText("Send - disabled");
+
+    expect(rightTools.contains(ring)).toBe(true);
+    expect(rightTools.contains(modelTrigger)).toBe(true);
+    expect(rightTools.contains(send)).toBe(true);
+
+    // DOM order inside right-tools must be: ContextRing, ModelSelector, Send.
+    const children = Array.from(rightTools.children);
+    const ringIndex = children.indexOf(ring);
+    const modelIndex = children.indexOf(modelTrigger.closest(".ua-model-selector")!);
+    const sendIndex = children.indexOf(send);
+    expect(ringIndex).toBeGreaterThanOrEqual(0);
+    expect(modelIndex).toBeGreaterThan(ringIndex);
+    expect(sendIndex).toBeGreaterThan(modelIndex);
+  });
+
+  it("CSS keeps right-tools from overlapping: stable gap, non-shrinkable ring, shrinkable selector", () => {
+    const css = readFileSync("web/src/composer/ComposerDock.css", "utf8");
+
+    // Stable gap on the right-tools container.
+    expect(css).toMatch(/\.ua-composer__right-tools\s*\{[\s\S]*?gap:\s*var\(--ua-space-3\);/m);
+    // Right tools can wrap to a new row instead of overlapping on narrow widths.
+    expect(css).toMatch(/\.ua-composer__right-tools\s*\{[\s\S]*?flex-wrap:\s*wrap;/m);
+    // ContextRing is non-compressible inside right-tools.
+    expect(css).toMatch(
+      /\.ua-composer__right-tools \.ua-context-ring\s*\{[\s\S]*?flex:\s*0\s+0\s+auto;/m,
+    );
+    // ModelSelector is allowed to shrink and capped so it never overlaps the ring.
+    expect(css).toMatch(
+      /\.ua-composer__right-tools \.ua-model-selector\s*\{[\s\S]*?flex:\s*0\s+1\s+auto;/m,
+    );
+    expect(css).toMatch(
+      /\.ua-composer__right-tools \.ua-model-selector\s*\{[\s\S]*?max-width:/m,
+    );
   });
 });

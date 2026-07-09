@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { EditorPanel } from "../inspector/EditorPanel";
 import { createDesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
 import type { NativeInvoke } from "../runtime/project-native-adapter";
@@ -171,6 +172,57 @@ describe("MVP14 desktop editor observation UI", () => {
     expect(nativeInvoke).toHaveBeenCalledWith("attach_editor_process", expect.anything());
     expect(nativeInvoke).toHaveBeenCalledWith("read_editor_process_status", expect.anything());
     expect(nativeInvoke).toHaveBeenCalledWith("read_editor_observation_snapshot", expect.anything());
+  });
+
+  it("renders the UE observation action row as a flex/wrap container with complete, ordered, unwrapped button labels", () => {
+    render(
+      <UIProvider>
+        <EditorPanel />
+      </UIProvider>,
+    );
+
+    const panel = screen.getByLabelText("Editor panel");
+    const actionRows = panel.querySelectorAll(".ua-utility-placeholder__action-row");
+    expect(actionRows.length).toBeGreaterThanOrEqual(1);
+
+    // The UE observation action row holds the five observation buttons in order.
+    const expectedLabels = [
+      "Refresh observation",
+      "Discover",
+      "Observe",
+      "Snapshot",
+      "Stop",
+    ];
+    const rowButtons = Array.from(actionRows[0].querySelectorAll("button"));
+    expect(rowButtons.map((btn) => btn.textContent)).toEqual(expectedLabels);
+
+    // Each button keeps its full label as a single text node (no mid-word break).
+    for (const btn of rowButtons) {
+      expect(btn.textContent).toBe(btn.textContent?.trim());
+      expect(btn.textContent?.length).toBeGreaterThan(0);
+      // Buttons carry a full-title tooltip in addition to the aria-label.
+      expect(btn.getAttribute("title")).not.toBeNull();
+    }
+  });
+
+  it("asserts the UE action-row CSS keeps button text on one line and wraps whole buttons", () => {
+    const css = readFileSync("web/src/inspector/UtilityPlaceholderPanel.css", "utf8");
+    expect(css).toMatch(/\.ua-utility-placeholder__action-row\s*\{[^}]*display:\s*flex;/s);
+    expect(css).toMatch(/\.ua-utility-placeholder__action-row\s*\{[^}]*flex-wrap:\s*wrap;/s);
+    expect(css).toMatch(/\.ua-utility-placeholder__button\s*\{[^}]*white-space:\s*nowrap;/s);
+    // Buttons must NOT inherit the list item's `overflow-wrap: anywhere` (which
+    // would split "Discover" into "Discove"/"r").
+    expect(css).toMatch(
+      /\.ua-utility-placeholder__action-row \.ua-utility-placeholder__button\s*\{[^}]*overflow-wrap:\s*normal;/s,
+    );
+  });
+
+  it("non-UE list items still wrap long text (regression guard for the generic placeholder CSS)", () => {
+    // The action-row override only applies to buttons inside the row. Regular
+    // `.ua-utility-placeholder__item` entries must keep wrapping long text so
+    // the Asset/Changes/Safety/diagnostic panels do not regress.
+    const css = readFileSync("web/src/inspector/UtilityPlaceholderPanel.css", "utf8");
+    expect(css).toMatch(/\.ua-utility-placeholder__item\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
   });
 
   it("renders native degraded lifecycle reads as not alive instead of heartbeat ok", async () => {

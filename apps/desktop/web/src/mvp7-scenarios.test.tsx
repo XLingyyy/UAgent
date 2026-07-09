@@ -96,7 +96,7 @@ describe("MVP7 desktop scenario matrix", () => {
 
     expect(container.querySelector('[data-workspace-mode="welcome"]')).toBeTruthy();
     expect(screen.getByText("MVP14 In Progress")).toBeTruthy();
-    expect(screen.getByText("Native FS: fixture") || screen.getByText("Read-only project index")).toBeTruthy();
+    expect(screen.getByText("Native FS fix") || screen.getByText("Read-only project index")).toBeTruthy();
     expect(screen.getByText("No project root registered")).toBeTruthy();
   });
 

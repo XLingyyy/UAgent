@@ -127,7 +127,7 @@ describe("MVP8 desktop scenario matrix", () => {
     const { container } = renderMvp8App();
 
     expect(container.querySelector('[data-workspace-mode="welcome"]')).toBeTruthy();
-    expect(screen.getByText("Native FS: fixture")).toBeTruthy();
+    expect(screen.getByText("Native FS fix")).toBeTruthy();
     expect(screen.getByText("No project root registered")).toBeTruthy();
   });
 
@@ -291,8 +291,8 @@ describe("MVP8 desktop scenario matrix", () => {
 
   it("shows capability cards, native FS fixture mode, and TitleBar status", () => {
     renderMvp8App();
-    expect(screen.getByText("Native FS: fixture")).toBeTruthy();
-    expect(screen.getByText(/No network/)).toBeTruthy();
+    expect(screen.getByText("Native FS fix")).toBeTruthy();
+    expect(screen.getByText(/No net/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Open utility drawer" }));
     const drawer = screen.getByLabelText("Utility drawer");

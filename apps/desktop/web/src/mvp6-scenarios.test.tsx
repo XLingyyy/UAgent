@@ -182,7 +182,7 @@ const scenarios: Mvp6Scenario[] = [
       expect(titlebar.getAttribute("data-tauri-drag-region")).toBe("");
       expect(toolsButton.parentElement?.getAttribute("data-tauri-drag-region")).toBeNull();
       expect(screen.getByLabelText("Connection summary")).toBeTruthy();
-      expect(within(screen.getByLabelText("Connection summary")).getByText("No network")).toBeTruthy();
+      expect(within(screen.getByLabelText("Connection summary")).getByText("No net")).toBeTruthy();
     },
   },
   {

@@ -45,52 +45,59 @@ export function EditorPanel() {
         </li>
         <li className="ua-utility-placeholder__item">{mvp14?.safetyBoundaries.join(" / ")}</li>
         <li className="ua-utility-placeholder__item">
-          <button
-            className="ua-utility-placeholder__button"
-            type="button"
-            aria-label="Refresh editor observation capability"
-            onClick={() => actions?.refreshMvp14ObservationCapability()}
-          >
-            Refresh observation
-          </button>{" "}
-          <button
-            className="ua-utility-placeholder__button"
-            type="button"
-            aria-label="Discover editor processes"
-            onClick={() => actions?.discoverMvp14EditorProcesses()}
-          >
-            Discover
-          </button>{" "}
-          <button
-            className="ua-utility-placeholder__button"
-            type="button"
-            aria-label="Attach editor observation session"
-            disabled={!latestProcess}
-            onClick={() => actions?.attachMvp14EditorProcess()}
-          >
-            Observe
-          </button>{" "}
-          <button
-            className="ua-utility-placeholder__button"
-            type="button"
-            aria-label="Read editor observation snapshot"
-            disabled={!mvp14?.session}
-            onClick={() => {
-              actions?.readMvp14EditorStatus();
-              actions?.readMvp14EditorSnapshot();
-            }}
-          >
-            Snapshot
-          </button>{" "}
-          <button
-            className="ua-utility-placeholder__button"
-            type="button"
-            aria-label="Stop editor observation session"
-            disabled={!mvp14?.session}
-            onClick={() => actions?.stopMvp14ObservationSession()}
-          >
-            Stop
-          </button>
+          <span className="ua-utility-placeholder__action-row">
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Refresh editor observation capability"
+              title="Refresh editor observation capability"
+              onClick={() => actions?.refreshMvp14ObservationCapability()}
+            >
+              Refresh observation
+            </button>
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Discover editor processes"
+              title="Discover editor processes"
+              onClick={() => actions?.discoverMvp14EditorProcesses()}
+            >
+              Discover
+            </button>
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Attach editor observation session"
+              title="Attach editor observation session"
+              disabled={!latestProcess}
+              onClick={() => actions?.attachMvp14EditorProcess()}
+            >
+              Observe
+            </button>
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Read editor observation snapshot"
+              title="Read editor observation snapshot"
+              disabled={!mvp14?.session}
+              onClick={() => {
+                actions?.readMvp14EditorStatus();
+                actions?.readMvp14EditorSnapshot();
+              }}
+            >
+              Snapshot
+            </button>
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Stop editor observation session"
+              title="Stop editor observation session"
+              disabled={!mvp14?.session}
+              onClick={() => actions?.stopMvp14ObservationSession()}
+            >
+              Stop
+            </button>
+          </span>
         </li>
         <li className="ua-utility-placeholder__item">
           Capability: {mvp13?.editorCapability.enabled ? mvp13.editorCapability.mode : "disabled"} /{" "}
@@ -103,21 +110,24 @@ export function EditorPanel() {
           Queue: {mvp13?.editorProposals.length ?? 0} proposals / {mvp13?.editorResults.length ?? 0} results
         </li>
         <li className="ua-utility-placeholder__item">
-          <button className="ua-utility-placeholder__button" type="button" aria-label="Refresh editor capability" onClick={() => actions?.refreshMvp13EditorCapability()}>
-            Refresh
-          </button>{" "}
-          <button className="ua-utility-placeholder__button" type="button" aria-label="Attach fixture editor session" onClick={() => actions?.attachMvp13FixtureEditorSession()}>
-            Attach
-          </button>{" "}
-          <button
-            className="ua-utility-placeholder__button"
-            type="button"
-            aria-label="Propose state-only editor operation"
-            disabled={!canPropose}
-            onClick={() => actions?.proposeMvp13StateOnlyEditorOperation()}
-          >
-            Propose
-          </button>
+          <span className="ua-utility-placeholder__action-row">
+            <button className="ua-utility-placeholder__button" type="button" aria-label="Refresh editor capability" title="Refresh editor capability" onClick={() => actions?.refreshMvp13EditorCapability()}>
+              Refresh
+            </button>
+            <button className="ua-utility-placeholder__button" type="button" aria-label="Attach fixture editor session" title="Attach fixture editor session" onClick={() => actions?.attachMvp13FixtureEditorSession()}>
+              Attach
+            </button>
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Propose state-only editor operation"
+              title="Propose state-only editor operation"
+              disabled={!canPropose}
+              onClick={() => actions?.proposeMvp13StateOnlyEditorOperation()}
+            >
+              Propose
+            </button>
+          </span>
         </li>
         {latestProposal && (
           <li className="ua-utility-placeholder__item">
@@ -126,33 +136,38 @@ export function EditorPanel() {
         )}
         {latestProposal && (
           <li className="ua-utility-placeholder__item">
-            <button
-              className="ua-utility-placeholder__button"
-              type="button"
-              aria-label="Approve editor operation"
-              disabled={!canApprove}
-              onClick={() => actions?.approveMvp13EditorOperation()}
-            >
-              Approve
-            </button>{" "}
-            <button
-              className="ua-utility-placeholder__button"
-              type="button"
-              aria-label="Execute editor operation"
-              disabled={!canExecute}
-              onClick={() => actions?.["executeMvp13EditorOperation"]()}
-            >
-              Execute
-            </button>{" "}
-            <button
-              className="ua-utility-placeholder__button"
-              type="button"
-              aria-label="Cancel editor operation"
-              disabled={!canCancel}
-              onClick={() => actions?.cancelMvp13EditorOperation()}
-            >
-              Cancel
-            </button>
+            <span className="ua-utility-placeholder__action-row">
+              <button
+                className="ua-utility-placeholder__button"
+                type="button"
+                aria-label="Approve editor operation"
+                title="Approve editor operation"
+                disabled={!canApprove}
+                onClick={() => actions?.approveMvp13EditorOperation()}
+              >
+                Approve
+              </button>
+              <button
+                className="ua-utility-placeholder__button"
+                type="button"
+                aria-label="Execute editor operation"
+                title="Execute editor operation"
+                disabled={!canExecute}
+                onClick={() => actions?.["executeMvp13EditorOperation"]()}
+              >
+                Execute
+              </button>
+              <button
+                className="ua-utility-placeholder__button"
+                type="button"
+                aria-label="Cancel editor operation"
+                title="Cancel editor operation"
+                disabled={!canCancel}
+                onClick={() => actions?.cancelMvp13EditorOperation()}
+              >
+                Cancel
+              </button>
+            </span>
           </li>
         )}
         {latestResult && (

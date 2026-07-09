@@ -140,6 +140,63 @@
   border-color: var(--ua-danger, #d32f2f);
 }
 
+/* Action row: a dedicated flex/wrap container for inline action button groups.
+   Replaces the previous pattern of loose inline buttons separated by text
+   spaces inside a `.ua-utility-placeholder__item`, which let long content
+   break inside a button (e.g. "Discove"/"r"). Buttons here keep their text on
+   one line and wrap as whole units instead. */
+.ua-utility-placeholder__action-row {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ua-space-2);
+  min-width: 0;
+}
+
+/* The item hosting an action row must not apply its `overflow-wrap: anywhere`
+   to the buttons, otherwise button labels break mid-word. Keep long wrapping
+   for sibling text by scoping the override to the action row children. */
+.ua-utility-placeholder__action-row .ua-utility-placeholder__button {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.ua-utility-placeholder__button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  min-width: 0;
+  padding: var(--ua-space-1) var(--ua-space-2);
+  border: 1px solid var(--ua-border-soft);
+  border-radius: var(--ua-radius-xs);
+  background: var(--ua-bg-app);
+  color: var(--ua-text-muted);
+  font-size: var(--ua-font-size-xs);
+  font-weight: var(--ua-font-weight-semibold);
+  line-height: var(--ua-line-height-relaxed);
+  cursor: pointer;
+  transition:
+    background var(--ua-dur-fast) var(--ua-ease-standard),
+    color var(--ua-dur-fast) var(--ua-ease-standard),
+    border-color var(--ua-dur-fast) var(--ua-ease-standard);
+}
+
+.ua-utility-placeholder__button:hover:not(:disabled) {
+  background: var(--ua-bg-hover);
+  color: var(--ua-text);
+  border-color: var(--ua-border-strong);
+}
+
+.ua-utility-placeholder__button:focus-visible {
+  outline: none;
+  box-shadow: var(--ua-focus-ring);
+}
+
+.ua-utility-placeholder__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @media (max-width: 420px) {
   .ua-utility-placeholder__header {
     flex-direction: column;

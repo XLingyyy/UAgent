@@ -49,6 +49,29 @@
 
 .ua-composer__right-tools {
   justify-content: flex-end;
+  /* Keep right tools from overflowing the input row: each child must be able
+     to shrink so ContextRing, ModelSelector and the Send button never overlap
+     at narrow widths or desktop scaling. The stable gap keeps them visually
+     separated. */
+  flex-wrap: wrap;
+  gap: var(--ua-space-3);
+}
+
+/* ContextRing has a stable, non-compressible footprint so its percentage
+   value never collides with the model selector. */
+.ua-composer__right-tools .ua-context-ring {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* ModelSelector must shrink (not just refuse to) when the right-tools row is
+   tight, and its width is capped so ContextRing and Send keep stable spacing.
+   Overrides the global ModelSelector `flex-shrink: 0` only inside the
+   composer right-tools. */
+.ua-composer__right-tools .ua-model-selector {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(240px, 30vw);
 }
 
 .ua-composer__add-btn {

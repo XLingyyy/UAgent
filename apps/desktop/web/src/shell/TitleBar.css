@@ -70,19 +70,69 @@
   justify-content: flex-end;
   min-width: 0;
   max-width: min(46vw, 760px);
+  /* The whole region may clip on overflow, but individual pills must NEVER be
+     compressed: each pill reserves its full label width and drops out only as
+     a whole unit (via the priority classes / media queries below), so you
+     never see a "M..." / "MC..." / "Pr..." intra-pill fragment. */
   overflow: hidden;
 }
 
 .ua-titlebar__status-pill {
-  flex: 0 1 auto;
+  /* `0 0 auto` refuses to shrink; combined with `white-space: nowrap` this
+     keeps each label intact at any flex pressure. Low-priority pills are
+     hidden wholesale by the responsive classes below, not clipped in place. */
+  flex: 0 0 auto;
   min-width: 0;
-  max-width: 160px;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   border: 1px solid var(--ua-border-soft);
   border-radius: var(--ua-radius-xs);
   padding: 1px var(--ua-space-2);
   background: var(--ua-bg-elevated);
+}
+
+/* Priority classes drive whole-pill hide/show at narrow widths. Pills are
+   hidden as complete elements so a region that can't fit them drops the
+   lowest-priority entry rather than fracturing its text.
+
+   CRITICAL: `.ua-titlebar__status` uses `justify-content: flex-end` +
+   `overflow: hidden`. When the kept pills' total width exceeds the status
+   flex slot, flex-end pushes the overflow off the *left* edge of the status
+   box, and `overflow: hidden` clips it there (the leftmost pills render
+   outside the box's left bound and get cropped — `Mock`/`MCP: RO` end up
+   at x < statusRect.left). The fix is NOT to keep overflowing pills and hope
+   they fit; it is to guarantee via these breakpoints that the kept pills'
+   total width is always strictly less than the status slot at every width,
+   so every visible pill stays inside the status box.
+
+   Priority order (kept across widths):
+     --key  : always shown on wide screens (core connection summary)
+     --p2   : UE editor state
+     --p3   : native FS source
+     --p4   : provider / network notes (lowest priority; implied by Mock) */
+
+/* Up to ~1700px the status flex slot shrinks below the full 6-pill total, so
+   flex-end + overflow would clip the left edge. Drop everything but the core
+   key summary (Mock + MCP: RO ≈ 106px), which fits in the slot at all these
+   widths (~190px+ at 1280px). */
+@media (max-width: 1700px) {
+  .ua-titlebar__status-pill--p4,
+  .ua-titlebar__status-pill--p3,
+  .ua-titlebar__status-pill--p2 {
+    display: none;
+  }
+}
+
+/* Narrow window (~1200px and below): the status flex slot can drop below the
+   ~106px key-summary total, so the key pills themselves would be clipped.
+   Hide the whole status summary rather than render clipped pills. This keeps
+   Tools / badges / window controls fully clickable; the connection summary is
+   still available (aria-label) for AT, just not visually cluttering a tiny bar. */
+@media (max-width: 1200px) {
+  .ua-titlebar__status {
+    display: none;
+  }
 }
 
 .ua-titlebar__controls {
@@ -133,4 +183,119 @@
 
 .ua-titlebar__badge--subtle {
   opacity: 0.44;
+}
+
+/* ---- Window controls (minimize / maximize-restore / close) ---- */
+
+.ua-titlebar__window-controls {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  margin-left: var(--ua-space-2);
+  height: var(--ua-titlebar-height);
+}
+
+.ua-titlebar__window-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ua-text-muted);
+  transition:
+    background var(--ua-dur-fast) var(--ua-ease-standard),
+    color var(--ua-dur-fast) var(--ua-ease-standard);
+}
+
+.ua-titlebar__window-btn:hover,
+.ua-titlebar__window-btn:focus-visible {
+  background: var(--ua-bg-hover);
+  color: var(--ua-text);
+}
+
+.ua-titlebar__window-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ua-focus-ring);
+}
+
+.ua-titlebar__window-btn--close:hover,
+.ua-titlebar__window-btn--close:focus-visible {
+  background: var(--ua-danger);
+  color: var(--ua-accent-fg);
+}
+
+/* Pure icon glyphs drawn with box-shadows so no icon library is needed.
+   They render as simple Windows-style minimize/maximize/close marks. */
+.ua-titlebar__win-icon {
+  position: relative;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+}
+
+.ua-titlebar__win-icon--minimize::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 12px;
+  height: 1.5px;
+  transform: translateY(-50%);
+  background: currentColor;
+}
+
+.ua-titlebar__win-icon--maximize {
+  border: 1.5px solid currentColor;
+}
+
+/* Restore icon: two overlapping squares (Windows-style). The window-btn above
+   is `display:flex; justify-content:center; align-items:center`, so the icon
+   sits centered. Use a 12px stage; the back L-shape is offset up-left, the
+   front square is offset down-right, both absolutely positioned within the
+   12px stage so they never clip or drift on hover/resize. The front fill uses
+   the titlebar background so the back frame reads behind it cleanly. */
+.ua-titlebar__win-icon--restore::before,
+.ua-titlebar__win-icon--restore::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+}
+
+/* Back square: top-left, only its top and left edges read as a "behind" frame. */
+.ua-titlebar__win-icon--restore::before {
+  top: 0;
+  left: 0;
+  border-top: 1.5px solid currentColor;
+  border-left: 1.5px solid currentColor;
+}
+
+/* Front square: bottom-right, full border, sits in front. */
+.ua-titlebar__win-icon--restore::after {
+  top: 3px;
+  left: 3px;
+  border: 1.5px solid currentColor;
+  background: var(--ua-bg-sidebar);
+}
+
+.ua-titlebar__win-icon--close::before,
+.ua-titlebar__win-icon--close::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 13px;
+  height: 1.5px;
+  background: currentColor;
+}
+
+.ua-titlebar__win-icon--close::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.ua-titlebar__win-icon--close::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
