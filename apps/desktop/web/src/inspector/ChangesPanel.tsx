@@ -10,6 +10,7 @@ export function ChangesPanel() {
   const lastChangeSet = changeSetEvents[changeSetEvents.length - 1];
   const mvp12 = runtime?.mvp12;
   const mvp13 = runtime?.mvp13;
+  const mvp15 = runtime?.mvp15;
   const activeChangeSet = mvp12?.activeChangeSet ?? null;
 
   return (
@@ -59,6 +60,19 @@ export function ChangesPanel() {
                 MCP dry-run: {dryRun.toolName} / {dryRun.textBacked ? "ChangeSet v2" : dryRun.assetRisk ? "blocked asset plan" : "state-only"}
               </li>
             ))}
+          </>
+        )}
+
+        {mvp15 && mvp15.changeSets.length > 0 && (
+          <>
+            <li className="ua-utility-placeholder__item">
+              Asset ChangeSets: {mvp15.changeSets.length} / gate {mvp15.gate.mode}
+            </li>
+            {mvp15.activeChangeSet && (
+              <li className="ua-utility-placeholder__item">
+                Asset ChangeSet: {mvp15.activeChangeSet.state} / {mvp15.activeChangeSet.risk}
+              </li>
+            )}
           </>
         )}
 

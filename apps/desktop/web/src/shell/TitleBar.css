@@ -25,11 +25,16 @@
 
 .ua-titlebar__center {
   justify-content: center;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .ua-titlebar__right {
+  flex: 1.8 1 0;
   justify-content: flex-end;
   gap: var(--ua-space-2);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .ua-titlebar__brand {
@@ -52,23 +57,46 @@
   text-overflow: ellipsis;
 }
 
+.ua-titlebar__drag-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .ua-titlebar__status {
   display: flex;
   align-items: center;
+  flex: 1 1 auto;
   gap: var(--ua-space-1);
+  justify-content: flex-end;
   min-width: 0;
+  max-width: min(46vw, 760px);
+  overflow: hidden;
 }
 
 .ua-titlebar__status-pill {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border: 1px solid var(--ua-border-soft);
   border-radius: var(--ua-radius-xs);
   padding: 1px var(--ua-space-2);
   background: var(--ua-bg-elevated);
 }
 
+.ua-titlebar__controls {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--ua-space-2);
+  min-width: max-content;
+}
+
 .ua-titlebar__btn {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
   height: 28px;
   padding: 0 var(--ua-space-2);
   border-radius: var(--ua-radius-md);
@@ -91,6 +119,7 @@
 }
 
 .ua-titlebar__badge {
+  flex: 0 0 auto;
   font-size: var(--ua-font-size-xs);
   font-weight: var(--ua-font-weight-normal);
   color: var(--ua-text-subtle);

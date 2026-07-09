@@ -3,10 +3,12 @@ import "./UtilityPlaceholderPanel.css";
 
 export function McpMutationPanel() {
   const mvp13 = useOptionalRuntimeStore((state) => state.mvp13);
+  const mvp15 = useOptionalRuntimeStore((state) => state.mvp15);
   const actions = useOptionalRuntimeActions();
   const latestDryRun = mvp13?.mcpDryRuns[mvp13.mcpDryRuns.length - 1] ?? null;
   const latestProposal = mvp13?.mcpProposals[mvp13.mcpProposals.length - 1] ?? null;
   const latestAssetPlan = mvp13?.assetPlans[mvp13.assetPlans.length - 1] ?? null;
+  const mvp15Inventory = mvp15?.mcpInventory ?? null;
 
   return (
     <section className="ua-utility-placeholder" aria-label="MCP mutation panel">
@@ -16,7 +18,7 @@ export function McpMutationPanel() {
           <h3 className="ua-utility-placeholder__title">MCP Mutation</h3>
         </div>
         <span className="ua-utility-placeholder__state">
-          {latestDryRun ? "dry-run recorded" : "default blocked"}
+          {mvp15Inventory?.status ?? (latestDryRun ? "dry-run recorded" : "default blocked")}
         </span>
       </div>
       <ul className="ua-utility-placeholder__list">
@@ -45,6 +47,15 @@ export function McpMutationPanel() {
             Asset plan: {latestAssetPlan.reason} / {latestAssetPlan.affectedAssets.length} assets
           </li>
         )}
+        {mvp15Inventory?.missingTools.length ? (
+          <li className="ua-utility-placeholder__item">MVP15 missing tools: {mvp15Inventory.missingTools.join(", ")}</li>
+        ) : null}
+        {mvp15Inventory?.missingSchemas.length ? (
+          <li className="ua-utility-placeholder__item">MVP15 missing schema: {mvp15Inventory.missingSchemas.join(", ")}</li>
+        ) : null}
+        {mvp15Inventory?.missingDryRunSchemas.length ? (
+          <li className="ua-utility-placeholder__item">MVP15 missing dry-run schema: {mvp15Inventory.missingDryRunSchemas.join(", ")}</li>
+        ) : null}
         {mvp13?.replayOnly && (
           <li className="ua-utility-placeholder__item">Replay: recorded summaries only</li>
         )}

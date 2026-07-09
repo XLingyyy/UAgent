@@ -143,3 +143,26 @@ pnpm --filter @uagent/desktop test:watch
 ```
 
 The desktop app includes UI shell smoke tests using Testing Library (`@testing-library/react`) with a jsdom environment.
+
+### MVP15 Asset Mutation Checks
+
+Run these checks when changing the sandbox asset mutation pilot:
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm --filter @uagent/shared test
+pnpm --filter @uagent/runtime test
+pnpm --filter @uagent/mcp-client test
+pnpm --filter @uagent/desktop test
+pnpm --filter @uagent/desktop web:build
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml asset_mutation -- --test-threads=1
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml ue_editor_process -- --test-threads=1
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml -- --test-threads=1
+node scripts/side-effect-scan.mjs
+git diff --check
+```
+
+Real UE sandbox smoke requires a supervisor-local UE Editor project with the bridge enabled. The smoke must mutate only `/Game/UAgentSandbox/**`, verify the resulting manifest, exercise rollback, and confirm that non-sandbox paths remain blocked.

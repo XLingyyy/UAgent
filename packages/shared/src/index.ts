@@ -49,6 +49,30 @@ export interface WorkspaceState {
 }
 
 export type {
+  AssetApproval,
+  AssetApprovalStatus,
+  AssetChangeSet,
+  AssetChangeSetState,
+  AssetDryRunResult,
+  AssetExecutionResult,
+  AssetManifestEntry,
+  AssetManifestState,
+  AssetMutationAuditEventType,
+  AssetMutationEvidencePayload,
+  AssetMutationOperation,
+  AssetMutationOperationKind,
+  AssetMutationRisk,
+  AssetRollbackAction,
+  AssetRollbackActionKind,
+  AssetRollbackPlan,
+  AssetVerificationCheck,
+  AssetVerificationResult,
+} from "./asset-mutation.js";
+export {
+  ASSET_MUTATION_OPERATION_KINDS,
+  ASSET_MUTATION_RISKS,
+} from "./asset-mutation.js";
+export type {
   PermissionMode,
   TaskDraft,
   TaskEvent,

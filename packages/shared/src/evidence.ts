@@ -26,7 +26,12 @@ export type EvidenceKind =
   | "editor_heartbeat"
   | "editor_snapshot"
   | "editor_state_operation"
-  | "asset_mutation_plan";
+  | "asset_mutation_plan"
+  | "asset_mutation_dry_run"
+  | "asset_changeset_summary"
+  | "asset_mutation_execution"
+  | "asset_mutation_verification"
+  | "asset_mutation_rollback";
 
 export type EvidenceSource =
   | "mock-runtime"
@@ -39,7 +44,8 @@ export type EvidenceSource =
   | "diagnostics-engine"
   | "editor-policy"
   | "editor-observation"
-  | "mcp-mutation-policy";
+  | "mcp-mutation-policy"
+  | "asset-mutation-policy";
 
 export interface EvidenceRecord {
   id: string;

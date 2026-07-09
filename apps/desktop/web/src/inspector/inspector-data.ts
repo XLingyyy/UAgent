@@ -48,6 +48,7 @@ export type UtilityToolId =
   | "screenshot"
   | "files"
   | "evidence"
+  | "asset-mutation"
   | "mcp-mutation"
   | "logs"
   | "ue"
@@ -57,6 +58,7 @@ export type UtilityPlaceholderToolId = Exclude<
   UtilityToolId,
   "review" | "diagnostics" | "runtime" | "agent-trace" | "evidence" | "terminal" | "browser" | "screenshot" | "files"
   | "ue"
+  | "asset-mutation"
   | "mcp-mutation"
 >;
 
@@ -242,6 +244,11 @@ export const utilityTools: UtilityToolDefinition[] = [
     id: "ue",
     label: "UE",
     summary: "Editor session",
+  },
+  {
+    id: "asset-mutation",
+    label: "Assets",
+    summary: "Sandbox mutation",
   },
   {
     id: "mcp-mutation",

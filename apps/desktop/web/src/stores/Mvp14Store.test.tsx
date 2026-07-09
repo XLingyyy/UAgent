@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { EditorPanel } from "../inspector/EditorPanel";
 import { createDesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
 import type { NativeInvoke } from "../runtime/project-native-adapter";
-import { UIProvider } from "./ui-store";
+import { UIProvider, useRuntimeStore } from "./ui-store";
+
+function RuntimePidHashProbe() {
+  const pidHash = useRuntimeStore((state) => state.mvp14.session?.pidHash ?? "missing");
+  return <output aria-label="MVP14 session pid hash">{pidHash}</output>;
+}
 
 describe("MVP14 desktop editor observation UI", () => {
   it("renders observation status, heartbeat, snapshot, and safety boundaries from the runtime store", () => {
@@ -71,6 +76,7 @@ describe("MVP14 desktop editor observation UI", () => {
           projectId: "project:fixture",
           rootId: "root:fixture",
           uprojectDisplayPath: "[project-root]/Game.uproject",
+          pidHash: "pid:native-1",
           mode: "attached",
           status: "attached",
           reason: "attached",
@@ -127,6 +133,7 @@ describe("MVP14 desktop editor observation UI", () => {
     render(
       <UIProvider runtimeClient={runtimeClient}>
         <EditorPanel />
+        <RuntimePidHashProbe />
       </UIProvider>,
     );
 
@@ -138,6 +145,7 @@ describe("MVP14 desktop editor observation UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Attach editor observation session" }));
     await waitFor(() => {
       expect(screen.getByText("attached")).toBeTruthy();
+      expect(screen.getByLabelText("MVP14 session pid hash").textContent).toBe("pid:native-1");
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Read editor observation snapshot" }));

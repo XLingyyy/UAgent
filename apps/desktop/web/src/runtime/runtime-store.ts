@@ -1,7 +1,13 @@
 import {
   createMockRuntime,
+  createAssetChangeSetService,
+  createAssetManifestRegistry,
+  createFixtureAssetMutationAdapter,
   parseBuildOutputToDiagnostics,
+  type AssetChangeSetService,
+  type AssetMutationReplaySummary,
   type BuildOutputDiagnosticSummary,
+  type Mvp15McpAssetToolInventory,
   type MockRuntimeClient,
 } from "@uagent/runtime";
 import type {
@@ -37,6 +43,11 @@ import type {
   McpMutationDryRunResult,
   McpMutationProposal,
   AssetMutationPlan,
+  AssetChangeSet,
+  AssetDryRunResult,
+  AssetExecutionResult,
+  AssetManifestEntry,
+  AssetVerificationResult,
   UEProjectMetadata,
   WorkspaceChangeSetV2,
 } from "@uagent/shared";
@@ -153,6 +164,30 @@ export interface Mvp14RuntimeState {
   lastError: string | null;
 }
 
+export type Mvp15GateMode = "disabled" | "dry-run-only" | "sandbox-enabled" | "supervisor-local-smoke-required";
+export type Mvp15AssetMarker = "sandbox_created" | "sandbox_modified" | "sandbox_deleted" | "rollback_available";
+
+export interface Mvp15RuntimeState {
+  gate: {
+    mode: Mvp15GateMode;
+    sandboxRoot: "/Game/UAgentSandbox";
+    reason: string;
+  };
+  executionMode: "fixture" | "real" | "blocked_by_mcp_schema";
+  sourceAssetPath: string | null;
+  runId: string | null;
+  mcpInventory: Mvp15McpAssetToolInventory | null;
+  manifestEntries: AssetManifestEntry[];
+  changeSets: AssetChangeSet[];
+  activeChangeSet: AssetChangeSet | null;
+  latestDryRun: AssetDryRunResult | null;
+  latestExecution: AssetExecutionResult | null;
+  latestVerification: AssetVerificationResult | null;
+  replaySummary: AssetMutationReplaySummary | null;
+  fileMarkers: Record<string, Mvp15AssetMarker[]>;
+  lastError: string | null;
+}
+
 export interface RuntimeStoreState extends RuntimeSnapshot {
   mockOnlyWarning: string | null;
   mcp: McpConnectionState;
@@ -161,6 +196,7 @@ export interface RuntimeStoreState extends RuntimeSnapshot {
   mvp12: Mvp12RuntimeState;
   mvp13: Mvp13RuntimeState;
   mvp14: Mvp14RuntimeState;
+  mvp15: Mvp15RuntimeState;
 }
 
 export interface RuntimeStoreActions {
@@ -227,6 +263,11 @@ export interface RuntimeStoreActions {
   readMvp14EditorStatus: () => void;
   readMvp14EditorSnapshot: () => void;
   stopMvp14ObservationSession: () => void;
+  runMvp15AssetDryRun: (sourceAssetPath?: string) => void;
+  approveMvp15AssetChangeSet: () => void;
+  executeMvp15AssetChangeSet: () => Promise<void>;
+  verifyMvp15AssetChangeSet: () => Promise<void>;
+  rollbackMvp15AssetChangeSet: () => Promise<void>;
 }
 
 export const DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS = 500;
@@ -341,6 +382,29 @@ export function createEmptyMvp14State(): Mvp14RuntimeState {
   };
 }
 
+export function createEmptyMvp15State(): Mvp15RuntimeState {
+  return {
+    gate: {
+      mode: "sandbox-enabled",
+      sandboxRoot: "/Game/UAgentSandbox",
+      reason: "fixture sandbox asset mutation requires dry-run, approval, execute, verify, and rollback",
+    },
+    executionMode: "fixture",
+    sourceAssetPath: null,
+    runId: null,
+    mcpInventory: null,
+    manifestEntries: [],
+    changeSets: [],
+    activeChangeSet: null,
+    latestDryRun: null,
+    latestExecution: null,
+    latestVerification: null,
+    replaySummary: null,
+    fileMarkers: {},
+    lastError: null,
+  };
+}
+
 export function createMvp12FileMarkers(state: Mvp12RuntimeState): Record<string, Mvp12FileMarker[]> {
   const markers: Record<string, Mvp12FileMarker[]> = {};
   for (const [path, summary] of Object.entries(state.changedFiles)) {
@@ -402,6 +466,23 @@ export function refreshMvp13DerivedState(state: Mvp13RuntimeState): Mvp13Runtime
       ]),
     ],
   };
+}
+
+export function refreshMvp15DerivedState(state: Mvp15RuntimeState): Mvp15RuntimeState {
+  const fileMarkers: Record<string, Mvp15AssetMarker[]> = {};
+  for (const changeSet of state.changeSets) {
+    for (const operation of changeSet.operations) {
+      const path = operation.assetPathAfter ?? operation.assetPathBefore;
+      if (!path) continue;
+      const markers = fileMarkers[path] ?? [];
+      if (operation.kind === "create_folder" || operation.kind === "duplicate_asset" || operation.kind === "create_test_asset") markers.push("sandbox_created");
+      if (operation.kind === "rename_asset" || operation.kind === "move_asset" || operation.kind === "save_single_asset") markers.push("sandbox_modified");
+      if (operation.kind === "delete_sandbox_asset") markers.push("sandbox_deleted");
+      if (changeSet.state === "verified" || changeSet.state === "rollback_available") markers.push("rollback_available");
+      fileMarkers[path] = [...new Set(markers)];
+    }
+  }
+  return { ...state, fileMarkers };
 }
 
 export function mergeMvp11RedactionSummaries(
@@ -581,7 +662,15 @@ export function createRuntimeStoreState(snapshot: RuntimeSnapshot): RuntimeStore
     mvp12: createEmptyMvp12State(),
     mvp13: createEmptyMvp13State(),
     mvp14: createEmptyMvp14State(),
+    mvp15: createEmptyMvp15State(),
   };
+}
+
+export function createMvp15FixtureService(): AssetChangeSetService {
+  return createAssetChangeSetService({
+    manifest: createAssetManifestRegistry(),
+    adapter: createFixtureAssetMutationAdapter(),
+  });
 }
 
 export function analyzeRecordedBuildOutput(state: RuntimeStoreState): RuntimeStoreState {

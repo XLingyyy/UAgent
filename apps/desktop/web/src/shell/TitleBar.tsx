@@ -47,17 +47,19 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
           </span>
           <span className="ua-titlebar__status-pill">UE Editor: {editorStatus}</span>
         </div>
-        <button
-          className="ua-titlebar__btn"
-          onClick={toggleInspector}
-          aria-label={toolsLabel}
-          aria-pressed={inspectorOpen}
-          type="button"
-        >
-          <span aria-hidden>Tools</span>
-        </button>
-        <span className="ua-titlebar__badge">MVP14 In Progress</span>
-        <span className="ua-titlebar__badge ua-titlebar__badge--subtle">Native FS OK</span>
+        <div className="ua-titlebar__controls">
+          <button
+            className="ua-titlebar__btn"
+            onClick={toggleInspector}
+            aria-label={toolsLabel}
+            aria-pressed={inspectorOpen}
+            type="button"
+          >
+            <span aria-hidden>Tools</span>
+          </button>
+          <span className="ua-titlebar__badge">MVP14 In Progress</span>
+          <span className="ua-titlebar__badge ua-titlebar__badge--subtle">Native FS OK</span>
+        </div>
       </div>
     </header>
   );

@@ -52,6 +52,7 @@ interface NativeSessionResult {
   projectId: string;
   rootId?: string | null;
   uprojectDisplayPath?: string | null;
+  pidHash?: string | null;
   mode: "fixture" | "attached" | "launched";
   status: UEEditorSession["status"];
   reason: string;
@@ -122,6 +123,7 @@ function toSession(result: NativeSessionResult): UEEditorSession | null {
     projectId: result.projectId,
     rootId: result.rootId,
     uprojectDisplayPath: result.uprojectDisplayPath,
+    pidHash: result.pidHash ?? null,
     mode: result.mode,
     status: result.status,
     createdAt: result.createdAt,

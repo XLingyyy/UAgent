@@ -1,13 +1,22 @@
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
 import {
   createContextPackV1,
+  createAssetChangeSetService,
+  createAssetManifestRegistry,
   createEditorOperationService,
   createEditorSessionRegistry,
+  createFixtureAssetMutationAdapter,
+  createMvp15McpAssetMutationAdapter,
+  createMvp15McpAssetToolInventory,
   createMcpMutationService,
   createRepairProposalEngine,
   createUEProjectDiagnosticsEngine,
   mapMcpDryRunToOperation,
   parseUEProjectMetadata,
+  replayAssetMutationSummary,
+  type AssetChangeSetService,
+  type Mvp15McpAssetToolDescriptor,
+  type Mvp15McpAssetToolInventory,
 } from "@uagent/runtime";
 import type { ChangeOperationV2, ProjectDiagnostic } from "@uagent/shared";
 import { createNativeProjectAdapter } from "../runtime/project-native-adapter";
@@ -37,6 +46,7 @@ import {
   refreshMvp11DerivedState,
   refreshMvp12DerivedState,
   refreshMvp13DerivedState,
+  refreshMvp15DerivedState,
   type RuntimeStoreActions,
   type RuntimeStoreState,
 } from "../runtime/runtime-store";
@@ -148,6 +158,116 @@ function toNativeApplyOperation(operation: ChangeOperationV2): NativeApplyTextMu
   };
 }
 
+function isMvp15RealReady(state: RuntimeStoreState): boolean {
+  return (
+    state.mvp15.gate.mode === "sandbox-enabled" &&
+    state.mvp14.session?.mode === "attached" &&
+    state.mvp14.status?.status === "ready" &&
+    state.mvp14.status.heartbeat?.processAlive === true
+  );
+}
+
+function getMvp15ObservedPidHash(state: RuntimeStoreState): string | null {
+  if (state.mvp14.status?.heartbeat?.processAlive !== true) return null;
+  const pidHash = state.mvp14.session?.pidHash?.trim();
+  return pidHash ? pidHash : null;
+}
+
+function sanitizeMvp15AssetName(name: string): string {
+  const sanitized = name.replace(/[^A-Za-z0-9_]/g, "");
+  return sanitized || "Asset";
+}
+
+function formatMvp15InventoryBlocker(inventory: ReturnType<typeof createMvp15McpAssetToolInventory>): string {
+  const firstMissingTool = inventory.missingTools[0];
+  if (firstMissingTool) return `blocked_by_mcp_schema:missing_tool:${firstMissingTool}`;
+  const firstMissingSchema = inventory.missingSchemas[0];
+  if (firstMissingSchema) return `blocked_by_mcp_schema:schema_required:${firstMissingSchema}`;
+  const firstMissingDryRun = inventory.missingDryRunSchemas[0];
+  if (firstMissingDryRun) return `blocked_by_mcp_schema:dry_run_required:${firstMissingDryRun}`;
+  return "blocked_by_mcp_schema:unknown";
+}
+
+function createMvp15FixtureAssetMutationService(): AssetChangeSetService {
+  return createAssetChangeSetService({
+    manifest: createAssetManifestRegistry(),
+    adapter: createFixtureAssetMutationAdapter(),
+  });
+}
+
+function getMvp15McpAssetTools(runtimeClient: DesktopRuntimeAdapter): Mvp15McpAssetToolDescriptor[] {
+  return (runtimeClient.getMcpDiscovery()?.tools ?? []).map((tool) => {
+    const descriptor = tool as typeof tool & { dryRunSchema?: unknown };
+    return {
+      name: descriptor.name,
+      inputSchema: descriptor.inputSchema,
+      dryRunSchema: descriptor.dryRunSchema,
+      annotations: descriptor.annotations,
+    };
+  });
+}
+
+function getMvp15McpAssetInventory(runtimeClient: DesktopRuntimeAdapter): Mvp15McpAssetToolInventory | null {
+  if (!runtimeClient.getMcpDiscovery()) return null;
+  return createMvp15McpAssetToolInventory(getMvp15McpAssetTools(runtimeClient));
+}
+
+function applyMvp15McpInventory(
+  state: RuntimeStoreState["mvp15"],
+  inventory: Mvp15McpAssetToolInventory | null,
+): RuntimeStoreState["mvp15"] {
+  if (!inventory) {
+    return {
+      ...state,
+      executionMode: state.executionMode === "blocked_by_mcp_schema" ? "fixture" : state.executionMode,
+      mcpInventory: null,
+      lastError: state.lastError?.startsWith("blocked_by_mcp_schema") ? null : state.lastError,
+    };
+  }
+  return {
+    ...state,
+    executionMode:
+      inventory.status === "blocked_by_mcp_schema"
+        ? "blocked_by_mcp_schema"
+        : state.executionMode === "blocked_by_mcp_schema"
+          ? "fixture"
+          : state.executionMode,
+    mcpInventory: inventory,
+    lastError:
+      inventory.status === "blocked_by_mcp_schema"
+        ? formatMvp15InventoryBlocker(inventory)
+        : state.lastError?.startsWith("blocked_by_mcp_schema")
+          ? null
+          : state.lastError,
+  };
+}
+
+function createMvp15RealAssetMutationService(
+  runtimeClient: DesktopRuntimeAdapter,
+  state: RuntimeStoreState,
+  tools: Mvp15McpAssetToolDescriptor[],
+  observedPidHash: string,
+): AssetChangeSetService {
+  return createAssetChangeSetService({
+    executionMode: "real",
+    manifest: createAssetManifestRegistry(),
+    adapter: createMvp15McpAssetMutationAdapter({
+      tools,
+      assetMutationGateEnabled: state.mvp15.gate.mode === "sandbox-enabled",
+      observedEditorSessionId: state.mvp14.status?.heartbeat?.sessionId ?? state.mvp14.session?.sessionId ?? null,
+      observedPidHash,
+      nativeGuard: (input) =>
+        runtimeClient.guardMvp15AssetMutation
+          ? runtimeClient.guardMvp15AssetMutation(input)
+          : { status: "blocked", reason: "native_asset_guard_unavailable", evidenceId: null },
+      callTool: (toolName, args) =>
+        runtimeClient.callMvp15AssetTool
+          ? runtimeClient.callMvp15AssetTool(toolName, args)
+          : { ok: false, status: "blocked", reason: "mcp_asset_bridge_unavailable", evidenceId: null },
+    }),
+  });
+}
+
 interface UIStoreBundle {
   layoutStore: SliceStore<LayoutStoreState>;
   settingsStore: SliceStore<SettingsShellState>;
@@ -179,9 +299,13 @@ function createUIStateBundle(
   const threadStore = createSliceStore(createInitialThreadState(initialState));
   const composerStore = createSliceStore(createInitialComposerState(initialState, providerState));
   const providerStore = createSliceStore(providerState);
+  const runtimeBaseState = createRuntimeStoreState(runtimeClient.getSnapshot());
+  const initialMvp15Inventory = getMvp15McpAssetInventory(runtimeClient);
   const runtimeStore = createSliceStore({
-    ...createRuntimeStoreState(runtimeClient.getSnapshot()),
+    ...runtimeBaseState,
+    mcp: runtimeClient.getMcpState(),
     mvp9: runtimeClient.getMvp9().getState(),
+    mvp15: refreshMvp15DerivedState(applyMvp15McpInventory(runtimeBaseState.mvp15, initialMvp15Inventory)),
     ...initialState?.runtime,
   });
   const mvp12ApprovalByChangeSetId = new Map<string, NativeBoundChangeSetApproval>();
@@ -206,6 +330,9 @@ function createUIStateBundle(
     allowlist: [{ toolName: "ue.asset.save", assetRisk: true, requiresDryRun: true }],
   });
   const mvp13ApprovalTokenByProposalId = new Map<string, string>();
+  let mvp15AssetMutationService = createMvp15FixtureAssetMutationService();
+  const mvp15ApprovalTokenByChangeSetId = new Map<string, string>();
+  let mvp15RunCounter = 0;
   runtimeClient.subscribe((snapshot) => {
     runtimeStore.setState((previousState) => ({
       ...previousState,
@@ -217,9 +344,11 @@ function createUIStateBundle(
     }));
   });
   runtimeClient.subscribeMcp((mcp) => {
+    const mvp15Inventory = getMvp15McpAssetInventory(runtimeClient);
     runtimeStore.setState((previousState) => ({
       ...previousState,
       mcp,
+      mvp15: refreshMvp15DerivedState(applyMvp15McpInventory(previousState.mvp15, mvp15Inventory)),
       mockOnlyWarning:
         mcp.status === "connected"
           ? "MCP read-only runtime / no provider call"
@@ -1646,6 +1775,203 @@ function createUIStateBundle(
           session: session ?? (previousState.mvp14.session ? { ...previousState.mvp14.session, status: "stopped" } : null),
           lastError: status.reason,
         },
+      }));
+    },
+    runMvp15AssetDryRun: (sourceAssetPathInput) => {
+      const sourceAssetPath = sourceAssetPathInput?.trim() ?? "";
+      if (!sourceAssetPath) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp15: refreshMvp15DerivedState({
+            ...previousState.mvp15,
+            sourceAssetPath: null,
+            lastError: "source_asset_required",
+          }),
+        }));
+        return;
+      }
+      if (!sourceAssetPath.startsWith("/Game/")) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp15: refreshMvp15DerivedState({
+            ...previousState.mvp15,
+            sourceAssetPath,
+            lastError: "source_asset_path_invalid",
+          }),
+        }));
+        return;
+      }
+      const state = runtimeStore.getState();
+      const realReady = isMvp15RealReady(state);
+      const mcpTools = realReady ? getMvp15McpAssetTools(runtimeClient) : [];
+      let mcpInventory: Mvp15McpAssetToolInventory | null = null;
+      let observedPidHash: string | null = null;
+      if (realReady) {
+        mcpInventory = createMvp15McpAssetToolInventory(mcpTools);
+        if (mcpInventory.status !== "ready") {
+          const blockedInventory = mcpInventory;
+          runtimeStore.setState((previousState) => ({
+            ...previousState,
+            mvp15: refreshMvp15DerivedState({
+              ...previousState.mvp15,
+              executionMode: "blocked_by_mcp_schema",
+              sourceAssetPath,
+              mcpInventory: blockedInventory,
+              lastError: formatMvp15InventoryBlocker(blockedInventory),
+            }),
+          }));
+          return;
+        }
+        observedPidHash = getMvp15ObservedPidHash(state);
+        if (!observedPidHash) {
+          runtimeStore.setState((previousState) => ({
+            ...previousState,
+            mvp15: refreshMvp15DerivedState({
+              ...previousState.mvp15,
+              executionMode: "real",
+              sourceAssetPath,
+              mcpInventory,
+              lastError: "observed_pid_required",
+            }),
+          }));
+          return;
+        }
+        mvp15AssetMutationService = createMvp15RealAssetMutationService(runtimeClient, state, mcpTools, observedPidHash);
+      } else {
+        mvp15AssetMutationService = createMvp15FixtureAssetMutationService();
+      }
+      mvp15ApprovalTokenByChangeSetId.clear();
+      mvp15RunCounter += 1;
+      const runId = `ui-${Date.now().toString(36)}-${mvp15RunCounter.toString(36)}`;
+      const assetName = sanitizeMvp15AssetName(sourceAssetPath.split("/").filter(Boolean).at(-1) ?? "Asset");
+      const copyPath = `/Game/UAgentSandbox/${runId}/${assetName}Copy`;
+      const renamedPath = `/Game/UAgentSandbox/${runId}/${assetName}Renamed`;
+      const movedPath = `/Game/UAgentSandbox/${runId}/Sub/${assetName}Renamed`;
+      const result = mvp15AssetMutationService.dryRun({
+        projectId: state.mvp14.session?.projectId ?? "project:fixture",
+        trustedRootId: state.mvp14.session?.rootId ?? "root:fixture",
+        editorSessionId: state.mvp14.session?.sessionId ?? "editor-session:fixture",
+        pidHash: observedPidHash ?? "pid:fixture",
+        runId,
+        operations: [
+          { kind: "create_folder", assetPathAfter: `/Game/UAgentSandbox/${runId}` },
+          { kind: "duplicate_asset", assetPathBefore: sourceAssetPath, assetPathAfter: copyPath },
+          { kind: "rename_asset", assetPathBefore: copyPath, assetPathAfter: renamedPath },
+          { kind: "move_asset", assetPathBefore: renamedPath, assetPathAfter: movedPath },
+          { kind: "save_single_asset", assetPathBefore: movedPath, assetPathAfter: movedPath },
+        ],
+      });
+      const preview = mvp15AssetMutationService.preview(result.changeSet.id);
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp15: refreshMvp15DerivedState({
+          ...previousState.mvp15,
+          executionMode: realReady ? "real" : "fixture",
+          sourceAssetPath,
+          runId,
+          mcpInventory,
+          latestDryRun: result.dryRun,
+          activeChangeSet: preview.changeSet,
+          changeSets: preview.changeSet ? [preview.changeSet] : previousState.mvp15.changeSets,
+          lastError: preview.reason,
+        }),
+      }));
+    },
+    approveMvp15AssetChangeSet: () => {
+      const mvp15 = runtimeStore.getState().mvp15;
+      const changeSet = mvp15.activeChangeSet;
+      if (!changeSet) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp15: { ...previousState.mvp15, lastError: "asset_changeset_required" },
+        }));
+        return;
+      }
+      const result = mvp15AssetMutationService.approve({
+        changeSetId: changeSet.id,
+        actor: mvp15.executionMode === "real" ? "desktop-real" : "desktop-fixture",
+        reason: mvp15.executionMode === "real" ? "sandbox asset mutation real approval" : "sandbox asset mutation fixture approval",
+      });
+      if (result.approvalToken) mvp15ApprovalTokenByChangeSetId.set(changeSet.id, result.approvalToken);
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp15: refreshMvp15DerivedState({
+          ...previousState.mvp15,
+          activeChangeSet: result.changeSet,
+          changeSets: result.changeSet ? [result.changeSet] : previousState.mvp15.changeSets,
+          lastError: result.reason,
+        }),
+      }));
+    },
+    executeMvp15AssetChangeSet: async () => {
+      const changeSet = runtimeStore.getState().mvp15.activeChangeSet;
+      const token = changeSet ? mvp15ApprovalTokenByChangeSetId.get(changeSet.id) : null;
+      if (!changeSet || !token) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp15: { ...previousState.mvp15, lastError: "asset_approval_required" },
+        }));
+        return;
+      }
+      const result = await mvp15AssetMutationService.execute({
+        changeSetId: changeSet.id,
+        approvalToken: token,
+        editorSessionId: changeSet.editorSessionId,
+        pidHash: changeSet.pidHash,
+      });
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp15: refreshMvp15DerivedState({
+          ...previousState.mvp15,
+          activeChangeSet: result.changeSet,
+          latestExecution: result.execution ?? previousState.mvp15.latestExecution,
+          manifestEntries: previousState.mvp15.manifestEntries,
+          changeSets: result.changeSet ? [result.changeSet] : previousState.mvp15.changeSets,
+          lastError: result.reason,
+        }),
+      }));
+    },
+    verifyMvp15AssetChangeSet: async () => {
+      const changeSet = runtimeStore.getState().mvp15.activeChangeSet;
+      if (!changeSet) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp15: { ...previousState.mvp15, lastError: "asset_changeset_required" },
+        }));
+        return;
+      }
+      const result = await mvp15AssetMutationService.verify(changeSet.id);
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp15: refreshMvp15DerivedState({
+          ...previousState.mvp15,
+          activeChangeSet: result.changeSet,
+          latestVerification: result.verification ?? previousState.mvp15.latestVerification,
+          replaySummary: result.changeSet ? replayAssetMutationSummary(result.changeSet) : previousState.mvp15.replaySummary,
+          changeSets: result.changeSet ? [result.changeSet] : previousState.mvp15.changeSets,
+          lastError: result.reason,
+        }),
+      }));
+    },
+    rollbackMvp15AssetChangeSet: async () => {
+      const changeSet = runtimeStore.getState().mvp15.activeChangeSet;
+      if (!changeSet) {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp15: { ...previousState.mvp15, lastError: "asset_changeset_required" },
+        }));
+        return;
+      }
+      const result = await mvp15AssetMutationService.rollback(changeSet.id);
+      runtimeStore.setState((previousState) => ({
+        ...previousState,
+        mvp15: refreshMvp15DerivedState({
+          ...previousState.mvp15,
+          activeChangeSet: result.changeSet,
+          replaySummary: result.changeSet ? replayAssetMutationSummary(result.changeSet) : previousState.mvp15.replaySummary,
+          changeSets: result.changeSet ? [result.changeSet] : previousState.mvp15.changeSets,
+          lastError: result.reason,
+        }),
       }));
     },
   };

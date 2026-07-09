@@ -250,6 +250,66 @@ export {
   type Mvp14McpSchemaClassification,
 } from "./mvp14-mcp-schema-adapters.js";
 export { runMvp14ScenarioMatrix, type Mvp14ScenarioMatrixResult, type Mvp14ScenarioResult } from "./mvp14-scenarios.js";
+export {
+  createSandboxAssetPathPolicy,
+  classifyAssetMutationRisk,
+  type AssetPathPolicyReason,
+  type AssetPathPolicyResult,
+  type SandboxAssetPathPolicy,
+} from "./mvp15-asset-policy.js";
+export {
+  createAssetManifestRegistry,
+  type AssetManifestRegistry,
+  type RegisterAssetInput,
+} from "./mvp15-asset-manifest.js";
+export {
+  classifyMvp15McpAssetTool,
+  createMvp15McpAssetMutationAdapter,
+  createMvp15McpAssetToolInventory,
+  MVP15_ASSET_TOOL_ALLOWLIST,
+  type Mvp15McpAssetMutationAdapterOptions,
+  type Mvp15McpAssetDecision,
+  type Mvp15McpAssetToolCallResult,
+  type Mvp15McpAssetToolDecision,
+  type Mvp15McpAssetToolDescriptor,
+  type Mvp15McpAssetToolInput,
+  type Mvp15McpAssetToolInventory,
+  type Mvp15McpAssetToolName,
+  type Mvp15NativeAssetGuardInput,
+  type Mvp15NativeAssetGuardResult,
+} from "./mvp15-mcp-asset-adapter.js";
+export {
+  createAssetChangeSetService,
+  createFixtureAssetMutationAdapter,
+  type AssetChangeSetService,
+  type AssetChangeSetServiceOptions,
+  type AssetMutationAdapter,
+  type AssetMutationAdapterContext,
+  type AssetMutationAdapterResult,
+  type AssetMutationApproveInput,
+  type AssetMutationDraftOperation,
+  type AssetMutationDryRunInput,
+  type AssetMutationExecuteInput,
+  type AssetMutationServiceResult,
+  type AssetMutationVerificationAdapter,
+  type AssetMutationVerificationContext,
+} from "./mvp15-asset-changeset.js";
+export {
+  verifyAssetDeletedOrTrash,
+  verifyAssetExists,
+  verifyAssetMoved,
+  verifySingleAssetSaved,
+  verifySourceAssetUntouched,
+} from "./mvp15-asset-verification.js";
+export {
+  replayAssetMutationSummary,
+  type AssetMutationReplaySummary,
+} from "./mvp15-asset-replay.js";
+export {
+  createMvp15ScenarioMatrix,
+  type Mvp15ScenarioMatrixResult,
+  type Mvp15ScenarioResult,
+} from "./mvp15-scenarios.js";
 
 export type AgentStatus = "idle" | "thinking" | "acting" | "waiting" | "finished" | "error";
 

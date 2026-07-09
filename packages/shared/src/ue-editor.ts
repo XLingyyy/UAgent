@@ -37,6 +37,7 @@ export interface UEEditorSession {
   projectId: string;
   rootId: string;
   uprojectDisplayPath: string;
+  pidHash?: string | null;
   mode: UEEditorSessionMode;
   status: UEEditorSessionStatus;
   createdAt: number;

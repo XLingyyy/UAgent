@@ -9,6 +9,7 @@ import type {
   UEEditorObservationSnapshot,
   UEEditorProcessDescriptor,
   UEEditorProcessState,
+  UEEditorSession,
   UEEditorStatusReason,
 } from "./index.js";
 
@@ -41,6 +42,18 @@ describe("MVP14 editor observation shared contracts", () => {
       uprojDisplayPath: "[project-root]/Game.uproject",
       processId: "process:fixture",
       mode: "fixture",
+    };
+    const session: UEEditorSession = {
+      sessionId: "editor-session:1",
+      projectId: request.projectId,
+      rootId: request.rootId,
+      uprojectDisplayPath: request.uprojDisplayPath,
+      pidHash: "pid:abc123",
+      mode: "attached",
+      status: "attached",
+      createdAt: 1,
+      expiresAt: 120_001,
+      replayOnly: false,
     };
     const heartbeat: UEEditorHeartbeat = {
       sessionId: "editor-session:1",
@@ -76,6 +89,7 @@ describe("MVP14 editor observation shared contracts", () => {
     };
 
     expect(heartbeat.statusReason satisfies UEEditorStatusReason).toBe("heartbeat_ok");
+    expect(session.pidHash).toBe("pid:abc123");
     expect(snapshot.editorState satisfies UEEditorProcessState).toBe("attached");
     expect(event.payload.displayPath).toBe("[project-root]/Game.uproject");
   });

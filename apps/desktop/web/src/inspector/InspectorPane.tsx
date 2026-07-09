@@ -13,6 +13,7 @@ import { ScreenshotPanel } from "./ScreenshotPanel";
 import { WatcherPanel } from "./WatcherPanel";
 import { EditorPanel } from "./EditorPanel";
 import { McpMutationPanel } from "./McpMutationPanel";
+import { AssetMutationPanel } from "./AssetMutationPanel";
 import { UtilityEvidencePanel, UtilityPlaceholderPanel } from "./UtilityPlaceholderPanel";
 import {
   utilityPlaceholderPanels,
@@ -88,6 +89,10 @@ function renderToolPanel(toolId: UtilityToolId) {
 
   if (toolId === "mcp-mutation") {
     return <McpMutationPanel />;
+  }
+
+  if (toolId === "asset-mutation") {
+    return <AssetMutationPanel />;
   }
 
   if (isUtilityPlaceholderTool(toolId)) {

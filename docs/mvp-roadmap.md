@@ -236,9 +236,29 @@ Non-goals:
 - Broad mutating MCP `tools/call`.
 - Provider live defaults, automatic provider-output apply, automatic git operations, dependency installs, or CI workflow changes.
 
-MVP15 reserved direction:
+## MVP15 - Real UE Sandbox Asset Mutation Pilot
 
-- Blocked-by-default asset mutation approval design and Blueprint compile planning, with explicit policy, evidence, rollback, and supervisor-local smoke requirements before any write execution.
+- **Sandbox Asset Contracts**: Adds asset mutation dry-run plans, sandbox asset paths, asset ChangeSet lifecycle, approval token binding, verification, rollback, evidence, audit, and replay-only summaries.
+- **Sandbox Path Policy**: Allows only `/Game/UAgentSandbox/**` package paths and mapped `/Content/UAgentSandbox/**` disk paths. Blocks traversal, non-sandbox assets, generated/cache paths, project-wide saves, and broad/bulk asset operations.
+- **Exact MCP Asset Adapters**: Permits only schema-checked sandbox dry-run asset operations. Generic mutating `tools/call`, unknown tool names, missing dry-run support, raw absolute paths, and provider auto-apply are blocked.
+- **Runtime Asset Mutation Service**: Provides deterministic dry-run, preview, approve, execute, verify, rollback, manifest, and replay summary behavior without storing approval tokens in ChangeSets or replaying side effects.
+- **Native Asset Mutation Guard**: Adds feature-gated Tauri commands that classify and reject unsafe asset mutation requests before native execution can occur.
+- **Desktop UI Integration**: Inspector Assets tab, Changes panel, Settings gate, and runtime store actions expose the sandbox asset ChangeSet lifecycle and blocked states.
+- **Scenario Matrix**: Runtime matrix covers at least 48 scenarios / 192 assertions across allowed paths, denied paths, stale manifest, approval expiry, execution, verification, rollback, replay, and MCP adapter boundaries.
+- **Security Regression**: Side-effect scan covers sandbox-only writes, non-sandbox asset paths, Save All, bulk operations, broad mutating MCP calls, replay re-execution, approval token leakage, provider live defaults, git/dependency operations, and raw path leakage.
+
+Status: implemented; supervisor-local real UE sandbox smoke is still required for final acceptance.
+
+Goals:
+
+- Demonstrate a narrow real UE asset mutation pilot that cannot write outside `/Game/UAgentSandbox/**`.
+- Preserve MVP12 text ChangeSet, MVP13 editor approval, and MVP14 observation boundaries.
+- Require explicit user approval before execution and keep replay strictly summary-only.
+- Provide rollback and verification records for every executed sandbox asset ChangeSet.
+
+Non-goals:
+
+- Non-sandbox asset writes, Save All, SavePackage on arbitrary packages, delete/move/rename/bulk operations, Blueprint compile execution, generic MCP mutation, provider-output auto-apply, default live provider access, automatic git operations, dependency installation, and CI workflow changes.
 
 ## Non-Goals
 

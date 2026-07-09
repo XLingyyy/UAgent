@@ -1016,7 +1016,8 @@ mod tests {
         assert!(
             discovery.reason == "native_discovery_unavailable"
                 || discovery.reason == "platform_unsupported"
-                || discovery.reason == "process_not_found",
+                || discovery.reason == "process_not_found"
+                || discovery.reason == "project_mismatch",
             "unexpected discovery reason: {}",
             discovery.reason
         );

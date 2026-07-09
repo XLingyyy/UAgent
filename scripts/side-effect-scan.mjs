@@ -244,11 +244,13 @@ const CATEGORIES = [
       (rel) => /packages\/runtime\/src\/mcp-readonly-policy/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp13-/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp14-/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp15-/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/(runtime\/runtime-store|stores\/ui-store)/.test(rel),
       (rel) => /packages\/runtime\/src\/sandbox-policy/.test(rel),
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\//.test(rel),
-      (rel) => /packages\/runtime\/src\/(?!mvp7-project-index|mvp9-terminal-policy|mvp10-terminal-policy|mvp10-scenarios|mvp13-|mvp14-)/.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp7-project-index|mvp9-terminal-policy|mvp10-terminal-policy|mvp10-scenarios|mvp13-|mvp14-|mvp15-)/.test(rel),
     ],
   },
   {
@@ -404,12 +406,13 @@ const CATEGORIES = [
       (rel) => /packages\/runtime\/src\/mvp10-scenarios/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp13-/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp14-/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp15-/.test(rel),
       (rel) => /packages\/shared\/src\/project/.test(rel),
       (rel) => /mcp-readonly-policy/.test(rel),
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
-      (rel) => /packages\/runtime\/src\/(?!mvp8-project-index|mvp9-terminal-policy|mvp10-terminal-policy|mvp13-|mvp14-)/.test(rel),
+      (rel) => /packages\/runtime\/src\/(?!mvp8-project-index|mvp9-terminal-policy|mvp10-terminal-policy|mvp13-|mvp14-|mvp15-)/.test(rel),
     ],
   },
   {
@@ -602,6 +605,7 @@ const CATEGORIES = [
       (rel) => /packages\/(shared|runtime)\/src\//.test(rel),
       (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
       (rel) => /apps\/desktop\/web\/src\/sidebar\/project-tree-data/.test(rel),
+      (rel, line) => /apps\/desktop\/web\/src\/inspector\/AssetMutationPanel/.test(rel) && /executeMvp15AssetChangeSet/.test(line),
       (rel) => /docs\//.test(rel),
       (rel) => /\.test\./.test(rel),
       (rel) => /scripts\/side-effect-scan/.test(rel),
@@ -644,6 +648,7 @@ const CATEGORIES = [
       (rel) => /\.test\./.test(rel),
       (rel) => /scripts\/side-effect-scan/.test(rel),
       (rel, line) => /apps\/desktop\/web\/src\/inspector\/UtilityPlaceholderPanel/.test(rel) && /recordedOnlyActions/.test(line),
+      (rel, line) => /apps\/desktop\/web\/src\/inspector\/AssetMutationPanel/.test(rel) && /recordedOnlyActions/.test(line),
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
@@ -766,6 +771,8 @@ const CATEGORIES = [
       (rel) => /packages\/runtime\/src\/mvp13-mcp-mutation/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp13-dry-run-adapter/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp13-scenarios/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp15-mcp-asset-adapter/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp15-scenarios/.test(rel),
       (rel) => /packages\/runtime\/src\/index/.test(rel),
       (rel) => /packages\/runtime\/src\/(mcp-readonly-runtime|ue-diagnostics|prompt\/context-pack|prompt\/prompt-builder)/.test(rel),
       (rel) => /packages\/runtime\/src\/provider\/mvp4-scenarios/.test(rel),
@@ -877,6 +884,7 @@ const CATEGORIES = [
       (rel, line) => /apps\/desktop\/web\/src\/runtime\/runtime-store/.test(rel) && /replayOnly/.test(line),
       (rel, line) => /apps\/desktop\/web\/src\/stores\/ui-store/.test(rel) && /replayOnly:\s*true/.test(line),
       (rel, line) => /apps\/desktop\/web\/src\/inspector\/(EditorPanel|McpMutationPanel)/.test(rel) && /replayOnly|Replay: recorded summaries only/.test(line),
+      (rel, line) => /apps\/desktop\/web\/src\/inspector\/AssetMutationPanel/.test(rel) && /replayOnly|Replay: recorded summaries only/.test(line),
       (rel, line) => /apps\/desktop\/web\/src\/inspector\/UtilityPlaceholderPanel/.test(rel) && /recordedOnlyActions/.test(line),
       (rel, line) => /apps\/desktop\/web\/src\/runtime\/editor-observation-native-adapter/.test(rel) && /replayOnly/.test(line),
     ],
@@ -1007,6 +1015,38 @@ const CATEGORIES = [
       (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
     ],
   },
+  {
+    id: "mvp15-asset-mutation-boundary",
+    title: "MVP15 Asset Mutation Boundary",
+    description: "Asset mutation must stay sandbox-only, exact-allowlisted, approval-bound, redacted, and replay-summary-only",
+    patterns: [
+      { re: /Save\s+All|save_all|SavePackage|EditorAssetLibrary\.save|UEditorLoadingAndSavingUtils/gi, label: "global editor save" },
+      { re: /compile_blueprint|compile\s+blueprint/gi, label: "compile blueprint" },
+      { re: /bulk_(?:delete|rename|save)|bulk\s+(?:delete|rename|save)/gi, label: "bulk asset operation" },
+      { re: /\/Game\/(?!UAgentSandbox\b)[A-Za-z0-9_/.-]+|\/Content\/(?!UAgentSandbox\b)[A-Za-z0-9_/.-]+/g, label: "non-sandbox asset path" },
+      { re: /tools\/call|callTool\s*\(/gi, label: "broad MCP tools/call" },
+      { re: /@tauri-apps\/api|invoke\s*\(\s*["'](?:dry_run_asset_mutation|execute_asset_mutation|rollback_asset_mutation)/gi, label: "direct UI native asset invoke" },
+      { re: /autoApply|provider.*apply|apply.*provider/gi, label: "provider auto apply" },
+      { re: /rawArgs|rawCommandLine|approval-token:|asset-approval-token:|Bearer\s+[A-Za-z0-9._-]+|sk-[A-Za-z0-9][A-Za-z0-9._-]{7,}/gi, label: "raw args paths tokens" },
+      { re: /replay.*(?:execute|dry[-_ ]?run|verify|rollback|tools\/call)/gi, label: "replay re-execute" },
+      { re: /taskkill|TerminateProcess|kill_process|\.kill\s*\(/gi, label: "UE process kill" },
+    ],
+    allowWhen: [
+      (rel) => /docs\//.test(rel),
+      (rel) => /\.test\./.test(rel),
+      (rel) => /scripts\/side-effect-scan/.test(rel),
+      (rel) => /packages\/shared\/src\/asset-mutation/.test(rel),
+      (rel) => /packages\/runtime\/src\/mvp15-/.test(rel),
+      (rel) => /packages\/runtime\/src\/index/.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\/asset_mutation/.test(rel),
+      (rel) => /apps\/desktop\/src-tauri\/src\/lib/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/runtime\/runtime-store/.test(rel),
+      (rel) => /apps\/desktop\/web\/src\/stores\/ui-store/.test(rel),
+    ],
+    blockWhen: [
+      (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
+    ],
+  },
 ];
 
 // ============================================================
@@ -1097,6 +1137,16 @@ function runScanSelfTests() {
   );
   if (!unsafeArgs.some((finding) => finding.severity === "BLOCKED")) {
     throw new Error("mvp14 raw args self-test did not block unsafe sample");
+  }
+  const mvp15Category = CATEGORIES.find((cat) => cat.id === "mvp15-asset-mutation-boundary");
+  if (!mvp15Category) throw new Error("mvp15 asset mutation scan category missing");
+  const unsafeMvp15 = scanContent(
+    "apps/desktop/web/src/inspector/AssetMutationPanel.tsx",
+    "invoke('execute_asset_mutation'); callTool('tools/call'); replayExecuteAssetMutation(); const p='/Game/Hero'; const token='asset-approval-token:leak';",
+    [mvp15Category],
+  );
+  if (!unsafeMvp15.some((finding) => finding.severity === "BLOCKED")) {
+    throw new Error("mvp15 asset mutation self-test did not block direct UI native invoke sample");
   }
 }
 

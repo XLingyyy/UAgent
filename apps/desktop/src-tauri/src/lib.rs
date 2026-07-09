@@ -1,9 +1,11 @@
 pub(crate) mod browser;
+pub(crate) mod mcp;
 pub(crate) mod screenshot;
 pub(crate) mod terminal;
 pub(crate) mod text_mutation;
 pub(crate) mod ue_editor;
 pub(crate) mod ue_editor_process;
+pub(crate) mod asset_mutation;
 pub(crate) mod watcher;
 
 use serde::{Deserialize, Serialize};
@@ -1341,6 +1343,10 @@ pub fn run() {
             ue_editor_process::read_editor_observation_snapshot,
             ue_editor_process::launch_editor_process,
             ue_editor_process::stop_editor_observation_session,
+            asset_mutation::dry_run_asset_mutation,
+            asset_mutation::execute_asset_mutation,
+            asset_mutation::rollback_asset_mutation,
+            mcp::mcp_streamable_http_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

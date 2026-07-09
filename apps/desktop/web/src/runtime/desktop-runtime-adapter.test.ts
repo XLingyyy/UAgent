@@ -44,6 +44,26 @@ const fullDiscoveryFixtures: Record<string, unknown> = {
   "prompts/list": { prompts: [{ name: "summarize-selection", description: "Summarize selected editor objects" }] },
 };
 
+type Mvp15AssetBridge = {
+  guardMvp15AssetMutation?: (input: {
+    toolName: "ue.asset.save";
+    assetPath: string;
+    targetAssetPath?: string | null;
+    dryRunHash: string;
+    approvalToken: string | null;
+    editorSessionId: string;
+    pidHash: string;
+    assetMutationGateEnabled: boolean;
+    observedEditorSessionId: string | null;
+    observedPidHash: string | null;
+    phase: "execute" | "rollback";
+  }) => Promise<{ status: string; reason: string | null; evidenceId?: string | null }>;
+  callMvp15AssetTool?: (
+    toolName: "ue.asset.save" | "ue.asset.delete",
+    args: Record<string, unknown>,
+  ) => Promise<unknown>;
+};
+
 function createMockTransport(fixtures: Record<string, unknown>): McpTransportClient {
   return {
     sendRequest: vi.fn(async (request) => {
@@ -57,6 +77,11 @@ function createMockTransport(fixtures: Record<string, unknown>): McpTransportCli
     sendNotification: vi.fn(async () => {}),
     close: vi.fn(async () => {}),
   };
+}
+
+function createNativeInvokeMockAdapter(mock: (command: string, payload?: unknown) => Promise<unknown>): NativeInvoke {
+  // NativeInvoke is generic because each Tauri command has its own response shape; tests control the command fixture.
+  return <T = unknown>(command: string, payload?: unknown) => mock(command, payload) as Promise<T>;
 }
 
 function createAdapterWithTransport(fixtures: Record<string, unknown> = fullDiscoveryFixtures) {
@@ -173,6 +198,97 @@ describe("DesktopRuntimeAdapter", () => {
         resources: 1,
         prompts: 1,
       },
+    });
+  });
+
+  it("exposes discovered MCP descriptors for narrow MVP15 schema inventory", async () => {
+    const adapter = createAdapterWithTransport();
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+
+    expect(adapter.getMcpDiscovery()?.tools.map((tool) => tool.name)).toEqual([
+      "ue.selection.get",
+      "ue.asset.delete",
+      "ue.asset.save",
+    ]);
+  });
+
+  it("exposes a narrow MVP15 asset bridge through native guard and allowlisted MCP tools only", async () => {
+    const sendRequest = vi.fn(async (request: { id: string | number | null; method: string; params?: unknown }) => {
+      if (request.method === "initialize") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: fullDiscoveryFixtures.initialize };
+      }
+      if (request.method === "tools/list") {
+        return {
+          jsonrpc: "2.0" as const,
+          id: request.id,
+          result: {
+            tools: [
+              {
+                name: "ue.asset.save",
+                inputSchema: { type: "object" },
+                annotations: { supportsDryRun: true },
+              },
+            ],
+          },
+        };
+      }
+      if (request.method === "resources/list") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: { resources: [] } };
+      }
+      if (request.method === "prompts/list") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: { prompts: [] } };
+      }
+      if (request.method === "tools/call") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: { status: "executed", evidenceId: "mcp:save" } };
+      }
+      return { jsonrpc: "2.0" as const, id: request.id, result: null };
+    });
+    const transport: McpTransportClient = {
+      sendRequest,
+      sendNotification: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+    };
+    const nativeInvokeMock = vi.fn(async (_command: string, _payload?: unknown) => ({
+      status: "accepted_by_native_guard",
+      reason: "sandbox_guard_passed",
+      evidenceId: "guard:save",
+    }));
+    const nativeInvoke = createNativeInvokeMockAdapter(nativeInvokeMock);
+    const adapter = createDesktopRuntimeAdapter({
+      createTransport: () => transport,
+      nativeInvoke,
+    }) as ReturnType<typeof createDesktopRuntimeAdapter> & Mvp15AssetBridge;
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+
+    expect(adapter.guardMvp15AssetMutation).toBeTypeOf("function");
+    expect(adapter.callMvp15AssetTool).toBeTypeOf("function");
+
+    const guard = await adapter.guardMvp15AssetMutation!({
+      toolName: "ue.asset.save",
+      assetPath: "/Game/UAgentSandbox/run-1/Hero",
+      targetAssetPath: null,
+      dryRunHash: "dry:hash",
+      approvalToken: "asset-approval-token:redacted",
+      editorSessionId: "editor-session:real",
+      pidHash: "pid:real-native",
+      assetMutationGateEnabled: true,
+      observedEditorSessionId: "editor-session:real",
+      observedPidHash: "pid:real-native",
+      phase: "execute",
+    });
+    await adapter.callMvp15AssetTool!("ue.asset.save", {
+      assetPath: "/Game/UAgentSandbox/run-1/Hero",
+      saveAll: false,
+    });
+
+    expect(guard).toMatchObject({ status: "accepted_by_native_guard", evidenceId: "guard:save" });
+    expect(nativeInvokeMock).toHaveBeenCalledWith("execute_asset_mutation", expect.anything());
+    expect(sendRequest.mock.calls.filter((call) => call[0].method === "tools/call")).toHaveLength(1);
+    expect(sendRequest.mock.calls.find((call) => call[0].method === "tools/call")?.[0].params).toEqual({
+      name: "ue.asset.save",
+      arguments: { assetPath: "/Game/UAgentSandbox/run-1/Hero", saveAll: false },
     });
   });
 
@@ -427,7 +543,7 @@ describe("DesktopRuntimeAdapter", () => {
 
   it("routes MVP10 terminal proposal, approval, and execution through native invoke without exposing raw token or cwd", async () => {
     const calls: Array<{ command: string; payload: unknown }> = [];
-    const nativeInvoke = vi.fn(async <T,>(command: string, payload: unknown): Promise<T> => {
+    const nativeInvokeMock = vi.fn(async (command: string, payload?: unknown): Promise<unknown> => {
       calls.push({ command, payload });
       if (command === "terminal_capability_status") {
         return {
@@ -440,7 +556,7 @@ describe("DesktopRuntimeAdapter", () => {
           timeoutMs: 60_000,
           outputLimitBytes: 1_048_576,
           outputLimitLines: 5_000,
-        } as T;
+        };
       }
       if (command === "watcher_capability_status") {
         return {
@@ -452,7 +568,7 @@ describe("DesktopRuntimeAdapter", () => {
           maxQueueSize: 10000,
           overflowAction: "warn",
           readDiffOnly: true,
-        } as T;
+        };
       }
       if (command === "propose_terminal_command") {
         return {
@@ -468,10 +584,10 @@ describe("DesktopRuntimeAdapter", () => {
           timeoutMs: 60_000,
           outputLimitBytes: 1_048_576,
           outputLimitLines: 5_000,
-        } as T;
+        };
       }
       if (command === "approve_terminal_proposal") {
-        return { token: "raw-native-token:native-proposal-1", status: "approved" } as T;
+        return { token: "raw-native-token:native-proposal-1", status: "approved" };
       }
       if (command === "execute_terminal_command_real") {
         return {
@@ -486,10 +602,11 @@ describe("DesktopRuntimeAdapter", () => {
           totalBytes: 3,
           totalLines: 1,
           redactionSummary: { replacedSecrets: 0, replacedPaths: 1 },
-        } as T;
+        };
       }
       throw new Error(`unexpected native command ${command}`);
-    }) as unknown as NativeInvoke;
+    });
+    const nativeInvoke = createNativeInvokeMockAdapter(nativeInvokeMock);
 
     const adapter = createDesktopRuntimeAdapter({ nativeInvoke });
     const terminal = adapter.getMvp9().mvp10.terminal;
@@ -532,7 +649,7 @@ describe("DesktopRuntimeAdapter", () => {
   });
 
   it("reports native terminal disabled from capability status even when native invoke exists", async () => {
-    const nativeInvoke = vi.fn(async <T,>(command: string): Promise<T> => {
+    const nativeInvokeMock = vi.fn(async (command: string): Promise<unknown> => {
       if (command === "terminal_capability_status") {
         return {
           enabled: false,
@@ -544,7 +661,7 @@ describe("DesktopRuntimeAdapter", () => {
           timeoutMs: 60_000,
           outputLimitBytes: 1_048_576,
           outputLimitLines: 5_000,
-        } as T;
+        };
       }
       if (command === "watcher_capability_status") {
         return {
@@ -556,10 +673,11 @@ describe("DesktopRuntimeAdapter", () => {
           maxQueueSize: 10000,
           overflowAction: "warn",
           readDiffOnly: true,
-        } as T;
+        };
       }
       throw new Error(`unexpected native command ${command}`);
-    }) as unknown as NativeInvoke;
+    });
+    const nativeInvoke = createNativeInvokeMockAdapter(nativeInvokeMock);
 
     const adapter = createDesktopRuntimeAdapter({ nativeInvoke });
     const terminal = adapter.getMvp9().mvp10.terminal;
@@ -571,11 +689,11 @@ describe("DesktopRuntimeAdapter", () => {
         reason: "feature_disabled",
       });
     });
-    expect(nativeInvoke).toHaveBeenCalledWith("terminal_capability_status");
+    expect(nativeInvokeMock).toHaveBeenCalledWith("terminal_capability_status", undefined);
   });
 
   it("reports native watcher disabled from capability status even when native invoke exists", async () => {
-    const nativeInvoke = vi.fn(async <T,>(command: string): Promise<T> => {
+    const nativeInvokeMock = vi.fn(async (command: string): Promise<unknown> => {
       if (command === "terminal_capability_status") {
         return {
           enabled: false,
@@ -587,7 +705,7 @@ describe("DesktopRuntimeAdapter", () => {
           timeoutMs: 60_000,
           outputLimitBytes: 1_048_576,
           outputLimitLines: 5_000,
-        } as T;
+        };
       }
       if (command === "watcher_capability_status") {
         return {
@@ -599,10 +717,11 @@ describe("DesktopRuntimeAdapter", () => {
           maxQueueSize: 10000,
           overflowAction: "warn",
           readDiffOnly: true,
-        } as T;
+        };
       }
       throw new Error(`unexpected native command ${command}`);
-    }) as unknown as NativeInvoke;
+    });
+    const nativeInvoke = createNativeInvokeMockAdapter(nativeInvokeMock);
 
     const adapter = createDesktopRuntimeAdapter({ nativeInvoke });
     const watcher = adapter.getMvp9().watcher;
@@ -615,7 +734,7 @@ describe("DesktopRuntimeAdapter", () => {
       trustedRootRequired: true,
       readDiffOnly: true,
     });
-    expect(nativeInvoke).toHaveBeenCalledWith("watcher_capability_status");
+    expect(nativeInvokeMock).toHaveBeenCalledWith("watcher_capability_status", undefined);
   });
 });
 

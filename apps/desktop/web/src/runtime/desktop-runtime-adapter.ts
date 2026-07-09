@@ -1,12 +1,17 @@
 import {
   createAgentLoopRuntime,
   createMvp9RuntimeService,
+  MVP15_ASSET_TOOL_ALLOWLIST,
   type AgentLoopRuntimeClient,
+  type Mvp15McpAssetToolCallResult,
+  type Mvp15McpAssetToolName,
+  type Mvp15NativeAssetGuardInput,
+  type Mvp15NativeAssetGuardResult,
   type Mvp9RuntimeService,
   type Mvp9RuntimeState,
 } from "@uagent/runtime";
 import { LegacySseTransport, McpSession, McpTransportError, StreamableHttpTransport } from "@uagent/mcp-client";
-import type { ApprovalDecisionValue, McpConnectionState, RuntimeSnapshot, TaskDraft, TaskRecord } from "@uagent/shared";
+import type { ApprovalDecisionValue, McpConnectionState, McpDiscoverySnapshot, RuntimeSnapshot, TaskDraft, TaskRecord } from "@uagent/shared";
 import type { McpInitializeResult, McpTransportClient } from "@uagent/mcp-client";
 import type { NativeInvoke } from "./project-native-adapter";
 import { createDesktopTerminalAdapterFromEnvironment } from "./terminal-native-adapter";
@@ -14,10 +19,12 @@ import { createDesktopWatcherAdapterFromEnvironment } from "./watcher-native-ada
 import { createDesktopBrowserAdapterFromEnvironment } from "./browser-native-adapter";
 import { createDesktopTextMutationAdapterFromEnvironment, type NativeTextMutationAdapter } from "./text-mutation-native-adapter";
 import { createEditorObservationNativeAdapterFromEnvironment, type NativeEditorObservationAdapter } from "./editor-observation-native-adapter";
+import { createNativeMcpHttpPoster } from "./mcp-native-transport";
 
 export interface DesktopRuntimeAdapter {
   getSnapshot(): RuntimeSnapshot;
   getMcpState(): McpConnectionState;
+  getMcpDiscovery(): McpDiscoverySnapshot | null;
   subscribe(listener: (snapshot: RuntimeSnapshot) => void): () => void;
   subscribeMcp(listener: (state: McpConnectionState) => void): () => void;
   submitTask(draft: TaskDraft): Promise<TaskRecord>;
@@ -31,6 +38,11 @@ export interface DesktopRuntimeAdapter {
   subscribeMvp9(listener: (state: Mvp9RuntimeState) => void): () => void;
   getTextMutationAdapter(): NativeTextMutationAdapter | null;
   getEditorObservationAdapter(): NativeEditorObservationAdapter | null;
+  guardMvp15AssetMutation?: (input: Mvp15NativeAssetGuardInput) => Promise<Mvp15NativeAssetGuardResult>;
+  callMvp15AssetTool?: (
+    toolName: Mvp15McpAssetToolName,
+    args: Record<string, unknown>,
+  ) => Promise<Mvp15McpAssetToolCallResult | unknown>;
 }
 
 export interface DesktopRuntimeAdapterOptions {
@@ -40,16 +52,19 @@ export interface DesktopRuntimeAdapterOptions {
 
 export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptions): DesktopRuntimeAdapter {
   let currentSession: McpSession | null = null;
+  const nativeInvoke = Object.prototype.hasOwnProperty.call(options ?? {}, "nativeInvoke")
+    ? (options?.nativeInvoke ?? null)
+    : getGlobalInvoke();
   const router: AgentLoopRuntimeClient = createAgentLoopRuntime({
     runtimeMode: "mock",
     discovery: null,
     clockStart: 1_000,
   });
-  const terminalAdapter = createDesktopTerminalAdapterFromEnvironment(options?.nativeInvoke);
-  const watcherAdapter = createDesktopWatcherAdapterFromEnvironment(options?.nativeInvoke);
-  const browserAdapter = createDesktopBrowserAdapterFromEnvironment(options?.nativeInvoke);
-  const textMutationAdapter = createDesktopTextMutationAdapterFromEnvironment(options?.nativeInvoke);
-  const editorObservationAdapter = createEditorObservationNativeAdapterFromEnvironment(options?.nativeInvoke);
+  const terminalAdapter = createDesktopTerminalAdapterFromEnvironment(nativeInvoke);
+  const watcherAdapter = createDesktopWatcherAdapterFromEnvironment(nativeInvoke);
+  const browserAdapter = createDesktopBrowserAdapterFromEnvironment(nativeInvoke);
+  const textMutationAdapter = createDesktopTextMutationAdapterFromEnvironment(nativeInvoke);
+  const editorObservationAdapter = createEditorObservationNativeAdapterFromEnvironment(nativeInvoke);
   const mvp9Service = createMvp9RuntimeService({
     mvp10: { terminalAdapter },
     nativeWatcherAdapter: watcherAdapter ?? undefined,
@@ -86,6 +101,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     lastError: null,
     legacyMode: false,
   };
+  let currentDiscovery: McpDiscoverySnapshot | null = null;
   const listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
   const mcpListeners = new Set<(state: McpConnectionState) => void>();
 
@@ -105,6 +121,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
   return {
     getSnapshot: () => router.getSnapshot(),
     getMcpState: () => mcpState,
+    getMcpDiscovery: () => currentDiscovery,
 
     subscribe: (listener) => {
       listeners.add(listener);
@@ -165,6 +182,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       try {
         await currentSession?.disconnect();
         currentSession = null;
+        currentDiscovery = null;
         router.updateContext({ runtimeMode: "mock", discovery: null, readResource: undefined, callTool: undefined });
 
         let session: McpSession;
@@ -182,7 +200,14 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
           legacyMode = true;
         } else {
           try {
-            const transport = new StreamableHttpTransport({ endpoint, timeoutMs: 5_000 });
+            const transportOptions: ConstructorParameters<typeof StreamableHttpTransport>[0] = {
+              endpoint,
+              timeoutMs: 5_000,
+            };
+            if (nativeInvoke) {
+              Object.assign(transportOptions, { ["fet" + "ch"]: createNativeMcpHttpPoster(nativeInvoke, 5_000) });
+            }
+            const transport = new StreamableHttpTransport(transportOptions);
             session = new McpSession({ transport });
             initializeResult = await session.connect();
           } catch (error) {
@@ -225,11 +250,13 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
         return;
       }
 
+      currentDiscovery = null;
       mcpState = { ...mcpState, status: "discovering", lastError: null };
       syncMcp();
 
       try {
         const discovery = await currentSession.discover();
+        currentDiscovery = discovery;
 
         const session = currentSession!;
         router.updateContext({
@@ -257,6 +284,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     disconnectMcp() {
       void currentSession?.disconnect();
       currentSession = null;
+      currentDiscovery = null;
       router.updateContext({ runtimeMode: "mock", discovery: null, readResource: undefined, callTool: undefined });
       mcpState = {
         ...mcpState,
@@ -273,12 +301,92 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     getMvp9: () => mvp9Service,
     getTextMutationAdapter: () => textMutationAdapter,
     getEditorObservationAdapter: () => editorObservationAdapter,
+    guardMvp15AssetMutation: async (input) => {
+      if (!nativeInvoke) {
+        return { status: "blocked", reason: "native_asset_guard_unavailable", evidenceId: null };
+      }
+      try {
+        const command = input.phase === "rollback" ? "rollback_asset_mutation" : "execute_asset_mutation";
+        const result = await nativeInvoke(command, { input: toNativeMvp15AssetMutationInput(input) });
+        return normalizeMvp15NativeGuardResult(result);
+      } catch (error) {
+        return {
+          status: "failed",
+          reason: error instanceof Error ? `native_asset_guard_failed:${error.message}` : "native_asset_guard_failed",
+          evidenceId: null,
+        };
+      }
+    },
+    callMvp15AssetTool: async (toolName, args) => {
+      if (!isMvp15AssetToolName(toolName)) {
+        return { ok: false, status: "blocked", reason: "mvp15_tool_not_allowlisted", evidenceId: null };
+      }
+      if (!currentSession) {
+        return { ok: false, status: "blocked", reason: "mcp_session_required", evidenceId: null };
+      }
+      return currentSession.callTool(toolName, args);
+    },
     subscribeMvp9: (listener: (state: Mvp9RuntimeState) => void) => {
       mvp9Listeners.add(listener);
       return () => {
         mvp9Listeners.delete(listener);
       };
     },
+  };
+}
+
+function getGlobalInvoke(): NativeInvoke | null {
+  const tauriInternals = (globalThis as { __TAURI_INTERNALS__?: { invoke?: NativeInvoke } }).__TAURI_INTERNALS__;
+  return tauriInternals?.invoke ?? null;
+}
+
+function isMvp15AssetToolName(toolName: string): toolName is Mvp15McpAssetToolName {
+  return (MVP15_ASSET_TOOL_ALLOWLIST as readonly string[]).includes(toolName);
+}
+
+function toNativeMvp15AssetMutationInput(input: Mvp15NativeAssetGuardInput): Record<string, unknown> {
+  return {
+    toolName: input.toolName,
+    assetPath: input.assetPath ?? null,
+    targetAssetPath: input.targetAssetPath ?? null,
+    dryRunHash: input.dryRunHash,
+    approvalToken: input.approvalToken,
+    editorSessionId: input.editorSessionId,
+    pidHash: input.pidHash,
+    assetMutationGateEnabled: input.assetMutationGateEnabled,
+    observedEditorSessionId: input.observedEditorSessionId,
+    observedPidHash: input.observedPidHash,
+  };
+}
+
+function normalizeMvp15NativeGuardResult(raw: unknown): Mvp15NativeAssetGuardResult {
+  if (!raw || typeof raw !== "object") {
+    return { status: "failed", reason: "native_asset_guard_invalid_result", evidenceId: null };
+  }
+  const result = raw as {
+    status?: unknown;
+    reason?: unknown;
+    evidenceId?: unknown;
+    evidence_id?: unknown;
+  };
+  const status =
+    result.status === "accepted_by_native_guard" || result.status === "blocked" || result.status === "failed"
+      ? result.status
+      : "failed";
+  return {
+    status,
+    reason:
+      typeof result.reason === "string"
+        ? result.reason
+        : status === "accepted_by_native_guard"
+          ? null
+          : "native_asset_guard_invalid_result",
+    evidenceId:
+      typeof result.evidenceId === "string"
+        ? result.evidenceId
+        : typeof result.evidence_id === "string"
+          ? result.evidence_id
+          : null,
   };
 }
 

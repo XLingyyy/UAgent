@@ -47,6 +47,7 @@ export interface ReplayFilter {
   changeSetIds?: string[];
   toolNames?: string[];
   affectedFiles?: string[];
+  affectedAssets?: string[];
 }
 
 export interface ReplaySummary {
@@ -58,4 +59,5 @@ export interface ReplaySummary {
   redacted: boolean;
   replayOnly?: boolean;
   recordedOnlyActions?: string[];
+  affectedAssets?: string[];
 }

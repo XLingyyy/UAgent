@@ -53,8 +53,8 @@ describe("MVP9 Desktop Scenarios", () => {
     expect(tool!.summary).toBe("Watcher and changes");
   });
 
-  it("has 16 utility tools total after MVP13 editor/MCP panels", () => {
-    expect(utilityTools.length).toBe(16);
+  it("has 17 utility tools total after MVP15 asset mutation panel", () => {
+    expect(utilityTools.length).toBe(17);
   });
 
   it("terminal/browser/screenshot/files are not future tools", () => {

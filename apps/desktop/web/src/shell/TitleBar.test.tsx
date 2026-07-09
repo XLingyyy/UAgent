@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { TitleBar } from "./TitleBar";
 import { UIProvider } from "../app/providers";
 
@@ -71,6 +72,30 @@ describe("TitleBar", () => {
       const updatedBtn = screen.getByRole("button", { name: "Open utility drawer" });
       expect(updatedBtn).toBeTruthy();
       expect(updatedBtn.getAttribute("aria-pressed")).toBe("false");
+    });
+
+    it("keeps status pills in a shrinkable region separate from the Tools hit target", () => {
+      const { container } = renderTitleBar();
+      const right = container.querySelector(".ua-titlebar__right");
+      const status = container.querySelector(".ua-titlebar__status");
+      const controls = container.querySelector(".ua-titlebar__controls");
+      const btn = screen.getByRole("button", { name: "Open utility drawer" });
+
+      expect(right).toBeTruthy();
+      expect(status).toBeTruthy();
+      expect(controls).toBeTruthy();
+      expect(controls?.contains(btn)).toBe(true);
+      expect(status?.contains(btn)).toBe(false);
+      expect(
+        Array.from(status?.querySelectorAll(".ua-titlebar__status-pill") ?? []).some((pill) =>
+          pill.textContent?.startsWith("UE Editor:"),
+        ),
+      ).toBe(true);
+
+      const css = readFileSync("web/src/shell/TitleBar.css", "utf8");
+      expect(css).toMatch(/\.ua-titlebar__status\s*\{[^}]*overflow:\s*hidden;/s);
+      expect(css).toMatch(/\.ua-titlebar__status-pill\s*\{[^}]*text-overflow:\s*ellipsis;/s);
+      expect(css).toMatch(/\.ua-titlebar__controls\s*\{[^}]*flex:\s*0\s+0\s+auto;/s);
     });
   });
 });

@@ -80,7 +80,13 @@ export type AuditEventType =
     | "editor_process_exited"
     | "mcp_mutation_proposed"
     | "mcp_mutation_blocked"
-    | "mcp_dry_run_completed";
+    | "mcp_dry_run_completed"
+    | "asset_mutation_dry_run"
+    | "asset_changeset_created"
+    | "asset_mutation_approved"
+    | "asset_mutation_executed"
+    | "asset_mutation_verified"
+    | "asset_mutation_rolled_back";
 
 export interface AuditActor {
   type: "user" | "system" | "policy" | "fixture";

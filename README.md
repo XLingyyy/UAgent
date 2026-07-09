@@ -2,21 +2,21 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP14 Real UE Attach / Status / Safe Editor Observation (Implemented / Final Acceptance Complete)
+## Current Stage: MVP15 Real UE Sandbox Asset Mutation Pilot (Implemented / Pending Supervisor Real-UE Smoke)
 
-MVP12 final acceptance and MVP13 controlled UE Editor / MCP mutation pilot are complete. MVP14 advances the editor path from fixture-only pilot behavior toward safe real UE Editor observation while preserving MVP12 ChangeSet v2, MVP13 approval binding, trusted roots, redaction, and replay boundaries. Current MVP14 implementation focus includes:
+MVP15 extends the MVP14 safe editor observation path into a blocked-by-default real UE sandbox asset mutation pilot. It introduces a narrow dry-run / approve / execute / verify / rollback loop for sandbox-only asset work while preserving MVP12 ChangeSet v2, MVP13 approval binding, MVP14 process observation, trusted roots, redaction, and replay boundaries.
 
-Current MVP14 code includes minimal real Windows UE process discovery and native attach/status/snapshot lifecycle rechecks. Final acceptance is complete after a supervisor-local real UE smoke confirmed discovery, attach, heartbeat, snapshot, and stop observation without closing Unreal Editor.
+Current MVP15 code includes shared contracts, runtime policy, exact MCP asset adapters, a Tauri native guard, desktop inspector surfaces, scenario coverage, and side-effect scan hardening. Real UE execution remains limited to `/Game/UAgentSandbox/**` and mapped `/Content/UAgentSandbox/**`; final acceptance still requires supervisor-local real UE smoke in a configured UE Editor environment.
 
-1. **Observation Contracts**: UE Editor process descriptors, attach requests, heartbeat, snapshots, process state, launch policy, status reasons, evidence, and audit event types.
-2. **Process Policy**: Trusted root, `.uproject`, root containment, network root, shell metacharacter, executable allowlist, raw env, and session/root/project mismatch checks.
-3. **Native Observation Commands**: Feature-gated Tauri commands for capability, process discovery, attach validation, attach, status, snapshot, launch policy, and local session stop.
-4. **Runtime Observation Service**: Fixture/native-compatible service for capability, process discovery, attach, status, snapshot, stop, and recorded replay summary.
-5. **MCP Schema Adapters**: Read-only/status/resource, state-only, text-backed ChangeSet intent, and blocked asset-plan classification without broad mutating `tools/call`.
-6. **Desktop UI / Store**: Editor, Review, Evidence, Settings, and TitleBar surfaces expose observation status, heartbeat, snapshot, and safety boundaries.
-7. **Scenario Matrix / Side-effect Scan / Docs**: MVP14 matrix target is at least 40 scenarios / 160 assertions; side-effect scan covers editor process kill/save/launch/raw args/replay boundaries.
+1. **Asset Mutation Contracts**: Sandbox asset paths, operation kinds, dry-run plans, ChangeSet approvals, verification, rollback, evidence, audit, and replay summaries.
+2. **Sandbox Policy**: Blocks non-sandbox paths, path traversal, Save All, delete/move/rename/bulk operations, broad mutating MCP calls, stale manifests, provider auto-apply, raw secrets, and replay re-execution.
+3. **Runtime Asset Service**: Deterministic dry-run, approval token, execute, verify, rollback, manifest, replay summary, and scenario matrix support.
+4. **Native Guard**: Feature-gated Tauri commands validate sandbox-only asset mutation requests before any native execution bridge can run.
+5. **MCP Schema Adapters**: Exact allowlist for dry-run-capable sandbox asset tools; all generic `tools/call` mutation paths remain blocked.
+6. **Desktop UI / Store**: Inspector Assets tab, Changes panel, Settings gate, evidence, and runtime store actions expose asset ChangeSet lifecycle state.
+7. **Scenario Matrix / Side-effect Scan / Docs**: MVP15 matrix covers at least 48 scenarios / 192 assertions; side-effect scan covers sandbox boundaries, broad mutating calls, Save All, replay, raw paths, and token leakage.
 
-Controlled text writes remain approval-gated and limited to trusted fixture/temp roots or explicitly trusted project roots. Binary UE assets, generated directories, arbitrary shell expansion, mutating MCP `tools/call`, provider live defaults, automatic git operations, replay re-execute, and raw secret/path leakage remain blocked.
+Controlled text writes remain approval-gated and limited to trusted fixture/temp roots or explicitly trusted project roots. Non-sandbox UE assets, Save All, bulk asset operations, arbitrary shell expansion, provider live defaults, automatic git operations, replay re-execute, and raw secret/path leakage remain blocked.
 
 ## Technology Stack
 
@@ -67,8 +67,8 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 ## Non-Goals (current stage)
 
 - Default live provider network access (must be opt-in)
-- Real Unreal Engine writes or Editor launch
-- Mutating MCP tool calls
+- Non-sandbox Unreal Engine writes or Editor launch
+- Broad mutating MCP tool calls
 - Shell/browser/filesystem product behavior
 - Cloud deployment, auth, or remote services
 - Forking or embedding Codex/Claude Code/Cursor/Aider
@@ -118,6 +118,12 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 - [MVP13 Risk Register](docs/mvp13-risk-register.md)
 - [MVP13 Final Verification](docs/mvp13-final-verification.md)
 - [MVP13 Final Handoff](docs/mvp13-final-handoff.md)
+- [MVP15 Prep](docs/mvp15-prep.md)
+- [MVP15 Acceptance](docs/mvp15-acceptance.md)
+- [MVP15 Manual Smoke](docs/mvp15-manual-smoke.md)
+- [MVP15 Risk Register](docs/mvp15-risk-register.md)
+- [MVP15 Final Verification](docs/mvp15-final-verification.md)
+- [MVP15 Final Handoff](docs/mvp15-final-handoff.md)
 - [Baseline Freeze](docs/mvp5-baseline-freeze.md)
 - [Development Guide](docs/development.md)
 

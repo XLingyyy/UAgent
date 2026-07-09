@@ -355,6 +355,7 @@ function DiagnosticsDisplay() {
   const mvp11 = useRuntimeStore((state) => state.mvp11);
   const mvp12 = useRuntimeStore((state) => state.mvp12);
   const mvp14 = useRuntimeStore((state) => state.mvp14);
+  const mvp15 = useRuntimeStore((state) => state.mvp15);
   const mcp = useRuntimeStore((state) => state.mcp);
   const diagnosticCounts = `${mvp11.diagnosticCounts.error} ${
     mvp11.diagnosticCounts.error === 1 ? "error" : "errors"
@@ -419,6 +420,12 @@ function DiagnosticsDisplay() {
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Editor safety</span>
         <span className="ua-settings-page__static-value">{mvp14.safetyBoundaries.join(", ")}</span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Asset mutation gate</span>
+        <span className="ua-settings-page__static-value">
+          {mvp15.gate.mode} / {mvp15.gate.sandboxRoot}
+        </span>
       </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Log level</span>
