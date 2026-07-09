@@ -45,6 +45,7 @@ const fullDiscoveryFixtures: Record<string, unknown> = {
 };
 
 type Mvp15AssetBridge = {
+  getMvp15AssetTools?: () => Array<{ name: string; annotations?: Record<string, unknown> }>;
   guardMvp15AssetMutation?: (input: {
     toolName: "ue.asset.save";
     assetPath: string;
@@ -249,7 +250,7 @@ describe("DesktopRuntimeAdapter", () => {
       sendNotification: vi.fn(async () => {}),
       close: vi.fn(async () => {}),
     };
-    const nativeInvokeMock = vi.fn(async (_command: string, _payload?: unknown) => ({
+    const nativeInvokeMock = vi.fn(async () => ({
       status: "accepted_by_native_guard",
       reason: "sandbox_guard_passed",
       evidenceId: "guard:save",
@@ -290,6 +291,206 @@ describe("DesktopRuntimeAdapter", () => {
       name: "ue.asset.save",
       arguments: { assetPath: "/Game/UAgentSandbox/run-1/Hero", saveAll: false },
     });
+  });
+
+  it("builds MVP15 exact facade tools from wrapper toolset descriptions and pins call_tool execution", async () => {
+    const fullContracts = {
+      inputSchema: { type: "object" },
+      dryRunSchema: { type: "object" },
+      rollbackContract: { type: "reverse_operation" },
+      affectedAssetsSchema: { type: "array" },
+      evidenceQuery: { type: "read_only" },
+    };
+    const methods = [
+      { exactToolName: "ue.asset.create_folder", methodId: "create_folder", schemaVersion: "2026-07-09", ...fullContracts },
+      { exactToolName: "ue.asset.duplicate", methodId: "duplicate", schemaVersion: "2026-07-09", ...fullContracts },
+      { exactToolName: "ue.asset.rename", methodId: "rename", schemaVersion: "2026-07-09", ...fullContracts },
+      { exactToolName: "ue.asset.move", methodId: "move", schemaVersion: "2026-07-09", ...fullContracts },
+      { exactToolName: "ue.asset.delete", methodId: "delete", schemaVersion: "2026-07-09", ...fullContracts },
+      { exactToolName: "ue.asset.save", methodId: "save", schemaVersion: "2026-07-09", ...fullContracts },
+    ];
+    const sendRequest = vi.fn(async (request: Parameters<McpTransportClient["sendRequest"]>[0]) => {
+      const params = request.params as { name?: string; arguments?: Record<string, unknown> } | undefined;
+      if (request.method === "initialize") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: fullDiscoveryFixtures.initialize };
+      }
+      if (request.method === "tools/list") {
+        return {
+          jsonrpc: "2.0" as const,
+          id: request.id,
+          result: {
+            tools: [
+              { name: "list_toolsets", inputSchema: { type: "object" } },
+              { name: "describe_toolset", inputSchema: { type: "object" } },
+              { name: "call_tool", inputSchema: { type: "object" } },
+            ],
+          },
+        };
+      }
+      if (request.method === "resources/list") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: { resources: [] } };
+      }
+      if (request.method === "prompts/list") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: { prompts: [] } };
+      }
+      if (request.method === "tools/call" && params?.name === "list_toolsets") {
+        return {
+          jsonrpc: "2.0" as const,
+          id: request.id,
+          result: { toolsets: [{ id: "editor_toolset.toolsets.asset.AssetTools" }] },
+        };
+      }
+      if (request.method === "tools/call" && params?.name === "describe_toolset") {
+        return {
+          jsonrpc: "2.0" as const,
+          id: request.id,
+          result: { toolsetId: "editor_toolset.toolsets.asset.AssetTools", methods },
+        };
+      }
+      if (request.method === "tools/call" && params?.name === "call_tool") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: { status: "executed", evidenceId: "mcp:facade-save" } };
+      }
+      return { jsonrpc: "2.0" as const, id: request.id, result: null };
+    });
+    const transport: McpTransportClient = {
+      sendRequest,
+      sendNotification: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+    };
+    const adapter = createDesktopRuntimeAdapter({ createTransport: () => transport }) as ReturnType<typeof createDesktopRuntimeAdapter> & Mvp15AssetBridge;
+
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+
+    expect(adapter.getMvp15AssetTools?.().map((tool) => tool.name)).toEqual([
+      "ue.asset.create_folder",
+      "ue.asset.duplicate",
+      "ue.asset.rename",
+      "ue.asset.move",
+      "ue.asset.delete",
+      "ue.asset.save",
+    ]);
+
+    await adapter.callMvp15AssetTool!("ue.asset.save", {
+      changeSetId: "asset-changeset:1",
+      dryRunHash: "dry:hash",
+      assetPath: "/Game/UAgentSandbox/run-1/Hero",
+      saveAll: false,
+    });
+
+    expect(sendRequest.mock.calls.filter((call) => call[0].method === "tools/call").map((call) => call[0].params)).toEqual([
+      { name: "list_toolsets", arguments: {} },
+      { name: "describe_toolset", arguments: { toolsetId: "editor_toolset.toolsets.asset.AssetTools" } },
+      {
+        name: "call_tool",
+        arguments: {
+          toolsetId: "editor_toolset.toolsets.asset.AssetTools",
+          methodId: "save",
+          schemaVersion: "2026-07-09",
+          changeSetId: "asset-changeset:1",
+          dryRunHash: "dry:hash",
+          arguments: {
+            assetPath: "/Game/UAgentSandbox/run-1/Hero",
+            saveAll: false,
+          },
+        },
+      },
+    ]);
+  });
+
+  it("keeps a complete direct MVP15 exact asset tool ahead of a same-name facade fallback", async () => {
+    const fullContracts = {
+      inputSchema: { type: "object" },
+      dryRunSchema: { type: "object" },
+      rollbackContract: { type: "reverse_operation" },
+      affectedAssetsSchema: { type: "array" },
+      evidenceQuery: { type: "read_only" },
+    };
+    const directSaveTool = {
+      name: "ue.asset.save",
+      annotations: { source: "direct-exact" },
+      ...fullContracts,
+    };
+    const methods = [
+      { exactToolName: "ue.asset.save", methodId: "save_via_facade", schemaVersion: "2026-07-09", ...fullContracts },
+    ];
+    const sendRequest = vi.fn(async (request: Parameters<McpTransportClient["sendRequest"]>[0]) => {
+      const params = request.params as { name?: string; arguments?: Record<string, unknown> } | undefined;
+      if (request.method === "initialize") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: fullDiscoveryFixtures.initialize };
+      }
+      if (request.method === "tools/list") {
+        return {
+          jsonrpc: "2.0" as const,
+          id: request.id,
+          result: {
+            tools: [
+              directSaveTool,
+              { name: "list_toolsets", inputSchema: { type: "object" } },
+              { name: "describe_toolset", inputSchema: { type: "object" } },
+              { name: "call_tool", inputSchema: { type: "object" } },
+            ],
+          },
+        };
+      }
+      if (request.method === "resources/list") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: { resources: [] } };
+      }
+      if (request.method === "prompts/list") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: { prompts: [] } };
+      }
+      if (request.method === "tools/call" && params?.name === "list_toolsets") {
+        return {
+          jsonrpc: "2.0" as const,
+          id: request.id,
+          result: { toolsets: [{ id: "editor_toolset.toolsets.asset.AssetTools" }] },
+        };
+      }
+      if (request.method === "tools/call" && params?.name === "describe_toolset") {
+        return {
+          jsonrpc: "2.0" as const,
+          id: request.id,
+          result: { toolsetId: "editor_toolset.toolsets.asset.AssetTools", methods },
+        };
+      }
+      if (request.method === "tools/call" && params?.name === "call_tool") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: { status: "executed", evidenceId: "mcp:facade-save" } };
+      }
+      if (request.method === "tools/call" && params?.name === "ue.asset.save") {
+        return { jsonrpc: "2.0" as const, id: request.id, result: { status: "executed", evidenceId: "mcp:direct-save" } };
+      }
+      return { jsonrpc: "2.0" as const, id: request.id, result: null };
+    });
+    const transport: McpTransportClient = {
+      sendRequest,
+      sendNotification: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+    };
+    const adapter = createDesktopRuntimeAdapter({ createTransport: () => transport }) as ReturnType<typeof createDesktopRuntimeAdapter> & Mvp15AssetBridge;
+
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+
+    const saveDescriptor = adapter.getMvp15AssetTools?.().find((tool) => tool.name === "ue.asset.save");
+    expect(saveDescriptor).toMatchObject({
+      name: "ue.asset.save",
+      annotations: { source: "direct-exact" },
+    });
+    expect(saveDescriptor?.annotations?.mvp15Facade).toBeUndefined();
+
+    sendRequest.mockClear();
+    const saveArgs = {
+      changeSetId: "asset-changeset:1",
+      dryRunHash: "dry:hash",
+      assetPath: "/Game/UAgentSandbox/run-1/Hero",
+      saveAll: false,
+    };
+
+    await adapter.callMvp15AssetTool!("ue.asset.save", saveArgs);
+
+    expect(sendRequest.mock.calls.filter((call) => call[0].method === "tools/call").map((call) => call[0].params)).toEqual([
+      { name: "ue.asset.save", arguments: saveArgs },
+    ]);
   });
 
   it("submits read-only query through MCP events after full connect+discover cycle", async () => {

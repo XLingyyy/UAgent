@@ -1,6 +1,6 @@
 # MVP15 Final Verification
 
-Status: automated rework verification covers manifest execution, real-mode adapter failure, exact MCP asset tool inventory, native guard ordering, external-evidence verification, duplicate source handling, UI real-ready/schema-blocked state, and side-effect scan gaps. Route B is the final MVP15 contract: the current real UE MCP wrapper endpoint may connect and discover successfully, but if it exposes only `list_toolsets`, `describe_toolset`, and `call_tool`, the expected result is `BLOCKED_BY_MCP_SCHEMA`, not real asset mutation PASS.
+Status: automated verification covers manifest execution, real-mode adapter failure, exact MCP asset tool inventory, rollback/evidence contract gaps, compliant exact-tool facade mapping, native guard ordering, external-evidence verification, duplicate source handling, UI real-ready/schema-blocked state, and side-effect scan gaps. Final MVP15 acceptance still requires supervisor-local real UE smoke; without UE Editor, trusted root, heartbeat, localhost MCP, and source asset evidence, the real smoke result is `BLOCKED_BY_ENVIRONMENT`, not PASS.
 
 ## Automated Verification Matrix
 
@@ -25,8 +25,8 @@ git diff --check
 
 The real UE smoke must be performed in a supervisor-controlled environment with a running UE Editor project. The smoke is not satisfied by fixture-only tests or manifest-only verification. Use `docs/mvp15-manual-smoke.md` and record one of:
 
-- `PASS_REAL_SMOKE`: exact MCP tools executed create folder, duplicate, rename, move, save single asset, real verification, and rollback under `/Game/UAgentSandbox/**`.
-- `BLOCKED_BY_MCP_SCHEMA`: discovery lacks one or more exact asset tools, input schemas, or dry-run schemas required by the adapter. This is the expected result for the current wrapper-only endpoint even when MCP connect/discover succeeds.
+- `PASS_REAL_SMOKE`: exact MCP tools or a compliant exact-tool facade executed create folder, duplicate, rename, move, save single asset, real verification, and rollback under `/Game/UAgentSandbox/**`.
+- `BLOCKED_BY_MCP_SCHEMA`: discovery lacks one or more exact asset tools, input schemas, dry-run schemas, rollback contracts, affected asset schemas, or evidence queries required by the adapter. Wrapper-only discovery is not PASS unless `describe_toolset` supplies complete exact method contracts for the facade.
 - `BLOCKED_BY_ENVIRONMENT`: UE Editor, heartbeat/snapshot, trusted root, or localhost MCP connection is unavailable.
 
 ## Required Evidence

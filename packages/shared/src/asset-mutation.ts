@@ -88,8 +88,23 @@ export interface AssetDryRunResult {
   dryRunHash: string;
   argsHash: string;
   affectedAssets: string[];
+  rollbackPlan: AssetRollbackPlan;
+  externalEvidenceQueries: AssetExternalEvidenceQuery[];
   redaction: ContextPackRedactionSummary;
   createdAt: number;
+}
+
+export type AssetExternalEvidenceQueryKind =
+  | "ue_mcp_asset_state"
+  | "readonly_content_filesystem";
+
+export interface AssetExternalEvidenceQuery {
+  id: string;
+  kind: AssetExternalEvidenceQueryKind;
+  assetPath: string;
+  readOnly: true;
+  required: true;
+  summary: string;
 }
 
 export type AssetApprovalStatus = "issued" | "used" | "expired" | "rejected" | "invalid";

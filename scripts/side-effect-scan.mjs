@@ -69,6 +69,22 @@ function getFileList() {
 // Scan Categories
 // ============================================================
 
+function isTitleBarWindowInternals(rel, line) {
+  return /apps\/desktop\/web\/src\/shell\/TitleBar/.test(rel)
+    && /@tauri-apps\/api|plugin:window\||__TAURI_INTERNALS__/.test(line);
+}
+
+function isTitleBarMcpReadOnlyStatus(rel, line) {
+  return /apps\/desktop\/web\/src\/shell\/TitleBar/.test(rel)
+    && /read-only tools only.*MCP calls are blocked/.test(line);
+}
+
+function isMvp15SaveAllEvidenceSummary(rel, line) {
+  return /packages\/runtime\/src\/mvp15-asset-changeset/.test(rel)
+    && (/single sandbox asset save, not Save All/.test(line)
+      || /evidenceQuery\(changeSetId, operation\.id, "saved"/.test(line));
+}
+
 const CATEGORIES = [
   {
     id: "provider-secret-boundary",
@@ -217,6 +233,7 @@ const CATEGORIES = [
       (rel) => /\.test\./.test(rel),
       (rel) => /scripts\//.test(rel),
       (rel) => /apps\/desktop\/src-tauri\//.test(rel),
+      isTitleBarWindowInternals,
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
@@ -270,6 +287,7 @@ const CATEGORIES = [
       (rel) => /docs\//.test(rel),
       (rel) => /\.test\./.test(rel),
       (rel) => /scripts\//.test(rel),
+      isTitleBarWindowInternals,
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
@@ -495,6 +513,7 @@ const CATEGORIES = [
       (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
       (rel) => /scripts\/side-effect-scan/.test(rel),
       (rel) => /\.test\./.test(rel),
+      isTitleBarWindowInternals,
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
@@ -710,6 +729,7 @@ const CATEGORIES = [
       (rel) => /docs\//.test(rel),
       (rel) => /\.test\./.test(rel),
       (rel) => /scripts\/side-effect-scan/.test(rel),
+      isTitleBarMcpReadOnlyStatus,
     ],
     blockWhen: [
       (rel) => /packages\/runtime\/src\/mvp12-change-set/.test(rel),
@@ -753,6 +773,7 @@ const CATEGORIES = [
       (rel) => /docs\//.test(rel),
       (rel) => /\.test\./.test(rel),
       (rel) => /scripts\/side-effect-scan/.test(rel),
+      isTitleBarWindowInternals,
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
@@ -780,6 +801,7 @@ const CATEGORIES = [
       (rel) => /docs\//.test(rel),
       (rel) => /\.test\./.test(rel),
       (rel) => /scripts\/side-effect-scan/.test(rel),
+      isTitleBarMcpReadOnlyStatus,
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|settings|shell|sidebar|workspace)\//.test(rel),
@@ -820,6 +842,7 @@ const CATEGORIES = [
       (rel) => /scripts\/side-effect-scan/.test(rel),
       (rel, line) => /apps\/desktop\/web\/src\/runtime\/runtime-store/.test(rel) && /Save All blocked/.test(line),
       (rel, line) => /packages\/runtime\/src\/mvp14-(editor-observation-service|scenarios)/.test(rel) && /Save All blocked/.test(line),
+      isMvp15SaveAllEvidenceSummary,
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\//.test(rel),
@@ -928,6 +951,7 @@ const CATEGORIES = [
       (rel) => /scripts\/side-effect-scan/.test(rel),
       (rel, line) => /apps\/desktop\/web\/src\/runtime\/runtime-store/.test(rel) && /Save All blocked/.test(line),
       (rel, line) => /packages\/runtime\/src\/mvp14-(editor-observation-service|scenarios)/.test(rel) && /Save All blocked/.test(line),
+      isMvp15SaveAllEvidenceSummary,
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/src-tauri\/src\//.test(rel),
@@ -1029,6 +1053,7 @@ const CATEGORIES = [
       { re: /autoApply|provider.*apply|apply.*provider/gi, label: "provider auto apply" },
       { re: /rawArgs|rawCommandLine|approval-token:|asset-approval-token:|Bearer\s+[A-Za-z0-9._-]+|sk-[A-Za-z0-9][A-Za-z0-9._-]{7,}/gi, label: "raw args paths tokens" },
       { re: /replay.*(?:execute|dry[-_ ]?run|verify|rollback|tools\/call)/gi, label: "replay re-execute" },
+      { re: /manifest[-_ ]?only.*real|real.*manifest[-_ ]?only/gi, label: "manifest-only real verification" },
       { re: /taskkill|TerminateProcess|kill_process|\.kill\s*\(/gi, label: "UE process kill" },
     ],
     allowWhen: [
@@ -1042,6 +1067,7 @@ const CATEGORIES = [
       (rel) => /apps\/desktop\/src-tauri\/src\/lib/.test(rel),
       (rel) => /apps\/desktop\/web\/src\/runtime\/runtime-store/.test(rel),
       (rel) => /apps\/desktop\/web\/src\/stores\/ui-store/.test(rel),
+      isTitleBarWindowInternals,
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
@@ -1147,6 +1173,14 @@ function runScanSelfTests() {
   );
   if (!unsafeMvp15.some((finding) => finding.severity === "BLOCKED")) {
     throw new Error("mvp15 asset mutation self-test did not block direct UI native invoke sample");
+  }
+  const unsafeManifestOnly = scanContent(
+    "apps/desktop/web/src/inspector/AssetMutationPanel.tsx",
+    "const result = 'real verification manifest-only pass';",
+    [mvp15Category],
+  );
+  if (!unsafeManifestOnly.some((finding) => finding.severity === "BLOCKED" && finding.pattern === "manifest-only real verification")) {
+    throw new Error("mvp15 asset mutation self-test did not block manifest-only real verification sample");
   }
 }
 

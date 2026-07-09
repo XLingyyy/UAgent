@@ -127,6 +127,7 @@ export function createAssetChangeSetService(options: AssetChangeSetServiceOption
   function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMutationRisk): AssetMutationServiceResult & { dryRun: AssetDryRunResult; changeSet: AssetChangeSet } {
     const id = nextId("asset-changeset");
     const dryRunId = nextId("asset-dry-run");
+    const rollbackPlan = createRollbackPlan(id, []);
     const dryRun: AssetDryRunResult = {
       id: dryRunId,
       changeSetId: id,
@@ -138,6 +139,8 @@ export function createAssetChangeSetService(options: AssetChangeSetServiceOption
       dryRunHash: hash(`${id}:blocked:${reason}`),
       argsHash: hash(JSON.stringify(input.operations)),
       affectedAssets: [],
+      rollbackPlan,
+      externalEvidenceQueries: [],
       redaction: REDACTED,
       createdAt: now(),
     };
@@ -189,6 +192,7 @@ export function createAssetChangeSetService(options: AssetChangeSetServiceOption
 
       const id = nextId("asset-changeset");
       const dryRunId = nextId("asset-dry-run");
+      const rollbackPlan = createRollbackPlan(id, operations);
       const risk = operations.reduce<AssetMutationRisk>((current, op) => {
         const opRisk = classifyAssetMutationRisk(op.kind, null);
         if (opRisk === "high_destructive") return opRisk;
@@ -206,6 +210,8 @@ export function createAssetChangeSetService(options: AssetChangeSetServiceOption
         dryRunHash: hash(`${id}:dry:${operations.map((op) => op.dryRunHash).join(":")}`),
         argsHash: hash(JSON.stringify(input.operations)),
         affectedAssets: [...new Set(operations.flatMap((op) => [op.assetPathBefore, op.assetPathAfter].filter((path): path is string => Boolean(path))))],
+        rollbackPlan,
+        externalEvidenceQueries: createExternalEvidenceQueries(id, operations),
         redaction: REDACTED,
         createdAt: now(),
       };
@@ -376,10 +382,53 @@ function createChangeSet(
     operations,
     risk,
     approval: null,
-    rollbackPlan: createRollbackPlan(id, operations),
+    rollbackPlan: dryRun.rollbackPlan,
     verification: null,
     evidenceIds: [`asset-evidence:dry-run:${id}`],
     redaction: REDACTED,
+  };
+}
+
+function createExternalEvidenceQueries(
+  changeSetId: string,
+  operations: AssetMutationOperation[],
+): AssetDryRunResult["externalEvidenceQueries"] {
+  return operations.flatMap((operation) => {
+    const afterPath = operation.assetPathAfter;
+    const beforePath = operation.assetPathBefore;
+    if (operation.kind === "duplicate_asset" && beforePath && afterPath) {
+      return [
+        evidenceQuery(changeSetId, operation.id, "target-exists", afterPath, "Read-only UE/MCP or Content/UAgentSandbox evidence must confirm the duplicate target exists."),
+        evidenceQuery(changeSetId, operation.id, "source-untouched", beforePath, "Read-only UE/MCP state must confirm the source asset remained untouched."),
+      ];
+    }
+    if ((operation.kind === "rename_asset" || operation.kind === "move_asset") && afterPath) {
+      return [evidenceQuery(changeSetId, operation.id, "moved", afterPath, "Read-only UE/MCP or Content/UAgentSandbox evidence must confirm old path absence and new path presence.")];
+    }
+    if (operation.kind === "save_single_asset" && (afterPath ?? beforePath)) {
+      return [evidenceQuery(changeSetId, operation.id, "saved", afterPath ?? beforePath!, "Read-only UE/MCP state must confirm a single sandbox asset save, not Save All.")];
+    }
+    if (operation.kind === "delete_sandbox_asset" && beforePath) {
+      return [evidenceQuery(changeSetId, operation.id, "deleted", beforePath, "Read-only UE/MCP or Content/UAgentSandbox evidence must confirm rollback cleanup or sandbox delete state.")];
+    }
+    return afterPath ? [evidenceQuery(changeSetId, operation.id, "exists", afterPath, "Read-only UE/MCP or Content/UAgentSandbox evidence must confirm sandbox asset existence.")] : [];
+  });
+}
+
+function evidenceQuery(
+  changeSetId: string,
+  operationId: string,
+  suffix: string,
+  assetPath: string,
+  summary: string,
+): AssetDryRunResult["externalEvidenceQueries"][number] {
+  return {
+    id: `asset-evidence-query:${hash(`${changeSetId}:${operationId}:${suffix}:${assetPath}`)}`,
+    kind: assetPath.startsWith("/Content/") ? "readonly_content_filesystem" : "ue_mcp_asset_state",
+    assetPath,
+    readOnly: true,
+    required: true,
+    summary,
   };
 }
 

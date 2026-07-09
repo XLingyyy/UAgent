@@ -55,6 +55,8 @@ export type {
   AssetChangeSetState,
   AssetDryRunResult,
   AssetExecutionResult,
+  AssetExternalEvidenceQuery,
+  AssetExternalEvidenceQueryKind,
   AssetManifestEntry,
   AssetManifestState,
   AssetMutationAuditEventType,

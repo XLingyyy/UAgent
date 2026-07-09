@@ -53,58 +53,60 @@ export function AssetMutationPanel() {
           Gate modes: disabled / dry-run-only / sandbox-enabled / supervisor-local-smoke-required
         </li>
         <li className="ua-utility-placeholder__item">
-          <button
-            className="ua-utility-placeholder__button"
-            type="button"
-            aria-label="Dry-run sandbox asset mutation"
-            onClick={() => {
-              void actions?.runMvp15AssetDryRun(sourceAssetPath);
-            }}
-          >
-            Dry-run
-          </button>{" "}
-          <button
-            className="ua-utility-placeholder__button"
-            type="button"
-            aria-label="Approve sandbox asset mutation"
-            disabled={!canApprove}
-            onClick={() => actions?.approveMvp15AssetChangeSet()}
-          >
-            Approve
-          </button>{" "}
-          <button
-            className="ua-utility-placeholder__button"
-            type="button"
-            aria-label="Execute sandbox asset mutation"
-            disabled={!canExecute}
-            onClick={() => {
-              void actions?.executeMvp15AssetChangeSet();
-            }}
-          >
-            Execute
-          </button>{" "}
-          <button
-            className="ua-utility-placeholder__button"
-            type="button"
-            aria-label="Verify sandbox asset mutation"
-            disabled={!canVerify}
-            onClick={() => {
-              void actions?.verifyMvp15AssetChangeSet();
-            }}
-          >
-            Verify
-          </button>{" "}
-          <button
-            className="ua-utility-placeholder__button"
-            type="button"
-            aria-label="Rollback sandbox asset mutation"
-            disabled={!canRollback}
-            onClick={() => {
-              void actions?.rollbackMvp15AssetChangeSet();
-            }}
-          >
-            Rollback
-          </button>
+          <span className="ua-utility-placeholder__action-row">
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Dry-run sandbox asset mutation"
+              onClick={() => {
+                void actions?.runMvp15AssetDryRun(sourceAssetPath);
+              }}
+            >
+              Dry-run
+            </button>
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Approve sandbox asset mutation"
+              disabled={!canApprove}
+              onClick={() => actions?.approveMvp15AssetChangeSet()}
+            >
+              Approve
+            </button>
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Execute sandbox asset mutation"
+              disabled={!canExecute}
+              onClick={() => {
+                void actions?.executeMvp15AssetChangeSet();
+              }}
+            >
+              Execute
+            </button>
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Verify sandbox asset mutation"
+              disabled={!canVerify}
+              onClick={() => {
+                void actions?.verifyMvp15AssetChangeSet();
+              }}
+            >
+              Verify
+            </button>
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Rollback sandbox asset mutation"
+              disabled={!canRollback}
+              onClick={() => {
+                void actions?.rollbackMvp15AssetChangeSet();
+              }}
+            >
+              Rollback
+            </button>
+          </span>
         </li>
         {runtimeMode && <li className="ua-utility-placeholder__item">Execution mode: {runtimeMode}</li>}
         {mvp15?.sourceAssetPath && <li className="ua-utility-placeholder__item">Source: {mvp15.sourceAssetPath}</li>}
@@ -117,6 +119,12 @@ export function AssetMutationPanel() {
         ) : null}
         {mvp15?.mcpInventory?.missingDryRunSchemas.length ? (
           <li className="ua-utility-placeholder__item">Missing MCP dry-run schema: {mvp15.mcpInventory.missingDryRunSchemas.join(", ")}</li>
+        ) : null}
+        {mvp15?.mcpInventory?.missingRollbackContracts.length ? (
+          <li className="ua-utility-placeholder__item">Missing MCP rollback contract: {mvp15.mcpInventory.missingRollbackContracts.join(", ")}</li>
+        ) : null}
+        {mvp15?.mcpInventory?.missingEvidenceQueries.length ? (
+          <li className="ua-utility-placeholder__item">Missing MCP evidence query: {mvp15.mcpInventory.missingEvidenceQueries.join(", ")}</li>
         ) : null}
         {dryRun && <li className="ua-utility-placeholder__item">Dry-run: {dryRun.status}</li>}
         {changeSet && <li className="ua-utility-placeholder__item">Risk: {changeSet.risk}</li>}

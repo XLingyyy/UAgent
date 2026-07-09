@@ -185,6 +185,10 @@ function formatMvp15InventoryBlocker(inventory: ReturnType<typeof createMvp15Mcp
   if (firstMissingSchema) return `blocked_by_mcp_schema:schema_required:${firstMissingSchema}`;
   const firstMissingDryRun = inventory.missingDryRunSchemas[0];
   if (firstMissingDryRun) return `blocked_by_mcp_schema:dry_run_required:${firstMissingDryRun}`;
+  const firstMissingRollback = inventory.missingRollbackContracts[0];
+  if (firstMissingRollback) return `blocked_by_mcp_schema:rollback_contract_required:${firstMissingRollback}`;
+  const firstMissingEvidence = inventory.missingEvidenceQueries[0];
+  if (firstMissingEvidence) return `blocked_by_mcp_schema:external_evidence_required:${firstMissingEvidence}`;
   return "blocked_by_mcp_schema:unknown";
 }
 
@@ -196,12 +200,22 @@ function createMvp15FixtureAssetMutationService(): AssetChangeSetService {
 }
 
 function getMvp15McpAssetTools(runtimeClient: DesktopRuntimeAdapter): Mvp15McpAssetToolDescriptor[] {
+  const adapterTools = runtimeClient.getMvp15AssetTools?.();
+  if (adapterTools) return adapterTools;
   return (runtimeClient.getMcpDiscovery()?.tools ?? []).map((tool) => {
-    const descriptor = tool as typeof tool & { dryRunSchema?: unknown };
+    const descriptor = tool as typeof tool & {
+      dryRunSchema?: unknown;
+      rollbackContract?: unknown;
+      affectedAssetsSchema?: unknown;
+      evidenceQuery?: unknown;
+    };
     return {
       name: descriptor.name,
       inputSchema: descriptor.inputSchema,
       dryRunSchema: descriptor.dryRunSchema,
+      rollbackContract: descriptor.rollbackContract,
+      affectedAssetsSchema: descriptor.affectedAssetsSchema,
+      evidenceQuery: descriptor.evidenceQuery,
       annotations: descriptor.annotations,
     };
   });

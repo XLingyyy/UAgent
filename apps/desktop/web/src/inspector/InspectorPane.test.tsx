@@ -94,6 +94,7 @@ function createSpyRuntimeAdapter(snapshot: RuntimeSnapshot): DesktopRuntimeAdapt
       legacyMode: false,
     }),
     getMcpDiscovery: () => null,
+    getMvp15AssetTools: () => [],
     subscribe: () => () => {},
     subscribeMcp: () => () => {},
     submitTask: vi.fn(),

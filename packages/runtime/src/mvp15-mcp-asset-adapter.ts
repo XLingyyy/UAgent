@@ -17,6 +17,9 @@ export interface Mvp15McpAssetToolInput {
   toolName: string;
   inputSchema: unknown;
   dryRunSchema: unknown;
+  rollbackContract?: unknown;
+  affectedAssetsSchema?: unknown;
+  evidenceQuery?: unknown;
   args?: Record<string, unknown>;
 }
 
@@ -24,6 +27,9 @@ export interface Mvp15McpAssetToolDescriptor {
   name: string;
   inputSchema?: unknown;
   dryRunSchema?: unknown;
+  rollbackContract?: unknown;
+  affectedAssetsSchema?: unknown;
+  evidenceQuery?: unknown;
   annotations?: Record<string, unknown>;
 }
 
@@ -35,6 +41,8 @@ export interface Mvp15McpAssetToolDecision {
   affectedAssets: string[];
   sandboxOnly: true;
   rollbackPlanRequired: true;
+  rollbackContractRequired: true;
+  externalEvidenceRequired: true;
 }
 
 export interface Mvp15McpAssetToolInventory {
@@ -43,6 +51,8 @@ export interface Mvp15McpAssetToolInventory {
   missingTools: Mvp15McpAssetToolName[];
   missingSchemas: Mvp15McpAssetToolName[];
   missingDryRunSchemas: Mvp15McpAssetToolName[];
+  missingRollbackContracts: Mvp15McpAssetToolName[];
+  missingEvidenceQueries: Mvp15McpAssetToolName[];
   decisions: Mvp15McpAssetToolDecision[];
 }
 
@@ -89,6 +99,15 @@ export function classifyMvp15McpAssetTool(input: Mvp15McpAssetToolInput): Mvp15M
   if (!allowlisted) return decision(input, false, "blocked", "not_allowlisted", affectedAssets);
   if (!input.inputSchema || typeof input.inputSchema !== "object") return decision(input, true, "blocked", "schema_required", affectedAssets);
   if (!input.dryRunSchema || typeof input.dryRunSchema !== "object") return decision(input, true, "blocked", "dry_run_required", affectedAssets);
+  if (!input.rollbackContract || typeof input.rollbackContract !== "object") return decision(input, true, "blocked", "rollback_contract_required", affectedAssets);
+  if (
+    !input.affectedAssetsSchema ||
+    typeof input.affectedAssetsSchema !== "object" ||
+    !input.evidenceQuery ||
+    typeof input.evidenceQuery !== "object"
+  ) {
+    return decision(input, true, "blocked", "external_evidence_required", affectedAssets);
+  }
   const hasUnsafeAsset = affectedAssetArgs.some((asset) => {
     if (isSandboxAssetPath(asset.path)) return false;
     return input.toolName !== "ue.asset.duplicate" || !isDuplicateSourceArg(asset.key);
@@ -110,6 +129,8 @@ export function createMvp15McpAssetToolInventory(
   const missingTools: Mvp15McpAssetToolName[] = [];
   const missingSchemas: Mvp15McpAssetToolName[] = [];
   const missingDryRunSchemas: Mvp15McpAssetToolName[] = [];
+  const missingRollbackContracts: Mvp15McpAssetToolName[] = [];
+  const missingEvidenceQueries: Mvp15McpAssetToolName[] = [];
   const decisions: Mvp15McpAssetToolDecision[] = [];
 
   for (const toolName of MVP15_ASSET_TOOL_ALLOWLIST) {
@@ -120,10 +141,16 @@ export function createMvp15McpAssetToolInventory(
       continue;
     }
     const dryRunSchema = getDryRunSchema(tool);
+    const rollbackContract = getRollbackContract(tool);
+    const affectedAssetsSchema = getAffectedAssetsSchema(tool);
+    const evidenceQuery = getEvidenceQuery(tool);
     const toolDecision = classifyMvp15McpAssetTool({
       toolName,
       inputSchema: tool.inputSchema ?? null,
       dryRunSchema,
+      rollbackContract,
+      affectedAssetsSchema,
+      evidenceQuery,
     });
     decisions.push(toolDecision);
     if (!tool.inputSchema || typeof tool.inputSchema !== "object") {
@@ -134,15 +161,30 @@ export function createMvp15McpAssetToolInventory(
       missingDryRunSchemas.push(toolName);
       continue;
     }
+    if (!rollbackContract || typeof rollbackContract !== "object") {
+      missingRollbackContracts.push(toolName);
+      continue;
+    }
+    if (
+      !affectedAssetsSchema ||
+      typeof affectedAssetsSchema !== "object" ||
+      !evidenceQuery ||
+      typeof evidenceQuery !== "object"
+    ) {
+      missingEvidenceQueries.push(toolName);
+      continue;
+    }
     availableTools.push(toolName);
   }
 
   return {
-    status: missingTools.length || missingSchemas.length || missingDryRunSchemas.length ? "blocked_by_mcp_schema" : "ready",
+    status: missingTools.length || missingSchemas.length || missingDryRunSchemas.length || missingRollbackContracts.length || missingEvidenceQueries.length ? "blocked_by_mcp_schema" : "ready",
     availableTools,
     missingTools,
     missingSchemas,
     missingDryRunSchemas,
+    missingRollbackContracts,
+    missingEvidenceQueries,
     decisions,
   };
 }
@@ -162,14 +204,22 @@ export function createMvp15McpAssetMutationAdapter(
     const tool = toolByName.get(call.toolName);
     if (!tool) return blockedResult(`blocked_by_mcp_schema:missing_tool:${call.toolName}`, operation.id);
     const dryRunSchema = getDryRunSchema(tool);
+    const rollbackContract = getRollbackContract(tool);
+    const affectedAssetsSchema = getAffectedAssetsSchema(tool);
+    const evidenceQuery = getEvidenceQuery(tool);
     const policy = classifyMvp15McpAssetTool({
       toolName: call.toolName,
       inputSchema: tool.inputSchema ?? null,
       dryRunSchema,
+      rollbackContract,
+      affectedAssetsSchema,
+      evidenceQuery,
       args: call.args,
     });
     if (policy.decision === "blocked") {
-      const prefix = policy.reason === "schema_required" || policy.reason === "dry_run_required" ? "blocked_by_mcp_schema" : "mcp_asset_policy_blocked";
+      const prefix = ["schema_required", "dry_run_required", "rollback_contract_required", "external_evidence_required"].includes(policy.reason)
+        ? "blocked_by_mcp_schema"
+        : "mcp_asset_policy_blocked";
       return blockedResult(`${prefix}:${policy.reason}:${call.toolName}`, operation.id);
     }
 
@@ -216,6 +266,21 @@ function getDryRunSchema(tool: Mvp15McpAssetToolDescriptor): unknown {
   if (annotationSchema) return annotationSchema;
   if (tool.annotations?.dryRunSupported === true || tool.annotations?.supportsDryRun === true) return tool.inputSchema;
   return null;
+}
+
+function getRollbackContract(tool: Mvp15McpAssetToolDescriptor): unknown {
+  if (tool.rollbackContract) return tool.rollbackContract;
+  return tool.annotations?.rollbackContract ?? tool.annotations?.rollback_contract ?? null;
+}
+
+function getAffectedAssetsSchema(tool: Mvp15McpAssetToolDescriptor): unknown {
+  if (tool.affectedAssetsSchema) return tool.affectedAssetsSchema;
+  return tool.annotations?.affectedAssetsSchema ?? tool.annotations?.affected_assets_schema ?? null;
+}
+
+function getEvidenceQuery(tool: Mvp15McpAssetToolDescriptor): unknown {
+  if (tool.evidenceQuery) return tool.evidenceQuery;
+  return tool.annotations?.evidenceQuery ?? tool.annotations?.evidence_query ?? tool.annotations?.externalEvidenceQuery ?? null;
 }
 
 function blockedResult(reason: string, operationId: string, evidenceId?: string): AssetMutationAdapterResult {
@@ -331,6 +396,8 @@ function decision(
     affectedAssets,
     sandboxOnly: true,
     rollbackPlanRequired: true,
+    rollbackContractRequired: true,
+    externalEvidenceRequired: true,
   };
 }
 

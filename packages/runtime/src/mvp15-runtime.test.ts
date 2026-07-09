@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyMvp15McpAssetTool,
+  createMvp15ExactToolFacade,
   createAssetChangeSetService,
   createAssetManifestRegistry,
   createFixtureAssetMutationAdapter,
@@ -97,18 +98,34 @@ describe("MVP15 manifest registry", () => {
 
 describe("MVP15 MCP exact allowlist", () => {
   it("requires exact tool names, schemas, dry-run support, and sandbox arguments", () => {
-    expect(classifyMvp15McpAssetTool({ toolName: "ue.asset.create_folder", inputSchema: { type: "object" }, dryRunSchema: { type: "object" } }).decision).toBe("dry_run_required");
-    expect(classifyMvp15McpAssetTool({ toolName: "ue.asset.compile_blueprint", inputSchema: { type: "object" }, dryRunSchema: { type: "object" } }).reason).toBe("not_allowlisted");
-    expect(classifyMvp15McpAssetTool({ toolName: "ue.asset.save", inputSchema: null, dryRunSchema: { type: "object" } }).reason).toBe("schema_required");
-    expect(classifyMvp15McpAssetTool({ toolName: "ue.asset.save", inputSchema: { type: "object" }, dryRunSchema: null }).reason).toBe("dry_run_required");
-    expect(classifyMvp15McpAssetTool({ toolName: "ue.asset.save", inputSchema: { type: "object" }, dryRunSchema: { type: "object" }, args: { assetPath: "/Game/Hero" } }).reason).toBe("sandbox_path_required");
+    const fullContracts = {
+      inputSchema: { type: "object" },
+      dryRunSchema: { type: "object" },
+      rollbackContract: { type: "reverse_operation" },
+      affectedAssetsSchema: { type: "array" },
+      evidenceQuery: { type: "read_only" },
+    };
+
+    expect(classifyMvp15McpAssetTool({ toolName: "ue.asset.create_folder", ...fullContracts }).decision).toBe("dry_run_required");
+    expect(classifyMvp15McpAssetTool({ toolName: "ue.asset.compile_blueprint", ...fullContracts }).reason).toBe("not_allowlisted");
+    expect(classifyMvp15McpAssetTool({ toolName: "ue.asset.save", ...fullContracts, inputSchema: null }).reason).toBe("schema_required");
+    expect(classifyMvp15McpAssetTool({ toolName: "ue.asset.save", ...fullContracts, dryRunSchema: null }).reason).toBe("dry_run_required");
+    expect(classifyMvp15McpAssetTool({ toolName: "ue.asset.save", ...fullContracts, rollbackContract: null }).reason).toBe("rollback_contract_required");
+    expect(classifyMvp15McpAssetTool({ toolName: "ue.asset.save", ...fullContracts, evidenceQuery: null }).reason).toBe("external_evidence_required");
+    expect(classifyMvp15McpAssetTool({ toolName: "ue.asset.save", ...fullContracts, args: { assetPath: "/Game/Hero" } }).reason).toBe("sandbox_path_required");
   });
 
   it("allows duplicate from an explicit read-only non-sandbox source only when the target stays in sandbox", () => {
-    const legalDuplicate = classifyMvp15McpAssetTool({
-      toolName: "ue.asset.duplicate",
+    const fullContracts = {
       inputSchema: { type: "object" },
       dryRunSchema: { type: "object" },
+      rollbackContract: { type: "reverse_operation" },
+      affectedAssetsSchema: { type: "array" },
+      evidenceQuery: { type: "read_only" },
+    };
+    const legalDuplicate = classifyMvp15McpAssetTool({
+      toolName: "ue.asset.duplicate",
+      ...fullContracts,
       args: {
         sourceAssetPath: "/Game/Templates/Hero",
         targetAssetPath: "/Game/UAgentSandbox/run-1/HeroCopy",
@@ -116,8 +133,7 @@ describe("MVP15 MCP exact allowlist", () => {
     });
     const unsafeTarget = classifyMvp15McpAssetTool({
       toolName: "ue.asset.duplicate",
-      inputSchema: { type: "object" },
-      dryRunSchema: { type: "object" },
+      ...fullContracts,
       args: {
         sourceAssetPath: "/Game/Templates/Hero",
         targetAssetPath: "/Game/Characters/HeroCopy",
@@ -131,11 +147,16 @@ describe("MVP15 MCP exact allowlist", () => {
   });
 
   it("reports exact asset tool inventory gaps for supervisor smoke decisions", () => {
+    const fullContracts = {
+      rollbackContract: { type: "reverse_operation" },
+      affectedAssetsSchema: { type: "array" },
+      evidenceQuery: { type: "read_only" },
+    };
     const inventory = createMvp15McpAssetToolInventory([
-      { name: "ue.asset.create_folder", inputSchema: { type: "object" }, dryRunSchema: { type: "object" } },
-      { name: "ue.asset.duplicate", inputSchema: { type: "object" }, dryRunSchema: { type: "object" } },
-      { name: "ue.asset.rename", inputSchema: { type: "object" } },
-      { name: "ue.asset.save", dryRunSchema: { type: "object" } },
+      { name: "ue.asset.create_folder", inputSchema: { type: "object" }, dryRunSchema: { type: "object" }, ...fullContracts },
+      { name: "ue.asset.duplicate", inputSchema: { type: "object" }, dryRunSchema: { type: "object" }, ...fullContracts },
+      { name: "ue.asset.rename", inputSchema: { type: "object" }, ...fullContracts },
+      { name: "ue.asset.save", dryRunSchema: { type: "object" }, ...fullContracts },
     ]);
 
     expect(inventory.status).toBe("blocked_by_mcp_schema");
@@ -143,6 +164,115 @@ describe("MVP15 MCP exact allowlist", () => {
     expect(inventory.missingTools).toEqual(["ue.asset.move", "ue.asset.delete"]);
     expect(inventory.missingSchemas).toEqual(["ue.asset.save"]);
     expect(inventory.missingDryRunSchemas).toEqual(["ue.asset.rename"]);
+  });
+
+  it("blocks inventory when rollback contracts or external evidence queries are missing", () => {
+    const baseTool = { inputSchema: { type: "object" }, dryRunSchema: { type: "object" } };
+    const completeTool = {
+      ...baseTool,
+      rollbackContract: { type: "reverse_operation" },
+      affectedAssetsSchema: { type: "array" },
+      evidenceQuery: { type: "read_only" },
+    };
+    const inventory = createMvp15McpAssetToolInventory([
+      { name: "ue.asset.create_folder", ...completeTool },
+      { name: "ue.asset.duplicate", ...completeTool },
+      { name: "ue.asset.rename", ...completeTool },
+      { name: "ue.asset.move", ...baseTool, evidenceQuery: { type: "read_only" }, affectedAssetsSchema: { type: "array" } },
+      { name: "ue.asset.delete", ...baseTool, rollbackContract: { type: "reverse_operation" }, affectedAssetsSchema: { type: "array" } },
+      { name: "ue.asset.save", ...completeTool },
+    ]);
+
+    expect(inventory.status).toBe("blocked_by_mcp_schema");
+    expect(inventory.missingRollbackContracts).toEqual(["ue.asset.move"]);
+    expect(inventory.missingEvidenceQueries).toEqual(["ue.asset.delete"]);
+    expect(inventory.availableTools).not.toContain("ue.asset.move");
+    expect(inventory.availableTools).not.toContain("ue.asset.delete");
+  });
+
+  it("builds an exact-tool facade only from fully described wrapper toolset methods", () => {
+    const facade = createMvp15ExactToolFacade([
+      {
+        toolsetId: "editor_toolset.toolsets.asset.AssetTools",
+        methods: [
+          {
+            exactToolName: "ue.asset.create_folder",
+            methodId: "create_folder",
+            schemaVersion: "2026-07-09",
+            inputSchema: { type: "object" },
+            dryRunSchema: { type: "object" },
+            rollbackContract: { type: "delete_created" },
+            affectedAssetsSchema: { type: "array" },
+            evidenceQuery: { type: "read_only_asset_state" },
+          },
+          {
+            exactToolName: "ue.asset.duplicate",
+            methodId: "duplicate",
+            schemaVersion: "2026-07-09",
+            inputSchema: { type: "object" },
+            dryRunSchema: { type: "object" },
+            rollbackContract: { type: "delete_created" },
+            affectedAssetsSchema: { type: "array" },
+            evidenceQuery: { type: "read_only_asset_state" },
+          },
+          {
+            exactToolName: "ue.asset.rename",
+            methodId: "rename",
+            schemaVersion: "2026-07-09",
+            inputSchema: { type: "object" },
+            dryRunSchema: { type: "object" },
+            rollbackContract: { type: "rename_back" },
+            affectedAssetsSchema: { type: "array" },
+            evidenceQuery: { type: "read_only_asset_state" },
+          },
+          {
+            exactToolName: "ue.asset.move",
+            methodId: "move",
+            schemaVersion: "2026-07-09",
+            inputSchema: { type: "object" },
+            dryRunSchema: { type: "object" },
+            rollbackContract: { type: "move_back" },
+            affectedAssetsSchema: { type: "array" },
+            evidenceQuery: { type: "read_only_asset_state" },
+          },
+          {
+            exactToolName: "ue.asset.save",
+            methodId: "save",
+            schemaVersion: "2026-07-09",
+            inputSchema: { type: "object" },
+            dryRunSchema: { type: "object" },
+            rollbackContract: { type: "save_single_restore" },
+            affectedAssetsSchema: { type: "array" },
+            evidenceQuery: { type: "read_only_asset_state" },
+          },
+          {
+            exactToolName: "ue.asset.delete",
+            methodId: "delete",
+            schemaVersion: "2026-07-09",
+            inputSchema: { type: "object" },
+            dryRunSchema: { type: "object" },
+            rollbackContract: { type: "restore_from_trash" },
+            affectedAssetsSchema: { type: "array" },
+          },
+        ],
+      },
+    ]);
+
+    expect(facade.status).toBe("blocked_by_mcp_schema");
+    expect(facade.tools.map((tool) => tool.name)).toEqual([
+      "ue.asset.create_folder",
+      "ue.asset.duplicate",
+      "ue.asset.rename",
+      "ue.asset.move",
+      "ue.asset.save",
+    ]);
+    expect(facade.inventory.missingEvidenceQueries).toEqual(["ue.asset.delete"]);
+    expect(facade.tools[0]?.annotations?.mvp15Facade).toMatchObject({
+      wrapperToolName: "call_tool",
+      toolsetId: "editor_toolset.toolsets.asset.AssetTools",
+      methodId: "create_folder",
+      schemaVersion: "2026-07-09",
+    });
   });
 });
 
@@ -189,7 +319,14 @@ describe("MVP15 asset ChangeSet service", () => {
       "ue.asset.move",
       "ue.asset.delete",
       "ue.asset.save",
-    ].map((name) => ({ name, inputSchema: { type: "object" }, dryRunSchema: { type: "object" } }));
+    ].map((name) => ({
+      name,
+      inputSchema: { type: "object" },
+      dryRunSchema: { type: "object" },
+      rollbackContract: { type: "reverse_operation" },
+      affectedAssetsSchema: { type: "array" },
+      evidenceQuery: { type: "read_only" },
+    }));
     const verifier: AssetMutationVerificationAdapter = {
       verify: (changeSet) => ({
         id: "asset-verification:real",
@@ -325,6 +462,9 @@ describe("MVP15 asset ChangeSet service", () => {
     const rolledBack = await service.rollback(preview.changeSet!.id);
 
     expect(dryRun.status).toBe("dry_run_completed");
+    expect(dryRun.dryRun.rollbackPlan.actions).toHaveLength(5);
+    expect(dryRun.dryRun.externalEvidenceQueries.length).toBeGreaterThanOrEqual(5);
+    expect(dryRun.dryRun.externalEvidenceQueries.every((query) => query.readOnly && query.required)).toBe(true);
     expect(preview.changeSet?.state).toBe("approval_required");
     expect(approval.changeSet?.approval?.status).toBe("issued");
     expect(JSON.stringify(approval.changeSet)).not.toContain(approval.approvalToken!);
@@ -518,11 +658,11 @@ describe("MVP15 asset ChangeSet service", () => {
     expect((await service.execute({ changeSetId: expires.changeSet.id, approvalToken: expiringApproval.approvalToken!, editorSessionId: "editor-session:1", pidHash: "pid:fixture" })).reason).toBe("expired_token");
   });
 
-  it("covers at least 48 MVP15 scenarios and 192 assertions", async () => {
+  it("covers at least 60 MVP15 scenarios and 240 assertions", async () => {
     const matrix = await createMvp15ScenarioMatrix();
 
-    expect(matrix.scenarios.length).toBeGreaterThanOrEqual(48);
-    expect(matrix.totalAssertions).toBeGreaterThanOrEqual(192);
+    expect(matrix.scenarios.length).toBeGreaterThanOrEqual(60);
+    expect(matrix.totalAssertions).toBeGreaterThanOrEqual(240);
     expect(matrix.scenarios.every((scenario) => scenario.pass)).toBe(true);
   });
 });

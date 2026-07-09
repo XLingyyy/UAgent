@@ -1,9 +1,14 @@
 import {
   createAgentLoopRuntime,
+  createMvp15ExactToolFacade,
+  createMvp15FacadeWrapperCall,
+  createMvp15McpAssetToolInventory,
   createMvp9RuntimeService,
   MVP15_ASSET_TOOL_ALLOWLIST,
   type AgentLoopRuntimeClient,
+  type Mvp15ExactToolFacadeToolset,
   type Mvp15McpAssetToolCallResult,
+  type Mvp15McpAssetToolDescriptor,
   type Mvp15McpAssetToolName,
   type Mvp15NativeAssetGuardInput,
   type Mvp15NativeAssetGuardResult,
@@ -25,6 +30,7 @@ export interface DesktopRuntimeAdapter {
   getSnapshot(): RuntimeSnapshot;
   getMcpState(): McpConnectionState;
   getMcpDiscovery(): McpDiscoverySnapshot | null;
+  getMvp15AssetTools(): Mvp15McpAssetToolDescriptor[];
   subscribe(listener: (snapshot: RuntimeSnapshot) => void): () => void;
   subscribeMcp(listener: (state: McpConnectionState) => void): () => void;
   submitTask(draft: TaskDraft): Promise<TaskRecord>;
@@ -102,6 +108,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     legacyMode: false,
   };
   let currentDiscovery: McpDiscoverySnapshot | null = null;
+  let currentMvp15FacadeTools: Mvp15McpAssetToolDescriptor[] = [];
   const listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
   const mcpListeners = new Set<(state: McpConnectionState) => void>();
 
@@ -122,6 +129,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     getSnapshot: () => router.getSnapshot(),
     getMcpState: () => mcpState,
     getMcpDiscovery: () => currentDiscovery,
+    getMvp15AssetTools: () => getMvp15AssetTools(currentDiscovery, currentMvp15FacadeTools),
 
     subscribe: (listener) => {
       listeners.add(listener);
@@ -183,6 +191,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
         await currentSession?.disconnect();
         currentSession = null;
         currentDiscovery = null;
+        currentMvp15FacadeTools = [];
         router.updateContext({ runtimeMode: "mock", discovery: null, readResource: undefined, callTool: undefined });
 
         let session: McpSession;
@@ -257,6 +266,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       try {
         const discovery = await currentSession.discover();
         currentDiscovery = discovery;
+        currentMvp15FacadeTools = await discoverMvp15FacadeTools(currentSession, discovery);
 
         const session = currentSession!;
         router.updateContext({
@@ -285,6 +295,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       void currentSession?.disconnect();
       currentSession = null;
       currentDiscovery = null;
+      currentMvp15FacadeTools = [];
       router.updateContext({ runtimeMode: "mock", discovery: null, readResource: undefined, callTool: undefined });
       mcpState = {
         ...mcpState,
@@ -324,6 +335,11 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       if (!currentSession) {
         return { ok: false, status: "blocked", reason: "mcp_session_required", evidenceId: null };
       }
+      const selectedDescriptor = getMvp15AssetTools(currentDiscovery, currentMvp15FacadeTools).find((tool) => tool.name === toolName);
+      const wrapperCall = selectedDescriptor ? createMvp15FacadeWrapperCall(selectedDescriptor, args) : null;
+      if (wrapperCall) {
+        return currentSession.callTool(wrapperCall.wrapperToolName, wrapperCall.args);
+      }
       return currentSession.callTool(toolName, args);
     },
     subscribeMvp9: (listener: (state: Mvp9RuntimeState) => void) => {
@@ -333,6 +349,163 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       };
     },
   };
+}
+
+function getMvp15AssetTools(
+  discovery: McpDiscoverySnapshot | null,
+  facadeTools: Mvp15McpAssetToolDescriptor[],
+): Mvp15McpAssetToolDescriptor[] {
+  const directTools = (discovery?.tools ?? [])
+    .filter((tool) => isMvp15AssetToolName(tool.name))
+    .map((tool) => toMvp15AssetToolDescriptor(tool));
+  const byName = new Map<string, Mvp15McpAssetToolDescriptor>();
+  for (const tool of directTools) {
+    byName.set(tool.name, tool);
+  }
+  for (const tool of facadeTools) {
+    const directTool = byName.get(tool.name);
+    if (!directTool || !isCompleteMvp15AssetToolDescriptor(directTool)) {
+      byName.set(tool.name, tool);
+    }
+  }
+  return [...byName.values()];
+}
+
+function isCompleteMvp15AssetToolDescriptor(tool: Mvp15McpAssetToolDescriptor): boolean {
+  const toolName = tool.name;
+  if (!isMvp15AssetToolName(toolName)) return false;
+  return createMvp15McpAssetToolInventory([tool]).availableTools.includes(toolName);
+}
+
+async function discoverMvp15FacadeTools(
+  session: McpSession,
+  discovery: McpDiscoverySnapshot,
+): Promise<Mvp15McpAssetToolDescriptor[]> {
+  const toolNames = new Set(discovery.tools.map((tool) => tool.name));
+  if (!toolNames.has("list_toolsets") || !toolNames.has("describe_toolset") || !toolNames.has("call_tool")) {
+    return [];
+  }
+  try {
+    const toolsetList = unwrapMcpToolPayload(await session.callTool("list_toolsets", {}));
+    const toolsetIds = getToolsetIds(toolsetList);
+    const toolsets: Mvp15ExactToolFacadeToolset[] = [];
+    for (const toolsetId of toolsetIds) {
+      const description = unwrapMcpToolPayload(await session.callTool("describe_toolset", { toolsetId }));
+      const normalized = normalizeFacadeToolset(description, toolsetId);
+      if (normalized) toolsets.push(normalized);
+    }
+    return createMvp15ExactToolFacade(toolsets).tools;
+  } catch {
+    return [];
+  }
+}
+
+function toMvp15AssetToolDescriptor(tool: McpDiscoverySnapshot["tools"][number]): Mvp15McpAssetToolDescriptor {
+  const descriptor = tool as typeof tool & {
+    dryRunSchema?: unknown;
+    rollbackContract?: unknown;
+    affectedAssetsSchema?: unknown;
+    evidenceQuery?: unknown;
+  };
+  return {
+    name: descriptor.name,
+    inputSchema: descriptor.inputSchema,
+    dryRunSchema: descriptor.dryRunSchema,
+    rollbackContract: descriptor.rollbackContract,
+    affectedAssetsSchema: descriptor.affectedAssetsSchema,
+    evidenceQuery: descriptor.evidenceQuery,
+    annotations: descriptor.annotations,
+  };
+}
+
+function unwrapMcpToolPayload(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const payload = raw as { content?: unknown };
+  if (!Array.isArray(payload.content)) return raw;
+  const text = payload.content
+    .map((item) => (item && typeof item === "object" && "text" in item ? (item as { text?: unknown }).text : null))
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  if (!text) return raw;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return raw;
+  }
+}
+
+function getToolsetIds(raw: unknown): string[] {
+  if (!raw || typeof raw !== "object") return [];
+  const record = raw as { toolsets?: unknown; toolSets?: unknown };
+  const items = Array.isArray(record.toolsets) ? record.toolsets : Array.isArray(record.toolSets) ? record.toolSets : [];
+  return items
+    .map((item) => {
+      if (typeof item === "string") return item;
+      if (!item || typeof item !== "object") return null;
+      const toolset = item as { id?: unknown; toolsetId?: unknown; toolset_id?: unknown; name?: unknown };
+      return firstString(toolset.id, toolset.toolsetId, toolset.toolset_id, toolset.name);
+    })
+    .filter((value): value is string => Boolean(value));
+}
+
+function normalizeFacadeToolset(raw: unknown, fallbackToolsetId: string): Mvp15ExactToolFacadeToolset | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as { toolset?: unknown; toolsetId?: unknown; toolset_id?: unknown; id?: unknown; methods?: unknown };
+  const source = record.toolset && typeof record.toolset === "object" ? record.toolset as typeof record : record;
+  const toolsetId = firstString(source.toolsetId, source.toolset_id, source.id, fallbackToolsetId);
+  if (!toolsetId) return null;
+  const methods = Array.isArray(source.methods) ? source.methods : [];
+  return {
+    toolsetId,
+    methods: methods.map(normalizeFacadeMethod).filter((method): method is Mvp15ExactToolFacadeToolset["methods"][number] => Boolean(method)),
+  };
+}
+
+function normalizeFacadeMethod(raw: unknown): Mvp15ExactToolFacadeToolset["methods"][number] | null {
+  if (!raw || typeof raw !== "object") return null;
+  const method = raw as {
+    exactToolName?: unknown;
+    exact_tool_name?: unknown;
+    toolName?: unknown;
+    name?: unknown;
+    methodId?: unknown;
+    method_id?: unknown;
+    id?: unknown;
+    schemaVersion?: unknown;
+    schema_version?: unknown;
+    version?: unknown;
+    inputSchema?: unknown;
+    input_schema?: unknown;
+    dryRunSchema?: unknown;
+    dry_run_schema?: unknown;
+    rollbackContract?: unknown;
+    rollback_contract?: unknown;
+    affectedAssetsSchema?: unknown;
+    affected_assets_schema?: unknown;
+    evidenceQuery?: unknown;
+    evidence_query?: unknown;
+    externalEvidenceQuery?: unknown;
+  };
+  const exactToolName = firstString(method.exactToolName, method.exact_tool_name, method.toolName, method.name);
+  const methodId = firstString(method.methodId, method.method_id, method.id, method.name);
+  const schemaVersion = firstString(method.schemaVersion, method.schema_version, method.version);
+  if (!exactToolName || !methodId || !schemaVersion) return null;
+  return {
+    exactToolName,
+    methodId,
+    schemaVersion,
+    inputSchema: method.inputSchema ?? method.input_schema,
+    dryRunSchema: method.dryRunSchema ?? method.dry_run_schema,
+    rollbackContract: method.rollbackContract ?? method.rollback_contract,
+    affectedAssetsSchema: method.affectedAssetsSchema ?? method.affected_assets_schema,
+    evidenceQuery: method.evidenceQuery ?? method.evidence_query ?? method.externalEvidenceQuery,
+  };
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return null;
 }
 
 function getGlobalInvoke(): NativeInvoke | null {

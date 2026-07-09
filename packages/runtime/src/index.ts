@@ -279,6 +279,16 @@ export {
   type Mvp15NativeAssetGuardResult,
 } from "./mvp15-mcp-asset-adapter.js";
 export {
+  createMvp15ExactToolFacade,
+  createMvp15FacadeWrapperCall,
+  getMvp15FacadeMetadata,
+  type Mvp15ExactToolFacadeMetadata,
+  type Mvp15ExactToolFacadeMethod,
+  type Mvp15ExactToolFacadeResult,
+  type Mvp15ExactToolFacadeToolset,
+  type Mvp15FacadeWrapperCall,
+} from "./mvp15-exact-tool-facade.js";
+export {
   createAssetChangeSetService,
   createFixtureAssetMutationAdapter,
   type AssetChangeSetService,

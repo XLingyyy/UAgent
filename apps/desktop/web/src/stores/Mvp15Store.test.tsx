@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { McpTransportClient } from "@uagent/mcp-client";
 import { AssetMutationPanel } from "../inspector/AssetMutationPanel";
@@ -18,6 +19,14 @@ const MVP15_TEST_TOOL_NAMES = [
   "ue.asset.delete",
   "ue.asset.save",
 ] as const;
+
+const MVP15_TEST_TOOL_CONTRACTS = {
+  inputSchema: { type: "object" },
+  dryRunSchema: { type: "object" },
+  rollbackContract: { type: "reverse_operation" },
+  affectedAssetsSchema: { type: "array" },
+  evidenceQuery: { type: "read_only" },
+};
 
 function createRealReadyMvp14State(pidHash: string | null = "pid:real-attached"): Mvp14RuntimeState {
   return {
@@ -70,8 +79,7 @@ function createMvp15ReadyTransport(events: string[]): McpTransportClient {
           result: {
             tools: MVP15_TEST_TOOL_NAMES.map((name) => ({
               name,
-              inputSchema: { type: "object" },
-              annotations: { supportsDryRun: true },
+              ...MVP15_TEST_TOOL_CONTRACTS,
             })),
           },
         };
@@ -153,6 +161,60 @@ function createNativeInvokeMockAdapter(mock: (command: string, payload?: unknown
 }
 
 describe("MVP15 desktop asset mutation UI", () => {
+  it("renders asset mutation actions inside a wrapping action row with accessible rollback", () => {
+    render(
+      <UIProvider>
+        <AssetMutationPanel />
+      </UIProvider>,
+    );
+
+    const panel = screen.getByLabelText("Asset mutation panel");
+    const actionRows = panel.querySelectorAll(".ua-utility-placeholder__action-row");
+    expect(actionRows).toHaveLength(1);
+
+    const rowButtons = Array.from(actionRows[0].querySelectorAll("button"));
+    expect(rowButtons.map((button) => button.textContent)).toEqual([
+      "Dry-run",
+      "Approve",
+      "Execute",
+      "Verify",
+      "Rollback",
+    ]);
+    expect(screen.getByRole("button", { name: "Rollback sandbox asset mutation" })).toBe(rowButtons[4]);
+
+    const actionItem = actionRows[0].closest(".ua-utility-placeholder__item");
+    expect(actionItem?.childElementCount).toBe(1);
+  });
+
+  it("asserts asset action-row CSS wraps whole buttons without mid-word label breaks", () => {
+    const css = readFileSync("web/src/inspector/UtilityPlaceholderPanel.css", "utf8");
+    expect(css).toMatch(/\.ua-utility-placeholder__action-row\s*\{[^}]*display:\s*flex;/s);
+    expect(css).toMatch(/\.ua-utility-placeholder__action-row\s*\{[^}]*flex-wrap:\s*wrap;/s);
+    expect(css).toMatch(/\.ua-utility-placeholder__button\s*\{[^}]*white-space:\s*nowrap;/s);
+    expect(css).toMatch(
+      /\.ua-utility-placeholder__action-row \.ua-utility-placeholder__button\s*\{[^}]*overflow-wrap:\s*normal;/s,
+    );
+  });
+
+  it("documents MCP endpoint connect and discovery before MVP15 asset dry-run", () => {
+    const manualSmoke = readFileSync("../../docs/mvp15-manual-smoke.md", "utf8");
+    const endpointStep = manualSmoke.indexOf("Settings -> Config -> MCP read-only runtime");
+    const dryRunStep = manualSmoke.indexOf("Run dry-run");
+
+    expect(endpointStep).toBeGreaterThan(-1);
+    expect(dryRunStep).toBeGreaterThan(endpointStep);
+    expect(manualSmoke).toContain("Endpoint");
+    expect(manualSmoke).toContain("http://127.0.0.1:8000/mcp");
+    expect(manualSmoke).toMatch(/`?localhost`?\s*\/\s*`?127\.0\.0\.1`?\s*\/\s*`?::1`?/);
+    expect(manualSmoke).toContain("Connect");
+    expect(manualSmoke).toContain("connected");
+    expect(manualSmoke).toContain("Discover");
+    expect(manualSmoke).toContain("discovery counts");
+    expect(manualSmoke).toContain("Tools -> MCP");
+    expect(manualSmoke).toContain("Tools -> Assets");
+    expect(manualSmoke).toContain("BLOCKED_BY_MCP_SCHEMA");
+  });
+
   it("runs the fixture sandbox asset mutation chain through runtime actions without direct native invocation", async () => {
     render(
       <UIProvider>
@@ -253,7 +315,7 @@ describe("MVP15 desktop asset mutation UI", () => {
     });
   });
 
-  it("surfaces wrapper-only MCP discovery as blocked_by_mcp_schema before dry-run and never calls the wrapper", async () => {
+  it("surfaces wrapper-only MCP discovery as blocked_by_mcp_schema before dry-run and never calls the execution wrapper", async () => {
     const events: string[] = [];
     const runtimeClient = createDesktopRuntimeAdapter({
       createTransport: () => createWrapperOnlyMcpTransport(events),
@@ -283,7 +345,8 @@ describe("MVP15 desktop asset mutation UI", () => {
       expect(screen.getByText(/Last issue: blocked_by_mcp_schema:missing_tool:ue\.asset\.create_folder/)).toBeTruthy();
     });
     expect(screen.queryByText(/Dry-run: dry_run_completed/)).toBeNull();
-    expect(events).toEqual([]);
+    expect(events).toEqual(["wrapper:list_toolsets"]);
+    expect(events).not.toContain("wrapper:call_tool");
   });
 
   it("routes ready real inventory through native guard and narrow MCP calls without fixture verification", async () => {

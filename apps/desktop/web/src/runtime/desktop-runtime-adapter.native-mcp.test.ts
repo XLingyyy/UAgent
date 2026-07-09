@@ -113,7 +113,7 @@ describe("DesktopRuntimeAdapter native MCP bridge", () => {
   });
 
   it("rejects non-local endpoints before calling the native MCP bridge", async () => {
-    const nativeInvokeMock = vi.fn(async (command: string, _payload?: unknown): Promise<unknown> => {
+    const nativeInvokeMock = vi.fn(async (...[command]: [string, unknown?]): Promise<unknown> => {
       if (command === "terminal_capability_status" || command === "browser_capability_status") {
         return { enabled: false, mode: "disabled", reason: "test_disabled" };
       }

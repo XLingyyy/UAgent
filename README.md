@@ -2,19 +2,19 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP15 Real UE Sandbox Asset Mutation Pilot (Implemented / Pending Supervisor Real-UE Smoke)
+## Current Stage: MVP15B Exact MCP Asset Tools Real Smoke (Implemented / Environment-Smoke Pending)
 
-MVP15 extends the MVP14 safe editor observation path into a blocked-by-default real UE sandbox asset mutation pilot. It introduces a narrow dry-run / approve / execute / verify / rollback loop for sandbox-only asset work while preserving MVP12 ChangeSet v2, MVP13 approval binding, MVP14 process observation, trusted roots, redaction, and replay boundaries.
+MVP15B extends the MVP14 safe editor observation path into a blocked-by-default real UE sandbox asset mutation pilot. It introduces a narrow dry-run / approve / execute / verify / rollback loop for sandbox-only asset work while preserving MVP12 ChangeSet v2, MVP13 approval binding, MVP14 process observation, trusted roots, redaction, and replay boundaries.
 
-Current MVP15 code includes shared contracts, runtime policy, exact MCP asset adapters, a Tauri native guard, desktop inspector surfaces, scenario coverage, and side-effect scan hardening. Real UE execution remains limited to `/Game/UAgentSandbox/**` and mapped `/Content/UAgentSandbox/**`; final acceptance still requires supervisor-local real UE smoke in a configured UE Editor environment.
+Current MVP15B code includes shared contracts, runtime policy, exact MCP asset adapters, a compliant exact-tool facade path for fully described wrapper toolsets, a Tauri native guard, desktop inspector surfaces, 60+ scenario coverage, and side-effect scan hardening. Real UE execution remains limited to `/Game/UAgentSandbox/**` and mapped `/Content/UAgentSandbox/**`; final acceptance still requires supervisor-local real UE smoke in a configured UE Editor environment.
 
 1. **Asset Mutation Contracts**: Sandbox asset paths, operation kinds, dry-run plans, ChangeSet approvals, verification, rollback, evidence, audit, and replay summaries.
-2. **Sandbox Policy**: Blocks non-sandbox paths, path traversal, Save All, delete/move/rename/bulk operations, broad mutating MCP calls, stale manifests, provider auto-apply, raw secrets, and replay re-execution.
+2. **Sandbox Policy**: Blocks non-sandbox paths, path traversal, Save All, unsafe delete/move/rename/bulk operations, broad mutating MCP calls, stale manifests, provider auto-apply, raw secrets, and replay re-execution.
 3. **Runtime Asset Service**: Deterministic dry-run, approval token, execute, verify, rollback, manifest, replay summary, and scenario matrix support.
 4. **Native Guard**: Feature-gated Tauri commands validate sandbox-only asset mutation requests before any native execution bridge can run.
-5. **MCP Schema Adapters**: Exact allowlist for dry-run-capable sandbox asset tools; all generic `tools/call` mutation paths remain blocked.
+5. **MCP Schema Adapters**: Exact allowlist for dry-run-capable sandbox asset tools with rollback contracts and read-only evidence queries; generic wrapper mutation paths remain blocked unless a compliant exact-tool facade pins toolset id, method id, schema version, `dryRunHash`, and `changeSetId`.
 6. **Desktop UI / Store**: Inspector Assets tab, Changes panel, Settings gate, evidence, and runtime store actions expose asset ChangeSet lifecycle state.
-7. **Scenario Matrix / Side-effect Scan / Docs**: MVP15 matrix covers at least 48 scenarios / 192 assertions; side-effect scan covers sandbox boundaries, broad mutating calls, Save All, replay, raw paths, and token leakage.
+7. **Scenario Matrix / Side-effect Scan / Docs**: MVP15 matrix covers at least 60 scenarios / 240 assertions; side-effect scan covers sandbox boundaries, broad mutating calls, Save All, replay, raw paths, token leakage, provider auto-apply, and manifest-only real verification.
 
 Controlled text writes remain approval-gated and limited to trusted fixture/temp roots or explicitly trusted project roots. Non-sandbox UE assets, Save All, bulk asset operations, arbitrary shell expansion, provider live defaults, automatic git operations, replay re-execute, and raw secret/path leakage remain blocked.
 

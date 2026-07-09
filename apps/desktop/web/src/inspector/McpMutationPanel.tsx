@@ -56,6 +56,12 @@ export function McpMutationPanel() {
         {mvp15Inventory?.missingDryRunSchemas.length ? (
           <li className="ua-utility-placeholder__item">MVP15 missing dry-run schema: {mvp15Inventory.missingDryRunSchemas.join(", ")}</li>
         ) : null}
+        {mvp15Inventory?.missingRollbackContracts.length ? (
+          <li className="ua-utility-placeholder__item">MVP15 missing rollback contract: {mvp15Inventory.missingRollbackContracts.join(", ")}</li>
+        ) : null}
+        {mvp15Inventory?.missingEvidenceQueries.length ? (
+          <li className="ua-utility-placeholder__item">MVP15 missing evidence query: {mvp15Inventory.missingEvidenceQueries.join(", ")}</li>
+        ) : null}
         {mvp13?.replayOnly && (
           <li className="ua-utility-placeholder__item">Replay: recorded summaries only</li>
         )}

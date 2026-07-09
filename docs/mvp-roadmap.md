@@ -240,12 +240,13 @@ Non-goals:
 
 - **Sandbox Asset Contracts**: Adds asset mutation dry-run plans, sandbox asset paths, asset ChangeSet lifecycle, approval token binding, verification, rollback, evidence, audit, and replay-only summaries.
 - **Sandbox Path Policy**: Allows only `/Game/UAgentSandbox/**` package paths and mapped `/Content/UAgentSandbox/**` disk paths. Blocks traversal, non-sandbox assets, generated/cache paths, project-wide saves, and broad/bulk asset operations.
-- **Exact MCP Asset Adapters**: Permits only schema-checked sandbox dry-run asset operations. Generic mutating `tools/call`, unknown tool names, missing dry-run support, raw absolute paths, and provider auto-apply are blocked.
+- **Exact MCP Asset Adapters**: Permits only schema-checked sandbox dry-run asset operations with rollback contracts and read-only evidence query capability. Generic mutating `tools/call`, unknown tool names, missing dry-run support, incomplete wrapper contracts, raw absolute paths, and provider auto-apply are blocked.
+- **Exact-tool Facade**: Wrapper-only endpoints may be adapted only when `describe_toolset` supplies fixed exact method ids, schema versions, input schemas, dry-run schemas, rollback contracts, affected asset schemas, and evidence queries for all six asset operations.
 - **Runtime Asset Mutation Service**: Provides deterministic dry-run, preview, approve, execute, verify, rollback, manifest, and replay summary behavior without storing approval tokens in ChangeSets or replaying side effects.
 - **Native Asset Mutation Guard**: Adds feature-gated Tauri commands that classify and reject unsafe asset mutation requests before native execution can occur.
 - **Desktop UI Integration**: Inspector Assets tab, Changes panel, Settings gate, and runtime store actions expose the sandbox asset ChangeSet lifecycle and blocked states.
-- **Scenario Matrix**: Runtime matrix covers at least 48 scenarios / 192 assertions across allowed paths, denied paths, stale manifest, approval expiry, execution, verification, rollback, replay, and MCP adapter boundaries.
-- **Security Regression**: Side-effect scan covers sandbox-only writes, non-sandbox asset paths, Save All, bulk operations, broad mutating MCP calls, replay re-execution, approval token leakage, provider live defaults, git/dependency operations, and raw path leakage.
+- **Scenario Matrix**: Runtime matrix covers at least 60 scenarios / 240 assertions across allowed paths, denied paths, stale manifest, approval expiry, execution, verification, rollback, replay, exact inventory, facade, and MCP adapter boundaries.
+- **Security Regression**: Side-effect scan covers sandbox-only writes, non-sandbox asset paths, Save All, bulk operations, broad mutating MCP calls, replay re-execution, approval token leakage, provider live defaults, manifest-only real verification, git/dependency operations, and raw path leakage.
 
 Status: implemented; supervisor-local real UE sandbox smoke is still required for final acceptance.
 

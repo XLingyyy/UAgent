@@ -3,6 +3,8 @@ import type {
   AssetApproval,
   AssetChangeSet,
   AssetChangeSetState,
+  AssetDryRunResult,
+  AssetExternalEvidenceQuery,
   AssetManifestEntry,
   AssetMutationEvidencePayload,
   AssetMutationOperation,
@@ -79,6 +81,32 @@ describe("MVP15 asset mutation shared contracts", () => {
       cleanupRequired: false,
       summary: "Rollback sandbox-created assets only.",
     };
+    const externalEvidenceQueries: AssetExternalEvidenceQuery[] = [
+      {
+        id: "asset-evidence-query:folder",
+        kind: "ue_mcp_asset_state",
+        assetPath: operation.assetPathAfter!,
+        readOnly: true,
+        required: true,
+        summary: "Read-only UE/MCP state must confirm sandbox folder exists.",
+      },
+    ];
+    const dryRun: AssetDryRunResult = {
+      id: "asset-dry-run:1",
+      changeSetId: "asset-changeset:1",
+      status: "dry_run_completed",
+      reason: null,
+      wouldChange: true,
+      operations: [operation],
+      risk: "low_sandbox",
+      dryRunHash: "dry:hash",
+      argsHash: "args:hash",
+      affectedAssets: [operation.assetPathAfter!],
+      rollbackPlan,
+      externalEvidenceQueries,
+      redaction: { redacted: true, replacedPaths: 0, replacedSecrets: 0 },
+      createdAt: 1,
+    };
     const verification: AssetVerificationResult = {
       id: "asset-verification:1",
       changeSetId: "asset-changeset:1",
@@ -123,9 +151,11 @@ describe("MVP15 asset mutation shared contracts", () => {
       redaction: changeSet.redaction,
       replayOnly: true,
     };
-    const serialized = JSON.stringify({ changeSet, payload });
+    const serialized = JSON.stringify({ dryRun, changeSet, payload });
 
     expect(operation.kind satisfies AssetMutationOperationKind).toBe("create_folder");
+    expect(dryRun.rollbackPlan.actions[0]?.action).toBe("delete_created");
+    expect(dryRun.externalEvidenceQueries[0]?.readOnly).toBe(true);
     expect(changeSet.state satisfies AssetChangeSetState).toBe("approval_required");
     expect(changeSet.risk satisfies AssetMutationRisk).toBe("low_sandbox");
     expect(serialized).not.toContain("C:/Users/");
