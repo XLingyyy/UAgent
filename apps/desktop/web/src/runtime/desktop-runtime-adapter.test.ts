@@ -45,7 +45,16 @@ const fullDiscoveryFixtures: Record<string, unknown> = {
 };
 
 type Mvp15AssetBridge = {
-  getMvp15AssetTools?: () => Array<{ name: string; annotations?: Record<string, unknown> }>;
+  getMvp15AssetTools?: () => Array<{
+    name: string;
+    inputSchema?: unknown;
+    outputSchema?: unknown;
+    dryRunSchema?: unknown;
+    rollbackContract?: unknown;
+    affectedAssetsSchema?: unknown;
+    evidenceQuery?: unknown;
+    annotations?: Record<string, unknown>;
+  }>;
   guardMvp15AssetMutation?: (input: {
     toolName: "ue.asset.save";
     assetPath: string;
@@ -212,6 +221,45 @@ describe("DesktopRuntimeAdapter", () => {
       "ue.asset.delete",
       "ue.asset.save",
     ]);
+  });
+
+  it("normalizes the live UE outputSchema shape into six complete direct MVP15 descriptors", async () => {
+    const names = [
+      "ue.asset.create_folder",
+      "ue.asset.duplicate",
+      "ue.asset.rename",
+      "ue.asset.move",
+      "ue.asset.delete",
+      "ue.asset.save",
+    ];
+    const contract = {
+      dryRunSchema: { type: "object" },
+      rollbackContract: { type: "reverse_operation" },
+      affectedAssetsSchema: { type: "array" },
+      evidenceQuery: { type: "read_only" },
+    };
+    const adapter = createAdapterWithTransport({
+      initialize: fullDiscoveryFixtures.initialize,
+      "tools/list": {
+        tools: names.map((name) => ({
+          name,
+          inputSchema: { type: "object", properties: { assetPath: { type: "string" } } },
+          outputSchema: contract,
+        })),
+      },
+      "resources/list": { resources: [] },
+      "prompts/list": { prompts: [] },
+    }) as ReturnType<typeof createDesktopRuntimeAdapter> & Mvp15AssetBridge;
+
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+
+    const tools = adapter.getMvp15AssetTools?.() ?? [];
+    expect(tools.map((tool) => tool.name)).toEqual(names);
+    expect(tools).toHaveLength(6);
+    expect(tools.every((tool) => tool.inputSchema && tool.outputSchema)).toBe(true);
+    expect(tools.every((tool) => tool.dryRunSchema && tool.rollbackContract && tool.affectedAssetsSchema && tool.evidenceQuery)).toBe(true);
+    expect(tools.every((tool) => tool.annotations?.mvp15Facade === undefined)).toBe(true);
   });
 
   it("exposes a narrow MVP15 asset bridge through native guard and allowlisted MCP tools only", async () => {

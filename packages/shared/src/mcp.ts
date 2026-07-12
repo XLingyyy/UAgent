@@ -43,6 +43,12 @@ export interface McpToolDescriptor {
   name: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  dryRunSchema?: Record<string, unknown>;
+  rollbackContract?: Record<string, unknown>;
+  affectedAssetsSchema?: Record<string, unknown>;
+  evidenceQuery?: Record<string, unknown>;
+  "x-uagent-contract"?: Record<string, unknown>;
   annotations?: Record<string, unknown>;
 }
 

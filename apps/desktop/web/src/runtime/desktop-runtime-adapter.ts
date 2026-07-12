@@ -5,6 +5,7 @@ import {
   createMvp15McpAssetToolInventory,
   createMvp9RuntimeService,
   MVP15_ASSET_TOOL_ALLOWLIST,
+  normalizeMvp15McpAssetToolDescriptor,
   type AgentLoopRuntimeClient,
   type Mvp15ExactToolFacadeToolset,
   type Mvp15McpAssetToolCallResult,
@@ -401,21 +402,7 @@ async function discoverMvp15FacadeTools(
 }
 
 function toMvp15AssetToolDescriptor(tool: McpDiscoverySnapshot["tools"][number]): Mvp15McpAssetToolDescriptor {
-  const descriptor = tool as typeof tool & {
-    dryRunSchema?: unknown;
-    rollbackContract?: unknown;
-    affectedAssetsSchema?: unknown;
-    evidenceQuery?: unknown;
-  };
-  return {
-    name: descriptor.name,
-    inputSchema: descriptor.inputSchema,
-    dryRunSchema: descriptor.dryRunSchema,
-    rollbackContract: descriptor.rollbackContract,
-    affectedAssetsSchema: descriptor.affectedAssetsSchema,
-    evidenceQuery: descriptor.evidenceQuery,
-    annotations: descriptor.annotations,
-  };
+  return normalizeMvp15McpAssetToolDescriptor(tool);
 }
 
 function unwrapMcpToolPayload(raw: unknown): unknown {

@@ -97,6 +97,21 @@ describe("MVP15 manifest registry", () => {
 });
 
 describe("MVP15 MCP exact allowlist", () => {
+  const exactAssetToolNames = [
+    "ue.asset.create_folder",
+    "ue.asset.duplicate",
+    "ue.asset.rename",
+    "ue.asset.move",
+    "ue.asset.delete",
+    "ue.asset.save",
+  ] as const;
+  const outputSchemaContract = {
+    dryRunSchema: { source: "output", type: "object" },
+    rollbackContract: { source: "output", type: "reverse_operation" },
+    affectedAssetsSchema: { source: "output", type: "array" },
+    evidenceQuery: { source: "output", type: "read_only" },
+  };
+
   it("requires exact tool names, schemas, dry-run support, and sandbox arguments", () => {
     const fullContracts = {
       inputSchema: { type: "object" },
@@ -188,6 +203,131 @@ describe("MVP15 MCP exact allowlist", () => {
     expect(inventory.missingEvidenceQueries).toEqual(["ue.asset.delete"]);
     expect(inventory.availableTools).not.toContain("ue.asset.move");
     expect(inventory.availableTools).not.toContain("ue.asset.delete");
+  });
+
+  it("accepts all six direct exact descriptors when contracts exist only in outputSchema", () => {
+    const inventory = createMvp15McpAssetToolInventory(
+      exactAssetToolNames.map((name) => ({
+        name,
+        inputSchema: { type: "object", properties: { assetPath: { type: "string" } } },
+        outputSchema: outputSchemaContract,
+      })),
+    );
+
+    expect(inventory).toMatchObject({
+      status: "ready",
+      availableTools: exactAssetToolNames,
+      missingTools: [],
+      missingSchemas: [],
+      missingDryRunSchemas: [],
+      missingRollbackContracts: [],
+      missingEvidenceQueries: [],
+    });
+  });
+
+  it.each([
+    ["dryRunSchema", "missingDryRunSchemas"],
+    ["rollbackContract", "missingRollbackContracts"],
+    ["affectedAssetsSchema", "missingEvidenceQueries"],
+    ["evidenceQuery", "missingEvidenceQueries"],
+  ] as const)("fails closed when outputSchema omits %s", (missingField, missingArray) => {
+    const incompleteOutputSchema: Record<string, unknown> = { ...outputSchemaContract };
+    delete incompleteOutputSchema[missingField];
+    const inventory = createMvp15McpAssetToolInventory(
+      exactAssetToolNames.map((name) => ({
+        name,
+        inputSchema: { type: "object" },
+        outputSchema: name === "ue.asset.save" ? incompleteOutputSchema : outputSchemaContract,
+      })),
+    );
+
+    expect(inventory.status).toBe("blocked_by_mcp_schema");
+    expect(inventory[missingArray]).toEqual(["ue.asset.save"]);
+    expect(inventory.availableTools).not.toContain("ue.asset.save");
+  });
+
+  it("does not treat an arbitrary non-empty outputSchema as an MVP15 contract", () => {
+    const inventory = createMvp15McpAssetToolInventory(
+      exactAssetToolNames.map((name) => ({
+        name,
+        inputSchema: { type: "object" },
+        outputSchema: { type: "object", properties: { ok: { type: "boolean" } } },
+      })),
+    );
+
+    expect(inventory.status).toBe("blocked_by_mcp_schema");
+    expect(inventory.availableTools).toEqual([]);
+    expect(inventory.missingDryRunSchemas).toEqual(exactAssetToolNames);
+  });
+
+  it("recognizes descriptor and outputSchema x-uagent-contract compatibility containers", () => {
+    const inventory = createMvp15McpAssetToolInventory(
+      exactAssetToolNames.map((name, index) => ({
+        name,
+        inputSchema: { type: "object" },
+        ...(index < 3
+          ? { "x-uagent-contract": outputSchemaContract }
+          : { outputSchema: { "x-uagent-contract": outputSchemaContract } }),
+      })),
+    );
+
+    expect(inventory.status).toBe("ready");
+    expect(inventory.availableTools).toEqual(exactAssetToolNames);
+  });
+
+  it("recognizes annotations and inputSchema compatibility containers", () => {
+    const inventory = createMvp15McpAssetToolInventory(
+      exactAssetToolNames.map((name, index) => ({
+        name,
+        ...(index % 3 === 0
+          ? { inputSchema: { type: "object" }, annotations: outputSchemaContract }
+          : index % 3 === 1
+            ? { inputSchema: { type: "object" }, annotations: { "x-uagent-contract": outputSchemaContract } }
+            : { inputSchema: { type: "object", "x-uagent-contract": outputSchemaContract } }),
+      })),
+    );
+
+    expect(inventory.status).toBe("ready");
+    expect(inventory.availableTools).toEqual(exactAssetToolNames);
+  });
+
+  it("keeps complete direct fields ahead of incomplete lower-priority containers", () => {
+    const directContracts = {
+      dryRunSchema: { source: "direct", type: "object" },
+      rollbackContract: { source: "direct", type: "reverse_operation" },
+      affectedAssetsSchema: { source: "direct", type: "array" },
+      evidenceQuery: { source: "direct", type: "read_only" },
+    };
+    const inventory = createMvp15McpAssetToolInventory(
+      exactAssetToolNames.map((name) => ({
+        name,
+        inputSchema: { type: "object" },
+        ...directContracts,
+        "x-uagent-contract": { dryRunSchema: "invalid-lower-priority" },
+        outputSchema: { rollbackContract: null },
+        annotations: { affectedAssetsSchema: false, evidenceQuery: [] },
+      })),
+    );
+
+    expect(inventory.status).toBe("ready");
+    expect(inventory.availableTools).toEqual(exactAssetToolNames);
+  });
+
+  it("does not bypass an invalid declared direct field with a valid fallback container", () => {
+    const inventory = createMvp15McpAssetToolInventory(
+      exactAssetToolNames.map((name) => ({
+        name,
+        inputSchema: { type: "object" },
+        dryRunSchema: name === "ue.asset.save" ? "invalid-direct" : outputSchemaContract.dryRunSchema,
+        rollbackContract: outputSchemaContract.rollbackContract,
+        affectedAssetsSchema: outputSchemaContract.affectedAssetsSchema,
+        evidenceQuery: outputSchemaContract.evidenceQuery,
+        outputSchema: outputSchemaContract,
+      })),
+    );
+
+    expect(inventory.status).toBe("blocked_by_mcp_schema");
+    expect(inventory.missingDryRunSchemas).toEqual(["ue.asset.save"]);
   });
 
   it("builds an exact-tool facade only from fully described wrapper toolset methods", () => {

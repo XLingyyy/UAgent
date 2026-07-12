@@ -12,6 +12,7 @@ import {
   createRepairProposalEngine,
   createUEProjectDiagnosticsEngine,
   mapMcpDryRunToOperation,
+  normalizeMvp15McpAssetToolDescriptor,
   parseUEProjectMetadata,
   replayAssetMutationSummary,
   type AssetChangeSetService,
@@ -201,24 +202,8 @@ function createMvp15FixtureAssetMutationService(): AssetChangeSetService {
 
 function getMvp15McpAssetTools(runtimeClient: DesktopRuntimeAdapter): Mvp15McpAssetToolDescriptor[] {
   const adapterTools = runtimeClient.getMvp15AssetTools?.();
-  if (adapterTools) return adapterTools;
-  return (runtimeClient.getMcpDiscovery()?.tools ?? []).map((tool) => {
-    const descriptor = tool as typeof tool & {
-      dryRunSchema?: unknown;
-      rollbackContract?: unknown;
-      affectedAssetsSchema?: unknown;
-      evidenceQuery?: unknown;
-    };
-    return {
-      name: descriptor.name,
-      inputSchema: descriptor.inputSchema,
-      dryRunSchema: descriptor.dryRunSchema,
-      rollbackContract: descriptor.rollbackContract,
-      affectedAssetsSchema: descriptor.affectedAssetsSchema,
-      evidenceQuery: descriptor.evidenceQuery,
-      annotations: descriptor.annotations,
-    };
-  });
+  if (adapterTools) return adapterTools.map(normalizeMvp15McpAssetToolDescriptor);
+  return (runtimeClient.getMcpDiscovery()?.tools ?? []).map(normalizeMvp15McpAssetToolDescriptor);
 }
 
 function getMvp15McpAssetInventory(runtimeClient: DesktopRuntimeAdapter): Mvp15McpAssetToolInventory | null {

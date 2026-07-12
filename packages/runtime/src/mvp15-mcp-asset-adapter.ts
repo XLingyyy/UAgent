@@ -23,9 +23,22 @@ export interface Mvp15McpAssetToolInput {
   args?: Record<string, unknown>;
 }
 
+export interface Mvp15McpAssetToolDescriptorLike {
+  name: string;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  dryRunSchema?: unknown;
+  rollbackContract?: unknown;
+  affectedAssetsSchema?: unknown;
+  evidenceQuery?: unknown;
+  annotations?: unknown;
+  "x-uagent-contract"?: unknown;
+}
+
 export interface Mvp15McpAssetToolDescriptor {
   name: string;
   inputSchema?: unknown;
+  outputSchema?: Record<string, unknown>;
   dryRunSchema?: unknown;
   rollbackContract?: unknown;
   affectedAssetsSchema?: unknown;
@@ -84,7 +97,7 @@ export interface Mvp15McpAssetToolCallResult {
 }
 
 export interface Mvp15McpAssetMutationAdapterOptions {
-  tools: readonly Mvp15McpAssetToolDescriptor[];
+  tools: readonly Mvp15McpAssetToolDescriptorLike[];
   assetMutationGateEnabled: boolean;
   observedEditorSessionId: string | null;
   observedPidHash: string | null;
@@ -97,14 +110,12 @@ export function classifyMvp15McpAssetTool(input: Mvp15McpAssetToolInput): Mvp15M
   const affectedAssetArgs = collectAffectedAssetArgs(input.args ?? {});
   const affectedAssets = affectedAssetArgs.map((asset) => asset.path);
   if (!allowlisted) return decision(input, false, "blocked", "not_allowlisted", affectedAssets);
-  if (!input.inputSchema || typeof input.inputSchema !== "object") return decision(input, true, "blocked", "schema_required", affectedAssets);
-  if (!input.dryRunSchema || typeof input.dryRunSchema !== "object") return decision(input, true, "blocked", "dry_run_required", affectedAssets);
-  if (!input.rollbackContract || typeof input.rollbackContract !== "object") return decision(input, true, "blocked", "rollback_contract_required", affectedAssets);
+  if (!isObjectRecord(input.inputSchema)) return decision(input, true, "blocked", "schema_required", affectedAssets);
+  if (!isObjectRecord(input.dryRunSchema)) return decision(input, true, "blocked", "dry_run_required", affectedAssets);
+  if (!isObjectRecord(input.rollbackContract)) return decision(input, true, "blocked", "rollback_contract_required", affectedAssets);
   if (
-    !input.affectedAssetsSchema ||
-    typeof input.affectedAssetsSchema !== "object" ||
-    !input.evidenceQuery ||
-    typeof input.evidenceQuery !== "object"
+    !isObjectRecord(input.affectedAssetsSchema) ||
+    !isObjectRecord(input.evidenceQuery)
   ) {
     return decision(input, true, "blocked", "external_evidence_required", affectedAssets);
   }
@@ -121,10 +132,70 @@ export function classifyMvp15McpAssetTool(input: Mvp15McpAssetToolInput): Mvp15M
   return decision(input, true, "dry_run_required", "exact_asset_allowlist", affectedAssets);
 }
 
+export function normalizeMvp15McpAssetToolDescriptor(
+  tool: Mvp15McpAssetToolDescriptorLike,
+): Mvp15McpAssetToolDescriptor {
+  const descriptorContract = asObjectRecord(tool["x-uagent-contract"]);
+  const outputSchema = asObjectRecord(tool.outputSchema);
+  const outputContract = asObjectRecord(outputSchema?.["x-uagent-contract"]);
+  const annotations = asObjectRecord(tool.annotations);
+  const annotationContract = asObjectRecord(annotations?.["x-uagent-contract"]);
+  const inputSchema = asObjectRecord(tool.inputSchema);
+  const inputContract = asObjectRecord(inputSchema?.["x-uagent-contract"]);
+
+  return {
+    name: tool.name,
+    inputSchema: tool.inputSchema,
+    ...(outputSchema ? { outputSchema } : {}),
+    dryRunSchema: firstDefined(
+      tool.dryRunSchema,
+      descriptorContract?.dryRunSchema,
+      outputSchema?.dryRunSchema,
+      outputContract?.dryRunSchema,
+      annotations?.dryRunSchema,
+      annotations?.dry_run_schema,
+      annotationContract?.dryRunSchema,
+      inputContract?.dryRunSchema,
+    ),
+    rollbackContract: firstDefined(
+      tool.rollbackContract,
+      descriptorContract?.rollbackContract,
+      outputSchema?.rollbackContract,
+      outputContract?.rollbackContract,
+      annotations?.rollbackContract,
+      annotations?.rollback_contract,
+      annotationContract?.rollbackContract,
+      inputContract?.rollbackContract,
+    ),
+    affectedAssetsSchema: firstDefined(
+      tool.affectedAssetsSchema,
+      descriptorContract?.affectedAssetsSchema,
+      outputSchema?.affectedAssetsSchema,
+      outputContract?.affectedAssetsSchema,
+      annotations?.affectedAssetsSchema,
+      annotations?.affected_assets_schema,
+      annotationContract?.affectedAssetsSchema,
+      inputContract?.affectedAssetsSchema,
+    ),
+    evidenceQuery: firstDefined(
+      tool.evidenceQuery,
+      descriptorContract?.evidenceQuery,
+      outputSchema?.evidenceQuery,
+      outputContract?.evidenceQuery,
+      annotations?.evidenceQuery,
+      annotations?.evidence_query,
+      annotations?.externalEvidenceQuery,
+      annotationContract?.evidenceQuery,
+      inputContract?.evidenceQuery,
+    ),
+    ...(annotations ? { annotations } : {}),
+  };
+}
+
 export function createMvp15McpAssetToolInventory(
-  tools: readonly Mvp15McpAssetToolDescriptor[],
+  tools: readonly Mvp15McpAssetToolDescriptorLike[],
 ): Mvp15McpAssetToolInventory {
-  const byName = new Map(tools.map((tool) => [tool.name, tool]));
+  const byName = new Map(tools.map(normalizeMvp15McpAssetToolDescriptor).map((tool) => [tool.name, tool]));
   const availableTools: Mvp15McpAssetToolName[] = [];
   const missingTools: Mvp15McpAssetToolName[] = [];
   const missingSchemas: Mvp15McpAssetToolName[] = [];
@@ -140,10 +211,7 @@ export function createMvp15McpAssetToolInventory(
       decisions.push(decision({ toolName, inputSchema: null, dryRunSchema: null }, true, "blocked", "missing_tool", []));
       continue;
     }
-    const dryRunSchema = getDryRunSchema(tool);
-    const rollbackContract = getRollbackContract(tool);
-    const affectedAssetsSchema = getAffectedAssetsSchema(tool);
-    const evidenceQuery = getEvidenceQuery(tool);
+    const { dryRunSchema, rollbackContract, affectedAssetsSchema, evidenceQuery } = tool;
     const toolDecision = classifyMvp15McpAssetTool({
       toolName,
       inputSchema: tool.inputSchema ?? null,
@@ -153,23 +221,21 @@ export function createMvp15McpAssetToolInventory(
       evidenceQuery,
     });
     decisions.push(toolDecision);
-    if (!tool.inputSchema || typeof tool.inputSchema !== "object") {
+    if (!isObjectRecord(tool.inputSchema)) {
       missingSchemas.push(toolName);
       continue;
     }
-    if (!dryRunSchema || typeof dryRunSchema !== "object") {
+    if (!isObjectRecord(dryRunSchema)) {
       missingDryRunSchemas.push(toolName);
       continue;
     }
-    if (!rollbackContract || typeof rollbackContract !== "object") {
+    if (!isObjectRecord(rollbackContract)) {
       missingRollbackContracts.push(toolName);
       continue;
     }
     if (
-      !affectedAssetsSchema ||
-      typeof affectedAssetsSchema !== "object" ||
-      !evidenceQuery ||
-      typeof evidenceQuery !== "object"
+      !isObjectRecord(affectedAssetsSchema) ||
+      !isObjectRecord(evidenceQuery)
     ) {
       missingEvidenceQueries.push(toolName);
       continue;
@@ -192,7 +258,7 @@ export function createMvp15McpAssetToolInventory(
 export function createMvp15McpAssetMutationAdapter(
   options: Mvp15McpAssetMutationAdapterOptions,
 ): AssetMutationAdapter {
-  const toolByName = new Map(options.tools.map((tool) => [tool.name, tool]));
+  const toolByName = new Map(options.tools.map(normalizeMvp15McpAssetToolDescriptor).map((tool) => [tool.name, tool]));
 
   async function runTool(
     operation: AssetMutationOperation,
@@ -203,10 +269,7 @@ export function createMvp15McpAssetMutationAdapter(
     if (!call.ok) return blockedResult(call.reason, operation.id);
     const tool = toolByName.get(call.toolName);
     if (!tool) return blockedResult(`blocked_by_mcp_schema:missing_tool:${call.toolName}`, operation.id);
-    const dryRunSchema = getDryRunSchema(tool);
-    const rollbackContract = getRollbackContract(tool);
-    const affectedAssetsSchema = getAffectedAssetsSchema(tool);
-    const evidenceQuery = getEvidenceQuery(tool);
+    const { dryRunSchema, rollbackContract, affectedAssetsSchema, evidenceQuery } = tool;
     const policy = classifyMvp15McpAssetTool({
       toolName: call.toolName,
       inputSchema: tool.inputSchema ?? null,
@@ -260,27 +323,16 @@ export function createMvp15McpAssetMutationAdapter(
   };
 }
 
-function getDryRunSchema(tool: Mvp15McpAssetToolDescriptor): unknown {
-  if (tool.dryRunSchema) return tool.dryRunSchema;
-  const annotationSchema = tool.annotations?.dryRunSchema ?? tool.annotations?.dry_run_schema;
-  if (annotationSchema) return annotationSchema;
-  if (tool.annotations?.dryRunSupported === true || tool.annotations?.supportsDryRun === true) return tool.inputSchema;
-  return null;
+function firstDefined(...values: unknown[]): unknown {
+  return values.find((value) => value !== undefined);
 }
 
-function getRollbackContract(tool: Mvp15McpAssetToolDescriptor): unknown {
-  if (tool.rollbackContract) return tool.rollbackContract;
-  return tool.annotations?.rollbackContract ?? tool.annotations?.rollback_contract ?? null;
+function asObjectRecord(value: unknown): Record<string, unknown> | null {
+  return isObjectRecord(value) ? value : null;
 }
 
-function getAffectedAssetsSchema(tool: Mvp15McpAssetToolDescriptor): unknown {
-  if (tool.affectedAssetsSchema) return tool.affectedAssetsSchema;
-  return tool.annotations?.affectedAssetsSchema ?? tool.annotations?.affected_assets_schema ?? null;
-}
-
-function getEvidenceQuery(tool: Mvp15McpAssetToolDescriptor): unknown {
-  if (tool.evidenceQuery) return tool.evidenceQuery;
-  return tool.annotations?.evidenceQuery ?? tool.annotations?.evidence_query ?? tool.annotations?.externalEvidenceQuery ?? null;
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function blockedResult(reason: string, operationId: string, evidenceId?: string): AssetMutationAdapterResult {

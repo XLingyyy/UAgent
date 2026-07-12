@@ -9,7 +9,7 @@ import { createEmptyMvp14State, type Mvp14RuntimeState } from "../runtime/runtim
 import type { NativeInvoke } from "../runtime/project-native-adapter";
 import { ChangesPanel } from "../inspector/ChangesPanel";
 import { ConfigSettings } from "../settings/pages/ConfigSettings";
-import { UIProvider } from "./ui-store";
+import { UIProvider, useRuntimeStore } from "./ui-store";
 
 const MVP15_TEST_TOOL_NAMES = [
   "ue.asset.create_folder",
@@ -79,7 +79,13 @@ function createMvp15ReadyTransport(events: string[]): McpTransportClient {
           result: {
             tools: MVP15_TEST_TOOL_NAMES.map((name) => ({
               name,
-              ...MVP15_TEST_TOOL_CONTRACTS,
+              inputSchema: MVP15_TEST_TOOL_CONTRACTS.inputSchema,
+              outputSchema: {
+                dryRunSchema: MVP15_TEST_TOOL_CONTRACTS.dryRunSchema,
+                rollbackContract: MVP15_TEST_TOOL_CONTRACTS.rollbackContract,
+                affectedAssetsSchema: MVP15_TEST_TOOL_CONTRACTS.affectedAssetsSchema,
+                evidenceQuery: MVP15_TEST_TOOL_CONTRACTS.evidenceQuery,
+              },
             })),
           },
         };
@@ -158,6 +164,11 @@ function createWrapperOnlyMcpTransport(events: string[]): McpTransportClient {
 function createNativeInvokeMockAdapter(mock: (command: string, payload?: unknown) => Promise<unknown>): NativeInvoke {
   // NativeInvoke is generic because each Tauri command has its own response shape; tests control the command fixture.
   return <T = unknown>(command: string, payload?: unknown) => mock(command, payload) as Promise<T>;
+}
+
+function Mvp15InventoryProbe() {
+  const inventory = useRuntimeStore((state) => state.mvp15.mcpInventory);
+  return <pre data-testid="mvp15-inventory-probe">{JSON.stringify(inventory)}</pre>;
 }
 
 describe("MVP15 desktop asset mutation UI", () => {
@@ -347,6 +358,37 @@ describe("MVP15 desktop asset mutation UI", () => {
     expect(screen.queryByText(/Dry-run: dry_run_completed/)).toBeNull();
     expect(events).toEqual(["wrapper:list_toolsets"]);
     expect(events).not.toContain("wrapper:call_tool");
+  });
+
+  it("stores a ready inventory with empty missing arrays for outputSchema-only direct discovery", async () => {
+    const events: string[] = [];
+    const runtimeClient = createDesktopRuntimeAdapter({
+      createTransport: () => createMvp15ReadyTransport(events),
+    });
+    runtimeClient.setMcpEndpoint("http://127.0.0.1:8000/mcp");
+    await runtimeClient.connectMcp();
+    await runtimeClient.discoverMcp();
+
+    render(
+      <UIProvider
+        runtimeClient={runtimeClient}
+        initialState={{ runtime: { mvp14: createRealReadyMvp14State() } }}
+      >
+        <Mvp15InventoryProbe />
+      </UIProvider>,
+    );
+
+    const inventory = JSON.parse(screen.getByTestId("mvp15-inventory-probe").textContent ?? "null") as Record<string, unknown>;
+    expect(inventory).toMatchObject({
+      status: "ready",
+      availableTools: MVP15_TEST_TOOL_NAMES,
+      missingTools: [],
+      missingSchemas: [],
+      missingDryRunSchemas: [],
+      missingRollbackContracts: [],
+      missingEvidenceQueries: [],
+    });
+    expect(events).toEqual([]);
   });
 
   it("routes ready real inventory through native guard and narrow MCP calls without fixture verification", async () => {
