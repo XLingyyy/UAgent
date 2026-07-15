@@ -1182,6 +1182,17 @@ function runScanSelfTests() {
   if (!unsafeManifestOnly.some((finding) => finding.severity === "BLOCKED" && finding.pattern === "manifest-only real verification")) {
     throw new Error("mvp15 asset mutation self-test did not block manifest-only real verification sample");
   }
+  // MVP15C live dry-run binding task regression: this task's harness/tests must never send
+  // live execute:true, rollback:true, Save All, or any asset mutation API. The binding
+  // boundary category must block these in any desktop source the scan reaches (inspector path).
+  const unsafeLivePayload = scanContent(
+    "apps/desktop/web/src/inspector/RejectLiveExecutePanel.tsx",
+    "invoke('execute_asset_mutation'); const args={ execute:true, rollback:true, saveAll:true }; tools/call('ue.asset.save'); SavePackage();",
+    [mvp15Category],
+  );
+  if (!unsafeLivePayload.some((finding) => finding.severity === "BLOCKED")) {
+    throw new Error("mvp15 asset mutation self-test did not block live execute/rollback/Save All/mutation API sample");
+  }
 }
 
 // ============================================================

@@ -13,17 +13,25 @@ export function AssetMutationPanel() {
   const execution = mvp15?.latestExecution ?? null;
   const verification = mvp15?.latestVerification ?? null;
   const replay = mvp15?.replaySummary ?? null;
-  const canApprove = changeSet?.state === "approval_required";
-  const canExecute = changeSet?.state === "approved";
-  const canVerify = changeSet?.state === "executed";
-  const canRollback = changeSet?.state === "verified" || changeSet?.state === "rollback_available";
+  const bindingStatus = changeSet?.externalBindingStatus ?? dryRun?.externalBindingStatus ?? "local_fixture";
   const runtimeMode = mvp15?.["executionMode"];
+  const realMode = runtimeMode === "real";
+  const bindingBound = bindingStatus === "external_bound";
+  const bindingApprovable = realMode ? bindingBound : changeSet?.state === "approval_required";
+  const canApprove = changeSet?.state === "approval_required" && bindingApprovable;
+  const canExecute = changeSet?.state === "approved" && !realMode;
+  const canVerify = !realMode && changeSet?.state === "executed";
+  const canRollback = !realMode && (changeSet?.state === "verified" || changeSet?.state === "rollback_available");
   const realReady =
     mvp15?.gate.mode === "sandbox-enabled" &&
     mvp14?.session?.mode === "attached" &&
     mvp14?.status?.status === "ready" &&
     mvp14.status.heartbeat?.processAlive === true;
   const stateLabel = changeSet?.state ?? (realReady ? "real-ready" : (mvp15?.gate.mode ?? "disabled"));
+  const bindingLabel = realMode
+    ? bindingStatus
+    : "local_fixture";
+  const aggregatePrefix = changeSet?.aggregateDryRunHash ? String(changeSet.aggregateDryRunHash).slice(0, 12) : null;
 
   return (
     <section className="ua-utility-placeholder" aria-label="Asset mutation panel">
@@ -109,6 +117,11 @@ export function AssetMutationPanel() {
           </span>
         </li>
         {runtimeMode && <li className="ua-utility-placeholder__item">Execution mode: {runtimeMode}</li>}
+        <li className="ua-utility-placeholder__item">Binding: {bindingLabel}</li>
+        {aggregatePrefix && <li className="ua-utility-placeholder__item">Aggregate dry-run: {aggregatePrefix}…</li>}
+        {realMode && (
+          <li className="ua-utility-placeholder__item">Execute gate: execute_not_enabled</li>
+        )}
         {mvp15?.sourceAssetPath && <li className="ua-utility-placeholder__item">Source: {mvp15.sourceAssetPath}</li>}
         {mvp15?.runId && <li className="ua-utility-placeholder__item">Run: {mvp15.runId}</li>}
         {mvp15?.mcpInventory?.missingTools.length ? (

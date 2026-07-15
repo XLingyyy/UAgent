@@ -4,11 +4,13 @@ import type {
   AssetChangeSet,
   AssetChangeSetState,
   AssetDryRunResult,
+  AssetExternalBindingStatus,
   AssetExternalEvidenceQuery,
   AssetManifestEntry,
   AssetMutationEvidencePayload,
   AssetMutationOperation,
   AssetMutationOperationKind,
+  AssetMutationOperationProvenance,
   AssetMutationRisk,
   AssetRollbackPlan,
   AssetVerificationResult,
@@ -132,6 +134,7 @@ describe("MVP15 asset mutation shared contracts", () => {
       editorSessionId: "editor-session:1",
       pidHash: "pid:fixture",
       dryRunId: "asset-dry-run:1",
+      runId: "run-1",
       state: "approval_required",
       operations: [operation],
       risk: "low_sandbox",
@@ -203,5 +206,116 @@ describe("MVP15 asset mutation shared contracts", () => {
 
     expect(evidenceKinds).toContain("asset_mutation_verification");
     expect(auditTypes).toContain("asset_mutation_rolled_back");
+  });
+
+  it("records external dry-run binding provenance, aggregate hashes, and ordered operation binding on ChangeSets and approvals", () => {
+    const provenance: AssetMutationOperationProvenance = {
+      exactToolName: "ue.asset.duplicate",
+      dryRunHash: "a".repeat(40),
+      dryRunHashSource: "ue_mcp_exact_tool",
+      dryRunHashAlgorithm: "sha1",
+      dryRunSchemaVersion: "mvp15c.dry-run.v1",
+      argsHash: "sha256:args",
+    };
+    const operation: AssetMutationOperation = {
+      id: "op:duplicate",
+      kind: "duplicate_asset",
+      assetPathBefore: "/Game/Templates/Hero",
+      assetPathAfter: "/Game/UAgentSandbox/run-1/HeroCopy",
+      sandboxRoot: "/Game/UAgentSandbox",
+      manifestEntryId: null,
+      dryRunHash: provenance.dryRunHash,
+      argsHash: provenance.argsHash,
+      summary: "duplicate sandbox asset",
+      blockedReason: null,
+      provenance,
+    };
+    const dryRun: AssetDryRunResult = {
+      id: "asset-dry-run:ext-1",
+      changeSetId: "asset-changeset-run1",
+      status: "dry_run_completed",
+      reason: null,
+      wouldChange: true,
+      operations: [operation],
+      risk: "low_sandbox",
+      dryRunHash: provenance.dryRunHash,
+      argsHash: provenance.argsHash,
+      affectedAssets: [operation.assetPathAfter!],
+      rollbackPlan: {
+        id: "asset-rollback:1",
+        changeSetId: "asset-changeset-run1",
+        actions: [],
+        cleanupRequired: false,
+        summary: "rollback",
+      },
+      externalEvidenceQueries: [],
+      redaction: { redacted: true, replacedPaths: 0, replacedSecrets: 0 },
+      createdAt: 5,
+      externalBindingStatus: "external_bound",
+      externalBindingReason: null,
+      aggregateDryRunHash: "sha256:aggregate:dry",
+      aggregateArgsHash: "sha256:aggregate:args",
+    };
+    const approval: AssetApproval = {
+      approvalId: "asset-approval:ext",
+      changeSetId: dryRun.changeSetId,
+      projectId: "project:real",
+      trustedRootId: "root:trusted",
+      editorSessionId: "editor-session:real",
+      pidHash: "pid:real",
+      operationKind: operation.kind,
+      assetPaths: [operation.assetPathAfter!],
+      dryRunHash: operation.dryRunHash,
+      argsHash: operation.argsHash,
+      manifestEntryIds: [],
+      orderedOperationIds: [operation.id],
+      orderedOperationKinds: [operation.kind],
+      aggregateDryRunHash: dryRun.aggregateDryRunHash,
+      aggregateArgsHash: dryRun.aggregateArgsHash,
+      externalBindingStatus: "external_bound",
+      actor: "desktop-real",
+      reason: "real approval bound to aggregate ChangeSet",
+      issuedAt: 6,
+      expiresAt: 60,
+      status: "issued",
+      tokenHash: "token:hash",
+    };
+    const changeSet: AssetChangeSet = {
+      id: dryRun.changeSetId,
+      projectId: approval.projectId,
+      trustedRootId: approval.trustedRootId,
+      editorSessionId: approval.editorSessionId,
+      pidHash: approval.pidHash,
+      dryRunId: dryRun.id,
+      runId: "run-1",
+      state: "approval_required",
+      operations: [operation],
+      risk: "low_sandbox",
+      approval,
+      rollbackPlan: dryRun.rollbackPlan,
+      verification: null,
+      evidenceIds: [],
+      redaction: { redacted: true, replacedPaths: 0, replacedSecrets: 0 },
+      externalBindingStatus: "external_bound",
+      externalBindingReason: null,
+      aggregateDryRunHash: dryRun.aggregateDryRunHash,
+      aggregateArgsHash: dryRun.aggregateArgsHash,
+    };
+
+    const serialized = JSON.stringify({ dryRun, changeSet, approval });
+    const bindingStatus: AssetExternalBindingStatus = "external_bound";
+
+    expect(operation.provenance?.dryRunHashSource).toBe("ue_mcp_exact_tool");
+    expect(operation.provenance?.dryRunHashAlgorithm).toBe("sha1");
+    expect(operation.provenance?.dryRunSchemaVersion).toBe("mvp15c.dry-run.v1");
+    expect(operation.provenance?.dryRunHash).toMatch(/^[0-9a-f]{40}$/);
+    expect(dryRun.externalBindingStatus).toBe(bindingStatus);
+    expect(approval.orderedOperationIds).toEqual([operation.id]);
+    expect(approval.orderedOperationKinds).toEqual(["duplicate_asset"]);
+    expect(approval.aggregateDryRunHash).toBe(dryRun.aggregateDryRunHash);
+    expect(changeSet.runId).toBe("run-1");
+    expect(serialized).not.toContain("rawArgs");
+    expect(serialized).not.toContain("approval-token-value");
+    expect(serialized).not.toContain("C:/Users/");
   });
 });

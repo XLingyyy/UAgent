@@ -1,7 +1,30 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { createDesktopRuntimeAdapter } from "./desktop-runtime-adapter";
 import { LegacySseTransport, McpTransportError, StreamableHttpTransport } from "@uagent/mcp-client";
 import type { McpTransportClient } from "@uagent/mcp-client";
+import {
+  buildExactDryRunPayload,
+  createAssetChangeSetService,
+  createAssetManifestRegistry,
+  createFixtureAssetMutationAdapter,
+  createMvp15McpAssetToolInventory,
+  MVP15_ASSET_TOOL_ALLOWLIST,
+  unwrapPluginDryRunResult,
+  validatePluginDryRunResult,
+  type AssetMutationExternalBinder,
+  type Mvp15McpAssetToolName,
+} from "@uagent/runtime";
 import type { TaskDraft } from "@uagent/shared";
 import type { NativeInvoke } from "./project-native-adapter";
 
@@ -13,6 +36,362 @@ vi.mock("@uagent/mcp-client", async (importOriginal) => {
     LegacySseTransport: vi.fn(),
   };
 });
+
+describe("MVP15C live evidence persistence", () => {
+  it("atomically writes the complete 07E evidence without leaving a temporary file", () => {
+    const directory = mkdtempSync(join(tmpdir(), "uagent-mvp15c07e-evidence-"));
+    const evidencePath = join(directory, "live-smoke-evidence.json");
+    const evidence = {
+      runId: "mvp15c07e-live-20260715",
+      callLedger: [{ toolName: "ue.asset.create_folder", pluginDryRunHash: "a".repeat(40) }],
+      aggregateDryRunHash: "b".repeat(64),
+      aggregateArgsHash: "c".repeat(64),
+      previewStatus: "previewed",
+      approvalOperationCount: 5,
+    };
+
+    try {
+      writeMvp15c07eEvidence(evidencePath, evidence);
+
+      expect(JSON.parse(readFileSync(evidencePath, "utf8"))).toEqual(evidence);
+      expect(existsSync(`${evidencePath}.tmp`)).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe.skipIf(process.env.UAGENT_MVP15C_CONNECT_PREFLIGHT !== "1")(
+  "MVP15C 07E connect/discover preflight",
+  () => {
+    it("connects and discovers six ready direct exact descriptors without asset calls", async () => {
+      const { StreamableHttpTransport: RealStreamableHttpTransport } =
+        await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");
+      const endpoint = "http://127.0.0.1:8000/mcp";
+      const adapter = createDesktopRuntimeAdapter({
+        nativeInvoke: null,
+        createTransport: (transportEndpoint) =>
+          new RealStreamableHttpTransport({ endpoint: transportEndpoint, timeoutMs: 30_000 }),
+      });
+      const originalExactAssetCall = adapter.callMvp15AssetTool;
+      expect(originalExactAssetCall).toBeTypeOf("function");
+      let exactAssetCalls = 0;
+      if (originalExactAssetCall) {
+        adapter.callMvp15AssetTool = async (...args) => {
+          exactAssetCalls += 1;
+          return originalExactAssetCall(...args);
+        };
+      }
+      adapter.setMcpEndpoint(endpoint);
+
+      try {
+        await adapter.connectMcp();
+        if (adapter.getMcpState().status !== "connected") {
+          throw new Error("connect_status_not_connected");
+        }
+        await adapter.discoverMcp();
+        if (adapter.getMcpState().status !== "connected") {
+          throw new Error("discover_status_not_connected");
+        }
+
+        const directExactDescriptors = (adapter.getMcpDiscovery()?.tools ?? []).filter((tool) =>
+          MVP15_ASSET_TOOL_ALLOWLIST.includes(tool.name as Mvp15McpAssetToolName),
+        );
+        const inventory = createMvp15McpAssetToolInventory(directExactDescriptors);
+        expect(inventory.status).toBe("ready");
+        expect(inventory.availableTools).toEqual([...MVP15_ASSET_TOOL_ALLOWLIST]);
+        expect(directExactDescriptors).toHaveLength(6);
+        expect(exactAssetCalls).toBe(0);
+
+        console.log(
+          JSON.stringify({
+            environment: "node",
+            status: adapter.getMcpState().status,
+            inventoryStatus: inventory.status,
+            directExactDescriptors: inventory.availableTools,
+            exactAssetCalls,
+            lastError: null,
+          }),
+        );
+      } catch (error) {
+        const safeLastError = sanitizeMvp15c07eLastError(
+          adapter.getMcpState().lastError ?? (error instanceof Error ? error.message : null),
+        );
+        console.error(
+          JSON.stringify({
+            environment: "node",
+            status: adapter.getMcpState().status,
+            exactAssetCalls,
+            lastError: safeLastError,
+          }),
+        );
+        throw new Error(
+          `MVP15C 07E connect/discover preflight failed: ${safeLastError ?? "unknown_error"}`,
+        );
+      } finally {
+        adapter.disconnectMcp();
+      }
+    }, 300_000);
+  },
+);
+
+describe.skipIf(process.env.UAGENT_MVP15C_LIVE_SMOKE !== "1")(
+  "MVP15C 07E live no-side-effect dry-run smoke",
+  () => {
+    it("binds five exact dry-run calls through the real desktop adapter and approves once", async () => {
+      const { StreamableHttpTransport: RealStreamableHttpTransport } =
+        await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");
+      const endpoint = "http://127.0.0.1:8000/mcp";
+      const runId = `mvp15c07e-live-${Date.now()}`;
+      expect(runId).toMatch(/^mvp15c07e-live-\d{13}$/);
+      const evidencePath = "G:\\UAgent\\.agent-bus\\tmp\\mvp15c07e-live-smoke-evidence.json";
+      expect(existsSync(evidencePath)).toBe(false);
+      expect(existsSync(`${evidencePath}.tmp`)).toBe(false);
+      const adapter = createDesktopRuntimeAdapter({
+        nativeInvoke: null,
+        createTransport: (transportEndpoint) =>
+          new RealStreamableHttpTransport({ endpoint: transportEndpoint, timeoutMs: 30_000 }),
+      });
+      adapter.setMcpEndpoint(endpoint);
+      try {
+        await adapter.connectMcp();
+        expect(adapter.getMcpState().status).toBe("connected");
+        await adapter.discoverMcp();
+        expect(adapter.getMcpState().status).toBe("connected");
+        const inventory = createMvp15McpAssetToolInventory(adapter.getMvp15AssetTools());
+        expect(inventory.status).toBe("ready");
+        expect(inventory.availableTools).toEqual([
+          "ue.asset.create_folder",
+          "ue.asset.duplicate",
+          "ue.asset.rename",
+          "ue.asset.move",
+          "ue.asset.delete",
+          "ue.asset.save",
+        ]);
+
+        const service = createAssetChangeSetService({
+          executionMode: "real",
+          manifest: createAssetManifestRegistry(),
+          adapter: createFixtureAssetMutationAdapter(),
+        });
+        const dryRun = service.dryRun({
+          projectId: "project:live-mcp",
+          trustedRootId: "root:live-mcp",
+          editorSessionId: "editor-session:live-mcp",
+          pidHash: "pid:live-mcp",
+          runId,
+          operations: [
+            { kind: "create_folder", assetPathAfter: `/Game/UAgentSandbox/${runId}/Work` },
+            {
+              kind: "duplicate_asset",
+              assetPathBefore: "/Game/Test01",
+              assetPathAfter: `/Game/UAgentSandbox/${runId}/Work/Test01Copy`,
+            },
+            {
+              kind: "rename_asset",
+              assetPathBefore: `/Game/UAgentSandbox/${runId}/Work/Test01Copy`,
+              assetPathAfter: `/Game/UAgentSandbox/${runId}/Work/Test01Renamed`,
+            },
+            {
+              kind: "move_asset",
+              assetPathBefore: `/Game/UAgentSandbox/${runId}/Work/Test01Renamed`,
+              assetPathAfter: `/Game/UAgentSandbox/${runId}/Work/Sub/Test01Renamed`,
+            },
+            {
+              kind: "save_single_asset",
+              assetPathBefore: `/Game/UAgentSandbox/${runId}/Work/Sub/Test01Renamed`,
+              assetPathAfter: `/Game/UAgentSandbox/${runId}/Work/Sub/Test01Renamed`,
+            },
+          ],
+        });
+        const calls: Array<{
+          toolName: string;
+          args: Record<string, unknown>;
+          pluginDryRunHash: string;
+        }> = [];
+        const pluginResults: NonNullable<ReturnType<typeof unwrapPluginDryRunResult>>[] = [];
+        const binder: AssetMutationExternalBinder = {
+          call: async (input) => {
+            const payload = buildExactDryRunPayload(input);
+            expect(payload.args).toMatchObject({ dryRun: true, execute: false, rollback: false });
+            expect(payload.args).not.toHaveProperty("dryRunHash");
+            expect(payload.args).not.toHaveProperty("approvalToken");
+            if (payload.toolName === "ue.asset.save")
+              expect(payload.args).toMatchObject({ saveAll: false });
+            const raw = await adapter.callMvp15AssetTool!(
+              payload.toolName as Mvp15McpAssetToolName,
+              payload.args,
+            );
+            const pluginResult = unwrapPluginDryRunResult(raw);
+            expect(pluginResult?.dryRunHash).toMatch(/^[0-9a-f]{40}$/);
+            calls.push({
+              toolName: payload.toolName,
+              args: payload.args,
+              pluginDryRunHash: pluginResult!.dryRunHash,
+            });
+            pluginResults.push(pluginResult!);
+            return raw;
+          },
+        };
+        const bound = await service.bindExternalDryRun({
+          changeSetId: dryRun.changeSet.id,
+          binder,
+        });
+        expect(bound.status).toBe("dry_run_completed");
+        expect(bound.changeSet?.externalBindingStatus).toBe("external_bound");
+        expect(bound.changeSet?.aggregateDryRunHash).toMatch(/^[0-9a-f]{64}$/);
+        expect(bound.changeSet?.aggregateArgsHash).toMatch(/^[0-9a-f]{64}$/);
+        expect(calls.map((call) => call.toolName)).toEqual([
+          "ue.asset.create_folder",
+          "ue.asset.duplicate",
+          "ue.asset.rename",
+          "ue.asset.move",
+          "ue.asset.save",
+        ]);
+        expect(calls).toHaveLength(5);
+
+        const preview = service.preview(dryRun.changeSet.id);
+        expect(preview.status).toBe("previewed");
+        let approvalCallCount = 0;
+        approvalCallCount += 1;
+        const approval = service.approve({
+          changeSetId: dryRun.changeSet.id,
+          actor: "live-smoke",
+          reason: "dry-run-only smoke",
+        });
+        expect(approval.status).toBe("approved");
+        expect(approvalCallCount).toBe(1);
+        const persistedChangeSet = JSON.stringify(approval.changeSet);
+        expect(persistedChangeSet).not.toContain("asset-approval-token:");
+        const approvalOperationCount =
+          approval.changeSet?.approval?.orderedOperationIds?.length ?? 0;
+        expect(approvalOperationCount).toBe(5);
+
+        const callsBeforeNegativeFixture = calls.length;
+        const malformed = validatePluginDryRunResult(null, {
+          expectedToolName: "ue.asset.create_folder",
+          expectedOperationKind: "create_folder",
+          context: {
+            changeSetId: dryRun.changeSet.id,
+            runId,
+            projectId: "project:live-mcp",
+            trustedRootId: "root:live-mcp",
+            editorSessionId: "editor-session:live-mcp",
+            pidHash: "pid:live-mcp",
+            sandboxRoot: "/Game/UAgentSandbox",
+          },
+          operation: {
+            kind: "create_folder",
+            assetPathBefore: null,
+            assetPathAfter: `/Game/UAgentSandbox/${runId}/Work`,
+          },
+        });
+        expect(malformed).toEqual({ ok: false, reason: "mcp_dry_run_transport_failed" });
+        if (malformed.ok) throw new Error("Malformed fixture unexpectedly passed validation.");
+        const wrongChangeSet = validatePluginDryRunResult(
+          { ...pluginResults[0], changeSetId: "wrong-change-set" },
+          {
+            expectedToolName: "ue.asset.create_folder",
+            expectedOperationKind: "create_folder",
+            context: {
+              changeSetId: dryRun.changeSet.id,
+              runId,
+              projectId: "project:live-mcp",
+              trustedRootId: "root:live-mcp",
+              editorSessionId: "editor-session:live-mcp",
+              pidHash: "pid:live-mcp",
+              sandboxRoot: "/Game/UAgentSandbox",
+            },
+            operation: {
+              kind: "create_folder",
+              assetPathBefore: null,
+              assetPathAfter: `/Game/UAgentSandbox/${runId}/Work`,
+            },
+          },
+        );
+        expect(wrongChangeSet).toEqual({
+          ok: false,
+          reason: "mcp_dry_run_contract_mismatch:changeSetId",
+        });
+        if (wrongChangeSet.ok)
+          throw new Error("Wrong-changeSet fixture unexpectedly passed validation.");
+        expect(calls).toHaveLength(callsBeforeNegativeFixture);
+
+        const evidence = {
+          taskId: "TASK-MVP15C-07E-FIX-NODE-LIVE-RUNNER-AND-COMPLETE-EVIDENCE",
+          endpoint,
+          runId,
+          inventoryStatus: inventory.status,
+          inventory: inventory.availableTools,
+          callLedger: calls,
+          pluginDryRunHashes: calls.map((call) => call.pluginDryRunHash),
+          aggregateDryRunHash: bound.changeSet!.aggregateDryRunHash!,
+          aggregateArgsHash: bound.changeSet!.aggregateArgsHash!,
+          strictValidation: "all_passed",
+          previewStatus: preview.status,
+          approvalStatus: approval.status,
+          approvalCallCount,
+          approvalOperationCount,
+          persistedChangeSetContainsRawToken: persistedChangeSet.includes("asset-approval-token:"),
+          negativeFixtures: {
+            malformed: malformed.reason,
+            wrongChangeSet: wrongChangeSet.reason,
+            sentLiveCalls: calls.length - callsBeforeNegativeFixture,
+          },
+          safety: {
+            executeCalls: calls.filter((call) => call.args.execute === true).length,
+            verifyCalls: 0,
+            rollbackCalls: calls.filter((call) => call.args.rollback === true).length,
+            nativeMutationCalls: 0,
+            saveAllCalls: calls.filter((call) => call.args.saveAll === true).length,
+            approvalTokenPayloadCalls: calls.filter((call) =>
+              Object.hasOwn(call.args, "approvalToken"),
+            ).length,
+            dryRunHashPayloadCalls: calls.filter((call) => Object.hasOwn(call.args, "dryRunHash"))
+              .length,
+          },
+        };
+        expect(JSON.stringify(evidence)).not.toContain("asset-approval-token:");
+        writeMvp15c07eEvidence(evidencePath, evidence);
+
+        console.log(
+          JSON.stringify({
+            callNames: calls.map((call) => call.toolName),
+            pluginHashPrefixes: calls.map((call) => call.pluginDryRunHash.slice(0, 12)),
+            aggregateDryRunHashPrefix: bound.changeSet!.aggregateDryRunHash!.slice(0, 16),
+            aggregateArgsHashPrefix: bound.changeSet!.aggregateArgsHash!.slice(0, 16),
+            approvalOperationCount,
+            negativeFixtureSentLiveCalls: calls.length - callsBeforeNegativeFixture,
+          }),
+        );
+      } finally {
+        adapter.disconnectMcp();
+      }
+    }, 300_000);
+  },
+);
+
+function writeMvp15c07eEvidence(evidencePath: string, evidence: unknown): void {
+  mkdirSync(dirname(evidencePath), { recursive: true });
+  const temporaryPath = `${evidencePath}.tmp`;
+  try {
+    writeFileSync(temporaryPath, `${JSON.stringify(evidence, null, 2)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+    });
+    renameSync(temporaryPath, evidencePath);
+  } finally {
+    rmSync(temporaryPath, { force: true });
+  }
+}
+
+function sanitizeMvp15c07eLastError(value: string | null): string | null {
+  if (!value) return null;
+  return value
+    .replace(/[A-Za-z]:[\\/][^\s"']+/g, "<local-path>")
+    .replace(/https?:\/\/[^\s"']+/g, "<local-endpoint>")
+    .slice(0, 512);
+}
 
 const baseDraft: TaskDraft = {
   input: "Review Lyra asset loading risks",
@@ -39,9 +418,13 @@ const fullDiscoveryFixtures: Record<string, unknown> = {
     ],
   },
   "resources/list": {
-    resources: [{ uri: "ue://selection/current", name: "Current selection", mimeType: "application/json" }],
+    resources: [
+      { uri: "ue://selection/current", name: "Current selection", mimeType: "application/json" },
+    ],
   },
-  "prompts/list": { prompts: [{ name: "summarize-selection", description: "Summarize selected editor objects" }] },
+  "prompts/list": {
+    prompts: [{ name: "summarize-selection", description: "Summarize selected editor objects" }],
+  },
 };
 
 type Mvp15AssetBridge = {
@@ -89,7 +472,9 @@ function createMockTransport(fixtures: Record<string, unknown>): McpTransportCli
   };
 }
 
-function createNativeInvokeMockAdapter(mock: (command: string, payload?: unknown) => Promise<unknown>): NativeInvoke {
+function createNativeInvokeMockAdapter(
+  mock: (command: string, payload?: unknown) => Promise<unknown>,
+): NativeInvoke {
   // NativeInvoke is generic because each Tauri command has its own response shape; tests control the command fixture.
   return <T = unknown>(command: string, payload?: unknown) => mock(command, payload) as Promise<T>;
 }
@@ -258,41 +643,59 @@ describe("DesktopRuntimeAdapter", () => {
     expect(tools.map((tool) => tool.name)).toEqual(names);
     expect(tools).toHaveLength(6);
     expect(tools.every((tool) => tool.inputSchema && tool.outputSchema)).toBe(true);
-    expect(tools.every((tool) => tool.dryRunSchema && tool.rollbackContract && tool.affectedAssetsSchema && tool.evidenceQuery)).toBe(true);
+    expect(
+      tools.every(
+        (tool) =>
+          tool.dryRunSchema &&
+          tool.rollbackContract &&
+          tool.affectedAssetsSchema &&
+          tool.evidenceQuery,
+      ),
+    ).toBe(true);
     expect(tools.every((tool) => tool.annotations?.mvp15Facade === undefined)).toBe(true);
   });
 
   it("exposes a narrow MVP15 asset bridge through native guard and allowlisted MCP tools only", async () => {
-    const sendRequest = vi.fn(async (request: { id: string | number | null; method: string; params?: unknown }) => {
-      if (request.method === "initialize") {
-        return { jsonrpc: "2.0" as const, id: request.id, result: fullDiscoveryFixtures.initialize };
-      }
-      if (request.method === "tools/list") {
-        return {
-          jsonrpc: "2.0" as const,
-          id: request.id,
-          result: {
-            tools: [
-              {
-                name: "ue.asset.save",
-                inputSchema: { type: "object" },
-                annotations: { supportsDryRun: true },
-              },
-            ],
-          },
-        };
-      }
-      if (request.method === "resources/list") {
-        return { jsonrpc: "2.0" as const, id: request.id, result: { resources: [] } };
-      }
-      if (request.method === "prompts/list") {
-        return { jsonrpc: "2.0" as const, id: request.id, result: { prompts: [] } };
-      }
-      if (request.method === "tools/call") {
-        return { jsonrpc: "2.0" as const, id: request.id, result: { status: "executed", evidenceId: "mcp:save" } };
-      }
-      return { jsonrpc: "2.0" as const, id: request.id, result: null };
-    });
+    const sendRequest = vi.fn(
+      async (request: { id: string | number | null; method: string; params?: unknown }) => {
+        if (request.method === "initialize") {
+          return {
+            jsonrpc: "2.0" as const,
+            id: request.id,
+            result: fullDiscoveryFixtures.initialize,
+          };
+        }
+        if (request.method === "tools/list") {
+          return {
+            jsonrpc: "2.0" as const,
+            id: request.id,
+            result: {
+              tools: [
+                {
+                  name: "ue.asset.save",
+                  inputSchema: { type: "object" },
+                  annotations: { supportsDryRun: true },
+                },
+              ],
+            },
+          };
+        }
+        if (request.method === "resources/list") {
+          return { jsonrpc: "2.0" as const, id: request.id, result: { resources: [] } };
+        }
+        if (request.method === "prompts/list") {
+          return { jsonrpc: "2.0" as const, id: request.id, result: { prompts: [] } };
+        }
+        if (request.method === "tools/call") {
+          return {
+            jsonrpc: "2.0" as const,
+            id: request.id,
+            result: { status: "executed", evidenceId: "mcp:save" },
+          };
+        }
+        return { jsonrpc: "2.0" as const, id: request.id, result: null };
+      },
+    );
     const transport: McpTransportClient = {
       sendRequest,
       sendNotification: vi.fn(async () => {}),
@@ -334,8 +737,12 @@ describe("DesktopRuntimeAdapter", () => {
 
     expect(guard).toMatchObject({ status: "accepted_by_native_guard", evidenceId: "guard:save" });
     expect(nativeInvokeMock).toHaveBeenCalledWith("execute_asset_mutation", expect.anything());
-    expect(sendRequest.mock.calls.filter((call) => call[0].method === "tools/call")).toHaveLength(1);
-    expect(sendRequest.mock.calls.find((call) => call[0].method === "tools/call")?.[0].params).toEqual({
+    expect(sendRequest.mock.calls.filter((call) => call[0].method === "tools/call")).toHaveLength(
+      1,
+    );
+    expect(
+      sendRequest.mock.calls.find((call) => call[0].method === "tools/call")?.[0].params,
+    ).toEqual({
       name: "ue.asset.save",
       arguments: { assetPath: "/Game/UAgentSandbox/run-1/Hero", saveAll: false },
     });
@@ -350,17 +757,53 @@ describe("DesktopRuntimeAdapter", () => {
       evidenceQuery: { type: "read_only" },
     };
     const methods = [
-      { exactToolName: "ue.asset.create_folder", methodId: "create_folder", schemaVersion: "2026-07-09", ...fullContracts },
-      { exactToolName: "ue.asset.duplicate", methodId: "duplicate", schemaVersion: "2026-07-09", ...fullContracts },
-      { exactToolName: "ue.asset.rename", methodId: "rename", schemaVersion: "2026-07-09", ...fullContracts },
-      { exactToolName: "ue.asset.move", methodId: "move", schemaVersion: "2026-07-09", ...fullContracts },
-      { exactToolName: "ue.asset.delete", methodId: "delete", schemaVersion: "2026-07-09", ...fullContracts },
-      { exactToolName: "ue.asset.save", methodId: "save", schemaVersion: "2026-07-09", ...fullContracts },
+      {
+        exactToolName: "ue.asset.create_folder",
+        methodId: "create_folder",
+        schemaVersion: "2026-07-09",
+        ...fullContracts,
+      },
+      {
+        exactToolName: "ue.asset.duplicate",
+        methodId: "duplicate",
+        schemaVersion: "2026-07-09",
+        ...fullContracts,
+      },
+      {
+        exactToolName: "ue.asset.rename",
+        methodId: "rename",
+        schemaVersion: "2026-07-09",
+        ...fullContracts,
+      },
+      {
+        exactToolName: "ue.asset.move",
+        methodId: "move",
+        schemaVersion: "2026-07-09",
+        ...fullContracts,
+      },
+      {
+        exactToolName: "ue.asset.delete",
+        methodId: "delete",
+        schemaVersion: "2026-07-09",
+        ...fullContracts,
+      },
+      {
+        exactToolName: "ue.asset.save",
+        methodId: "save",
+        schemaVersion: "2026-07-09",
+        ...fullContracts,
+      },
     ];
     const sendRequest = vi.fn(async (request: Parameters<McpTransportClient["sendRequest"]>[0]) => {
-      const params = request.params as { name?: string; arguments?: Record<string, unknown> } | undefined;
+      const params = request.params as
+        | { name?: string; arguments?: Record<string, unknown> }
+        | undefined;
       if (request.method === "initialize") {
-        return { jsonrpc: "2.0" as const, id: request.id, result: fullDiscoveryFixtures.initialize };
+        return {
+          jsonrpc: "2.0" as const,
+          id: request.id,
+          result: fullDiscoveryFixtures.initialize,
+        };
       }
       if (request.method === "tools/list") {
         return {
@@ -396,7 +839,11 @@ describe("DesktopRuntimeAdapter", () => {
         };
       }
       if (request.method === "tools/call" && params?.name === "call_tool") {
-        return { jsonrpc: "2.0" as const, id: request.id, result: { status: "executed", evidenceId: "mcp:facade-save" } };
+        return {
+          jsonrpc: "2.0" as const,
+          id: request.id,
+          result: { status: "executed", evidenceId: "mcp:facade-save" },
+        };
       }
       return { jsonrpc: "2.0" as const, id: request.id, result: null };
     });
@@ -405,7 +852,10 @@ describe("DesktopRuntimeAdapter", () => {
       sendNotification: vi.fn(async () => {}),
       close: vi.fn(async () => {}),
     };
-    const adapter = createDesktopRuntimeAdapter({ createTransport: () => transport }) as ReturnType<typeof createDesktopRuntimeAdapter> & Mvp15AssetBridge;
+    const adapter = createDesktopRuntimeAdapter({ createTransport: () => transport }) as ReturnType<
+      typeof createDesktopRuntimeAdapter
+    > &
+      Mvp15AssetBridge;
 
     await adapter.connectMcp();
     await adapter.discoverMcp();
@@ -426,9 +876,16 @@ describe("DesktopRuntimeAdapter", () => {
       saveAll: false,
     });
 
-    expect(sendRequest.mock.calls.filter((call) => call[0].method === "tools/call").map((call) => call[0].params)).toEqual([
+    expect(
+      sendRequest.mock.calls
+        .filter((call) => call[0].method === "tools/call")
+        .map((call) => call[0].params),
+    ).toEqual([
       { name: "list_toolsets", arguments: {} },
-      { name: "describe_toolset", arguments: { toolsetId: "editor_toolset.toolsets.asset.AssetTools" } },
+      {
+        name: "describe_toolset",
+        arguments: { toolsetId: "editor_toolset.toolsets.asset.AssetTools" },
+      },
       {
         name: "call_tool",
         arguments: {
@@ -460,12 +917,23 @@ describe("DesktopRuntimeAdapter", () => {
       ...fullContracts,
     };
     const methods = [
-      { exactToolName: "ue.asset.save", methodId: "save_via_facade", schemaVersion: "2026-07-09", ...fullContracts },
+      {
+        exactToolName: "ue.asset.save",
+        methodId: "save_via_facade",
+        schemaVersion: "2026-07-09",
+        ...fullContracts,
+      },
     ];
     const sendRequest = vi.fn(async (request: Parameters<McpTransportClient["sendRequest"]>[0]) => {
-      const params = request.params as { name?: string; arguments?: Record<string, unknown> } | undefined;
+      const params = request.params as
+        | { name?: string; arguments?: Record<string, unknown> }
+        | undefined;
       if (request.method === "initialize") {
-        return { jsonrpc: "2.0" as const, id: request.id, result: fullDiscoveryFixtures.initialize };
+        return {
+          jsonrpc: "2.0" as const,
+          id: request.id,
+          result: fullDiscoveryFixtures.initialize,
+        };
       }
       if (request.method === "tools/list") {
         return {
@@ -502,10 +970,18 @@ describe("DesktopRuntimeAdapter", () => {
         };
       }
       if (request.method === "tools/call" && params?.name === "call_tool") {
-        return { jsonrpc: "2.0" as const, id: request.id, result: { status: "executed", evidenceId: "mcp:facade-save" } };
+        return {
+          jsonrpc: "2.0" as const,
+          id: request.id,
+          result: { status: "executed", evidenceId: "mcp:facade-save" },
+        };
       }
       if (request.method === "tools/call" && params?.name === "ue.asset.save") {
-        return { jsonrpc: "2.0" as const, id: request.id, result: { status: "executed", evidenceId: "mcp:direct-save" } };
+        return {
+          jsonrpc: "2.0" as const,
+          id: request.id,
+          result: { status: "executed", evidenceId: "mcp:direct-save" },
+        };
       }
       return { jsonrpc: "2.0" as const, id: request.id, result: null };
     });
@@ -514,12 +990,17 @@ describe("DesktopRuntimeAdapter", () => {
       sendNotification: vi.fn(async () => {}),
       close: vi.fn(async () => {}),
     };
-    const adapter = createDesktopRuntimeAdapter({ createTransport: () => transport }) as ReturnType<typeof createDesktopRuntimeAdapter> & Mvp15AssetBridge;
+    const adapter = createDesktopRuntimeAdapter({ createTransport: () => transport }) as ReturnType<
+      typeof createDesktopRuntimeAdapter
+    > &
+      Mvp15AssetBridge;
 
     await adapter.connectMcp();
     await adapter.discoverMcp();
 
-    const saveDescriptor = adapter.getMvp15AssetTools?.().find((tool) => tool.name === "ue.asset.save");
+    const saveDescriptor = adapter
+      .getMvp15AssetTools?.()
+      .find((tool) => tool.name === "ue.asset.save");
     expect(saveDescriptor).toMatchObject({
       name: "ue.asset.save",
       annotations: { source: "direct-exact" },
@@ -536,9 +1017,11 @@ describe("DesktopRuntimeAdapter", () => {
 
     await adapter.callMvp15AssetTool!("ue.asset.save", saveArgs);
 
-    expect(sendRequest.mock.calls.filter((call) => call[0].method === "tools/call").map((call) => call[0].params)).toEqual([
-      { name: "ue.asset.save", arguments: saveArgs },
-    ]);
+    expect(
+      sendRequest.mock.calls
+        .filter((call) => call[0].method === "tools/call")
+        .map((call) => call[0].params),
+    ).toEqual([{ name: "ue.asset.save", arguments: saveArgs }]);
   });
 
   it("submits read-only query through MCP events after full connect+discover cycle", async () => {
@@ -630,8 +1113,12 @@ describe("DesktopRuntimeAdapter", () => {
     expect(events).toContain("agent_step_failed");
     expect(events).toContain("agent_report_created");
     expect(events).toContain("review_created");
-    expect(events.indexOf("agent_report_created")).toBeGreaterThan(events.indexOf("agent_step_failed"));
-    expect(events.indexOf("review_created")).toBeGreaterThan(events.indexOf("agent_report_created"));
+    expect(events.indexOf("agent_report_created")).toBeGreaterThan(
+      events.indexOf("agent_step_failed"),
+    );
+    expect(events.indexOf("review_created")).toBeGreaterThan(
+      events.indexOf("agent_report_created"),
+    );
     expect(events.indexOf("task_failed")).toBeGreaterThan(events.indexOf("review_created"));
     expect(events.at(-1)).toBe("task_failed");
     expect(snapshot.tasksById[record.id].state).toBe("failed");
@@ -692,9 +1179,9 @@ describe("DesktopRuntimeAdapter", () => {
     expect(snapshot.tasksById["task-0003"]).toBeDefined();
     expect(Object.keys(snapshot.tasksById).length).toBe(3);
     expect(record3.id).toBe("task-0003");
-    expect(
-      snapshot.eventsByTaskId["task-0003"].map((e) => e.type),
-    ).toContain("mcp_fallback_to_mock");
+    expect(snapshot.eventsByTaskId["task-0003"].map((e) => e.type)).toContain(
+      "mcp_fallback_to_mock",
+    );
   });
 
   it("blocks non-localhost endpoints and keeps MockRuntime fallback available", async () => {
@@ -842,7 +1329,13 @@ describe("DesktopRuntimeAdapter", () => {
         return {
           status: "completed",
           chunks: [
-            { index: 0, stream: "stdout", text: "ok\n", truncated: false, timestamp: 1_700_000_000_001 },
+            {
+              index: 0,
+              stream: "stdout",
+              text: "ok\n",
+              truncated: false,
+              timestamp: 1_700_000_000_001,
+            },
           ],
           exitCode: 0,
           durationMs: 25,
@@ -863,7 +1356,13 @@ describe("DesktopRuntimeAdapter", () => {
       expect(terminal.getState().capability?.enabled).toBe(true);
     });
 
-    const proposal = await terminal.propose("pnpm test", "G:\\UAgent", "task-native-1", "G:\\UAgent", "lyra");
+    const proposal = await terminal.propose(
+      "pnpm test",
+      "G:\\UAgent",
+      "task-native-1",
+      "G:\\UAgent",
+      "lyra",
+    );
     const token = await terminal.approve(proposal.id, "user", "approve");
     const state = terminal.getState();
 
@@ -996,12 +1495,12 @@ const initializeFixture = {
 const discoveryFixtures: Record<string, unknown> = {
   initialize: initializeFixture,
   "tools/list": {
-    tools: [
-      { name: "ue.selection.get", description: "Read current editor selection" },
-    ],
+    tools: [{ name: "ue.selection.get", description: "Read current editor selection" }],
   },
   "resources/list": {
-    resources: [{ uri: "ue://selection/current", name: "Current selection", mimeType: "application/json" }],
+    resources: [
+      { uri: "ue://selection/current", name: "Current selection", mimeType: "application/json" },
+    ],
   },
   "prompts/list": { prompts: [{ name: "summarize-selection", description: "Summarize" }] },
 };
@@ -1027,13 +1526,19 @@ type LegacySseTransportImplementation = (
 
 function mockStreamableHttpTransport(createTransport: () => McpTransportClient) {
   vi.mocked(StreamableHttpTransport).mockImplementation(
-    (() => createTransport() as InstanceType<typeof StreamableHttpTransport>) as StreamableHttpTransportImplementation,
+    (() =>
+      createTransport() as InstanceType<
+        typeof StreamableHttpTransport
+      >) as StreamableHttpTransportImplementation,
   );
 }
 
 function mockLegacySseTransport(createTransport: () => McpTransportClient) {
   vi.mocked(LegacySseTransport).mockImplementation(
-    (() => createTransport() as InstanceType<typeof LegacySseTransport>) as LegacySseTransportImplementation,
+    (() =>
+      createTransport() as InstanceType<
+        typeof LegacySseTransport
+      >) as LegacySseTransportImplementation,
   );
 }
 

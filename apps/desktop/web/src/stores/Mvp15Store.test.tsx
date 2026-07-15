@@ -9,7 +9,7 @@ import { createEmptyMvp14State, type Mvp14RuntimeState } from "../runtime/runtim
 import type { NativeInvoke } from "../runtime/project-native-adapter";
 import { ChangesPanel } from "../inspector/ChangesPanel";
 import { ConfigSettings } from "../settings/pages/ConfigSettings";
-import { UIProvider, useRuntimeStore } from "./ui-store";
+import { UIProvider, useOptionalRuntimeActions, useRuntimeStore } from "./ui-store";
 
 const MVP15_TEST_TOOL_NAMES = [
   "ue.asset.create_folder",
@@ -27,6 +27,62 @@ const MVP15_TEST_TOOL_CONTRACTS = {
   affectedAssetsSchema: { type: "array" },
   evidenceQuery: { type: "read_only" },
 };
+
+const TOOL_NAME_TO_OPERATION = {
+  "ue.asset.create_folder": "create_folder",
+  "ue.asset.duplicate": "duplicate",
+  "ue.asset.rename": "rename",
+  "ue.asset.move": "move",
+  "ue.asset.delete": "delete",
+  "ue.asset.save": "save",
+} as const;
+
+function fakeSha1Hex(seed: string): string {
+  let h = 0x811c9dc5 >>> 0;
+  for (let i = 0; i < seed.length; i += 1) h = Math.imul(h ^ seed.charCodeAt(i), 0x01000193) >>> 0;
+  const base = (h >>> 0).toString(16).padStart(8, "0");
+  return (base + base.repeat(5) + base).slice(0, 40);
+}
+
+function structuredDryRunResult(
+  toolName: string,
+  _exactKindHint: string,
+  changeSetId: string,
+  runId: string,
+  beforePath: string | null,
+  afterPath: string | null,
+): Record<string, unknown> {
+  const operation = TOOL_NAME_TO_OPERATION[toolName as keyof typeof TOOL_NAME_TO_OPERATION] ?? "create_folder";
+  const isDuplicate = toolName === "ue.asset.duplicate";
+  const isDelete = toolName === "ue.asset.delete";
+  const isRenameOrMove = toolName === "ue.asset.rename" || toolName === "ue.asset.move";
+  const wouldRead = isDuplicate && beforePath ? [beforePath] : [];
+  const wouldModify = isDelete
+    ? (beforePath ? [beforePath] : [])
+    : isRenameOrMove
+      ? (beforePath && afterPath ? [beforePath, afterPath] : [])
+      : (afterPath ? [afterPath] : []);
+  return {
+    blocked: false,
+    status: "dry_run_completed",
+    toolName,
+    operation,
+    changeSetId,
+    runId,
+    sandboxRoot: `/Game/UAgentSandbox/${runId}`,
+    wouldChange: true,
+    wouldModify,
+    wouldRead,
+    affectedAssets: { readOnlySources: wouldRead, sandboxTargets: wouldModify, externalTargets: [] },
+    rollbackPlan: { executionEnabled: false, inverseOperation: "restore", summary: "rollback" },
+    externalEvidenceQueries: [{ queryKind: "asset_registry_snapshot", readOnly: true, paths: [...wouldRead, ...wouldModify] }],
+    dryRunHash: fakeSha1Hex(`${toolName}|${changeSetId}|${runId}|${beforePath ?? ""}|${afterPath ?? ""}`),
+    hashAlgorithm: "sha1",
+    schemaVersion: "mvp15c.dry-run.v1",
+    approvalRequired: true,
+    implementationStatus: "dry_run_only",
+  };
+}
 
 function createRealReadyMvp14State(pidHash: string | null = "pid:real-attached"): Mvp14RuntimeState {
   return {
@@ -97,13 +153,32 @@ function createMvp15ReadyTransport(events: string[]): McpTransportClient {
         return { jsonrpc: "2.0" as const, id: request.id, result: { prompts: [] } };
       }
       if (request.method === "tools/call") {
-        const params = request.params as { name?: string };
+        const params = request.params as { name?: string; arguments?: Record<string, unknown> };
         events.push(`mcp:${params.name ?? "unknown"}`);
-        return {
-          jsonrpc: "2.0" as const,
-          id: request.id,
-          result: { status: "executed", reason: null, evidenceId: `mcp:${params.name ?? "unknown"}` },
-        };
+        const args = params.arguments ?? {};
+        // dry-run only: assert execute/rollback are never true and no token sent across the wire.
+        if (args.dryRun === true) {
+          // Produce a contract-compliant structured dry-run result for the binding validator.
+          const runId = typeof args.runId === "string" ? args.runId : "";
+          const changeSetId = typeof args.changeSetId === "string" ? args.changeSetId : "";
+          const beforePath = typeof args.sourceAssetPath === "string"
+            ? args.sourceAssetPath
+            : typeof args.assetPath === "string"
+              ? args.assetPath
+              : null;
+          const afterCandidate = args.folderPath ?? args.targetAssetPath ?? args.assetPath;
+          const afterPath = typeof afterCandidate === "string" ? afterCandidate : null;
+          const result = structuredDryRunResult(
+            params.name ?? "ue.asset.create_folder",
+            params.name ?? "ue.asset.create_folder",
+            changeSetId,
+            runId,
+            beforePath,
+            afterPath,
+          );
+          return { jsonrpc: "2.0" as const, id: request.id, result: { structuredContent: result } };
+        }
+        return { jsonrpc: "2.0" as const, id: request.id, result: { status: "executed", reason: null, evidenceId: `mcp:${params.name ?? "unknown"}` } };
       }
       return { jsonrpc: "2.0" as const, id: request.id, result: null };
     }),
@@ -169,6 +244,21 @@ function createNativeInvokeMockAdapter(mock: (command: string, payload?: unknown
 function Mvp15InventoryProbe() {
   const inventory = useRuntimeStore((state) => state.mvp15.mcpInventory);
   return <pre data-testid="mvp15-inventory-probe">{JSON.stringify(inventory)}</pre>;
+}
+
+function Mvp15StateProbe() {
+  const state = useRuntimeStore((runtime) => runtime.mvp15);
+  return <pre data-testid="mvp15-state-probe">{JSON.stringify(state)}</pre>;
+}
+
+function Mvp15DirectActionProbe() {
+  const actions = useOptionalRuntimeActions();
+  return (
+    <div>
+      <button type="button" onClick={() => void actions?.verifyMvp15AssetChangeSet()}>Direct real verify</button>
+      <button type="button" onClick={() => void actions?.rollbackMvp15AssetChangeSet()}>Direct real rollback</button>
+    </div>
+  );
 }
 
 describe("MVP15 desktop asset mutation UI", () => {
@@ -433,26 +523,26 @@ describe("MVP15 desktop asset mutation UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dry-run sandbox asset mutation" }));
     await waitFor(() => {
       expect(screen.getByText(/Execution mode: real/)).toBeTruthy();
+      expect(screen.getByText(/Binding: external_bound/)).toBeTruthy();
       expect(screen.getByText(/Dry-run: dry_run_completed/)).toBeTruthy();
     });
 
+    // Real approve binds the complete ordered ChangeSet (gated by the runtime binding check).
     fireEvent.click(screen.getByRole("button", { name: "Approve sandbox asset mutation" }));
     await waitFor(() => {
       expect(screen.getByText(/Approval: issued/)).toBeTruthy();
     });
 
+    // Real execute stays not-enabled; native guard and live mutation are never invoked.
     fireEvent.click(screen.getByRole("button", { name: "Execute sandbox asset mutation" }));
     await waitFor(() => {
-      expect(screen.getByText(/Execution: executed/)).toBeTruthy();
+      expect(screen.getByText(/Execute gate: execute_not_enabled/)).toBeTruthy();
     });
 
-    expect(events.filter((event) => event.startsWith("native:execute_asset_mutation:"))).toHaveLength(5);
-    expect(nativeGuardInputs).toHaveLength(5);
-    expect(nativeGuardInputs.every((input) => input.editorSessionId === "editor-session:real")).toBe(true);
-    expect(nativeGuardInputs.every((input) => input.observedEditorSessionId === "editor-session:real")).toBe(true);
-    expect(nativeGuardInputs.every((input) => input.pidHash === "pid:real-attached")).toBe(true);
-    expect(nativeGuardInputs.every((input) => input.observedPidHash === "pid:real-attached")).toBe(true);
+    expect(events.filter((event) => event.startsWith("native:execute_asset_mutation:"))).toEqual([]);
+    expect(nativeGuardInputs).toEqual([]);
     expect(JSON.stringify(nativeGuardInputs)).not.toContain("pid:observed");
+    // Exactly five dry-run MCP calls; zero execute, rollback, Save All, or mutation calls.
     expect(events.filter((event) => event.startsWith("mcp:"))).toEqual([
       "mcp:ue.asset.create_folder",
       "mcp:ue.asset.duplicate",
@@ -460,13 +550,94 @@ describe("MVP15 desktop asset mutation UI", () => {
       "mcp:ue.asset.move",
       "mcp:ue.asset.save",
     ]);
+    // No approval token, MCP session id, or absolute project path leaks into rendered UI state.
+    const serialized = document.body.textContent ?? "";
+    expect(serialized).not.toContain("asset-approval-token:");
+    expect(serialized).not.toContain("editor-session:real");
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Verify sandbox asset mutation" }));
-    await waitFor(() => {
-      expect(screen.getByText(/Verification: blocked/)).toBeTruthy();
-      expect(screen.getByText(/Last issue: real_verification_required/)).toBeTruthy();
+  it("keeps raw path and session-like exception text out of desktop state", async () => {
+    const runtimeClient = createDesktopRuntimeAdapter({
+      createTransport: () => createMvp15ReadyTransport([]),
     });
-    expect(screen.queryByText(/Verification: passed/)).toBeNull();
+    await runtimeClient.connectMcp();
+    await runtimeClient.discoverMcp();
+    const rawError = "MCP failed at C:\\Users\\admin\\Secrets\\BehaviorTree_Learn with session mcp-session-9f8e and token sk-live-1234567890";
+    Object.defineProperty(runtimeClient, "callMvp15AssetTool", {
+      configurable: true,
+      get: () => {
+        throw new Error(rawError);
+      },
+    });
+
+    render(
+      <UIProvider
+        runtimeClient={runtimeClient}
+        initialState={{ runtime: { mvp14: createRealReadyMvp14State() } }}
+      >
+        <AssetMutationPanel />
+        <Mvp15StateProbe />
+      </UIProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText("Source asset path"), { target: { value: "/Game/Characters/Hero" } });
+    fireEvent.click(screen.getByRole("button", { name: "Dry-run sandbox asset mutation" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Last issue: external_binding_failed/)).toBeTruthy();
+    });
+    const serializedState = screen.getByTestId("mvp15-state-probe").textContent ?? "";
+    expect(serializedState).toContain("external_binding_failed");
+    expect(serializedState).not.toContain(rawError);
+    expect(serializedState).not.toContain("C:\\Users\\admin\\Secrets");
+    expect(serializedState).not.toContain("mcp-session-9f8e");
+    expect(serializedState).not.toContain("sk-live-1234567890");
+  });
+
+  it("keeps real verify and rollback actions disabled and returns stable not-enabled reasons", async () => {
+    const events: string[] = [];
+    const nativeInvokeMock = vi.fn(async (command: string, payload?: unknown): Promise<unknown> => {
+      const input = (payload as { input?: { toolName?: string } } | undefined)?.input;
+      events.push(`native:${command}:${input?.toolName ?? "unknown"}`);
+      return { status: "accepted_by_native_guard", reason: "should_not_run", evidenceId: "native-called" };
+    });
+    const runtimeClient = createDesktopRuntimeAdapter({
+      createTransport: () => createMvp15ReadyTransport(events),
+      nativeInvoke: createNativeInvokeMockAdapter(nativeInvokeMock),
+    });
+    await runtimeClient.connectMcp();
+    await runtimeClient.discoverMcp();
+
+    render(
+      <UIProvider
+        runtimeClient={runtimeClient}
+        initialState={{ runtime: { mvp14: createRealReadyMvp14State() } }}
+      >
+        <AssetMutationPanel />
+        <Mvp15DirectActionProbe />
+        <Mvp15StateProbe />
+      </UIProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText("Source asset path"), { target: { value: "/Game/Characters/Hero" } });
+    fireEvent.click(screen.getByRole("button", { name: "Dry-run sandbox asset mutation" }));
+    await waitFor(() => expect(screen.getByText(/Binding: external_bound/)).toBeTruthy());
+
+    expect((screen.getByRole("button", { name: "Verify sandbox asset mutation" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Rollback sandbox asset mutation" }) as HTMLButtonElement).disabled).toBe(true);
+    const bindingEvents = [...events];
+    const nativeCallsBeforeActions = nativeInvokeMock.mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "Direct real verify" }));
+    await waitFor(() => expect(screen.getByText(/Last issue: verify_not_enabled/)).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Direct real rollback" }));
+    await waitFor(() => expect(screen.getByText(/Last issue: rollback_not_enabled/)).toBeTruthy());
+
+    expect(events).toEqual(bindingEvents);
+    expect(nativeInvokeMock.mock.calls.length).toBe(nativeCallsBeforeActions);
+    const serializedState = screen.getByTestId("mvp15-state-probe").textContent ?? "";
+    expect(serializedState).toContain("rollback_not_enabled");
+    expect(serializedState).not.toContain("real_verification_required");
   });
 
   it("blocks ready real inventory when the attached observation session has no pid hash", async () => {

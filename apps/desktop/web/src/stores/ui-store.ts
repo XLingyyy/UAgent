@@ -11,15 +11,19 @@ import {
   createMcpMutationService,
   createRepairProposalEngine,
   createUEProjectDiagnosticsEngine,
+  buildExactDryRunPayload,
   mapMcpDryRunToOperation,
   normalizeMvp15McpAssetToolDescriptor,
   parseUEProjectMetadata,
   replayAssetMutationSummary,
   type AssetChangeSetService,
+  type AssetMutationExternalBinder,
+  type DryRunBindingInput,
   type Mvp15McpAssetToolDescriptor,
   type Mvp15McpAssetToolInventory,
 } from "@uagent/runtime";
 import type { ChangeOperationV2, ProjectDiagnostic } from "@uagent/shared";
+import type { AssetMutationDraftOperation } from "@uagent/runtime";
 import { createNativeProjectAdapter } from "../runtime/project-native-adapter";
 import { getDefaultModelSelection } from "../composer/composer-data";
 import { cloneProviderConfig } from "../provider/provider-data";
@@ -267,6 +271,30 @@ function createMvp15RealAssetMutationService(
   });
 }
 
+/**
+ * Build the external dry-run binder that drives the live UE MCP plugin exact dry-run calls.
+ * Only the canonical dry-run payload is sent to callMvp15AssetTool: dryRun=true, execute=false,
+ * rollback=false, and never any dryRunHash/approvalToken/saveAll. The service validates the
+ * structured result fail-closed; this binder is the thin MCP transport and does not interpret it.
+ */
+async function createMvp15ExternalBinder(runtimeClient: DesktopRuntimeAdapter): Promise<AssetMutationExternalBinder> {
+  const callFn = runtimeClient.callMvp15AssetTool;
+  if (!callFn) throw new Error("mcp_asset_bridge_unavailable");
+  return {
+    call: (input: DryRunBindingInput) => callMvp15ToolSafely(callFn, input),
+  };
+}
+
+async function callMvp15ToolSafely(
+  call: NonNullable<DesktopRuntimeAdapter["callMvp15AssetTool"]>,
+  input: DryRunBindingInput,
+): Promise<unknown> {
+  const payload = buildExactDryRunPayload(input);
+  // buildExactDryRunPayload only emits one of the six exact allowlisted tool names; the desktop
+  // adapter re-validates before any MCP send.
+  return call(payload.toolName as Parameters<typeof call>[0], payload.args);
+}
+
 interface UIStoreBundle {
   layoutStore: SliceStore<LayoutStoreState>;
   settingsStore: SliceStore<SettingsShellState>;
@@ -332,6 +360,7 @@ function createUIStateBundle(
   let mvp15AssetMutationService = createMvp15FixtureAssetMutationService();
   const mvp15ApprovalTokenByChangeSetId = new Map<string, string>();
   let mvp15RunCounter = 0;
+  let runningGeneration = 0;
   runtimeClient.subscribe((snapshot) => {
     runtimeStore.setState((previousState) => ({
       ...previousState,
@@ -1776,7 +1805,7 @@ function createUIStateBundle(
         },
       }));
     },
-    runMvp15AssetDryRun: (sourceAssetPathInput) => {
+    runMvp15AssetDryRun: async (sourceAssetPathInput) => {
       const sourceAssetPath = sourceAssetPathInput?.trim() ?? "";
       if (!sourceAssetPath) {
         runtimeStore.setState((previousState) => ({
@@ -1842,39 +1871,124 @@ function createUIStateBundle(
       mvp15ApprovalTokenByChangeSetId.clear();
       mvp15RunCounter += 1;
       const runId = `ui-${Date.now().toString(36)}-${mvp15RunCounter.toString(36)}`;
+      const activeGeneration = (runningGeneration += 1);
       const assetName = sanitizeMvp15AssetName(sourceAssetPath.split("/").filter(Boolean).at(-1) ?? "Asset");
-      const copyPath = `/Game/UAgentSandbox/${runId}/${assetName}Copy`;
-      const renamedPath = `/Game/UAgentSandbox/${runId}/${assetName}Renamed`;
-      const movedPath = `/Game/UAgentSandbox/${runId}/Sub/${assetName}Renamed`;
-      const result = mvp15AssetMutationService.dryRun({
+      // Run-scoped Work subdirectory targets per the accepted plugin contract: writes must
+      // live under /Game/UAgentSandbox/<runId>/...; the run root itself is not a valid target.
+      const workDir = `/Game/UAgentSandbox/${runId}/Work`;
+      const copyPath = `${workDir}/${assetName}Copy`;
+      const renamedPath = `${workDir}/${assetName}Renamed`;
+      const movedPath = `${workDir}/Sub/${assetName}Renamed`;
+      const dryRunInput = {
         projectId: state.mvp14.session?.projectId ?? "project:fixture",
         trustedRootId: state.mvp14.session?.rootId ?? "root:fixture",
         editorSessionId: state.mvp14.session?.sessionId ?? "editor-session:fixture",
         pidHash: observedPidHash ?? "pid:fixture",
         runId,
         operations: [
-          { kind: "create_folder", assetPathAfter: `/Game/UAgentSandbox/${runId}` },
+          { kind: "create_folder", assetPathAfter: workDir },
           { kind: "duplicate_asset", assetPathBefore: sourceAssetPath, assetPathAfter: copyPath },
           { kind: "rename_asset", assetPathBefore: copyPath, assetPathAfter: renamedPath },
           { kind: "move_asset", assetPathBefore: renamedPath, assetPathAfter: movedPath },
           { kind: "save_single_asset", assetPathBefore: movedPath, assetPathAfter: movedPath },
-        ],
-      });
-      const preview = mvp15AssetMutationService.preview(result.changeSet.id);
+        ] satisfies AssetMutationDraftOperation[],
+      };
+      const result = mvp15AssetMutationService.dryRun(dryRunInput);
+
+      // Real mode: ChangeSet starts external_pending. Drive the live plugin exact dry-run binder
+      // before any preview/approve. The binder only ever calls Mvp15 exact tools (dry-run only);
+      // it never sends execute:true, rollback, approval tokens, or global save-all requests.
+      if (!realReady) {
+        const fixturePreview = mvp15AssetMutationService.preview(result.changeSet.id);
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp15: refreshMvp15DerivedState({
+            ...previousState.mvp15,
+            executionMode: "fixture",
+            sourceAssetPath,
+            runId,
+            mcpInventory,
+            latestDryRun: result.dryRun,
+            activeChangeSet: fixturePreview.changeSet,
+            changeSets: fixturePreview.changeSet ? [fixturePreview.changeSet] : previousState.mvp15.changeSets,
+            lastError: fixturePreview.reason,
+          }),
+        }));
+        return;
+      }
+
       runtimeStore.setState((previousState) => ({
         ...previousState,
         mvp15: refreshMvp15DerivedState({
           ...previousState.mvp15,
-          executionMode: realReady ? "real" : "fixture",
+          executionMode: "real",
           sourceAssetPath,
           runId,
           mcpInventory,
           latestDryRun: result.dryRun,
-          activeChangeSet: preview.changeSet,
-          changeSets: preview.changeSet ? [preview.changeSet] : previousState.mvp15.changeSets,
-          lastError: preview.reason,
+          activeChangeSet: result.changeSet,
+          changeSets: [result.changeSet],
+          lastError: null,
         }),
       }));
+
+      const generation = activeGeneration;
+      try {
+        const binder = await createMvp15ExternalBinder(runtimeClient);
+        const bound = runningGeneration === generation
+          ? await mvp15AssetMutationService.bindExternalDryRun({ changeSetId: result.changeSet.id, binder })
+          : null;
+        if (!bound || bound.status === "blocked") {
+          if (runningGeneration !== generation) return; // stale async response; a newer request is active
+          runtimeStore.setState((previousState) => ({
+            ...previousState,
+            mvp15: refreshMvp15DerivedState({
+              ...previousState.mvp15,
+              activeChangeSet: bound?.changeSet ?? previousState.mvp15.activeChangeSet,
+              changeSets: bound?.changeSet ? [bound.changeSet] : previousState.mvp15.changeSets,
+              latestDryRun: bound?.dryRun ?? previousState.mvp15.latestDryRun,
+              lastError: bound?.reason ?? "external_binding_failed",
+            }),
+          }));
+          return;
+        }
+        const boundPreview = mvp15AssetMutationService.preview(result.changeSet.id);
+        if (boundPreview.status !== "previewed") {
+          runtimeStore.setState((previousState) => ({
+            ...previousState,
+            mvp15: refreshMvp15DerivedState({
+              ...previousState.mvp15,
+              activeChangeSet: boundPreview.changeSet ?? bound.changeSet,
+              changeSets: boundPreview.changeSet ? [boundPreview.changeSet] : [bound.changeSet!],
+              latestDryRun: bound.dryRun,
+              lastError: boundPreview.reason ?? "external_binding_failed",
+            }),
+          }));
+          return;
+        }
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp15: refreshMvp15DerivedState({
+            ...previousState.mvp15,
+            activeChangeSet: boundPreview.changeSet,
+            changeSets: [boundPreview.changeSet!],
+            latestDryRun: bound.dryRun,
+            lastError: null,
+          }),
+        }));
+      } catch {
+        if (runningGeneration !== generation) return;
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp15: refreshMvp15DerivedState({
+            ...previousState.mvp15,
+            // The display state must never contain raw transport, path, session, token, or secret text.
+            // Binding failures already have stable reasons at the runtime boundary; unexpected errors
+            // here intentionally collapse to one safe UI reason.
+            lastError: "external_binding_failed",
+          }),
+        }));
+      }
     },
     approveMvp15AssetChangeSet: () => {
       const mvp15 = runtimeStore.getState().mvp15;
@@ -1903,7 +2017,20 @@ function createUIStateBundle(
       }));
     },
     executeMvp15AssetChangeSet: async () => {
-      const changeSet = runtimeStore.getState().mvp15.activeChangeSet;
+      const mvp15 = runtimeStore.getState().mvp15;
+      const changeSet = mvp15.activeChangeSet;
+      // Real-mode execute is not enabled at this stage. Even with a completed external binding,
+      // live mutation execution stays gated off until the plugin execute path lands later.
+      if (mvp15.executionMode === "real") {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp15: refreshMvp15DerivedState({
+            ...previousState.mvp15,
+            lastError: "execute_not_enabled",
+          }),
+        }));
+        return;
+      }
       const token = changeSet ? mvp15ApprovalTokenByChangeSetId.get(changeSet.id) : null;
       if (!changeSet || !token) {
         runtimeStore.setState((previousState) => ({
@@ -1931,7 +2058,18 @@ function createUIStateBundle(
       }));
     },
     verifyMvp15AssetChangeSet: async () => {
-      const changeSet = runtimeStore.getState().mvp15.activeChangeSet;
+      const mvp15 = runtimeStore.getState().mvp15;
+      if (mvp15.executionMode === "real") {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp15: refreshMvp15DerivedState({
+            ...previousState.mvp15,
+            lastError: "verify_not_enabled",
+          }),
+        }));
+        return;
+      }
+      const changeSet = mvp15.activeChangeSet;
       if (!changeSet) {
         runtimeStore.setState((previousState) => ({
           ...previousState,
@@ -1953,7 +2091,18 @@ function createUIStateBundle(
       }));
     },
     rollbackMvp15AssetChangeSet: async () => {
-      const changeSet = runtimeStore.getState().mvp15.activeChangeSet;
+      const mvp15 = runtimeStore.getState().mvp15;
+      if (mvp15.executionMode === "real") {
+        runtimeStore.setState((previousState) => ({
+          ...previousState,
+          mvp15: refreshMvp15DerivedState({
+            ...previousState.mvp15,
+            lastError: "rollback_not_enabled",
+          }),
+        }));
+        return;
+      }
+      const changeSet = mvp15.activeChangeSet;
       if (!changeSet) {
         runtimeStore.setState((previousState) => ({
           ...previousState,
