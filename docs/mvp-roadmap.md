@@ -236,7 +236,7 @@ Non-goals:
 - Broad mutating MCP `tools/call`.
 - Provider live defaults, automatic provider-output apply, automatic git operations, dependency installs, or CI workflow changes.
 
-## MVP15 - Real UE Sandbox Asset Mutation Pilot
+## MVP15 - Real UE Sandbox Asset Mutation Pilot (Final Acceptance Complete)
 
 - **Sandbox Asset Contracts**: Adds asset mutation dry-run plans, sandbox asset paths, asset ChangeSet lifecycle, approval token binding, verification, rollback, evidence, audit, and replay-only summaries.
 - **Sandbox Path Policy**: Allows `create_folder` only at the exact `/Game/UAgentSandbox/<run-id>` root and all later writes only at strict descendants, with mapped `/Content/UAgentSandbox/**` disk paths. Blocks the global root, cross-run/root-prefix confusion, traversal, non-sandbox assets, generated/cache paths, project-wide saves, and broad/bulk asset operations.
@@ -249,7 +249,7 @@ Non-goals:
 - **Scenario Matrix**: Runtime matrix covers at least 60 scenarios / 240 assertions across allowed paths, denied paths, stale manifest, approval expiry, execution, verification, rollback, replay, exact inventory, facade, and MCP adapter boundaries.
 - **Security Regression**: Side-effect scan covers non-empty-token fake verification, unknown-result fail-open, sandbox-only writes, non-sandbox asset paths, Save All, bulk operations, generic wrapper mutation, replay execute/rollback, raw evidence path/identity leakage, provider live defaults, and manifest-only real verification.
 
-Status: `PASS_REAL_SMOKE candidate / awaiting supervisor review`.
+Status: complete. The accepted MVP15C / 09Z product-UI lifecycle finished with `PASS_REAL_SMOKE`; all G0-G15 gates are `COMPLETE`, no MVP15 acceptance blocker remains, and progression to the next as-yet-unnamed product stage is approved.
 
 Goals:
 
@@ -260,7 +260,7 @@ Goals:
 
 Non-goals:
 
-- Non-sandbox asset writes, Save All, SavePackage on arbitrary packages, delete/move/rename/bulk operations, Blueprint compile execution, generic MCP mutation, provider-output auto-apply, default live provider access, automatic git operations, dependency installation, and CI workflow changes.
+- Non-sandbox asset writes, Save All, SavePackage on arbitrary packages, broad/bulk asset operations, Blueprint compile execution, generic MCP mutation, provider-output auto-apply, default live provider access, automatic git operations, dependency installation, and CI workflow changes. The accepted pilot's exact, approval-bound move/rename and rollback cleanup operations under its registered run root are delivered capabilities, not part of this prohibition.
 
 ## Non-Goals
 

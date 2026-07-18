@@ -197,7 +197,7 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
           >
             <span aria-hidden>Tools</span>
           </button>
-          <span className="ua-titlebar__badge">MVP14 In Progress</span>
+          <span className="ua-titlebar__badge">MVP15 Complete</span>
           <span className="ua-titlebar__badge ua-titlebar__badge--subtle">Native FS OK</span>
         </div>
         <div

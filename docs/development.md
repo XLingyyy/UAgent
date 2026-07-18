@@ -166,3 +166,5 @@ git diff --check
 ```
 
 Real UE sandbox smoke requires a supervisor-local UE Editor project with the bridge enabled. The smoke must mutate only `/Game/UAgentSandbox/**`, verify the resulting manifest, exercise rollback, and confirm that non-sandbox paths remain blocked.
+
+The MVP15 final product-UI smoke was completed and accepted on 2026-07-18 as `PASS_REAL_SMOKE`; this is a recorded stage result, not a substitute for future verification. Any later change to the native approval lifecycle, exact MCP asset facade, sandbox path policy, verification, rollback, replay, or related UI wiring must repeat the applicable automated matrix above and the procedure in `docs/mvp15-manual-smoke.md`. Documentation-only or presentation-only changes must mark the real smoke as skipped when the task forbids a new mutation run.

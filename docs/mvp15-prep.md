@@ -1,10 +1,12 @@
 # MVP15 Prep - Real UE Sandbox Asset Mutation Pilot
 
-## Objective
+> Historical preparation document. This file records the scope posture used before MVP15 implementation. MVP15 subsequently completed final acceptance in MVP15C / 09Z; current delivered scope and remaining prohibitions are defined by the acceptance, verification, risk, and handoff documents.
 
-MVP15 validates the first controlled UE asset mutation path under a sandbox-only boundary. The pilot may prepare, execute, verify, and roll back asset changes only under `/Game/UAgentSandbox/**` and mapped `/Content/UAgentSandbox/**`.
+## Historical Objective
 
-## Scope
+The preparation objective was to validate the first controlled UE asset mutation path under a sandbox-only boundary. The planned pilot could prepare, execute, verify, and roll back asset changes only under `/Game/UAgentSandbox/**` and mapped `/Content/UAgentSandbox/**`.
+
+## Historical Planned Scope
 
 - Shared contracts for sandbox asset mutation plans, ChangeSets, approval tokens, execution, verification, rollback, evidence, audit, and replay summaries.
 - Runtime policy and service for dry-run, approve, execute, verify, rollback, manifest tracking, and replay summary generation.
@@ -21,11 +23,11 @@ MVP15 validates the first controlled UE asset mutation path under a sandbox-only
 - Replay records summaries only and must never re-execute asset operations.
 - Evidence and audit payloads must not store raw secrets, approval tokens, provider credentials, or broad local paths.
 
-## Out of Scope
+## Historical Out of Scope at Preparation Time
 
 - Non-sandbox asset writes.
 - Save All or project-wide package saves.
-- Delete, move, rename, bulk asset operations, or Blueprint compile execution.
+- Delete, move, rename, bulk asset operations, or Blueprint compile execution were excluded from the initial preparation posture. Final MVP15 later delivered only the exact approval-bound move/rename steps and inverse cleanup required inside a registered `/Game/UAgentSandbox/<run-id>` lifecycle; broad/bulk operations, arbitrary deletes, and Blueprint compile remain prohibited.
 - Generic mutating MCP `tools/call`.
 - Provider-output auto-apply or default live provider access.
 - Git commit, push, PR, dependency install, or CI workflow edits.

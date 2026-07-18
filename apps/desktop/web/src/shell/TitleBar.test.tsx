@@ -28,9 +28,9 @@ describe("TitleBar", () => {
       expect(screen.getByText("Custom")).toBeTruthy();
     });
 
-    it("renders the MVP14 In Progress badge", () => {
+    it("renders the MVP15 Complete badge", () => {
       renderTitleBar();
-      expect(screen.getByText("MVP14 In Progress")).toBeTruthy();
+      expect(screen.getByText("MVP15 Complete")).toBeTruthy();
     });
 
     it("renders the Native FS OK badge", () => {

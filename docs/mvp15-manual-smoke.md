@@ -1,5 +1,9 @@
 # MVP15 Manual Smoke
 
+This document separates the repeatable procedure from the most recent accepted execution. The current MVP15 result is `PASS_REAL_SMOKE`; `BLOCKED_BY_MCP_SCHEMA` and `BLOCKED_BY_ENVIRONMENT` remain valid failure results for future reruns, not current stage status.
+
+## Repeatable Procedure Template
+
 ## Preconditions
 
 - Use a disposable or version-controlled UE project prepared by the supervisor.
@@ -9,7 +13,7 @@
 - Connect to the localhost Unreal MCP endpoint and run MCP discovery.
 - Confirm the exact MCP asset tools expose input schema, dry-run schema, rollback contract, affected assets schema, and read-only evidence query capability: `ue.asset.create_folder`, `ue.asset.duplicate`, `ue.asset.rename`, `ue.asset.move`, `ue.asset.delete`, and `ue.asset.save`.
 - If the endpoint exposes only `list_toolsets`, `describe_toolset`, and `call_tool`, the expected MVP15 result is `BLOCKED_BY_MCP_SCHEMA` unless `describe_toolset` returns complete exact method contracts for all six operations. Do not treat `editor_toolset.toolsets.asset.AssetTools` behind the generic wrapper as MVP15-ready asset mutation by name alone.
-- On a real Windows desktop, include a titlebar precheck at `2560x1600` with system scaling `150%`: the `Tools` button must not overlap `UE Editor:*`, `MVP14 In Progress`, or `Native FS OK`, and it must toggle the utility drawer with the existing `Open utility drawer` / `Close utility drawer` accessible label.
+- On a real Windows desktop, include a titlebar precheck at `2560x1600` with system scaling `150%`: the `Tools` button must not overlap `UE Editor:*`, `MVP15 Complete`, or `Native FS OK`, and it must toggle the utility drawer with the existing `Open utility drawer` / `Close utility drawer` accessible label.
 - Do not run Save All, bulk asset operations, Blueprint compile, or non-sandbox asset operations.
 
 ## Smoke Steps
@@ -47,11 +51,28 @@
 - Replay inspection: 0 new native, MCP, provider, verify, or rollback calls.
 - Forbidden totals: 0 Save All, 0 bulk, 0 generic wrapper mutation, 0 non-sandbox write, 0 provider auto-apply, and 0 raw token/path leakage.
 
-## Expected Result
+## Template Result Criteria
 
 - The only successful mutation is under `/Game/UAgentSandbox/**`.
 - Every denied operation is blocked before execution.
 - Missing exact MCP tools, schemas, rollback contracts, or evidence queries are reported as `BLOCKED_BY_MCP_SCHEMA`, not as a passing dry-run.
 - Evidence and audit summaries contain no approval token, raw secret, or raw local project root.
 - Replay shows recorded summary only and does not call native or MCP execution.
-- Candidate status after collecting the complete ledger: `PASS_REAL_SMOKE candidate / awaiting supervisor review`.
+- Record `PASS_REAL_SMOKE` only after the complete ledger and final environment checks pass.
+- Record `BLOCKED_BY_MCP_SCHEMA` when exact inventory/schema/rollback/evidence readiness is incomplete.
+- Record `BLOCKED_BY_ENVIRONMENT` when the required UE, observation, trusted-root, or localhost MCP environment is unavailable.
+
+## Most Recent Actual Execution - 2026-07-18
+
+- Result: `PASS_REAL_SMOKE`.
+- Accepted closeout: MVP15C / 09Z.
+- Fresh run: `ui-mrpovp9e-1`.
+- Product actions: exactly one Dry-run, Approve/registration, Execute, Verify, Rollback, replay inspection, and Close; retries, fallbacks, direct native/MCP calls, second actions, and manual cleanup were all zero.
+- Timing: registration to Execute `12,883 ms`; registration to Rollback `143,015 ms`, crossing the original 60-second TTL; Rollback click to `rolled_back` `10,785 ms`.
+- Forward ledger: 5 guards, 5 strict results, 5 exact facade dispatches.
+- Rollback ledger: 4 guards, 4 strict results, 4 exact facade dispatches in move, rename, duplicate cleanup, and create-folder/run-root cleanup order.
+- Same-registration terminal evidence lease: PASS with no new token, registration, or mutation capability.
+- Replay delta: native/MCP/provider/verification/rollback `0/0/0/0/0`.
+- Final Content: 256/256 canonical, all mismatch counts zero, exact run root absent, fixed `Content/UAgentSandbox` ordinary/non-reparse/strictly empty.
+- Process ownership: the task-owned UAgent and listeners were closed; the user's pre-existing UE/MCP processes remained owner-matched.
+- Current TitleBar expectation: `MVP15 Complete`.

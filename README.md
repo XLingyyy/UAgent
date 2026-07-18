@@ -2,11 +2,11 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP15C08 Real Asset Lifecycle Candidate
+## Current Stage: MVP15 - Real UE Sandbox Asset Mutation Pilot (Final Acceptance Complete)
 
-MVP15C08 extends the MVP14 safe editor observation path into a blocked-by-default real UE sandbox asset mutation pilot. It implements a narrow dry-run / approve / execute / verify / rollback loop for sandbox-only asset work while preserving MVP12 ChangeSet v2, MVP13 approval binding, MVP14 process observation, trusted roots, redaction, and replay boundaries.
+MVP15 extends the MVP14 safe editor observation path into a blocked-by-default real UE sandbox asset mutation pilot. The accepted MVP15C / 09Z closeout proves the narrow dry-run / approve / execute / verify / rollback loop through the product UI while preserving MVP12 ChangeSet v2, MVP13 approval binding, MVP14 process observation, trusted roots, redaction, and replay boundaries.
 
-Current code includes a native-issued 256-bit one-time approval registry (hash-only storage and a 60-second maximum TTL), ordered operation binding, strict exact-tool execute/rollback results, read-only Content evidence, inverse rollback, desktop lifecycle/audit surfaces, recorded-only replay, scenario coverage, and side-effect scan hardening. Real UE execution remains limited to `/Game/UAgentSandbox/**`; `ue.asset.create_folder` may create only the exact `/Game/UAgentSandbox/<run-id>` root, and every later write target must be a strict descendant of that root. The accepted source baseline is read-only `/Game/Test01`. Status: `PASS_REAL_SMOKE candidate / awaiting supervisor review`.
+Current code includes a native-issued 256-bit one-time approval registry (hash-only storage and a 60-second maximum TTL), ordered operation binding, strict exact-tool execute/rollback results, read-only Content evidence, inverse rollback, desktop lifecycle/audit surfaces, recorded-only replay, scenario coverage, and side-effect scan hardening. Real UE execution remains limited to `/Game/UAgentSandbox/**`; `ue.asset.create_folder` may create only the exact `/Game/UAgentSandbox/<run-id>` root, and every later write target must be a strict descendant of that root. The accepted source baseline is read-only `/Game/Test01`. The fresh 09Z run `ui-mrpovp9e-1` completed with `PASS_REAL_SMOKE`: same-registration terminal evidence verification passed without restoring mutation authority, replay produced zero native/MCP/provider/verification/rollback delta, and final Content returned to the accepted 256/256 canonical state with the exact run root absent and the fixed sandbox container strictly empty. Remaining MVP15 acceptance blockers: none. The project is ready for the next stage; its name is not yet decided.
 
 1. **Asset Mutation Contracts**: Sandbox asset paths, operation kinds, dry-run plans, ChangeSet approvals, verification, rollback, evidence, audit, and replay summaries.
 2. **Sandbox Policy**: Blocks non-sandbox paths, path traversal, Save All, unsafe delete/move/rename/bulk operations, broad mutating MCP calls, stale manifests, provider auto-apply, raw secrets, and replay re-execution.
@@ -67,9 +67,10 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 ## Non-Goals (current stage)
 
 - Default live provider network access (must be opt-in)
-- Non-sandbox Unreal Engine writes or Editor launch
+- Non-sandbox Unreal Engine writes or uncontrolled/automatic Editor launch
 - Broad mutating MCP tool calls
-- Shell/browser/filesystem product behavior
+- Uncontrolled or arbitrary shell, browser, or filesystem behavior outside the existing approval, trust, containment, and read-only boundaries
+- Save All, broad/bulk asset mutation, provider auto-apply, replay execution, automatic git operations, or secret/raw-path disclosure
 - Cloud deployment, auth, or remote services
 - Forking or embedding Codex/Claude Code/Cursor/Aider
 
@@ -118,7 +119,7 @@ The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and pla
 - [MVP13 Risk Register](docs/mvp13-risk-register.md)
 - [MVP13 Final Verification](docs/mvp13-final-verification.md)
 - [MVP13 Final Handoff](docs/mvp13-final-handoff.md)
-- [MVP15 Prep](docs/mvp15-prep.md)
+- [MVP15 Prep (historical)](docs/mvp15-prep.md)
 - [MVP15 Acceptance](docs/mvp15-acceptance.md)
 - [MVP15 Manual Smoke](docs/mvp15-manual-smoke.md)
 - [MVP15 Risk Register](docs/mvp15-risk-register.md)

@@ -15,9 +15,9 @@ function renderMvp9App() {
 }
 
 describe("MVP9 Desktop Scenarios", () => {
-  it("renders TitleBar with MVP14 In Progress badge", () => {
+  it("renders TitleBar with MVP15 Complete badge", () => {
     renderMvp9App();
-    expect(screen.getByText("MVP14 In Progress")).toBeTruthy();
+    expect(screen.getByText("MVP15 Complete")).toBeTruthy();
   });
 
   it("renders TitleBar with Native FS OK badge", () => {

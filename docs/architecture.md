@@ -32,7 +32,7 @@ UAgent is an AI Agent Host and Client for Unreal Engine workflows, aligned with 
 
 ### `apps/desktop/src-tauri`
 
-Tauri 2 native shell. The Rust entry point creates the application window and hosts the web frontend. Native sidecars, Runtime IPC, and MCP transport will be added in later stages. The window uses a custom title bar (`decorations: false`) so the React `TitleBar` component can render the drag region and custom controls.
+Tauri 2 native shell. The Rust entry point creates the application window and hosts the web frontend. The native core now provides policy-gated filesystem access, controlled process execution and observation, trusted-root binding, UE Editor attach/status support, and the approval-bound sandbox asset-mutation guard. Runtime-to-native commands and the localhost MCP client/transport are implemented; unsafe or unavailable capabilities remain disabled or fail closed. The window uses a custom title bar (`decorations: false`) so the React `TitleBar` component can render the drag region and custom controls.
 
 ### `apps/desktop/web`
 
@@ -74,7 +74,7 @@ Agent runtime state machine plus the deterministic MVP1 `MockRuntime`. The mock 
 
 ### `packages/mcp-client`
 
-MCP (Model Context Protocol) client abstraction layer. MVP2 implements JSON-RPC 2.0 message helpers, structured protocol/transport errors, Streamable HTTP transport, legacy HTTP+SSE fallback transport, session lifecycle (`initialize` -> `notifications/initialized`), discovery (`tools/list`, `resources/list`, `prompts/list`), and read-only execution methods (`readResource`, `callTool`). The UE product path uses localhost HTTP transports only; `stdio` remains a generic non-UE type boundary.
+MCP (Model Context Protocol) client abstraction layer. MVP2 implements JSON-RPC 2.0 message helpers, structured protocol/transport errors, Streamable HTTP transport, legacy HTTP+SSE fallback transport, session lifecycle (`initialize` -> `notifications/initialized`), discovery (`tools/list`, `resources/list`, `prompts/list`), and read-only execution methods (`readResource`, `callTool`). The UE product path uses localhost HTTP transports only; `stdio` remains a generic non-UE type boundary. Above this transport, the runtime applies read-only routing by default and exposes only exact, schema-checked, explicitly approved mutation operations for the registered `/Game/UAgentSandbox/<run-id>` lifecycle. Generic wrapper mutation, non-sandbox writes, and replay execution remain blocked.
 
 ### Runtime Router
 
@@ -90,4 +90,4 @@ React components do not construct JSON-RPC requests or call `tools/call` directl
 - **Extensible**: Provider-agnostic adapter patterns for LLM backends.
 - **MCP-native**: Protocol alignment with Unreal MCP Server for UE5.8.
 - **Tool-grade UI**: Desktop AI Agent workbench aesthetic — dense, functional, and extensible. No landing-page or marketing styling.
-- **Mock-first runtime boundary**: MVP1 proves the product task flow without real network, MCP, UE, filesystem, or LLM side effects.
+- **Guarded runtime boundary**: The mock runtime remains available for deterministic fallback and tests, while implemented native, MCP, process-observation, and sandbox mutation paths require explicit capability, trust, approval, containment, verification, and replay guards.
