@@ -2,7 +2,7 @@
 
 ## Acceptance Gates
 
-Current implementation status: automated contracts, runtime policy, manifest-bound fixture execution, real-mode MCP asset adapter, exact tool/schema/rollback/evidence inventory, compliant exact-tool facade support, external-evidence verification blocking, rollback failure handling, MCP duplicate source policy, native guard binding tests, UI real-ready/schema-blocked state, 60+ scenario matrix coverage, and side-effect scan checks are implemented. MVP15 final remains pending until supervisor-local real UE smoke records `PASS_REAL_SMOKE`.
+Current implementation status: native approval registration, strict exact-tool execute/rollback results, external read-only verification, inverse rollback, UI lifecycle/audit, replay zero-side-effect coverage, and the expanded side-effect scan are implemented and automated. Status: `PASS_REAL_SMOKE candidate / awaiting supervisor review`.
 
 | Gate | Requirement | Status |
 | --- | --- | --- |
@@ -11,16 +11,17 @@ Current implementation status: automated contracts, runtime policy, manifest-bou
 | G2 wrapper-only blocked | Wrapper-only `list_toolsets` / `describe_toolset` / `call_tool` is not exact ready by itself. | Implemented |
 | G3 exact-tool facade | Facade may generate exact descriptors only from complete `describe_toolset` method contracts and pins toolset/method/schema version for internal `call_tool`. | Implemented |
 | G4 dry-run result | Dry-run includes `affectedAssets`, `wouldChange`, `rollbackPlan`, `externalEvidenceQueries`, and `dryRunHash` without mutation. | Implemented |
-| G5 approval registry / replay blocked | Approval is scoped, one-time, expiring, dry-run-hash bound, and replay summary-only. | Implemented |
-| G6 native guard | Native guard validates exact tool, gate, observation session, pid hash, dry-run hash, approval, phase, and sandbox paths. | Implemented |
-| G7 exact tool execution evidence | Real execution path is allowlisted exact tools or compliant facade only, with redacted evidence ids. | Implemented / pending supervisor smoke |
-| G8 external evidence verification | Real verification blocks without UE/MCP read-only state or read-only Content evidence; manifest-only is fixture/local only. | Implemented / pending supervisor smoke |
-| G9 rollback evidence / source untouched | Rollback uses reverse exact operations or exact rollback path; duplicate source remains read-only and verified untouched. | Implemented / pending supervisor smoke |
-| G10 UI status surfaces | Assets/MCP/Changes/Settings expose ready, schema-blocked, dry-run, approved, executed, verified, rollback states, run id, source, missing schemas, and redacted evidence. | Implemented |
-| G11 replay no execution | Replay never calls native, MCP, apply, rollback, or provider. | Implemented |
-| G12 side-effect scan | Scan covers broad wrapper bypass, generic `call_tool`, Save All, bulk ops, non-sandbox writes, raw token/path/command leakage, replay execution, provider auto-apply, and manifest-only real verification. | Implemented |
-| G13 real UE smoke result | Requires local UE Editor, trusted root, heartbeat, localhost MCP, exact inventory/facade, external verification, rollback, and source untouched evidence. | Pending supervisor-local environment; report as `BLOCKED_BY_ENVIRONMENT` when unavailable |
+| G5 approval registry / replay blocked | Native validates the complete binding, then issues an unpredictable 256-bit token once, stores only its hash, applies a 60-second maximum TTL, and consumes the JS/raw-token handoff on the first execute attempt; native registration must succeed before Execute becomes available. | Implemented |
+| G6 native guard | Native guard binds exact tool, gate, root, observation session/PID, changeSet/run, aggregate hashes, operation order, and execute/rollback phase. | Implemented |
+| G7 exact tool execution evidence | Five real operations require strict state-specific structured results with explicit `sideEffectObserved`; unknown, malformed, transport, or pre-mutation blocked results have no ownership and never receive a success audit. | Implemented / supervisor smoke candidate |
+| G8 external evidence verification | Real verification uses read-only Content evidence for source SHA-256, target presence, old-path absence, and outside-run manifest stability. | Implemented / supervisor smoke candidate |
+| G9 rollback evidence / source untouched | Successfully completed operations, plus a failed exact-tool operation only when its strict result proves an observed reversible side effect, receive manifest ownership and roll back in reverse order; transport/unknown failures never receive ownership; save is `none`; rollback is followed by external source verification, exact registered run-root absence, and fixed-container verification. The fixed `/Game/UAgentSandbox` container may be absent; if present, it must be an ordinary non-reparse directory with zero direct or recursive children, files, and subdirectories. | Implemented / supervisor smoke candidate |
+| G10 UI status surfaces | Assets and Changes expose real lifecycle states, safe native registration state, stable reasons, per-operation exact-tool/phase/virtual-path/evidence/result audit, and no raw identity/path/token fields. | Implemented |
+| G11 replay no execution | Replay reads recorded summaries only; automated UI coverage asserts zero new native/MCP/provider/verification/rollback calls. | Implemented |
+| G12 side-effect scan | Scan covers fake non-empty-token verification, unknown-result fail-open, Save All, bulk, non-sandbox writes, generic wrapper mutation, replay execute/rollback, raw evidence identity/path, provider auto-apply, and manifest-only verification. | Implemented |
+| G13 real UE smoke result | Requires a supervisor-controlled UE Editor, trusted root, active observation, localhost MCP, exact inventory, `/Game/Test01` source evidence, execution, verification, and rollback evidence. | `PASS_REAL_SMOKE candidate / awaiting supervisor review` |
 | G14 docs finalization | Public docs describe automation, manual smoke, blockers, risks, and handoff without claiming final acceptance. | Implemented |
+| G15 exact run root / cleanup | `create_folder` targets exactly `/Game/UAgentSandbox/<run-id>`; every other write is a strict descendant. Cleanup ownership ends at that exact registered run root and removes only its asset-free, non-reparse directory tree; it does not own or delete the fixed global `/Game/UAgentSandbox` container. Canonical cleanup requires the exact run root absent and the fixed container either absent or verified as an ordinary non-reparse directory with zero direct or recursive children, files, and subdirectories; any child, asset, reparse point, or unresolved containment fails closed. | Implemented / supervisor smoke candidate |
 
 ## Required Verification
 
@@ -36,4 +37,4 @@ Current implementation status: automated contracts, runtime policy, manifest-bou
 
 ## Acceptance Notes
 
-The code path is designed so fixture tests can validate policy and lifecycle behavior without a UE Editor process, while real mode refuses to treat manifest-only checks as final verification. A wrapper-only endpoint is acceptable only as `BLOCKED_BY_MCP_SCHEMA` unless `describe_toolset` provides complete exact method contracts for the facade. Final acceptance still depends on a real UE project and MCP server configured by the supervisor.
+The automated real-mode harness proves registration-before-MCP ordering, five exact execute calls, read-only external verification, four reverse rollback calls, source preservation, stable blockers, redacted UI audit, and replay with zero side-effect calls. It does not substitute for the supervisor-controlled real UE smoke.

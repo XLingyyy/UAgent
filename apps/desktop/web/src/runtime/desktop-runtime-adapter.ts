@@ -17,9 +17,20 @@ import {
   type Mvp9RuntimeState,
 } from "@uagent/runtime";
 import { LegacySseTransport, McpSession, McpTransportError, StreamableHttpTransport } from "@uagent/mcp-client";
-import type { ApprovalDecisionValue, McpConnectionState, McpDiscoverySnapshot, RuntimeSnapshot, TaskDraft, TaskRecord } from "@uagent/shared";
+import type {
+  ApprovalDecisionValue,
+  AssetContentEvidenceObservation,
+  AssetContentEvidenceRequest,
+  AssetContentManifestObservation,
+  AssetMutationExternalRegistrationBinding,
+  McpConnectionState,
+  McpDiscoverySnapshot,
+  RuntimeSnapshot,
+  TaskDraft,
+  TaskRecord,
+} from "@uagent/shared";
 import type { McpInitializeResult, McpTransportClient } from "@uagent/mcp-client";
-import type { NativeInvoke } from "./project-native-adapter";
+import { resolveTrustedNativeRootRef, type NativeInvoke } from "./project-native-adapter";
 import { createDesktopTerminalAdapterFromEnvironment } from "./terminal-native-adapter";
 import { createDesktopWatcherAdapterFromEnvironment } from "./watcher-native-adapter";
 import { createDesktopBrowserAdapterFromEnvironment } from "./browser-native-adapter";
@@ -50,6 +61,8 @@ export interface DesktopRuntimeAdapter {
     toolName: Mvp15McpAssetToolName,
     args: Record<string, unknown>,
   ) => Promise<Mvp15McpAssetToolCallResult | unknown>;
+  readMvp15AssetContentEvidence?: (input: AssetContentEvidenceRequest) => Promise<AssetContentEvidenceObservation>;
+  snapshotMvp15AssetContentManifest?: (input: AssetMutationExternalRegistrationBinding) => Promise<AssetContentManifestObservation>;
 }
 
 export interface DesktopRuntimeAdapterOptions {
@@ -318,13 +331,23 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
         return { status: "blocked", reason: "native_asset_guard_unavailable", evidenceId: null };
       }
       try {
-        const command = input.phase === "rollback" ? "rollback_asset_mutation" : "execute_asset_mutation";
-        const result = await nativeInvoke(command, { input: toNativeMvp15AssetMutationInput(input) });
+        const command = input.command === "register"
+          ? "register_asset_mutation_approval"
+          : input.command === "record_outcome"
+            ? "record_asset_mutation_outcome"
+            : input.phase === "rollback"
+              ? "rollback_asset_mutation"
+              : "execute_asset_mutation";
+        const nativeInput = toNativeMvp15AssetMutationInput(input);
+        if (!nativeInput) {
+          return { status: "blocked", reason: "trusted_root_ref_unavailable" };
+        }
+        const result = await nativeInvoke(command, { input: nativeInput });
         return normalizeMvp15NativeGuardResult(result);
-      } catch (error) {
+      } catch {
         return {
           status: "failed",
-          reason: error instanceof Error ? `native_asset_guard_failed:${error.message}` : "native_asset_guard_failed",
+          reason: "native_asset_guard_failed",
           evidenceId: null,
         };
       }
@@ -336,12 +359,45 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       if (!currentSession) {
         return { ok: false, status: "blocked", reason: "mcp_session_required", evidenceId: null };
       }
+      const isMutationPhase = args.execute === true || args.rollback === true;
+      if (isMutationPhase) {
+        const directTool = (currentDiscovery?.tools ?? []).find((tool) => tool.name === toolName);
+        const directToolAvailable = directTool
+          ? isCompleteMvp15AssetToolDescriptor(toMvp15AssetToolDescriptor(directTool))
+          : false;
+        if (!directToolAvailable) {
+          return { ok: false, status: "blocked", reason: "mvp15_direct_exact_tool_required", evidenceId: null };
+        }
+        return currentSession.callTool(toolName, args);
+      }
       const selectedDescriptor = getMvp15AssetTools(currentDiscovery, currentMvp15FacadeTools).find((tool) => tool.name === toolName);
       const wrapperCall = selectedDescriptor ? createMvp15FacadeWrapperCall(selectedDescriptor, args) : null;
       if (wrapperCall) {
         return currentSession.callTool(wrapperCall.wrapperToolName, wrapperCall.args);
       }
       return currentSession.callTool(toolName, args);
+    },
+    readMvp15AssetContentEvidence: async (input) => {
+      if (!nativeInvoke) return blockedMvp15ContentEvidence(input.assetPath, "native_asset_evidence_unavailable");
+      if (!isSafeMvp15EvidenceBinding(input) || !isCanonicalMvp15AssetPath(input.assetPath)) {
+        return blockedMvp15ContentEvidence(input.assetPath, "asset_evidence_input_invalid");
+      }
+      try {
+        const raw = await nativeInvoke("read_asset_content_evidence", { input });
+        return normalizeMvp15ContentEvidence(raw, input.assetPath);
+      } catch {
+        return blockedMvp15ContentEvidence(input.assetPath, "native_asset_evidence_failed", "failed");
+      }
+    },
+    snapshotMvp15AssetContentManifest: async (input) => {
+      if (!nativeInvoke) return blockedMvp15ContentManifest("native_content_manifest_unavailable");
+      if (!isSafeMvp15EvidenceBinding(input)) return blockedMvp15ContentManifest("content_manifest_input_invalid");
+      try {
+        const raw = await nativeInvoke("snapshot_asset_content_manifest", { input });
+        return normalizeMvp15ContentManifest(raw);
+      } catch {
+        return blockedMvp15ContentManifest("native_content_manifest_failed", "failed");
+      }
     },
     subscribeMvp9: (listener: (state: Mvp9RuntimeState) => void) => {
       mvp9Listeners.add(listener);
@@ -504,7 +560,21 @@ function isMvp15AssetToolName(toolName: string): toolName is Mvp15McpAssetToolNa
   return (MVP15_ASSET_TOOL_ALLOWLIST as readonly string[]).includes(toolName);
 }
 
-function toNativeMvp15AssetMutationInput(input: Mvp15NativeAssetGuardInput): Record<string, unknown> {
+function toNativeMvp15AssetMutationInput(input: Mvp15NativeAssetGuardInput): Record<string, unknown> | null {
+  if (input.command === "register") {
+    const trustedProjectRoot = resolveTrustedNativeRootRef(input.trustedRootRef);
+    if (!trustedProjectRoot) return null;
+    const registration = { ...input } as Record<string, unknown>;
+    delete registration.command;
+    delete registration.phase;
+    delete registration.trustedRootRef;
+    return { ...registration, trustedProjectRoot };
+  }
+  if (input.command === "guard" || input.command === "record_outcome") {
+    const nativeInput = { ...input } as Record<string, unknown>;
+    delete nativeInput.command;
+    return nativeInput;
+  }
   return {
     toolName: input.toolName,
     assetPath: input.assetPath ?? null,
@@ -523,31 +593,228 @@ function normalizeMvp15NativeGuardResult(raw: unknown): Mvp15NativeAssetGuardRes
   if (!raw || typeof raw !== "object") {
     return { status: "failed", reason: "native_asset_guard_invalid_result", evidenceId: null };
   }
-  const result = raw as {
-    status?: unknown;
-    reason?: unknown;
-    evidenceId?: unknown;
-    evidence_id?: unknown;
+  const result = raw as Record<string, unknown>;
+  const status = typeof result.status === "string" ? result.status : "failed";
+  const reason = safeNativeReason(result.reason);
+  if (status === "registered") {
+    return {
+      status,
+      reason,
+      registrationId: safeNativeIdentifier(firstString(result.registrationId, result.registration_id)),
+      trustedRootId: safeNativeIdentifier(firstString(result.trustedRootId, result.trusted_root_id)),
+      operationCount: firstNumber(result.operationCount, result.operation_count) ?? undefined,
+      approvalToken: safeNativeApprovalToken(firstString(result.approvalToken, result.approval_token)),
+      issuedAt: firstNumber(result.issuedAt, result.issued_at) ?? undefined,
+      expiresAt: firstNumber(result.expiresAt, result.expires_at) ?? undefined,
+    };
+  }
+  if (status === "recorded") {
+    return {
+      status,
+      reason,
+      registrationId: safeNativeIdentifier(firstString(result.registrationId, result.registration_id)),
+      phase: result.phase === "execute" || result.phase === "rollback" ? result.phase : null,
+      operationId: safeNativeIdentifier(firstString(result.operationId, result.operation_id)),
+      rollbackAvailable: firstBoolean(result.rollbackAvailable, result.rollback_available),
+      terminal: firstBoolean(result.terminal),
+    };
+  }
+  if (status === "accepted_by_native_guard") {
+    return {
+      status,
+      reason,
+      registrationId: safeNativeIdentifier(firstString(result.registrationId, result.registration_id)),
+      phase: result.phase === "execute" || result.phase === "rollback" ? result.phase : null,
+      operationId: safeNativeIdentifier(firstString(result.operationId, result.operation_id)),
+      operationIndex: firstNumber(result.operationIndex, result.operation_index) ?? undefined,
+      operationCount: firstNumber(result.operationCount, result.operation_count) ?? undefined,
+      evidenceId: safeNativeIdentifier(firstString(result.evidenceId, result.evidence_id)),
+    };
+  }
+  return { status: status === "blocked" ? "blocked" : "failed", reason: reason ?? "native_asset_guard_invalid_result" };
+}
+
+function safeNativeApprovalToken(value: string | null): string | null {
+  return value && /^[0-9a-f]{64}$/.test(value) ? value : null;
+}
+
+function normalizeMvp15ContentEvidence(raw: unknown, expectedAssetPath: string): AssetContentEvidenceObservation {
+  if (!isSafeNativeEvidenceObject(raw)) return blockedMvp15ContentEvidence(expectedAssetPath, "native_asset_evidence_invalid_result", "failed");
+  const result = raw as Record<string, unknown>;
+  if (!hasOnlyNativeKeys(result, ["status", "reason", "assetPath", "exists", "size", "sha256", "evidenceId"])) {
+    return blockedMvp15ContentEvidence(expectedAssetPath, "native_asset_evidence_invalid_result", "failed");
+  }
+  const reason = safeNativeReason(result.reason);
+  if (result.status === "blocked" || result.status === "failed") {
+    return blockedMvp15ContentEvidence(expectedAssetPath, reason ?? "native_asset_evidence_blocked", result.status);
+  }
+  if (
+    result.status !== "observed"
+    || !reason
+    || result.assetPath !== expectedAssetPath
+    || typeof result.exists !== "boolean"
+    || typeof result.evidenceId !== "string"
+    || !result.evidenceId.trim()
+  ) {
+    return blockedMvp15ContentEvidence(expectedAssetPath, "native_asset_evidence_invalid_result", "failed");
+  }
+  if (result.exists) {
+    if (reason !== "asset_present" || !isSafeMvp15Size(result.size) || !isMvp15Sha256(result.sha256)) {
+      return blockedMvp15ContentEvidence(expectedAssetPath, "native_asset_evidence_invalid_result", "failed");
+    }
+  } else if (reason !== "asset_absent" || result.size !== null || result.sha256 !== null) {
+    return blockedMvp15ContentEvidence(expectedAssetPath, "native_asset_evidence_invalid_result", "failed");
+  }
+  return {
+    status: "observed",
+    reason,
+    assetPath: expectedAssetPath,
+    exists: result.exists,
+    size: result.exists ? result.size as number : null,
+    sha256: result.exists ? result.sha256 as string : null,
+    evidenceId: result.evidenceId,
   };
-  const status =
-    result.status === "accepted_by_native_guard" || result.status === "blocked" || result.status === "failed"
-      ? result.status
-      : "failed";
+}
+
+function normalizeMvp15ContentManifest(raw: unknown): AssetContentManifestObservation {
+  if (!isSafeNativeEvidenceObject(raw)) return blockedMvp15ContentManifest("native_content_manifest_invalid_result", "failed");
+  const result = raw as Record<string, unknown>;
+  if (!hasOnlyNativeKeys(result, ["status", "reason", "entries", "aggregateSha256", "evidenceId"])) {
+    return blockedMvp15ContentManifest("native_content_manifest_invalid_result", "failed");
+  }
+  const reason = safeNativeReason(result.reason);
+  if (result.status === "blocked" || result.status === "failed") {
+    return blockedMvp15ContentManifest(reason ?? "native_content_manifest_blocked", result.status);
+  }
+  if (
+    result.status !== "observed"
+    || reason !== "content_manifest_captured"
+    || !Array.isArray(result.entries)
+    || !isMvp15Sha256(result.aggregateSha256)
+    || typeof result.evidenceId !== "string"
+    || !result.evidenceId.trim()
+  ) {
+    return blockedMvp15ContentManifest("native_content_manifest_invalid_result", "failed");
+  }
+  const entries: AssetContentManifestObservation["entries"] = [];
+  let previousPath = "";
+  for (const item of result.entries) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return blockedMvp15ContentManifest("native_content_manifest_invalid_result", "failed");
+    const entry = item as Record<string, unknown>;
+    if (!hasOnlyNativeKeys(entry, ["assetPath", "size", "sha256"])) return blockedMvp15ContentManifest("native_content_manifest_invalid_result", "failed");
+    if (!isCanonicalMvp15AssetPath(entry.assetPath) || !isSafeMvp15Size(entry.size) || !isMvp15Sha256(entry.sha256)) {
+      return blockedMvp15ContentManifest("native_content_manifest_invalid_result", "failed");
+    }
+    if (previousPath && entry.assetPath <= previousPath) return blockedMvp15ContentManifest("native_content_manifest_invalid_result", "failed");
+    previousPath = entry.assetPath;
+    entries.push({ assetPath: entry.assetPath, size: entry.size, sha256: entry.sha256 });
+  }
+  return {
+    status: "observed",
+    reason,
+    entries,
+    aggregateSha256: result.aggregateSha256,
+    evidenceId: result.evidenceId,
+  };
+}
+
+function blockedMvp15ContentEvidence(
+  assetPath: string,
+  reason: string,
+  status: "blocked" | "failed" = "blocked",
+): AssetContentEvidenceObservation {
   return {
     status,
-    reason:
-      typeof result.reason === "string"
-        ? result.reason
-        : status === "accepted_by_native_guard"
-          ? null
-          : "native_asset_guard_invalid_result",
-    evidenceId:
-      typeof result.evidenceId === "string"
-        ? result.evidenceId
-        : typeof result.evidence_id === "string"
-          ? result.evidence_id
-          : null,
+    reason,
+    assetPath: isCanonicalMvp15AssetPath(assetPath) ? assetPath : "[invalid-asset-path]",
+    exists: false,
+    size: null,
+    sha256: null,
+    evidenceId: null,
   };
+}
+
+function blockedMvp15ContentManifest(
+  reason: string,
+  status: "blocked" | "failed" = "blocked",
+): AssetContentManifestObservation {
+  return { status, reason, entries: [], aggregateSha256: null, evidenceId: null };
+}
+
+function isSafeMvp15EvidenceBinding(input: AssetMutationExternalRegistrationBinding): boolean {
+  return [input.registrationId, input.projectBindingId, input.trustedRootId].every((value) => (
+    typeof value === "string"
+    && value.length > 0
+    && value.length <= 256
+    && !/[\\/\r\n\t]/.test(value)
+    && !/^[A-Za-z]:/.test(value)
+  ));
+}
+
+function isCanonicalMvp15AssetPath(value: unknown): value is string {
+  return typeof value === "string"
+    && value.startsWith("/Game/")
+    && value.length > "/Game/".length
+    && !value.includes("\\")
+    && !value.includes("//")
+    && !value.includes("..")
+    && !value.includes(":")
+    && !value.includes(".")
+    && value.split("/").slice(2).every((segment) => Boolean(segment));
+}
+
+function isSafeMvp15Size(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isMvp15Sha256(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
+function safeNativeReason(value: unknown): string | null {
+  return typeof value === "string" && /^[a-z0-9_:-]+$/.test(value) ? value : null;
+}
+
+function safeNativeIdentifier(value: unknown): string | null {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 512
+    && /^[A-Za-z0-9:._-]+$/.test(value)
+    ? value
+    : null;
+}
+
+function isSafeNativeEvidenceObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return !containsSensitiveNativeEvidence(value);
+}
+
+function hasOnlyNativeKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function containsSensitiveNativeEvidence(value: unknown): boolean {
+  if (typeof value === "string") {
+    return /^[A-Za-z]:[\\/]/.test(value)
+      || /^\\\\/.test(value)
+      || /^file:/i.test(value)
+      || (value.startsWith("/") && !value.startsWith("/Game/"))
+      || /approval.?token|trusted.?project.?root|pid.?hash|editor.?session|\bsk-[a-z0-9_-]{8,}/i.test(value);
+  }
+  if (Array.isArray(value)) return value.some(containsSensitiveNativeEvidence);
+  if (!value || typeof value !== "object") return false;
+  return Object.entries(value).some(([key, nested]) => (
+    /approval.?token|trusted.?project.?root|pid.?hash|editor.?session/i.test(key)
+    || containsSensitiveNativeEvidence(nested)
+  ));
+}
+
+function firstNumber(...values: unknown[]): number | null {
+  return values.find((value): value is number => typeof value === "number" && Number.isFinite(value)) ?? null;
+}
+
+function firstBoolean(...values: unknown[]): boolean | undefined {
+  return values.find((value): value is boolean => typeof value === "boolean");
 }
 
 function isLegacyFallbackCandidate(error: unknown): boolean {

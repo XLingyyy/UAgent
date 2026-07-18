@@ -2,22 +2,26 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { McpTransportClient } from "@uagent/mcp-client";
+import { MVP15_ASSET_TOOL_ALLOWLIST, type Mvp15McpAssetToolInventory, type Mvp15McpAssetToolName } from "@uagent/runtime";
 import { AssetMutationPanel } from "../inspector/AssetMutationPanel";
 import { McpMutationPanel } from "../inspector/McpMutationPanel";
 import { createDesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
-import { createEmptyMvp14State, type Mvp14RuntimeState } from "../runtime/runtime-store";
-import type { NativeInvoke } from "../runtime/project-native-adapter";
+import { createEmptyMvp14State, createEmptyMvp15State, type Mvp14RuntimeState } from "../runtime/runtime-store";
+import { createNativeProjectAdapter, type NativeInvoke } from "../runtime/project-native-adapter";
 import { ChangesPanel } from "../inspector/ChangesPanel";
 import { ConfigSettings } from "../settings/pages/ConfigSettings";
 import { UIProvider, useOptionalRuntimeActions, useRuntimeStore } from "./ui-store";
 
-const MVP15_TEST_TOOL_NAMES = [
-  "ue.asset.create_folder",
-  "ue.asset.duplicate",
-  "ue.asset.rename",
-  "ue.asset.move",
-  "ue.asset.delete",
-  "ue.asset.save",
+const MVP15_TEST_TOOL_NAMES = MVP15_ASSET_TOOL_ALLOWLIST;
+
+const MVP15_READY_CONTRACT_TEXT = [
+  "Exact facade contracts: ready",
+  `Exact facade tools (6/6): ${MVP15_TEST_TOOL_NAMES.join(", ")}`,
+  "Input schemas: ready",
+  "Dry-run schemas: ready",
+  "Rollback metadata: ready",
+  "Affected-assets schemas: ready",
+  "Read-only evidence queries: ready",
 ] as const;
 
 const MVP15_TEST_TOOL_CONTRACTS = {
@@ -27,6 +31,22 @@ const MVP15_TEST_TOOL_CONTRACTS = {
   affectedAssetsSchema: { type: "array" },
   evidenceQuery: { type: "read_only" },
 };
+
+function createMvp15InventoryForAssetsDom(
+  availableTools: readonly string[],
+  status: Mvp15McpAssetToolInventory["status"] = "ready",
+): Mvp15McpAssetToolInventory {
+  return {
+    status,
+    availableTools: [...availableTools] as Mvp15McpAssetToolName[],
+    missingTools: [],
+    missingSchemas: [],
+    missingDryRunSchemas: [],
+    missingRollbackContracts: [],
+    missingEvidenceQueries: [],
+    decisions: [],
+  };
+}
 
 const TOOL_NAME_TO_OPERATION = {
   "ue.asset.create_folder": "create_folder",
@@ -80,7 +100,58 @@ function structuredDryRunResult(
     hashAlgorithm: "sha1",
     schemaVersion: "mvp15c.dry-run.v1",
     approvalRequired: true,
-    implementationStatus: "dry_run_only",
+    implementationStatus: "execution_capable",
+  };
+}
+
+function structuredExecutionResult(
+  toolName: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const operation = TOOL_NAME_TO_OPERATION[toolName as keyof typeof TOOL_NAME_TO_OPERATION] ?? "create_folder";
+  const beforePath = typeof args.sourceAssetPath === "string"
+    ? args.sourceAssetPath
+    : typeof args.assetPath === "string"
+      ? args.assetPath
+      : null;
+  const afterCandidate = args.folderPath ?? args.targetAssetPath ?? args.assetPath;
+  const afterPath = typeof afterCandidate === "string" ? afterCandidate : null;
+  const isDuplicate = toolName === "ue.asset.duplicate";
+  const isRenameOrMove = toolName === "ue.asset.rename" || toolName === "ue.asset.move";
+  const isDelete = toolName === "ue.asset.delete";
+  const wouldRead = isDuplicate && beforePath ? [beforePath] : [];
+  const wouldModify = isDelete
+    ? (beforePath ? [beforePath] : [])
+    : isRenameOrMove
+      ? (beforePath && afterPath ? [beforePath, afterPath] : [])
+      : (afterPath ? [afterPath] : []);
+  const rollback = args.rollback === true;
+  const rollbackAvailable = !rollback && toolName !== "ue.asset.save";
+  return {
+    blocked: false,
+    status: rollback ? "rolled_back" : "executed",
+    reasonCode: "none",
+    toolName,
+    operation,
+    phase: rollback ? "rollback" : "execute",
+    changeSetId: args.changeSetId,
+    runId: args.runId,
+    sandboxRoot: `/Game/UAgentSandbox/${String(args.runId ?? "")}`,
+    wouldChange: true,
+    wouldModify,
+    wouldRead,
+    affectedAssets: { readOnlySources: wouldRead, sandboxTargets: wouldModify, externalTargets: [] },
+    rollbackPlan: { strategy: "reverse_operation", inverseOperation: "restore", executionEnabled: rollbackAvailable },
+    externalEvidenceQueries: [{ queryKind: "asset_registry_snapshot", readOnly: true, paths: [...wouldRead, ...wouldModify] }],
+    dryRunHash: args.dryRunHash,
+    hashAlgorithm: "sha1",
+    schemaVersion: "mvp15c.dry-run.v1",
+    approvalRequired: true,
+    evidenceId: `mcp-evidence:${rollback ? "rollback" : "execute"}:${operation}`,
+    sideEffectObserved: true,
+    rollbackAvailable,
+    rollbackStatus: rollback ? "completed" : rollbackAvailable ? "available" : "none",
+    implementationStatus: "execution_capable",
   };
 }
 
@@ -114,7 +185,7 @@ function createRealReadyMvp14State(pidHash: string | null = "pid:real-attached")
   };
 }
 
-function createMvp15ReadyTransport(events: string[]): McpTransportClient {
+function createMvp15ReadyTransport(events: string[], lifecycleTrace?: string[]): McpTransportClient {
   return {
     sendRequest: vi.fn(async (request) => {
       if (request.method === "initialize") {
@@ -156,7 +227,7 @@ function createMvp15ReadyTransport(events: string[]): McpTransportClient {
         const params = request.params as { name?: string; arguments?: Record<string, unknown> };
         events.push(`mcp:${params.name ?? "unknown"}`);
         const args = params.arguments ?? {};
-        // dry-run only: assert execute/rollback are never true and no token sent across the wire.
+        lifecycleTrace?.push(`mcp:${args.rollback === true ? "rollback" : args.execute === true ? "execute" : "dry-run"}:${params.name ?? "unknown"}`);
         if (args.dryRun === true) {
           // Produce a contract-compliant structured dry-run result for the binding validator.
           const runId = typeof args.runId === "string" ? args.runId : "";
@@ -178,7 +249,8 @@ function createMvp15ReadyTransport(events: string[]): McpTransportClient {
           );
           return { jsonrpc: "2.0" as const, id: request.id, result: { structuredContent: result } };
         }
-        return { jsonrpc: "2.0" as const, id: request.id, result: { status: "executed", reason: null, evidenceId: `mcp:${params.name ?? "unknown"}` } };
+        const result = structuredExecutionResult(params.name ?? "ue.asset.create_folder", args);
+        return { jsonrpc: "2.0" as const, id: request.id, result: { structuredContent: result } };
       }
       return { jsonrpc: "2.0" as const, id: request.id, result: null };
     }),
@@ -255,6 +327,7 @@ function Mvp15DirectActionProbe() {
   const actions = useOptionalRuntimeActions();
   return (
     <div>
+      <button type="button" onClick={() => void actions?.executeMvp15AssetChangeSet()}>Direct real execute</button>
       <button type="button" onClick={() => void actions?.verifyMvp15AssetChangeSet()}>Direct real verify</button>
       <button type="button" onClick={() => void actions?.rollbackMvp15AssetChangeSet()}>Direct real rollback</button>
     </div>
@@ -314,6 +387,21 @@ describe("MVP15 desktop asset mutation UI", () => {
     expect(manualSmoke).toContain("Tools -> MCP");
     expect(manualSmoke).toContain("Tools -> Assets");
     expect(manualSmoke).toContain("BLOCKED_BY_MCP_SCHEMA");
+  });
+
+  it("composes real verification through read-only Content evidence bridges with fail-closed fallbacks", () => {
+    const source = readFileSync("web/src/stores/ui-store.ts", "utf8");
+    const start = source.indexOf("function createMvp15RealAssetMutationService(");
+    const end = source.indexOf("/**\n * Build the external dry-run binder", start);
+    const factorySource = source.slice(start, end);
+
+    expect(factorySource).toContain("externalVerification: createMvp15NativeAssetVerificationAdapter");
+    expect(factorySource).toContain("runtimeClient.readMvp15AssetContentEvidence");
+    expect(factorySource).toContain("runtimeClient.snapshotMvp15AssetContentManifest");
+    expect(factorySource).toContain("native_asset_evidence_unavailable");
+    expect(factorySource).toContain("native_content_manifest_unavailable");
+    expect(factorySource).not.toContain("read_asset_content_evidence");
+    expect(factorySource).not.toContain("snapshot_asset_content_manifest");
   });
 
   it("runs the fixture sandbox asset mutation chain through runtime actions without direct native invocation", async () => {
@@ -438,6 +526,9 @@ describe("MVP15 desktop asset mutation UI", () => {
     expect(screen.getByText("blocked_by_mcp_schema")).toBeTruthy();
     expect(screen.getByText(/MVP15 missing tools: ue\.asset\.create_folder/)).toBeTruthy();
     expect(screen.getByText(/Missing MCP tools: ue\.asset\.create_folder/)).toBeTruthy();
+    for (const readyContractText of MVP15_READY_CONTRACT_TEXT) {
+      expect(screen.queryByText(readyContractText)).toBeNull();
+    }
 
     fireEvent.change(screen.getByLabelText("Source asset path"), { target: { value: "/Game/Characters/Hero" } });
     fireEvent.click(screen.getByRole("button", { name: "Dry-run sandbox asset mutation" }));
@@ -450,7 +541,7 @@ describe("MVP15 desktop asset mutation UI", () => {
     expect(events).not.toContain("wrapper:call_tool");
   });
 
-  it("stores a ready inventory with empty missing arrays for outputSchema-only direct discovery", async () => {
+  it("renders exact ready MCP facade contracts in the Assets DOM for a complete inventory", async () => {
     const events: string[] = [];
     const runtimeClient = createDesktopRuntimeAdapter({
       createTransport: () => createMvp15ReadyTransport(events),
@@ -464,6 +555,7 @@ describe("MVP15 desktop asset mutation UI", () => {
         runtimeClient={runtimeClient}
         initialState={{ runtime: { mvp14: createRealReadyMvp14State() } }}
       >
+        <AssetMutationPanel />
         <Mvp15InventoryProbe />
       </UIProvider>,
     );
@@ -478,33 +570,182 @@ describe("MVP15 desktop asset mutation UI", () => {
       missingRollbackContracts: [],
       missingEvidenceQueries: [],
     });
+    const panel = screen.getByLabelText("Asset mutation panel");
+    for (const readyContractText of MVP15_READY_CONTRACT_TEXT) {
+      expect(screen.getByText(readyContractText)).toBeTruthy();
+    }
+    for (const exactFacadeTool of MVP15_TEST_TOOL_NAMES) {
+      expect(panel.textContent).toContain(exactFacadeTool);
+    }
     expect(events).toEqual([]);
   });
 
-  it("routes ready real inventory through native guard and narrow MCP calls without fixture verification", async () => {
+  it("fails closed for null, blocked, incomplete, duplicate, unexpected, and reordered asset inventories", () => {
+    const inventoryCases: Array<{
+      name: string;
+      inventory: Mvp15McpAssetToolInventory | null;
+      expectedMissingText?: string;
+    }> = [
+      { name: "null inventory", inventory: null },
+      {
+        name: "blocked inventory",
+        inventory: {
+          ...createMvp15InventoryForAssetsDom(MVP15_TEST_TOOL_NAMES, "blocked_by_mcp_schema"),
+          missingSchemas: [MVP15_TEST_TOOL_NAMES[0]],
+        },
+        expectedMissingText: `Missing MCP schema: ${MVP15_TEST_TOOL_NAMES[0]}`,
+      },
+      {
+        name: "incomplete status-ready inventory",
+        inventory: createMvp15InventoryForAssetsDom(MVP15_TEST_TOOL_NAMES.slice(0, -1)),
+      },
+      {
+        name: "duplicate status-ready inventory",
+        inventory: createMvp15InventoryForAssetsDom([...MVP15_TEST_TOOL_NAMES.slice(0, -1), MVP15_TEST_TOOL_NAMES[0]]),
+      },
+      {
+        name: "unexpected status-ready inventory",
+        inventory: createMvp15InventoryForAssetsDom([...MVP15_TEST_TOOL_NAMES.slice(0, -1), "ue.asset.unexpected"]),
+      },
+      {
+        name: "reordered status-ready inventory",
+        inventory: createMvp15InventoryForAssetsDom([...MVP15_TEST_TOOL_NAMES].reverse()),
+      },
+    ];
+
+    for (const { name, inventory, expectedMissingText } of inventoryCases) {
+      const { queryByText, unmount } = render(
+        <UIProvider
+          initialState={{
+            runtime: {
+              mvp15: {
+                ...createEmptyMvp15State(),
+                mcpInventory: inventory,
+              },
+            },
+          }}
+        >
+          <AssetMutationPanel />
+        </UIProvider>,
+      );
+
+      for (const readyContractText of MVP15_READY_CONTRACT_TEXT) {
+        expect(queryByText(readyContractText), name).toBeNull();
+      }
+      if (expectedMissingText) {
+        expect(queryByText(expectedMissingText), name).toBeTruthy();
+      }
+      unmount();
+    }
+  });
+
+  it("completes the real execute verify rollback lifecycle with recorded-only replay", async () => {
     const events: string[] = [];
-    const nativeGuardInputs: Array<{
-      toolName?: string;
-      editorSessionId?: string;
-      pidHash?: string;
-      observedEditorSessionId?: string | null;
-      observedPidHash?: string | null;
-    }> = [];
-    const nativeInvokeMock = vi.fn(async (command: string, payload?: unknown): Promise<unknown> => {
-      const input = (payload as { input?: (typeof nativeGuardInputs)[number] } | undefined)?.input;
-      if (input) nativeGuardInputs.push(input);
-      events.push(`native:${command}:${input?.toolName ?? "unknown"}`);
-      return {
-        status: "accepted_by_native_guard",
-        reason: "sandbox_guard_passed",
-        sandboxOnly: true,
-        wouldChange: false,
-        affectedAssets: [],
-        evidenceId: `guard:${input?.toolName ?? "unknown"}`,
-      };
+    const lifecycleTrace: string[] = [];
+    const nativeCalls: Array<{ command: string; input: Record<string, unknown> }> = [];
+    let manifestReads = 0;
+    let finalTarget = "";
+    let runRoot = "";
+    let releaseNativeRegistration!: () => void;
+    const nativeIssuedToken = "d".repeat(64);
+    const nativeRegistrationResponse = new Promise<void>((resolve) => {
+      releaseNativeRegistration = resolve;
     });
+    const nativeInvokeMock = vi.fn(async (command: string, payload?: unknown): Promise<unknown> => {
+      const input = ((payload as { input?: Record<string, unknown> } | undefined)?.input ?? {});
+      nativeCalls.push({ command, input });
+      lifecycleTrace.push(`native:${command}`);
+      if (command === "validate_native_project_root") {
+        return {
+          ok: true,
+          reason: "valid",
+          displayRoot: "[project-root]/Mvp15",
+          projectName: "Mvp15",
+          engine: { label: "UE", association: null, source: "fixture" },
+        };
+      }
+      if (command === "trust_native_project_root") {
+        return { rootId: "root:trusted", displayRoot: "[project-root]/Mvp15", trustState: "trusted" };
+      }
+      if (command === "register_asset_mutation_approval") {
+        const operations = Array.isArray(input.operations) ? input.operations as Array<Record<string, unknown>> : [];
+        const save = operations.find((operation) => operation.kind === "save");
+        finalTarget = String(save?.assetPath ?? "");
+        runRoot = `/Game/UAgentSandbox/${String(input.runId ?? "")}`;
+        expect(operations[0]?.assetPath).toBe(runRoot);
+        await nativeRegistrationResponse;
+        return {
+          status: "registered",
+          reason: "approval_binding_registered",
+          registrationId: "asset-registration:ui-real",
+          trustedRootId: "trusted-root:ui-real",
+          operationCount: operations.length,
+          approvalToken: nativeIssuedToken,
+          issuedAt: Date.now(),
+          expiresAt: Date.now() + 60_000,
+        };
+      }
+      if (command === "execute_asset_mutation" || command === "rollback_asset_mutation") {
+        const operation = input.operation as Record<string, unknown> | undefined;
+        return {
+          status: "accepted_by_native_guard",
+          reason: "registered_binding_matched",
+          registrationId: input.registrationId,
+          phase: input.phase,
+          operationId: operation?.operationId,
+          operationIndex: input.operationIndex,
+          operationCount: input.operationCount,
+          evidenceId: `native-guard:${String(input.phase)}:${String(input.operationIndex)}`,
+        };
+      }
+      if (command === "record_asset_mutation_outcome") {
+        return {
+          status: "recorded",
+          reason: "operation_outcome_recorded",
+          registrationId: input.registrationId,
+          phase: input.phase,
+          operationId: input.operationId,
+          rollbackAvailable: input.phase === "execute",
+          terminal: false,
+        };
+      }
+      if (command === "read_asset_content_evidence") {
+        const assetPath = String(input.assetPath ?? "");
+        const present = assetPath === "/Game/Test01" || assetPath === finalTarget;
+        return {
+          status: "observed",
+          reason: present ? "asset_present" : "asset_absent",
+          assetPath,
+          exists: present,
+          size: present ? 12 : null,
+          sha256: present ? (assetPath === "/Game/Test01" ? "a" : "c").repeat(64) : null,
+          evidenceId: `asset-content:${present ? "present" : "absent"}:${fakeSha1Hex(assetPath).slice(0, 8)}`,
+        };
+      }
+      if (command === "snapshot_asset_content_manifest") {
+        manifestReads += 1;
+        const baselineEntries = [
+          { assetPath: "/Game/Outside/Stable", size: 8, sha256: "b".repeat(64) },
+          { assetPath: "/Game/Test01", size: 12, sha256: "a".repeat(64) },
+        ];
+        const entries = manifestReads === 2
+          ? [...baselineEntries, { assetPath: finalTarget, size: 12, sha256: "c".repeat(64) }]
+          : baselineEntries;
+        return {
+          status: "observed",
+          reason: "content_manifest_captured",
+          entries,
+          aggregateSha256: String(manifestReads).repeat(64),
+          evidenceId: `asset-content-manifest:${manifestReads}`,
+        };
+      }
+      return null;
+    });
+    const projectAdapter = createNativeProjectAdapter({ invoke: createNativeInvokeMockAdapter(nativeInvokeMock), now: () => 1 });
+    const project = await projectAdapter.addProject("G:/Projects/Mvp15");
+    await projectAdapter.confirmTrust(project.id);
     const runtimeClient = createDesktopRuntimeAdapter({
-      createTransport: () => createMvp15ReadyTransport(events),
+      createTransport: () => createMvp15ReadyTransport(events, lifecycleTrace),
       nativeInvoke: createNativeInvokeMockAdapter(nativeInvokeMock),
     });
     await runtimeClient.connectMcp();
@@ -516,44 +757,119 @@ describe("MVP15 desktop asset mutation UI", () => {
         initialState={{ runtime: { mvp14: createRealReadyMvp14State() } }}
       >
         <AssetMutationPanel />
+        <ChangesPanel />
+        <Mvp15DirectActionProbe />
+        <Mvp15StateProbe />
       </UIProvider>,
     );
 
-    fireEvent.change(screen.getByLabelText("Source asset path"), { target: { value: "/Game/Characters/Hero" } });
+    fireEvent.change(screen.getByLabelText("Source asset path"), { target: { value: "/Game/Test01" } });
     fireEvent.click(screen.getByRole("button", { name: "Dry-run sandbox asset mutation" }));
     await waitFor(() => {
       expect(screen.getByText(/Execution mode: real/)).toBeTruthy();
       expect(screen.getByText(/Binding: external_bound/)).toBeTruthy();
       expect(screen.getByText(/Dry-run: dry_run_completed/)).toBeTruthy();
+      expect(screen.getByText(/Native registration: required/)).toBeTruthy();
+    });
+    const dryRunState = JSON.parse(screen.getByTestId("mvp15-state-probe").textContent ?? "null") as {
+      activeChangeSet?: { runId?: string; operations?: Array<{ kind?: string; assetPathAfter?: string }> };
+    };
+    expect(dryRunState.activeChangeSet?.operations?.[0]).toMatchObject({
+      kind: "create_folder",
+      assetPathAfter: `/Game/UAgentSandbox/${dryRunState.activeChangeSet?.runId}`,
     });
 
-    // Real approve binds the complete ordered ChangeSet (gated by the runtime binding check).
     fireEvent.click(screen.getByRole("button", { name: "Approve sandbox asset mutation" }));
     await waitFor(() => {
       expect(screen.getByText(/Approval: issued/)).toBeTruthy();
+      expect(screen.getByText(/Native registration: required/)).toBeTruthy();
     });
+    expect((screen.getByRole("button", { name: "Execute sandbox asset mutation" }) as HTMLButtonElement).disabled).toBe(true);
+    releaseNativeRegistration();
+    await waitFor(() => {
+      expect(screen.getByText(/Native registration: registered/)).toBeTruthy();
+    });
+    const registrationCall = nativeCalls.find(({ command }) => command === "register_asset_mutation_approval");
+    expect(registrationCall?.input).not.toHaveProperty("approvalToken");
+    expect(screen.getByTestId("mvp15-state-probe").textContent).not.toContain(nativeIssuedToken);
+    expect(document.body.textContent).not.toContain(nativeIssuedToken);
+    expect(nativeCalls.filter(({ command }) => command === "register_asset_mutation_approval")).toHaveLength(1);
+    expect((screen.getByRole("button", { name: "Execute sandbox asset mutation" }) as HTMLButtonElement).disabled).toBe(false);
 
-    // Real execute stays not-enabled; native guard and live mutation are never invoked.
     fireEvent.click(screen.getByRole("button", { name: "Execute sandbox asset mutation" }));
     await waitFor(() => {
-      expect(screen.getByText(/Execute gate: execute_not_enabled/)).toBeTruthy();
+      expect(screen.getByText(/Execution: executed/)).toBeTruthy();
+      expect(screen.getByText(/Asset ChangeSet: executed/)).toBeTruthy();
+      expect(screen.getAllByText(/Asset operation audit: phase execute \/ tool ue\.asset\.create_folder \/ virtual path .* \/ result executed \/ evidence mcp-evidence:execute:create_folder/).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/Asset operation audit: phase execute \/ tool ue\.asset\.save \/ virtual path .*\/Work\/Sub\/Test01Renamed \/ result executed \/ evidence mcp-evidence:execute:save/).length).toBeGreaterThanOrEqual(1);
+    });
+    expect(lifecycleTrace.indexOf("native:register_asset_mutation_approval")).toBeGreaterThan(-1);
+    expect(lifecycleTrace.indexOf("native:register_asset_mutation_approval")).toBeLessThan(
+      lifecycleTrace.findIndex((event) => event.startsWith("mcp:execute:")),
+    );
+    expect((screen.getByRole("button", { name: "Verify sandbox asset mutation" }) as HTMLButtonElement).disabled).toBe(false);
+
+    const nativeCallsAfterFirstExecuteAttempt = nativeInvokeMock.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Direct real execute" }));
+    await waitFor(() => expect(screen.getByText(/Last issue: asset_approval_required/)).toBeTruthy());
+    expect(nativeInvokeMock.mock.calls.length).toBe(nativeCallsAfterFirstExecuteAttempt);
+
+    fireEvent.click(screen.getByRole("button", { name: "Verify sandbox asset mutation" }));
+    await waitFor(() => {
+      const verifyState = JSON.parse(screen.getByTestId("mvp15-state-probe").textContent ?? "null") as { lastError?: string | null };
+      expect(verifyState.lastError).toBeNull();
+      expect(screen.getByText(/Verification: passed/)).toBeTruthy();
+      expect(screen.getByText(/Asset ChangeSet: verified/)).toBeTruthy();
+      expect(screen.getAllByText(/Replay: recorded summaries only/).length).toBeGreaterThanOrEqual(1);
+    });
+    expect((screen.getByRole("button", { name: "Rollback sandbox asset mutation" }) as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rollback sandbox asset mutation" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Rollback: rolled_back/)).toBeTruthy();
+      expect(screen.getByText(/Asset ChangeSet: rolled_back/)).toBeTruthy();
+      expect(screen.getAllByText(/Asset operation audit: phase rollback \/ tool ue\.asset\.move .* result completed \/ evidence mcp-evidence:rollback:move/).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(/Asset replay audit: recorded-only .* 0 runtime side effects/)).toBeTruthy();
     });
 
-    expect(events.filter((event) => event.startsWith("native:execute_asset_mutation:"))).toEqual([]);
-    expect(nativeGuardInputs).toEqual([]);
-    expect(JSON.stringify(nativeGuardInputs)).not.toContain("pid:observed");
-    // Exactly five dry-run MCP calls; zero execute, rollback, Save All, or mutation calls.
-    expect(events.filter((event) => event.startsWith("mcp:"))).toEqual([
+    expect(runRoot).toMatch(/^\/Game\/UAgentSandbox\/ui-/);
+    expect(finalTarget).toBe(`${runRoot}/Work/Sub/Test01Renamed`);
+    expect(nativeCalls.filter(({ command }) => command === "register_asset_mutation_approval")).toHaveLength(1);
+    expect(nativeCalls.filter(({ command }) => command === "execute_asset_mutation")).toHaveLength(5);
+    expect(nativeCalls.filter(({ command }) => command === "rollback_asset_mutation")).toHaveLength(4);
+    expect(nativeCalls.filter(({ command }) => command === "read_asset_content_evidence")).toHaveLength(6);
+    expect(nativeCalls.filter(({ command }) => command === "snapshot_asset_content_manifest")).toHaveLength(3);
+    expect(events).toEqual([
       "mcp:ue.asset.create_folder",
       "mcp:ue.asset.duplicate",
       "mcp:ue.asset.rename",
       "mcp:ue.asset.move",
       "mcp:ue.asset.save",
+      "mcp:ue.asset.create_folder",
+      "mcp:ue.asset.duplicate",
+      "mcp:ue.asset.rename",
+      "mcp:ue.asset.move",
+      "mcp:ue.asset.save",
+      "mcp:ue.asset.move",
+      "mcp:ue.asset.rename",
+      "mcp:ue.asset.duplicate",
+      "mcp:ue.asset.create_folder",
     ]);
-    // No approval token, MCP session id, or absolute project path leaks into rendered UI state.
-    const serialized = document.body.textContent ?? "";
-    expect(serialized).not.toContain("asset-approval-token:");
-    expect(serialized).not.toContain("editor-session:real");
+    const callCountsBeforeReplayInspection = { mcp: events.length, native: nativeInvokeMock.mock.calls.length };
+    const serializedState = screen.getByTestId("mvp15-state-probe").textContent ?? "";
+    expect(serializedState).toContain('"state":"rolled_back"');
+    expect(serializedState).toContain('"replayOnly":true');
+    expect(serializedState).toContain('"recordedOnlyActions"');
+    expect(serializedState).not.toContain("asset-approval-token:");
+    expect(serializedState).not.toContain("G:/Projects/Mvp15");
+    const userVisibleAudit = [
+      screen.getByLabelText("Asset mutation panel").textContent,
+      screen.getByLabelText("Changes panel").textContent,
+    ].join("\n");
+    expect(userVisibleAudit).not.toContain("editor-session:real");
+    expect(userVisibleAudit).not.toContain("pid:real-attached");
+    expect(userVisibleAudit).not.toContain("G:/Projects/Mvp15");
+    expect({ mcp: events.length, native: nativeInvokeMock.mock.calls.length }).toEqual(callCountsBeforeReplayInspection);
   });
 
   it("keeps raw path and session-like exception text out of desktop state", async () => {
@@ -594,7 +910,7 @@ describe("MVP15 desktop asset mutation UI", () => {
     expect(serializedState).not.toContain("sk-live-1234567890");
   });
 
-  it("keeps real verify and rollback actions disabled and returns stable not-enabled reasons", async () => {
+  it("keeps premature real verify and rollback disabled with stable state reasons", async () => {
     const events: string[] = [];
     const nativeInvokeMock = vi.fn(async (command: string, payload?: unknown): Promise<unknown> => {
       const input = (payload as { input?: { toolName?: string } } | undefined)?.input;
@@ -614,6 +930,7 @@ describe("MVP15 desktop asset mutation UI", () => {
         initialState={{ runtime: { mvp14: createRealReadyMvp14State() } }}
       >
         <AssetMutationPanel />
+        <ChangesPanel />
         <Mvp15DirectActionProbe />
         <Mvp15StateProbe />
       </UIProvider>,
@@ -629,14 +946,17 @@ describe("MVP15 desktop asset mutation UI", () => {
     const nativeCallsBeforeActions = nativeInvokeMock.mock.calls.length;
 
     fireEvent.click(screen.getByRole("button", { name: "Direct real verify" }));
-    await waitFor(() => expect(screen.getByText(/Last issue: verify_not_enabled/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Last issue: external_verification_state_invalid/)).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Direct real rollback" }));
-    await waitFor(() => expect(screen.getByText(/Last issue: rollback_not_enabled/)).toBeTruthy());
+    await waitFor(() => {
+      expect(screen.getByText(/Last issue: rollback_state_invalid/)).toBeTruthy();
+      expect(screen.getByText(/Asset blocked reason: rollback_state_invalid/)).toBeTruthy();
+    });
 
     expect(events).toEqual(bindingEvents);
     expect(nativeInvokeMock.mock.calls.length).toBe(nativeCallsBeforeActions);
     const serializedState = screen.getByTestId("mvp15-state-probe").textContent ?? "";
-    expect(serializedState).toContain("rollback_not_enabled");
+    expect(serializedState).toContain("rollback_state_invalid");
     expect(serializedState).not.toContain("real_verification_required");
   });
 

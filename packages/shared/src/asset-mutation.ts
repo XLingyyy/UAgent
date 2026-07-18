@@ -72,6 +72,12 @@ export interface AssetMutationOperation {
   argsHash: string;
   summary: string;
   blockedReason?: string | null;
+  /** Per-operation execution result for the Changes audit. Pending also covers operations not reached after an earlier failure. */
+  executionStatus?: "pending" | "executed" | "partial_failure" | "failed" | "blocked";
+  /** Exact-tool evidence for this operation only; never substitute an aggregate execution evidence id. */
+  executionEvidenceId?: string | null;
+  /** True only when the exact plugin reported a failed operation with an observed, reversible side effect. */
+  partialSideEffectObserved?: boolean;
   /**
    * External dry-run binding provenance. Only present for real-mode operations whose
    * hash was issued by the live UE MCP exact tool. Fixture/local operations leave this
@@ -150,6 +156,7 @@ export interface AssetApproval {
   trustedRootId: string;
   editorSessionId: string;
   pidHash: string;
+  runId: string;
   /** Legacy singular summary retained for compatibility; real approval MUST verify orderedOperationIds/kinds instead. */
   operationKind: AssetMutationOperationKind;
   assetPaths: string[];
@@ -202,6 +209,8 @@ export interface AssetRollbackAction {
   operationId: string;
   action: AssetRollbackActionKind;
   assetPath: string;
+  status: "pending" | "completed" | "failed" | "not_applicable";
+  evidenceId: string | null;
   summary: string;
 }
 
@@ -269,4 +278,181 @@ export interface AssetChangeSet {
   externalBindingReason?: string | null;
   aggregateDryRunHash?: string | null;
   aggregateArgsHash?: string | null;
+  /** Safe UI-visible state only. Native registration identifiers remain private runtime state. */
+  nativeApprovalRegistrationStatus?: "not_required" | "required" | "registered" | "blocked";
+  nativeApprovalRegistrationReason?: string | null;
+}
+
+/** Canonical operation binding registered with the native one-shot approval registry. */
+export interface AssetMutationApprovalOperationBinding {
+  operationId: string;
+  kind: "create_folder" | "duplicate" | "rename" | "move" | "save" | "cleanup_empty_folder" | "delete_duplicate" | "rename_back" | "move_back";
+  toolName: string;
+  pluginDryRunHash: string;
+  argsHash: string;
+  sourceAssetPath?: string | null;
+  assetPath?: string | null;
+  targetAssetPath?: string | null;
+  rollbackAction: "cleanup_empty_folder" | "delete_duplicate" | "rename_back" | "move_back" | "none";
+  rollbackToolName?: string | null;
+  saveAll: false;
+  bulk: false;
+}
+
+/** Safe runtime-side registration request. Native issues the one-shot token after validating this binding. */
+export interface AssetMutationApprovalRegistrationRequest {
+  changeSetId: string;
+  runId: string;
+  projectBindingId: string;
+  trustedRootRef: string;
+  editorSessionId: string;
+  pidHash: string;
+  observedEditorSessionId: string;
+  observedPidHash: string;
+  aggregateDryRunHash: string;
+  aggregateArgsHash: string;
+  requestedTtlMs: number;
+  assetMutationGateEnabled: boolean;
+  operations: AssetMutationApprovalOperationBinding[];
+}
+
+export interface AssetMutationApprovalRegistrationResult {
+  status: "registered" | "blocked" | "failed";
+  reason: string | null;
+  registrationId?: string | null;
+  trustedRootId?: string | null;
+  operationCount?: number;
+  /** Returned once by native and retained only in short-lived runtime/renderer memory. */
+  approvalToken?: string | null;
+  issuedAt?: number;
+  expiresAt?: number;
+}
+
+export interface AssetMutationOperationGuardRequest {
+  registrationId: string;
+  approvalToken?: string | null;
+  phase: "execute" | "rollback";
+  operationIndex: number;
+  operationCount: number;
+  changeSetId: string;
+  runId: string;
+  projectBindingId: string;
+  trustedRootId: string;
+  editorSessionId: string;
+  pidHash: string;
+  observedEditorSessionId: string;
+  observedPidHash: string;
+  aggregateDryRunHash: string;
+  aggregateArgsHash: string;
+  assetMutationGateEnabled: boolean;
+  operation: AssetMutationApprovalOperationBinding;
+}
+
+export interface AssetMutationOperationGuardResult {
+  status: "accepted_by_native_guard" | "blocked" | "failed";
+  reason: string | null;
+  registrationId?: string | null;
+  phase?: "execute" | "rollback" | null;
+  operationId?: string | null;
+  operationIndex?: number;
+  operationCount?: number;
+  evidenceId?: string | null;
+}
+
+export interface AssetMutationOutcomeRequest {
+  registrationId: string;
+  phase: "execute" | "rollback";
+  operationId: string;
+  success: boolean;
+  sideEffectObserved: boolean;
+  rollbackAvailable: boolean;
+  evidenceId?: string | null;
+  reasonCode?: string | null;
+}
+
+export interface AssetMutationOutcomeResult {
+  status: "recorded" | "blocked" | "failed";
+  reason: string | null;
+  registrationId?: string | null;
+  phase?: "execute" | "rollback" | null;
+  operationId?: string | null;
+  rollbackAvailable?: boolean;
+  terminal?: boolean;
+}
+
+/** Strict structured result emitted by an execution-capable exact UE asset tool. */
+export interface AssetMutationPluginExecutionResult {
+  blocked: boolean;
+  status: string;
+  reasonCode: string;
+  toolName: string;
+  operation: string;
+  phase: "execute" | "rollback";
+  changeSetId: string;
+  runId: string;
+  sandboxRoot: string;
+  sideEffectObserved: boolean;
+  wouldChange: boolean;
+  wouldModify: string[];
+  wouldRead: string[];
+  affectedAssets: {
+    readOnlySources: string[];
+    sandboxTargets: string[];
+    externalTargets: string[];
+  };
+  rollbackPlan: {
+    strategy: string;
+    executionEnabled: boolean;
+    inverseOperation: string;
+    summary?: string;
+  };
+  externalEvidenceQueries: Array<{ queryKind: string; readOnly: true; paths: string[] }>;
+  dryRunHash: string;
+  hashAlgorithm: "sha1";
+  schemaVersion: "mvp15c.dry-run.v1";
+  approvalRequired: true;
+  evidenceId: string;
+  rollbackAvailable: boolean;
+  rollbackStatus: string;
+  implementationStatus: "execution_capable";
+}
+
+/** Safe native registration binding retained only in runtime memory for read-only evidence calls. */
+export interface AssetMutationExternalRegistrationBinding {
+  registrationId: string;
+  projectBindingId: string;
+  trustedRootId: string;
+}
+
+export interface AssetContentEvidenceRequest extends AssetMutationExternalRegistrationBinding {
+  assetPath: string;
+}
+
+export interface AssetContentEvidenceObservation {
+  status: "observed" | "blocked" | "failed";
+  reason: string;
+  assetPath: string;
+  exists: boolean;
+  size: number | null;
+  sha256: string | null;
+  evidenceId: string | null;
+}
+
+export interface AssetContentManifestEntry {
+  assetPath: string;
+  size: number;
+  sha256: string;
+}
+
+export interface AssetContentManifestObservation {
+  status: "observed" | "blocked" | "failed";
+  reason: string;
+  entries: AssetContentManifestEntry[];
+  aggregateSha256: string | null;
+  evidenceId: string | null;
+}
+
+export interface AssetExternalVerificationBaseline {
+  source: AssetContentEvidenceObservation;
+  contentManifest: AssetContentManifestObservation;
 }

@@ -23,56 +23,29 @@
 7. Click `Tools` in the titlebar to open the utility drawer. Confirm the UE tab, MCP tab, and Assets tab can each be selected and display the current observed state without the titlebar status pills blocking the hit target.
 8. Return to `Tools -> MCP` and `Tools -> Assets` to check exact tools, input schema, dry-run schema, rollback contract, affected assets schema, and read-only evidence query status.
 9. If discovery is wrapper-only or incomplete after `Discover`, record the missing exact tools or incomplete facade contract as `BLOCKED_BY_MCP_SCHEMA` and do not continue mutation execution.
-10. Enter a real existing source asset package path in Source asset path, for example `/Game/.../SomeAsset`.
-11. Run dry-run. UAgent must create a run-scoped plan under `/Game/UAgentSandbox/<run-id>/Work/`; fixed `ui-run-1` and hardcoded `/Game/Templates/Hero` are not acceptable for real smoke.
+10. Enter the accepted read-only source asset package path `/Game/Test01`.
+11. Run dry-run. The first operation must be `ue.asset.create_folder` for exactly `/Game/UAgentSandbox/<run-id>`. Later duplicate, rename, move, and save targets must stay below `/Game/UAgentSandbox/<run-id>/Work/**`.
 12. If the UI reports `blocked_by_mcp_schema`, record the missing tool, missing schema, missing dry-run schema, missing rollback contract, or missing evidence query names shown in the Assets or MCP tab and stop the smoke as `BLOCKED_BY_MCP_SCHEMA`.
-13. Confirm the ChangeSet preview lists create folder, duplicate, rename, move, and save-single-asset operations, all sandbox targets under `/Game/UAgentSandbox/<run-id>/Work/...`.
+13. Confirm the binding advances from `external_pending` to `external_bound`, the aggregate dry-run prefix is shown, and the preview lists the ordered five operations. Approval remains disabled while binding is pending or blocked.
+14. Approve once. Wait for the native response and confirm the UI advances from `Native registration: required` to `Native registration: registered`. Execute may become available only while the ChangeSet is `approved`, binding is `external_bound`, observation is active, and this registration status is `registered`; it must not claim registration succeeded before native has validated the binding and issued the short-lived one-time token. The registration request must not contain a caller-chosen token.
+15. Execute once. Confirm no second registration occurs and the already registered approval precedes exactly five exact calls in order: create folder, duplicate, rename, move, save single asset. The raw token is consumed before this first attempt and is never sent to MCP or shown in UI/audit/replay, whether the attempt succeeds or is blocked.
+16. Verify. Read-only Content evidence must prove `/Game/Test01` retains its baseline size and SHA-256, the final sandbox target exists and is saved, the rename/move old paths are absent, and entries outside the run root did not change. Manifest-only runtime state is not sufficient.
+17. Roll back once. Confirm reverse operations are move back, rename back, delete duplicate, then clean up only the exact registered run root. Save has no inverse operation and must not create a fifth rollback mutation.
+18. Verify rollback. The exact registered `/Game/UAgentSandbox/<run-id>` root and its now-empty nested directories must be gone, no asset packages may remain there, and `/Game/Test01` must still match the original size and SHA-256. The fixed global `/Game/UAgentSandbox` container is outside run-owned cleanup: it may be absent, or it may remain only when resolved under the accepted Content root as an ordinary non-reparse directory with zero direct or recursive children, files, and subdirectories. Any container child, asset, reparse point, cross-run target, unresolved path, or uncertain containment must fail closed rather than be reported as a passing rollback.
+19. Open the recorded replay summary and note native/MCP/provider/verification/rollback call counts before and after. Every delta must be zero.
+20. Attempt no second execute or rollback during the accepted smoke. Dedicated automated replay tests must show the repeat request is blocked before native/MCP mutation.
+21. Confirm Assets and Changes show phase, exact tool, virtual `/Game` path, safe evidence id, and result without raw args, token, project root, MCP session id, PID, or absolute disk path.
+22. Stop observation and confirm Unreal Editor remains running.
 
-## Current Stage Stop Points (MVP15C live dry-run binding only)
+## Live Ledger
 
-At this stage UAgent only validates live plugin exact **dry-run** calls and binds approval to the
-complete ordered ChangeSet. The following gates must remain STOPPED during this stage:
-
-- After Dry-run, the Assets panel must show the binding status advance from `external_pending`
-  to `external_bound` (or `blocked` if any plugin result fails closed). The Approve button must
-  stay disabled while binding is pending or blocked.
-- Confirm the binding label is `external_bound` and that a stable Aggregate dry-run hash prefix
-  is shown. No approval token or MCP session id may appear in the Assets panel, audit evidence,
-  or serialized UI state.
-- Approve the ChangeSet once. Approval must bind the complete ordered operation ids/kinds plus
-  aggregate dry-run `/Game/UAgentSandbox/<run-id>/Work/...`, and `changeSetId` matching
-  `^[A-Za-z0-9_-]+$` in both the dry-run calls and the approval.
-- The Execute button must stay disabled and the panel must show `Execute gate: execute_not_enabled`.
-  Do NOT click Execute. Live UE asset execution remains deferred to a later task.
-- Real Verify and Rollback are also service-level `verify_not_enabled` / `rollback_not_enabled`
-  gates before any verification, manifest, adapter, native, or MCP call. Their desktop buttons
-  stay disabled and direct actions must only record the stable not-enabled reason.
-- Do NOT click Verify or Rollback in real mode. Live UE asset verify, rollback, Save All, and
-  PASS_REAL_SMOKE remain deferred to a later task.
-- Record five exact dry-run `tools/call` names (`ue.asset.create_folder`,
-  `ue.asset.duplicate`, `ue.asset.rename`, `ue.asset.move`, `ue.asset.save`) with only
-  `dryRun:true`, `execute:false`, `rollback:false`, and no `dryRunHash`/`approvalToken`. Stat
-  the actual calls: it must be 5 exact dry-run calls and 0 `execute:true`, 0 rollback,
-  0 mutation, 0 Save All.
-- Validate the returned impact arrays literally and in order: create and duplicate write only the
-  target; rename and move write `[before, after]`; delete writes only `before`; save writes
-  `after ?? before`. Only duplicate reports its source in `wouldRead` and
-  `affectedAssets.readOnlySources`; rename and move have empty read-only arrays. Missing, extra,
-  duplicate, reordered, or mismatched `wouldModify` / `sandboxTargets` values are fail-closed.
-- Keep earlier interrupted attempts separate from the successful round in the audit: the two
-  previous attempts contain 6 dry-run calls total (create, duplicate, then rename fail-closed);
-  do not merge them into the final five-call statistic.
-- Generate a relative path + size + SHA256 manifest of
-  `G:\UnrealEngine\BehaviorTree_Learn\Content` before and after the smoke; they must be identical.
-- Stop the smoke here. Do not proceed to real Execute, Verify, Rollback, or PASS_REAL_SMOKE.
-
-14. (Deferred) Approve the ChangeSet and execute it once.
-15. (Deferred) Verify real UE/MCP read-only asset state, or read-only `Content/UAgentSandbox/<run-id>` filesystem evidence, for duplicate target existence, rename/move before-after paths, and save-single-asset evidence. Manifest-only verification is not sufficient for real smoke.
-16. (Deferred) Roll back the executed sandbox ChangeSet.
-17. (Deferred) Verify the current run id has no remaining sandbox asset packages, or only a recorded empty cleanup directory remains.
-18. Confirm the original source asset still exists and was not renamed, moved, saved, or deleted.
-19. Confirm replay shows recorded summaries only and does not call native, MCP, or provider execution.
-20. Stop observation and confirm Unreal Editor remains running.
+- Preflight/discovery: record endpoint class and exact inventory without secrets.
+- Dry-run: 5 exact calls; `dryRun:true`, `execute:false`, `rollback:false`.
+- Registration/execute: 1 native registration before 5 execute guards and 5 exact execute calls.
+- Verify: read-only evidence calls only; 0 mutation calls.
+- Rollback: 4 rollback guards and 4 exact inverse calls in reverse order.
+- Replay inspection: 0 new native, MCP, provider, verify, or rollback calls.
+- Forbidden totals: 0 Save All, 0 bulk, 0 generic wrapper mutation, 0 non-sandbox write, 0 provider auto-apply, and 0 raw token/path leakage.
 
 ## Expected Result
 
@@ -81,3 +54,4 @@ complete ordered ChangeSet. The following gates must remain STOPPED during this 
 - Missing exact MCP tools, schemas, rollback contracts, or evidence queries are reported as `BLOCKED_BY_MCP_SCHEMA`, not as a passing dry-run.
 - Evidence and audit summaries contain no approval token, raw secret, or raw local project root.
 - Replay shows recorded summary only and does not call native or MCP execution.
+- Candidate status after collecting the complete ledger: `PASS_REAL_SMOKE candidate / awaiting supervisor review`.

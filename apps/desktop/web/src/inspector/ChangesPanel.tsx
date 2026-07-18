@@ -12,6 +12,10 @@ export function ChangesPanel() {
   const mvp13 = runtime?.mvp13;
   const mvp15 = runtime?.mvp15;
   const activeChangeSet = mvp12?.activeChangeSet ?? null;
+  const rollbackAttempted = mvp15?.activeChangeSet?.rollbackPlan.actions.some((action) => (
+    action.status === "completed" || action.status === "failed"
+  )) === true;
+  const assetAuditPhase = mvp15?.activeChangeSet?.state === "rolled_back" || rollbackAttempted ? "rollback" : "execute";
 
   return (
     <section className="ua-utility-placeholder" aria-label="Changes panel">
@@ -68,10 +72,47 @@ export function ChangesPanel() {
             <li className="ua-utility-placeholder__item">
               Asset ChangeSets: {mvp15.changeSets.length} / gate {mvp15.gate.mode}
             </li>
+            {mvp15.lastError && (
+              <li className="ua-utility-placeholder__item">Asset blocked reason: {mvp15.lastError}</li>
+            )}
             {mvp15.activeChangeSet && (
-              <li className="ua-utility-placeholder__item">
-                Asset ChangeSet: {mvp15.activeChangeSet.state} / {mvp15.activeChangeSet.risk}
-              </li>
+              <>
+                <li className="ua-utility-placeholder__item">
+                  Asset ChangeSet: {mvp15.activeChangeSet.state} / {mvp15.activeChangeSet.risk}
+                </li>
+                {mvp15.latestExecution && (
+                  <li className="ua-utility-placeholder__item">
+                    Asset execution audit: {mvp15.latestExecution.status} / {mvp15.latestExecution.affectedAssets.length} affected assets
+                  </li>
+                )}
+                {mvp15.latestVerification && (
+                  <li className="ua-utility-placeholder__item">
+                    Asset verification audit: {mvp15.latestVerification.status} / {mvp15.latestVerification.checks.length} checks
+                  </li>
+                )}
+                {mvp15.activeChangeSet.state === "rolled_back" && (
+                  <li className="ua-utility-placeholder__item">Asset rollback audit: rolled_back</li>
+                )}
+                {mvp15.replaySummary?.replayOnly && (
+                  <li className="ua-utility-placeholder__item">
+                    Asset replay audit: recorded-only / {mvp15.replaySummary.recordedOnlyActions?.length ?? 0} actions / 0 runtime side effects
+                  </li>
+                )}
+                {mvp15.activeChangeSet.operations.map((operation) => {
+                  const rollbackAction = mvp15.activeChangeSet?.rollbackPlan.actions.find((action) => action.operationId === operation.id);
+                  const result = assetAuditPhase === "rollback"
+                    ? (rollbackAction?.status ?? "not_applicable")
+                    : (operation.executionStatus ?? "pending");
+                  const evidenceId = assetAuditPhase === "rollback"
+                    ? rollbackAction?.evidenceId
+                    : operation.executionEvidenceId;
+                  return (
+                    <li key={`asset-audit:${operation.id}`} className="ua-utility-placeholder__item">
+                      Asset operation audit: phase {assetAuditPhase} / tool {operation.provenance?.exactToolName ?? "fixture-local"} / virtual path {operation.assetPathAfter ?? operation.assetPathBefore ?? "[redacted]"} / result {result} / evidence {evidenceId ?? "recorded-only"}
+                    </li>
+                  );
+                })}
+              </>
             )}
           </>
         )}

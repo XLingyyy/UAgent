@@ -24,15 +24,20 @@ export function createNativeMcpHttpPoster(invoke: NativeInvoke, timeoutMs = 5_00
     }
 
     const headers = headersFromRequestInput(input, init);
-    const result = await invoke<NativeMcpHttpRequestResult>("mcp_streamable_http_request", {
-      input: {
-        endpoint,
-        body: await bodyToText(init?.body ?? (input instanceof Request ? input.clone().body : null)),
-        protocolVersion: headers.get("MCP-Protocol-Version") ?? "2025-06-18",
-        sessionId: headers.get("Mcp-Session-Id"),
-        timeoutMs,
-      },
-    });
+    let result: NativeMcpHttpRequestResult;
+    try {
+      result = await invoke<NativeMcpHttpRequestResult>("mcp_streamable_http_request", {
+        input: {
+          endpoint,
+          body: await bodyToText(init?.body ?? (input instanceof Request ? input.clone().body : null)),
+          protocolVersion: headers.get("MCP-Protocol-Version") ?? "2025-06-18",
+          sessionId: headers.get("Mcp-Session-Id"),
+          timeoutMs,
+        },
+      });
+    } catch (error) {
+      throw new Error(normalizeNativeMcpFailure(error));
+    }
 
     const responseHeaders = new Headers();
     const contentType = result.contentType ?? result.content_type;
@@ -74,4 +79,12 @@ async function bodyToText(body: BodyInit | ReadableStream<Uint8Array> | null | u
 
 function normalizeStatus(status: number | undefined): number {
   return status && status >= 100 && status <= 599 ? status : 599;
+}
+
+function normalizeNativeMcpFailure(error: unknown): "native_request_failed" | "native_response_read_failed" {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  if (message === "native_response_read_failed" || message.startsWith("mcp_http_response_read_failed:")) {
+    return "native_response_read_failed";
+  }
+  return "native_request_failed";
 }

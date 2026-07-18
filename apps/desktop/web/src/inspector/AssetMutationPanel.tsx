@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { MVP15_ASSET_TOOL_ALLOWLIST } from "@uagent/runtime";
 import { useOptionalRuntimeActions, useOptionalRuntimeStore } from "../stores/ui-store";
 import "./UtilityPlaceholderPanel.css";
 
@@ -17,21 +18,40 @@ export function AssetMutationPanel() {
   const runtimeMode = mvp15?.["executionMode"];
   const realMode = runtimeMode === "real";
   const bindingBound = bindingStatus === "external_bound";
-  const bindingApprovable = realMode ? bindingBound : changeSet?.state === "approval_required";
-  const canApprove = changeSet?.state === "approval_required" && bindingApprovable;
-  const canExecute = changeSet?.state === "approved" && !realMode;
-  const canVerify = !realMode && changeSet?.state === "executed";
-  const canRollback = !realMode && (changeSet?.state === "verified" || changeSet?.state === "rollback_available");
-  const realReady =
-    mvp15?.gate.mode === "sandbox-enabled" &&
+  const activeObservation =
     mvp14?.session?.mode === "attached" &&
     mvp14?.status?.status === "ready" &&
     mvp14.status.heartbeat?.processAlive === true;
+  const nativeRegistrationStatus = changeSet?.nativeApprovalRegistrationStatus ?? (realMode ? "required" : "not_required");
+  const bindingApprovable = realMode ? bindingBound : changeSet?.state === "approval_required";
+  const canApprove = changeSet?.state === "approval_required" && bindingApprovable;
+  const canExecute = changeSet?.state === "approved"
+    && (!realMode || (bindingBound && activeObservation && nativeRegistrationStatus === "registered"));
+  const canVerify = (changeSet?.state === "executed" || changeSet?.state === "rollback_available")
+    && (!realMode || bindingBound);
+  const hasReversibleRollbackAction = changeSet?.rollbackPlan.actions.some((action) => (
+    action.action !== "none"
+    && action.status !== "not_applicable"
+    && changeSet.operations.some((operation) => operation.id === action.operationId && Boolean(operation.manifestEntryId))
+  )) === true;
+  const canRollback = ["executed", "verified", "rollback_available"].includes(changeSet?.state ?? "")
+    && hasReversibleRollbackAction
+    && (!realMode || bindingBound);
+  const realReady =
+    mvp15?.gate.mode === "sandbox-enabled" &&
+    activeObservation;
   const stateLabel = changeSet?.state ?? (realReady ? "real-ready" : (mvp15?.gate.mode ?? "disabled"));
   const bindingLabel = realMode
     ? bindingStatus
     : "local_fixture";
   const aggregatePrefix = changeSet?.aggregateDryRunHash ? String(changeSet.aggregateDryRunHash).slice(0, 12) : null;
+  const mcpInventory = mvp15?.mcpInventory ?? null;
+  const readyMcpInventory =
+    mcpInventory?.status === "ready" &&
+    mcpInventory.availableTools.length === MVP15_ASSET_TOOL_ALLOWLIST.length &&
+    mcpInventory.availableTools.every((toolName, index) => toolName === MVP15_ASSET_TOOL_ALLOWLIST[index])
+    ? mcpInventory
+    : null;
 
   return (
     <section className="ua-utility-placeholder" aria-label="Asset mutation panel">
@@ -53,7 +73,7 @@ export function AssetMutationPanel() {
               type="text"
               value={sourceAssetPath}
               onChange={(event) => setSourceAssetPath(event.currentTarget.value)}
-              placeholder="/Game/UAgentSandbox/SourceAsset"
+              placeholder="/Game/Test01"
             />
           </label>
         </li>
@@ -77,7 +97,9 @@ export function AssetMutationPanel() {
               type="button"
               aria-label="Approve sandbox asset mutation"
               disabled={!canApprove}
-              onClick={() => actions?.approveMvp15AssetChangeSet()}
+              onClick={() => {
+                void actions?.approveMvp15AssetChangeSet();
+              }}
             >
               Approve
             </button>
@@ -120,10 +142,25 @@ export function AssetMutationPanel() {
         <li className="ua-utility-placeholder__item">Binding: {bindingLabel}</li>
         {aggregatePrefix && <li className="ua-utility-placeholder__item">Aggregate dry-run: {aggregatePrefix}…</li>}
         {realMode && (
-          <li className="ua-utility-placeholder__item">Execute gate: execute_not_enabled</li>
+          <li className="ua-utility-placeholder__item">
+            Native registration: {nativeRegistrationStatus}
+          </li>
         )}
         {mvp15?.sourceAssetPath && <li className="ua-utility-placeholder__item">Source: {mvp15.sourceAssetPath}</li>}
         {mvp15?.runId && <li className="ua-utility-placeholder__item">Run: {mvp15.runId}</li>}
+        {readyMcpInventory && (
+          <>
+            <li className="ua-utility-placeholder__item">Exact facade contracts: ready</li>
+            <li className="ua-utility-placeholder__item">
+              Exact facade tools ({readyMcpInventory.availableTools.length}/6): {readyMcpInventory.availableTools.join(", ")}
+            </li>
+            <li className="ua-utility-placeholder__item">Input schemas: ready</li>
+            <li className="ua-utility-placeholder__item">Dry-run schemas: ready</li>
+            <li className="ua-utility-placeholder__item">Rollback metadata: ready</li>
+            <li className="ua-utility-placeholder__item">Affected-assets schemas: ready</li>
+            <li className="ua-utility-placeholder__item">Read-only evidence queries: ready</li>
+          </>
+        )}
         {mvp15?.mcpInventory?.missingTools.length ? (
           <li className="ua-utility-placeholder__item">Missing MCP tools: {mvp15.mcpInventory.missingTools.join(", ")}</li>
         ) : null}
@@ -152,7 +189,7 @@ export function AssetMutationPanel() {
         ))}
         {replay?.replayOnly && (
           <li className="ua-utility-placeholder__item">
-            Replay: recorded summaries only / {replay.recordedOnlyActions?.join(", ")}
+            Replay: recorded summaries only / {replay.recordedOnlyActions?.join(", ")} / 0 runtime side effects
           </li>
         )}
         {mvp15?.lastError && <li className="ua-utility-placeholder__item">Last issue: {mvp15.lastError}</li>}

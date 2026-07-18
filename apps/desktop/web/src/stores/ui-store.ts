@@ -7,6 +7,7 @@ import {
   createEditorSessionRegistry,
   createFixtureAssetMutationAdapter,
   createMvp15McpAssetMutationAdapter,
+  createMvp15NativeAssetVerificationAdapter,
   createMvp15McpAssetToolInventory,
   createMcpMutationService,
   createRepairProposalEngine,
@@ -268,6 +269,30 @@ function createMvp15RealAssetMutationService(
           ? runtimeClient.callMvp15AssetTool(toolName, args)
           : { ok: false, status: "blocked", reason: "mcp_asset_bridge_unavailable", evidenceId: null },
     }),
+    externalVerification: createMvp15NativeAssetVerificationAdapter({
+      readEvidence: (input) =>
+        runtimeClient.readMvp15AssetContentEvidence
+          ? runtimeClient.readMvp15AssetContentEvidence(input)
+          : {
+              status: "blocked",
+              reason: "native_asset_evidence_unavailable",
+              assetPath: input.assetPath,
+              exists: false,
+              size: null,
+              sha256: null,
+              evidenceId: null,
+            },
+      snapshotManifest: (input) =>
+        runtimeClient.snapshotMvp15AssetContentManifest
+          ? runtimeClient.snapshotMvp15AssetContentManifest(input)
+          : {
+              status: "blocked",
+              reason: "native_content_manifest_unavailable",
+              entries: [],
+              aggregateSha256: null,
+              evidenceId: null,
+            },
+    }),
   });
 }
 
@@ -359,6 +384,27 @@ function createUIStateBundle(
   const mvp13ApprovalTokenByProposalId = new Map<string, string>();
   let mvp15AssetMutationService = createMvp15FixtureAssetMutationService();
   const mvp15ApprovalTokenByChangeSetId = new Map<string, string>();
+  const mvp15ApprovalTokenExpiryByChangeSetId = new Map<string, ReturnType<typeof setTimeout>>();
+
+  const clearMvp15ApprovalToken = (changeSetId: string) => {
+    mvp15ApprovalTokenByChangeSetId.delete(changeSetId);
+    const expiry = mvp15ApprovalTokenExpiryByChangeSetId.get(changeSetId);
+    if (expiry !== undefined) clearTimeout(expiry);
+    mvp15ApprovalTokenExpiryByChangeSetId.delete(changeSetId);
+  };
+  const clearAllMvp15ApprovalTokens = () => {
+    for (const changeSetId of mvp15ApprovalTokenByChangeSetId.keys()) clearMvp15ApprovalToken(changeSetId);
+  };
+  const setMvp15ApprovalToken = (changeSetId: string, token: string, expiresAt: number) => {
+    clearMvp15ApprovalToken(changeSetId);
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now()) return;
+    mvp15ApprovalTokenByChangeSetId.set(changeSetId, token);
+    const delay = Math.min(expiresAt - Date.now(), 2_147_483_647);
+    mvp15ApprovalTokenExpiryByChangeSetId.set(changeSetId, setTimeout(() => {
+      mvp15ApprovalTokenByChangeSetId.delete(changeSetId);
+      mvp15ApprovalTokenExpiryByChangeSetId.delete(changeSetId);
+    }, delay));
+  };
   let mvp15RunCounter = 0;
   let runningGeneration = 0;
   runtimeClient.subscribe((snapshot) => {
@@ -523,11 +569,19 @@ function createUIStateBundle(
         open: true,
         activePageId: pageId ?? DEFAULT_SETTINGS_STATE.activePageId,
       }),
-    closeSettings: () =>
+    closeSettings: () => {
+      const layoutState = layoutStore.getState();
+      if (layoutState.sidebar.activeNav === "settings") {
+        layoutStore.setState({
+          ...layoutState,
+          sidebar: { ...layoutState.sidebar, activeNav: "workspace" },
+        });
+      }
       settingsStore.setState((previousState) => ({
         ...previousState,
         open: false,
-      })),
+      }));
+    },
     setActiveSettingsPage: (pageId) =>
       settingsStore.setState((previousState) =>
         previousState.activePageId === pageId
@@ -1868,13 +1922,14 @@ function createUIStateBundle(
       } else {
         mvp15AssetMutationService = createMvp15FixtureAssetMutationService();
       }
-      mvp15ApprovalTokenByChangeSetId.clear();
+      clearAllMvp15ApprovalTokens();
       mvp15RunCounter += 1;
       const runId = `ui-${Date.now().toString(36)}-${mvp15RunCounter.toString(36)}`;
       const activeGeneration = (runningGeneration += 1);
       const assetName = sanitizeMvp15AssetName(sourceAssetPath.split("/").filter(Boolean).at(-1) ?? "Asset");
-      // Run-scoped Work subdirectory targets per the accepted plugin contract: writes must
-      // live under /Game/UAgentSandbox/<runId>/...; the run root itself is not a valid target.
+      // The accepted real smoke starts by creating the run root exactly once. Later asset
+      // targets stay in its Work subtree and remain owned by this one ChangeSet/run.
+      const runRoot = `/Game/UAgentSandbox/${runId}`;
       const workDir = `/Game/UAgentSandbox/${runId}/Work`;
       const copyPath = `${workDir}/${assetName}Copy`;
       const renamedPath = `${workDir}/${assetName}Renamed`;
@@ -1886,7 +1941,7 @@ function createUIStateBundle(
         pidHash: observedPidHash ?? "pid:fixture",
         runId,
         operations: [
-          { kind: "create_folder", assetPathAfter: workDir },
+          { kind: "create_folder", assetPathAfter: runRoot },
           { kind: "duplicate_asset", assetPathBefore: sourceAssetPath, assetPathAfter: copyPath },
           { kind: "rename_asset", assetPathBefore: copyPath, assetPathAfter: renamedPath },
           { kind: "move_asset", assetPathBefore: renamedPath, assetPathAfter: movedPath },
@@ -1990,7 +2045,7 @@ function createUIStateBundle(
         }));
       }
     },
-    approveMvp15AssetChangeSet: () => {
+    approveMvp15AssetChangeSet: async () => {
       const mvp15 = runtimeStore.getState().mvp15;
       const changeSet = mvp15.activeChangeSet;
       if (!changeSet) {
@@ -2005,7 +2060,10 @@ function createUIStateBundle(
         actor: mvp15.executionMode === "real" ? "desktop-real" : "desktop-fixture",
         reason: mvp15.executionMode === "real" ? "sandbox asset mutation real approval" : "sandbox asset mutation fixture approval",
       });
-      if (result.approvalToken) mvp15ApprovalTokenByChangeSetId.set(changeSet.id, result.approvalToken);
+      clearMvp15ApprovalToken(changeSet.id);
+      if (result.approvalToken && result.changeSet?.approval) {
+        setMvp15ApprovalToken(changeSet.id, result.approvalToken, result.changeSet.approval.expiresAt);
+      }
       runtimeStore.setState((previousState) => ({
         ...previousState,
         mvp15: refreshMvp15DerivedState({
@@ -2015,22 +2073,41 @@ function createUIStateBundle(
           lastError: result.reason,
         }),
       }));
-    },
-    executeMvp15AssetChangeSet: async () => {
-      const mvp15 = runtimeStore.getState().mvp15;
-      const changeSet = mvp15.activeChangeSet;
-      // Real-mode execute is not enabled at this stage. Even with a completed external binding,
-      // live mutation execution stays gated off until the plugin execute path lands later.
-      if (mvp15.executionMode === "real") {
+      if (
+        mvp15.executionMode === "real"
+        && result.changeSet
+        && result.status === "approved"
+      ) {
+        const approvalGeneration = runningGeneration;
+        const registration = await mvp15AssetMutationService.registerApproval({
+          changeSetId: result.changeSet.id,
+          editorSessionId: result.changeSet.editorSessionId,
+          pidHash: result.changeSet.pidHash,
+        });
+        const latestChangeSetId = runtimeStore.getState().mvp15.activeChangeSet?.id;
+        if (runningGeneration !== approvalGeneration || latestChangeSetId !== result.changeSet.id) {
+          clearMvp15ApprovalToken(result.changeSet.id);
+          return;
+        }
+        if (registration.approvalToken && registration.changeSet?.approval) {
+          setMvp15ApprovalToken(result.changeSet.id, registration.approvalToken, registration.changeSet.approval.expiresAt);
+        } else {
+          clearMvp15ApprovalToken(result.changeSet.id);
+        }
         runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp15: refreshMvp15DerivedState({
             ...previousState.mvp15,
-            lastError: "execute_not_enabled",
+            activeChangeSet: registration.changeSet,
+            changeSets: registration.changeSet ? [registration.changeSet] : previousState.mvp15.changeSets,
+            lastError: registration.reason,
           }),
         }));
-        return;
       }
+    },
+    executeMvp15AssetChangeSet: async () => {
+      const mvp15 = runtimeStore.getState().mvp15;
+      const changeSet = mvp15.activeChangeSet;
       const token = changeSet ? mvp15ApprovalTokenByChangeSetId.get(changeSet.id) : null;
       if (!changeSet || !token) {
         runtimeStore.setState((previousState) => ({
@@ -2039,6 +2116,8 @@ function createUIStateBundle(
         }));
         return;
       }
+      // The raw native-issued token is one-shot renderer memory: consume it before the first await.
+      clearMvp15ApprovalToken(changeSet.id);
       const result = await mvp15AssetMutationService.execute({
         changeSetId: changeSet.id,
         approvalToken: token,
@@ -2059,16 +2138,6 @@ function createUIStateBundle(
     },
     verifyMvp15AssetChangeSet: async () => {
       const mvp15 = runtimeStore.getState().mvp15;
-      if (mvp15.executionMode === "real") {
-        runtimeStore.setState((previousState) => ({
-          ...previousState,
-          mvp15: refreshMvp15DerivedState({
-            ...previousState.mvp15,
-            lastError: "verify_not_enabled",
-          }),
-        }));
-        return;
-      }
       const changeSet = mvp15.activeChangeSet;
       if (!changeSet) {
         runtimeStore.setState((previousState) => ({
@@ -2092,16 +2161,6 @@ function createUIStateBundle(
     },
     rollbackMvp15AssetChangeSet: async () => {
       const mvp15 = runtimeStore.getState().mvp15;
-      if (mvp15.executionMode === "real") {
-        runtimeStore.setState((previousState) => ({
-          ...previousState,
-          mvp15: refreshMvp15DerivedState({
-            ...previousState.mvp15,
-            lastError: "rollback_not_enabled",
-          }),
-        }));
-        return;
-      }
       const changeSet = mvp15.activeChangeSet;
       if (!changeSet) {
         runtimeStore.setState((previousState) => ({
@@ -2116,6 +2175,7 @@ function createUIStateBundle(
         mvp15: refreshMvp15DerivedState({
           ...previousState.mvp15,
           activeChangeSet: result.changeSet,
+          latestVerification: result.verification ?? previousState.mvp15.latestVerification,
           replaySummary: result.changeSet ? replayAssetMutationSummary(result.changeSet) : previousState.mvp15.replaySummary,
           changeSets: result.changeSet ? [result.changeSet] : previousState.mvp15.changeSets,
           lastError: result.reason,

@@ -2,11 +2,19 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { AppShell } from "./AppShell";
 import { UIProvider } from "../app/providers";
+import { useLayoutStore } from "../stores/ui-store";
+
+function ActiveNavProbe() {
+  const activeNav = useLayoutStore((state) => state.sidebar.activeNav);
+
+  return <span data-testid="active-nav">{activeNav}</span>;
+}
 
 function renderAppShell() {
   return render(
     <UIProvider>
       <AppShell />
+      <ActiveNavProbe />
     </UIProvider>,
   );
 }
@@ -260,6 +268,27 @@ describe("AppShell", () => {
       expect(layout).toBeTruthy();
       expect(layout?.getAttribute("data-inspector-state")).toBe("open");
       expect(layout?.getAttribute("data-utility-pane-state")).toBe("open");
+    });
+
+    it("restores Workspace navigation when Back to app closes Settings from PrimaryNav", () => {
+      const { container } = renderAppShell();
+      const primaryNav = screen.getByLabelText("Primary navigation");
+      const settingsButton = within(primaryNav).getByRole("button", { name: "Settings" });
+
+      fireEvent.click(settingsButton);
+
+      expect(screen.getByTestId("active-nav").textContent).toBe("settings");
+      expect(container.querySelector(".ua-settings-shell")).toBeTruthy();
+
+      fireEvent.click(screen.getByLabelText("Back to app"));
+
+      const restoredNav = screen.getByLabelText("Primary navigation");
+      expect(container.querySelector(".ua-settings-shell")).toBeNull();
+      expect(container.querySelector(".ua-main-layout")).toBeTruthy();
+      expect(within(restoredNav).getByRole("button", { name: "Workspace" }).getAttribute("aria-current")).toBe(
+        "page",
+      );
+      expect(within(restoredNav).getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBeNull();
     });
 
     it("resyncs the composer defaults after switching the default provider in settings", () => {

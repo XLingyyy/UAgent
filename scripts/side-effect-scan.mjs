@@ -617,7 +617,7 @@ const CATEGORIES = [
     title: "MVP12 Binary Write Boundary",
     description: "Binary UE assets and executable/generated artifacts must remain blocked from text mutation",
     patterns: [
-      { re: /\.uasset|\.umap|\.ubulk|\.uexp|\.dll|\.exe/gi, label: "blocked binary extension" },
+      { re: /\.(?:uasset|umap|ubulk|uexp|dll|exe)(?![A-Za-z0-9_])/gi, label: "blocked binary extension" },
       { re: /blocked_binary/gi, label: "blocked_binary reason" },
     ],
     allowWhen: [
@@ -668,6 +668,7 @@ const CATEGORIES = [
       (rel) => /scripts\/side-effect-scan/.test(rel),
       (rel, line) => /apps\/desktop\/web\/src\/inspector\/UtilityPlaceholderPanel/.test(rel) && /recordedOnlyActions/.test(line),
       (rel, line) => /apps\/desktop\/web\/src\/inspector\/AssetMutationPanel/.test(rel) && /recordedOnlyActions/.test(line),
+      (rel, line) => /apps\/desktop\/web\/src\/inspector\/ChangesPanel/.test(rel) && /replaySummary|recordedOnlyActions/.test(line),
     ],
     blockWhen: [
       (rel) => /apps\/desktop\/web\/src\/(app|components|composer|inspector|settings|shell|sidebar|workspace)\//.test(rel),
@@ -908,6 +909,7 @@ const CATEGORIES = [
       (rel, line) => /apps\/desktop\/web\/src\/stores\/ui-store/.test(rel) && /replayOnly:\s*true/.test(line),
       (rel, line) => /apps\/desktop\/web\/src\/inspector\/(EditorPanel|McpMutationPanel)/.test(rel) && /replayOnly|Replay: recorded summaries only/.test(line),
       (rel, line) => /apps\/desktop\/web\/src\/inspector\/AssetMutationPanel/.test(rel) && /replayOnly|Replay: recorded summaries only/.test(line),
+      (rel, line) => /apps\/desktop\/web\/src\/inspector\/ChangesPanel/.test(rel) && /replayOnly|recordedOnlyActions|recorded-only/.test(line),
       (rel, line) => /apps\/desktop\/web\/src\/inspector\/UtilityPlaceholderPanel/.test(rel) && /recordedOnlyActions/.test(line),
       (rel, line) => /apps\/desktop\/web\/src\/runtime\/editor-observation-native-adapter/.test(rel) && /replayOnly/.test(line),
     ],
@@ -1052,6 +1054,9 @@ const CATEGORIES = [
       { re: /@tauri-apps\/api|invoke\s*\(\s*["'](?:dry_run_asset_mutation|execute_asset_mutation|rollback_asset_mutation)/gi, label: "direct UI native asset invoke" },
       { re: /autoApply|provider.*apply|apply.*provider/gi, label: "provider auto apply" },
       { re: /rawArgs|rawCommandLine|approval-token:|asset-approval-token:|Bearer\s+[A-Za-z0-9._-]+|sk-[A-Za-z0-9][A-Za-z0-9._-]{7,}/gi, label: "raw args paths tokens" },
+      { re: /if\s*\(\s*(?:approvalToken|token)\s*\)\s*(?:return\s+)?(?:accepted|true)|(?:approvalToken|token)\s*!==?\s*["']["'][^;\n]{0,80}(?:accepted|true)/gi, label: "non-empty token fake verification" },
+      { re: /unknown[^;\n]{0,80}(?:accepted|executed|success|allow)|(?:accepted|executed|success|allow)[^;\n]{0,80}unknown/gi, label: "unknown result fail-open" },
+      { re: /(?:audit|evidence|replay)[^;\n]{0,160}(?:rawProjectRoot|editorSessionId|pidHash|[A-Za-z]:[\\/]|\/home\/)|(?:rawProjectRoot|editorSessionId|pidHash|[A-Za-z]:[\\/]|\/home\/)[^;\n]{0,160}(?:audit|evidence|replay)/gi, label: "raw evidence identity or path" },
       { re: /replay.*(?:execute|dry[-_ ]?run|verify|rollback|tools\/call)/gi, label: "replay re-execute" },
       { re: /manifest[-_ ]?only.*real|real.*manifest[-_ ]?only/gi, label: "manifest-only real verification" },
       { re: /taskkill|TerminateProcess|kill_process|\.kill\s*\(/gi, label: "UE process kill" },
@@ -1067,6 +1072,9 @@ const CATEGORIES = [
       (rel) => /apps\/desktop\/src-tauri\/src\/lib/.test(rel),
       (rel) => /apps\/desktop\/web\/src\/runtime\/runtime-store/.test(rel),
       (rel) => /apps\/desktop\/web\/src\/stores\/ui-store/.test(rel),
+      (rel, line, pattern) => /apps\/desktop\/web\/src\/inspector\/AssetMutationPanel/.test(rel)
+        && pattern.label === "non-sandbox asset path"
+        && /placeholder="\/Game\/Test01"/.test(line),
       isTitleBarWindowInternals,
     ],
     blockWhen: [
@@ -1192,6 +1200,30 @@ function runScanSelfTests() {
   );
   if (!unsafeLivePayload.some((finding) => finding.severity === "BLOCKED")) {
     throw new Error("mvp15 asset mutation self-test did not block live execute/rollback/Save All/mutation API sample");
+  }
+  const unsafeNonEmptyToken = scanContent(
+    "apps/desktop/web/src/inspector/RejectFakeTokenPanel.tsx",
+    "if (approvalToken) return accepted;",
+    [mvp15Category],
+  );
+  if (!unsafeNonEmptyToken.some((finding) => finding.severity === "BLOCKED" && finding.pattern === "non-empty token fake verification")) {
+    throw new Error("mvp15 asset mutation self-test did not block non-empty token fake verification");
+  }
+  const unsafeUnknownResult = scanContent(
+    "apps/desktop/web/src/inspector/RejectUnknownResultPanel.tsx",
+    "const result = unknownResult ? accepted : failed;",
+    [mvp15Category],
+  );
+  if (!unsafeUnknownResult.some((finding) => finding.severity === "BLOCKED" && finding.pattern === "unknown result fail-open")) {
+    throw new Error("mvp15 asset mutation self-test did not block unknown-result fail-open");
+  }
+  const unsafeRawEvidence = scanContent(
+    "apps/desktop/web/src/inspector/RejectRawEvidencePanel.tsx",
+    "const evidence = { rawProjectRoot: 'C:/Users/operator/project', editorSessionId, pidHash };",
+    [mvp15Category],
+  );
+  if (!unsafeRawEvidence.some((finding) => finding.severity === "BLOCKED" && finding.pattern === "raw evidence identity or path")) {
+    throw new Error("mvp15 asset mutation self-test did not block raw evidence path/session/pid");
   }
 }
 

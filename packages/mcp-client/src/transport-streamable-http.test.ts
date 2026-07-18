@@ -98,7 +98,7 @@ describe("Streamable HTTP transport", () => {
     ).resolves.toMatchObject({ result: { contents: [{ text: "sse resource" }] } });
   });
 
-  it("surfaces malformed fixture SSE as protocol errors", async () => {
+  it("surfaces malformed fixture SSE with a stable protocol category", async () => {
     const scenario = createMcpFixtureScenario({
       routes: {
         "tools/list": { malformed: "this is not json rpc" },
@@ -109,8 +109,22 @@ describe("Streamable HTTP transport", () => {
       fetch: createStreamableHttpFixtureFetch(scenario, { responseMode: "sse" }),
     });
 
-    await expect(transport.sendRequest(createJsonRpcRequest("tools/list", {}, () => 4))).rejects.toThrow(
-      "Invalid JSON-RPC message",
-    );
+    await expect(transport.sendRequest(createJsonRpcRequest("tools/list", {}, () => 4))).rejects.toMatchObject({
+      message: "protocol_response_malformed",
+    });
+  });
+
+  it("surfaces non-response JSON-RPC messages with the stable protocol category", async () => {
+    const transport = new StreamableHttpTransport({
+      endpoint: "http://localhost:8765/mcp",
+      fetch: async () => new Response(JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    });
+
+    await expect(transport.sendRequest(createJsonRpcRequest("tools/list", {}, () => 5))).rejects.toMatchObject({
+      message: "protocol_response_malformed",
+    });
   });
 });

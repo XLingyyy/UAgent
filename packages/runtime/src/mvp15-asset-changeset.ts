@@ -9,12 +9,15 @@ import type {
   AssetMutationOperation,
   AssetMutationOperationKind,
   AssetMutationOperationProvenance,
+  AssetMutationExternalRegistrationBinding,
   AssetMutationRisk,
+  AssetExternalVerificationBaseline,
   AssetRollbackPlan,
   AssetVerificationResult,
 } from "@uagent/shared";
 import { classifyAssetMutationRisk, createSandboxAssetPathPolicy } from "./mvp15-asset-policy.js";
 import type { AssetManifestRegistry } from "./mvp15-asset-manifest.js";
+import type { AssetMutationExternalVerificationAdapter } from "./mvp15-asset-verification.js";
 import { verifyAssetDeletedOrTrash, verifyAssetExists, verifyAssetMoved, verifySingleAssetSaved, verifySourceAssetUntouched } from "./mvp15-asset-verification.js";
 import {
   computeAggregateBindingForOperations,
@@ -96,6 +99,12 @@ export interface AssetMutationExecuteInput {
   pidHash: string;
 }
 
+export interface AssetMutationRegisterApprovalInput {
+  changeSetId: string;
+  editorSessionId: string;
+  pidHash: string;
+}
+
 /**
  * External dry-run binder drives the live UE MCP plugin exact dry-run calls. The service
  * never calls MCP directly; it hands each canonical payload to this binder and treats any
@@ -127,6 +136,8 @@ export interface AssetMutationAdapterContext {
   editorSessionId: string;
   pidHash: string;
   dryRunHash: string;
+  operationIndex: number;
+  operationCount: number;
 }
 
 export interface AssetMutationAdapterResult {
@@ -134,9 +145,16 @@ export interface AssetMutationAdapterResult {
   reason: string | null;
   evidenceId: string;
   stateOnFailure?: "failed" | "rollback_available";
+  sideEffectObserved?: boolean;
+  rollbackAvailable?: boolean;
+  externalRegistration?: AssetMutationExternalRegistrationBinding;
+  issuedApprovalToken?: string;
+  issuedAt?: number;
+  expiresAt?: number;
 }
 
 export interface AssetMutationAdapter {
+  prepareExecute?(context: AssetMutationAdapterContext): MaybePromise<AssetMutationAdapterResult>;
   execute(operation: AssetMutationOperation, context: AssetMutationAdapterContext): MaybePromise<AssetMutationAdapterResult>;
   rollback(operation: AssetMutationOperation, context: AssetMutationAdapterContext): MaybePromise<AssetMutationAdapterResult>;
 }
@@ -156,6 +174,7 @@ export interface AssetChangeSetServiceOptions {
   manifest: AssetManifestRegistry;
   adapter: AssetMutationAdapter;
   verification?: AssetMutationVerificationAdapter;
+  externalVerification?: AssetMutationExternalVerificationAdapter;
 }
 
 export interface AssetChangeSetService {
@@ -163,6 +182,7 @@ export interface AssetChangeSetService {
   bindExternalDryRun(input: AssetMutationBindExternalInput): Promise<AssetMutationServiceResult & { dryRun: AssetDryRunResult | null; changeSet: AssetChangeSet | null }>;
   preview(changeSetId: string): AssetMutationServiceResult;
   approve(input: AssetMutationApproveInput): AssetMutationServiceResult;
+  registerApproval(input: AssetMutationRegisterApprovalInput): Promise<AssetMutationServiceResult>;
   execute(input: AssetMutationExecuteInput): Promise<AssetMutationServiceResult>;
   verify(changeSetId: string): Promise<AssetMutationServiceResult>;
   rollback(changeSetId: string): Promise<AssetMutationServiceResult>;
@@ -184,7 +204,11 @@ export function createAssetChangeSetService(options: AssetChangeSetServiceOption
   const changeSets = new Map<string, AssetChangeSet>();
   const tokens = new Map<string, { changeSetId: string; tokenHash: string; used: boolean; expiresAt: number }>();
   const tamperedChangeSetIds = new Set<string>();
+  const externalRegistrations = new Map<string, AssetMutationExternalRegistrationBinding>();
+  const externalBaselines = new Map<string, AssetExternalVerificationBaseline>();
+  const registrationsInFlight = new Set<string>();
   let counter = 0;
+  let tokenGeneration = 0;
 
   function store(changeSet: AssetChangeSet): AssetChangeSet {
     const authoritative = cloneChangeSet(changeSet);
@@ -209,13 +233,20 @@ export function createAssetChangeSetService(options: AssetChangeSetServiceOption
     return detached;
   }
 
-  function adapterContext(changeSet: AssetChangeSet, approvalToken: string | null, dryRunHash: string): AssetMutationAdapterContext {
+  function adapterContext(
+    changeSet: AssetChangeSet,
+    approvalToken: string | null,
+    dryRunHash: string,
+    operationIndex = 0,
+  ): AssetMutationAdapterContext {
     return {
       changeSet: cloneChangeSet(changeSet),
       approvalToken,
       editorSessionId: changeSet.editorSessionId,
       pidHash: changeSet.pidHash,
       dryRunHash,
+      operationIndex,
+      operationCount: changeSet.operations.length,
     };
   }
 
@@ -278,8 +309,176 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
     return `${prefix}:${counter}`;
   }
 
+  async function prepareNativeRegistration(
+    current: AssetChangeSet,
+  ): Promise<{ ok: boolean; reason: string | null; changeSet: AssetChangeSet; evidenceIds: string[]; approvalToken: string | null }> {
+    if (
+      current.nativeApprovalRegistrationStatus === "registered"
+      && externalRegistrations.has(current.id)
+      && externalBaselines.has(current.id)
+    ) {
+      return { ok: true, reason: null, changeSet: current, evidenceIds: [], approvalToken: null };
+    }
+    if (registrationsInFlight.has(current.id)) {
+      return { ok: false, reason: "native_registration_in_progress", changeSet: current, evidenceIds: [], approvalToken: null };
+    }
+    if (!options.adapter.prepareExecute) {
+      const reason = "native_registration_required";
+      return {
+        ok: false,
+        reason,
+        changeSet: store({
+          ...current,
+          state: "failed",
+          nativeApprovalRegistrationStatus: "blocked",
+          nativeApprovalRegistrationReason: reason,
+        }),
+        evidenceIds: [],
+        approvalToken: null,
+      };
+    }
+
+    registrationsInFlight.add(current.id);
+    const registrationGeneration = tokenGeneration;
+    try {
+      let prepared: AssetMutationAdapterResult;
+      try {
+        prepared = await options.adapter.prepareExecute(
+          adapterContext(current, null, current.operations[0]?.dryRunHash ?? "", 0),
+        );
+      } catch {
+        prepared = { ok: false, reason: "native_registration_failed", evidenceId: `asset-evidence:block:${current.id}`, stateOnFailure: "failed" };
+      }
+      if (!prepared.ok) {
+        const reason = prepared.reason ?? "native_registration_failed";
+        const evidenceIds = prepared.evidenceId ? [prepared.evidenceId] : [];
+        return {
+          ok: false,
+          reason,
+          changeSet: store({
+            ...current,
+            state: "failed",
+            nativeApprovalRegistrationStatus: "blocked",
+            nativeApprovalRegistrationReason: reason,
+            evidenceIds: [...new Set([...current.evidenceIds, ...evidenceIds])],
+          }),
+          evidenceIds,
+          approvalToken: null,
+        };
+      }
+
+      const registration = validateExternalRegistration(prepared.externalRegistration, current);
+      const issuedToken = prepared.issuedApprovalToken;
+      const issuedAt = prepared.issuedAt;
+      const expiresAt = prepared.expiresAt;
+      const issuedTokenIsValid = typeof issuedToken === "string"
+        && /^[0-9a-f]{64}$/.test(issuedToken)
+        && Number.isSafeInteger(issuedAt)
+        && Number.isSafeInteger(expiresAt)
+        && (issuedAt ?? -1) >= 0
+        && (expiresAt ?? 0) > (issuedAt ?? 0)
+        && (expiresAt ?? 0) - (issuedAt ?? 0) <= 60_000;
+      if (!registration || !options.externalVerification || !issuedTokenIsValid) {
+        const reason = registration ? "external_verification_required" : "external_registration_binding_required";
+        const safeReason = !issuedTokenIsValid ? "native_issued_token_invalid" : reason;
+        const evidenceIds = prepared.evidenceId ? [prepared.evidenceId] : [];
+        return {
+          ok: false,
+          reason: safeReason,
+          changeSet: store({
+            ...current,
+            state: "failed",
+            nativeApprovalRegistrationStatus: "blocked",
+            nativeApprovalRegistrationReason: safeReason,
+            evidenceIds: [...new Set([...current.evidenceIds, ...evidenceIds])],
+          }),
+          evidenceIds,
+          approvalToken: null,
+        };
+      }
+
+      let captured;
+      try {
+        captured = await options.externalVerification.captureBaseline(cloneChangeSet(current), { ...registration });
+      } catch {
+        captured = { ok: false, reason: "external_baseline_read_failed", baseline: null };
+      }
+      if (!captured.ok || !captured.baseline || !isValidExternalBaseline(captured.baseline, current)) {
+        const reason = captured.reason ?? "external_baseline_required";
+        const evidenceIds = prepared.evidenceId ? [prepared.evidenceId] : [];
+        return {
+          ok: false,
+          reason,
+          changeSet: store({
+            ...current,
+            state: "failed",
+            nativeApprovalRegistrationStatus: "blocked",
+            nativeApprovalRegistrationReason: reason,
+            evidenceIds: [...new Set([...current.evidenceIds, ...evidenceIds])],
+          }),
+          evidenceIds,
+          approvalToken: null,
+        };
+      }
+
+      if (registrationGeneration !== tokenGeneration) {
+        const reason = "native_registration_stale";
+        return {
+          ok: false,
+          reason,
+          changeSet: store({
+            ...current,
+            state: "failed",
+            nativeApprovalRegistrationStatus: "blocked",
+            nativeApprovalRegistrationReason: reason,
+          }),
+          evidenceIds: [],
+          approvalToken: null,
+        };
+      }
+
+      externalRegistrations.set(current.id, { ...registration });
+      externalBaselines.set(current.id, cloneExternalBaseline(captured.baseline));
+      const tokenHash = hash(issuedToken!);
+      tokens.set(tokenHash, {
+        changeSetId: current.id,
+        tokenHash,
+        used: false,
+        expiresAt: expiresAt!,
+      });
+      const evidenceIds = [
+        prepared.evidenceId,
+        ...[captured.baseline.source.evidenceId, captured.baseline.contentManifest.evidenceId]
+          .filter((value): value is string => Boolean(value)),
+      ];
+      return {
+        ok: true,
+        reason: null,
+        changeSet: store({
+          ...current,
+          approval: current.approval ? {
+            ...current.approval,
+            issuedAt: issuedAt!,
+            expiresAt: expiresAt!,
+            tokenHash,
+          } : null,
+          nativeApprovalRegistrationStatus: "registered",
+          nativeApprovalRegistrationReason: null,
+          evidenceIds: [...new Set([...current.evidenceIds, ...evidenceIds])],
+        }),
+        evidenceIds,
+        approvalToken: issuedToken!,
+      };
+    } finally {
+      registrationsInFlight.delete(current.id);
+    }
+  }
+
   return {
     dryRun(input) {
+      // A new run invalidates every renderer/runtime-held raw approval immediately.
+      tokenGeneration += 1;
+      tokens.clear();
       const run = policy.validateRunId(input.runId);
       if (!run.ok) return blocked(input, run.reason, "blocked_unknown");
       if (input.operations.length > 1 && input.operations.every((op) => op.kind === "delete_sandbox_asset")) {
@@ -288,6 +487,23 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
 
       const operations: AssetMutationOperation[] = [];
       for (const draft of input.operations) {
+        const runRoot = `/Game/UAgentSandbox/${input.runId}`;
+        const strictRunDescendant = (value: string | null | undefined) =>
+          typeof value === "string" && value.startsWith(`${runRoot}/`);
+        if (draft.kind === "create_folder" || draft.kind === "create_test_asset") {
+          if (draft.assetPathBefore != null || draft.assetPathAfter !== runRoot) {
+            return blocked(input, "run_root_contract_invalid", "blocked_non_sandbox");
+          }
+        } else {
+          const writeTargets = draft.kind === "duplicate_asset"
+            ? [draft.assetPathAfter]
+            : draft.kind === "rename_asset" || draft.kind === "move_asset"
+              ? [draft.assetPathBefore, draft.assetPathAfter]
+              : [draft.assetPathAfter ?? draft.assetPathBefore];
+          if (writeTargets.some((path) => !strictRunDescendant(path))) {
+            return blocked(input, "run_root_contract_invalid", "blocked_non_sandbox");
+          }
+        }
         const paths = [draft.assetPathBefore ?? null, draft.assetPathAfter ?? null].filter((path): path is string => Boolean(path));
         const sandboxPaths = paths.filter((path) => path.startsWith("/Game/UAgentSandbox") || path.startsWith("/Content/UAgentSandbox"));
         for (const path of sandboxPaths) {
@@ -312,6 +528,8 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
           argsHash: hash(JSON.stringify(draft)),
           summary: summarizeOperation(draft),
           blockedReason: null,
+          executionStatus: "pending",
+          executionEvidenceId: null,
           provenance: null,
         });
       }
@@ -493,7 +711,9 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
       }
       if (current.state !== "approval_required") return boundary({ status: "blocked", reason: "approval_required", changeSet: current, approvalToken: null });
       const issuedAt = now();
-      const approvalToken = `asset-approval-token:${hash(`${current.id}:${issuedAt}:${input.actor}`)}`;
+      const approvalToken = options.executionMode === "real"
+        ? null
+        : `asset-approval-token:${hash(`${current.id}:${issuedAt}:${input.actor}`)}`;
       const approval: AssetApproval = {
         approvalId: nextId("asset-approval"),
         changeSetId: current.id,
@@ -501,6 +721,7 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
         trustedRootId: current.trustedRootId,
         editorSessionId: current.editorSessionId,
         pidHash: current.pidHash,
+        runId: current.runId,
         operationKind: current.operations[0]?.kind ?? "create_folder",
         assetPaths: current.operations.flatMap((op) => [op.assetPathBefore, op.assetPathAfter].filter((path): path is string => Boolean(path))),
         dryRunHash: current.operations[0]?.dryRunHash ?? "",
@@ -516,42 +737,140 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
         issuedAt,
         expiresAt: issuedAt + ttl,
         status: "issued",
-        tokenHash: hash(approvalToken),
+        tokenHash: approvalToken ? hash(approvalToken) : "native-issued-pending",
       };
-      tokens.set(approvalToken, { changeSetId: current.id, tokenHash: approval.tokenHash, used: false, expiresAt: approval.expiresAt });
+      if (approvalToken) {
+        tokens.set(approval.tokenHash, { changeSetId: current.id, tokenHash: approval.tokenHash, used: false, expiresAt: approval.expiresAt });
+      }
       const changeSet = store({ ...current, state: "approved", approval });
       return boundary({ status: "approved", reason: null, changeSet, approvalToken });
     },
-    async execute(input) {
+    async registerApproval(input) {
       const current = changeSets.get(input.changeSetId);
       if (!current) return { status: "blocked", reason: "changeset_required", changeSet: null };
-      // Real-mode execute is not enabled at this stage. Even when external binding is complete,
-      // live mutation execution stays gated off until the plugin execute path lands in a later task.
-      if (options.executionMode === "real") {
-        return boundary({ status: "blocked", reason: "execute_not_enabled", changeSet: current });
+      if (options.executionMode !== "real") {
+        return boundary({ status: "not_required", reason: null, changeSet: current });
       }
-      const token = tokens.get(input.approvalToken);
+      if (tamperedChangeSetIds.has(input.changeSetId)) {
+        return boundary({ status: "blocked", reason: "changeset_snapshot_tampered", changeSet: current });
+      }
+      const bindingReason = validateRealExternalBinding(current);
+      if (bindingReason) return boundary({ status: "blocked", reason: bindingReason, changeSet: current });
+      if (input.editorSessionId !== current.editorSessionId) return boundary({ status: "blocked", reason: "session_mismatch", changeSet: current });
+      if (input.pidHash !== current.pidHash) return boundary({ status: "blocked", reason: "pid_mismatch", changeSet: current });
+      const approvalReason = validateRealApprovalBinding(current);
+      if (approvalReason) return boundary({ status: "blocked", reason: approvalReason, changeSet: current });
+
+      const registration = await prepareNativeRegistration(current);
+      return boundary({
+        status: registration.ok ? "registered" : "failed",
+        reason: registration.reason,
+        changeSet: registration.changeSet,
+        approvalToken: registration.approvalToken,
+      });
+    },
+    async execute(input) {
+      let current = changeSets.get(input.changeSetId);
+      if (!current) return { status: "blocked", reason: "changeset_required", changeSet: null };
+      const preExecutionEvidenceIds: string[] = [];
+      if (options.executionMode === "real") {
+        if (tamperedChangeSetIds.has(input.changeSetId)) {
+          return boundary({ status: "blocked", reason: "changeset_snapshot_tampered", changeSet: current });
+        }
+        const bindingReason = validateRealExternalBinding(current);
+        if (bindingReason) return boundary({ status: "blocked", reason: bindingReason, changeSet: current });
+      }
+      const tokenKey = hash(input.approvalToken);
+      const token = tokens.get(tokenKey);
       if (!token || token.changeSetId !== input.changeSetId || current.approval?.tokenHash !== token.tokenHash) return boundary({ status: "blocked", reason: "forged_token", changeSet: current });
       if (token.used) return boundary({ status: "blocked", reason: "replay_token", changeSet: current });
+      // Consume before any further validation/await: every first execute attempt is terminal for raw-token memory.
+      token.used = true;
+      tokens.delete(tokenKey);
       if (input.editorSessionId !== current.editorSessionId) return boundary({ status: "blocked", reason: "session_mismatch", changeSet: current });
       if (input.pidHash !== current.pidHash) return boundary({ status: "blocked", reason: "pid_mismatch", changeSet: current });
       if (now() >= token.expiresAt) return boundary({ status: "blocked", reason: "expired_token", changeSet: store({ ...current, state: "expired", approval: current.approval ? { ...current.approval, status: "expired" } : null }) });
+
+      if (options.executionMode === "real") {
+        const approvalReason = validateRealApprovalBinding(current);
+        if (approvalReason) return boundary({ status: "blocked", reason: approvalReason, changeSet: current });
+        // Consume before the first await so concurrent/replayed batches cannot pass the JS boundary.
+        const registration = await prepareNativeRegistration(current);
+        if (!registration.ok) {
+          const execution = createExecutionResult(nextId("asset-execution"), registration.changeSet, [], registration.evidenceIds, "failed", registration.reason ?? "native_registration_failed", now());
+          const changeSet = store({
+            ...registration.changeSet,
+            state: "failed",
+            approval: registration.changeSet.approval ? { ...registration.changeSet.approval, status: "used" } : null,
+          });
+          return boundary({ status: "failed", reason: execution.reason, changeSet, execution });
+        }
+        current = registration.changeSet;
+        preExecutionEvidenceIds.push(...registration.evidenceIds);
+      }
       const nextOps: AssetMutationOperation[] = [];
-      const evidenceIds: string[] = [];
-      for (const op of current.operations) {
+      const evidenceIds: string[] = [...preExecutionEvidenceIds];
+      for (const [operationIndex, op] of current.operations.entries()) {
         const ownership = resolveManifestOwnership(current, op, options.manifest.list());
         if (!ownership.ok) {
+          nextOps.push({
+            ...op,
+            executionStatus: "blocked",
+            executionEvidenceId: null,
+          });
           const execution = createExecutionResult(nextId("asset-execution"), current, nextOps, evidenceIds, "blocked", ownership.reason, now());
-          const state = evidenceIds.length > 0 ? "rollback_available" : current.state;
+          const state = hasRollbackOwnership(nextOps) ? "rollback_available" : "failed";
           const changeSet = store({ ...current, state, operations: mergeOperations(current.operations, nextOps), evidenceIds: [...current.evidenceIds, ...evidenceIds] });
           return boundary({ status: "blocked", reason: ownership.reason, changeSet, execution });
         }
-        token.used = true;
-        const result = await options.adapter.execute(cloneOperation(op), adapterContext(current, input.approvalToken, op.dryRunHash));
+        const approvalToken = options.executionMode === "real" && operationIndex > 0 ? null : input.approvalToken;
+        const result = await options.adapter.execute(
+          cloneOperation(op),
+          adapterContext(current, approvalToken, op.dryRunHash, operationIndex),
+        );
         evidenceIds.push(result.evidenceId);
+        let manifestEntry: AssetManifestEntry | null = null;
+        if (result.ok || result.sideEffectObserved === true) {
+          if (op.kind === "create_folder" || op.kind === "create_test_asset") {
+            manifestEntry = options.manifest.registerCreated({
+              projectId: current.projectId,
+              editorSessionId: current.editorSessionId,
+              runId: extractRunId(op.assetPathAfter),
+              assetPath: op.assetPathAfter!,
+              sourceOperationId: op.id,
+              evidenceId: result.evidenceId,
+            });
+          } else if (op.kind === "duplicate_asset") {
+            manifestEntry = options.manifest.registerDuplicated({
+              projectId: current.projectId,
+              editorSessionId: current.editorSessionId,
+              runId: extractRunId(op.assetPathAfter),
+              assetPath: op.assetPathAfter!,
+              sourceAssetPath: op.assetPathBefore ?? undefined,
+              sourceOperationId: op.id,
+              evidenceId: result.evidenceId,
+            });
+          } else if (op.kind === "rename_asset" || op.kind === "move_asset" || op.kind === "save_single_asset" || op.kind === "delete_sandbox_asset") {
+            const entry = ownership.entry;
+            if (entry && op.kind === "rename_asset") manifestEntry = options.manifest.markRenamed(entry.id, op.assetPathAfter!, op.id, result.evidenceId);
+            if (entry && op.kind === "move_asset") manifestEntry = options.manifest.markMoved(entry.id, op.assetPathAfter!, op.id, result.evidenceId);
+            if (entry && op.kind === "save_single_asset") manifestEntry = options.manifest.markSaved(entry.id, result.evidenceId);
+            if (entry && op.kind === "delete_sandbox_asset") manifestEntry = options.manifest.markDeleted(entry.id, result.evidenceId);
+          }
+        }
+        const processedOperation = {
+          ...op,
+          manifestEntryId: manifestEntry?.id ?? op.manifestEntryId,
+          executionStatus: result.ok ? "executed" as const : result.sideEffectObserved === true ? "partial_failure" as const : "failed" as const,
+          executionEvidenceId: result.evidenceId,
+          partialSideEffectObserved: result.sideEffectObserved === true || undefined,
+        };
         if (!result.ok) {
+          nextOps.push(processedOperation);
           const execution = createExecutionResult(nextId("asset-execution"), current, nextOps, evidenceIds, "failed", result.reason ?? "adapter_execute_failed", now());
-          const failureState = result.stateOnFailure ?? "rollback_available";
+          const failureState = options.executionMode === "real"
+            ? hasRollbackOwnership(nextOps) ? "rollback_available" : "failed"
+            : result.stateOnFailure ?? "rollback_available";
           const changeSet = store({
             ...current,
             state: failureState,
@@ -561,34 +880,7 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
           });
           return boundary({ status: "failed", reason: execution.reason, changeSet, execution });
         }
-        let manifestEntry: AssetManifestEntry | null = null;
-        if (op.kind === "create_folder" || op.kind === "create_test_asset") {
-          manifestEntry = options.manifest.registerCreated({
-            projectId: current.projectId,
-            editorSessionId: current.editorSessionId,
-            runId: extractRunId(op.assetPathAfter),
-            assetPath: op.assetPathAfter!,
-            sourceOperationId: op.id,
-            evidenceId: result.evidenceId,
-          });
-        } else if (op.kind === "duplicate_asset") {
-          manifestEntry = options.manifest.registerDuplicated({
-            projectId: current.projectId,
-            editorSessionId: current.editorSessionId,
-            runId: extractRunId(op.assetPathAfter),
-            assetPath: op.assetPathAfter!,
-            sourceAssetPath: op.assetPathBefore ?? undefined,
-            sourceOperationId: op.id,
-            evidenceId: result.evidenceId,
-          });
-        } else if (op.kind === "rename_asset" || op.kind === "move_asset" || op.kind === "save_single_asset" || op.kind === "delete_sandbox_asset") {
-          const entry = ownership.entry;
-          if (entry && op.kind === "rename_asset") manifestEntry = options.manifest.markRenamed(entry.id, op.assetPathAfter!, op.id, result.evidenceId);
-          if (entry && op.kind === "move_asset") manifestEntry = options.manifest.markMoved(entry.id, op.assetPathAfter!, op.id, result.evidenceId);
-          if (entry && op.kind === "save_single_asset") manifestEntry = options.manifest.markSaved(entry.id, result.evidenceId);
-          if (entry && op.kind === "delete_sandbox_asset") manifestEntry = options.manifest.markDeleted(entry.id, result.evidenceId);
-        }
-        nextOps.push({ ...op, manifestEntryId: manifestEntry?.id ?? op.manifestEntryId });
+        nextOps.push(processedOperation);
       }
       const execution = createExecutionResult(nextId("asset-execution"), current, nextOps, evidenceIds, "executed", null, now());
       const changeSet = store({ ...current, state: "executed", operations: nextOps, approval: current.approval ? { ...current.approval, status: "used" } : null, evidenceIds: [...current.evidenceIds, ...evidenceIds] });
@@ -598,7 +890,41 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
       const current = changeSets.get(changeSetId);
       if (!current) return { status: "blocked", reason: "changeset_required", changeSet: null };
       if (options.executionMode === "real") {
-        return boundary({ status: "blocked", reason: "verify_not_enabled", changeSet: current });
+        if (current.state !== "executed" && current.state !== "rollback_available") {
+          return boundary({ status: "blocked", reason: "external_verification_state_invalid", changeSet: current });
+        }
+        const registration = externalRegistrations.get(changeSetId);
+        const baseline = externalBaselines.get(changeSetId);
+        if (!options.externalVerification || !registration || !baseline) {
+          const reason = !options.externalVerification ? "external_verification_required" : "external_baseline_required";
+          const changeSet = store({ ...current, state: "rollback_available" });
+          return boundary({ status: "blocked", reason, changeSet, verification: null });
+        }
+        let result;
+        try {
+          result = await options.externalVerification.verify(
+            cloneChangeSet(current),
+            { ...registration },
+            cloneExternalBaseline(baseline),
+          );
+        } catch {
+          result = { ok: false, reason: "external_verification_read_failed", verification: null };
+        }
+        if (!result.ok || !isValidExternalVerification(result.verification, current)) {
+          const reason = result.ok ? "external_verification_result_invalid" : result.reason ?? "external_verification_failed";
+          const verification = result.verification ? cloneVerification(result.verification) : null;
+          const evidenceIds = verification?.evidenceId ? [...new Set([...current.evidenceIds, verification.evidenceId])] : current.evidenceIds;
+          const changeSet = store({ ...current, state: "rollback_available", verification, evidenceIds });
+          return boundary({ status: "failed", reason, changeSet, verification });
+        }
+        const verification = cloneVerification(result.verification)!;
+        const changeSet = store({
+          ...current,
+          state: "verified",
+          verification,
+          evidenceIds: [...new Set([...current.evidenceIds, verification.evidenceId])],
+        });
+        return boundary({ status: "verified", reason: null, changeSet, verification });
       }
       const verification = options.verification
         ? await options.verification.verify(cloneChangeSet(current), { manifest: options.manifest })
@@ -613,7 +939,105 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
       const current = changeSets.get(changeSetId);
       if (!current) return { status: "blocked", reason: "changeset_required", changeSet: null };
       if (options.executionMode === "real") {
-        return boundary({ status: "blocked", reason: "rollback_not_enabled", changeSet: current });
+        if (!["executed", "verified", "rollback_available"].includes(current.state)) {
+          return boundary({ status: "blocked", reason: "rollback_state_invalid", changeSet: current });
+        }
+        const registration = externalRegistrations.get(changeSetId);
+        const baseline = externalBaselines.get(changeSetId);
+        if (!registration || !baseline || !options.externalVerification?.verifyRollback) {
+          return boundary({ status: "blocked", reason: "external_rollback_verification_required", changeSet: current });
+        }
+        const reversible = current.operations
+          .map((operation, operationIndex) => ({ operation, operationIndex }))
+          .filter(({ operation }) => operation.kind !== "save_single_asset" && Boolean(operation.manifestEntryId));
+        if (reversible.length === 0) {
+          return boundary({ status: "blocked", reason: "rollback_operations_required", changeSet: current });
+        }
+        const reversibleIds = new Set(reversible.map(({ operation }) => operation.id));
+        let working = store({
+          ...current,
+          state: "rollback_available",
+          rollbackPlan: {
+            ...current.rollbackPlan,
+            actions: current.rollbackPlan.actions.map((action) => (
+              action.action === "none" || !reversibleIds.has(action.operationId)
+                ? { ...action, status: "not_applicable" as const, evidenceId: null }
+                : { ...action }
+            )),
+          },
+        });
+        for (const { operation, operationIndex } of [...reversible].reverse()) {
+          const action = working.rollbackPlan.actions.find((candidate) => candidate.operationId === operation.id);
+          if (action?.status === "completed") continue;
+          if (!action || (action.status !== "pending" && action.status !== "failed")) {
+            return boundary({ status: "blocked", reason: "rollback_plan_invalid", changeSet: working });
+          }
+          const ownership = resolveRollbackManifestOwnership(working, operation, options.manifest);
+          if (!ownership.ok) {
+            return boundary({ status: "blocked", reason: ownership.reason, changeSet: working });
+          }
+          let result: AssetMutationAdapterResult;
+          try {
+            result = await options.adapter.rollback(
+              cloneOperation(operation),
+              adapterContext(working, null, operation.dryRunHash, operationIndex),
+            );
+          } catch {
+            result = { ok: false, reason: "adapter_rollback_failed", evidenceId: `asset-evidence:block:${operation.id}` };
+          }
+          const evidenceIds = [...new Set([...working.evidenceIds, result.evidenceId])];
+          if (!result.ok) {
+            working = store({
+              ...working,
+              state: "rollback_available",
+              rollbackPlan: {
+                ...working.rollbackPlan,
+                actions: working.rollbackPlan.actions.map((candidate) => candidate.operationId === operation.id
+                  ? { ...candidate, status: "failed", evidenceId: result.evidenceId }
+                  : { ...candidate }),
+              },
+              evidenceIds,
+            });
+            return boundary({ status: "failed", reason: result.reason ?? "adapter_rollback_failed", changeSet: working });
+          }
+          applyRollbackManifestTransition(options.manifest, ownership.entry, operation, result.evidenceId);
+          working = store({
+            ...working,
+            state: "rollback_available",
+            rollbackPlan: {
+              ...working.rollbackPlan,
+              actions: working.rollbackPlan.actions.map((candidate) => candidate.operationId === operation.id
+                ? { ...candidate, status: "completed", evidenceId: result.evidenceId }
+                : { ...candidate }),
+            },
+            evidenceIds,
+          });
+        }
+        let restored;
+        try {
+          restored = await options.externalVerification.verifyRollback(
+            cloneChangeSet(working),
+            { ...registration },
+            cloneExternalBaseline(baseline),
+          );
+        } catch {
+          restored = { ok: false, reason: "external_rollback_verification_read_failed", verification: null };
+        }
+        if (!restored.ok || !isValidExternalRollbackVerification(restored.verification, working)) {
+          const reason = restored.ok ? "external_rollback_verification_result_invalid" : restored.reason ?? "external_rollback_verification_failed";
+          const verification = restored.verification ? cloneVerification(restored.verification) : null;
+          const evidenceIds = verification?.evidenceId ? [...new Set([...working.evidenceIds, verification.evidenceId])] : working.evidenceIds;
+          working = store({ ...working, state: "rollback_available", verification, evidenceIds });
+          return boundary({ status: "failed", reason, changeSet: working, verification });
+        }
+        const verification = cloneVerification(restored.verification)!;
+        working = store({
+          ...working,
+          state: "rolled_back",
+          verification,
+          evidenceIds: [...new Set([...working.evidenceIds, verification.evidenceId])],
+        });
+        return boundary({ status: "rolled_back", reason: null, changeSet: working, verification });
       }
       const approvalToken = findApprovalToken(tokens, changeSetId);
       for (const op of [...current.operations].reverse()) {
@@ -661,6 +1085,10 @@ function createChangeSet(
     externalBindingReason: dryRun.externalBindingReason ?? null,
     aggregateDryRunHash: dryRun.aggregateDryRunHash ?? null,
     aggregateArgsHash: dryRun.aggregateArgsHash ?? null,
+    nativeApprovalRegistrationStatus: dryRun.externalBindingStatus === "local_fixture"
+      ? "not_required"
+      : dryRun.status === "blocked" ? "blocked" : "required",
+    nativeApprovalRegistrationReason: dryRun.status === "blocked" ? dryRun.reason : null,
   };
 }
 
@@ -695,6 +1123,37 @@ export function validateRealExternalBinding(changeSet: AssetChangeSet): string |
   if (recompute.aggregateDryRunHash !== changeSet.aggregateDryRunHash) return "aggregate_dry_run_hash_mismatch";
   if (recompute.aggregateArgsHash !== changeSet.aggregateArgsHash) return "aggregate_args_hash_mismatch";
   return null;
+}
+
+function validateRealApprovalBinding(changeSet: AssetChangeSet): string | null {
+  const approval = changeSet.approval;
+  if (!approval || changeSet.state !== "approved" || approval.status !== "issued") return "approval_required";
+  if (
+    approval.changeSetId !== changeSet.id
+    || approval.projectId !== changeSet.projectId
+    || approval.trustedRootId !== changeSet.trustedRootId
+    || approval.editorSessionId !== changeSet.editorSessionId
+    || approval.pidHash !== changeSet.pidHash
+    || approval.runId !== changeSet.runId
+  ) {
+    return "approval_binding_mismatch";
+  }
+  if (
+    approval.aggregateDryRunHash !== changeSet.aggregateDryRunHash
+    || approval.aggregateArgsHash !== changeSet.aggregateArgsHash
+  ) {
+    return "approval_aggregate_mismatch";
+  }
+  const operationIds = changeSet.operations.map((operation) => operation.id);
+  const operationKinds = changeSet.operations.map((operation) => operation.kind);
+  if (!arraysEqual(approval.orderedOperationIds, operationIds) || !arraysEqual(approval.orderedOperationKinds, operationKinds)) {
+    return "approval_operation_order_mismatch";
+  }
+  return null;
+}
+
+function arraysEqual<T>(actual: readonly T[] | undefined, expected: readonly T[]): boolean {
+  return Boolean(actual) && actual!.length === expected.length && actual!.every((value, index) => value === expected[index]);
 }
 
 function createExternalBindingBlockedDryRun(
@@ -790,6 +1249,156 @@ function cloneVerification(verification: AssetVerificationResult | null): AssetV
     checks: verification.checks.map((check) => ({ ...check })),
     redaction: { ...verification.redaction },
   };
+}
+
+function validateExternalRegistration(
+  registration: AssetMutationExternalRegistrationBinding | undefined,
+  changeSet: AssetChangeSet,
+): AssetMutationExternalRegistrationBinding | null {
+  if (!registration || registration.projectBindingId !== changeSet.projectId) return null;
+  if (!isSafeOpaqueId(registration.registrationId) || !isSafeOpaqueId(registration.projectBindingId) || !isSafeOpaqueId(registration.trustedRootId)) return null;
+  return { ...registration };
+}
+
+function isSafeOpaqueId(value: string): boolean {
+  return Boolean(value)
+    && value.length <= 256
+    && !/[\\/\r\n\t]/.test(value)
+    && !/^[A-Za-z]:/.test(value);
+}
+
+function cloneExternalBaseline(baseline: AssetExternalVerificationBaseline): AssetExternalVerificationBaseline {
+  return {
+    source: { ...baseline.source },
+    contentManifest: {
+      ...baseline.contentManifest,
+      entries: baseline.contentManifest.entries.map((entry) => ({ ...entry })),
+    },
+  };
+}
+
+function isValidExternalBaseline(
+  baseline: AssetExternalVerificationBaseline,
+  changeSet: AssetChangeSet,
+): boolean {
+  if (!hasOnlyObjectKeys(baseline, ["source", "contentManifest"])) return false;
+  const source = baseline.source;
+  const manifest = baseline.contentManifest;
+  if (!hasOnlyObjectKeys(source, ["status", "reason", "assetPath", "exists", "size", "sha256", "evidenceId"])) return false;
+  if (
+    source.status !== "observed"
+    || source.reason !== "asset_present"
+    || source.assetPath !== "/Game/Test01"
+    || source.exists !== true
+    || !Number.isSafeInteger(source.size)
+    || (source.size ?? -1) < 0
+    || !isSha256(source.sha256)
+    || !isSafeEvidenceId(source.evidenceId)
+  ) return false;
+  if (!hasOnlyObjectKeys(manifest, ["status", "reason", "entries", "aggregateSha256", "evidenceId"])) return false;
+  if (
+    manifest.status !== "observed"
+    || manifest.reason !== "content_manifest_captured"
+    || !isSha256(manifest.aggregateSha256)
+    || !isSafeEvidenceId(manifest.evidenceId)
+  ) return false;
+  let previousPath = "";
+  for (const entry of manifest.entries) {
+    if (!hasOnlyObjectKeys(entry, ["assetPath", "size", "sha256"])) return false;
+    if (
+      !isCanonicalGameAssetPath(entry.assetPath)
+      || !Number.isSafeInteger(entry.size)
+      || entry.size < 0
+      || !isSha256(entry.sha256)
+      || (previousPath && entry.assetPath <= previousPath)
+    ) return false;
+    previousPath = entry.assetPath;
+  }
+  const sourceEntry = manifest.entries.find((entry) => entry.assetPath === source.assetPath);
+  if (!sourceEntry || sourceEntry.size !== source.size || sourceEntry.sha256 !== source.sha256) return false;
+  const runRoot = `/Game/UAgentSandbox/${changeSet.runId}`;
+  return manifest.entries.every((entry) => !isPathWithinGameAsset(entry.assetPath, runRoot))
+    && !containsSensitiveExternalValue(baseline);
+}
+
+function isValidExternalVerification(
+  verification: AssetVerificationResult | null,
+  changeSet: AssetChangeSet,
+): verification is AssetVerificationResult {
+  if (!verification || verification.changeSetId !== changeSet.id || verification.status !== "passed") return false;
+  if (!verification.evidenceId.trim() || verification.checks.length === 0) return false;
+  if (verification.checks.some((check) => check.status !== "passed" || !isCanonicalGameAssetPath(check.assetPath))) return false;
+  const sourcePath = changeSet.operations.find((operation) => operation.kind === "duplicate_asset")?.assetPathBefore;
+  const save = changeSet.operations.find((operation) => operation.kind === "save_single_asset");
+  const finalTarget = save?.assetPathAfter ?? save?.assetPathBefore;
+  const oldPaths = [...new Set(changeSet.operations
+    .filter((operation) => operation.kind === "rename_asset" || operation.kind === "move_asset")
+    .flatMap((operation) => operation.assetPathBefore ? [operation.assetPathBefore] : []))];
+  if (sourcePath !== "/Game/Test01" || !finalTarget) return false;
+  const hasCheck = (kind: AssetVerificationResult["checks"][number]["kind"], assetPath: string) =>
+    verification.checks.some((check) => check.kind === kind && check.assetPath === assetPath && check.status === "passed");
+  return hasCheck("source_asset_untouched", sourcePath)
+    && hasCheck("asset_exists", finalTarget)
+    && hasCheck("single_asset_saved", finalTarget)
+    && oldPaths.every((path) => hasCheck("asset_moved", path))
+    && !containsSensitiveExternalValue(verification);
+}
+
+function isValidExternalRollbackVerification(
+  verification: AssetVerificationResult | null,
+  changeSet: AssetChangeSet,
+): verification is AssetVerificationResult {
+  if (!verification || verification.changeSetId !== changeSet.id || verification.status !== "passed") return false;
+  if (!isSafeEvidenceId(verification.evidenceId) || verification.checks.length < 2) return false;
+  if (verification.checks.some((check) => check.status !== "passed" || !isCanonicalGameAssetPath(check.assetPath))) return false;
+  const runRoot = `/Game/UAgentSandbox/${changeSet.runId}`;
+  const sourceRestored = verification.checks.some((check) => check.kind === "source_asset_untouched" && check.assetPath === "/Game/Test01");
+  const runEmpty = verification.checks.some((check) => check.kind === "asset_deleted_or_trash" && check.assetPath === runRoot);
+  return sourceRestored && runEmpty && !containsSensitiveExternalValue(verification);
+}
+
+function isCanonicalGameAssetPath(assetPath: string): boolean {
+  return assetPath.startsWith("/Game/")
+    && assetPath.length > "/Game/".length
+    && !assetPath.includes("\\")
+    && !assetPath.includes("//")
+    && !assetPath.includes("..")
+    && !assetPath.includes(":");
+}
+
+function isPathWithinGameAsset(assetPath: string, root: string): boolean {
+  return assetPath === root || assetPath.startsWith(`${root}/`);
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
+function isSafeEvidenceId(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && !containsSensitiveExternalValue(value);
+}
+
+function hasOnlyObjectKeys(value: unknown, allowed: readonly string[]): boolean {
+  return Boolean(value)
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Object.keys(value as object).every((key) => allowed.includes(key));
+}
+
+function containsSensitiveExternalValue(value: unknown): boolean {
+  if (typeof value === "string") {
+    return /^[A-Za-z]:[\\/]/.test(value)
+      || /^\\\\/.test(value)
+      || /^file:/i.test(value)
+      || (value.startsWith("/") && !value.startsWith("/Game/"))
+      || /approval.?token|trusted.?project.?root|pid.?hash|editor.?session|\bsk-[a-z0-9_-]{8,}/i.test(value);
+  }
+  if (Array.isArray(value)) return value.some(containsSensitiveExternalValue);
+  if (!value || typeof value !== "object") return false;
+  return Object.entries(value).some(([key, nested]) => (
+    /approval.?token|trusted.?project.?root|pid.?hash|editor.?session/i.test(key)
+    || containsSensitiveExternalValue(nested)
+  ));
 }
 
 function cloneChangeSet(changeSet: AssetChangeSet): AssetChangeSet {
@@ -939,6 +1548,41 @@ function resolveManifestOwnership(
   return { ok: true, entry, reason: null };
 }
 
+function resolveRollbackManifestOwnership(
+  changeSet: AssetChangeSet,
+  operation: AssetMutationOperation,
+  manifest: AssetManifestRegistry,
+): { ok: true; entry: AssetManifestEntry; reason: null } | { ok: false; entry: null; reason: string } {
+  if (!operation.manifestEntryId) return { ok: false, entry: null, reason: "rollback_manifest_entry_required" };
+  const entry = manifest.get(operation.manifestEntryId);
+  if (!entry) return { ok: false, entry: null, reason: "rollback_manifest_entry_required" };
+  if (entry.projectId !== changeSet.projectId) return { ok: false, entry: null, reason: "rollback_manifest_project_mismatch" };
+  if (entry.editorSessionId !== changeSet.editorSessionId) return { ok: false, entry: null, reason: "rollback_manifest_session_mismatch" };
+  if (entry.runId !== changeSet.runId) return { ok: false, entry: null, reason: "rollback_manifest_run_mismatch" };
+  if (entry.currentState === "rolled_back") return { ok: false, entry: null, reason: "rollback_manifest_state_mismatch" };
+  if (!operation.assetPathAfter || entry.assetPath !== operation.assetPathAfter) {
+    return { ok: false, entry: null, reason: "rollback_manifest_path_mismatch" };
+  }
+  return { ok: true, entry, reason: null };
+}
+
+function applyRollbackManifestTransition(
+  manifest: AssetManifestRegistry,
+  entry: AssetManifestEntry,
+  operation: AssetMutationOperation,
+  evidenceId: string,
+): void {
+  if (operation.kind === "move_asset" && operation.assetPathBefore) {
+    manifest.markMoved(entry.id, operation.assetPathBefore, operation.id, evidenceId);
+    return;
+  }
+  if (operation.kind === "rename_asset" && operation.assetPathBefore) {
+    manifest.markRenamed(entry.id, operation.assetPathBefore, operation.id, evidenceId);
+    return;
+  }
+  manifest.rollbackState(entry.id, evidenceId);
+}
+
 function createExecutionResult(
   id: string,
   changeSet: AssetChangeSet,
@@ -967,6 +1611,10 @@ function mergeOperations(current: AssetMutationOperation[], processed: AssetMuta
   return current.map((operation) => processedById.get(operation.id) ?? operation);
 }
 
+function hasRollbackOwnership(operations: AssetMutationOperation[]): boolean {
+  return operations.some((operation) => Boolean(operation.manifestEntryId));
+}
+
 function createRollbackPlan(changeSetId: string, operations: AssetMutationOperation[]): AssetRollbackPlan {
   return {
     id: `asset-rollback:${changeSetId}`,
@@ -974,8 +1622,10 @@ function createRollbackPlan(changeSetId: string, operations: AssetMutationOperat
     actions: operations.map((operation) => ({
       id: `asset-rollback:${operation.id}`,
       operationId: operation.id,
-      action: operation.kind === "rename_asset" ? "rename_back" : operation.kind === "move_asset" ? "move_back" : operation.kind === "delete_sandbox_asset" ? "restore_from_trash" : "delete_created",
+      action: operation.kind === "rename_asset" ? "rename_back" : operation.kind === "move_asset" ? "move_back" : operation.kind === "delete_sandbox_asset" ? "restore_from_trash" : operation.kind === "save_single_asset" ? "none" : "delete_created",
       assetPath: operation.assetPathAfter ?? operation.assetPathBefore ?? "/Game/UAgentSandbox",
+      status: operation.kind === "save_single_asset" ? "not_applicable" : "pending",
+      evidenceId: null,
       summary: `Rollback ${operation.kind} within UAgentSandbox only.`,
     })),
     cleanupRequired: operations.some((operation) => operation.kind === "delete_sandbox_asset"),

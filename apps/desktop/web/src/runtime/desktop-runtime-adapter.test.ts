@@ -26,7 +26,7 @@ import {
   type Mvp15McpAssetToolName,
 } from "@uagent/runtime";
 import type { TaskDraft } from "@uagent/shared";
-import type { NativeInvoke } from "./project-native-adapter";
+import { createNativeProjectAdapter, type NativeInvoke } from "./project-native-adapter";
 
 vi.mock("@uagent/mcp-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@uagent/mcp-client")>();
@@ -181,26 +181,26 @@ describe.skipIf(process.env.UAGENT_MVP15C_LIVE_SMOKE !== "1")(
           pidHash: "pid:live-mcp",
           runId,
           operations: [
-            { kind: "create_folder", assetPathAfter: `/Game/UAgentSandbox/${runId}/Work` },
+            { kind: "create_folder", assetPathAfter: `/Game/UAgentSandbox/${runId}` },
             {
               kind: "duplicate_asset",
               assetPathBefore: "/Game/Test01",
-              assetPathAfter: `/Game/UAgentSandbox/${runId}/Work/Test01Copy`,
+              assetPathAfter: `/Game/UAgentSandbox/${runId}/Test01Copy`,
             },
             {
               kind: "rename_asset",
-              assetPathBefore: `/Game/UAgentSandbox/${runId}/Work/Test01Copy`,
-              assetPathAfter: `/Game/UAgentSandbox/${runId}/Work/Test01Renamed`,
+              assetPathBefore: `/Game/UAgentSandbox/${runId}/Test01Copy`,
+              assetPathAfter: `/Game/UAgentSandbox/${runId}/Test01Renamed`,
             },
             {
               kind: "move_asset",
-              assetPathBefore: `/Game/UAgentSandbox/${runId}/Work/Test01Renamed`,
-              assetPathAfter: `/Game/UAgentSandbox/${runId}/Work/Sub/Test01Renamed`,
+              assetPathBefore: `/Game/UAgentSandbox/${runId}/Test01Renamed`,
+              assetPathAfter: `/Game/UAgentSandbox/${runId}/Sub/Test01Renamed`,
             },
             {
               kind: "save_single_asset",
-              assetPathBefore: `/Game/UAgentSandbox/${runId}/Work/Sub/Test01Renamed`,
-              assetPathAfter: `/Game/UAgentSandbox/${runId}/Work/Sub/Test01Renamed`,
+              assetPathBefore: `/Game/UAgentSandbox/${runId}/Sub/Test01Renamed`,
+              assetPathAfter: `/Game/UAgentSandbox/${runId}/Sub/Test01Renamed`,
             },
           ],
         });
@@ -283,7 +283,7 @@ describe.skipIf(process.env.UAGENT_MVP15C_LIVE_SMOKE !== "1")(
           operation: {
             kind: "create_folder",
             assetPathBefore: null,
-            assetPathAfter: `/Game/UAgentSandbox/${runId}/Work`,
+            assetPathAfter: `/Game/UAgentSandbox/${runId}`,
           },
         });
         expect(malformed).toEqual({ ok: false, reason: "mcp_dry_run_transport_failed" });
@@ -305,7 +305,7 @@ describe.skipIf(process.env.UAGENT_MVP15C_LIVE_SMOKE !== "1")(
             operation: {
               kind: "create_folder",
               assetPathBefore: null,
-              assetPathAfter: `/Game/UAgentSandbox/${runId}/Work`,
+              assetPathAfter: `/Game/UAgentSandbox/${runId}`,
             },
           },
         );
@@ -748,6 +748,198 @@ describe("DesktopRuntimeAdapter", () => {
     });
   });
 
+  it("routes Phase D registration, ordered execute guard, and outcome commands while resolving the raw root only at native invoke", async () => {
+    const rawRoot = "G:/Projects/PhaseD";
+    const nativeCalls: Array<{ command: string; payload: unknown }> = [];
+    const nativeInvoke: NativeInvoke = async (command, payload) => {
+      nativeCalls.push({ command, payload });
+      if (command === "validate_native_project_root") {
+        return { ok: true, reason: "valid", displayRoot: "[project]/PhaseD", projectName: "PhaseD", engine: { label: "UE", association: null, source: "fixture" } } as never;
+      }
+      if (command === "trust_native_project_root") return { rootId: "root:phase-d", displayRoot: "[project]/PhaseD", trustState: "trusted" } as never;
+      if (command === "register_asset_mutation_approval") return { status: "registered", reason: "approval_binding_registered", registrationId: "asset-approval:phase-d", trustedRootId: "trusted-root:phase-d", operationCount: 5, approvalToken: "a".repeat(64), issuedAt: 1, expiresAt: 2000 } as never;
+      if (command === "execute_asset_mutation") return { status: "accepted_by_native_guard", reason: "registered_binding_matched", registrationId: "asset-approval:phase-d", phase: "execute", operationId: "op-1", operationIndex: 0, operationCount: 5, evidenceId: "native:phase-d" } as never;
+      if (command === "record_asset_mutation_outcome") return { status: "recorded", reason: "operation_outcome_recorded", registrationId: "asset-approval:phase-d", phase: "execute", operationId: "op-1", rollbackAvailable: true, terminal: false } as never;
+      return null as never;
+    };
+    const projectAdapter = createNativeProjectAdapter({ invoke: nativeInvoke, now: () => 1 });
+    const project = await projectAdapter.addProject(rawRoot);
+    const trusted = await projectAdapter.confirmTrust(project.id);
+    const adapter = createDesktopRuntimeAdapter({ nativeInvoke });
+    const operation = {
+      operationId: "op-1",
+      kind: "create_folder" as const,
+      toolName: "ue.asset.create_folder",
+      pluginDryRunHash: "a".repeat(40),
+      argsHash: "b".repeat(64),
+      assetPath: "/Game/UAgentSandbox/run-1",
+      rollbackAction: "cleanup_empty_folder" as const,
+      rollbackToolName: "ue.asset.delete",
+      saveAll: false as const,
+      bulk: false as const,
+    };
+    const common = {
+      changeSetId: "changeset-1",
+      runId: "run-1",
+      projectBindingId: trusted.id,
+      editorSessionId: "editor-session:1",
+      pidHash: "pid:1",
+      observedEditorSessionId: "editor-session:1",
+      observedPidHash: "pid:1",
+      aggregateDryRunHash: "c".repeat(64),
+      aggregateArgsHash: "d".repeat(64),
+      assetMutationGateEnabled: true,
+    };
+
+    const registered = await adapter.guardMvp15AssetMutation!({
+      command: "register", phase: "register", trustedRootRef: trusted.rootRef,
+      requestedTtlMs: 1_999, operations: [operation, operation, operation, operation, operation], ...common,
+    });
+    const guarded = await adapter.guardMvp15AssetMutation!({
+      command: "guard", registrationId: "asset-approval:phase-d", approvalToken: "raw-token-native-only", phase: "execute",
+      operationIndex: 0, operationCount: 5, trustedRootId: "trusted-root:phase-d", operation, ...common,
+    });
+    const recorded = await adapter.guardMvp15AssetMutation!({
+      command: "record_outcome", operationIndex: 0, registrationId: "asset-approval:phase-d", phase: "execute",
+      operationId: "op-1", success: true, sideEffectObserved: true, rollbackAvailable: true, evidenceId: "mcp:op-1", reasonCode: "none",
+    });
+
+    expect(registered).toMatchObject({ status: "registered", registrationId: "asset-approval:phase-d", trustedRootId: "trusted-root:phase-d", operationCount: 5 });
+    expect(guarded).toMatchObject({ status: "accepted_by_native_guard", operationIndex: 0, evidenceId: "native:phase-d" });
+    expect(recorded).toMatchObject({ status: "recorded", operationId: "op-1", rollbackAvailable: true });
+    const relevantCalls = nativeCalls.filter((call) => ["validate_native_project_root", "trust_native_project_root", "register_asset_mutation_approval", "execute_asset_mutation", "record_asset_mutation_outcome"].includes(call.command));
+    expect(relevantCalls.map((call) => call.command)).toEqual(["validate_native_project_root", "trust_native_project_root", "register_asset_mutation_approval", "execute_asset_mutation", "record_asset_mutation_outcome"]);
+    const registrationPayload = relevantCalls[2]?.payload as { input?: Record<string, unknown> };
+    expect(registrationPayload.input?.trustedProjectRoot).toBe(rawRoot);
+    expect(registrationPayload.input).not.toHaveProperty("trustedRootRef");
+    expect(JSON.stringify({ registered, guarded, recorded })).not.toContain(rawRoot);
+  });
+
+  it("redacts malformed native guard identifiers and reasons before they cross the desktop boundary", async () => {
+    const adapter = createDesktopRuntimeAdapter({
+      nativeInvoke: async (command) => command === "execute_asset_mutation"
+        ? {
+            status: "accepted_by_native_guard",
+            reason: "G:\\private\\project",
+            registrationId: "G:\\private\\registration",
+            phase: "execute",
+            operationId: "op-1",
+            operationIndex: 0,
+            operationCount: 1,
+            evidenceId: "C:\\private\\evidence",
+          } as never
+        : null as never,
+    });
+
+    const result = await adapter.guardMvp15AssetMutation!({
+      command: "legacy_guard",
+      toolName: "ue.asset.save",
+      assetPath: "/Game/UAgentSandbox/run-1/Hero",
+      targetAssetPath: null,
+      dryRunHash: "a".repeat(40),
+      approvalToken: "token-native-only",
+      editorSessionId: "editor-session:1",
+      pidHash: "pid:1",
+      assetMutationGateEnabled: true,
+      observedEditorSessionId: "editor-session:1",
+      observedPidHash: "pid:1",
+      phase: "execute",
+    });
+
+    expect(result).toMatchObject({
+      status: "accepted_by_native_guard",
+      reason: null,
+      registrationId: null,
+      evidenceId: null,
+    });
+    expect(JSON.stringify(result)).not.toContain("private");
+  });
+
+  it("exposes strict read-only Phase E asset evidence and Content-manifest bridges", async () => {
+    const nativeCalls: Array<{ command: string; payload: unknown }> = [];
+    const nativeInvoke: NativeInvoke = async (command, payload) => {
+      nativeCalls.push({ command, payload });
+      if (command === "read_asset_content_evidence") {
+        return { status: "observed", reason: "asset_present", assetPath: "/Game/Test01", exists: true, size: 12, sha256: "a".repeat(64), evidenceId: "asset-content:source" } as never;
+      }
+      if (command === "snapshot_asset_content_manifest") {
+        return { status: "observed", reason: "content_manifest_captured", entries: [{ assetPath: "/Game/Test01", size: 12, sha256: "a".repeat(64) }], aggregateSha256: "b".repeat(64), evidenceId: "asset-content-manifest:before" } as never;
+      }
+      return null as never;
+    };
+    const adapter = createDesktopRuntimeAdapter({ nativeInvoke }) as ReturnType<typeof createDesktopRuntimeAdapter> & {
+      readMvp15AssetContentEvidence?: (input: Record<string, unknown>) => Promise<unknown>;
+      snapshotMvp15AssetContentManifest?: (input: Record<string, unknown>) => Promise<unknown>;
+    };
+    expect(adapter.readMvp15AssetContentEvidence).toBeTypeOf("function");
+    expect(adapter.snapshotMvp15AssetContentManifest).toBeTypeOf("function");
+    if (!adapter.readMvp15AssetContentEvidence || !adapter.snapshotMvp15AssetContentManifest) return;
+
+    const binding = { registrationId: "registration:phase-e", projectBindingId: "project:fixture", trustedRootId: "trusted-root:phase-e" };
+    const evidence = await adapter.readMvp15AssetContentEvidence({ ...binding, assetPath: "/Game/Test01" });
+    const manifest = await adapter.snapshotMvp15AssetContentManifest(binding);
+
+    expect(evidence).toEqual({ status: "observed", reason: "asset_present", assetPath: "/Game/Test01", exists: true, size: 12, sha256: "a".repeat(64), evidenceId: "asset-content:source" });
+    expect(manifest).toEqual({ status: "observed", reason: "content_manifest_captured", entries: [{ assetPath: "/Game/Test01", size: 12, sha256: "a".repeat(64) }], aggregateSha256: "b".repeat(64), evidenceId: "asset-content-manifest:before" });
+    expect(nativeCalls).toEqual([
+      { command: "terminal_capability_status", payload: undefined },
+      { command: "browser_capability_status", payload: undefined },
+      { command: "read_asset_content_evidence", payload: { input: { ...binding, assetPath: "/Game/Test01" } } },
+      { command: "snapshot_asset_content_manifest", payload: { input: binding } },
+    ]);
+    expect(JSON.stringify({ evidence, manifest })).not.toContain("G:/");
+
+    const leakingAdapter = createDesktopRuntimeAdapter({
+      nativeInvoke: async (command) => command === "read_asset_content_evidence"
+        ? { status: "observed", reason: "asset_present", assetPath: "/Game/Test01", exists: true, size: 12, sha256: "a".repeat(64), evidenceId: "asset-content:source", unexpectedRoot: "/home/user/project" } as never
+        : null as never,
+    });
+    const rejectedLeak = await leakingAdapter.readMvp15AssetContentEvidence?.({ ...binding, assetPath: "/Game/Test01" });
+    expect(rejectedLeak).toMatchObject({ status: "failed", reason: "native_asset_evidence_invalid_result", evidenceId: null });
+  });
+
+  it("routes Phase F registered rollback guard and outcome through rollback-native DTOs", async () => {
+    const nativeCalls: Array<{ command: string; payload: unknown }> = [];
+    const nativeInvoke: NativeInvoke = async (command, payload) => {
+      nativeCalls.push({ command, payload });
+      const input = (payload as { input?: Record<string, unknown> } | undefined)?.input ?? {};
+      if (command === "rollback_asset_mutation") {
+        const operation = input.operation as { operationId?: string } | undefined;
+        return { status: "accepted_by_native_guard", reason: "registered_binding_matched", registrationId: input.registrationId, phase: "rollback", operationId: operation?.operationId, operationIndex: input.operationIndex, operationCount: input.operationCount, evidenceId: "native:rollback:3" } as never;
+      }
+      if (command === "record_asset_mutation_outcome") {
+        return { status: "recorded", reason: "operation_succeeded", registrationId: input.registrationId, phase: "rollback", operationId: input.operationId, rollbackAvailable: true, terminal: false } as never;
+      }
+      return null as never;
+    };
+    const adapter = createDesktopRuntimeAdapter({ nativeInvoke });
+    const common = {
+      registrationId: "asset-registration:phase-f",
+      phase: "rollback",
+      operationIndex: 3,
+      operationCount: 5,
+      changeSetId: "asset-changeset:phase-f",
+      runId: "run-phase-f",
+      projectBindingId: "project:fixture",
+      trustedRootId: "root:fixture",
+      editorSessionId: "editor-session:1",
+      pidHash: "pid:fixture",
+      observedEditorSessionId: "editor-session:1",
+      observedPidHash: "pid:fixture",
+      aggregateDryRunHash: "a".repeat(64),
+      aggregateArgsHash: "b".repeat(64),
+      assetMutationGateEnabled: true,
+      operation: { operationId: "op-move", kind: "move_back", toolName: "ue.asset.move", pluginDryRunHash: "c".repeat(40), argsHash: "d".repeat(64), assetPath: "/Game/UAgentSandbox/run-phase-f/Sub/Hero", targetAssetPath: "/Game/UAgentSandbox/run-phase-f/Hero", rollbackAction: "none", saveAll: false, bulk: false },
+    };
+
+    const guarded = await adapter.guardMvp15AssetMutation!({ command: "guard", approvalToken: null, ...common } as never);
+    const recorded = await adapter.guardMvp15AssetMutation!({ command: "record_outcome", operationIndex: 3, registrationId: common.registrationId, phase: "rollback", operationId: "op-move", success: true, sideEffectObserved: true, rollbackAvailable: false, evidenceId: "mcp:rollback:move", reasonCode: "none" } as never);
+
+    expect(guarded).toMatchObject({ status: "accepted_by_native_guard", phase: "rollback", operationId: "op-move", operationIndex: 3 });
+    expect(recorded).toMatchObject({ status: "recorded", phase: "rollback", operationId: "op-move", rollbackAvailable: true });
+    expect(nativeCalls.filter((call) => call.command.includes("asset_mutation")).map((call) => call.command)).toEqual(["rollback_asset_mutation", "record_asset_mutation_outcome"]);
+  });
+
   it("builds MVP15 exact facade tools from wrapper toolset descriptions and pins call_tool execution", async () => {
     const fullContracts = {
       inputSchema: { type: "object" },
@@ -901,6 +1093,19 @@ describe("DesktopRuntimeAdapter", () => {
         },
       },
     ]);
+
+    const mutationAttempt = await adapter.callMvp15AssetTool!("ue.asset.save", {
+      changeSetId: "asset-changeset:1",
+      runId: "run-1",
+      dryRun: false,
+      execute: true,
+      rollback: false,
+      dryRunHash: "a".repeat(40),
+      assetPath: "/Game/UAgentSandbox/run-1/Hero",
+      saveAll: false,
+    });
+    expect(mutationAttempt).toMatchObject({ status: "blocked", reason: "mvp15_direct_exact_tool_required" });
+    expect(sendRequest.mock.calls.filter((call) => call[0].method === "tools/call")).toHaveLength(3);
   });
 
   it("keeps a complete direct MVP15 exact asset tool ahead of a same-name facade fallback", async () => {
@@ -1010,7 +1215,11 @@ describe("DesktopRuntimeAdapter", () => {
     sendRequest.mockClear();
     const saveArgs = {
       changeSetId: "asset-changeset:1",
-      dryRunHash: "dry:hash",
+      runId: "run-1",
+      dryRun: false,
+      execute: true,
+      rollback: false,
+      dryRunHash: "a".repeat(40),
       assetPath: "/Game/UAgentSandbox/run-1/Hero",
       saveAll: false,
     };

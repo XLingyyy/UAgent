@@ -206,7 +206,8 @@ fn validate_native_project_root(input: ProjectRootValidationInput) -> ProjectRoo
                 }
                 let uproject_path = &uproject_files[0].path();
                 let uproject_content = fs::read_to_string(uproject_path).unwrap_or_default();
-                let (project_name, engine_association) = parse_uproject_content(&uproject_content);
+                let (project_name, engine_association) =
+                    parse_uproject_content(&uproject_content, uproject_path);
                 ProjectRootValidationResult {
                     ok: true,
                     reason: "valid".to_string(),
@@ -713,8 +714,12 @@ fn resolve_canonical_path(path_str: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
-fn parse_uproject_content(content: &str) -> (Option<String>, Option<String>) {
-    let project_name = None;
+fn parse_uproject_content(content: &str, uproject_path: &Path) -> (Option<String>, Option<String>) {
+    let project_name = uproject_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .map(|stem| stem.to_string());
     let engine_association = if content.contains("\"EngineAssociation\"") {
         Some("5.8".to_string())
     } else {
@@ -1189,6 +1194,9 @@ pub(crate) fn redact_path_for_ui(path: &str) -> String {
     if norm.starts_with("fixture://") {
         return norm.replacen("fixture://", "[fixture-root]/", 1);
     }
+    if is_absolute_path(&norm) {
+        return "[project-root]".to_string();
+    }
     let mut redacted = norm.clone();
     for env_key in ["USERPROFILE", "HOME"] {
         if let Ok(home) = std::env::var(env_key) {
@@ -1344,8 +1352,12 @@ pub fn run() {
             ue_editor_process::launch_editor_process,
             ue_editor_process::stop_editor_observation_session,
             asset_mutation::dry_run_asset_mutation,
+            asset_mutation::register_asset_mutation_approval,
             asset_mutation::execute_asset_mutation,
             asset_mutation::rollback_asset_mutation,
+            asset_mutation::record_asset_mutation_outcome,
+            asset_mutation::read_asset_content_evidence,
+            asset_mutation::snapshot_asset_content_manifest,
             mcp::mcp_streamable_http_request,
         ])
         .run(tauri::generate_context!())
@@ -1355,6 +1367,81 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct RealProjectValidationTestRoot {
+        path: PathBuf,
+    }
+
+    impl Drop for RealProjectValidationTestRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn create_real_project_validation_test_root() -> RealProjectValidationTestRoot {
+        let unique = format!(
+            "uagent-real-project-validation-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(unique);
+        fs::create_dir_all(&path).unwrap();
+        fs::write(
+            path.join("SampleNativeProject.uproject"),
+            "{\"EngineAssociation\":\"5.8\"}",
+        )
+        .unwrap();
+        RealProjectValidationTestRoot { path }
+    }
+
+    #[test]
+    fn real_project_validation_uses_uproject_filename_stem() {
+        let root = create_real_project_validation_test_root();
+        let result = validate_native_project_root(ProjectRootValidationInput {
+            root_ref: root.path.to_string_lossy().to_string(),
+        });
+
+        assert!(result.ok);
+        assert_eq!(result.reason, "valid");
+        assert_eq!(
+            result.project_name.as_deref(),
+            Some("SampleNativeProject")
+        );
+        assert_eq!(result.engine.source, "uproject");
+    }
+
+    #[test]
+    fn real_project_validation_redacts_absolute_display_root() {
+        let root = create_real_project_validation_test_root();
+        let root_ref = root.path.to_string_lossy().to_string();
+        let uproject_ref = root
+            .path
+            .join("SampleNativeProject.uproject")
+            .to_string_lossy()
+            .to_string();
+        let result = validate_native_project_root(ProjectRootValidationInput { root_ref });
+
+        assert_eq!(result.display_root, "[project-root]");
+
+        let serialized = serde_json::to_string(&result).unwrap();
+        assert!(
+            !serialized.contains(&normalize_project_path(&root.path.to_string_lossy())),
+            "validation result contains raw project root: {}",
+            serialized
+        );
+        assert!(
+            !serialized.contains(&normalize_project_path(&uproject_ref)),
+            "validation result contains raw uproject path: {}",
+            serialized
+        );
+        assert!(
+            !serialized.contains("C:/") && !serialized.contains("//?/") && !serialized.contains("\\\\?\\"),
+            "validation result contains an absolute Windows path prefix: {}",
+            serialized
+        );
+    }
 
     #[test]
     fn preview_rejects_untrusted_fixture_root() {

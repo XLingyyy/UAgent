@@ -239,16 +239,17 @@ Non-goals:
 ## MVP15 - Real UE Sandbox Asset Mutation Pilot
 
 - **Sandbox Asset Contracts**: Adds asset mutation dry-run plans, sandbox asset paths, asset ChangeSet lifecycle, approval token binding, verification, rollback, evidence, audit, and replay-only summaries.
-- **Sandbox Path Policy**: Allows only `/Game/UAgentSandbox/**` package paths and mapped `/Content/UAgentSandbox/**` disk paths. Blocks traversal, non-sandbox assets, generated/cache paths, project-wide saves, and broad/bulk asset operations.
+- **Sandbox Path Policy**: Allows `create_folder` only at the exact `/Game/UAgentSandbox/<run-id>` root and all later writes only at strict descendants, with mapped `/Content/UAgentSandbox/**` disk paths. Blocks the global root, cross-run/root-prefix confusion, traversal, non-sandbox assets, generated/cache paths, project-wide saves, and broad/bulk asset operations.
 - **Exact MCP Asset Adapters**: Permits only schema-checked sandbox dry-run asset operations with rollback contracts and read-only evidence query capability. Generic mutating `tools/call`, unknown tool names, missing dry-run support, incomplete wrapper contracts, raw absolute paths, and provider auto-apply are blocked.
 - **Exact-tool Facade**: Wrapper-only endpoints may be adapted only when `describe_toolset` supplies fixed exact method ids, schema versions, input schemas, dry-run schemas, rollback contracts, affected asset schemas, and evidence queries for all six asset operations.
-- **Runtime Asset Mutation Service**: Provides deterministic dry-run, preview, approve, execute, verify, rollback, manifest, and replay summary behavior without storing approval tokens in ChangeSets or replaying side effects.
-- **Native Asset Mutation Guard**: Adds feature-gated Tauri commands that classify and reject unsafe asset mutation requests before native execution can occur.
-- **Desktop UI Integration**: Inspector Assets tab, Changes panel, Settings gate, and runtime store actions expose the sandbox asset ChangeSet lifecycle and blocked states.
+- **Runtime Asset Mutation Service**: Provides deterministic dry-run, preview, approve/register, exact-tool execute, external verify, inverse rollback, manifest, and recorded replay summary behavior; the native-issued raw token is held only until the first execute attempt and never enters ChangeSets, UI/audit, MCP, or replay.
+- **Native Asset Mutation Guard**: Validates run/session/PID/root/order/path/aggregate/TTL binding before issuing a 256-bit one-time token, stores only its SHA-256 hash, records strict side-effect outcomes, and rejects execute or rollback replay.
+- **Partial Failure / Cleanup Contract**: Only an exact `partial_failure` with `sideEffectObserved:true`, rollback availability, evidence, and a registered inverse receives ownership. Run-root cleanup recursively removes only an asset-free exact registered directory tree and fails closed on assets, cross-run targets, escapes, or reparse points.
+- **Desktop UI Integration**: Inspector Assets and Changes surfaces expose `executed`, `verified`, `rollback_available`, `rolled_back`, stable blocked reasons, redacted per-operation audit, and recorded-only replay with zero runtime side effects.
 - **Scenario Matrix**: Runtime matrix covers at least 60 scenarios / 240 assertions across allowed paths, denied paths, stale manifest, approval expiry, execution, verification, rollback, replay, exact inventory, facade, and MCP adapter boundaries.
-- **Security Regression**: Side-effect scan covers sandbox-only writes, non-sandbox asset paths, Save All, bulk operations, broad mutating MCP calls, replay re-execution, approval token leakage, provider live defaults, manifest-only real verification, git/dependency operations, and raw path leakage.
+- **Security Regression**: Side-effect scan covers non-empty-token fake verification, unknown-result fail-open, sandbox-only writes, non-sandbox asset paths, Save All, bulk operations, generic wrapper mutation, replay execute/rollback, raw evidence path/identity leakage, provider live defaults, and manifest-only real verification.
 
-Status: implemented; supervisor-local real UE sandbox smoke is still required for final acceptance.
+Status: `PASS_REAL_SMOKE candidate / awaiting supervisor review`.
 
 Goals:
 

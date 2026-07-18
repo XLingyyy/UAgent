@@ -121,8 +121,14 @@ function SliceProbe() {
       <button type="button" onClick={() => layoutActions.setActiveNav("projects")}>
         set nav projects
       </button>
+      <button type="button" onClick={() => layoutActions.setActiveNav("settings")}>
+        set nav settings
+      </button>
       <button type="button" onClick={() => settingsActions.openSettings("provider")}>
         open provider settings
+      </button>
+      <button type="button" onClick={settingsActions.closeSettings}>
+        close settings
       </button>
       <button type="button" onClick={() => projectActions.setActiveProject("mech")}>
         set active project
@@ -245,6 +251,29 @@ describe("ui-store", () => {
     expect(screen.getByTestId("composer-model").textContent).toBe("provider-a-model-2");
     expect(screen.getByTestId("selected-provider").textContent).toBe("provider-b");
     expect(screen.getByTestId("default-provider").textContent).toBe("provider-a");
+  });
+
+  it("resets Settings navigation to Workspace when closing Settings", () => {
+    renderSliceProbe();
+
+    fireEvent.click(screen.getByText("set nav settings"));
+    fireEvent.click(screen.getByText("open provider settings"));
+    fireEvent.click(screen.getByText("close settings"));
+
+    expect(screen.getByTestId("settings-open").textContent).toBe("false");
+    expect(screen.getByTestId("active-nav").textContent).toBe("workspace");
+  });
+
+  it("preserves non-Settings navigation and active page when closing Settings", () => {
+    renderSliceProbe();
+
+    fireEvent.click(screen.getByText("set nav projects"));
+    fireEvent.click(screen.getByText("open provider settings"));
+    fireEvent.click(screen.getByText("close settings"));
+
+    expect(screen.getByTestId("settings-open").textContent).toBe("false");
+    expect(screen.getByTestId("active-nav").textContent).toBe("projects");
+    expect(screen.getByTestId("settings-page").textContent).toBe("provider");
   });
 
   it("resyncs composer defaults when provider defaults change or disappear", () => {

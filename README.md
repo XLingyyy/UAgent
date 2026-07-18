@@ -2,19 +2,19 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP15B Exact MCP Asset Tools Real Smoke (Implemented / Environment-Smoke Pending)
+## Current Stage: MVP15C08 Real Asset Lifecycle Candidate
 
-MVP15B extends the MVP14 safe editor observation path into a blocked-by-default real UE sandbox asset mutation pilot. It introduces a narrow dry-run / approve / execute / verify / rollback loop for sandbox-only asset work while preserving MVP12 ChangeSet v2, MVP13 approval binding, MVP14 process observation, trusted roots, redaction, and replay boundaries.
+MVP15C08 extends the MVP14 safe editor observation path into a blocked-by-default real UE sandbox asset mutation pilot. It implements a narrow dry-run / approve / execute / verify / rollback loop for sandbox-only asset work while preserving MVP12 ChangeSet v2, MVP13 approval binding, MVP14 process observation, trusted roots, redaction, and replay boundaries.
 
-Current MVP15B code includes shared contracts, runtime policy, exact MCP asset adapters, a compliant exact-tool facade path for fully described wrapper toolsets, a Tauri native guard, desktop inspector surfaces, 60+ scenario coverage, and side-effect scan hardening. Real UE execution remains limited to `/Game/UAgentSandbox/**` and mapped `/Content/UAgentSandbox/**`; final acceptance still requires supervisor-local real UE smoke in a configured UE Editor environment.
+Current code includes a native-issued 256-bit one-time approval registry (hash-only storage and a 60-second maximum TTL), ordered operation binding, strict exact-tool execute/rollback results, read-only Content evidence, inverse rollback, desktop lifecycle/audit surfaces, recorded-only replay, scenario coverage, and side-effect scan hardening. Real UE execution remains limited to `/Game/UAgentSandbox/**`; `ue.asset.create_folder` may create only the exact `/Game/UAgentSandbox/<run-id>` root, and every later write target must be a strict descendant of that root. The accepted source baseline is read-only `/Game/Test01`. Status: `PASS_REAL_SMOKE candidate / awaiting supervisor review`.
 
 1. **Asset Mutation Contracts**: Sandbox asset paths, operation kinds, dry-run plans, ChangeSet approvals, verification, rollback, evidence, audit, and replay summaries.
 2. **Sandbox Policy**: Blocks non-sandbox paths, path traversal, Save All, unsafe delete/move/rename/bulk operations, broad mutating MCP calls, stale manifests, provider auto-apply, raw secrets, and replay re-execution.
-3. **Runtime Asset Service**: Deterministic dry-run, approval token, execute, verify, rollback, manifest, replay summary, and scenario matrix support.
-4. **Native Guard**: Feature-gated Tauri commands validate sandbox-only asset mutation requests before any native execution bridge can run.
-5. **MCP Schema Adapters**: Exact allowlist for dry-run-capable sandbox asset tools with rollback contracts and read-only evidence queries; generic wrapper mutation paths remain blocked unless a compliant exact-tool facade pins toolset id, method id, schema version, `dryRunHash`, and `changeSetId`.
-6. **Desktop UI / Store**: Inspector Assets tab, Changes panel, Settings gate, evidence, and runtime store actions expose asset ChangeSet lifecycle state.
-7. **Scenario Matrix / Side-effect Scan / Docs**: MVP15 matrix covers at least 60 scenarios / 240 assertions; side-effect scan covers sandbox boundaries, broad mutating calls, Save All, replay, raw paths, token leakage, provider auto-apply, and manifest-only real verification.
+3. **Runtime Asset Service**: Deterministic dry-run, ephemeral native-issued approval token handoff, execute, verify, rollback, manifest, replay summary, and scenario matrix support.
+4. **Native Guard**: Feature-gated native commands validate the complete binding before issuing an unpredictable token, store only its hash, consume it on the first execute attempt, enforce ordered execute/rollback phases, and reject replay.
+5. **MCP Schema Adapters**: Exact allowlist for dry-run, execute, and rollback-capable sandbox asset tools with strict state-specific structured results, required `sideEffectObserved`, and read-only evidence queries; generic wrapper mutation remains blocked.
+6. **Desktop UI / Store**: Inspector Assets and Changes surfaces expose `executed`, `verified`, `rollback_available`, `rolled_back`, stable blocked reasons, redacted operation audit, and recorded replay summaries.
+7. **Scenario Matrix / Side-effect Scan / Docs**: Security checks cover forged token shortcuts, unknown-result fail-open, sandbox boundaries, broad mutation, Save All, replay, raw evidence identity/path leakage, provider auto-apply, and manifest-only real verification.
 
 Controlled text writes remain approval-gated and limited to trusted fixture/temp roots or explicitly trusted project roots. Non-sandbox UE assets, Save All, bulk asset operations, arbitrary shell expansion, provider live defaults, automatic git operations, replay re-execute, and raw secret/path leakage remain blocked.
 

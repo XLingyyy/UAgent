@@ -1,4 +1,14 @@
-import type { AssetMutationOperation } from "@uagent/shared";
+import type {
+  AssetMutationApprovalOperationBinding,
+  AssetMutationApprovalRegistrationRequest,
+  AssetMutationApprovalRegistrationResult,
+  AssetMutationOperation,
+  AssetMutationOperationGuardRequest,
+  AssetMutationOperationGuardResult,
+  AssetMutationOutcomeRequest,
+  AssetMutationOutcomeResult,
+  AssetMutationPluginExecutionResult,
+} from "@uagent/shared";
 import type { AssetMutationAdapter, AssetMutationAdapterContext, AssetMutationAdapterResult } from "./mvp15-asset-changeset.js";
 
 export const MVP15_ASSET_TOOL_ALLOWLIST = [
@@ -69,31 +79,37 @@ export interface Mvp15McpAssetToolInventory {
   decisions: Mvp15McpAssetToolDecision[];
 }
 
-export interface Mvp15NativeAssetGuardInput {
-  toolName: Mvp15McpAssetToolName;
-  assetPath?: string | null;
-  targetAssetPath?: string | null;
-  dryRunHash: string;
-  approvalToken: string | null;
-  editorSessionId: string;
-  pidHash: string;
-  assetMutationGateEnabled: boolean;
-  observedEditorSessionId: string | null;
-  observedPidHash: string | null;
-  phase: "execute" | "rollback";
-}
+export type Mvp15NativeAssetGuardInput =
+  | ({ command: "register"; phase: "register" } & AssetMutationApprovalRegistrationRequest)
+  | ({ command: "guard" } & AssetMutationOperationGuardRequest)
+  | ({ command: "record_outcome"; operationIndex: number } & AssetMutationOutcomeRequest)
+  | {
+      /** Fixture-only compatibility input; real-mode service requires registration before this path. */
+      command?: "legacy_guard";
+      toolName: Mvp15McpAssetToolName;
+      assetPath?: string | null;
+      targetAssetPath?: string | null;
+      dryRunHash: string;
+      approvalToken: string | null;
+      editorSessionId: string;
+      pidHash: string;
+      assetMutationGateEnabled: boolean;
+      observedEditorSessionId: string | null;
+      observedPidHash: string | null;
+      phase: "execute" | "rollback";
+    };
 
-export interface Mvp15NativeAssetGuardResult {
-  status: "accepted_by_native_guard" | "blocked" | "failed";
-  reason: string | null;
-  evidenceId?: string | null;
-}
+export type Mvp15NativeAssetGuardResult =
+  | AssetMutationApprovalRegistrationResult
+  | AssetMutationOperationGuardResult
+  | AssetMutationOutcomeResult;
 
 export interface Mvp15McpAssetToolCallResult {
   ok?: boolean;
   status?: string | null;
   reason?: string | null;
   evidenceId?: string | null;
+  structuredContent?: unknown;
 }
 
 export interface Mvp15McpAssetMutationAdapterOptions {
@@ -259,6 +275,82 @@ export function createMvp15McpAssetMutationAdapter(
   options: Mvp15McpAssetMutationAdapterOptions,
 ): AssetMutationAdapter {
   const toolByName = new Map(options.tools.map(normalizeMvp15McpAssetToolDescriptor).map((tool) => [tool.name, tool]));
+  const registrations = new Map<string, { registrationId: string; trustedRootId: string; operationCount: number }>();
+
+  async function prepareExecute(context: AssetMutationAdapterContext): Promise<AssetMutationAdapterResult> {
+    const { changeSet } = context;
+    const approval = changeSet.approval;
+    if (!approval) return blockedResult("approval_required", changeSet.id);
+    if (!options.assetMutationGateEnabled) return blockedResult("native_guard_asset_mutation_gate_disabled", changeSet.id);
+    if (!options.observedEditorSessionId || !options.observedPidHash) {
+      return blockedResult("native_guard_active_observation_required", changeSet.id);
+    }
+    if (!changeSet.aggregateDryRunHash || !changeSet.aggregateArgsHash) {
+      return blockedResult("approval_aggregate_required", changeSet.id);
+    }
+    const inventory = createMvp15McpAssetToolInventory(options.tools);
+    if (inventory.status !== "ready") return blockedResult("blocked_by_mcp_schema:inventory_not_ready", changeSet.id);
+    const operations: AssetMutationApprovalOperationBinding[] = [];
+    for (const operation of changeSet.operations) {
+      const binding = toNativeApprovalOperation(operation);
+      if (!binding) return blockedResult("native_registration_operation_invalid", operation.id);
+      operations.push(binding);
+    }
+    let result: Mvp15NativeAssetGuardResult;
+    try {
+      result = await options.nativeGuard({
+        command: "register",
+        phase: "register",
+        changeSetId: changeSet.id,
+        runId: changeSet.runId,
+        projectBindingId: changeSet.projectId,
+        trustedRootRef: changeSet.trustedRootId,
+        editorSessionId: changeSet.editorSessionId,
+        pidHash: changeSet.pidHash,
+        observedEditorSessionId: options.observedEditorSessionId,
+        observedPidHash: options.observedPidHash,
+        aggregateDryRunHash: changeSet.aggregateDryRunHash,
+        aggregateArgsHash: changeSet.aggregateArgsHash,
+        requestedTtlMs: approval.expiresAt - approval.issuedAt,
+        assetMutationGateEnabled: options.assetMutationGateEnabled,
+        operations,
+      });
+    } catch {
+      return blockedResult("native_registration_failed", changeSet.id);
+    }
+    if (
+      result.status !== "registered"
+      || typeof result.registrationId !== "string"
+      || !result.registrationId
+      || typeof result.trustedRootId !== "string"
+      || !result.trustedRootId
+      || result.operationCount !== operations.length
+      || typeof result.approvalToken !== "string"
+      || !/^[0-9a-f]{64}$/.test(result.approvalToken)
+      || !Number.isSafeInteger(result.issuedAt)
+      || !Number.isSafeInteger(result.expiresAt)
+    ) {
+      return blockedResult(nativeFailureReason("native_registration_", result.reason), changeSet.id);
+    }
+    registrations.set(changeSet.id, {
+      registrationId: result.registrationId,
+      trustedRootId: result.trustedRootId,
+      operationCount: operations.length,
+    });
+    return {
+      ok: true,
+      reason: null,
+      evidenceId: `asset-evidence:native-registration:${result.registrationId}`,
+      externalRegistration: {
+        registrationId: result.registrationId,
+        projectBindingId: changeSet.projectId,
+        trustedRootId: result.trustedRootId,
+      },
+      issuedApprovalToken: result.approvalToken,
+      issuedAt: result.issuedAt,
+      expiresAt: result.expiresAt,
+    };
+  }
 
   async function runTool(
     operation: AssetMutationOperation,
@@ -286,38 +378,142 @@ export function createMvp15McpAssetMutationAdapter(
       return blockedResult(`${prefix}:${policy.reason}:${call.toolName}`, operation.id);
     }
 
-    const guard = await options.nativeGuard({
-      toolName: call.toolName,
-      assetPath: call.assetPath,
-      targetAssetPath: call.targetAssetPath,
-      dryRunHash: context.dryRunHash,
-      approvalToken: context.approvalToken,
-      editorSessionId: context.editorSessionId,
-      pidHash: context.pidHash,
-      assetMutationGateEnabled: options.assetMutationGateEnabled,
-      observedEditorSessionId: options.observedEditorSessionId,
-      observedPidHash: options.observedPidHash,
-      phase: rollback ? "rollback" : "execute",
-    });
+    const registration = registrations.get(context.changeSet.id);
+    const guardOperation = rollback ? toNativeRollbackOperation(operation) : toNativeApprovalOperation(operation);
+    if (rollback && (!registration || !guardOperation)) {
+      return blockedResult("native_rollback_registration_required", operation.id);
+    }
+    let guard: Mvp15NativeAssetGuardResult;
+    try {
+      guard = registration && guardOperation
+        ? await options.nativeGuard({
+          command: "guard",
+          registrationId: registration.registrationId,
+          approvalToken: rollback ? null : context.operationIndex === 0 ? context.approvalToken : null,
+          phase: rollback ? "rollback" : "execute",
+          operationIndex: context.operationIndex,
+          operationCount: context.operationCount,
+          changeSetId: context.changeSet.id,
+          runId: context.changeSet.runId,
+          projectBindingId: context.changeSet.projectId,
+          trustedRootId: registration.trustedRootId,
+          editorSessionId: context.editorSessionId,
+          pidHash: context.pidHash,
+          observedEditorSessionId: options.observedEditorSessionId ?? "",
+          observedPidHash: options.observedPidHash ?? "",
+          aggregateDryRunHash: context.changeSet.aggregateDryRunHash ?? "",
+          aggregateArgsHash: context.changeSet.aggregateArgsHash ?? "",
+          assetMutationGateEnabled: options.assetMutationGateEnabled,
+          operation: guardOperation,
+          })
+        : await options.nativeGuard({
+          command: "legacy_guard",
+          toolName: call.toolName,
+          assetPath: call.assetPath,
+          targetAssetPath: call.targetAssetPath,
+          dryRunHash: context.dryRunHash,
+          approvalToken: context.approvalToken,
+          editorSessionId: context.editorSessionId,
+          pidHash: context.pidHash,
+          assetMutationGateEnabled: options.assetMutationGateEnabled,
+          observedEditorSessionId: options.observedEditorSessionId,
+          observedPidHash: options.observedPidHash,
+            phase: rollback ? "rollback" : "execute",
+          });
+    } catch {
+      return blockedResult("native_guard_failed", operation.id);
+    }
     if (guard.status !== "accepted_by_native_guard") {
-      return blockedResult(`native_guard_${guard.reason ?? "blocked"}`, operation.id, guard.evidenceId ?? undefined);
+      const evidenceId = "evidenceId" in guard ? guard.evidenceId ?? undefined : undefined;
+      return blockedResult(nativeFailureReason("native_guard_", guard.reason, "blocked"), operation.id, evidenceId);
+    }
+    if (
+      registration
+      && guardOperation
+      && (
+        guard.registrationId !== registration.registrationId
+        || guard.phase !== (rollback ? "rollback" : "execute")
+        || guard.operationId !== operation.id
+        || guard.operationIndex !== context.operationIndex
+        || guard.operationCount !== context.operationCount
+      )
+    ) {
+      return blockedResult("native_guard_result_invalid", operation.id);
     }
 
+    let raw: unknown;
     try {
-      const raw = await options.callTool(call.toolName, call.args);
-      const normalized = normalizeToolResult(raw, operation.id);
-      if (!normalized.ok) return normalized;
-      return {
-        ok: true,
-        reason: null,
-        evidenceId: normalized.evidenceId || guard.evidenceId || `asset-evidence:mcp:${operation.id}`,
-      };
-    } catch (error) {
-      return blockedResult(error instanceof Error ? `mcp_call_failed:${error.message}` : "mcp_call_failed", operation.id);
+      raw = await options.callTool(call.toolName, call.args);
+    } catch {
+      if (registration && guardOperation) {
+        const phase = rollback ? "rollback" : "execute";
+        let failedOutcome: Mvp15NativeAssetGuardResult;
+        try {
+          failedOutcome = await options.nativeGuard({
+            command: "record_outcome",
+            operationIndex: context.operationIndex,
+            registrationId: registration.registrationId,
+            phase,
+            operationId: operation.id,
+            success: false,
+            sideEffectObserved: false,
+            rollbackAvailable: false,
+            evidenceId: `asset-evidence:block:${operation.id}`,
+            reasonCode: "mcp_call_failed",
+          });
+        } catch {
+          return blockedResult("native_outcome_failed", operation.id);
+        }
+        if (
+          failedOutcome.status !== "recorded"
+          || failedOutcome.registrationId !== registration.registrationId
+          || failedOutcome.phase !== phase
+          || failedOutcome.operationId !== operation.id
+        ) {
+          return blockedResult(nativeFailureReason("native_outcome_", failedOutcome.reason), operation.id);
+        }
+      }
+      return blockedResult("mcp_call_failed", operation.id);
     }
+    const normalized = validateMvp15PluginExecutionResult(raw, operation, context, call);
+    if (registration && guardOperation) {
+      const phase = rollback ? "rollback" : "execute";
+      let outcome: Mvp15NativeAssetGuardResult;
+      try {
+        outcome = await options.nativeGuard({
+          command: "record_outcome",
+          operationIndex: context.operationIndex,
+          registrationId: registration.registrationId,
+          phase,
+          operationId: operation.id,
+          success: normalized.ok,
+          sideEffectObserved: normalized.sideEffectObserved === true,
+          rollbackAvailable: normalized.rollbackAvailable === true,
+          evidenceId: normalized.evidenceId,
+          reasonCode: normalized.reason,
+        });
+      } catch {
+        return blockedResult("native_outcome_failed", operation.id, normalized.evidenceId);
+      }
+      if (
+        outcome.status !== "recorded"
+        || outcome.registrationId !== registration.registrationId
+        || outcome.phase !== phase
+        || outcome.operationId !== operation.id
+      ) {
+        return blockedResult(nativeFailureReason("native_outcome_", outcome.reason), operation.id, normalized.evidenceId);
+      }
+    }
+    if (!normalized.ok) return normalized;
+    return {
+      ok: true,
+      reason: null,
+      evidenceId: normalized.evidenceId || guard.evidenceId || `asset-evidence:mcp:${operation.id}`,
+    };
   }
 
   return {
+    prepareExecute,
     execute: (operation, context) => runTool(operation, context),
     rollback: (operation, context) => runTool(operation, context, true),
   };
@@ -339,24 +535,286 @@ function blockedResult(reason: string, operationId: string, evidenceId?: string)
   return {
     ok: false,
     reason,
-    evidenceId: evidenceId ?? `asset-evidence:block:${operationId}`,
-    stateOnFailure: reason.startsWith("blocked_by_mcp_schema:") || reason.startsWith("native_guard_") ? "failed" : undefined,
+    evidenceId: isSafeOpaqueIdentifier(evidenceId) ? evidenceId : `asset-evidence:block:${operationId}`,
+    stateOnFailure: "failed",
+    sideEffectObserved: false,
+    rollbackAvailable: false,
   };
 }
 
-function normalizeToolResult(raw: unknown, operationId: string): AssetMutationAdapterResult {
-  if (!raw || typeof raw !== "object") {
-    return { ok: true, reason: null, evidenceId: `asset-evidence:mcp:${operationId}` };
+function nativeFailureReason(prefix: string, reason: unknown, fallback = "invalid_result"): string {
+  return typeof reason === "string" && /^[a-z0-9_:-]+$/.test(reason)
+    ? `${prefix}${reason}`
+    : `${prefix}${fallback}`;
+}
+
+function isSafeOpaqueIdentifier(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 512
+    && /^[A-Za-z0-9:._-]+$/.test(value);
+}
+
+export function validateMvp15PluginExecutionResult(
+  raw: unknown,
+  operation: AssetMutationOperation,
+  context: AssetMutationAdapterContext,
+  call: Extract<ToolCallPlan, { ok: true }>,
+): AssetMutationAdapterResult {
+  const structured = extractStrictStructuredContent(raw);
+  if (!structured || containsSensitiveExecutionField(structured)) {
+    return invalidToolResult(operation.id);
   }
-  const result = raw as Mvp15McpAssetToolCallResult;
-  const status = typeof result.status === "string" ? result.status : null;
-  const ok = result.ok !== false && status !== "blocked" && status !== "failed" && status !== "error";
+  const result = structured as unknown as AssetMutationPluginExecutionResult;
+  const allowedTopLevelKeys = new Set([
+    "blocked", "status", "reasonCode", "toolName", "operation", "phase", "changeSetId", "runId",
+    "sandboxRoot", "wouldChange", "wouldModify", "wouldRead", "affectedAssets", "rollbackPlan",
+    "externalEvidenceQueries", "dryRunHash", "hashAlgorithm", "schemaVersion", "approvalRequired",
+    "evidenceId", "sideEffectObserved", "rollbackAvailable", "rollbackStatus", "implementationStatus",
+  ]);
+  const expectedOperation = pluginOperationForKind(operation.kind);
+  const expectedModify = expectedModifiedPaths(operation);
+  const expectedRead = operation.kind === "duplicate_asset" && operation.assetPathBefore ? [operation.assetPathBefore] : [];
+  const rollback = call.args.rollback === true;
+  const rollbackAvailable = rollback ? false : operation.kind !== "save_single_asset";
+  const expectedEvidencePaths = [...expectedRead, ...expectedModify];
+  const commonChecks = [
+    hasOnlyKeys(structured, allowedTopLevelKeys),
+    typeof result.blocked === "boolean",
+    typeof result.status === "string" && result.status.length > 0,
+    typeof result.reasonCode === "string" && result.reasonCode.length > 0,
+    result.toolName === call.toolName,
+    result.operation === expectedOperation,
+    result.phase === (rollback ? "rollback" : "execute"),
+    result.changeSetId === context.changeSet.id,
+    result.runId === context.changeSet.runId,
+    result.sandboxRoot === `/Game/UAgentSandbox/${context.changeSet.runId}`,
+    typeof result.sideEffectObserved === "boolean",
+    typeof result.wouldChange === "boolean",
+    Array.isArray(result.wouldModify),
+    Array.isArray(result.wouldRead),
+    isObjectRecord(result.affectedAssets),
+    hasOnlyKeys(result.affectedAssets, new Set(["readOnlySources", "sandboxTargets", "externalTargets"])),
+    isObjectRecord(result.rollbackPlan),
+    hasOnlyKeys(result.rollbackPlan, new Set(["strategy", "inverseOperation", "executionEnabled"])),
+    typeof result.rollbackPlan?.strategy === "string" && result.rollbackPlan.strategy.length > 0,
+    typeof result.rollbackPlan?.executionEnabled === "boolean",
+    typeof result.rollbackPlan?.inverseOperation === "string" && result.rollbackPlan.inverseOperation.length > 0,
+    Array.isArray(result.externalEvidenceQueries) && result.externalEvidenceQueries.length === 1,
+    Array.isArray(result.externalEvidenceQueries) && result.externalEvidenceQueries.every((query) => (
+      isObjectRecord(query)
+      && hasOnlyKeys(query, new Set(["queryKind", "readOnly", "paths"]))
+      && query.readOnly === true
+      && query.queryKind === "asset_registry_snapshot"
+      && Array.isArray(query.paths)
+    )),
+    result.dryRunHash === context.dryRunHash && /^[0-9a-f]{40}$/.test(result.dryRunHash),
+    result.hashAlgorithm === "sha1",
+    result.schemaVersion === "mvp15c.dry-run.v1",
+    result.approvalRequired === true,
+    typeof result.evidenceId === "string" && result.evidenceId.trim().length > 0,
+    typeof result.rollbackAvailable === "boolean",
+    typeof result.rollbackStatus === "string" && result.rollbackStatus.length > 0,
+    result.implementationStatus === "execution_capable",
+  ];
+  if (commonChecks.some((passed) => !passed)) return invalidToolResult(operation.id);
+
+  const impactsMatch = stringArraysEqual(result.wouldModify, expectedModify)
+    && stringArraysEqual(result.wouldRead, expectedRead)
+    && stringArraysEqual(result.affectedAssets.sandboxTargets, expectedModify)
+    && stringArraysEqual(result.affectedAssets.readOnlySources, expectedRead)
+    && stringArraysEqual(result.affectedAssets.externalTargets, [])
+    && result.externalEvidenceQueries.every((query) => stringArraysEqual(query.paths, expectedEvidencePaths));
+  const impactsAreEmpty = stringArraysEqual(result.wouldModify, [])
+    && stringArraysEqual(result.wouldRead, [])
+    && stringArraysEqual(result.affectedAssets.sandboxTargets, [])
+    && stringArraysEqual(result.affectedAssets.readOnlySources, [])
+    && stringArraysEqual(result.affectedAssets.externalTargets, [])
+    && result.externalEvidenceQueries.every((query) => stringArraysEqual(query.paths, []));
+  const successShape = result.blocked === false
+    && result.status === (rollback ? "rolled_back" : "executed")
+    && result.reasonCode === "none"
+    && result.sideEffectObserved === true
+    && result.wouldChange === true
+    && impactsMatch
+    && result.rollbackAvailable === rollbackAvailable
+    && result.rollbackPlan.executionEnabled === rollbackAvailable
+    && result.rollbackStatus === (rollback ? "completed" : rollbackAvailable ? "available" : "none");
+  const partialFailureShape = !rollback
+    && rollbackAvailable
+    && result.blocked === true
+    && result.status === "partial_failure"
+    && result.reasonCode !== "none"
+    && result.sideEffectObserved === true
+    && result.wouldChange === true
+    && impactsMatch
+    && result.rollbackAvailable === true
+    && result.rollbackPlan.executionEnabled === true
+    && result.rollbackStatus === "available";
+  const blockedShape = result.blocked === true
+    && result.status === "blocked"
+    && result.reasonCode !== "none"
+    && result.sideEffectObserved === false
+    && result.wouldChange === false
+    && impactsAreEmpty
+    && result.rollbackAvailable === false
+    && result.rollbackPlan.executionEnabled === false
+    && (result.rollbackStatus === "not_available" || result.rollbackStatus === "failed");
+
+  if (partialFailureShape) {
+    return {
+      ok: false,
+      reason: `mcp_tool_partial_failure:${result.reasonCode}`,
+      evidenceId: result.evidenceId,
+      stateOnFailure: "rollback_available",
+      sideEffectObserved: true,
+      rollbackAvailable: true,
+    };
+  }
+  if (blockedShape) {
+    return {
+      ok: false,
+      reason: `mcp_tool_blocked:${result.reasonCode}`,
+      evidenceId: result.evidenceId,
+      stateOnFailure: "failed",
+      sideEffectObserved: false,
+      rollbackAvailable: false,
+    };
+  }
+  if (!successShape) return invalidToolResult(operation.id);
   return {
-    ok,
-    reason: ok ? null : result.reason ?? status ?? "mcp_tool_failed",
-    evidenceId: result.evidenceId ?? `asset-evidence:mcp:${operationId}`,
-    stateOnFailure: ok ? undefined : "rollback_available",
+    ok: true,
+    reason: null,
+    evidenceId: result.evidenceId,
+    sideEffectObserved: true,
+    rollbackAvailable,
   };
+}
+
+function invalidToolResult(operationId: string): AssetMutationAdapterResult {
+  return {
+    ok: false,
+    reason: "mcp_tool_result_invalid",
+    evidenceId: `asset-evidence:block:${operationId}`,
+    stateOnFailure: "failed",
+    sideEffectObserved: false,
+    rollbackAvailable: false,
+  };
+}
+
+function extractStrictStructuredContent(raw: unknown): Record<string, unknown> | null {
+  if (!isObjectRecord(raw)) return null;
+  if (isObjectRecord(raw.structuredContent)) return raw.structuredContent;
+  if (isObjectRecord(raw.result) && isObjectRecord(raw.result.structuredContent)) return raw.result.structuredContent;
+  return null;
+}
+
+function containsSensitiveExecutionField(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsSensitiveExecutionField);
+  if (typeof value === "string") {
+    return /^[a-zA-Z]:[\\/]/.test(value)
+      || /^\\\\/.test(value)
+      || /^file:/i.test(value)
+      || (value.startsWith("/") && !value.startsWith("/Game/"))
+      || /(?:^|[^a-z0-9])sk-[a-z0-9_-]{8,}/i.test(value)
+      || /(?:approval|access|auth|secret)?[-_:]?token|session.?id|pid.?hash/i.test(value);
+  }
+  if (!isObjectRecord(value)) return false;
+  return Object.entries(value).some(([key, nested]) => (
+    /approval.?token|trusted.?project.?root|raw.?root|session.?id|pid.?hash|command.?line|secret/i.test(key)
+    || containsSensitiveExecutionField(nested)
+  ));
+}
+
+function hasOnlyKeys(value: unknown, allowed: ReadonlySet<string>): boolean {
+  return isObjectRecord(value) && Object.keys(value).every((key) => allowed.has(key));
+}
+
+function stringArraysEqual(actual: unknown, expected: string[]): boolean {
+  return Array.isArray(actual)
+    && actual.length === expected.length
+    && actual.every((value, index) => typeof value === "string" && value === expected[index]);
+}
+
+function expectedModifiedPaths(operation: AssetMutationOperation): string[] {
+  if (operation.kind === "rename_asset" || operation.kind === "move_asset") {
+    return operation.assetPathBefore && operation.assetPathAfter ? [operation.assetPathBefore, operation.assetPathAfter] : [];
+  }
+  if (operation.kind === "delete_sandbox_asset") return operation.assetPathBefore ? [operation.assetPathBefore] : [];
+  const path = operation.assetPathAfter ?? operation.assetPathBefore;
+  return path ? [path] : [];
+}
+
+function pluginOperationForKind(kind: AssetMutationOperation["kind"]): string {
+  if (kind === "duplicate_asset") return "duplicate";
+  if (kind === "rename_asset") return "rename";
+  if (kind === "move_asset") return "move";
+  if (kind === "save_single_asset") return "save";
+  if (kind === "delete_sandbox_asset") return "delete";
+  return "create_folder";
+}
+
+function toNativeApprovalOperation(operation: AssetMutationOperation): AssetMutationApprovalOperationBinding | null {
+  const provenance = operation.provenance;
+  if (!provenance || provenance.exactToolName !== exactToolForOperation(operation.kind)) return null;
+  const common = {
+    operationId: operation.id,
+    pluginDryRunHash: provenance.dryRunHash,
+    argsHash: provenance.argsHash,
+    saveAll: false as const,
+    bulk: false as const,
+  };
+  if (operation.kind === "create_folder" && operation.assetPathAfter) {
+    return { ...common, kind: "create_folder", toolName: "ue.asset.create_folder", assetPath: operation.assetPathAfter, rollbackAction: "cleanup_empty_folder", rollbackToolName: "ue.asset.delete" };
+  }
+  if (operation.kind === "duplicate_asset" && operation.assetPathBefore && operation.assetPathAfter) {
+    return { ...common, kind: "duplicate", toolName: "ue.asset.duplicate", sourceAssetPath: operation.assetPathBefore, targetAssetPath: operation.assetPathAfter, rollbackAction: "delete_duplicate", rollbackToolName: "ue.asset.delete" };
+  }
+  if (operation.kind === "rename_asset" && operation.assetPathBefore && operation.assetPathAfter) {
+    return { ...common, kind: "rename", toolName: "ue.asset.rename", assetPath: operation.assetPathBefore, targetAssetPath: operation.assetPathAfter, rollbackAction: "rename_back", rollbackToolName: "ue.asset.rename" };
+  }
+  if (operation.kind === "move_asset" && operation.assetPathBefore && operation.assetPathAfter) {
+    return { ...common, kind: "move", toolName: "ue.asset.move", assetPath: operation.assetPathBefore, targetAssetPath: operation.assetPathAfter, rollbackAction: "move_back", rollbackToolName: "ue.asset.move" };
+  }
+  if (operation.kind === "save_single_asset" && (operation.assetPathAfter ?? operation.assetPathBefore)) {
+    return { ...common, kind: "save", toolName: "ue.asset.save", assetPath: operation.assetPathAfter ?? operation.assetPathBefore, rollbackAction: "none" };
+  }
+  return null;
+}
+
+function toNativeRollbackOperation(operation: AssetMutationOperation): AssetMutationApprovalOperationBinding | null {
+  const provenance = operation.provenance;
+  if (!provenance || provenance.exactToolName !== exactToolForOperation(operation.kind)) return null;
+  const common = {
+    operationId: operation.id,
+    pluginDryRunHash: provenance.dryRunHash,
+    argsHash: provenance.argsHash,
+    rollbackAction: "none" as const,
+    saveAll: false as const,
+    bulk: false as const,
+  };
+  if (operation.kind === "create_folder" && operation.assetPathAfter) {
+    return { ...common, kind: "cleanup_empty_folder", toolName: "ue.asset.delete", assetPath: operation.assetPathAfter };
+  }
+  if (operation.kind === "duplicate_asset" && operation.assetPathAfter) {
+    return { ...common, kind: "delete_duplicate", toolName: "ue.asset.delete", assetPath: operation.assetPathAfter };
+  }
+  if (operation.kind === "rename_asset" && operation.assetPathBefore && operation.assetPathAfter) {
+    return { ...common, kind: "rename_back", toolName: "ue.asset.rename", assetPath: operation.assetPathAfter, targetAssetPath: operation.assetPathBefore };
+  }
+  if (operation.kind === "move_asset" && operation.assetPathBefore && operation.assetPathAfter) {
+    return { ...common, kind: "move_back", toolName: "ue.asset.move", assetPath: operation.assetPathAfter, targetAssetPath: operation.assetPathBefore };
+  }
+  return null;
+}
+
+function exactToolForOperation(kind: AssetMutationOperation["kind"]): string {
+  if (kind === "duplicate_asset") return "ue.asset.duplicate";
+  if (kind === "rename_asset") return "ue.asset.rename";
+  if (kind === "move_asset") return "ue.asset.move";
+  if (kind === "save_single_asset") return "ue.asset.save";
+  if (kind === "delete_sandbox_asset") return "ue.asset.delete";
+  return "ue.asset.create_folder";
 }
 
 type ToolCallPlan =
@@ -370,7 +828,14 @@ type ToolCallPlan =
   | { ok: false; reason: string };
 
 function mapOperationToToolCall(operation: AssetMutationOperation, context: AssetMutationAdapterContext): ToolCallPlan {
-  const common = { changeSetId: context.changeSet.id, dryRunHash: context.dryRunHash, execute: true };
+  const common = {
+    changeSetId: context.changeSet.id,
+    runId: context.changeSet.runId,
+    dryRun: false,
+    execute: true,
+    rollback: false,
+    dryRunHash: context.dryRunHash,
+  };
   if (operation.kind === "create_folder") {
     return planned("ue.asset.create_folder", { ...common, folderPath: operation.assetPathAfter }, operation.assetPathAfter, null);
   }
@@ -393,24 +858,25 @@ function mapOperationToToolCall(operation: AssetMutationOperation, context: Asse
 }
 
 function mapRollbackOperationToToolCall(operation: AssetMutationOperation, context: AssetMutationAdapterContext): ToolCallPlan {
-  const common = { changeSetId: context.changeSet.id, dryRunHash: context.dryRunHash, rollback: true };
-  if (operation.kind === "create_folder" || operation.kind === "duplicate_asset" || operation.kind === "create_test_asset") {
-    return planned("ue.asset.delete", { ...common, assetPath: operation.assetPathAfter }, operation.assetPathAfter, null);
+  const common = {
+    changeSetId: context.changeSet.id,
+    runId: context.changeSet.runId,
+    dryRun: false,
+    execute: false,
+    rollback: true,
+    dryRunHash: context.dryRunHash,
+  };
+  if (operation.kind === "create_folder") {
+    return planned("ue.asset.create_folder", { ...common, folderPath: operation.assetPathAfter }, operation.assetPathAfter, null);
+  }
+  if (operation.kind === "duplicate_asset") {
+    return planned("ue.asset.duplicate", { ...common, sourceAssetPath: operation.assetPathBefore, targetAssetPath: operation.assetPathAfter }, operation.assetPathBefore, operation.assetPathAfter);
   }
   if (operation.kind === "rename_asset") {
-    return planned("ue.asset.rename", { ...common, assetPath: operation.assetPathAfter, targetAssetPath: operation.assetPathBefore }, operation.assetPathAfter, operation.assetPathBefore);
+    return planned("ue.asset.rename", { ...common, assetPath: operation.assetPathBefore, targetAssetPath: operation.assetPathAfter }, operation.assetPathBefore, operation.assetPathAfter);
   }
   if (operation.kind === "move_asset") {
-    return planned("ue.asset.move", { ...common, assetPath: operation.assetPathAfter, targetAssetPath: operation.assetPathBefore }, operation.assetPathAfter, operation.assetPathBefore);
-  }
-  if (operation.kind === "save_single_asset") {
-    return {
-      ok: true,
-      toolName: "ue.asset.save",
-      args: { ...common, assetPath: operation.assetPathAfter ?? operation.assetPathBefore, saveAll: false },
-      assetPath: operation.assetPathAfter ?? operation.assetPathBefore,
-      targetAssetPath: null,
-    };
+    return planned("ue.asset.move", { ...common, assetPath: operation.assetPathBefore, targetAssetPath: operation.assetPathAfter }, operation.assetPathBefore, operation.assetPathAfter);
   }
   return { ok: false, reason: `mcp_asset_policy_blocked:rollback_unsupported:${operation.kind}` };
 }

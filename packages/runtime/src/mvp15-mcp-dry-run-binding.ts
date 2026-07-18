@@ -114,7 +114,7 @@ export interface PluginDryRunResult {
   hashAlgorithm: string;
   schemaVersion: string;
   approvalRequired: boolean;
-  implementationStatus: string;
+  implementationStatus: "execution_capable";
 }
 
 export interface ExternalBindingOperation {
@@ -351,7 +351,7 @@ export function validatePluginDryRunResult(
     [result.hashAlgorithm === "sha1", "hashAlgorithm"],
     [result.schemaVersion === "mvp15c.dry-run.v1", "schemaVersion"],
     [result.approvalRequired === true, "approvalRequired"],
-    [result.implementationStatus === "dry_run_only", "implementationStatus"],
+    [result.implementationStatus === "execution_capable", "implementationStatus"],
   ];
   for (const [passed, field] of checks) {
     if (!passed) return { ok: false, reason: `mcp_dry_run_contract_mismatch:${field}` };

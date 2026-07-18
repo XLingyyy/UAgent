@@ -7,10 +7,12 @@ import type {
   AssetExternalBindingStatus,
   AssetExternalEvidenceQuery,
   AssetManifestEntry,
+  AssetMutationApprovalRegistrationRequest,
   AssetMutationEvidencePayload,
   AssetMutationOperation,
   AssetMutationOperationKind,
   AssetMutationOperationProvenance,
+  AssetMutationPluginExecutionResult,
   AssetMutationRisk,
   AssetRollbackPlan,
   AssetVerificationResult,
@@ -56,6 +58,7 @@ describe("MVP15 asset mutation shared contracts", () => {
       trustedRootId: "root:fixture",
       editorSessionId: "editor-session:1",
       pidHash: "pid:fixture",
+      runId: "run-1",
       operationKind: "create_folder",
       assetPaths: [operation.assetPathAfter!],
       dryRunHash: operation.dryRunHash,
@@ -77,6 +80,8 @@ describe("MVP15 asset mutation shared contracts", () => {
           operationId: operation.id,
           action: "delete_created",
           assetPath: operation.assetPathAfter!,
+          status: "pending",
+          evidenceId: null,
           summary: "Remove empty sandbox folder or mark cleanup pending.",
         },
       ],
@@ -263,6 +268,7 @@ describe("MVP15 asset mutation shared contracts", () => {
       trustedRootId: "root:trusted",
       editorSessionId: "editor-session:real",
       pidHash: "pid:real",
+      runId: "run-1",
       operationKind: operation.kind,
       assetPaths: [operation.assetPathAfter!],
       dryRunHash: operation.dryRunHash,
@@ -317,5 +323,53 @@ describe("MVP15 asset mutation shared contracts", () => {
     expect(serialized).not.toContain("rawArgs");
     expect(serialized).not.toContain("approval-token-value");
     expect(serialized).not.toContain("C:/Users/");
+  });
+
+  it("keeps caller tokens out of registration requests and makes side effects explicit", () => {
+    const registration: AssetMutationApprovalRegistrationRequest = {
+      changeSetId: "changeset-1",
+      runId: "run-1",
+      projectBindingId: "project-1",
+      trustedRootRef: "root-ref-1",
+      editorSessionId: "editor-1",
+      pidHash: "pid-1",
+      observedEditorSessionId: "editor-1",
+      observedPidHash: "pid-1",
+      aggregateDryRunHash: "a".repeat(64),
+      aggregateArgsHash: "b".repeat(64),
+      requestedTtlMs: 60_000,
+      assetMutationGateEnabled: true,
+      operations: [],
+    };
+    const partial: AssetMutationPluginExecutionResult = {
+      blocked: true,
+      status: "partial_failure",
+      reasonCode: "mutation_failed",
+      toolName: "ue.asset.create_folder",
+      operation: "create_folder",
+      phase: "execute",
+      changeSetId: "changeset-1",
+      runId: "run-1",
+      sandboxRoot: "/Game/UAgentSandbox/run-1",
+      sideEffectObserved: true,
+      wouldChange: true,
+      wouldModify: ["/Game/UAgentSandbox/run-1"],
+      wouldRead: [],
+      affectedAssets: { readOnlySources: [], sandboxTargets: ["/Game/UAgentSandbox/run-1"], externalTargets: [] },
+      rollbackPlan: { strategy: "registry_owned_inverse", executionEnabled: true, inverseOperation: "cleanup_empty_folder" },
+      externalEvidenceQueries: [{ queryKind: "asset_registry_snapshot", readOnly: true, paths: ["/Game/UAgentSandbox/run-1"] }],
+      dryRunHash: "c".repeat(40),
+      hashAlgorithm: "sha1",
+      schemaVersion: "mvp15c.dry-run.v1",
+      approvalRequired: true,
+      evidenceId: "evidence-partial-1",
+      rollbackAvailable: true,
+      rollbackStatus: "available",
+      implementationStatus: "execution_capable",
+    };
+
+    expect(registration).not.toHaveProperty("approvalToken");
+    expect(registration.requestedTtlMs).toBe(60_000);
+    expect(partial).toMatchObject({ status: "partial_failure", sideEffectObserved: true, rollbackAvailable: true });
   });
 });

@@ -32,7 +32,7 @@ export class StreamableHttpTransport implements McpTransport {
     }
     const message = await parseJsonRpcHttpResponse(response);
     if (!isJsonRpcResponse(message)) {
-      throw new McpProtocolError("MCP HTTP response did not contain a JSON-RPC response.");
+      throw new McpProtocolError("protocol_response_malformed");
     }
     return message;
   }
@@ -75,6 +75,10 @@ export class StreamableHttpTransport implements McpTransport {
       if (error instanceof McpTransportError) {
         throw error;
       }
+      const nativeFailure = getNativeMcpFailure(error);
+      if (nativeFailure) {
+        throw new McpTransportError(nativeFailure, undefined, error);
+      }
       const aborted = error instanceof DOMException && error.name === "AbortError";
       throw new McpTransportError(aborted ? "MCP HTTP request timed out." : "MCP HTTP request failed.", undefined, error);
     } finally {
@@ -93,10 +97,7 @@ async function parseJsonRpcHttpResponse(response: Response): Promise<unknown> {
     assertJsonRpcMessage(message);
     return message;
   } catch (error) {
-    if (error instanceof McpProtocolError) {
-      throw error;
-    }
-    throw new McpProtocolError("Malformed JSON-RPC HTTP response.", error);
+    throw new McpProtocolError("protocol_response_malformed", error);
   }
 }
 
@@ -113,4 +114,11 @@ export function parseFirstSseJsonMessage(text: string): unknown {
     }
   }
   throw new McpProtocolError("SSE response did not include a JSON-RPC message.");
+}
+
+function getNativeMcpFailure(error: unknown): "native_request_failed" | "native_response_read_failed" | null {
+  if (!(error instanceof Error)) return null;
+  return error.message === "native_request_failed" || error.message === "native_response_read_failed"
+    ? error.message
+    : null;
 }

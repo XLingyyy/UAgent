@@ -268,6 +268,7 @@ export {
   createMvp15McpAssetToolInventory,
   MVP15_ASSET_TOOL_ALLOWLIST,
   normalizeMvp15McpAssetToolDescriptor,
+  validateMvp15PluginExecutionResult,
   type Mvp15McpAssetMutationAdapterOptions,
   type Mvp15McpAssetDecision,
   type Mvp15McpAssetToolCallResult,
@@ -314,6 +315,13 @@ export {
   verifyAssetMoved,
   verifySingleAssetSaved,
   verifySourceAssetUntouched,
+} from "./mvp15-asset-verification.js";
+export {
+  createMvp15NativeAssetVerificationAdapter,
+  type AssetExternalBaselineResult,
+  type AssetExternalVerificationResult,
+  type AssetMutationExternalVerificationAdapter,
+  type Mvp15NativeAssetVerificationAdapterOptions,
 } from "./mvp15-asset-verification.js";
 export {
   replayAssetMutationSummary,
