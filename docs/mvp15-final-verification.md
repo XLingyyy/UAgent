@@ -5,13 +5,13 @@
 - Execution date: `2026-07-18`.
 - Public stage: `MVP15 - Real UE Sandbox Asset Mutation Pilot (Final Acceptance Complete)`.
 - Verified MVP15 implementation commit: `6b7f231e9bdd1e6391f4514af9f77c4556872a5a` on `origin/main`.
-- Documentation closeout commit: `PENDING_SUPERVISOR_CHECKPOINT`.
+- Documentation closeout content commit: `3fb53fe15980c0a1269865938bf9ee30467cc4a9`.
 - Acceptance: `COMPLETE` for G0-G15.
 - Real smoke: `PASS_REAL_SMOKE`.
 - Remaining MVP15 acceptance blockers: `None`.
 - Ready for next stage: `YES`; the next stage name is not yet decided.
 
-## 2026-07-18 Supervisor Verification Record
+## Accepted 09Z Supervisor Verification Record
 
 | Command / Check | Result | Count / Summary | Evidence Date |
 | --- | --- | --- | --- |
@@ -29,6 +29,25 @@
 | Project plugin rebuild / targeted UE automation | SKIPPED | Not required for the accepted 09Z product-UI lifecycle result; no new rebuild is claimed | 2026-07-18 |
 
 `cargo fmt --check` is recorded as known debt rather than rewritten as a passing check. It did not block the serial Rust, TypeScript, product build, safety scan, or real lifecycle acceptance.
+
+## MVP15C10 Documentation Closeout Verification
+
+The following checks were run against the documentation and TitleBar-alignment content recorded in `3fb53fe15980c0a1269865938bf9ee30467cc4a9`. This closeout did not change the asset-mutation lifecycle and was prohibited from performing another real mutation run.
+
+| Command / Check | Result | Count / Summary | Evidence Date |
+| --- | --- | --- | --- |
+| `pnpm typecheck` | PASS | All four TypeScript workspaces passed | 2026-07-18 |
+| `pnpm lint` | PASS | Workspace ESLint check passed | 2026-07-18 |
+| `pnpm --filter @uagent/desktop test` | PASS | 41 files; 662 passed / 2 skipped; existing React `act(...)` warnings retained | 2026-07-18 |
+| `pnpm --filter @uagent/desktop web:build` | PASS | 255 modules transformed; existing >500 kB chunk warning retained | 2026-07-18 |
+| `pnpm test` | PASS | shared 32; runtime 786; MCP client 46; desktop 662 passed / 2 skipped | 2026-07-18 |
+| `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml -- --test-threads=1` | PASS | 126/126 serial Rust tests | 2026-07-18 |
+| `node scripts/side-effect-scan.mjs` | PASS | 298 files / 0 blocked / 936 review after documentation closeout | 2026-07-18 |
+| Exact stale-current-state scan | PASS | 0 matches for the task-defined deprecated current-state expressions in the public scan scope | 2026-07-18 |
+| `git diff --cached --check` | PASS | 15-file closeout content checkpoint had no whitespace error | 2026-07-18 |
+| Real UE mutation smoke | SKIPPED | Explicitly prohibited for this presentation/documentation-only closeout; the accepted 09Z `PASS_REAL_SMOKE` ledger remains the product evidence | 2026-07-18 |
+
+The increase from 928 to 936 review findings comes from the new explicit safety terminology in the synchronized documentation. Both scans have 0 blocked findings; the later 936 result is the current closeout scan, while 928 remains the accepted 09Z implementation-checkpoint record.
 
 ## Accepted 09Z Real Smoke Ledger
 

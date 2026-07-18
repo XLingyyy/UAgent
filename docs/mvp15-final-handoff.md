@@ -33,4 +33,4 @@ Current stage: **MVP15 - Real UE Sandbox Asset Mutation Pilot (Final Acceptance 
 - Ready for next stage: `YES`.
 - Next stage name: not yet decided.
 
-The verified MVP15 implementation checkpoint is `6b7f231e9bdd1e6391f4514af9f77c4556872a5a` on `origin/main`. The documentation closeout checkpoint is intentionally left to the supervisor workflow.
+The verified MVP15 implementation checkpoint is `6b7f231e9bdd1e6391f4514af9f77c4556872a5a` on `origin/main`. The synchronized documentation and TitleBar content checkpoint is `3fb53fe15980c0a1269865938bf9ee30467cc4a9`; the supervisor-owned finalization commit records this SHA and publishes the completed task state.
