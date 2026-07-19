@@ -292,6 +292,16 @@ export {
   type Mvp15FacadeWrapperCall,
 } from "./mvp15-exact-tool-facade.js";
 export {
+  createMvp15LiveAssetToolsetFingerprint,
+  MVP15_LIVE_ASSET_TOOLSET_FINGERPRINT_SCHEMA_VERSION,
+  type Mvp15LiveAssetToolFingerprintInvalidTool,
+  type Mvp15LiveAssetToolFingerprintInput,
+  type Mvp15LiveAssetToolFingerprintIssues,
+  type Mvp15LiveAssetToolFingerprintSummary,
+  type Mvp15LiveAssetToolsetFingerprintResult,
+  type Mvp15LiveAssetToolSource,
+} from "./mvp15-live-asset-toolset-fingerprint.js";
+export {
   createAssetChangeSetService,
   createFixtureAssetMutationAdapter,
   type AssetChangeSetService,

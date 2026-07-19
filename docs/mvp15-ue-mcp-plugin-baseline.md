@@ -30,7 +30,7 @@ C13E defines a separate task-copy integrity surface for readiness and later prod
 - cache layer: exactly `28 / 673,559 / b1e57b7aec0d3252cd3466c28a57e6b6111cccf3253d31b7833350cfbcc30339`, with every cache and source regular, non-link, non-reparse, correctly paired, and header-compatible;
 - full Plugins layer: exactly `191 / 365,489,946 / 0468b036a24f3a0b761ed61e8dd0b82a7be535fa4282250679ddd70fc5e9889c`, with zero unclassified entries.
 
-This contract is intentionally narrow and does not accept a 29th cache file, a different ABI, a missing or moved source, a changed business/cache file, an unverifiable path, a link/reparse substitution, or any broad Plugins write side effect. A native inspection error is a hard failure, never an unknown-but-safe result. The contract also does not prove the official plugin source/artifact mapping or the product-adapter live six-descriptor fingerprint required below.
+This contract is intentionally narrow and does not accept a 29th cache file, a different ABI, a missing or moved source, a changed business/cache file, an unverifiable path, a link/reparse substitution, or any broad Plugins write side effect. A native inspection error is a hard failure, never an unknown-but-safe result. C14 re-ran this gate before and after its read-only attempt: all three aggregates and the 28-entry path/size/SHA/mtime manifest were identical. The contract does not prove the official plugin source/artifact mapping or the product-adapter live six-descriptor fingerprint required below.
 
 ## Repository Expectation Fingerprint
 
@@ -61,25 +61,49 @@ C12-C13E established and preserved the following real-environment byte identity 
 | `UnrealEditor-ModelContextProtocolEngineTests.dll` | `e8de89e8762372964add2832677d065783d8952868e4f35b0e3deddb18d630ac` |
 | `UnrealEditor-ModelContextProtocolTests.dll` | `ad832127dd48b7ce2341de4ad6ccbafdb02c2afcf77462cb9ca4f41e3993900a` |
 
-These hashes reproducibly identify the active project-local bytes, but the descriptor vendor/version strings and matching BuildId do not prove an official source commit or authoritative official artifact mapping. They also do not bind a fresh product-UI smoke to a product-adapter-published contract.
+These hashes reproducibly identify the active project-local bytes, but the descriptor vendor/version strings and matching BuildId do not prove an official source commit or authoritative official artifact mapping. C14 Authenticode inspection found that all six active modules are unsigned. A separate sibling set is validly signed by Epic Games, Inc., uses the same UE build family, and has six different SHA-256 values. That proves the sibling set's publisher identity, not a mapping from the active bytes to an official package or source build. No package manifest, official source revision, repository revision, or build attestation was present to bridge that gap.
+
+### C14 authoritative mapping matrix
+
+| Evidence | Observed fact | Authority decision |
+| --- | --- | --- |
+| Active descriptor/version/BuildId | Stable descriptor SHA, version `1.0`, and build `55116800` | Identity only; insufficient provenance |
+| Active six module hashes | Reproduces the loaded project-local bytes; Authenticode status is unsigned | Stable identity only; insufficient provenance |
+| Signed sibling six modules | Valid Epic Games, Inc. code-signing chain and matching engine build family | Authoritative for the sibling bytes only |
+| Active-to-sibling comparison | Every module hash differs | Explicitly does not map active bytes to the signed sibling set |
+| Official package/source/build record | Not found in the inspected material | Required mapping remains missing |
+
+The mapping can close only if an official package manifest names the exact active hashes, the exact active binaries carry a valid Epic signature, or an official source revision plus build attestation reproducibly maps to those exact hashes.
 
 | Required fact | Current value | Consequence |
 | --- | --- | --- |
 | Exact UE version/build | UE `5.8.0`, promoted `55116800` | Known environment fact; not a product-smoke pass |
 | Active descriptor/module binary identity | Descriptor and six module SHA-256 values recorded above | Active bytes are reproducible |
-| Official source commit or authoritative artifact mapping | Missing | `BLOCKED_BY_MCP_SCHEMA` |
+| Official source commit or authoritative artifact mapping | Missing; signed sibling bytes do not hash-match the active unsigned bytes | `BLOCKED_BY_MCP_SCHEMA` |
 | Fresh-smoke plugin build binding | Missing | Fresh product smoke cannot be accepted |
-| Canonical product-adapter live six-descriptor fingerprint | Missing | `BLOCKED_BY_MCP_SCHEMA` |
-| Per-tool schema/contract version or stable per-field fingerprint | Missing | Schema compatibility is not reproducible |
+| Canonical product-adapter live six-descriptor fingerprint | Implementation present; controlled live result has no accepted SHA | `BLOCKED_BY_MCP_SCHEMA` |
+| Per-tool schema/contract version or stable per-field fingerprint | Redacted per-tool SHA summaries are implemented, but no live descriptors were accepted | Schema compatibility is not yet reproduced live |
 
 A statement that a plugin is running locally, a descriptor vendor string, or module hashes alone are not official provenance. Acceptance still requires the authoritative mapping plus the fresh live contract fingerprint.
+
+## C14 Product Fingerprint Contract
+
+- Publication schema: `uagent.mvp15.live-asset-toolset-fingerprint.v1`.
+- Canonical root payload: the publication schema version plus six tool payloads in the exact repository allowlist order.
+- Canonical tool payload: `name`, `source`, `toolsetId`, `methodId`, descriptor `schemaVersion`, and the complete `inputSchema`, `dryRunSchema`, `rollbackContract`, `affectedAssetsSchema`, and `evidenceQuery` objects. Direct tools use null facade ids; facade tools require non-empty facade ids and schema version.
+- Canonicalization: recursively sort object keys lexicographically, preserve array order and exact scalar values, encode compact JSON as UTF-8, and calculate lowercase SHA-256 plus UTF-8 byte length. Per-tool publication exposes only `name`, `source`, and SHA-256; it never publishes the full schema, endpoint, session id, path, PID, token, or credential.
+- Fail-closed rules: missing, duplicate, unexpected, or raw-reordered asset tools; empty identity/schema version; null/array/primitive required contracts; non-finite/unsupported/cyclic/non-JSON objects; primitive, non-string, throwing/proxy-like malformed descriptors; stale session, endpoint, or generation all produce `blocked_by_mcp_schema`, `sha256: null`, and no accepted per-tool summaries.
+- Blocked issue redaction: public issues may contain only exact allowlisted duplicate names, stable booleans, and counts for unexpected, unexpected-duplicate, and malformed input. Raw unexpected/duplicate names never enter the result, so discovery-controlled URL, path, endpoint, PID, token, `Bearer`, or credential text cannot be serialized.
+- Authority: a successful publication is bound to the current desktop MCP session and discovery generation. A new connection generation retracts discovery, facade inventory, binding, SHA, and canonical byte length before endpoint validation or any synchronous status notification. Disconnect, endpoint change, reconnect, new discovery, concurrent connection completion, or stale discovery success/error completion cannot retain or overwrite authority.
+
+The C14 task-owned attempt observed the expected loaded module/listener environment but the product adapter's single initialization request encountered a pre-discovery transport/environment failure. `list_toolsets`, `describe_toolset`, generic `call_tool`, registration, token, dry-run, execute, verify, rollback, replay, and mutation counts were all zero. It produced no descriptor/schema decision or live fingerprint evidence; the fail-closed getter remained without an accepted SHA or per-tool summary. No fixture descriptor was substituted. C14A did not rerun live discovery or launch UE/UAgent.
 
 ## Live Fingerprint Procedure
 
 1. Use product MCP discovery against the task-owned/local approved endpoint; do not bypass the product adapter.
 2. Require exactly the six canonical names in canonical order and all five required contract fields.
-3. Canonicalize each complete descriptor with deterministic key ordering while preserving array order and exact scalar values.
-4. Hash the UTF-8 canonical descriptor array with SHA-256.
+3. Feed raw direct discovery and reviewed facade candidates to the product fingerprint boundary; do not pre-sort, drop duplicates, or hand-assemble descriptors.
+4. Require `status: ready`, six redacted tool summaries, the current session/generation binding, and a lowercase SHA-256 before recording a live fingerprint.
 5. Record only the plugin identity, UE build identifier, schema/fingerprint values, date, and redacted run reference. Do not record local paths, raw process ids, tokens, credential-bearing endpoints, or secrets.
 6. Use the same plugin build identifier in the fresh happy-path ledger.
 

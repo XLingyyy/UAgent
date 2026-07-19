@@ -41,6 +41,7 @@ export interface McpConnectionState {
 
 export interface McpToolDescriptor {
   name: string;
+  schemaVersion?: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;

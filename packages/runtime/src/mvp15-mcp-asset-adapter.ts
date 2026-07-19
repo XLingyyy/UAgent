@@ -35,6 +35,7 @@ export interface Mvp15McpAssetToolInput {
 
 export interface Mvp15McpAssetToolDescriptorLike {
   name: string;
+  schemaVersion?: unknown;
   inputSchema?: unknown;
   outputSchema?: unknown;
   dryRunSchema?: unknown;
@@ -47,6 +48,7 @@ export interface Mvp15McpAssetToolDescriptorLike {
 
 export interface Mvp15McpAssetToolDescriptor {
   name: string;
+  schemaVersion?: unknown;
   inputSchema?: unknown;
   outputSchema?: Record<string, unknown>;
   dryRunSchema?: unknown;
@@ -160,6 +162,16 @@ export function normalizeMvp15McpAssetToolDescriptor(
 
   return {
     name: tool.name,
+    schemaVersion: firstDefined(
+      tool.schemaVersion,
+      descriptorContract?.schemaVersion,
+      outputSchema?.schemaVersion,
+      outputContract?.schemaVersion,
+      annotations?.schemaVersion,
+      annotations?.schema_version,
+      annotationContract?.schemaVersion,
+      inputContract?.schemaVersion,
+    ),
     inputSchema: tool.inputSchema,
     ...(outputSchema ? { outputSchema } : {}),
     dryRunSchema: firstDefined(

@@ -18,6 +18,7 @@ import type {
   AssetVerificationResult,
   AuditEventType,
   EvidenceKind,
+  McpToolDescriptor,
 } from "./index.js";
 import {
   ASSET_MUTATION_OPERATION_KINDS,
@@ -25,6 +26,16 @@ import {
 } from "./index.js";
 
 describe("MVP15 asset mutation shared contracts", () => {
+  it("preserves an explicit MCP descriptor schema version for live fingerprinting", () => {
+    const descriptor: McpToolDescriptor = {
+      name: "ue.asset.save",
+      schemaVersion: "ue.asset.contract.v1",
+      inputSchema: { type: "object" },
+    };
+
+    expect(descriptor.schemaVersion).toBe("ue.asset.contract.v1");
+  });
+
   it("models additive asset mutation contracts without raw paths or approval tokens", () => {
     const manifest: AssetManifestEntry = {
       id: "manifest:run-1:folder",

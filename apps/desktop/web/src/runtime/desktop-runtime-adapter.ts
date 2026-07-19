@@ -2,6 +2,7 @@ import {
   createAgentLoopRuntime,
   createMvp15ExactToolFacade,
   createMvp15FacadeWrapperCall,
+  createMvp15LiveAssetToolsetFingerprint,
   createMvp15McpAssetToolInventory,
   createMvp9RuntimeService,
   MVP15_ASSET_TOOL_ALLOWLIST,
@@ -11,6 +12,7 @@ import {
   type Mvp15McpAssetToolCallResult,
   type Mvp15McpAssetToolDescriptor,
   type Mvp15McpAssetToolName,
+  type Mvp15LiveAssetToolsetFingerprintResult,
   type Mvp15NativeAssetGuardInput,
   type Mvp15NativeAssetGuardResult,
   type Mvp9RuntimeService,
@@ -43,6 +45,7 @@ export interface DesktopRuntimeAdapter {
   getMcpState(): McpConnectionState;
   getMcpDiscovery(): McpDiscoverySnapshot | null;
   getMvp15AssetTools(): Mvp15McpAssetToolDescriptor[];
+  getMvp15LiveAssetToolsetFingerprint?(): Mvp15LiveAssetToolsetFingerprintPublication;
   captureMvp15McpBinding?(): string | null;
   isMvp15McpBindingCurrent?(binding: string): boolean;
   subscribe(listener: (snapshot: RuntimeSnapshot) => void): () => void;
@@ -65,6 +68,16 @@ export interface DesktopRuntimeAdapter {
   ) => Promise<Mvp15McpAssetToolCallResult | unknown>;
   readMvp15AssetContentEvidence?: (input: AssetContentEvidenceRequest) => Promise<AssetContentEvidenceObservation>;
   snapshotMvp15AssetContentManifest?: (input: AssetMutationExternalRegistrationBinding) => Promise<AssetContentManifestObservation>;
+}
+
+export interface Mvp15LiveAssetToolsetFingerprintPublication
+  extends Mvp15LiveAssetToolsetFingerprintResult {
+  discoveryGeneration: number;
+  binding: {
+    session: "current";
+    endpoint: "redacted";
+    generation: number;
+  } | null;
 }
 
 export interface DesktopRuntimeAdapterOptions {
@@ -128,6 +141,11 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
   let mcpDiscoveryGeneration = 0;
   let mvp15McpBindingGeneration = 0;
   let currentMvp15McpBinding: { identity: string; endpoint: string; session: McpSession } | null = null;
+  let currentMvp15Fingerprint: Mvp15LiveAssetToolsetFingerprintPublication = {
+    ...createMvp15LiveAssetToolsetFingerprint([]),
+    discoveryGeneration: 0,
+    binding: null,
+  };
   const listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
   const mcpListeners = new Set<(state: McpConnectionState) => void>();
 
@@ -161,6 +179,11 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     invalidateMvp15McpBinding();
     currentDiscovery = null;
     currentMvp15FacadeTools = [];
+    currentMvp15Fingerprint = {
+      ...createMvp15LiveAssetToolsetFingerprint([]),
+      discoveryGeneration: mcpDiscoveryGeneration,
+      binding: null,
+    };
     router.updateContext({ runtimeMode: "mock", discovery: null, readResource: undefined, callTool: undefined });
   };
 
@@ -169,6 +192,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     getMcpState: () => mcpState,
     getMcpDiscovery: () => currentDiscovery,
     getMvp15AssetTools: () => getMvp15AssetTools(currentDiscovery, currentMvp15FacadeTools),
+    getMvp15LiveAssetToolsetFingerprint: () => currentMvp15Fingerprint,
     captureMvp15McpBinding: () => currentMvp15McpBinding?.identity ?? null,
     isMvp15McpBindingCurrent: (binding) => Boolean(
       currentMvp15McpBinding
@@ -227,11 +251,19 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       syncMcp();
     },
     async connectMcp() {
-      mcpDiscoveryGeneration += 1;
+      const connectionGeneration = ++mcpDiscoveryGeneration;
+      retractMcpPublication();
+      const previousSession = currentSession;
+      currentSession = null;
       const endpoint = mcpState.profile?.endpoint ?? "";
       const transportKind = mcpState.profile?.transport ?? "streamable-http";
+      const isCurrentConnectionAttempt = () => (
+        mcpDiscoveryGeneration === connectionGeneration
+        && mcpState.profile?.endpoint === endpoint
+      );
 
       if (!isLocalEndpoint(endpoint)) {
+        void previousSession?.disconnect();
         mcpState = { ...mcpState, status: "error", lastError: "Only localhost MCP endpoints are allowed in MVP2." };
         syncMcp();
         return;
@@ -241,9 +273,8 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       syncMcp();
 
       try {
-        retractMcpPublication();
-        await currentSession?.disconnect();
-        currentSession = null;
+        await previousSession?.disconnect();
+        if (!isCurrentConnectionAttempt()) return;
 
         let session: McpSession;
         let initializeResult: McpInitializeResult;
@@ -279,6 +310,10 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
           }
         }
 
+        if (!isCurrentConnectionAttempt()) {
+          await session.disconnect();
+          return;
+        }
         currentSession = session;
         mcpState = {
           ...mcpState,
@@ -291,6 +326,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
         };
         syncMcp();
       } catch (err) {
+        if (!isCurrentConnectionAttempt()) return;
         invalidateMvp15McpBinding();
         currentSession = null;
         mcpState = {
@@ -326,10 +362,14 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       try {
         const discovery = await discoverySession.discover();
         if (!isCurrentDiscoveryAttempt()) return;
-        const facadeTools = await discoverMvp15FacadeTools(discoverySession, discovery);
+        const facadeDiscovery = await discoverMvp15FacadeTools(discoverySession, discovery);
         if (!isCurrentDiscoveryAttempt()) return;
+        const fingerprint = createMvp15LiveAssetToolsetFingerprint({
+          directTools: discovery.tools,
+          facadeTools: facadeDiscovery.candidates,
+        });
         currentDiscovery = discovery;
-        currentMvp15FacadeTools = facadeTools;
+        currentMvp15FacadeTools = facadeDiscovery.tools;
 
         router.updateContext({
           runtimeMode: "mcp-readonly",
@@ -344,6 +384,15 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
           lastError: null,
         };
         publishMvp15McpBinding(discoverySession, discoveryEndpoint);
+        currentMvp15Fingerprint = {
+          ...fingerprint,
+          discoveryGeneration,
+          binding: {
+            session: "current",
+            endpoint: "redacted",
+            generation: mvp15McpBindingGeneration,
+          },
+        };
         syncMcp();
       } catch (err) {
         if (!isCurrentDiscoveryAttempt()) return;
@@ -489,10 +538,13 @@ function isCompleteMvp15AssetToolDescriptor(tool: Mvp15McpAssetToolDescriptor): 
 async function discoverMvp15FacadeTools(
   session: McpSession,
   discovery: McpDiscoverySnapshot,
-): Promise<Mvp15McpAssetToolDescriptor[]> {
+): Promise<{
+  tools: Mvp15McpAssetToolDescriptor[];
+  candidates: Mvp15McpAssetToolDescriptor[];
+}> {
   const toolNames = new Set(discovery.tools.map((tool) => tool.name));
   if (!toolNames.has("list_toolsets") || !toolNames.has("describe_toolset") || !toolNames.has("call_tool")) {
-    return [];
+    return { tools: [], candidates: [] };
   }
   try {
     const toolsetList = unwrapMcpToolPayload(await session.callTool("list_toolsets", {}));
@@ -503,9 +555,10 @@ async function discoverMvp15FacadeTools(
       const normalized = normalizeFacadeToolset(description, toolsetId);
       if (normalized) toolsets.push(normalized);
     }
-    return createMvp15ExactToolFacade(toolsets).tools;
+    const facade = createMvp15ExactToolFacade(toolsets);
+    return { tools: facade.tools, candidates: facade.candidates };
   } catch {
-    return [];
+    return { tools: [], candidates: [] };
   }
 }
 

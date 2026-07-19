@@ -136,6 +136,115 @@ describe.skipIf(process.env.UAGENT_MVP15C_CONNECT_PREFLIGHT !== "1")(
   },
 );
 
+describe.skipIf(process.env.UAGENT_MVP15C14_READONLY_DISCOVERY !== "1")(
+  "MVP15C14 controlled product-adapter read-only discovery",
+  () => {
+    it("publishes the live exact-six fingerprint with zero asset method calls", async () => {
+      const { StreamableHttpTransport: RealStreamableHttpTransport } =
+        await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");
+      const endpoint = process.env.UAGENT_MVP15C14_ENDPOINT ?? "http://127.0.0.1:18080/mcp";
+      const callCounts: Record<string, number> = {};
+      const adapter = createDesktopRuntimeAdapter({
+        nativeInvoke: null,
+        createTransport: (transportEndpoint) => {
+          const transport = new RealStreamableHttpTransport({
+            endpoint: transportEndpoint,
+            timeoutMs: 30_000,
+          });
+          return {
+            sendRequest: async (request) => {
+              const params = request.params as { name?: string } | undefined;
+              const key = request.method === "tools/call"
+                ? `tools/call:${params?.name ?? "unknown"}`
+                : request.method;
+              callCounts[key] = (callCounts[key] ?? 0) + 1;
+              if (
+                request.method === "tools/call" &&
+                params?.name !== "list_toolsets" &&
+                params?.name !== "describe_toolset"
+              ) {
+                throw new Error("forbidden_non_discovery_tool_call");
+              }
+              return transport.sendRequest(request);
+            },
+            sendNotification: (notification) => transport.sendNotification(notification),
+            close: () => transport.close(),
+          } satisfies McpTransportClient;
+        },
+      });
+      let exactAssetCalls = 0;
+      const originalExactAssetCall = adapter.callMvp15AssetTool;
+      if (originalExactAssetCall) {
+        adapter.callMvp15AssetTool = async (...args) => {
+          exactAssetCalls += 1;
+          return originalExactAssetCall(...args);
+        };
+      }
+      adapter.setMcpEndpoint(endpoint);
+
+      try {
+        await adapter.connectMcp();
+        if (adapter.getMcpState().status !== "connected") {
+          throw new Error(
+            `c14_connect_failed:${sanitizeMvp15c07eLastError(adapter.getMcpState().lastError)}`,
+          );
+        }
+        await adapter.discoverMcp();
+        if (adapter.getMcpState().status !== "connected") {
+          throw new Error(
+            `c14_discover_failed:${sanitizeMvp15c07eLastError(adapter.getMcpState().lastError)}`,
+          );
+        }
+        const inventory = createMvp15McpAssetToolInventory(adapter.getMvp15AssetTools());
+        const fingerprint = adapter.getMvp15LiveAssetToolsetFingerprint!();
+
+        expect(exactAssetCalls).toBe(0);
+        expect(callCounts["tools/call:call_tool"] ?? 0).toBe(0);
+        console.log(JSON.stringify({
+          environment: "task-owned-product-adapter",
+          connectionStatus: adapter.getMcpState().status,
+          inventoryStatus: inventory.status,
+          inventoryTools: inventory.availableTools,
+          fingerprint,
+          callCounts,
+          exactAssetCalls,
+          registrationCalls: 0,
+          tokenCalls: 0,
+          dryRunCalls: 0,
+          executeCalls: 0,
+          verifyCalls: 0,
+          rollbackCalls: 0,
+          replayCalls: 0,
+          mutationCalls: 0,
+        }));
+      } catch (error) {
+        const safeLastError = sanitizeMvp15c07eLastError(
+          error instanceof Error ? error.message : adapter.getMcpState().lastError,
+        );
+        console.error(JSON.stringify({
+          environment: "task-owned-product-adapter",
+          connectionStatus: adapter.getMcpState().status,
+          fingerprint: adapter.getMvp15LiveAssetToolsetFingerprint!(),
+          callCounts,
+          exactAssetCalls,
+          registrationCalls: 0,
+          tokenCalls: 0,
+          dryRunCalls: 0,
+          executeCalls: 0,
+          verifyCalls: 0,
+          rollbackCalls: 0,
+          replayCalls: 0,
+          mutationCalls: 0,
+          lastError: safeLastError,
+        }));
+        throw error;
+      } finally {
+        adapter.disconnectMcp();
+      }
+    }, 300_000);
+  },
+);
+
 describe.skipIf(process.env.UAGENT_MVP15C_LIVE_SMOKE !== "1")(
   "MVP15C 07E live no-side-effect dry-run smoke",
   () => {
@@ -428,6 +537,31 @@ const fullDiscoveryFixtures: Record<string, unknown> = {
   },
 };
 
+function exactAssetDiscoveryFixtures(extraTools: Array<Record<string, unknown>> = []): Record<string, unknown> {
+  const contract = {
+    schemaVersion: "ue.asset.contract.v1",
+    dryRunSchema: { type: "object" },
+    rollbackContract: { type: "reverse_operation" },
+    affectedAssetsSchema: { type: "array" },
+    evidenceQuery: { type: "read_only" },
+  };
+  return {
+    initialize: fullDiscoveryFixtures.initialize,
+    "tools/list": {
+      tools: [
+        ...MVP15_ASSET_TOOL_ALLOWLIST.map((name) => ({
+          name,
+          inputSchema: { type: "object" },
+          outputSchema: contract,
+        })),
+        ...extraTools,
+      ],
+    },
+    "resources/list": { resources: [] },
+    "prompts/list": { prompts: [] },
+  };
+}
+
 type Mvp15AssetBridge = {
   getMvp15AssetTools?: () => Array<{
     name: string;
@@ -505,9 +639,104 @@ describe("DesktopRuntimeAdapter", () => {
     expect(adapter.isMvp15McpBindingCurrent!(secondBinding!)).toBe(false);
   });
 
-  it.each(["disconnect", "endpoint", "rediscover", "reconnect"] as const)(
-    "does not publish a stale facade discovery after %s",
-    async (action) => {
+  it.each(["success", "error"] as const)(
+    "retracts accepted MCP publication before the first synchronous reconnect notification on %s",
+    async (outcome) => {
+      let transportCount = 0;
+      const adapter = createDesktopRuntimeAdapter({
+        createTransport: () => {
+          transportCount += 1;
+          if (transportCount === 1 || outcome === "success") {
+            return createMockTransport(exactAssetDiscoveryFixtures());
+          }
+          const transport = createMockTransport(exactAssetDiscoveryFixtures());
+          transport.sendRequest = vi.fn(async () => {
+            throw new Error("reconnect_transport_failure");
+          });
+          return transport;
+        },
+      });
+      await adapter.connectMcp();
+      await adapter.discoverMcp();
+      expect(adapter.getMvp15LiveAssetToolsetFingerprint!().sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(adapter.getMcpDiscovery()).not.toBeNull();
+      expect(adapter.getMvp15AssetTools()).toHaveLength(6);
+      expect(adapter.captureMvp15McpBinding!()).not.toBeNull();
+
+      const observations: Array<{
+        status: string;
+        sha256: string | null;
+        canonicalByteLength: number | null;
+        binding: unknown;
+        discovery: unknown;
+        tools: unknown[];
+        capturedBinding: string | null;
+      }> = [];
+      const unsubscribe = adapter.subscribeMcp((state) => {
+        const fingerprint = adapter.getMvp15LiveAssetToolsetFingerprint!();
+        observations.push({
+          status: state.status,
+          sha256: fingerprint.sha256,
+          canonicalByteLength: fingerprint.canonicalByteLength,
+          binding: fingerprint.binding,
+          discovery: adapter.getMcpDiscovery(),
+          tools: adapter.getMvp15AssetTools(),
+          capturedBinding: adapter.captureMvp15McpBinding!(),
+        });
+      });
+      await adapter.connectMcp();
+      unsubscribe();
+
+      expect(observations[0]).toEqual({
+        status: "connecting",
+        sha256: null,
+        canonicalByteLength: null,
+        binding: null,
+        discovery: null,
+        tools: [],
+        capturedBinding: null,
+      });
+      expect(adapter.getMcpState().status).toBe(outcome === "success" ? "connected" : "error");
+      expect(adapter.getMvp15LiveAssetToolsetFingerprint!()).toMatchObject({
+        sha256: null,
+        canonicalByteLength: null,
+        binding: null,
+      });
+      expect(adapter.getMcpDiscovery()).toBeNull();
+      expect(adapter.getMvp15AssetTools()).toEqual([]);
+      expect(adapter.captureMvp15McpBinding!()).toBeNull();
+    },
+  );
+
+  it("keeps an invalid endpoint notification fail closed after a prior accepted publication", async () => {
+    const adapter = createAdapterWithTransport(exactAssetDiscoveryFixtures());
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+    expect(adapter.getMvp15LiveAssetToolsetFingerprint!().sha256).toMatch(/^[0-9a-f]{64}$/);
+
+    const observations: Array<{ status: string; sha256: string | null; binding: unknown }> = [];
+    const unsubscribe = adapter.subscribeMcp((state) => {
+      const fingerprint = adapter.getMvp15LiveAssetToolsetFingerprint!();
+      observations.push({ status: state.status, sha256: fingerprint.sha256, binding: fingerprint.binding });
+    });
+    adapter.setMcpEndpoint("https://example.invalid/token=endpoint-canary");
+    await adapter.connectMcp();
+    unsubscribe();
+
+    expect(observations[0]).toEqual({ status: "connected", sha256: null, binding: null });
+    expect(observations.at(-1)).toEqual({ status: "error", sha256: null, binding: null });
+    expect(adapter.getMcpDiscovery()).toBeNull();
+    expect(adapter.getMvp15AssetTools()).toEqual([]);
+    expect(adapter.captureMvp15McpBinding!()).toBeNull();
+  });
+
+  it.each(
+    (["disconnect", "endpoint", "rediscover", "reconnect"] as const).flatMap((action) =>
+      (["success", "error"] as const).map((completion) => ({ action, completion })),
+    ),
+  )(
+    "does not publish a stale facade discovery $completion after $action",
+    async ({ action, completion }) => {
       let releaseOldFacade!: () => void;
       let markOldFacadeStarted!: () => void;
       const oldFacadeStarted = new Promise<void>((resolve) => {
@@ -546,6 +775,7 @@ describe("DesktopRuntimeAdapter", () => {
             if (listToolsetsCalls === 1) {
               markOldFacadeStarted();
               await oldFacadeGate;
+              if (completion === "error") throw new Error("stale_facade_error");
             }
             return { jsonrpc: "2.0" as const, id: request.id, result: { toolsets: [] } };
           }
@@ -565,6 +795,7 @@ describe("DesktopRuntimeAdapter", () => {
       await oldFacadeStarted;
       expect(adapter.getMcpDiscovery()).toBeNull();
       expect(adapter.getMvp15AssetTools()).toEqual([]);
+      expect(adapter.getMvp15LiveAssetToolsetFingerprint!().sha256).toBeNull();
       expect(adapter.captureMvp15McpBinding!()).toBeNull();
 
       if (action === "disconnect") {
@@ -579,6 +810,7 @@ describe("DesktopRuntimeAdapter", () => {
       }
       const latestDiscovery = adapter.getMcpDiscovery();
       const latestBinding = adapter.captureMvp15McpBinding!();
+      const latestFingerprint = adapter.getMvp15LiveAssetToolsetFingerprint!();
       releaseOldFacade();
       await staleDiscovery;
 
@@ -587,10 +819,13 @@ describe("DesktopRuntimeAdapter", () => {
         expect(latestBinding).not.toBeNull();
         expect(adapter.getMcpDiscovery()).toBe(latestDiscovery);
         expect(adapter.captureMvp15McpBinding!()).toBe(latestBinding);
+        expect(adapter.getMvp15LiveAssetToolsetFingerprint!()).toBe(latestFingerprint);
         expect(adapter.getMcpState().status).toBe("connected");
       } else {
         expect(adapter.getMcpDiscovery()).toBeNull();
         expect(adapter.captureMvp15McpBinding!()).toBeNull();
+        expect(adapter.getMvp15LiveAssetToolsetFingerprint!()).toBe(latestFingerprint);
+        expect(latestFingerprint.sha256).toBeNull();
         expect(adapter.getMcpState().status).not.toBe("connected");
       }
     },
@@ -724,6 +959,7 @@ describe("DesktopRuntimeAdapter", () => {
       "ue.asset.save",
     ];
     const contract = {
+      schemaVersion: "ue.asset.contract.v1",
       dryRunSchema: { type: "object" },
       rollbackContract: { type: "reverse_operation" },
       affectedAssetsSchema: { type: "array" },
@@ -759,6 +995,74 @@ describe("DesktopRuntimeAdapter", () => {
       ),
     ).toBe(true);
     expect(tools.every((tool) => tool.annotations?.mvp15Facade === undefined)).toBe(true);
+    const fingerprint = adapter.getMvp15LiveAssetToolsetFingerprint!();
+    expect(fingerprint).toMatchObject({
+      status: "ready",
+      schemaVersion: "uagent.mvp15.live-asset-toolset-fingerprint.v1",
+      toolCount: 6,
+      source: "direct",
+      binding: { session: "current", endpoint: "redacted" },
+      issues: {
+        missingTools: [],
+        duplicateTools: [],
+        unexpectedToolCount: 0,
+        unexpectedDuplicateCount: 0,
+        malformedToolCount: 0,
+        reordered: false,
+        invalidTools: [],
+      },
+    });
+    expect(fingerprint.sha256).toMatch(/^[0-9a-f]{64}$/);
+    const serialized = JSON.stringify(fingerprint);
+    expect(serialized).not.toMatch(/https?:|127\.0\.0\.1|localhost|session.?id|pid|token|assetPath|properties/i);
+
+    adapter.disconnectMcp();
+    expect(adapter.getMvp15LiveAssetToolsetFingerprint!()).toMatchObject({
+      status: "blocked_by_mcp_schema",
+      sha256: null,
+      canonicalByteLength: null,
+      binding: null,
+    });
+  });
+
+  it("publishes redacted blocked issue counts for unexpected discovery names", async () => {
+    const unexpectedNames = [
+      "ue.asset.http://127.0.0.1/private",
+      "ue.asset.C:\\Users\\operator\\token=secret-value",
+      "ue.asset.Bearer secret-credential",
+    ];
+    const adapter = createAdapterWithTransport(exactAssetDiscoveryFixtures([
+      ...unexpectedNames.map((name) => ({ name })),
+      { name: unexpectedNames[0] },
+    ]));
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+
+    const publication = adapter.getMvp15LiveAssetToolsetFingerprint!();
+    expect(publication).toMatchObject({
+      status: "blocked_by_mcp_schema",
+      sha256: null,
+      canonicalByteLength: null,
+      tools: [],
+      issues: {
+        duplicateTools: [],
+        unexpectedToolCount: 4,
+        unexpectedDuplicateCount: 1,
+        malformedToolCount: 0,
+      },
+    });
+    const serialized = JSON.stringify(publication);
+    for (const canary of [
+      "http://127.0.0.1",
+      "127.0.0.1",
+      "C:\\Users\\operator",
+      "token=",
+      "secret-value",
+      "Bearer",
+      "secret-credential",
+    ]) {
+      expect(serialized).not.toContain(canary);
+    }
   });
 
   it("exposes a narrow MVP15 asset bridge through native guard and allowlisted MCP tools only", async () => {
@@ -1177,6 +1481,18 @@ describe("DesktopRuntimeAdapter", () => {
       "ue.asset.delete",
       "ue.asset.save",
     ]);
+    expect(adapter.getMvp15LiveAssetToolsetFingerprint!()).toMatchObject({
+      status: "ready",
+      toolCount: 6,
+      source: "facade",
+      sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      binding: { session: "current", endpoint: "redacted" },
+    });
+    expect(
+      sendRequest.mock.calls
+        .filter((call) => call[0].method === "tools/call")
+        .map((call) => (call[0].params as { name?: string }).name),
+    ).toEqual(["list_toolsets", "describe_toolset"]);
 
     await adapter.callMvp15AssetTool!("ue.asset.save", {
       changeSetId: "asset-changeset:1",

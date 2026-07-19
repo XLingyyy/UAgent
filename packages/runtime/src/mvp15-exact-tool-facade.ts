@@ -32,6 +32,7 @@ export interface Mvp15ExactToolFacadeMetadata {
 export interface Mvp15ExactToolFacadeResult {
   status: "ready" | "blocked_by_mcp_schema";
   tools: Mvp15McpAssetToolDescriptor[];
+  candidates: Mvp15McpAssetToolDescriptor[];
   inventory: Mvp15McpAssetToolInventory;
   skippedMethods: string[];
 }
@@ -52,6 +53,7 @@ export function createMvp15ExactToolFacade(
   toolsets: readonly Mvp15ExactToolFacadeToolset[],
 ): Mvp15ExactToolFacadeResult {
   const candidates: Mvp15McpAssetToolDescriptor[] = [];
+  const validCandidates: Mvp15McpAssetToolDescriptor[] = [];
   const skippedMethods: string[] = [];
 
   for (const toolset of toolsets) {
@@ -60,16 +62,13 @@ export function createMvp15ExactToolFacade(
       continue;
     }
     for (const method of toolset.methods) {
-      if (!isExactAssetToolName(method.exactToolName)) {
+      if (!method.exactToolName.startsWith("ue.asset.")) {
         skippedMethods.push(method.exactToolName || "missing_exact_tool_name");
         continue;
       }
-      if (!method.methodId.trim() || !method.schemaVersion.trim()) {
-        skippedMethods.push(method.exactToolName);
-        continue;
-      }
-      candidates.push({
+      const candidate: Mvp15McpAssetToolDescriptor = {
         name: method.exactToolName,
+        schemaVersion: method.schemaVersion,
         inputSchema: method.inputSchema,
         dryRunSchema: method.dryRunSchema,
         rollbackContract: method.rollbackContract,
@@ -81,17 +80,28 @@ export function createMvp15ExactToolFacade(
             toolsetId: toolset.toolsetId,
             methodId: method.methodId,
             schemaVersion: method.schemaVersion,
-          } satisfies Mvp15ExactToolFacadeMetadata,
+          },
         },
-      });
+      };
+      candidates.push(candidate);
+      if (
+        !isExactAssetToolName(method.exactToolName) ||
+        !method.methodId.trim() ||
+        !method.schemaVersion.trim()
+      ) {
+        skippedMethods.push(method.exactToolName);
+        continue;
+      }
+      validCandidates.push(candidate);
     }
   }
 
-  const inventory = createMvp15McpAssetToolInventory(candidates);
+  const inventory = createMvp15McpAssetToolInventory(validCandidates);
   const available = new Set(inventory.availableTools);
   return {
     status: inventory.status,
-    tools: candidates.filter((tool) => available.has(tool.name as Mvp15McpAssetToolName)),
+    tools: validCandidates.filter((tool) => available.has(tool.name as Mvp15McpAssetToolName)),
+    candidates,
     inventory,
     skippedMethods,
   };
