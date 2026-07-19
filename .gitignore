@@ -24,6 +24,9 @@ uagent-workflow-reviewer.md
 .playwright-cli/
 output/
 
+# Local external plugin/evidence copies
+external/
+
 # Dependencies and builds
 node_modules/
 out/
