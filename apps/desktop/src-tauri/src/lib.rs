@@ -1,3 +1,4 @@
+pub(crate) mod asset_mutation;
 pub(crate) mod browser;
 pub(crate) mod mcp;
 pub(crate) mod screenshot;
@@ -5,19 +6,80 @@ pub(crate) mod terminal;
 pub(crate) mod text_mutation;
 pub(crate) mod ue_editor;
 pub(crate) mod ue_editor_process;
-pub(crate) mod asset_mutation;
 pub(crate) mod watcher;
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+#[cfg(test)]
+use std::collections::HashSet;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-fn trusted_roots() -> &'static Mutex<HashSet<String>> {
-    static ROOTS: std::sync::OnceLock<Mutex<HashSet<String>>> = std::sync::OnceLock::new();
-    ROOTS.get_or_init(|| Mutex::new(HashSet::new()))
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TrustedRootBinding {
+    pub root_id: String,
+    pub normalized_root: String,
+    pub canonical_root: PathBuf,
+    object_identity: TrustedRootObjectIdentity,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TrustedRootObjectIdentity {
+    Fixture(String),
+    #[cfg(windows)]
+    Windows {
+        creation_time: u64,
+    },
+    #[cfg(unix)]
+    Unix {
+        device: u64,
+        inode: u64,
+    },
+}
+
+#[derive(Default)]
+pub(crate) struct TrustedRootRegistry {
+    bindings: HashMap<String, TrustedRootBinding>,
+    #[cfg(test)]
+    legacy_test_root_ids: HashSet<String>,
+}
+
+impl TrustedRootRegistry {
+    fn insert_binding(&mut self, binding: TrustedRootBinding) {
+        self.bindings.insert(binding.root_id.clone(), binding);
+    }
+
+    fn binding(&self, root_id: &str) -> Option<&TrustedRootBinding> {
+        self.bindings.get(root_id)
+    }
+
+    #[cfg(test)]
+    fn contains(&self, root_id: &String) -> bool {
+        self.bindings.contains_key(root_id) || self.legacy_test_root_ids.contains(root_id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn insert(&mut self, root_id: String) -> bool {
+        self.legacy_test_root_ids.insert(root_id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn clear(&mut self) {
+        self.bindings.clear();
+        self.legacy_test_root_ids.clear();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn remove(&mut self, root_id: &str) -> bool {
+        self.bindings.remove(root_id).is_some() || self.legacy_test_root_ids.remove(root_id)
+    }
+}
+
+pub(crate) fn trusted_roots() -> &'static Mutex<TrustedRootRegistry> {
+    static ROOTS: std::sync::OnceLock<Mutex<TrustedRootRegistry>> = std::sync::OnceLock::new();
+    ROOTS.get_or_init(|| Mutex::new(TrustedRootRegistry::default()))
 }
 
 fn cancel_flags() -> &'static Mutex<HashMap<String, bool>> {
@@ -32,8 +94,102 @@ pub(crate) fn hash_path(path: &str) -> String {
 }
 
 pub(crate) fn is_trusted_root(normalized: &str) -> bool {
-    let hash = hash_path(normalized);
-    trusted_roots().lock().unwrap().contains(&hash)
+    resolve_trusted_root_binding(normalized).is_ok() || {
+        #[cfg(test)]
+        {
+            let hash = hash_path(normalized);
+            trusted_roots()
+                .lock()
+                .map(|registry| registry.contains(&hash))
+                .unwrap_or(false)
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
+    }
+}
+
+fn canonical_root_for_binding(normalized: &str) -> Result<PathBuf, &'static str> {
+    if normalized.starts_with("fixture://") {
+        return Ok(PathBuf::from(normalized));
+    }
+    std::fs::canonicalize(normalized).map_err(|_| "trust_revoked")
+}
+
+fn root_object_identity(
+    normalized: &str,
+    canonical_root: &Path,
+) -> Result<TrustedRootObjectIdentity, &'static str> {
+    if normalized.starts_with("fixture://") {
+        return Ok(TrustedRootObjectIdentity::Fixture(normalized.to_string()));
+    }
+    let metadata = std::fs::metadata(canonical_root).map_err(|_| "trust_revoked")?;
+    if !metadata.is_dir() {
+        return Err("trust_revoked");
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        let creation_time = metadata.creation_time();
+        if creation_time == 0 {
+            return Err("native_authority_unavailable");
+        }
+        return Ok(TrustedRootObjectIdentity::Windows { creation_time });
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        return Ok(TrustedRootObjectIdentity::Unix {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        });
+    }
+    #[allow(unreachable_code)]
+    Err("native_authority_unavailable")
+}
+
+pub(crate) fn resolve_trusted_root_binding(raw: &str) -> Result<TrustedRootBinding, &'static str> {
+    let normalized = normalize_project_path(raw);
+    if normalized.is_empty() {
+        return Err("untrusted_root");
+    }
+    let root_id = hash_path(&normalized);
+    let binding = trusted_roots()
+        .lock()
+        .map_err(|_| "native_authority_unavailable")?
+        .binding(&root_id)
+        .cloned()
+        .ok_or("untrusted_root")?;
+    if binding.normalized_root != normalized {
+        return Err("trusted_root_binding_mismatch");
+    }
+    let canonical = canonical_root_for_binding(&normalized)?;
+    let object_identity = root_object_identity(&normalized, &canonical)?;
+    if canonical != binding.canonical_root || object_identity != binding.object_identity {
+        return Err("trusted_root_binding_mismatch");
+    }
+    Ok(binding)
+}
+
+pub(crate) fn resolve_trusted_root_binding_by_id(
+    root_id: &str,
+) -> Result<TrustedRootBinding, &'static str> {
+    let binding = trusted_roots()
+        .lock()
+        .map_err(|_| "native_authority_unavailable")?
+        .binding(root_id)
+        .cloned()
+        .ok_or("trust_revoked")?;
+    let canonical = canonical_root_for_binding(&binding.normalized_root)?;
+    let object_identity = root_object_identity(&binding.normalized_root, &canonical)?;
+    if canonical != binding.canonical_root
+        || object_identity != binding.object_identity
+        || hash_path(&binding.normalized_root) != binding.root_id
+    {
+        return Err("trusted_root_binding_mismatch");
+    }
+    Ok(binding)
 }
 
 fn mark_cancelled(scan_id: &str) {
@@ -267,7 +423,19 @@ fn trust_native_project_root(input: TrustRootInput) -> Result<TrustRootResult, S
     let normalized = normalize_project_path(&input.root_ref);
     let display = redact_path_for_ui(&normalized);
     let root_id = hash_path(&normalized);
-    trusted_roots().lock().unwrap().insert(root_id.clone());
+    let canonical_root = canonical_root_for_binding(&normalized)
+        .map_err(|reason| format!("Cannot trust root: {reason}"))?;
+    let object_identity = root_object_identity(&normalized, &canonical_root)
+        .map_err(|reason| format!("Cannot trust root: {reason}"))?;
+    trusted_roots()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .insert_binding(TrustedRootBinding {
+            root_id: root_id.clone(),
+            normalized_root: normalized,
+            canonical_root,
+            object_identity,
+        });
     Ok(TrustRootResult {
         root_id,
         display_root: display,
@@ -1353,6 +1521,7 @@ pub fn run() {
             ue_editor_process::stop_editor_observation_session,
             asset_mutation::dry_run_asset_mutation,
             asset_mutation::register_asset_mutation_approval,
+            asset_mutation::cancel_asset_mutation_approval,
             asset_mutation::execute_asset_mutation,
             asset_mutation::rollback_asset_mutation,
             asset_mutation::record_asset_mutation_outcome,
@@ -1405,11 +1574,39 @@ mod tests {
 
         assert!(result.ok);
         assert_eq!(result.reason, "valid");
-        assert_eq!(
-            result.project_name.as_deref(),
-            Some("SampleNativeProject")
-        );
+        assert_eq!(result.project_name.as_deref(), Some("SampleNativeProject"));
         assert_eq!(result.engine.source, "uproject");
+    }
+
+    #[test]
+    fn trusted_root_resolver_rejects_same_path_object_replacement() {
+        trusted_roots().lock().unwrap().clear();
+        let root = create_real_project_validation_test_root();
+        let root_ref = root.path.to_string_lossy().to_string();
+        let trusted = trust_native_project_root(TrustRootInput {
+            root_ref: root_ref.clone(),
+        })
+        .unwrap();
+        assert_eq!(
+            resolve_trusted_root_binding(&root_ref).unwrap().root_id,
+            trusted.root_id
+        );
+
+        let displaced = root.path.with_extension("trusted-root-displaced");
+        let _ = fs::remove_dir_all(&displaced);
+        fs::rename(&root.path, &displaced).unwrap();
+        fs::create_dir_all(&root.path).unwrap();
+        fs::write(root.path.join("SampleNativeProject.uproject"), "{}").unwrap();
+
+        assert_eq!(
+            resolve_trusted_root_binding(&root_ref).unwrap_err(),
+            "trusted_root_binding_mismatch"
+        );
+        assert_eq!(
+            resolve_trusted_root_binding_by_id(&trusted.root_id).unwrap_err(),
+            "trusted_root_binding_mismatch"
+        );
+        let _ = fs::remove_dir_all(displaced);
     }
 
     #[test]
@@ -1437,7 +1634,9 @@ mod tests {
             serialized
         );
         assert!(
-            !serialized.contains("C:/") && !serialized.contains("//?/") && !serialized.contains("\\\\?\\"),
+            !serialized.contains("C:/")
+                && !serialized.contains("//?/")
+                && !serialized.contains("\\\\?\\"),
             "validation result contains an absolute Windows path prefix: {}",
             serialized
         );
@@ -1724,13 +1923,11 @@ mod tests {
 
     #[test]
     fn terminal_feature_flag_off_returns_blocked() {
-        let result = terminal::propose_terminal_command(
-            terminal::TerminalProposeCommandInput {
-                command: "git status".to_string(),
-                cwd: ".".to_string(),
-                project_id: "proj1".to_string(),
-            },
-        )
+        let result = terminal::propose_terminal_command(terminal::TerminalProposeCommandInput {
+            command: "git status".to_string(),
+            cwd: ".".to_string(),
+            project_id: "proj1".to_string(),
+        })
         .unwrap();
         if cfg!(test) {
             assert_eq!(result.risk, "allowlisted");
@@ -1743,12 +1940,11 @@ mod tests {
 
     #[test]
     fn terminal_execute_without_approval_rejected() {
-        let result = terminal::execute_terminal_command_fixture(
-            terminal::TerminalExecuteCommandInput {
+        let result =
+            terminal::execute_terminal_command_fixture(terminal::TerminalExecuteCommandInput {
                 proposal_id: "proposal:abc".to_string(),
                 approved_token: String::new(),
-            },
-        );
+            });
         assert!(result.is_err());
         assert!(
             result.unwrap_err().contains("missing approval token"),
@@ -1802,10 +1998,14 @@ mod tests {
 
     #[test]
     fn browser_file_url_without_trusted_root_blocked() {
-        let (policy, blocked, _, needs_root) = browser::classify_url("file:///C:/output/report.html");
+        let (policy, blocked, _, needs_root) =
+            browser::classify_url("file:///C:/output/report.html");
         assert!(blocked);
         assert_eq!(policy, "blocked_external");
-        assert!(needs_root, "file:// should indicate trusted root requirement");
+        assert!(
+            needs_root,
+            "file:// should indicate trusted root requirement"
+        );
     }
 
     #[test]
@@ -1822,7 +2022,7 @@ mod tests {
         assert_eq!(status.mode, "native");
     }
 
-        // --- Screenshot Capture skeleton tests ---
+    // --- Screenshot Capture skeleton tests ---
 
     #[test]
     fn screenshot_request_disabled_returns_blocked() {
@@ -1835,9 +2035,15 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(result.blocked, "request should be blocked when feature disabled");
+        assert!(
+            result.blocked,
+            "request should be blocked when feature disabled"
+        );
         assert_eq!(result.status, "blocked");
-        assert!(result.artifact_id.is_none(), "no artifact when feature disabled");
+        assert!(
+            result.artifact_id.is_none(),
+            "no artifact when feature disabled"
+        );
         assert_eq!(result.reason, "feature_disabled");
     }
 
@@ -1851,9 +2057,15 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(result.blocked, "approve should be blocked when feature disabled");
+        assert!(
+            result.blocked,
+            "approve should be blocked when feature disabled"
+        );
         assert_eq!(result.status, "blocked");
-        assert!(result.artifact_id.is_none(), "no artifact when feature disabled");
+        assert!(
+            result.artifact_id.is_none(),
+            "no artifact when feature disabled"
+        );
         assert_eq!(result.reason, "feature_disabled");
     }
 
@@ -1879,42 +2091,62 @@ mod tests {
             true,
         )
         .unwrap();
-        assert!(!result.blocked, "approve should succeed when feature enabled");
+        assert!(
+            !result.blocked,
+            "approve should succeed when feature enabled"
+        );
         assert_eq!(result.status, "captured");
-        assert!(result.artifact_id.is_some(), "should produce artifact when feature enabled");
+        assert!(
+            result.artifact_id.is_some(),
+            "should produce artifact when feature enabled"
+        );
         assert_eq!(result.reason, "approved_and_captured");
     }
 
     #[test]
     fn screenshot_metadata_contains_no_raw_paths_or_secrets() {
-        let request = screenshot::request_screenshot_capture(
-            screenshot::ScreenshotCaptureInput {
-                scope: "viewport".to_string(),
-                reason: "testing".to_string(),
-                task_id: Some("task-sec-1".to_string()),
-            },
-        )
+        let request = screenshot::request_screenshot_capture(screenshot::ScreenshotCaptureInput {
+            scope: "viewport".to_string(),
+            reason: "testing".to_string(),
+            task_id: Some("task-sec-1".to_string()),
+        })
         .unwrap();
         let serialized = serde_json::to_string(&request).unwrap();
         assert!(!serialized.contains("C:/Users/"), "metadata leaks raw path");
         assert!(!serialized.contains("/Users/"), "metadata leaks macOS path");
         assert!(!serialized.contains("/home/"), "metadata leaks Linux path");
         assert!(!serialized.contains("sk-"), "metadata leaks secret pattern");
-        assert!(!serialized.contains("Bearer"), "metadata leaks Bearer token");
+        assert!(
+            !serialized.contains("Bearer"),
+            "metadata leaks Bearer token"
+        );
 
-        let approved = screenshot::approve_screenshot(
-            screenshot::ApproveScreenshotInput {
-                request_id: request.request_id,
-                approved: true,
-            },
-        )
+        let approved = screenshot::approve_screenshot(screenshot::ApproveScreenshotInput {
+            request_id: request.request_id,
+            approved: true,
+        })
         .unwrap();
         let serialized_approved = serde_json::to_string(&approved).unwrap();
-        assert!(!serialized_approved.contains("C:/Users/"), "approve metadata leaks raw path");
-        assert!(!serialized_approved.contains("/Users/"), "approve metadata leaks macOS path");
-        assert!(!serialized_approved.contains("/home/"), "approve metadata leaks Linux path");
-        assert!(!serialized_approved.contains("sk-"), "approve metadata leaks secret pattern");
-        assert!(!serialized_approved.contains("Bearer"), "approve metadata leaks Bearer token");
+        assert!(
+            !serialized_approved.contains("C:/Users/"),
+            "approve metadata leaks raw path"
+        );
+        assert!(
+            !serialized_approved.contains("/Users/"),
+            "approve metadata leaks macOS path"
+        );
+        assert!(
+            !serialized_approved.contains("/home/"),
+            "approve metadata leaks Linux path"
+        );
+        assert!(
+            !serialized_approved.contains("sk-"),
+            "approve metadata leaks secret pattern"
+        );
+        assert!(
+            !serialized_approved.contains("Bearer"),
+            "approve metadata leaks Bearer token"
+        );
     }
 
     // --- Watcher integration tests (unit tests in watcher.rs) ---
@@ -1942,7 +2174,11 @@ mod tests {
         })
         .unwrap();
         if cfg!(test) {
-            assert!(!start.blocked, "start should not be blocked: {:?}", start.reason);
+            assert!(
+                !start.blocked,
+                "start should not be blocked: {:?}",
+                start.reason
+            );
         }
 
         // Wait briefly for watcher to settle

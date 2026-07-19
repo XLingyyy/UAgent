@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * UAgent MVP7 Side-effect Scan
+ * UAgent Side-effect Scan
  *
  * Scans the codebase for potential boundary violations:
  * - Provider/secret/Authorization terms in non-contract code
@@ -27,6 +27,20 @@ const SCAN_DIRS = ["packages", "apps", "scripts", "tools", "docs"];
 const ALLOWED_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".md"]);
 const EXCLUDE_DIRS = new Set(["node_modules", "dist", ".git", "__pycache__", "fixtures", "coverage"]);
 const EXCLUDE_FILES = [/\.d\.ts$/, /\.test\./, /\.spec\./];
+
+// Rust is intentionally not added to the general walker: legacy keyword scans were
+// designed for TS/JS and would turn native implementation details into thousands of
+// unrelated review findings. MVP15 authority scans below read only the production
+// boundary files that own the native invariants.
+const MVP15_AUTHORITY_FILES = [
+  "apps/desktop/src-tauri/src/asset_mutation.rs",
+  "apps/desktop/src-tauri/src/lib.rs",
+  "apps/desktop/src-tauri/src/ue_editor_process.rs",
+  "apps/desktop/web/src/runtime/project-native-adapter.ts",
+  "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts",
+  "packages/runtime/src/mvp15-mcp-asset-adapter.ts",
+  "packages/shared/src/asset-mutation.ts",
+];
 
 function collectFiles(dir, results = []) {
   let entries;
@@ -1084,6 +1098,171 @@ const CATEGORIES = [
 ];
 
 // ============================================================
+// MVP15 native-authority structural invariants
+// ============================================================
+
+function withoutComments(content) {
+  return content
+    .replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, " "))
+    .replace(/(^|\s)\/\/.*$/gm, "$1");
+}
+
+function authoritySource(relPath, content) {
+  return withoutComments(content);
+}
+
+function structuralFinding(category, file, pattern, content) {
+  return {
+    category,
+    catTitle: category,
+    pattern,
+    severity: "BLOCKED",
+    file,
+    line: 1,
+    content,
+  };
+}
+
+function functionSlice(source, startPattern, nextPattern) {
+  const start = source.search(startPattern);
+  if (start < 0) return "";
+  const tail = source.slice(start);
+  const next = nextPattern ? tail.slice(1).search(nextPattern) : -1;
+  return next >= 0 ? tail.slice(0, next + 1) : tail;
+}
+
+const AUTHORITY_CATEGORIES = [
+  {
+    id: "mvp15-native-trust-authority-boundary",
+    title: "MVP15 Native Trust Authority Boundary",
+    description: "Asset approval registration must resolve the native trusted-root registry and must not mint a caller-derived root identity",
+    inspect(rel, source) {
+      if (rel !== "apps/desktop/src-tauri/src/asset_mutation.rs") return [];
+      const registrationStart = /fn\s+register_asset_mutation_approval_with_gate_at\b/.test(source)
+        ? /fn\s+register_asset_mutation_approval_with_gate_at\b/
+        : /fn\s+register_asset_mutation_approval_at\b/;
+      const body = functionSlice(source, registrationStart, /fn\s+authorize_asset_mutation_with_gate_at\b/);
+      const findings = [];
+      if (!/resolve_trusted_root_binding\s*\(/.test(body)) {
+        findings.push(structuralFinding(this.id, rel, "missing native trusted-root resolver", "registration does not call resolve_trusted_root_binding"));
+      }
+      if (/trusted-root:|canonicalize\s*\(\s*&?input\.trusted_project_root/.test(body)) {
+        findings.push(structuralFinding(this.id, rel, "caller-derived trusted-root identity", "registration canonicalizes or mints trust instead of resolving registry authority"));
+      }
+      return findings;
+    },
+  },
+  {
+    id: "mvp15-observation-authority-boundary",
+    title: "MVP15 Observation Authority Boundary",
+    description: "Registration and mutation guards must resolve the native observation/process registry rather than compare caller-declared session or PID duplicates",
+    inspect(rel, source) {
+      const findings = [];
+      if (rel === "apps/desktop/src-tauri/src/asset_mutation.rs") {
+        if (!/(?:resolve|validate)_asset_mutation_(?:observation|authority)(?:_binding)?(?:_at)?\s*\(/.test(source)) {
+          findings.push(structuralFinding(this.id, rel, "missing native observation validator", "asset mutation does not call the ue_editor_process authority validator"));
+        }
+      }
+      const contractSource = rel === "apps/desktop/src-tauri/src/asset_mutation.rs"
+        ? functionSlice(source, /pub\s+struct\s+RegisterAssetMutationApprovalInput\b/, /pub\s+struct\s+RecordAssetMutationOutcomeInput\b/)
+        : source;
+      if ([
+        "apps/desktop/src-tauri/src/asset_mutation.rs",
+        "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts",
+        "packages/runtime/src/mvp15-mcp-asset-adapter.ts",
+        "packages/shared/src/asset-mutation.ts",
+      ].includes(rel) && /observedEditorSessionId|observedPidHash|observed_editor_session_id|observed_pid_hash/.test(contractSource)) {
+        findings.push(structuralFinding(this.id, rel, "caller observation duplicate", "caller-declared observed session/PID remains in the production mutation contract"));
+      }
+      return findings;
+    },
+  },
+  {
+    id: "mvp15-native-gate-boundary",
+    title: "MVP15 Native Gate Boundary",
+    description: "Native registration and forward execution require the strict default-off UAGENT_ENABLE_ASSET_MUTATION=1 gate; caller booleans cannot enable it",
+    inspect(rel, source) {
+      const findings = [];
+      if (rel === "apps/desktop/src-tauri/src/asset_mutation.rs") {
+        if (!/UAGENT_ENABLE_ASSET_MUTATION/.test(source) || !/(?:==|matches!)[^\n]{0,120}["']1["']/.test(source)) {
+          findings.push(structuralFinding(this.id, rel, "missing strict native gate", "native mutation source does not implement an exact value 1 environment gate"));
+        }
+      }
+      if ([
+        "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts",
+        "packages/shared/src/asset-mutation.ts",
+      ].includes(rel) && /assetMutationGateEnabled|asset_mutation_gate_enabled/.test(source)) {
+        findings.push(structuralFinding(this.id, rel, "caller mutation gate", "caller assetMutationGateEnabled remains in the production native-authority contract"));
+      }
+      return findings;
+    },
+  },
+  {
+    id: "mvp15-transaction-liveness-boundary",
+    title: "MVP15 Transaction Liveness Boundary",
+    description: "Every mutation phase must revalidate live authority and enforce absolute 15-minute forward and 20-minute recovery caps",
+    inspect(rel, source) {
+      if (rel !== "apps/desktop/src-tauri/src/asset_mutation.rs") return [];
+      const findings = [];
+      const hasCaps = /15\s*\*\s*(?:60\s*\*\s*1000|60_000)|900_000/.test(source)
+        && /20\s*\*\s*(?:60\s*\*\s*1000|60_000)|1_200_000/.test(source)
+        && /transaction_expired/.test(source)
+        && /recovery_expired/.test(source);
+      if (!hasCaps) {
+        findings.push(structuralFinding(this.id, rel, "missing absolute transaction/recovery caps", "15-minute forward and 20-minute recovery deadlines or stable reasons are absent"));
+      }
+      const guardStart = /fn\s+authorize_asset_mutation_with_gate_at\b/.test(source)
+        ? /fn\s+authorize_asset_mutation_with_gate_at\b/
+        : /fn\s+authorize_asset_mutation_at\b/;
+      const guardBody = functionSlice(source, guardStart, /fn\s+record_asset_mutation_outcome_at\b/);
+      if (!/(?:revalidate|resolve|validate)_asset_mutation_(?:live_)?authority|(?:resolve|validate)_asset_mutation_observation/.test(guardBody)) {
+        findings.push(structuralFinding(this.id, rel, "missing per-guard live recheck", "authorize_asset_mutation_at does not call a live authority/observation revalidator"));
+      }
+      return findings;
+    },
+  },
+  {
+    id: "mvp15-pretrust-root-ref-boundary",
+    title: "MVP15 Pre-trust Root Reference Boundary",
+    description: "Mutation-resolvable root mappings may be published only after confirmTrust succeeds",
+    inspect(rel, source) {
+      if (rel !== "apps/desktop/web/src/runtime/project-native-adapter.ts") return [];
+      const findings = [];
+      const addProject = functionSlice(source, /async\s+addProject\s*\(/, /async\s+confirmTrust\s*\(/);
+      if (/register(?:Mutation)?TrustedRootRef\s*\(|trustedRootRefs\.set\s*\(/.test(addProject)) {
+        findings.push(structuralFinding(this.id, rel, "pre-trust mutation root mapping", "addProject publishes a mutation-resolvable root before confirmTrust"));
+      }
+      const confirmTrust = functionSlice(source, /async\s+confirmTrust\s*\(/, /async\s+(?:removeProject|scanProject|scan)\s*\(/);
+      const trustIndex = confirmTrust.search(/trust_native_project_root/);
+      const publishIndex = confirmTrust.search(/register(?:Mutation)?TrustedRootRef\s*\(|trustedRootRefs\.set\s*\(/);
+      if (publishIndex >= 0 && (trustIndex < 0 || publishIndex < trustIndex)) {
+        findings.push(structuralFinding(this.id, rel, "root mapping precedes native trust", "confirmTrust publishes the mapping before the native trust command"));
+      }
+      return findings;
+    },
+  },
+];
+
+function scanAuthorityContent(relPath, content, categories = AUTHORITY_CATEGORIES) {
+  const source = authoritySource(relPath, content);
+  return categories.flatMap((category) => category.inspect(relPath, source));
+}
+
+function scanAuthorityFiles() {
+  return MVP15_AUTHORITY_FILES.flatMap((relPath) => {
+    const absPath = join(ROOT, relPath);
+    if (!existsSync(absPath)) {
+      return [structuralFinding("mvp15-native-trust-authority-boundary", relPath, "authority source missing", "required production boundary file is missing")];
+    }
+    try {
+      return scanAuthorityContent(relPath, readFileSync(absPath, "utf-8"));
+    } catch {
+      return [structuralFinding("mvp15-native-trust-authority-boundary", relPath, "authority source unreadable", "required production boundary file could not be read")];
+    }
+  });
+}
+
+// ============================================================
 // Scan Logic
 // ============================================================
 
@@ -1225,6 +1404,51 @@ function runScanSelfTests() {
   if (!unsafeRawEvidence.some((finding) => finding.severity === "BLOCKED" && finding.pattern === "raw evidence identity or path")) {
     throw new Error("mvp15 asset mutation self-test did not block raw evidence path/session/pid");
   }
+
+  const authorityCases = [
+    {
+      id: "mvp15-native-trust-authority-boundary",
+      file: "apps/desktop/src-tauri/src/asset_mutation.rs",
+      unsafe: "fn register_asset_mutation_approval_at(input: Input) { let root = canonicalize(&input.trusted_project_root); let id = format!(\"trusted-root:{}\", root); } fn authorize_asset_mutation_at() {}",
+      safe: "fn register_asset_mutation_approval_at(input: Input) { let binding = resolve_trusted_root_binding(&input.trusted_project_root); } fn authorize_asset_mutation_at() {}",
+    },
+    {
+      id: "mvp15-observation-authority-boundary",
+      file: "packages/shared/src/asset-mutation.ts",
+      unsafe: "export interface Guard { observedEditorSessionId: string; observedPidHash: string; }",
+      safe: "export interface Guard { registrationId: string; operationId: string; }",
+    },
+    {
+      id: "mvp15-native-gate-boundary",
+      file: "packages/shared/src/asset-mutation.ts",
+      unsafe: "export interface Register { assetMutationGateEnabled: boolean; }",
+      safe: "export interface Register { registrationId: string; }",
+    },
+    {
+      id: "mvp15-transaction-liveness-boundary",
+      file: "apps/desktop/src-tauri/src/asset_mutation.rs",
+      unsafe: "fn authorize_asset_mutation_at() { return accepted(); }",
+      safe: "const FORWARD: u64 = 15 * 60 * 1000; const RECOVERY: u64 = 20 * 60 * 1000; const A: &str = \"transaction_expired\"; const B: &str = \"recovery_expired\"; fn authorize_asset_mutation_at() { revalidate_asset_mutation_live_authority(); } fn record_asset_mutation_outcome_at() {}",
+    },
+    {
+      id: "mvp15-pretrust-root-ref-boundary",
+      file: "apps/desktop/web/src/runtime/project-native-adapter.ts",
+      unsafe: "async addProject(ref) { registerTrustedRootRef(ref, raw); } async confirmTrust(id) { await trust_native_project_root(id); } async removeProject() {}",
+      safe: "async addProject(ref) { rawPaths.set(ref, raw); } async confirmTrust(id) { await trust_native_project_root(id); registerTrustedRootRef(id, raw); } async removeProject() {}",
+    },
+  ];
+  for (const sample of authorityCases) {
+    const category = AUTHORITY_CATEGORIES.find((candidate) => candidate.id === sample.id);
+    if (!category) throw new Error(`${sample.id} scan category missing`);
+    const unsafeFindings = scanAuthorityContent(sample.file, sample.unsafe, [category]);
+    if (!unsafeFindings.some((finding) => finding.severity === "BLOCKED")) {
+      throw new Error(`${sample.id} self-test did not block unsafe sample`);
+    }
+    const safeFindings = scanAuthorityContent(sample.file, sample.safe, [category]);
+    if (safeFindings.some((finding) => finding.severity === "BLOCKED")) {
+      throw new Error(`${sample.id} self-test blocked safe authoritative sample`);
+    }
+  }
 }
 
 // ============================================================
@@ -1241,11 +1465,14 @@ function main() {
     const findings = scanFile(absPath, CATEGORIES);
     allFindings.push(...findings);
   }
+  allFindings.push(...scanAuthorityFiles());
+
+  const reportCategories = [...CATEGORIES, ...AUTHORITY_CATEGORIES];
 
   // Build report
   const report = {};
 
-  for (const cat of CATEGORIES) {
+  for (const cat of reportCategories) {
     const catFindings = allFindings.filter((f) => f.category === cat.id);
     const allowed = catFindings.filter((f) => f.severity === "ALLOWED");
     const blocked = catFindings.filter((f) => f.severity === "BLOCKED");
@@ -1260,7 +1487,7 @@ function main() {
   const hr = "=".repeat(80);
 
   console.log(hr);
-  console.log("  UAgent MVP9 Side-effect Scan Report");
+  console.log("  UAgent Side-effect Scan Report");
   console.log(`  ${new Date().toISOString()}`);
   console.log(`  Files scanned: ${fileSet.length}`);
   console.log(hr);
@@ -1270,7 +1497,7 @@ function main() {
   let totalBlocked = 0;
   let totalReview = 0;
 
-  for (const cat of CATEGORIES) {
+  for (const cat of reportCategories) {
     const r = report[cat.id];
     const a = r.allowed.length;
     const b = r.blocked.length;

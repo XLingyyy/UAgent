@@ -155,6 +155,10 @@ export interface AssetMutationAdapterResult {
 
 export interface AssetMutationAdapter {
   prepareExecute?(context: AssetMutationAdapterContext): MaybePromise<AssetMutationAdapterResult>;
+  cancelPreparedRegistration?(
+    context: AssetMutationAdapterContext,
+    prepared: AssetMutationAdapterResult,
+  ): MaybePromise<AssetMutationAdapterResult>;
   execute(operation: AssetMutationOperation, context: AssetMutationAdapterContext): MaybePromise<AssetMutationAdapterResult>;
   rollback(operation: AssetMutationOperation, context: AssetMutationAdapterContext): MaybePromise<AssetMutationAdapterResult>;
 }
@@ -175,6 +179,8 @@ export interface AssetChangeSetServiceOptions {
   adapter: AssetMutationAdapter;
   verification?: AssetMutationVerificationAdapter;
   externalVerification?: AssetMutationExternalVerificationAdapter;
+  /** Desktop-owned current-run check used before publishing a native-issued registration. */
+  isCurrentRun?: () => boolean;
 }
 
 export interface AssetChangeSetService {
@@ -309,6 +315,22 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
     return `${prefix}:${counter}`;
   }
 
+  async function cancelPreparedNativeRegistration(
+    current: AssetChangeSet,
+    prepared: AssetMutationAdapterResult,
+  ): Promise<boolean> {
+    if (!options.adapter.cancelPreparedRegistration) return false;
+    try {
+      const cancelled = await options.adapter.cancelPreparedRegistration(
+        adapterContext(current, prepared.issuedApprovalToken ?? null, current.operations[0]?.dryRunHash ?? "", 0),
+        prepared,
+      );
+      return cancelled.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async function prepareNativeRegistration(
     current: AssetChangeSet,
   ): Promise<{ ok: boolean; reason: string | null; changeSet: AssetChangeSet; evidenceIds: string[]; approvalToken: string | null }> {
@@ -367,7 +389,7 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
         };
       }
 
-      const registration = validateExternalRegistration(prepared.externalRegistration, current);
+      const registration = validateExternalRegistration(prepared.externalRegistration);
       const issuedToken = prepared.issuedApprovalToken;
       const issuedAt = prepared.issuedAt;
       const expiresAt = prepared.expiresAt;
@@ -378,7 +400,7 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
         && (issuedAt ?? -1) >= 0
         && (expiresAt ?? 0) > (issuedAt ?? 0)
         && (expiresAt ?? 0) - (issuedAt ?? 0) <= 60_000;
-      if (!registration || !options.externalVerification || !issuedTokenIsValid) {
+      if (!registration || !issuedTokenIsValid) {
         const reason = registration ? "external_verification_required" : "external_registration_binding_required";
         const safeReason = !issuedTokenIsValid ? "native_issued_token_invalid" : reason;
         const evidenceIds = prepared.evidenceId ? [prepared.evidenceId] : [];
@@ -396,6 +418,38 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
           approvalToken: null,
         };
       }
+      if (registrationGeneration !== tokenGeneration || options.isCurrentRun?.() === false) {
+        const cancelled = await cancelPreparedNativeRegistration(current, prepared);
+        const reason = cancelled ? "native_registration_stale" : "native_registration_cancel_failed";
+        return {
+          ok: false,
+          reason,
+          changeSet: store({
+            ...current,
+            state: "failed",
+            nativeApprovalRegistrationStatus: "blocked",
+            nativeApprovalRegistrationReason: reason,
+          }),
+          evidenceIds: [],
+          approvalToken: null,
+        };
+      }
+      if (!options.externalVerification) {
+        const cancelled = await cancelPreparedNativeRegistration(current, prepared);
+        const reason = cancelled ? "external_verification_required" : "native_registration_cancel_failed";
+        return {
+          ok: false,
+          reason,
+          changeSet: store({
+            ...current,
+            state: "failed",
+            nativeApprovalRegistrationStatus: "blocked",
+            nativeApprovalRegistrationReason: reason,
+          }),
+          evidenceIds: [],
+          approvalToken: null,
+        };
+      }
 
       let captured;
       try {
@@ -404,7 +458,10 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
         captured = { ok: false, reason: "external_baseline_read_failed", baseline: null };
       }
       if (!captured.ok || !captured.baseline || !isValidExternalBaseline(captured.baseline, current)) {
-        const reason = captured.reason ?? "external_baseline_required";
+        const cancelled = await cancelPreparedNativeRegistration(current, prepared);
+        const reason = cancelled
+          ? captured.reason ?? "external_baseline_required"
+          : "native_registration_cancel_failed";
         const evidenceIds = prepared.evidenceId ? [prepared.evidenceId] : [];
         return {
           ok: false,
@@ -421,8 +478,9 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
         };
       }
 
-      if (registrationGeneration !== tokenGeneration) {
-        const reason = "native_registration_stale";
+      if (registrationGeneration !== tokenGeneration || options.isCurrentRun?.() === false) {
+        const cancelled = await cancelPreparedNativeRegistration(current, prepared);
+        const reason = cancelled ? "native_registration_stale" : "native_registration_cancel_failed";
         return {
           ok: false,
           reason,
@@ -1253,10 +1311,8 @@ function cloneVerification(verification: AssetVerificationResult | null): AssetV
 
 function validateExternalRegistration(
   registration: AssetMutationExternalRegistrationBinding | undefined,
-  changeSet: AssetChangeSet,
 ): AssetMutationExternalRegistrationBinding | null {
-  if (!registration || registration.projectBindingId !== changeSet.projectId) return null;
-  if (!isSafeOpaqueId(registration.registrationId) || !isSafeOpaqueId(registration.projectBindingId) || !isSafeOpaqueId(registration.trustedRootId)) return null;
+  if (!registration || !isSafeOpaqueId(registration.registrationId)) return null;
   return { ...registration };
 }
 

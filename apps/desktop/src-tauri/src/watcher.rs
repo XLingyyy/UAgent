@@ -1,5 +1,7 @@
 use crate::{hash_path, is_trusted_root, normalize_project_path, redact_path_for_ui};
-use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher};
+use notify::{
+    Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -194,11 +196,7 @@ fn map_event_kind(kind: &EventKind) -> &'static str {
     }
 }
 
-fn is_ignored_path(
-    path: &Path,
-    ignored_dirs: &[&str],
-    ignored_patterns: &[&str],
-) -> bool {
+fn is_ignored_path(path: &Path, ignored_dirs: &[&str], ignored_patterns: &[&str]) -> bool {
     let path_str = path.to_string_lossy().replace('\\', "/");
     for dir in ignored_dirs {
         if path_str.contains(&format!("/{}/", dir)) || path_str.ends_with(&format!("/{}", dir)) {
@@ -231,15 +229,24 @@ fn debounce_events(events: &[RawChangeEvent]) -> Vec<RawChangeEvent> {
 pub fn start_watcher(input: WatcherStartInput) -> Result<WatcherStartResult, String> {
     let normalized = normalize_project_path(&input.root_ref);
     if !is_trusted_root(&normalized) {
-        return Ok(redacted_blocked_start(&normalized, "untrusted_root".to_string()));
+        return Ok(redacted_blocked_start(
+            &normalized,
+            "untrusted_root".to_string(),
+        ));
     }
     if !watcher_real_enabled() {
-        return Ok(redacted_blocked_start(&normalized, "feature_disabled".to_string()));
+        return Ok(redacted_blocked_start(
+            &normalized,
+            "feature_disabled".to_string(),
+        ));
     }
 
     let root_path = Path::new(&normalized);
     if !root_path.exists() || !root_path.is_dir() {
-        return Ok(redacted_blocked_start(&normalized, "root_not_found".to_string()));
+        return Ok(redacted_blocked_start(
+            &normalized,
+            "root_not_found".to_string(),
+        ));
     }
 
     let session_id = next_session_id();
@@ -263,8 +270,17 @@ pub fn start_watcher(input: WatcherStartInput) -> Result<WatcherStartResult, Str
     let root_clone = root_path.to_path_buf();
     let data_clone = data.clone();
     let ignored_dirs: Vec<&str> = vec![
-        ".git", "node_modules", "dist", "build", "Binaries", "Intermediate",
-        "Saved", "DerivedDataCache", ".vs", "coverage", ".agent-bus",
+        ".git",
+        "node_modules",
+        "dist",
+        "build",
+        "Binaries",
+        "Intermediate",
+        "Saved",
+        "DerivedDataCache",
+        ".vs",
+        "coverage",
+        ".agent-bus",
     ];
     let ignored_patterns: Vec<&str> = vec!["*.log", "*.tmp", "*.swp", "*.lock"];
 
@@ -356,9 +372,9 @@ pub fn stop_watcher(input: WatcherStopInput) -> Result<WatcherStopResult, String
 #[tauri::command]
 pub fn read_watcher_diff(input: WatcherReadDiffInput) -> Result<WatcherReadDiffResult, String> {
     let registry = watcher_registry().lock().map_err(|e| e.to_string())?;
-    let entry = registry.get(&input.session_id).ok_or_else(|| {
-        format!("session not found: {}", input.session_id)
-    })?;
+    let entry = registry
+        .get(&input.session_id)
+        .ok_or_else(|| format!("session not found: {}", input.session_id))?;
 
     let mut d = entry.data.lock().map_err(|e| e.to_string())?;
     let raw_events: Vec<RawChangeEvent> = d.events.drain(..).collect();
@@ -520,11 +536,20 @@ mod tests {
 
     #[test]
     fn test_map_event_kind() {
-        assert_eq!(map_event_kind(&EventKind::Create(notify::event::CreateKind::File)), "added");
-        assert_eq!(map_event_kind(&EventKind::Modify(notify::event::ModifyKind::Data(
-            notify::event::DataChange::Any,
-        ))), "modified");
-        assert_eq!(map_event_kind(&EventKind::Remove(notify::event::RemoveKind::File)), "deleted");
+        assert_eq!(
+            map_event_kind(&EventKind::Create(notify::event::CreateKind::File)),
+            "added"
+        );
+        assert_eq!(
+            map_event_kind(&EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            ))),
+            "modified"
+        );
+        assert_eq!(
+            map_event_kind(&EventKind::Remove(notify::event::RemoveKind::File)),
+            "deleted"
+        );
     }
 
     #[test]
@@ -576,7 +601,11 @@ mod tests {
             root_ref: root_str.clone(),
         })
         .unwrap();
-        assert!(!start.blocked, "start should not be blocked: {:?}", start.reason);
+        assert!(
+            !start.blocked,
+            "start should not be blocked: {:?}",
+            start.reason
+        );
         assert_eq!(start.status, "watching");
         assert!(!start.display_root.contains(&normalized));
 

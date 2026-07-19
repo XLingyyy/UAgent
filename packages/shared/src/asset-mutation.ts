@@ -305,14 +305,11 @@ export interface AssetMutationApprovalRegistrationRequest {
   runId: string;
   projectBindingId: string;
   trustedRootRef: string;
+  /** Opaque native observation reference. Native resolves process and PID authority. */
   editorSessionId: string;
-  pidHash: string;
-  observedEditorSessionId: string;
-  observedPidHash: string;
   aggregateDryRunHash: string;
   aggregateArgsHash: string;
   requestedTtlMs: number;
-  assetMutationGateEnabled: boolean;
   operations: AssetMutationApprovalOperationBinding[];
 }
 
@@ -320,7 +317,6 @@ export interface AssetMutationApprovalRegistrationResult {
   status: "registered" | "blocked" | "failed";
   reason: string | null;
   registrationId?: string | null;
-  trustedRootId?: string | null;
   operationCount?: number;
   /** Returned once by native and retained only in short-lived runtime/renderer memory. */
   approvalToken?: string | null;
@@ -337,14 +333,8 @@ export interface AssetMutationOperationGuardRequest {
   changeSetId: string;
   runId: string;
   projectBindingId: string;
-  trustedRootId: string;
-  editorSessionId: string;
-  pidHash: string;
-  observedEditorSessionId: string;
-  observedPidHash: string;
   aggregateDryRunHash: string;
   aggregateArgsHash: string;
-  assetMutationGateEnabled: boolean;
   operation: AssetMutationApprovalOperationBinding;
 }
 
@@ -420,8 +410,6 @@ export interface AssetMutationPluginExecutionResult {
 /** Safe native registration binding retained only in runtime memory for read-only evidence calls. */
 export interface AssetMutationExternalRegistrationBinding {
   registrationId: string;
-  projectBindingId: string;
-  trustedRootId: string;
 }
 
 export interface AssetContentEvidenceRequest extends AssetMutationExternalRegistrationBinding {

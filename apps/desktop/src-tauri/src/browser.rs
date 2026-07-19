@@ -24,7 +24,11 @@ pub fn browser_capability_status() -> BrowserCapabilityStatus {
     BrowserCapabilityStatus {
         enabled,
         mode: if enabled { "native" } else { "disabled" }.to_string(),
-        reason: if enabled { None } else { Some("feature_disabled".to_string()) },
+        reason: if enabled {
+            None
+        } else {
+            Some("feature_disabled".to_string())
+        },
         localhost_allowed: true,
         loopback_allowed: true,
         file_allowed: true,
@@ -104,7 +108,10 @@ fn display_url(url: &str) -> String {
     }
 }
 
-fn blocked_classification(reason: &'static str, needs_trusted_root: bool) -> BrowserTargetClassification {
+fn blocked_classification(
+    reason: &'static str,
+    needs_trusted_root: bool,
+) -> BrowserTargetClassification {
     BrowserTargetClassification {
         policy: "blocked_external",
         blocked: true,
@@ -165,15 +172,23 @@ fn classify_preview_target(url: &str, root_ref: Option<&str>) -> BrowserTargetCl
     }
     let parsed = match tauri::Url::parse(url) {
         Ok(parsed) => parsed,
-        Err(_) => return blocked_classification("Malformed URL blocked by browser preview policy", false),
+        Err(_) => {
+            return blocked_classification("Malformed URL blocked by browser preview policy", false)
+        }
     };
     match parsed.scheme() {
         "http" | "https" => {
             if !parsed.username().is_empty() || parsed.password().is_some() {
-                return blocked_classification("URL userinfo is blocked by browser preview policy", false);
+                return blocked_classification(
+                    "URL userinfo is blocked by browser preview policy",
+                    false,
+                );
             }
             let Some(host) = parsed.host_str().map(|h| h.to_ascii_lowercase()) else {
-                return blocked_classification("Malformed URL blocked by browser preview policy", false);
+                return blocked_classification(
+                    "Malformed URL blocked by browser preview policy",
+                    false,
+                );
             };
             if host == "localhost" || host == "127.0.0.1" {
                 return allowed_classification(url, false);
@@ -222,7 +237,9 @@ pub fn browser_preview(input: BrowserPreviewInput) -> Result<BrowserPreviewResul
     let display = classification.display_target.clone();
     Ok(BrowserPreviewResult {
         session_id: format!("session:{}", hash_input(&input.url)),
-        url: display.clone().unwrap_or_else(|| "[blocked target]".to_string()),
+        url: display
+            .clone()
+            .unwrap_or_else(|| "[blocked target]".to_string()),
         target_id: classification.target_id,
         policy: classification.policy.to_string(),
         blocked: classification.blocked,
@@ -261,17 +278,14 @@ pub async fn open_browser_preview(
         return Err(format!("URL blocked: {}", classification.reason));
     }
     let label = format!("browser-preview-{}", input.session_id);
-    let parsed = tauri::Url::parse(&input.url)
-        .map_err(|e| format!("Invalid URL: {}", e))?;
+    let parsed = tauri::Url::parse(&input.url).map_err(|e| format!("Invalid URL: {}", e))?;
     let navigation_root = input.root_ref.clone();
     let window = tauri::WebviewWindowBuilder::new(
         &app_handle,
         &label,
         tauri::WebviewUrl::External(parsed.clone()),
     )
-    .on_navigation(move |url| {
-        allow_preview_navigation(url, navigation_root.as_deref())
-    })
+    .on_navigation(move |url| allow_preview_navigation(url, navigation_root.as_deref()))
     .title("Browser Preview")
     .inner_size(1024.0, 768.0)
     .resizable(true)
@@ -451,8 +465,14 @@ mod tests {
             root_ref: None,
         })
         .unwrap();
-        assert!(result.needs_trusted_root, "file:// should signal trusted-root check");
-        assert!(result.blocked, "file:// without trusted root should be blocked");
+        assert!(
+            result.needs_trusted_root,
+            "file:// should signal trusted-root check"
+        );
+        assert!(
+            result.blocked,
+            "file:// without trusted root should be blocked"
+        );
     }
 
     #[test]
@@ -480,7 +500,10 @@ mod tests {
         let serialized = serde_json::to_string(&result).unwrap();
 
         assert!(!result.blocked);
-        assert_eq!(result.display_url.as_deref(), Some("[local file] report.html"));
+        assert_eq!(
+            result.display_url.as_deref(),
+            Some("[local file] report.html")
+        );
         assert!(!serialized.contains(&root_str));
         assert!(!serialized.contains(&file_url));
         assert!(!serialized.contains("file://"));

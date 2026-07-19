@@ -81,26 +81,22 @@ export interface Mvp15McpAssetToolInventory {
 
 export type Mvp15NativeAssetGuardInput =
   | ({ command: "register"; phase: "register" } & AssetMutationApprovalRegistrationRequest)
-  | ({ command: "guard" } & AssetMutationOperationGuardRequest)
-  | ({ command: "record_outcome"; operationIndex: number } & AssetMutationOutcomeRequest)
   | {
-      /** Fixture-only compatibility input; real-mode service requires registration before this path. */
-      command?: "legacy_guard";
-      toolName: Mvp15McpAssetToolName;
-      assetPath?: string | null;
-      targetAssetPath?: string | null;
-      dryRunHash: string;
-      approvalToken: string | null;
-      editorSessionId: string;
-      pidHash: string;
-      assetMutationGateEnabled: boolean;
-      observedEditorSessionId: string | null;
-      observedPidHash: string | null;
-      phase: "execute" | "rollback";
-    };
+    command: "cancel_registration";
+    phase: "cancel";
+    registrationId: string;
+    approvalToken: string;
+  }
+  | ({ command: "guard" } & AssetMutationOperationGuardRequest)
+  | ({ command: "record_outcome"; operationIndex: number } & AssetMutationOutcomeRequest);
 
 export type Mvp15NativeAssetGuardResult =
   | AssetMutationApprovalRegistrationResult
+  | {
+    status: "cancelled" | "blocked" | "failed";
+    reason: string | null;
+    registrationId?: string | null;
+  }
   | AssetMutationOperationGuardResult
   | AssetMutationOutcomeResult;
 
@@ -114,9 +110,12 @@ export interface Mvp15McpAssetToolCallResult {
 
 export interface Mvp15McpAssetMutationAdapterOptions {
   tools: readonly Mvp15McpAssetToolDescriptorLike[];
+  /** Renderer-side tightening only. Native independently owns the feature authority gate. */
   assetMutationGateEnabled: boolean;
-  observedEditorSessionId: string | null;
-  observedPidHash: string | null;
+  /** Captures the desktop-owned MCP session/connection/endpoint identity. */
+  captureMcpBinding: () => string | null;
+  /** Revalidates the captured desktop-owned identity immediately before an MCP call. */
+  isMcpBindingCurrent: (binding: string) => boolean;
   nativeGuard: (input: Mvp15NativeAssetGuardInput) => Mvp15NativeAssetGuardResult | Promise<Mvp15NativeAssetGuardResult>;
   callTool: (toolName: Mvp15McpAssetToolName, args: Record<string, unknown>) => Mvp15McpAssetToolCallResult | Promise<Mvp15McpAssetToolCallResult | unknown>;
 }
@@ -275,19 +274,83 @@ export function createMvp15McpAssetMutationAdapter(
   options: Mvp15McpAssetMutationAdapterOptions,
 ): AssetMutationAdapter {
   const toolByName = new Map(options.tools.map(normalizeMvp15McpAssetToolDescriptor).map((tool) => [tool.name, tool]));
-  const registrations = new Map<string, { registrationId: string; trustedRootId: string; operationCount: number }>();
+  const registrations = new Map<string, { registrationId: string; operationCount: number; mcpBinding: string }>();
+
+  async function cancelNativeRegistration(
+    changeSetId: string,
+    registrationId: string,
+    approvalToken: string,
+  ): Promise<AssetMutationAdapterResult> {
+    let cancelled: Mvp15NativeAssetGuardResult;
+    try {
+      cancelled = await options.nativeGuard({
+        command: "cancel_registration",
+        phase: "cancel",
+        registrationId,
+        approvalToken,
+      });
+    } catch {
+      return blockedResult("native_registration_cancel_failed", changeSetId);
+    }
+    if (
+      cancelled.status !== "cancelled"
+      || cancelled.registrationId !== registrationId
+    ) {
+      return blockedResult(nativeFailureReason("native_registration_cancel_", cancelled.reason), changeSetId);
+    }
+    registrations.delete(changeSetId);
+    return {
+      ok: true,
+      reason: null,
+      evidenceId: `asset-evidence:native-registration-cancelled:${registrationId}`,
+    };
+  }
+
+  async function settleNoSideEffectFailure(
+    registrationId: string,
+    phase: "execute" | "rollback",
+    operation: AssetMutationOperation,
+    operationIndex: number,
+    reasonCode: string,
+  ): Promise<AssetMutationAdapterResult | null> {
+    let outcome: Mvp15NativeAssetGuardResult;
+    try {
+      outcome = await options.nativeGuard({
+        command: "record_outcome",
+        operationIndex,
+        registrationId,
+        phase,
+        operationId: operation.id,
+        success: false,
+        sideEffectObserved: false,
+        rollbackAvailable: false,
+        evidenceId: `asset-evidence:block:${operation.id}`,
+        reasonCode,
+      });
+    } catch {
+      return blockedResult("native_outcome_failed", operation.id);
+    }
+    if (
+      outcome.status !== "recorded"
+      || outcome.registrationId !== registrationId
+      || outcome.phase !== phase
+      || outcome.operationId !== operation.id
+    ) {
+      return blockedResult("native_outcome_failed", operation.id);
+    }
+    return null;
+  }
 
   async function prepareExecute(context: AssetMutationAdapterContext): Promise<AssetMutationAdapterResult> {
     const { changeSet } = context;
     const approval = changeSet.approval;
     if (!approval) return blockedResult("approval_required", changeSet.id);
-    if (!options.assetMutationGateEnabled) return blockedResult("native_guard_asset_mutation_gate_disabled", changeSet.id);
-    if (!options.observedEditorSessionId || !options.observedPidHash) {
-      return blockedResult("native_guard_active_observation_required", changeSet.id);
-    }
+    if (!options.assetMutationGateEnabled) return blockedResult("ui_asset_mutation_gate_disabled", changeSet.id);
     if (!changeSet.aggregateDryRunHash || !changeSet.aggregateArgsHash) {
       return blockedResult("approval_aggregate_required", changeSet.id);
     }
+    const mcpBinding = options.captureMcpBinding();
+    if (!mcpBinding) return blockedResult("mcp_binding_unavailable", changeSet.id);
     const inventory = createMvp15McpAssetToolInventory(options.tools);
     if (inventory.status !== "ready") return blockedResult("blocked_by_mcp_schema:inventory_not_ready", changeSet.id);
     const operations: AssetMutationApprovalOperationBinding[] = [];
@@ -306,13 +369,9 @@ export function createMvp15McpAssetMutationAdapter(
         projectBindingId: changeSet.projectId,
         trustedRootRef: changeSet.trustedRootId,
         editorSessionId: changeSet.editorSessionId,
-        pidHash: changeSet.pidHash,
-        observedEditorSessionId: options.observedEditorSessionId,
-        observedPidHash: options.observedPidHash,
         aggregateDryRunHash: changeSet.aggregateDryRunHash,
         aggregateArgsHash: changeSet.aggregateArgsHash,
         requestedTtlMs: approval.expiresAt - approval.issuedAt,
-        assetMutationGateEnabled: options.assetMutationGateEnabled,
         operations,
       });
     } catch {
@@ -322,20 +381,42 @@ export function createMvp15McpAssetMutationAdapter(
       result.status !== "registered"
       || typeof result.registrationId !== "string"
       || !result.registrationId
-      || typeof result.trustedRootId !== "string"
-      || !result.trustedRootId
       || result.operationCount !== operations.length
       || typeof result.approvalToken !== "string"
       || !/^[0-9a-f]{64}$/.test(result.approvalToken)
       || !Number.isSafeInteger(result.issuedAt)
       || !Number.isSafeInteger(result.expiresAt)
     ) {
+      if (
+        result.status === "registered"
+        && typeof result.registrationId === "string"
+        && result.registrationId
+        && typeof result.approvalToken === "string"
+        && /^[0-9a-f]{64}$/.test(result.approvalToken)
+      ) {
+        const cancellation = await cancelNativeRegistration(
+          changeSet.id,
+          result.registrationId,
+          result.approvalToken,
+        );
+        if (!cancellation.ok) return cancellation;
+      }
       return blockedResult(nativeFailureReason("native_registration_", result.reason), changeSet.id);
+    }
+    if (!options.isMcpBindingCurrent(mcpBinding)) {
+      const cancellation = await cancelNativeRegistration(
+        changeSet.id,
+        result.registrationId,
+        result.approvalToken,
+      );
+      return cancellation.ok
+        ? blockedResult("mcp_binding_changed", changeSet.id)
+        : cancellation;
     }
     registrations.set(changeSet.id, {
       registrationId: result.registrationId,
-      trustedRootId: result.trustedRootId,
       operationCount: operations.length,
+      mcpBinding,
     });
     return {
       ok: true,
@@ -343,8 +424,6 @@ export function createMvp15McpAssetMutationAdapter(
       evidenceId: `asset-evidence:native-registration:${result.registrationId}`,
       externalRegistration: {
         registrationId: result.registrationId,
-        projectBindingId: changeSet.projectId,
-        trustedRootId: result.trustedRootId,
       },
       issuedApprovalToken: result.approvalToken,
       issuedAt: result.issuedAt,
@@ -380,13 +459,10 @@ export function createMvp15McpAssetMutationAdapter(
 
     const registration = registrations.get(context.changeSet.id);
     const guardOperation = rollback ? toNativeRollbackOperation(operation) : toNativeApprovalOperation(operation);
-    if (rollback && (!registration || !guardOperation)) {
-      return blockedResult("native_rollback_registration_required", operation.id);
-    }
+    if (!registration || !guardOperation) return blockedResult(rollback ? "native_rollback_registration_required" : "native_execute_registration_required", operation.id);
     let guard: Mvp15NativeAssetGuardResult;
     try {
-      guard = registration && guardOperation
-        ? await options.nativeGuard({
+      guard = await options.nativeGuard({
           command: "guard",
           registrationId: registration.registrationId,
           approvalToken: rollback ? null : context.operationIndex === 0 ? context.approvalToken : null,
@@ -396,30 +472,10 @@ export function createMvp15McpAssetMutationAdapter(
           changeSetId: context.changeSet.id,
           runId: context.changeSet.runId,
           projectBindingId: context.changeSet.projectId,
-          trustedRootId: registration.trustedRootId,
-          editorSessionId: context.editorSessionId,
-          pidHash: context.pidHash,
-          observedEditorSessionId: options.observedEditorSessionId ?? "",
-          observedPidHash: options.observedPidHash ?? "",
           aggregateDryRunHash: context.changeSet.aggregateDryRunHash ?? "",
           aggregateArgsHash: context.changeSet.aggregateArgsHash ?? "",
-          assetMutationGateEnabled: options.assetMutationGateEnabled,
           operation: guardOperation,
-          })
-        : await options.nativeGuard({
-          command: "legacy_guard",
-          toolName: call.toolName,
-          assetPath: call.assetPath,
-          targetAssetPath: call.targetAssetPath,
-          dryRunHash: context.dryRunHash,
-          approvalToken: context.approvalToken,
-          editorSessionId: context.editorSessionId,
-          pidHash: context.pidHash,
-          assetMutationGateEnabled: options.assetMutationGateEnabled,
-          observedEditorSessionId: options.observedEditorSessionId,
-          observedPidHash: options.observedPidHash,
-            phase: rollback ? "rollback" : "execute",
-          });
+        });
     } catch {
       return blockedResult("native_guard_failed", operation.id);
     }
@@ -438,7 +494,24 @@ export function createMvp15McpAssetMutationAdapter(
         || guard.operationCount !== context.operationCount
       )
     ) {
-      return blockedResult("native_guard_result_invalid", operation.id);
+      const settlement = await settleNoSideEffectFailure(
+        registration.registrationId,
+        rollback ? "rollback" : "execute",
+        operation,
+        context.operationIndex,
+        "native_guard_result_invalid",
+      );
+      return settlement ?? blockedResult("native_guard_result_invalid", operation.id);
+    }
+    if (!options.isMcpBindingCurrent(registration.mcpBinding)) {
+      const settlement = await settleNoSideEffectFailure(
+        registration.registrationId,
+        rollback ? "rollback" : "execute",
+        operation,
+        context.operationIndex,
+        "mcp_binding_changed",
+      );
+      return settlement ?? blockedResult("mcp_binding_changed", operation.id, guard.evidenceId ?? undefined);
     }
 
     let raw: unknown;
@@ -514,6 +587,14 @@ export function createMvp15McpAssetMutationAdapter(
 
   return {
     prepareExecute,
+    cancelPreparedRegistration: async (context, prepared) => {
+      const registrationId = prepared.externalRegistration?.registrationId;
+      const approvalToken = prepared.issuedApprovalToken;
+      if (!registrationId || !approvalToken) {
+        return blockedResult("native_registration_cancel_binding_required", "registration");
+      }
+      return cancelNativeRegistration(context.changeSet.id, registrationId, approvalToken);
+    },
     execute: (operation, context) => runTool(operation, context),
     rollback: (operation, context) => runTool(operation, context, true),
   };

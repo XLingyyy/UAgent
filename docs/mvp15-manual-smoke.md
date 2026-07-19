@@ -1,78 +1,66 @@
-# MVP15 Manual Smoke
+# MVP15 Native Authority Binding Rework Manual Smoke
 
-This document separates the repeatable procedure from the most recent accepted execution. The current MVP15 result is `PASS_REAL_SMOKE`; `BLOCKED_BY_MCP_SCHEMA` and `BLOCKED_BY_ENVIRONMENT` remain valid failure results for future reruns, not current stage status.
-
-## Repeatable Procedure Template
+This is the repeatable product-UI procedure, not a claim that the current run passed. Current acceptance is `BLOCKED`. C13-C13E established a retained task copy and task-owned launch/readiness facts; C13E also preserved exact 163-business/28-cache inventories through a `+94.338s` readiness run. The C13E1 implementation candidate repairs the dual-aggregate validator's native-inspection and header-validity semantics, passes 23/23 targeted tests, and revalidates the retained copy read-only with zero cache size/SHA/mtime change. The validator is again eligible as the readiness/product-smoke pre/post containment gate, subject to supervisor acceptance; no additional UE launch was needed for the repair. No C13E/C13E1 product Connect/Discover, MCP/native request, or mutation lifecycle was performed. Official source/artifact mapping and product-adapter contract discovery remain `BLOCKED_BY_MCP_SCHEMA`; the 09Z `PASS_REAL_SMOKE` ledger is historical only.
 
 ## Preconditions
 
-- Use a disposable or version-controlled UE project prepared by the supervisor.
-- Start Unreal Editor with the project already open.
-- Enable only the required local bridge flags for the smoke.
-- Confirm the UAgent asset mutation gate is `sandbox-enabled`.
-- Connect to the localhost Unreal MCP endpoint and run MCP discovery.
-- Confirm the exact MCP asset tools expose input schema, dry-run schema, rollback contract, affected assets schema, and read-only evidence query capability: `ue.asset.create_folder`, `ue.asset.duplicate`, `ue.asset.rename`, `ue.asset.move`, `ue.asset.delete`, and `ue.asset.save`.
-- If the endpoint exposes only `list_toolsets`, `describe_toolset`, and `call_tool`, the expected MVP15 result is `BLOCKED_BY_MCP_SCHEMA` unless `describe_toolset` returns complete exact method contracts for all six operations. Do not treat `editor_toolset.toolsets.asset.AssetTools` behind the generic wrapper as MVP15-ready asset mutation by name alone.
-- On a real Windows desktop, include a titlebar precheck at `2560x1600` with system scaling `150%`: the `Tools` button must not overlap `UE Editor:*`, `MVP15 Complete`, or `Native FS OK`, and it must toggle the utility drawer with the existing `Open utility drawer` / `Close utility drawer` accessible label.
-- Do not run Save All, bulk asset operations, Blueprint compile, or non-sandbox asset operations.
+- Use a disposable, recoverable, or version-controlled UE project. Do not use an irreplaceable project.
+- Record redacted Content aggregate, source size/SHA-256, outside-run aggregate, exact run-root absence, and fixed container state.
+- Record ownership for UAgent, UE, MCP/listener processes, and relevant local ports without publishing raw paths, PIDs, tokens, endpoints containing credentials, or secrets.
+- For a task-owned readiness launch, use only a verified retained/disposable copy and a writable cache inside that copy. Pass both `-ddc=NoZenLocalFallback` and `-LocalDataCachePath=<task-ddc>`, and set `UE-LocalDataCachePath` only for the task UE child. Do not change permanent environment variables or control shared Zen. `PYTHONDONTWRITEBYTECODE=1` is not a pass condition: C13D proved that the embedded runtime ignores it for this cache surface.
+- Before launch and after task UE exit, run `node scripts/mvp15-python-cache-surface.mjs --plugins-root <absolute-task-copy-Plugins> --contract scripts/mvp15-python-cache-contract.json --cache-state generated --json`. Require both the exact 163-file business aggregate and the exact 28-file cache aggregate, with zero unclassified entries, link/reparse entries, missing pairs, or header/type violations. This Route A contract accepts only the listed cache paths; it does not authorize arbitrary `.pyc`, arbitrary `__pycache__`, or other Plugins writes.
+- Keep readiness observation separate from product smoke: poll lightweight process/module/port/log/immutable-state and contracted cache facts every five seconds; do not run full DDC/business workers while UE is live. On first-ready or failure, immediately close the positively identified task UE, then run full DDC/business aggregates after exit. Fail closed on any business-tree or cache-contract delta and retain unknown/new residue. Do not Connect, Discover, call MCP/native routes, or mutate assets during this readiness-only phase.
+- Start a task-owned UAgent process with `UAGENT_ENABLE_ASSET_MUTATION=1`; keep the product UI sandbox gate enabled as an additional restriction.
+- Through the product UI, perform `validate -> add -> confirmTrust`; never inject a raw mapping or call the native trust command directly.
+- Attach the real UE observation through the product UI and confirm heartbeat ready and process alive.
+- Discover exactly, in canonical order: `ue.asset.create_folder`, `ue.asset.duplicate`, `ue.asset.rename`, `ue.asset.move`, `ue.asset.delete`, `ue.asset.save`.
+- Verify every tool supplies `inputSchema`, `dryRunSchema`, `rollbackContract`, `affectedAssetsSchema`, and `evidenceQuery`, and record the canonical live fingerprint and plugin build identity described in [the plugin baseline](mvp15-ue-mcp-plugin-baseline.md).
+- Complete all required automated verification, including Rust formatting and the five authority scans, before any real mutation.
 
-## Smoke Steps
+## Fresh Happy-path Lifecycle
 
-1. Attach UAgent to the running UE Editor process using the existing MVP14 observation path.
-2. Confirm heartbeat is alive and the snapshot matches the open `.uproject`.
-3. Open `Settings -> Config -> MCP read-only runtime`.
-4. In `Endpoint`, enter the local UE MCP endpoint, for example `http://127.0.0.1:8000/mcp` or the current localhost address displayed by the UE MCP plugin. Only `localhost` / `127.0.0.1` / `::1` endpoints are allowed for this smoke.
-5. Click `Connect` and confirm MCP status is `connected`.
-6. Click `Discover` and confirm discovery counts refresh.
-7. Click `Tools` in the titlebar to open the utility drawer. Confirm the UE tab, MCP tab, and Assets tab can each be selected and display the current observed state without the titlebar status pills blocking the hit target.
-8. Return to `Tools -> MCP` and `Tools -> Assets` to check exact tools, input schema, dry-run schema, rollback contract, affected assets schema, and read-only evidence query status.
-9. If discovery is wrapper-only or incomplete after `Discover`, record the missing exact tools or incomplete facade contract as `BLOCKED_BY_MCP_SCHEMA` and do not continue mutation execution.
-10. Enter the accepted read-only source asset package path `/Game/Test01`.
-11. Run dry-run. The first operation must be `ue.asset.create_folder` for exactly `/Game/UAgentSandbox/<run-id>`. Later duplicate, rename, move, and save targets must stay below `/Game/UAgentSandbox/<run-id>/Work/**`.
-12. If the UI reports `blocked_by_mcp_schema`, record the missing tool, missing schema, missing dry-run schema, missing rollback contract, or missing evidence query names shown in the Assets or MCP tab and stop the smoke as `BLOCKED_BY_MCP_SCHEMA`.
-13. Confirm the binding advances from `external_pending` to `external_bound`, the aggregate dry-run prefix is shown, and the preview lists the ordered five operations. Approval remains disabled while binding is pending or blocked.
-14. Approve once. Wait for the native response and confirm the UI advances from `Native registration: required` to `Native registration: registered`. Execute may become available only while the ChangeSet is `approved`, binding is `external_bound`, observation is active, and this registration status is `registered`; it must not claim registration succeeded before native has validated the binding and issued the short-lived one-time token. The registration request must not contain a caller-chosen token.
-15. Execute once. Confirm no second registration occurs and the already registered approval precedes exactly five exact calls in order: create folder, duplicate, rename, move, save single asset. The raw token is consumed before this first attempt and is never sent to MCP or shown in UI/audit/replay, whether the attempt succeeds or is blocked.
-16. Verify. Read-only Content evidence must prove `/Game/Test01` retains its baseline size and SHA-256, the final sandbox target exists and is saved, the rename/move old paths are absent, and entries outside the run root did not change. Manifest-only runtime state is not sufficient.
-17. Roll back once. Confirm reverse operations are move back, rename back, delete duplicate, then clean up only the exact registered run root. Save has no inverse operation and must not create a fifth rollback mutation.
-18. Verify rollback. The exact registered `/Game/UAgentSandbox/<run-id>` root and its now-empty nested directories must be gone, no asset packages may remain there, and `/Game/Test01` must still match the original size and SHA-256. The fixed global `/Game/UAgentSandbox` container is outside run-owned cleanup: it may be absent, or it may remain only when resolved under the accepted Content root as an ordinary non-reparse directory with zero direct or recursive children, files, and subdirectories. Any container child, asset, reparse point, cross-run target, unresolved path, or uncertain containment must fail closed rather than be reported as a passing rollback.
-19. Open the recorded replay summary and note native/MCP/provider/verification/rollback call counts before and after. Every delta must be zero.
-20. Attempt no second execute or rollback during the accepted smoke. Dedicated automated replay tests must show the repeat request is blocked before native/MCP mutation.
-21. Confirm Assets and Changes show phase, exact tool, virtual `/Game` path, safe evidence id, and result without raw args, token, project root, MCP session id, PID, or absolute disk path.
-22. Stop observation and confirm Unreal Editor remains running.
+1. Open `Settings -> Config -> MCP read-only runtime`. In `Endpoint`, enter the configured local address (for example `http://127.0.0.1:8000/mcp`); only `localhost` / `127.0.0.1` / `::1` is allowed. Click `Connect`, confirm the status is `connected`, then click `Discover`. Record the discovery counts and confirm the exact six-tool inventory and contract fingerprint in `Tools -> MCP` before opening `Tools -> Assets` for the asset mutation workflow.
+2. Choose a fresh run id and record redacted authoritative root/observation/process provenance.
+3. Run dry-run once from the product UI. Require five exact dry-run results and `external_bound`; Content digest must not change.
+4. Click Approve once. Continue only after one native registration returns one opaque token.
+5. Click Execute once. Require five native guard/call/result triplets in order: create run root, duplicate, rename, move, save one asset. Each guard must complete a live authority recheck before its MCP call.
+6. Verify source size/SHA-256 unchanged, final target present, old paths absent, and outside-run aggregate unchanged.
+7. Wait beyond the original 60-second token TTL while staying below the absolute 15-minute transaction cap and maintaining a genuinely live heartbeat. Do not obtain another token or registration.
+8. Click Rollback once. Require four guard/call/result triplets in strict inverse order: move back, rename back, delete duplicate, remove the exact run root.
+9. Final verify: source unchanged; exact run root absent; fixed container absent or ordinary/non-reparse/strictly empty; outside-run aggregate unchanged.
+10. Open recorded replay inspection and prove native/MCP/provider/verification/rollback deltas are `0/0/0/0/0`.
+11. Stop observation through the UI and prove UE remains running.
+12. Close only task-owned UAgent/listener processes and prove pre-existing UE/MCP ownership is unchanged.
 
-## Live Ledger
+## Required Negative Ledgers
 
-- Preflight/discovery: record endpoint class and exact inventory without secrets.
-- Dry-run: 5 exact calls; `dryRun:true`, `execute:false`, `rollback:false`.
-- Registration/execute: 1 native registration before 5 execute guards and 5 exact execute calls.
-- Verify: read-only evidence calls only; 0 mutation calls.
-- Rollback: 4 rollback guards and 4 exact inverse calls in reverse order.
-- Replay inspection: 0 new native, MCP, provider, verify, or rollback calls.
-- Forbidden totals: 0 Save All, 0 bulk, 0 generic wrapper mutation, 0 non-sandbox write, 0 provider auto-apply, and 0 raw token/path leakage.
+Each negative case uses an independent registration/run and must prove before/after Content digest equality, token count zero, MCP mutation count zero, and manifest ownership zero.
 
-## Template Result Criteria
+1. Before `confirmTrust`, attempt registration for the disposable root: require `untrusted_root`.
+2. Start a task-owned UAgent with native gate OFF while the UI gate is ON: require `feature_disabled`. Close that task-owned app before starting the gate-ON happy path.
+3. Stop the observation, then request a new registration: require `observation_session_stopped` or the documented stable equivalent.
+4. Only when a task-owned UE process exists, create an independent registration, close that process, and attempt the next operation: require `process_exited` before MCP. If no task-owned UE exists, record `BLOCKED_BY_ENVIRONMENT`; never stop a user-owned process or fabricate a pass.
 
-- The only successful mutation is under `/Game/UAgentSandbox/**`.
-- Every denied operation is blocked before execution.
-- Missing exact MCP tools, schemas, rollback contracts, or evidence queries are reported as `BLOCKED_BY_MCP_SCHEMA`, not as a passing dry-run.
-- Evidence and audit summaries contain no approval token, raw secret, or raw local project root.
-- Replay shows recorded summary only and does not call native or MCP execution.
-- Record `PASS_REAL_SMOKE` only after the complete ledger and final environment checks pass.
-- Record `BLOCKED_BY_MCP_SCHEMA` when exact inventory/schema/rollback/evidence readiness is incomplete.
-- Record `BLOCKED_BY_ENVIRONMENT` when the required UE, observation, trusted-root, or localhost MCP environment is unavailable.
+## Lease and Authority Checks
 
-## Most Recent Actual Execution - 2026-07-18
+- First execute after 60 seconds without a prior accepted execute: `approval_expired`.
+- Forward after the absolute 15-minute cap: `transaction_expired`.
+- From 15 to 20 minutes, an already-owned side effect permits only explicit same-registration recovery rollback.
+- Rollback after the absolute 20-minute cap: `recovery_expired` with no MCP call.
+- Trust revocation/root replacement blocks guard and active evidence.
+- Unbound evidence path returns `asset_path_not_bound`.
+- Gate OFF after an owned side effect blocks forward work but may permit only the bounded explicit recovery rollback.
 
-- Result: `PASS_REAL_SMOKE`.
-- Accepted closeout: MVP15C / 09Z.
-- Fresh run: `ui-mrpovp9e-1`.
-- Product actions: exactly one Dry-run, Approve/registration, Execute, Verify, Rollback, replay inspection, and Close; retries, fallbacks, direct native/MCP calls, second actions, and manual cleanup were all zero.
-- Timing: registration to Execute `12,883 ms`; registration to Rollback `143,015 ms`, crossing the original 60-second TTL; Rollback click to `rolled_back` `10,785 ms`.
-- Forward ledger: 5 guards, 5 strict results, 5 exact facade dispatches.
-- Rollback ledger: 4 guards, 4 strict results, 4 exact facade dispatches in move, rename, duplicate cleanup, and create-folder/run-root cleanup order.
-- Same-registration terminal evidence lease: PASS with no new token, registration, or mutation capability.
-- Replay delta: native/MCP/provider/verification/rollback `0/0/0/0/0`.
-- Final Content: 256/256 canonical, all mismatch counts zero, exact run root absent, fixed `Content/UAgentSandbox` ordinary/non-reparse/strictly empty.
-- Process ownership: the task-owned UAgent and listeners were closed; the user's pre-existing UE/MCP processes remained owner-matched.
-- Current TitleBar expectation: `MVP15 Complete`.
+## Ledger Result Rules
+
+- Record `PASS_REAL_SMOKE` only when the complete current-source happy path, all required negative ledgers, final residue checks, plugin identity, and ownership checks pass.
+- Record `BLOCKED_BY_MCP_SCHEMA` for missing/incomplete exact discovery or an unreproducible plugin identity.
+- Record `BLOCKED_BY_ENVIRONMENT` for missing disposable target, task-owned process, required ownership facts, or other genuine environment prerequisites.
+- On unknown residue or failed bounded recovery, stop. Do not use direct native/MCP calls or manual/broad cleanup.
+
+## Historical 09Z Result
+
+- Historical result: `PASS_REAL_SMOKE`.
+- Historical run: `ui-mrpovp9e-1`.
+- Scope: former happy path only; not accepted as C11 authority or fresh smoke evidence.
+- Current TitleBar expectation during implementation: `MVP15 Rework`.

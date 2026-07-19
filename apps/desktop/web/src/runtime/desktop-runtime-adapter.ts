@@ -43,6 +43,8 @@ export interface DesktopRuntimeAdapter {
   getMcpState(): McpConnectionState;
   getMcpDiscovery(): McpDiscoverySnapshot | null;
   getMvp15AssetTools(): Mvp15McpAssetToolDescriptor[];
+  captureMvp15McpBinding?(): string | null;
+  isMvp15McpBindingCurrent?(binding: string): boolean;
   subscribe(listener: (snapshot: RuntimeSnapshot) => void): () => void;
   subscribeMcp(listener: (state: McpConnectionState) => void): () => void;
   submitTask(draft: TaskDraft): Promise<TaskRecord>;
@@ -123,6 +125,9 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
   };
   let currentDiscovery: McpDiscoverySnapshot | null = null;
   let currentMvp15FacadeTools: Mvp15McpAssetToolDescriptor[] = [];
+  let mcpDiscoveryGeneration = 0;
+  let mvp15McpBindingGeneration = 0;
+  let currentMvp15McpBinding: { identity: string; endpoint: string; session: McpSession } | null = null;
   const listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
   const mcpListeners = new Set<(state: McpConnectionState) => void>();
 
@@ -139,11 +144,40 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
     }
   };
 
+  const invalidateMvp15McpBinding = () => {
+    currentMvp15McpBinding = null;
+  };
+
+  const publishMvp15McpBinding = (session: McpSession, endpoint: string) => {
+    mvp15McpBindingGeneration += 1;
+    currentMvp15McpBinding = {
+      identity: `mcp-binding:${mvp15McpBindingGeneration}`,
+      endpoint,
+      session,
+    };
+  };
+
+  const retractMcpPublication = () => {
+    invalidateMvp15McpBinding();
+    currentDiscovery = null;
+    currentMvp15FacadeTools = [];
+    router.updateContext({ runtimeMode: "mock", discovery: null, readResource: undefined, callTool: undefined });
+  };
+
   return {
     getSnapshot: () => router.getSnapshot(),
     getMcpState: () => mcpState,
     getMcpDiscovery: () => currentDiscovery,
     getMvp15AssetTools: () => getMvp15AssetTools(currentDiscovery, currentMvp15FacadeTools),
+    captureMvp15McpBinding: () => currentMvp15McpBinding?.identity ?? null,
+    isMvp15McpBindingCurrent: (binding) => Boolean(
+      currentMvp15McpBinding
+      && binding === currentMvp15McpBinding.identity
+      && currentSession === currentMvp15McpBinding.session
+      && currentDiscovery
+      && mcpState.status === "connected"
+      && mcpState.profile?.endpoint === currentMvp15McpBinding.endpoint
+    ),
 
     subscribe: (listener) => {
       listeners.add(listener);
@@ -174,6 +208,10 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       syncSnapshot();
     },
     setMcpEndpoint(endpoint) {
+      if (endpoint !== mcpState.profile?.endpoint) {
+        mcpDiscoveryGeneration += 1;
+        retractMcpPublication();
+      }
       mcpState = {
         ...mcpState,
         profile: mcpState.profile
@@ -189,6 +227,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       syncMcp();
     },
     async connectMcp() {
+      mcpDiscoveryGeneration += 1;
       const endpoint = mcpState.profile?.endpoint ?? "";
       const transportKind = mcpState.profile?.transport ?? "streamable-http";
 
@@ -202,11 +241,9 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       syncMcp();
 
       try {
+        retractMcpPublication();
         await currentSession?.disconnect();
         currentSession = null;
-        currentDiscovery = null;
-        currentMvp15FacadeTools = [];
-        router.updateContext({ runtimeMode: "mock", discovery: null, readResource: undefined, callTool: undefined });
 
         let session: McpSession;
         let initializeResult: McpInitializeResult;
@@ -254,6 +291,7 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
         };
         syncMcp();
       } catch (err) {
+        invalidateMvp15McpBinding();
         currentSession = null;
         mcpState = {
           ...mcpState,
@@ -273,21 +311,31 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
         return;
       }
 
-      currentDiscovery = null;
+      const discoverySession = currentSession;
+      const discoveryEndpoint = mcpState.profile?.endpoint ?? "";
+      const discoveryGeneration = ++mcpDiscoveryGeneration;
+      const isCurrentDiscoveryAttempt = () => (
+        currentSession === discoverySession
+        && mcpState.profile?.endpoint === discoveryEndpoint
+        && mcpDiscoveryGeneration === discoveryGeneration
+      );
+      retractMcpPublication();
       mcpState = { ...mcpState, status: "discovering", lastError: null };
       syncMcp();
 
       try {
-        const discovery = await currentSession.discover();
+        const discovery = await discoverySession.discover();
+        if (!isCurrentDiscoveryAttempt()) return;
+        const facadeTools = await discoverMvp15FacadeTools(discoverySession, discovery);
+        if (!isCurrentDiscoveryAttempt()) return;
         currentDiscovery = discovery;
-        currentMvp15FacadeTools = await discoverMvp15FacadeTools(currentSession, discovery);
+        currentMvp15FacadeTools = facadeTools;
 
-        const session = currentSession!;
         router.updateContext({
           runtimeMode: "mcp-readonly",
           discovery,
-          readResource: async (uri) => session.readResource(uri),
-          callTool: async (name, args) => session.callTool(name, args),
+          readResource: async (uri) => discoverySession.readResource(uri),
+          callTool: async (name, args) => discoverySession.callTool(name, args),
         });
         mcpState = {
           ...mcpState,
@@ -295,8 +343,11 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
           capabilities: discovery.capabilitySummary,
           lastError: null,
         };
+        publishMvp15McpBinding(discoverySession, discoveryEndpoint);
         syncMcp();
       } catch (err) {
+        if (!isCurrentDiscoveryAttempt()) return;
+        retractMcpPublication();
         mcpState = {
           ...mcpState,
           status: "error",
@@ -306,11 +357,10 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       }
     },
     disconnectMcp() {
+      mcpDiscoveryGeneration += 1;
+      retractMcpPublication();
       void currentSession?.disconnect();
       currentSession = null;
-      currentDiscovery = null;
-      currentMvp15FacadeTools = [];
-      router.updateContext({ runtimeMode: "mock", discovery: null, readResource: undefined, callTool: undefined });
       mcpState = {
         ...mcpState,
         status: "disconnected",
@@ -333,6 +383,8 @@ export function createDesktopRuntimeAdapter(options?: DesktopRuntimeAdapterOptio
       try {
         const command = input.command === "register"
           ? "register_asset_mutation_approval"
+          : input.command === "cancel_registration"
+            ? "cancel_asset_mutation_approval"
           : input.command === "record_outcome"
             ? "record_asset_mutation_outcome"
             : input.phase === "rollback"
@@ -570,23 +622,17 @@ function toNativeMvp15AssetMutationInput(input: Mvp15NativeAssetGuardInput): Rec
     delete registration.trustedRootRef;
     return { ...registration, trustedProjectRoot };
   }
-  if (input.command === "guard" || input.command === "record_outcome") {
+  if (
+    input.command === "guard"
+    || input.command === "record_outcome"
+    || input.command === "cancel_registration"
+  ) {
     const nativeInput = { ...input } as Record<string, unknown>;
     delete nativeInput.command;
+    if (input.command === "cancel_registration") delete nativeInput.phase;
     return nativeInput;
   }
-  return {
-    toolName: input.toolName,
-    assetPath: input.assetPath ?? null,
-    targetAssetPath: input.targetAssetPath ?? null,
-    dryRunHash: input.dryRunHash,
-    approvalToken: input.approvalToken,
-    editorSessionId: input.editorSessionId,
-    pidHash: input.pidHash,
-    assetMutationGateEnabled: input.assetMutationGateEnabled,
-    observedEditorSessionId: input.observedEditorSessionId,
-    observedPidHash: input.observedPidHash,
-  };
+  return null;
 }
 
 function normalizeMvp15NativeGuardResult(raw: unknown): Mvp15NativeAssetGuardResult {
@@ -601,7 +647,6 @@ function normalizeMvp15NativeGuardResult(raw: unknown): Mvp15NativeAssetGuardRes
       status,
       reason,
       registrationId: safeNativeIdentifier(firstString(result.registrationId, result.registration_id)),
-      trustedRootId: safeNativeIdentifier(firstString(result.trustedRootId, result.trusted_root_id)),
       operationCount: firstNumber(result.operationCount, result.operation_count) ?? undefined,
       approvalToken: safeNativeApprovalToken(firstString(result.approvalToken, result.approval_token)),
       issuedAt: firstNumber(result.issuedAt, result.issued_at) ?? undefined,
@@ -617,6 +662,13 @@ function normalizeMvp15NativeGuardResult(raw: unknown): Mvp15NativeAssetGuardRes
       operationId: safeNativeIdentifier(firstString(result.operationId, result.operation_id)),
       rollbackAvailable: firstBoolean(result.rollbackAvailable, result.rollback_available),
       terminal: firstBoolean(result.terminal),
+    };
+  }
+  if (status === "cancelled") {
+    return {
+      status,
+      reason,
+      registrationId: safeNativeIdentifier(firstString(result.registrationId, result.registration_id)),
     };
   }
   if (status === "accepted_by_native_guard") {
@@ -742,13 +794,12 @@ function blockedMvp15ContentManifest(
 }
 
 function isSafeMvp15EvidenceBinding(input: AssetMutationExternalRegistrationBinding): boolean {
-  return [input.registrationId, input.projectBindingId, input.trustedRootId].every((value) => (
-    typeof value === "string"
+  const value = input.registrationId;
+  return typeof value === "string"
     && value.length > 0
     && value.length <= 256
     && !/[\\/\r\n\t]/.test(value)
-    && !/^[A-Za-z]:/.test(value)
-  ));
+    && !/^[A-Za-z]:/.test(value);
 }
 
 function isCanonicalMvp15AssetPath(value: unknown): value is string {

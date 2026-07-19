@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createNativeProjectAdapter } from "./project-native-adapter";
+import { createNativeProjectAdapter, resolveTrustedNativeRootRef } from "./project-native-adapter";
 import { createDesktopBrowserAdapter } from "./browser-native-adapter";
 import { createDesktopTerminalAdapter } from "./terminal-native-adapter";
 
@@ -389,6 +389,41 @@ describe("project-native-adapter", () => {
 
     const input = (terminalPayload as { input?: { cwd?: string } }).input;
     expect(input?.cwd).toBe(RAW_PATH);
+  });
+
+  it("does not expose mutation root mappings until native trust succeeds and removes them with the project", async () => {
+    const rawRoot = "C:/Projects/A20OnlyAfterTrust";
+    const adapter = createNativeProjectAdapter({
+      invoke: async <T,>(command: string): Promise<T> => {
+        if (command === "validate_native_project_root") return { ok: true, reason: "valid", displayRoot: "[project-root]/A20OnlyAfterTrust", projectName: "A20OnlyAfterTrust", engine: { label: "UE", association: null, source: "fixture" } } as T;
+        if (command === "trust_native_project_root") return { rootId: "trusted-root:a20-only-after-trust", displayRoot: "[project-root]/A20OnlyAfterTrust", trustState: "trusted" } as T;
+        throw new Error(`Unexpected project command: ${command}`);
+      },
+    });
+    const project = await adapter.addProject(rawRoot);
+    expect(resolveTrustedNativeRootRef(project.id)).toBeUndefined();
+    expect(resolveTrustedNativeRootRef(project.rootRef)).toBeUndefined();
+    const trusted = await adapter.confirmTrust(project.id);
+    expect(resolveTrustedNativeRootRef(trusted.id)).toBe(rawRoot);
+    expect(resolveTrustedNativeRootRef(trusted.rootRef)).toBe(rawRoot);
+    adapter.removeProject(trusted.id);
+    expect(resolveTrustedNativeRootRef(trusted.id)).toBeUndefined();
+    expect(resolveTrustedNativeRootRef(trusted.rootRef)).toBeUndefined();
+  });
+
+  it("does not expose mutation root mappings when native trust fails", async () => {
+    const rawRoot = "C:/Projects/A20TrustFailure";
+    const adapter = createNativeProjectAdapter({
+      invoke: async <T,>(command: string): Promise<T> => {
+        if (command === "validate_native_project_root") return { ok: true, reason: "valid", displayRoot: "[project-root]/A20TrustFailure", projectName: "A20TrustFailure", engine: { label: "UE", association: null, source: "fixture" } } as T;
+        if (command === "trust_native_project_root") throw new Error("trust rejected");
+        throw new Error(`Unexpected project command: ${command}`);
+      },
+    });
+    const project = await adapter.addProject(rawRoot);
+    await expect(adapter.confirmTrust(project.id)).rejects.toThrow("trust rejected");
+    expect(resolveTrustedNativeRootRef(project.id)).toBeUndefined();
+    expect(resolveTrustedNativeRootRef(project.rootRef)).toBeUndefined();
   });
 
   it("uses camelCase trusted root payloads for native browser preview", async () => {

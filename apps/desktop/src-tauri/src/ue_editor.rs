@@ -79,14 +79,22 @@ pub fn editor_capability_status() -> EditorCapabilityStatus {
 pub fn editor_capability_status_with_feature(enabled: bool) -> EditorCapabilityStatus {
     EditorCapabilityStatus {
         enabled,
-        mode: if enabled { "native".to_string() } else { "disabled".to_string() },
+        mode: if enabled {
+            "native".to_string()
+        } else {
+            "disabled".to_string()
+        },
         reason: if enabled {
             "ue_editor_bridge_feature_enabled".to_string()
         } else {
             "feature_disabled".to_string()
         },
         trusted_root_required: true,
-        mutation_execution: if enabled { "state_only".to_string() } else { "blocked".to_string() },
+        mutation_execution: if enabled {
+            "state_only".to_string()
+        } else {
+            "blocked".to_string()
+        },
     }
 }
 
@@ -111,8 +119,13 @@ pub struct EditorConfigValidationResult {
 }
 
 #[tauri::command]
-pub fn validate_editor_config(input: EditorConfigInput) -> Result<EditorConfigValidationResult, String> {
-    Ok(validate_editor_config_with_feature(input, feature_enabled()))
+pub fn validate_editor_config(
+    input: EditorConfigInput,
+) -> Result<EditorConfigValidationResult, String> {
+    Ok(validate_editor_config_with_feature(
+        input,
+        feature_enabled(),
+    ))
 }
 
 pub fn validate_editor_config_with_feature(
@@ -186,7 +199,9 @@ pub fn stop_editor_session(input: EditorSessionIdInput) -> Result<EditorSessionR
 }
 
 #[tauri::command]
-pub fn get_editor_session_status(input: EditorSessionIdInput) -> Result<EditorSessionResult, String> {
+pub fn get_editor_session_status(
+    input: EditorSessionIdInput,
+) -> Result<EditorSessionResult, String> {
     let mut registry = session_registry().lock().unwrap();
     let Some(record) = registry.get_mut(&input.session_id) else {
         return Ok(blocked_session("session_not_found", None, None, "unknown"));
@@ -218,7 +233,9 @@ pub struct EditorOperationProposalResult {
 }
 
 #[tauri::command]
-pub fn propose_editor_operation(input: EditorOperationInput) -> Result<EditorOperationProposalResult, String> {
+pub fn propose_editor_operation(
+    input: EditorOperationInput,
+) -> Result<EditorOperationProposalResult, String> {
     let mut sessions = session_registry().lock().unwrap();
     let Some(session) = sessions.get_mut(&input.session_id) else {
         return Ok(blocked_proposal(&input.session_id, "session_not_found"));
@@ -240,7 +257,13 @@ pub fn propose_editor_operation(input: EditorOperationInput) -> Result<EditorOpe
         });
     }
     let args_hash = stable_hash(&input.args_json);
-    let proposal_id = format!("editor-operation:{}", stable_hash(&format!("{}:{}:{}", input.session_id, input.operation_kind, args_hash)));
+    let proposal_id = format!(
+        "editor-operation:{}",
+        stable_hash(&format!(
+            "{}:{}:{}",
+            input.session_id, input.operation_kind, args_hash
+        ))
+    );
     let expires_at = now_millis() + DEFAULT_OPERATION_TTL_MILLIS;
     proposal_registry().lock().unwrap().insert(
         proposal_id.clone(),
@@ -298,23 +321,37 @@ pub struct EditorOperationApprovalResult {
 }
 
 #[tauri::command]
-pub fn approve_editor_operation(input: EditorOperationApprovalInput) -> Result<EditorOperationApprovalResult, String> {
+pub fn approve_editor_operation(
+    input: EditorOperationApprovalInput,
+) -> Result<EditorOperationApprovalResult, String> {
     let mut proposals = proposal_registry().lock().unwrap();
     let Some(proposal) = proposals.get_mut(&input.proposal_id) else {
         return Ok(blocked_approval(&input.proposal_id, "proposal_not_found"));
     };
     if input.actor.trim().is_empty() || input.reason.trim().is_empty() {
-        return Ok(blocked_approval(&input.proposal_id, "approval_actor_required"));
+        return Ok(blocked_approval(
+            &input.proposal_id,
+            "approval_actor_required",
+        ));
     }
     if now_millis() > proposal.expires_at {
         proposal.status = "expired".to_string();
         return Ok(blocked_approval(&input.proposal_id, "proposal_expired"));
     }
     if proposal.status != "approval_required" && proposal.status != "proposed" {
-        return Ok(blocked_approval(&input.proposal_id, "proposal_not_approvable"));
+        return Ok(blocked_approval(
+            &input.proposal_id,
+            "proposal_not_approvable",
+        ));
     }
     let approved_at = now_millis();
-    let token = format!("editor-approval-token:{}", stable_hash(&format!("{}:{}:{}", proposal.proposal_id, proposal.session_id, proposal.args_hash)));
+    let token = format!(
+        "editor-approval-token:{}",
+        stable_hash(&format!(
+            "{}:{}:{}",
+            proposal.proposal_id, proposal.session_id, proposal.args_hash
+        ))
+    );
     let approval = BoundEditorOperationApproval {
         token: token.clone(),
         proposal_id: proposal.proposal_id.clone(),
@@ -370,7 +407,9 @@ pub struct ExecuteEditorOperationResult {
 }
 
 #[tauri::command]
-pub fn execute_editor_operation(input: ExecuteEditorOperationInput) -> Result<ExecuteEditorOperationResult, String> {
+pub fn execute_editor_operation(
+    input: ExecuteEditorOperationInput,
+) -> Result<ExecuteEditorOperationResult, String> {
     let mut proposals = proposal_registry().lock().unwrap();
     let Some(proposal) = proposals.get_mut(&input.proposal_id) else {
         return Ok(blocked_execute(&input.proposal_id, "proposal_not_found"));
@@ -380,7 +419,10 @@ pub fn execute_editor_operation(input: ExecuteEditorOperationInput) -> Result<Ex
         return Ok(blocked_execute(&input.proposal_id, "proposal_expired"));
     }
     if proposal.status != "approved" {
-        return Ok(blocked_execute(&input.proposal_id, "proposal_not_executable"));
+        return Ok(blocked_execute(
+            &input.proposal_id,
+            "proposal_not_executable",
+        ));
     }
     let mut approvals = approval_registry().lock().unwrap();
     let Some(approval) = approvals.get_mut(&input.proposal_id) else {
@@ -398,7 +440,10 @@ pub fn execute_editor_operation(input: ExecuteEditorOperationInput) -> Result<Ex
         || proposal.args_hash != approval.args_hash
         || proposal.expires_at != approval.expires_at
     {
-        return Ok(blocked_execute(&input.proposal_id, "approval_binding_mismatch"));
+        return Ok(blocked_execute(
+            &input.proposal_id,
+            "approval_binding_mismatch",
+        ));
     }
     if approval.token != input.approval.token {
         return Ok(blocked_execute(&input.proposal_id, "forged_token"));
@@ -409,17 +454,28 @@ pub fn execute_editor_operation(input: ExecuteEditorOperationInput) -> Result<Ex
     if now_millis() > approval.expires_at {
         return Ok(blocked_execute(&input.proposal_id, "approval_expired"));
     }
-    if approval.operation_kind != input.operation_kind || approval.args_hash != stable_hash(&input.args_json) {
-        return Ok(blocked_execute(&input.proposal_id, "operation_or_args_mismatch"));
+    if approval.operation_kind != input.operation_kind
+        || approval.args_hash != stable_hash(&input.args_json)
+    {
+        return Ok(blocked_execute(
+            &input.proposal_id,
+            "operation_or_args_mismatch",
+        ));
     }
     let sessions = session_registry().lock().unwrap();
     let Some(session) = sessions.get(&approval.session_id) else {
         return Ok(blocked_execute(&input.proposal_id, "session_not_found"));
     };
     if session.root_id != approval.root_id {
-        return Ok(blocked_execute(&input.proposal_id, "session_or_root_mismatch"));
+        return Ok(blocked_execute(
+            &input.proposal_id,
+            "session_or_root_mismatch",
+        ));
     }
-    if now_millis() > session.expires_at || session.status == "stopped" || session.status == "expired" {
+    if now_millis() > session.expires_at
+        || session.status == "stopped"
+        || session.status == "expired"
+    {
         return Ok(blocked_execute(&input.proposal_id, "session_expired"));
     }
     approval.used = true;
@@ -428,7 +484,10 @@ pub fn execute_editor_operation(input: ExecuteEditorOperationInput) -> Result<Ex
         proposal_id: input.proposal_id.clone(),
         status: "executed".to_string(),
         reason: "executed_state_only".to_string(),
-        output_summary: format!("Executed {} without saving UE assets.", input.operation_kind),
+        output_summary: format!(
+            "Executed {} without saving UE assets.",
+            input.operation_kind
+        ),
         duration_ms: 1,
         evidence_id: Some(format!("evidence:{}", input.proposal_id)),
         replay_only: false,
@@ -436,13 +495,19 @@ pub fn execute_editor_operation(input: ExecuteEditorOperationInput) -> Result<Ex
 }
 
 #[tauri::command]
-pub fn cancel_editor_operation(input: EditorOperationApprovalInput) -> Result<EditorOperationApprovalResult, String> {
+pub fn cancel_editor_operation(
+    input: EditorOperationApprovalInput,
+) -> Result<EditorOperationApprovalResult, String> {
     let mut proposals = proposal_registry().lock().unwrap();
     let Some(proposal) = proposals.get_mut(&input.proposal_id) else {
         return Ok(blocked_approval(&input.proposal_id, "proposal_not_found"));
     };
     proposal.status = "cancelled".to_string();
-    if let Some(approval) = approval_registry().lock().unwrap().get_mut(&input.proposal_id) {
+    if let Some(approval) = approval_registry()
+        .lock()
+        .unwrap()
+        .get_mut(&input.proposal_id)
+    {
         approval.used = true;
     }
     Ok(EditorOperationApprovalResult {
@@ -461,18 +526,30 @@ fn start_session(input: EditorConfigInput, mode: &str, enabled: bool) -> EditorS
     let normalized = normalize_project_path(&input.root_ref);
     let root_id = validation.root_id.unwrap_or_else(|| hash_path(&normalized));
     let now = now_millis();
-    let session_id = format!("editor-session:{}", stable_hash(&format!("{}:{}:{}", input.project_id, root_id, now)));
+    let session_id = format!(
+        "editor-session:{}",
+        stable_hash(&format!("{}:{}:{}", input.project_id, root_id, now))
+    );
     let record = NativeEditorSessionRecord {
         session_id: session_id.clone(),
         project_id: input.project_id,
         root_id: root_id.clone(),
-        uproject_display_path: validation.uproject_display_path.unwrap_or_else(|| "[project-root]/Game.uproject".to_string()),
+        uproject_display_path: validation
+            .uproject_display_path
+            .unwrap_or_else(|| "[project-root]/Game.uproject".to_string()),
         mode: mode.to_string(),
-        status: if mode == "launched" { "launched".to_string() } else { "attached".to_string() },
+        status: if mode == "launched" {
+            "launched".to_string()
+        } else {
+            "attached".to_string()
+        },
         created_at: now,
         expires_at: now + DEFAULT_SESSION_TTL_MILLIS,
     };
-    session_registry().lock().unwrap().insert(session_id, record.clone());
+    session_registry()
+        .lock()
+        .unwrap()
+        .insert(session_id, record.clone());
     session_result(&record, false)
 }
 
@@ -482,7 +559,10 @@ struct EditorProject {
     uproject_display_path: String,
 }
 
-fn resolve_editor_project(root_ref: &str, uproject_relative_path: &str) -> Result<EditorProject, String> {
+fn resolve_editor_project(
+    root_ref: &str,
+    uproject_relative_path: &str,
+) -> Result<EditorProject, String> {
     let raw = root_ref.trim();
     if raw.starts_with("//") || raw.starts_with("\\\\") {
         return Err("network_root".to_string());
@@ -494,7 +574,10 @@ fn resolve_editor_project(root_ref: &str, uproject_relative_path: &str) -> Resul
     if !is_trusted_root(&normalized) {
         return Err("untrusted_root".to_string());
     }
-    if uproject_relative_path.contains("..") || uproject_relative_path.starts_with('/') || uproject_relative_path.starts_with('\\') {
+    if uproject_relative_path.contains("..")
+        || uproject_relative_path.starts_with('/')
+        || uproject_relative_path.starts_with('\\')
+    {
         return Err("root_escape".to_string());
     }
     if !uproject_relative_path.ends_with(".uproject") {
@@ -504,7 +587,10 @@ fn resolve_editor_project(root_ref: &str, uproject_relative_path: &str) -> Resul
         return Ok(EditorProject {
             root_id: hash_path(&normalized),
             display_root: redact_path_for_ui(&normalized),
-            uproject_display_path: format!("[project-root]/{}", normalize_project_path(uproject_relative_path)),
+            uproject_display_path: format!(
+                "[project-root]/{}",
+                normalize_project_path(uproject_relative_path)
+            ),
         });
     }
     let root = canonicalize(&normalized)?;
@@ -519,31 +605,65 @@ fn resolve_editor_project(root_ref: &str, uproject_relative_path: &str) -> Resul
     Ok(EditorProject {
         root_id: hash_path(&normalized),
         display_root: redact_path_for_ui(root.to_str().unwrap_or(&normalized)),
-        uproject_display_path: format!("[project-root]/{}", normalize_project_path(uproject_relative_path)),
+        uproject_display_path: format!(
+            "[project-root]/{}",
+            normalize_project_path(uproject_relative_path)
+        ),
     })
 }
 
 fn classify_operation(operation_kind: &str) -> (String, String) {
-    let read_only: HashSet<&str> = ["status", "run_read_only_validation", "refresh_diagnostics"].into_iter().collect();
-    let state_only: HashSet<&str> = ["open_asset", "focus_content_browser", "select_asset", "open_local_preview"].into_iter().collect();
-    let asset_write: HashSet<&str> = ["save_asset", "delete_asset", "rename_asset", "move_asset", "compile_blueprint"].into_iter().collect();
+    let read_only: HashSet<&str> = ["status", "run_read_only_validation", "refresh_diagnostics"]
+        .into_iter()
+        .collect();
+    let state_only: HashSet<&str> = [
+        "open_asset",
+        "focus_content_browser",
+        "select_asset",
+        "open_local_preview",
+    ]
+    .into_iter()
+    .collect();
+    let asset_write: HashSet<&str> = [
+        "save_asset",
+        "delete_asset",
+        "rename_asset",
+        "move_asset",
+        "compile_blueprint",
+    ]
+    .into_iter()
+    .collect();
     if read_only.contains(operation_kind) {
         return ("read_only".to_string(), "read_only_allowlisted".to_string());
     }
     if state_only.contains(operation_kind) {
-        return ("state_only".to_string(), "state_only_allowlisted".to_string());
+        return (
+            "state_only".to_string(),
+            "state_only_allowlisted".to_string(),
+        );
     }
     if operation_kind == "patch_text_file" {
-        return ("text_backed_change".to_string(), "changeset_v2_required".to_string());
+        return (
+            "text_backed_change".to_string(),
+            "changeset_v2_required".to_string(),
+        );
     }
     if asset_write.contains(operation_kind) {
-        return ("blocked_asset_write".to_string(), "asset_mutation_blocked".to_string());
+        return (
+            "blocked_asset_write".to_string(),
+            "asset_mutation_blocked".to_string(),
+        );
     }
-    ("blocked_unknown".to_string(), "unknown_operation".to_string())
+    (
+        "blocked_unknown".to_string(),
+        "unknown_operation".to_string(),
+    )
 }
 
 fn feature_enabled() -> bool {
-    std::env::var("UAGENT_ENABLE_UE_EDITOR_BRIDGE").map(|value| value == "1").unwrap_or(false)
+    std::env::var("UAGENT_ENABLE_UE_EDITOR_BRIDGE")
+        .map(|value| value == "1")
+        .unwrap_or(false)
 }
 
 fn blocked_config(reason: &str, root_ref: &str) -> EditorConfigValidationResult {
@@ -556,7 +676,12 @@ fn blocked_config(reason: &str, root_ref: &str) -> EditorConfigValidationResult 
     }
 }
 
-fn blocked_session(reason: &str, session_id: Option<String>, root_id: Option<String>, mode: &str) -> EditorSessionResult {
+fn blocked_session(
+    reason: &str,
+    session_id: Option<String>,
+    root_id: Option<String>,
+    mode: &str,
+) -> EditorSessionResult {
     EditorSessionResult {
         session_id,
         project_id: String::new(),
@@ -624,7 +749,8 @@ fn canonicalize(root: &str) -> Result<PathBuf, String> {
 }
 
 fn canonicalize_path(path: &Path) -> Result<PathBuf, String> {
-    path.canonicalize().map_err(|_| "missing_uproject".to_string())
+    path.canonicalize()
+        .map_err(|_| "missing_uproject".to_string())
 }
 
 fn stable_hash(value: &str) -> String {
@@ -648,7 +774,10 @@ mod tests {
 
     fn trust(root: &str) {
         let normalized = normalize_project_path(root);
-        trusted_roots().lock().unwrap().insert(hash_path(&normalized));
+        trusted_roots()
+            .lock()
+            .unwrap()
+            .insert(hash_path(&normalized));
     }
 
     fn input(root_ref: &str, uproject: &str) -> EditorConfigInput {
@@ -670,7 +799,11 @@ mod tests {
     }
 
     fn approved_state_only_operation() -> (String, BoundEditorOperationApproval) {
-        let session = start_session(input("fixture://lyra-starter", "Game.uproject"), "attached", true);
+        let session = start_session(
+            input("fixture://lyra-starter", "Game.uproject"),
+            "attached",
+            true,
+        );
         let proposal = propose_editor_operation(EditorOperationInput {
             session_id: session.session_id.unwrap(),
             operation_kind: "select_asset".to_string(),
@@ -699,7 +832,10 @@ mod tests {
     #[test]
     fn ue_editor_requires_trusted_root() {
         trusted_roots().lock().unwrap().clear();
-        let result = validate_editor_config_with_feature(input("fixture://lyra-starter", "Game.uproject"), true);
+        let result = validate_editor_config_with_feature(
+            input("fixture://lyra-starter", "Game.uproject"),
+            true,
+        );
         assert!(!result.ok);
         assert_eq!(result.reason, "untrusted_root");
     }
@@ -709,15 +845,21 @@ mod tests {
         trusted_roots().lock().unwrap().clear();
         trust("fixture://lyra-starter");
         assert_eq!(
-            validate_editor_config_with_feature(input("fixture://lyra-starter", "../Game.uproject"), true).reason,
+            validate_editor_config_with_feature(
+                input("fixture://lyra-starter", "../Game.uproject"),
+                true
+            )
+            .reason,
             "root_escape"
         );
         assert_eq!(
-            validate_editor_config_with_feature(input("//server/project", "Game.uproject"), true).reason,
+            validate_editor_config_with_feature(input("//server/project", "Game.uproject"), true)
+                .reason,
             "network_root"
         );
         assert_eq!(
-            validate_editor_config_with_feature(input("fixture://lyra-starter", "Game.txt"), true).reason,
+            validate_editor_config_with_feature(input("fixture://lyra-starter", "Game.txt"), true)
+                .reason,
             "missing_uproject"
         );
     }
@@ -730,7 +872,11 @@ mod tests {
         approval_registry().lock().unwrap().clear();
         trust("fixture://lyra-starter");
 
-        let session = start_session(input("fixture://lyra-starter", "Game.uproject"), "attached", true);
+        let session = start_session(
+            input("fixture://lyra-starter", "Game.uproject"),
+            "attached",
+            true,
+        );
         assert_eq!(session.status, "attached");
         let session_id = session.session_id.clone().unwrap();
         let proposal = propose_editor_operation(EditorOperationInput {
@@ -764,7 +910,12 @@ mod tests {
         .unwrap();
         assert_eq!(executed.status, "executed");
         assert_eq!(replay.reason, "proposal_not_executable");
-        assert_eq!(stop_editor_session(EditorSessionIdInput { session_id }).unwrap().status, "stopped");
+        assert_eq!(
+            stop_editor_session(EditorSessionIdInput { session_id })
+                .unwrap()
+                .status,
+            "stopped"
+        );
     }
 
     #[test]
@@ -822,7 +973,11 @@ mod tests {
         assert_eq!(execute.reason, "proposal_not_executable");
 
         reset_editor_state();
-        let session = start_session(input("fixture://lyra-starter", "Game.uproject"), "attached", true);
+        let session = start_session(
+            input("fixture://lyra-starter", "Game.uproject"),
+            "attached",
+            true,
+        );
         let proposal = propose_editor_operation(EditorOperationInput {
             session_id: session.session_id.unwrap(),
             operation_kind: "select_asset".to_string(),
@@ -908,7 +1063,11 @@ mod tests {
         trusted_roots().lock().unwrap().clear();
         session_registry().lock().unwrap().clear();
         trust("fixture://lyra-starter");
-        let session = start_session(input("fixture://lyra-starter", "Game.uproject"), "attached", true);
+        let session = start_session(
+            input("fixture://lyra-starter", "Game.uproject"),
+            "attached",
+            true,
+        );
         let proposal = propose_editor_operation(EditorOperationInput {
             session_id: session.session_id.unwrap(),
             operation_kind: "save_asset".to_string(),

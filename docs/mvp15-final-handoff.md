@@ -1,36 +1,58 @@
-# MVP15 Final Handoff
+# MVP15 Native Authority Binding Rework Handoff Candidate
 
-Current stage: **MVP15 - Real UE Sandbox Asset Mutation Pilot (Final Acceptance Complete)**.
+Current stage: **MVP15 - Native Authority Binding Rework**. Acceptance is `BLOCKED`; ready for next stage is `NO`.
 
-## Delivered
+## Delivered Historical Baseline
 
-- Shared sandbox asset-mutation contracts, deterministic dry-run planning, ChangeSet approval binding, strict execution results, external verification, inverse rollback, redacted evidence/audit, and recorded-only replay.
-- Native-issued 256-bit one-time approval registration with hash-only storage, maximum TTL, complete root/session/run/hash/order/phase binding, first-attempt consumption, strict outcome recording, terminal mutation-authority removal, and bounded same-registration read-only terminal evidence lease.
-- Exact schema-checked MCP asset facade and adapters. The accepted forward ledger is 5 guards, 5 strict results, and 5 exact dispatches; rollback is 4/4/4 in move, rename, duplicate cleanup, and exact run-root cleanup order.
-- Desktop Assets and Changes lifecycle surfaces through `executed`, `verified`, `rollback_available`, and `rolled_back`, with stable blockers and no raw token, secret, identity, or local-path leakage.
-- Exact registered run-root cleanup that fails closed on assets, files, cross-run targets, reparse points, or containment ambiguity and never broadens ownership to the fixed sandbox container.
-- Fresh product-UI run `ui-mrpovp9e-1`: exactly one Dry-run, Approve/registration, Execute, Verify, Rollback, replay inspection, and Close; all prohibited action counts zero.
-- Final accepted result `PASS_REAL_SMOKE`; final Content 256/256 canonical, all mismatch counts zero, run root absent, fixed sandbox container ordinary/non-reparse/strictly empty, and replay delta `0/0/0/0/0`.
+- The historical MVP15C / 09Z product-UI lifecycle `ui-mrpovp9e-1` remains `PASS_REAL_SMOKE` for the former happy path only.
+- The narrow write scope remains `/Game/UAgentSandbox/<run-id>/**`; `/Game/Test01` remains read-only.
+- Exact six-tool allowlisting, strict result parsing, inverse ownership, read-only evidence, redaction, and recorded-only replay remain required capabilities.
+
+## Delivered C11 Candidate Implementation
+
+- Native trusted-root resolver and revocation-aware root authority.
+- Live observation/process binding at registration and before every execute/rollback MCP call.
+- Strict default-off `UAGENT_ENABLE_ASSET_MUTATION=1` native gate.
+- Maximum 60-second first-execute token plus absolute 15-minute forward and 20-minute recovery deadlines.
+- Authority-revalidated active evidence and path-bounded read-only terminal evidence.
+- Post-confirmTrust-only mutation root mapping.
+- A01-A21 automated coverage and five structural side-effect scan categories.
+
+Fresh 11A automated evidence includes TypeScript typecheck/lint, shared 32, runtime 789, MCP 46, desktop 671 with 2 existing skips, full workspace tests, web build, exact cargo fmt/check, native 139/139 serial tests, diff check, and the final side-effect scan at 299 files / 3,813 allowed / 0 blocked / 923 review. Deterministic tests cover atomic observation renewal, accepted-guard settlement, token-bound unstarted-registration retirement, prior-ownership rollback recovery, and stale facade-discovery publication.
+
+## Delivered C12-C13E1 Environment Evidence
+
+- C12 reproducibly identified UE `5.8.0` promoted `55116800`, descriptor-reported `Unreal MCP` `1.0`, BuildId, and six project-local module hashes.
+- C13 created and preserved a task-owned project copy. C13B proved child-only task-local DDC isolation and task-owned module/listener startup, although cold-cache listener readiness was about `+602.9s`.
+- C13C observed the same warm launch readiness at `+33.408s` with one launch, zero retries, five-second light polls, 30-second heavy snapshots, unchanged user UE/shared Zen/source metadata, and zero product/MCP/native/mutation actions.
+- C13C did not close cleanly: task Plugins gained 28 generated Python bytecode cache files. The retained copy and evidence were preserved without unauthorized cleanup.
+- C13D exactly removed the C13C residue, restored the 163-file Plugins baseline, and used one child-only bytecode-suppressed launch with zero retries and no live heavy worker. Readiness was observed at `+115.030s`; immediate closeout then regenerated the same 28 files, so `PYTHONDONTWRITEBYTECODE=1` did not contain the embedded UE Python runtime. The second-generation residue was preserved and the result is `BLOCKED_BY_ENVIRONMENT` / `BYTECODE_SUPPRESSION_FAILED`.
+- C13E produced a narrow dual-aggregate candidate and valid one-launch ledger: exact 163-file business state plus exact 28-file cache state, readiness at `+94.338s`, matching pre/post inventories, clean process/port closeout, and zero product/MCP/native/mutation actions. Supervisor review did not accept its validator because native `realpath` errors fail open and header mismatch results can still claim `valid: true`.
+- C13E1 repaired that candidate without launching UE or touching the retained cache: native `lstat`/`realpath` errors now produce `PATH_INSPECTION_FAILED` and a nonzero exit, every failed header branch reports `valid: false`, the expanded matrix passes 23/23, and a fresh read-only retained-copy run remains exact at `191 = 163 + 28` with zero size/SHA/mtime change.
+
+## Pending Acceptance Evidence
+
+- Authoritative official source/artifact mapping for the identified project-local plugin bytes and a product-adapter live exact six-tool fingerprint.
+- Fresh product-UI happy-path and negative ledgers.
+
+## Current Blockers
+
+- `BLOCKED_BY_MCP_SCHEMA`: project-local descriptor/module bytes are identified, but their authoritative official source/artifact mapping and the live product-adapter canonical contract fingerprint are not recorded.
+- Supervisor review/checkpoints are not yet recorded.
 
 ## Residual Risks
 
-- Real UE/MCP/plugin behavior can vary across engine, project, and environment versions. Future boundary changes should repeat the documented real smoke in the target environment.
-- Existing desktop-test React `act(...)` warnings, the existing web-build chunk-size warning, and existing Rust formatting debt remain known non-blocking engineering debt.
-- Exact-tool schema drift must continue to fail closed until the complete reviewed contract is available.
+- Real UE/MCP behavior can vary by engine patch, project, plugin build, and machine.
+- A failed real mutation may leave owned residue that only the bounded product recovery path may address.
+- Schema or plugin upgrades invalidate the recorded contract fingerprint and require complete rediscovery, tests, and real smoke.
 
 ## Still Prohibited
 
-- Non-sandbox UE asset writes and writes outside the exact registered `/Game/UAgentSandbox/<run-id>` boundary.
-- Save All, arbitrary SavePackage, broad/bulk mutation, arbitrary delete, Blueprint compile, and generic mutating MCP `tools/call`.
-- Provider-output auto-apply, default live provider access, replay re-execution, automatic git operations, dependency installation, and CI workflow creation.
-- Raw approval token, credential, session, PID, absolute path, or other secret/private environment detail in UI, evidence, audit, replay, or public documentation.
+- Non-sandbox writes, Save All, arbitrary SavePackage, broad/bulk mutation, generic wrapper mutation, provider auto-apply, replay execution, automatic git operations, secret/raw-path disclosure, and manual/broad cleanup.
+- Killing or taking over user-owned UE/MCP processes.
+- Treating UI/caller root, session, PID, or gate values as native authority.
+- Starting MVP16 implementation; only research and planning are allowed.
 
 ## Progression Decision
 
-- MVP15 status: `COMPLETE`.
-- Real smoke status: `PASS_REAL_SMOKE`.
-- Remaining MVP15 acceptance blockers: `None`.
-- Ready for next stage: `YES`.
-- Next stage name: not yet decided.
-
-The verified MVP15 implementation checkpoint is `6b7f231e9bdd1e6391f4514af9f77c4556872a5a` on `origin/main`. The synchronized documentation and TitleBar content checkpoint is `3fb53fe15980c0a1269865938bf9ee30467cc4a9`; the supervisor-owned finalization commit records this SHA and publishes the completed task state.
+No progression decision is made by this candidate. After all current blockers are cleared, the implementation handoff may claim at most `PARTIAL`; supervisor review, checkpoint SHA backfill, and push remain mandatory before any final completion state can be restored.

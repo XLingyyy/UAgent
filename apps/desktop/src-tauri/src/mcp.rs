@@ -53,7 +53,11 @@ fn post_streamable_http(input: McpHttpRequestInput) -> Result<McpHttpRequestResu
         .set("Accept", "application/json, text/event-stream")
         .set("MCP-Protocol-Version", protocol_version);
 
-    if let Some(session_id) = input.session_id.as_deref().filter(|value| !value.is_empty()) {
+    if let Some(session_id) = input
+        .session_id
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
         request = request.set("Mcp-Session-Id", session_id);
     }
 
@@ -72,7 +76,9 @@ pub(crate) fn validate_local_mcp_endpoint(endpoint: &str) -> Result<(), String> 
     if !parsed.username().is_empty() || parsed.password().is_some() {
         return Err("credentials_not_allowed".to_string());
     }
-    let host = parsed.host_str().ok_or_else(|| "host_required".to_string())?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "host_required".to_string())?;
     if host.eq_ignore_ascii_case("localhost") {
         return Ok(());
     }
@@ -274,7 +280,8 @@ mod tests {
     #[test]
     fn post_streamable_http_reads_terminal_sse_after_an_empty_initial_frame() {
         let initial_frame = ": keepalive\n\n";
-        let terminal_frame = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n\n";
+        let terminal_frame =
+            "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n\n";
         let body = format!("{initial_frame}{terminal_frame}");
         let headers = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nMcp-Session-Id: safe-session\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -307,7 +314,9 @@ mod tests {
         let (endpoint, handle) = spawn_loopback_server(move |stream| {
             stream.write_all(headers.as_bytes()).unwrap();
             stream.write_all(initial_frame.as_bytes()).unwrap();
-            stream.write_all(b"event: message\r\ndata: {\"jsonrpc\":\"2.0\",").unwrap();
+            stream
+                .write_all(b"event: message\r\ndata: {\"jsonrpc\":\"2.0\",")
+                .unwrap();
             stream.flush().unwrap();
             thread::sleep(Duration::from_millis(10));
             stream

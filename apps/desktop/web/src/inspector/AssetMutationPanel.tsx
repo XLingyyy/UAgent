@@ -3,6 +3,14 @@ import { MVP15_ASSET_TOOL_ALLOWLIST } from "@uagent/runtime";
 import { useOptionalRuntimeActions, useOptionalRuntimeStore } from "../stores/ui-store";
 import "./UtilityPlaceholderPanel.css";
 
+export function formatMvp15UiBlocker(reason: string): string {
+  const value = reason.trim();
+  if (!value || value.length > 192 || !/^[a-z0-9_.:-]+$/.test(value) || /^(?:pid|session|token|root|trusted-root):/i.test(value)) {
+    return "asset_mutation_blocked";
+  }
+  return value;
+}
+
 export function AssetMutationPanel() {
   const mvp15 = useOptionalRuntimeStore((state) => state.mvp15);
   const mvp14 = useOptionalRuntimeStore((state) => state.mvp14);
@@ -192,7 +200,7 @@ export function AssetMutationPanel() {
             Replay: recorded summaries only / {replay.recordedOnlyActions?.join(", ")} / 0 runtime side effects
           </li>
         )}
-        {mvp15?.lastError && <li className="ua-utility-placeholder__item">Last issue: {mvp15.lastError}</li>}
+        {mvp15?.lastError && <li className="ua-utility-placeholder__item">Last issue: {formatMvp15UiBlocker(mvp15.lastError)}</li>}
       </ul>
     </section>
   );

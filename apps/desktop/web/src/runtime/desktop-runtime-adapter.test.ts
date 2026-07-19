@@ -24,6 +24,7 @@ import {
   validatePluginDryRunResult,
   type AssetMutationExternalBinder,
   type Mvp15McpAssetToolName,
+  type Mvp15NativeAssetGuardInput,
 } from "@uagent/runtime";
 import type { TaskDraft } from "@uagent/shared";
 import { createNativeProjectAdapter, type NativeInvoke } from "./project-native-adapter";
@@ -438,19 +439,7 @@ type Mvp15AssetBridge = {
     evidenceQuery?: unknown;
     annotations?: Record<string, unknown>;
   }>;
-  guardMvp15AssetMutation?: (input: {
-    toolName: "ue.asset.save";
-    assetPath: string;
-    targetAssetPath?: string | null;
-    dryRunHash: string;
-    approvalToken: string | null;
-    editorSessionId: string;
-    pidHash: string;
-    assetMutationGateEnabled: boolean;
-    observedEditorSessionId: string | null;
-    observedPidHash: string | null;
-    phase: "execute" | "rollback";
-  }) => Promise<{ status: string; reason: string | null; evidenceId?: string | null }>;
+  guardMvp15AssetMutation?: (input: Mvp15NativeAssetGuardInput) => Promise<{ status: string; reason: string | null; evidenceId?: string | null }>;
   callMvp15AssetTool?: (
     toolName: "ue.asset.save" | "ue.asset.delete",
     args: Record<string, unknown>,
@@ -490,6 +479,123 @@ afterEach(() => {
 });
 
 describe("DesktopRuntimeAdapter", () => {
+  it("binds MVP15 to the actual discovered MCP session generation and endpoint identity", async () => {
+    const adapter = createAdapterWithTransport();
+    expect(adapter.captureMvp15McpBinding!()).toBeNull();
+    await adapter.connectMcp();
+    expect(adapter.captureMvp15McpBinding!()).toBeNull();
+    await adapter.discoverMcp();
+
+    const firstBinding = adapter.captureMvp15McpBinding!();
+    expect(firstBinding).toMatch(/^mcp-binding:\d+$/);
+    expect(adapter.isMvp15McpBindingCurrent!(firstBinding!)).toBe(true);
+
+    adapter.setMcpEndpoint("http://127.0.0.1:8766/mcp");
+    expect(adapter.captureMvp15McpBinding!()).toBeNull();
+    expect(adapter.isMvp15McpBindingCurrent!(firstBinding!)).toBe(false);
+
+    await adapter.connectMcp();
+    await adapter.discoverMcp();
+    const secondBinding = adapter.captureMvp15McpBinding!();
+    expect(secondBinding).toMatch(/^mcp-binding:\d+$/);
+    expect(secondBinding).not.toBe(firstBinding);
+    expect(adapter.isMvp15McpBindingCurrent!(secondBinding!)).toBe(true);
+
+    adapter.disconnectMcp();
+    expect(adapter.isMvp15McpBindingCurrent!(secondBinding!)).toBe(false);
+  });
+
+  it.each(["disconnect", "endpoint", "rediscover", "reconnect"] as const)(
+    "does not publish a stale facade discovery after %s",
+    async (action) => {
+      let releaseOldFacade!: () => void;
+      let markOldFacadeStarted!: () => void;
+      const oldFacadeStarted = new Promise<void>((resolve) => {
+        markOldFacadeStarted = resolve;
+      });
+      const oldFacadeGate = new Promise<void>((resolve) => {
+        releaseOldFacade = resolve;
+      });
+      let listToolsetsCalls = 0;
+      let transportCount = 0;
+      const oldTransport: McpTransportClient = {
+        sendRequest: vi.fn(async (request) => {
+          const params = request.params as { name?: string } | undefined;
+          if (request.method === "initialize") {
+            return { jsonrpc: "2.0" as const, id: request.id, result: fullDiscoveryFixtures.initialize };
+          }
+          if (request.method === "tools/list") {
+            return {
+              jsonrpc: "2.0" as const,
+              id: request.id,
+              result: { tools: [
+                { name: "list_toolsets", inputSchema: { type: "object" } },
+                { name: "describe_toolset", inputSchema: { type: "object" } },
+                { name: "call_tool", inputSchema: { type: "object" } },
+              ] },
+            };
+          }
+          if (request.method === "resources/list") {
+            return { jsonrpc: "2.0" as const, id: request.id, result: { resources: [] } };
+          }
+          if (request.method === "prompts/list") {
+            return { jsonrpc: "2.0" as const, id: request.id, result: { prompts: [] } };
+          }
+          if (request.method === "tools/call" && params?.name === "list_toolsets") {
+            listToolsetsCalls += 1;
+            if (listToolsetsCalls === 1) {
+              markOldFacadeStarted();
+              await oldFacadeGate;
+            }
+            return { jsonrpc: "2.0" as const, id: request.id, result: { toolsets: [] } };
+          }
+          return { jsonrpc: "2.0" as const, id: request.id, result: null };
+        }),
+        sendNotification: vi.fn(async () => {}),
+        close: vi.fn(async () => {}),
+      };
+      const adapter = createDesktopRuntimeAdapter({
+        createTransport: () => {
+          transportCount += 1;
+          return transportCount === 1 ? oldTransport : createMockTransport(fullDiscoveryFixtures);
+        },
+      });
+      await adapter.connectMcp();
+      const staleDiscovery = adapter.discoverMcp();
+      await oldFacadeStarted;
+      expect(adapter.getMcpDiscovery()).toBeNull();
+      expect(adapter.getMvp15AssetTools()).toEqual([]);
+      expect(adapter.captureMvp15McpBinding!()).toBeNull();
+
+      if (action === "disconnect") {
+        adapter.disconnectMcp();
+      } else if (action === "endpoint") {
+        adapter.setMcpEndpoint("http://127.0.0.1:8766/mcp");
+      } else if (action === "rediscover") {
+        await adapter.discoverMcp();
+      } else {
+        await adapter.connectMcp();
+        await adapter.discoverMcp();
+      }
+      const latestDiscovery = adapter.getMcpDiscovery();
+      const latestBinding = adapter.captureMvp15McpBinding!();
+      releaseOldFacade();
+      await staleDiscovery;
+
+      if (action === "rediscover" || action === "reconnect") {
+        expect(latestDiscovery).not.toBeNull();
+        expect(latestBinding).not.toBeNull();
+        expect(adapter.getMcpDiscovery()).toBe(latestDiscovery);
+        expect(adapter.captureMvp15McpBinding!()).toBe(latestBinding);
+        expect(adapter.getMcpState().status).toBe("connected");
+      } else {
+        expect(adapter.getMcpDiscovery()).toBeNull();
+        expect(adapter.captureMvp15McpBinding!()).toBeNull();
+        expect(adapter.getMcpState().status).not.toBe("connected");
+      }
+    },
+  );
+
   it("submit routes through AgentLoop and emits plan, observation, evidence, and report events", async () => {
     const adapter = createDesktopRuntimeAdapter();
     const record = await adapter.submitTask(baseDraft);
@@ -718,17 +824,11 @@ describe("DesktopRuntimeAdapter", () => {
     expect(adapter.callMvp15AssetTool).toBeTypeOf("function");
 
     const guard = await adapter.guardMvp15AssetMutation!({
-      toolName: "ue.asset.save",
-      assetPath: "/Game/UAgentSandbox/run-1/Hero",
-      targetAssetPath: null,
-      dryRunHash: "dry:hash",
+      command: "guard", registrationId: "asset-registration:bridge",
       approvalToken: "asset-approval-token:redacted",
-      editorSessionId: "editor-session:real",
-      pidHash: "pid:real-native",
-      assetMutationGateEnabled: true,
-      observedEditorSessionId: "editor-session:real",
-      observedPidHash: "pid:real-native",
-      phase: "execute",
+      phase: "execute", operationIndex: 0, operationCount: 1, changeSetId: "changeset:bridge", runId: "run-1",
+      projectBindingId: "project:bridge", aggregateDryRunHash: "a".repeat(64), aggregateArgsHash: "b".repeat(64),
+      operation: { operationId: "op-save", kind: "save", toolName: "ue.asset.save", pluginDryRunHash: "c".repeat(40), argsHash: "d".repeat(64), assetPath: "/Game/UAgentSandbox/run-1/Hero", rollbackAction: "none", saveAll: false, bulk: false },
     });
     await adapter.callMvp15AssetTool!("ue.asset.save", {
       assetPath: "/Game/UAgentSandbox/run-1/Hero",
@@ -757,7 +857,8 @@ describe("DesktopRuntimeAdapter", () => {
         return { ok: true, reason: "valid", displayRoot: "[project]/PhaseD", projectName: "PhaseD", engine: { label: "UE", association: null, source: "fixture" } } as never;
       }
       if (command === "trust_native_project_root") return { rootId: "root:phase-d", displayRoot: "[project]/PhaseD", trustState: "trusted" } as never;
-      if (command === "register_asset_mutation_approval") return { status: "registered", reason: "approval_binding_registered", registrationId: "asset-approval:phase-d", trustedRootId: "trusted-root:phase-d", operationCount: 5, approvalToken: "a".repeat(64), issuedAt: 1, expiresAt: 2000 } as never;
+      if (command === "register_asset_mutation_approval") return { status: "registered", reason: "approval_binding_registered", registrationId: "asset-approval:phase-d", operationCount: 5, approvalToken: "a".repeat(64), issuedAt: 1, expiresAt: 2000 } as never;
+      if (command === "cancel_asset_mutation_approval") return { status: "cancelled", reason: "approval_registration_cancelled", registrationId: "asset-approval:phase-d" } as never;
       if (command === "execute_asset_mutation") return { status: "accepted_by_native_guard", reason: "registered_binding_matched", registrationId: "asset-approval:phase-d", phase: "execute", operationId: "op-1", operationIndex: 0, operationCount: 5, evidenceId: "native:phase-d" } as never;
       if (command === "record_asset_mutation_outcome") return { status: "recorded", reason: "operation_outcome_recorded", registrationId: "asset-approval:phase-d", phase: "execute", operationId: "op-1", rollbackAvailable: true, terminal: false } as never;
       return null as never;
@@ -778,41 +879,70 @@ describe("DesktopRuntimeAdapter", () => {
       saveAll: false as const,
       bulk: false as const,
     };
-    const common = {
+    const guardCommon = {
       changeSetId: "changeset-1",
       runId: "run-1",
       projectBindingId: trusted.id,
-      editorSessionId: "editor-session:1",
-      pidHash: "pid:1",
-      observedEditorSessionId: "editor-session:1",
-      observedPidHash: "pid:1",
       aggregateDryRunHash: "c".repeat(64),
       aggregateArgsHash: "d".repeat(64),
-      assetMutationGateEnabled: true,
     };
 
     const registered = await adapter.guardMvp15AssetMutation!({
       command: "register", phase: "register", trustedRootRef: trusted.rootRef,
-      requestedTtlMs: 1_999, operations: [operation, operation, operation, operation, operation], ...common,
+      editorSessionId: "editor-session:1", requestedTtlMs: 1_999, operations: [operation, operation, operation, operation, operation], ...guardCommon,
     });
     const guarded = await adapter.guardMvp15AssetMutation!({
       command: "guard", registrationId: "asset-approval:phase-d", approvalToken: "raw-token-native-only", phase: "execute",
-      operationIndex: 0, operationCount: 5, trustedRootId: "trusted-root:phase-d", operation, ...common,
+      operationIndex: 0, operationCount: 5, operation, ...guardCommon,
     });
     const recorded = await adapter.guardMvp15AssetMutation!({
       command: "record_outcome", operationIndex: 0, registrationId: "asset-approval:phase-d", phase: "execute",
       operationId: "op-1", success: true, sideEffectObserved: true, rollbackAvailable: true, evidenceId: "mcp:op-1", reasonCode: "none",
     });
+    const cancelled = await adapter.guardMvp15AssetMutation!({
+      command: "cancel_registration", phase: "cancel", registrationId: "asset-approval:phase-d", approvalToken: "a".repeat(64),
+    });
 
-    expect(registered).toMatchObject({ status: "registered", registrationId: "asset-approval:phase-d", trustedRootId: "trusted-root:phase-d", operationCount: 5 });
+    expect(registered).toMatchObject({ status: "registered", registrationId: "asset-approval:phase-d", operationCount: 5 });
     expect(guarded).toMatchObject({ status: "accepted_by_native_guard", operationIndex: 0, evidenceId: "native:phase-d" });
     expect(recorded).toMatchObject({ status: "recorded", operationId: "op-1", rollbackAvailable: true });
-    const relevantCalls = nativeCalls.filter((call) => ["validate_native_project_root", "trust_native_project_root", "register_asset_mutation_approval", "execute_asset_mutation", "record_asset_mutation_outcome"].includes(call.command));
-    expect(relevantCalls.map((call) => call.command)).toEqual(["validate_native_project_root", "trust_native_project_root", "register_asset_mutation_approval", "execute_asset_mutation", "record_asset_mutation_outcome"]);
+    expect(cancelled).toMatchObject({ status: "cancelled", registrationId: "asset-approval:phase-d" });
+    const relevantCalls = nativeCalls.filter((call) => ["validate_native_project_root", "trust_native_project_root", "register_asset_mutation_approval", "execute_asset_mutation", "record_asset_mutation_outcome", "cancel_asset_mutation_approval"].includes(call.command));
+    expect(relevantCalls.map((call) => call.command)).toEqual(["validate_native_project_root", "trust_native_project_root", "register_asset_mutation_approval", "execute_asset_mutation", "record_asset_mutation_outcome", "cancel_asset_mutation_approval"]);
     const registrationPayload = relevantCalls[2]?.payload as { input?: Record<string, unknown> };
     expect(registrationPayload.input?.trustedProjectRoot).toBe(rawRoot);
     expect(registrationPayload.input).not.toHaveProperty("trustedRootRef");
+    for (const forbidden of ["pidHash", "observedEditorSessionId", "observedPidHash", "assetMutationGateEnabled"]) expect(registrationPayload.input).not.toHaveProperty(forbidden);
+    const guardPayload = relevantCalls[3]?.payload as { input?: Record<string, unknown> };
+    for (const forbidden of ["trustedRootId", "editorSessionId", "pidHash", "observedEditorSessionId", "observedPidHash", "assetMutationGateEnabled"]) expect(guardPayload.input).not.toHaveProperty(forbidden);
+    expect(relevantCalls[5]?.payload).toEqual({ input: { registrationId: "asset-approval:phase-d", approvalToken: "a".repeat(64) } });
     expect(JSON.stringify({ registered, guarded, recorded })).not.toContain(rawRoot);
+  });
+
+  it("blocks mutation registration before confirmTrust without invoking the native registration command", async () => {
+    const rawRoot = "G:/Projects/A20Desktop";
+    const nativeCommands: string[] = [];
+    const nativeInvoke: NativeInvoke = async (command) => {
+      nativeCommands.push(command);
+      if (command === "validate_native_project_root") return { ok: true, reason: "valid", displayRoot: "[project]/A20Desktop", projectName: "A20Desktop", engine: { label: "UE", association: null, source: "fixture" } } as never;
+      if (command === "trust_native_project_root") return { rootId: "root:a20-desktop", displayRoot: "[project]/A20Desktop", trustState: "trusted" } as never;
+      if (command === "register_asset_mutation_approval") return { status: "registered", reason: null, registrationId: "registration:a20", operationCount: 1, approvalToken: "a".repeat(64), issuedAt: 1, expiresAt: 60_000 } as never;
+      return null as never;
+    };
+    const projectAdapter = createNativeProjectAdapter({ invoke: nativeInvoke, now: () => 1 });
+    const project = await projectAdapter.addProject(rawRoot);
+    const adapter = createDesktopRuntimeAdapter({ nativeInvoke });
+    const registration = {
+      command: "register" as const, phase: "register" as const, changeSetId: "changeset:a20", runId: "run-a20",
+      projectBindingId: project.id, trustedRootRef: project.rootRef, editorSessionId: "observation:a20",
+      aggregateDryRunHash: "b".repeat(64), aggregateArgsHash: "c".repeat(64), requestedTtlMs: 60_000,
+      operations: [{ operationId: "operation:a20", kind: "create_folder" as const, toolName: "ue.asset.create_folder", pluginDryRunHash: "d".repeat(40), argsHash: "e".repeat(64), assetPath: "/Game/UAgentSandbox/run-a20", rollbackAction: "cleanup_empty_folder" as const, rollbackToolName: "ue.asset.delete", saveAll: false as const, bulk: false as const }],
+    };
+    await expect(adapter.guardMvp15AssetMutation!(registration)).resolves.toMatchObject({ status: "blocked", reason: "trusted_root_ref_unavailable" });
+    expect(nativeCommands.filter((command) => command === "register_asset_mutation_approval")).toHaveLength(0);
+    const trusted = await projectAdapter.confirmTrust(project.id);
+    await expect(adapter.guardMvp15AssetMutation!({ ...registration, projectBindingId: trusted.id, trustedRootRef: trusted.rootRef })).resolves.toMatchObject({ status: "registered", registrationId: "registration:a20" });
+    expect(nativeCommands.filter((command) => command === "register_asset_mutation_approval")).toHaveLength(1);
   });
 
   it("redacts malformed native guard identifiers and reasons before they cross the desktop boundary", async () => {
@@ -832,18 +962,11 @@ describe("DesktopRuntimeAdapter", () => {
     });
 
     const result = await adapter.guardMvp15AssetMutation!({
-      command: "legacy_guard",
-      toolName: "ue.asset.save",
-      assetPath: "/Game/UAgentSandbox/run-1/Hero",
-      targetAssetPath: null,
-      dryRunHash: "a".repeat(40),
+      command: "guard", registrationId: "registration:redaction",
       approvalToken: "token-native-only",
-      editorSessionId: "editor-session:1",
-      pidHash: "pid:1",
-      assetMutationGateEnabled: true,
-      observedEditorSessionId: "editor-session:1",
-      observedPidHash: "pid:1",
-      phase: "execute",
+      phase: "execute", operationIndex: 0, operationCount: 1, changeSetId: "changeset:redaction", runId: "run-redaction",
+      projectBindingId: "project:redaction", aggregateDryRunHash: "a".repeat(64), aggregateArgsHash: "b".repeat(64),
+      operation: { operationId: "op-1", kind: "save", toolName: "ue.asset.save", pluginDryRunHash: "c".repeat(40), argsHash: "d".repeat(64), assetPath: "/Game/UAgentSandbox/run-1/Hero", rollbackAction: "none", saveAll: false, bulk: false },
     });
 
     expect(result).toMatchObject({
@@ -875,7 +998,7 @@ describe("DesktopRuntimeAdapter", () => {
     expect(adapter.snapshotMvp15AssetContentManifest).toBeTypeOf("function");
     if (!adapter.readMvp15AssetContentEvidence || !adapter.snapshotMvp15AssetContentManifest) return;
 
-    const binding = { registrationId: "registration:phase-e", projectBindingId: "project:fixture", trustedRootId: "trusted-root:phase-e" };
+    const binding = { registrationId: "registration:phase-e" };
     const evidence = await adapter.readMvp15AssetContentEvidence({ ...binding, assetPath: "/Game/Test01" });
     const manifest = await adapter.snapshotMvp15AssetContentManifest(binding);
 
@@ -921,14 +1044,8 @@ describe("DesktopRuntimeAdapter", () => {
       changeSetId: "asset-changeset:phase-f",
       runId: "run-phase-f",
       projectBindingId: "project:fixture",
-      trustedRootId: "root:fixture",
-      editorSessionId: "editor-session:1",
-      pidHash: "pid:fixture",
-      observedEditorSessionId: "editor-session:1",
-      observedPidHash: "pid:fixture",
       aggregateDryRunHash: "a".repeat(64),
       aggregateArgsHash: "b".repeat(64),
-      assetMutationGateEnabled: true,
       operation: { operationId: "op-move", kind: "move_back", toolName: "ue.asset.move", pluginDryRunHash: "c".repeat(40), argsHash: "d".repeat(64), assetPath: "/Game/UAgentSandbox/run-phase-f/Sub/Hero", targetAssetPath: "/Game/UAgentSandbox/run-phase-f/Hero", rollbackAction: "none", saveAll: false, bulk: false },
     };
 

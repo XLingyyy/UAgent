@@ -15,9 +15,9 @@ function renderMvp9App() {
 }
 
 describe("MVP9 Desktop Scenarios", () => {
-  it("renders TitleBar with MVP15 Complete badge", () => {
+  it("renders TitleBar with MVP15 Rework badge", () => {
     renderMvp9App();
-    expect(screen.getByText("MVP15 Complete")).toBeTruthy();
+    expect(screen.getByText("MVP15 Rework")).toBeTruthy();
   });
 
   it("renders TitleBar with Native FS OK badge", () => {

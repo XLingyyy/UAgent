@@ -250,7 +250,7 @@ function createMvp15RealAssetMutationService(
   runtimeClient: DesktopRuntimeAdapter,
   state: RuntimeStoreState,
   tools: Mvp15McpAssetToolDescriptor[],
-  observedPidHash: string,
+  isCurrentRun: () => boolean,
 ): AssetChangeSetService {
   return createAssetChangeSetService({
     executionMode: "real",
@@ -258,8 +258,8 @@ function createMvp15RealAssetMutationService(
     adapter: createMvp15McpAssetMutationAdapter({
       tools,
       assetMutationGateEnabled: state.mvp15.gate.mode === "sandbox-enabled",
-      observedEditorSessionId: state.mvp14.status?.heartbeat?.sessionId ?? state.mvp14.session?.sessionId ?? null,
-      observedPidHash,
+      captureMcpBinding: () => runtimeClient.captureMvp15McpBinding?.() ?? null,
+      isMcpBindingCurrent: (binding) => runtimeClient.isMvp15McpBindingCurrent?.(binding) ?? false,
       nativeGuard: (input) =>
         runtimeClient.guardMvp15AssetMutation
           ? runtimeClient.guardMvp15AssetMutation(input)
@@ -293,6 +293,7 @@ function createMvp15RealAssetMutationService(
               evidenceId: null,
             },
     }),
+    isCurrentRun,
   });
 }
 
@@ -1883,6 +1884,7 @@ function createUIStateBundle(
         }));
         return;
       }
+      const activeGeneration = (runningGeneration += 1);
       const state = runtimeStore.getState();
       const realReady = isMvp15RealReady(state);
       const mcpTools = realReady ? getMvp15McpAssetTools(runtimeClient) : [];
@@ -1918,14 +1920,18 @@ function createUIStateBundle(
           }));
           return;
         }
-        mvp15AssetMutationService = createMvp15RealAssetMutationService(runtimeClient, state, mcpTools, observedPidHash);
+        mvp15AssetMutationService = createMvp15RealAssetMutationService(
+          runtimeClient,
+          state,
+          mcpTools,
+          () => runningGeneration === activeGeneration,
+        );
       } else {
         mvp15AssetMutationService = createMvp15FixtureAssetMutationService();
       }
       clearAllMvp15ApprovalTokens();
       mvp15RunCounter += 1;
       const runId = `ui-${Date.now().toString(36)}-${mvp15RunCounter.toString(36)}`;
-      const activeGeneration = (runningGeneration += 1);
       const assetName = sanitizeMvp15AssetName(sourceAssetPath.split("/").filter(Boolean).at(-1) ?? "Asset");
       // The accepted real smoke starts by creating the run root exactly once. Later asset
       // targets stay in its Work subtree and remain owned by this one ChangeSet/run.

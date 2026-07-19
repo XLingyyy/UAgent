@@ -164,7 +164,7 @@ const scenarios: Mvp6Scenario[] = [
     run: () => {
       const { container } = renderMvp6App();
 
-      expect(screen.getByText("MVP15 Complete")).toBeTruthy();
+      expect(screen.getByText("MVP15 Rework")).toBeTruthy();
       expect(container.querySelector('[data-utility-pane-state="closed"]')).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "Open utility drawer" }));
       expect(screen.getByRole("button", { name: "Close utility drawer" })).toBeTruthy();
@@ -546,7 +546,7 @@ const scenarios: Mvp6Scenario[] = [
       expect(animationsCss).toContain("@media (prefers-reduced-motion: reduce)");
       expect(animationsCss).toContain("animation-duration: 1ms !important");
       expect(animationsCss).toContain("transition-duration: 1ms !important");
-      expect(screen.getByText("MVP15 Complete")).toBeTruthy();
+      expect(screen.getByText("MVP15 Rework")).toBeTruthy();
     },
   },
   {

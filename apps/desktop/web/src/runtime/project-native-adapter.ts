@@ -95,6 +95,11 @@ function registerTrustedRootRef(ref: string | null | undefined, rawRoot: string)
   trustedRootRefs.set(ref, rawRoot);
 }
 
+function unregisterTrustedRootRef(ref: string | null | undefined, rawRoot: string | undefined): void {
+  if (!ref || !rawRoot || trustedRootRefs.get(ref) !== rawRoot) return;
+  trustedRootRefs.delete(ref);
+}
+
 export function resolveTrustedNativeRootRef(ref: string | null | undefined): string | undefined {
   if (!ref) return undefined;
   return trustedRootRefs.get(ref);
@@ -255,8 +260,6 @@ export function createNativeProjectAdapter(
         const normalized = normalizeProjectPath(ref);
         rawPaths.set(project.id, normalized);
         rawPaths.set(project.rootRef, normalized);
-        registerTrustedRootRef(project.id, normalized);
-        registerTrustedRootRef(project.rootRef, normalized);
         projects.set(project.id, project);
         return project;
       },
@@ -289,6 +292,9 @@ export function createNativeProjectAdapter(
       removeProject(id) {
         const project = projects.get(id);
         if (project) {
+          const rawRoot = rawPaths.get(id) ?? rawPaths.get(project.rootRef);
+          unregisterTrustedRootRef(id, rawRoot);
+          unregisterTrustedRootRef(project.rootRef, rawRoot);
           rawPaths.delete(id);
           rawPaths.delete(project.rootRef);
         }

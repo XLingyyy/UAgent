@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "contractId": "mvp15-c13e-controlled-cpython-cache-surface-v1",
+  "validationMode": "generated",
+  "aggregateAlgorithm": {
+    "version": "uagent-relative-path-size-content-sha256-v1",
+    "pathPrefix": "Plugins",
+    "pathEncoding": "utf-8",
+    "pathSeparator": "/",
+    "sort": "normalized-relative-path-lowercase-ascending",
+    "recordFormat": "<path>\\0<size-as-ascii>\\0<content-sha256-lowercase>\\n",
+    "digest": "sha256"
+  },
+  "pathNormalization": {
+    "separator": "/",
+    "caseCollisionPolicy": "reject",
+    "absolutePaths": "reject",
+    "parentTraversal": "reject",
+    "emptySegments": "reject",
+    "dotSegments": "reject",
+    "backslashes": "reject"
+  },
+  "pluginPythonRelativeRoot": "Toolsets/EditorToolset/Content/Python/editor_toolset",
+  "cpythonTag": "cpython-311",
+  "cacheState": {
+    "mode": "generated",
+    "header": {
+      "magicHex": "a70d0d0a",
+      "flags": 0,
+      "kind": "timestamp",
+      "requireSourceMetadataMatch": true
+    }
+  },
+  "businessAggregate": {
+    "fileCount": 163,
+    "bytes": 364816387,
+    "sha256": "550ca685525243e88f9f549cd4230f698aa13c08e11985555664b31d2f13f383"
+  },
+  "cacheDirectories": [
+    "Toolsets/EditorToolset/Content/Python/editor_toolset/__pycache__",
+    "Toolsets/EditorToolset/Content/Python/editor_toolset/skills/__pycache__",
+    "Toolsets/EditorToolset/Content/Python/editor_toolset/tests/__pycache__",
+    "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__"
+  ],
+  "cacheEntries": [
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/__pycache__/__init__.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/__init__.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/skills/__pycache__/__init__.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/skills/__init__.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/skills/__pycache__/blueprint_basics.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/skills/blueprint_basics.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/skills/__pycache__/default_outdoor_lighting.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/skills/default_outdoor_lighting.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/skills/__pycache__/material_basics.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/skills/material_basics.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/skills/__pycache__/unreal_skill_best_practices.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/skills/unreal_skill_best_practices.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/tests/__pycache__/__init__.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/tests/__init__.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/__init__.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__init__.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/actor.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/actor.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/asset.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/asset.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/blueprint.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/blueprint.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/blueprint_dsl.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/blueprint_dsl.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/blueprint_layout.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/blueprint_layout.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/blueprint_node.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/blueprint_node.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/curve_table.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/curve_table.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/data_asset.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/data_asset.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/data_table.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/data_table.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/material.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/material.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/material_instance.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/material_instance.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/object.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/object.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/primitive.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/primitive.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/programmatic.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/programmatic.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/scene.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/scene.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/skeletal_mesh.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/skeletal_mesh.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/static_mesh.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/static_mesh.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/string_table.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/string_table.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/texture.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/texture.py"
+    },
+    {
+      "cache": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/__pycache__/uagent_mvp15_asset.cpython-311.pyc",
+      "source": "Toolsets/EditorToolset/Content/Python/editor_toolset/toolsets/uagent_mvp15_asset.py"
+    }
+  ]
+}

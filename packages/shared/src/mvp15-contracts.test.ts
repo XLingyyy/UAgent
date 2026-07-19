@@ -332,13 +332,9 @@ describe("MVP15 asset mutation shared contracts", () => {
       projectBindingId: "project-1",
       trustedRootRef: "root-ref-1",
       editorSessionId: "editor-1",
-      pidHash: "pid-1",
-      observedEditorSessionId: "editor-1",
-      observedPidHash: "pid-1",
       aggregateDryRunHash: "a".repeat(64),
       aggregateArgsHash: "b".repeat(64),
       requestedTtlMs: 60_000,
-      assetMutationGateEnabled: true,
       operations: [],
     };
     const partial: AssetMutationPluginExecutionResult = {
@@ -369,6 +365,10 @@ describe("MVP15 asset mutation shared contracts", () => {
     };
 
     expect(registration).not.toHaveProperty("approvalToken");
+    expect(registration).not.toHaveProperty("pidHash");
+    expect(registration).not.toHaveProperty("observedEditorSessionId");
+    expect(registration).not.toHaveProperty("observedPidHash");
+    expect(registration).not.toHaveProperty("assetMutationGateEnabled");
     expect(registration.requestedTtlMs).toBe(60_000);
     expect(partial).toMatchObject({ status: "partial_failure", sideEffectObserved: true, rollbackAvailable: true });
   });

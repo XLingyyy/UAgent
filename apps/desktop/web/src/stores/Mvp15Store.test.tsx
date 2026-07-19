@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { McpTransportClient } from "@uagent/mcp-client";
 import { MVP15_ASSET_TOOL_ALLOWLIST, type Mvp15McpAssetToolInventory, type Mvp15McpAssetToolName } from "@uagent/runtime";
-import { AssetMutationPanel } from "../inspector/AssetMutationPanel";
+import { AssetMutationPanel, formatMvp15UiBlocker } from "../inspector/AssetMutationPanel";
 import { McpMutationPanel } from "../inspector/McpMutationPanel";
 import { createDesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
 import { createEmptyMvp14State, createEmptyMvp15State, type Mvp14RuntimeState } from "../runtime/runtime-store";
@@ -13,6 +13,16 @@ import { ConfigSettings } from "../settings/pages/ConfigSettings";
 import { UIProvider, useOptionalRuntimeActions, useRuntimeStore } from "./ui-store";
 
 const MVP15_TEST_TOOL_NAMES = MVP15_ASSET_TOOL_ALLOWLIST;
+
+describe("MVP15 UI blocker redaction", () => {
+  it("keeps stable reasons and replaces raw authority facts", () => {
+    expect(formatMvp15UiBlocker("feature_disabled")).toBe("feature_disabled");
+    expect(formatMvp15UiBlocker("transaction_expired")).toBe("transaction_expired");
+    expect(formatMvp15UiBlocker("G:\\private\\project")).toBe("asset_mutation_blocked");
+    expect(formatMvp15UiBlocker("pid:12345")).toBe("asset_mutation_blocked");
+    expect(formatMvp15UiBlocker("session:private-session")).toBe("asset_mutation_blocked");
+  });
+});
 
 const MVP15_READY_CONTRACT_TEXT = [
   "Exact facade contracts: ready",

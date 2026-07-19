@@ -3,9 +3,16 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+use crate::{
+    resolve_trusted_root_binding, resolve_trusted_root_binding_by_id,
+    ue_editor_process::validate_asset_mutation_observation_at,
+};
+
 const REQUIRED_OPERATION_KINDS: [&str; 5] =
     ["create_folder", "duplicate", "rename", "move", "save"];
 const MAX_APPROVAL_TTL_MS: u64 = 60_000;
+const TRANSACTION_LEASE_MS: u64 = 15 * 60_000;
+const RECOVERY_LEASE_MS: u64 = 20 * 60_000;
 const TERMINAL_EVIDENCE_LEASE_MS: u64 = 60_000;
 const APPROVAL_TOKEN_BYTES: usize = 32;
 
@@ -61,13 +68,9 @@ pub struct RegisterAssetMutationApprovalInput {
     pub project_binding_id: String,
     pub trusted_project_root: String,
     pub editor_session_id: String,
-    pub pid_hash: String,
-    pub observed_editor_session_id: String,
-    pub observed_pid_hash: String,
     pub aggregate_dry_run_hash: String,
     pub aggregate_args_hash: String,
     pub requested_ttl_ms: u64,
-    pub asset_mutation_gate_enabled: bool,
     pub operations: Vec<AssetMutationApprovalOperation>,
 }
 
@@ -86,6 +89,23 @@ pub struct RegisterAssetMutationApprovalResult {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub struct CancelAssetMutationApprovalInput {
+    pub registration_id: String,
+    pub approval_token: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelAssetMutationApprovalResult {
+    pub status: String,
+    pub reason: String,
+    pub registration_id: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct AssetMutationGuardInput {
     pub registration_id: String,
     pub approval_token: Option<String>,
@@ -95,14 +115,8 @@ pub struct AssetMutationGuardInput {
     pub change_set_id: String,
     pub run_id: String,
     pub project_binding_id: String,
-    pub trusted_root_id: String,
-    pub editor_session_id: String,
-    pub pid_hash: String,
-    pub observed_editor_session_id: String,
-    pub observed_pid_hash: String,
     pub aggregate_dry_run_hash: String,
     pub aggregate_args_hash: String,
-    pub asset_mutation_gate_enabled: bool,
     pub operation: AssetMutationApprovalOperation,
 }
 
@@ -147,10 +161,9 @@ pub struct RecordAssetMutationOutcomeResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct ReadAssetContentEvidenceInput {
     pub registration_id: String,
-    pub project_binding_id: String,
-    pub trusted_root_id: String,
     pub asset_path: String,
 }
 
@@ -168,10 +181,9 @@ pub struct AssetContentEvidenceResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SnapshotAssetContentManifestInput {
     pub registration_id: String,
-    pub project_binding_id: String,
-    pub trusted_root_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,14 +211,17 @@ struct ApprovalRecord {
     run_id: String,
     project_binding_id: String,
     trusted_root_id: String,
+    normalized_root: String,
+    canonical_root: PathBuf,
     content_root: PathBuf,
     editor_session_id: String,
+    process_id: String,
     pid_hash: String,
-    observed_editor_session_id: String,
-    observed_pid_hash: String,
     aggregate_dry_run_hash: String,
     aggregate_args_hash: String,
     expires_at: u64,
+    transaction_deadline: Option<u64>,
+    recovery_deadline: Option<u64>,
     operations: Vec<AssetMutationApprovalOperation>,
     token_consumed: bool,
     execute_started: bool,
@@ -221,8 +236,9 @@ struct ApprovalRecord {
 #[derive(Debug, Clone)]
 struct TerminalEvidenceLease {
     run_id: String,
-    project_binding_id: String,
     trusted_root_id: String,
+    normalized_root: String,
+    canonical_root: PathBuf,
     content_root: PathBuf,
     allowed_asset_paths: Vec<String>,
     expires_at: u64,
@@ -231,6 +247,9 @@ struct TerminalEvidenceLease {
 #[derive(Clone)]
 struct EvidenceAccess {
     run_id: String,
+    trusted_root_id: String,
+    normalized_root: String,
+    canonical_root: PathBuf,
     content_root: PathBuf,
     allowed_asset_paths: Vec<String>,
 }
@@ -246,6 +265,20 @@ fn approval_registry() -> &'static Mutex<ApprovalRegistry> {
     REGISTRY.get_or_init(|| Mutex::new(ApprovalRegistry::default()))
 }
 
+#[cfg(test)]
+fn authority_race_injection() -> &'static Mutex<Option<String>> {
+    static INJECTION: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+    INJECTION.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(test)]
+fn apply_authority_race_injection() {
+    let root_id = authority_race_injection().lock().unwrap().take();
+    if let Some(root_id) = root_id {
+        crate::trusted_roots().lock().unwrap().remove(&root_id);
+    }
+}
+
 #[tauri::command]
 pub fn dry_run_asset_mutation(input: AssetMutationCommandInput) -> AssetMutationCommandResult {
     classify_asset_mutation(input, false)
@@ -255,7 +288,55 @@ pub fn dry_run_asset_mutation(input: AssetMutationCommandInput) -> AssetMutation
 pub fn register_asset_mutation_approval(
     input: RegisterAssetMutationApprovalInput,
 ) -> RegisterAssetMutationApprovalResult {
-    register_asset_mutation_approval_at(input, current_time_millis())
+    register_asset_mutation_approval_with_gate_at(
+        input,
+        current_time_millis(),
+        native_asset_mutation_enabled(),
+    )
+}
+
+#[tauri::command]
+pub fn cancel_asset_mutation_approval(
+    input: CancelAssetMutationApprovalInput,
+) -> CancelAssetMutationApprovalResult {
+    cancel_asset_mutation_approval_at(input, current_time_millis())
+}
+
+fn cancel_asset_mutation_approval_at(
+    input: CancelAssetMutationApprovalInput,
+    now: u64,
+) -> CancelAssetMutationApprovalResult {
+    let mut registry = match approval_registry().lock() {
+        Ok(registry) => registry,
+        Err(_) => {
+            return blocked_cancellation(&input.registration_id, "native_authority_unavailable")
+        }
+    };
+    purge_expired_terminal_evidence(&mut registry, now);
+    let Some(record) = registry.records.get(&input.registration_id) else {
+        return blocked_cancellation(&input.registration_id, "approval_registration_unknown");
+    };
+    if input.approval_token.is_empty()
+        || sha256_bytes(input.approval_token.as_bytes()) != record.token_hash
+    {
+        return blocked_cancellation(&input.registration_id, "approval_token_unknown");
+    }
+    if record.execute_started
+        || record.token_consumed
+        || record.in_flight.is_some()
+        || !record.successful_execute.is_empty()
+        || record.next_execute != 0
+        || record.rollback_started
+        || !record.rolled_back.is_empty()
+    {
+        return blocked_cancellation(&input.registration_id, "approval_registration_started");
+    }
+    registry.records.remove(&input.registration_id);
+    CancelAssetMutationApprovalResult {
+        status: "cancelled".to_string(),
+        reason: "approval_registration_cancelled".to_string(),
+        registration_id: input.registration_id,
+    }
 }
 
 #[tauri::command]
@@ -263,7 +344,11 @@ pub fn execute_asset_mutation(input: AssetMutationGuardInput) -> AssetMutationGu
     if input.phase != "execute" {
         return blocked_guard(&input, "phase_mismatch");
     }
-    authorize_asset_mutation_at(input, current_time_millis())
+    authorize_asset_mutation_with_gate_at(
+        input,
+        current_time_millis(),
+        native_asset_mutation_enabled(),
+    )
 }
 
 #[tauri::command]
@@ -271,7 +356,33 @@ pub fn rollback_asset_mutation(input: AssetMutationGuardInput) -> AssetMutationG
     if input.phase != "rollback" {
         return blocked_guard(&input, "phase_mismatch");
     }
-    authorize_asset_mutation_at(input, current_time_millis())
+    authorize_asset_mutation_with_gate_at(
+        input,
+        current_time_millis(),
+        native_asset_mutation_enabled(),
+    )
+}
+
+fn native_asset_mutation_enabled() -> bool {
+    std::env::var("UAGENT_ENABLE_ASSET_MUTATION")
+        .map(|value| value == "1")
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+fn register_asset_mutation_approval_at(
+    input: RegisterAssetMutationApprovalInput,
+    now: u64,
+) -> RegisterAssetMutationApprovalResult {
+    register_asset_mutation_approval_with_gate_at(input, now, true)
+}
+
+#[cfg(test)]
+fn authorize_asset_mutation_at(
+    input: AssetMutationGuardInput,
+    now: u64,
+) -> AssetMutationGuardResult {
+    authorize_asset_mutation_with_gate_at(input, now, true)
 }
 
 #[tauri::command]
@@ -285,9 +396,10 @@ fn record_asset_mutation_outcome_at(
     input: RecordAssetMutationOutcomeInput,
     now: u64,
 ) -> RecordAssetMutationOutcomeResult {
-    let mut registry = approval_registry()
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
+    let mut registry = match approval_registry().lock() {
+        Ok(registry) => registry,
+        Err(_) => return blocked_outcome(&input, "native_authority_unavailable"),
+    };
     purge_expired_terminal_evidence(&mut registry, now);
     let Some(record) = registry.records.get_mut(&input.registration_id) else {
         return blocked_outcome(&input, "approval_registration_unknown");
@@ -316,13 +428,19 @@ fn record_asset_mutation_outcome_at(
         let partial_failure_is_owned = input.side_effect_observed
             && input.rollback_available
             && has_inverse
-            && input.evidence_id.as_deref().map(str::trim).is_some_and(|value| !value.is_empty())
+            && input
+                .evidence_id
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|value| !value.is_empty())
             && input
                 .reason_code
                 .as_deref()
                 .map(str::trim)
                 .is_some_and(|value| !value.is_empty() && value != "none");
-        if input.side_effect_observed != partial_failure_is_owned || input.rollback_available != partial_failure_is_owned {
+        if input.side_effect_observed != partial_failure_is_owned
+            || input.rollback_available != partial_failure_is_owned
+        {
             return blocked_outcome(&input, "partial_failure_contract_invalid");
         }
     }
@@ -435,12 +553,7 @@ fn snapshot_asset_content_manifest_at(
     input: SnapshotAssetContentManifestInput,
     now: u64,
 ) -> AssetContentManifestResult {
-    let access = match evidence_access_at(
-        &input.registration_id,
-        &input.project_binding_id,
-        &input.trusted_root_id,
-        now,
-    ) {
+    let access = match evidence_access_at(&input.registration_id, now) {
         Ok(access) => access,
         Err(reason) => return blocked_manifest(&reason),
     };
@@ -525,21 +638,38 @@ pub fn classify_asset_mutation(
     }
 }
 
-fn register_asset_mutation_approval_at(
+fn register_asset_mutation_approval_with_gate_at(
     input: RegisterAssetMutationApprovalInput,
     now: u64,
+    native_gate_enabled: bool,
 ) -> RegisterAssetMutationApprovalResult {
+    if !native_gate_enabled {
+        return blocked_registration("feature_disabled");
+    }
     if let Some(reason) = validate_registration(&input, now) {
         return blocked_registration(&reason);
     }
-    let canonical_root = match std::fs::canonicalize(&input.trusted_project_root) {
-        Ok(path) if path.is_dir() => path,
-        _ => return blocked_registration("trusted_root_invalid"),
+    let trusted_root = match resolve_trusted_root_binding(&input.trusted_project_root) {
+        Ok(binding) => binding,
+        Err(reason) => return blocked_registration(reason),
     };
+    let canonical_root = trusted_root.canonical_root.clone();
     let content_root = match std::fs::canonicalize(canonical_root.join("Content")) {
         Ok(path) if path.is_dir() && path.starts_with(&canonical_root) => path,
         _ => return blocked_registration("trusted_content_root_invalid"),
     };
+    let observation = match validate_asset_mutation_observation_at(
+        &input.editor_session_id,
+        &input.project_binding_id,
+        &trusted_root.root_id,
+        now,
+    ) {
+        Ok(binding) => binding,
+        Err(reason) => return blocked_registration(reason),
+    };
+    if observation.canonical_root != canonical_root {
+        return blocked_registration("trusted_root_binding_mismatch");
+    }
     let approval_token = match issue_approval_token() {
         Ok(token) => token,
         Err(()) => return blocked_registration("approval_token_issuance_failed"),
@@ -549,26 +679,58 @@ fn register_asset_mutation_approval_at(
     let Some(expires_at) = issued_at.checked_add(input.requested_ttl_ms) else {
         return blocked_registration("approval_ttl_invalid");
     };
-    let trusted_root_id = format!(
-        "trusted-root:{}",
-        &sha256_bytes(canonical_root.to_string_lossy().as_bytes())[..24]
-    );
+    let trusted_root_id = trusted_root.root_id.clone();
     let registration_digest = sha256_bytes(
         format!(
             "{}|{}|{}|{}|{}",
-            token_hash,
-            input.change_set_id,
-            input.run_id,
-            input.aggregate_dry_run_hash,
-            expires_at
+            token_hash, input.change_set_id, input.run_id, input.aggregate_dry_run_hash, expires_at
         )
         .as_bytes(),
     );
     let registration_id = format!("asset-approval:{}", &registration_digest[..24]);
-    let mut registry = approval_registry()
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
+    #[cfg(test)]
+    apply_authority_race_injection();
+    let mut registry = match approval_registry().lock() {
+        Ok(registry) => registry,
+        Err(_) => return blocked_registration("native_authority_unavailable"),
+    };
     purge_expired_terminal_evidence(&mut registry, now);
+    let final_trusted_root = match resolve_trusted_root_binding_by_id(&trusted_root_id) {
+        Ok(binding) => binding,
+        Err(reason) => return blocked_registration(reason),
+    };
+    if final_trusted_root.normalized_root != trusted_root.normalized_root
+        || final_trusted_root.canonical_root != canonical_root
+    {
+        return blocked_registration("trusted_root_binding_mismatch");
+    }
+    let final_content_root =
+        match std::fs::canonicalize(final_trusted_root.canonical_root.join("Content")) {
+            Ok(path)
+                if path.is_dir()
+                    && path.starts_with(&final_trusted_root.canonical_root)
+                    && path == content_root =>
+            {
+                path
+            }
+            _ => return blocked_registration("trust_revoked"),
+        };
+    let final_observation = match validate_asset_mutation_observation_at(
+        &input.editor_session_id,
+        &input.project_binding_id,
+        &trusted_root_id,
+        now,
+    ) {
+        Ok(binding) => binding,
+        Err(reason) => return blocked_registration(reason),
+    };
+    if final_content_root != content_root
+        || final_observation.process_id != observation.process_id
+        || final_observation.pid_hash != observation.pid_hash
+        || final_observation.canonical_root != canonical_root
+    {
+        return blocked_registration("native_authority_unavailable");
+    }
     if registry
         .records
         .values()
@@ -589,14 +751,17 @@ fn register_asset_mutation_approval_at(
             run_id: input.run_id,
             project_binding_id: input.project_binding_id,
             trusted_root_id: trusted_root_id.clone(),
+            normalized_root: trusted_root.normalized_root,
+            canonical_root,
             content_root,
-            editor_session_id: input.editor_session_id,
-            pid_hash: input.pid_hash,
-            observed_editor_session_id: input.observed_editor_session_id,
-            observed_pid_hash: input.observed_pid_hash,
+            editor_session_id: observation.session_id,
+            process_id: observation.process_id,
+            pid_hash: observation.pid_hash,
             aggregate_dry_run_hash: input.aggregate_dry_run_hash,
             aggregate_args_hash: input.aggregate_args_hash,
             expires_at,
+            transaction_deadline: None,
+            recovery_deadline: None,
             operations: input.operations,
             token_consumed: false,
             execute_started: false,
@@ -620,28 +785,130 @@ fn register_asset_mutation_approval_at(
     }
 }
 
-fn authorize_asset_mutation_at(
+fn authorize_asset_mutation_with_gate_at(
     input: AssetMutationGuardInput,
     now: u64,
+    native_gate_enabled: bool,
 ) -> AssetMutationGuardResult {
-    if !input.asset_mutation_gate_enabled {
-        return blocked_guard(&input, "asset_mutation_gate_disabled");
+    if input.phase == "execute" && !native_gate_enabled {
+        return blocked_guard(&input, "feature_disabled");
     }
-    let mut registry = approval_registry()
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    let Some((expires_at, execute_started)) = registry
-        .records
-        .get(&input.registration_id)
-        .map(|record| (record.expires_at, record.execute_started))
-    else {
+    let snapshot = match approval_registry().lock() {
+        Ok(registry) => registry.records.get(&input.registration_id).cloned(),
+        Err(_) => return blocked_guard(&input, "native_authority_unavailable"),
+    };
+    let Some(snapshot) = snapshot else {
         return blocked_guard(&input, "approval_registration_unknown");
     };
-    if now >= expires_at && !execute_started {
-        registry.records.remove(&input.registration_id);
+    if !native_gate_enabled && input.phase == "rollback" && snapshot.successful_execute.is_empty() {
+        return blocked_guard(&input, "feature_disabled");
+    }
+    if now >= snapshot.expires_at && !snapshot.execute_started {
+        if let Ok(mut registry) = approval_registry().lock() {
+            registry.records.remove(&input.registration_id);
+        }
         return blocked_guard(&input, "approval_expired");
     }
-    let record = registry.records.get_mut(&input.registration_id).expect("record checked above");
+    if input.phase == "execute"
+        && snapshot
+            .transaction_deadline
+            .is_some_and(|deadline| now >= deadline)
+    {
+        return blocked_guard(&input, "transaction_expired");
+    }
+    if input.phase == "rollback"
+        && snapshot
+            .recovery_deadline
+            .is_some_and(|deadline| now >= deadline)
+    {
+        return blocked_guard(&input, "recovery_expired");
+    }
+    let trusted_root = match resolve_trusted_root_binding_by_id(&snapshot.trusted_root_id) {
+        Ok(binding) => binding,
+        Err(reason) => return blocked_guard(&input, reason),
+    };
+    if trusted_root.normalized_root != snapshot.normalized_root
+        || trusted_root.canonical_root != snapshot.canonical_root
+    {
+        return blocked_guard(&input, "trusted_root_binding_mismatch");
+    }
+    let current_content_root =
+        match std::fs::canonicalize(trusted_root.canonical_root.join("Content")) {
+            Ok(path)
+                if path.is_dir()
+                    && path.starts_with(&trusted_root.canonical_root)
+                    && path == snapshot.content_root =>
+            {
+                path
+            }
+            _ => return blocked_guard(&input, "trust_revoked"),
+        };
+    let observation = match validate_asset_mutation_observation_at(
+        &snapshot.editor_session_id,
+        &snapshot.project_binding_id,
+        &snapshot.trusted_root_id,
+        now,
+    ) {
+        Ok(binding) => binding,
+        Err(reason) => return blocked_guard(&input, reason),
+    };
+    if observation.process_id != snapshot.process_id
+        || observation.pid_hash != snapshot.pid_hash
+        || observation.canonical_root != snapshot.canonical_root
+    {
+        return blocked_guard(&input, "observation_pid_mismatch");
+    }
+    #[cfg(test)]
+    apply_authority_race_injection();
+    let mut registry = match approval_registry().lock() {
+        Ok(registry) => registry,
+        Err(_) => return blocked_guard(&input, "native_authority_unavailable"),
+    };
+    let Some(record) = registry.records.get_mut(&input.registration_id) else {
+        return blocked_guard(&input, "approval_registration_unknown");
+    };
+    if record.content_root != current_content_root
+        || record.process_id != snapshot.process_id
+        || record.pid_hash != snapshot.pid_hash
+    {
+        return blocked_guard(&input, "native_authority_unavailable");
+    }
+    let final_trusted_root = match resolve_trusted_root_binding_by_id(&record.trusted_root_id) {
+        Ok(binding) => binding,
+        Err(reason) => return blocked_guard(&input, reason),
+    };
+    if final_trusted_root.normalized_root != record.normalized_root
+        || final_trusted_root.canonical_root != record.canonical_root
+    {
+        return blocked_guard(&input, "trusted_root_binding_mismatch");
+    }
+    let final_content_root =
+        match std::fs::canonicalize(final_trusted_root.canonical_root.join("Content")) {
+            Ok(path)
+                if path.is_dir()
+                    && path.starts_with(&final_trusted_root.canonical_root)
+                    && path == record.content_root =>
+            {
+                path
+            }
+            _ => return blocked_guard(&input, "trust_revoked"),
+        };
+    let final_observation = match validate_asset_mutation_observation_at(
+        &record.editor_session_id,
+        &record.project_binding_id,
+        &record.trusted_root_id,
+        now,
+    ) {
+        Ok(binding) => binding,
+        Err(reason) => return blocked_guard(&input, reason),
+    };
+    if final_content_root != current_content_root
+        || final_observation.process_id != record.process_id
+        || final_observation.pid_hash != record.pid_hash
+        || final_observation.canonical_root != record.canonical_root
+    {
+        return blocked_guard(&input, "native_authority_unavailable");
+    }
     if record.change_set_id != input.change_set_id {
         return blocked_guard(&input, "change_set_mismatch");
     }
@@ -650,21 +917,6 @@ fn authorize_asset_mutation_at(
     }
     if record.project_binding_id != input.project_binding_id {
         return blocked_guard(&input, "project_binding_mismatch");
-    }
-    if record.trusted_root_id != input.trusted_root_id {
-        return blocked_guard(&input, "trusted_root_binding_mismatch");
-    }
-    if record.editor_session_id != input.editor_session_id
-        || record.observed_editor_session_id != input.observed_editor_session_id
-        || input.editor_session_id != input.observed_editor_session_id
-    {
-        return blocked_guard(&input, "observation_session_mismatch");
-    }
-    if record.pid_hash != input.pid_hash
-        || record.observed_pid_hash != input.observed_pid_hash
-        || input.pid_hash != input.observed_pid_hash
-    {
-        return blocked_guard(&input, "observation_pid_mismatch");
     }
     if record.aggregate_dry_run_hash != input.aggregate_dry_run_hash {
         return blocked_guard(&input, "aggregate_dry_run_hash_mismatch");
@@ -707,6 +959,8 @@ fn authorize_asset_mutation_at(
             }
             record.token_consumed = true;
             record.execute_started = true;
+            record.transaction_deadline = Some(now.saturating_add(TRANSACTION_LEASE_MS));
+            record.recovery_deadline = Some(now.saturating_add(RECOVERY_LEASE_MS));
         } else if input.approval_token.is_some() {
             return blocked_guard(&input, "approval_token_replay");
         }
@@ -758,27 +1012,15 @@ fn authorize_asset_mutation_at(
 }
 
 fn validate_registration(input: &RegisterAssetMutationApprovalInput, _now: u64) -> Option<String> {
-    if !input.asset_mutation_gate_enabled {
-        return Some("asset_mutation_gate_disabled".to_string());
-    }
     for value in [
         &input.change_set_id,
         &input.run_id,
         &input.project_binding_id,
         &input.editor_session_id,
-        &input.pid_hash,
-        &input.observed_editor_session_id,
-        &input.observed_pid_hash,
     ] {
         if value.trim().is_empty() {
             return Some("approval_binding_incomplete".to_string());
         }
-    }
-    if input.editor_session_id != input.observed_editor_session_id {
-        return Some("observation_session_mismatch".to_string());
-    }
-    if input.pid_hash != input.observed_pid_hash {
-        return Some("observation_pid_mismatch".to_string());
     }
     if input.requested_ttl_ms == 0 {
         return Some("approval_ttl_invalid".to_string());
@@ -974,8 +1216,9 @@ fn terminal_evidence_lease(record: &ApprovalRecord, now: u64) -> TerminalEvidenc
     allowed_asset_paths.dedup();
     TerminalEvidenceLease {
         run_id: record.run_id.clone(),
-        project_binding_id: record.project_binding_id.clone(),
         trusted_root_id: record.trusted_root_id.clone(),
+        normalized_root: record.normalized_root.clone(),
+        canonical_root: record.canonical_root.clone(),
         content_root: record.content_root.clone(),
         allowed_asset_paths,
         expires_at: now.saturating_add(TERMINAL_EVIDENCE_LEASE_MS),
@@ -988,45 +1231,52 @@ fn purge_expired_terminal_evidence(registry: &mut ApprovalRegistry, now: u64) {
         .retain(|_, lease| now < lease.expires_at);
 }
 
-fn evidence_access_at(
-    registration_id: &str,
-    project_binding_id: &str,
-    trusted_root_id: &str,
-    now: u64,
-) -> Result<EvidenceAccess, String> {
-    let mut registry = approval_registry()
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    purge_expired_terminal_evidence(&mut registry, now);
-    if let Some(record) = registry.records.get(registration_id) {
-        if record.project_binding_id != project_binding_id {
-            return Err("project_binding_mismatch".to_string());
+fn evidence_access_at(registration_id: &str, now: u64) -> Result<EvidenceAccess, String> {
+    let access = {
+        let mut registry = approval_registry()
+            .lock()
+            .map_err(|_| "native_authority_unavailable".to_string())?;
+        purge_expired_terminal_evidence(&mut registry, now);
+        if let Some(record) = registry.records.get(registration_id) {
+            EvidenceAccess {
+                run_id: record.run_id.clone(),
+                trusted_root_id: record.trusted_root_id.clone(),
+                normalized_root: record.normalized_root.clone(),
+                canonical_root: record.canonical_root.clone(),
+                content_root: record.content_root.clone(),
+                allowed_asset_paths: terminal_evidence_lease(record, now).allowed_asset_paths,
+            }
+        } else {
+            let lease = registry
+                .terminal_evidence
+                .get(registration_id)
+                .ok_or_else(|| "approval_registration_unknown".to_string())?;
+            EvidenceAccess {
+                run_id: lease.run_id.clone(),
+                trusted_root_id: lease.trusted_root_id.clone(),
+                normalized_root: lease.normalized_root.clone(),
+                canonical_root: lease.canonical_root.clone(),
+                content_root: lease.content_root.clone(),
+                allowed_asset_paths: lease.allowed_asset_paths.clone(),
+            }
         }
-        if record.trusted_root_id != trusted_root_id {
-            return Err("trusted_root_binding_mismatch".to_string());
-        }
-        let lease = terminal_evidence_lease(record, now);
-        return Ok(EvidenceAccess {
-            run_id: lease.run_id,
-            content_root: lease.content_root,
-            allowed_asset_paths: lease.allowed_asset_paths,
-        });
-    }
-    let lease = registry
-        .terminal_evidence
-        .get(registration_id)
-        .ok_or_else(|| "approval_registration_unknown".to_string())?;
-    if lease.project_binding_id != project_binding_id {
-        return Err("project_binding_mismatch".to_string());
-    }
-    if lease.trusted_root_id != trusted_root_id {
+    };
+    let trusted_root =
+        resolve_trusted_root_binding_by_id(&access.trusted_root_id).map_err(str::to_string)?;
+    if trusted_root.normalized_root != access.normalized_root
+        || trusted_root.canonical_root != access.canonical_root
+    {
         return Err("trusted_root_binding_mismatch".to_string());
     }
-    Ok(EvidenceAccess {
-        run_id: lease.run_id.clone(),
-        content_root: lease.content_root.clone(),
-        allowed_asset_paths: lease.allowed_asset_paths.clone(),
-    })
+    let content_root = std::fs::canonicalize(trusted_root.canonical_root.join("Content"))
+        .map_err(|_| "trust_revoked".to_string())?;
+    if !content_root.is_dir()
+        || !content_root.starts_with(&trusted_root.canonical_root)
+        || content_root != access.content_root
+    {
+        return Err("trust_revoked".to_string());
+    }
+    Ok(access)
 }
 
 fn evidence_access_and_path_at(
@@ -1034,12 +1284,7 @@ fn evidence_access_and_path_at(
     now: u64,
 ) -> Result<(EvidenceAccess, String), String> {
     let asset_path = canonicalize_asset_path(&input.asset_path)?;
-    let access = evidence_access_at(
-        &input.registration_id,
-        &input.project_binding_id,
-        &input.trusted_root_id,
-        now,
-    )?;
+    let access = evidence_access_at(&input.registration_id, now)?;
     let run_root = format!("/Game/UAgentSandbox/{}", access.run_id);
     let bound = is_path_within(&asset_path, &run_root)
         || access
@@ -1175,6 +1420,14 @@ fn blocked_registration(reason: &str) -> RegisterAssetMutationApprovalResult {
         approval_token: None,
         issued_at: 0,
         expires_at: 0,
+    }
+}
+
+fn blocked_cancellation(registration_id: &str, reason: &str) -> CancelAssetMutationApprovalResult {
+    CancelAssetMutationApprovalResult {
+        status: "blocked".to_string(),
+        reason: reason.to_string(),
+        registration_id: registration_id.to_string(),
     }
 }
 
@@ -1386,6 +1639,16 @@ pub fn sha256_bytes(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        resolve_trusted_root_binding, trust_native_project_root, trusted_roots,
+        ue_editor_process::{
+            expire_asset_mutation_observation_fixture, mismatch_asset_mutation_pid_fixture,
+            mismatch_asset_mutation_project_fixture, register_asset_mutation_observation_fixture,
+            remove_asset_mutation_process_fixture, stop_editor_observation_session,
+            EditorObservationSessionIdInput,
+        },
+        TrustRootInput,
+    };
     use std::sync::Arc;
 
     fn hex(character: char, length: usize) -> String {
@@ -1397,6 +1660,7 @@ mod tests {
             std::env::temp_dir().join(format!("uagent-asset-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("Content")).unwrap();
+        std::fs::write(root.join("Game.uproject"), "{}").unwrap();
         root
     }
 
@@ -1485,21 +1749,31 @@ mod tests {
         ]
     }
 
-    fn registration(label: &str, _now: u64) -> RegisterAssetMutationApprovalInput {
+    fn registration(label: &str, now: u64) -> RegisterAssetMutationApprovalInput {
         let run_id = format!("run-{label}");
+        let root = test_root(label);
+        let root_ref = root.to_string_lossy().to_string();
+        trust_native_project_root(TrustRootInput {
+            root_ref: root_ref.clone(),
+        })
+        .expect("test root trust");
+        let trusted_root = resolve_trusted_root_binding(&root_ref).expect("trusted test root");
+        let project_binding_id = format!("project-{label}");
+        let observation = register_asset_mutation_observation_fixture(
+            &trusted_root,
+            &project_binding_id,
+            label,
+            now,
+        );
         RegisterAssetMutationApprovalInput {
             change_set_id: format!("change-{label}"),
             run_id: run_id.clone(),
-            project_binding_id: format!("project-{label}"),
-            trusted_project_root: test_root(label).to_string_lossy().to_string(),
-            editor_session_id: format!("session-{label}"),
-            pid_hash: format!("pid-{label}"),
-            observed_editor_session_id: format!("session-{label}"),
-            observed_pid_hash: format!("pid-{label}"),
+            project_binding_id,
+            trusted_project_root: root_ref,
+            editor_session_id: observation.session_id,
             aggregate_dry_run_hash: hex('d', 64),
             aggregate_args_hash: hex('e', 64),
             requested_ttl_ms: 1_000,
-            asset_mutation_gate_enabled: true,
             operations: operations(&run_id),
         }
     }
@@ -1525,20 +1799,8 @@ mod tests {
             change_set_id: registration.change_set_id.clone(),
             run_id: registration.run_id.clone(),
             project_binding_id: registration.project_binding_id.clone(),
-            trusted_root_id: approval_registry()
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .records
-                .get(registration_id)
-                .map(|record| record.trusted_root_id.clone())
-                .unwrap_or_default(),
-            editor_session_id: registration.editor_session_id.clone(),
-            pid_hash: registration.pid_hash.clone(),
-            observed_editor_session_id: registration.observed_editor_session_id.clone(),
-            observed_pid_hash: registration.observed_pid_hash.clone(),
             aggregate_dry_run_hash: registration.aggregate_dry_run_hash.clone(),
             aggregate_args_hash: registration.aggregate_args_hash.clone(),
-            asset_mutation_gate_enabled: true,
             operation,
         }
     }
@@ -1587,6 +1849,345 @@ mod tests {
             .unwrap_or_else(|error| error.into_inner());
         registry.records.clear();
         registry.terminal_evidence.clear();
+    }
+
+    #[test]
+    fn asset_registration_requires_native_root_and_live_observation_authority() {
+        clear_registry();
+        let now = 50;
+
+        let untrusted = registration("authority-untrusted", now);
+        let untrusted_root_id = crate::hash_path(&crate::normalize_project_path(
+            &untrusted.trusted_project_root,
+        ));
+        trusted_roots().lock().unwrap().remove(&untrusted_root_id);
+        let blocked = register_asset_mutation_approval_at(untrusted, now);
+        assert_eq!(blocked.reason, "untrusted_root");
+        assert!(blocked.approval_token.is_none());
+
+        let mut unknown = registration("authority-unknown", now);
+        unknown.editor_session_id = "editor-observation:unknown".to_string();
+        assert_eq!(
+            register_asset_mutation_approval_at(unknown, now).reason,
+            "observation_session_unknown"
+        );
+
+        let mismatched_pid = registration("authority-pid", now);
+        mismatch_asset_mutation_pid_fixture(&mismatched_pid.editor_session_id);
+        assert_eq!(
+            register_asset_mutation_approval_at(mismatched_pid, now).reason,
+            "observation_pid_mismatch"
+        );
+
+        let stopped = registration("authority-stopped", now);
+        stop_editor_observation_session(EditorObservationSessionIdInput {
+            session_id: stopped.editor_session_id.clone(),
+        })
+        .unwrap();
+        assert_eq!(
+            register_asset_mutation_approval_at(stopped, now).reason,
+            "observation_session_stopped"
+        );
+
+        let expired = registration("authority-expired", now);
+        expire_asset_mutation_observation_fixture(&expired.editor_session_id, now);
+        assert_eq!(
+            register_asset_mutation_approval_at(expired, now).reason,
+            "observation_session_expired"
+        );
+
+        let exited = registration("authority-exited", now);
+        remove_asset_mutation_process_fixture(&exited.editor_session_id);
+        assert_eq!(
+            register_asset_mutation_approval_at(exited, now).reason,
+            "process_exited"
+        );
+
+        let root_a = registration("authority-root-a", now);
+        let root_b = registration("authority-root-b", now);
+        let mut mismatched_root = root_a;
+        mismatched_root.trusted_project_root = root_b.trusted_project_root;
+        assert_eq!(
+            register_asset_mutation_approval_at(mismatched_root, now).reason,
+            "trusted_root_binding_mismatch"
+        );
+
+        let raced = registration("authority-registration-race", now);
+        let raced_root_id =
+            crate::hash_path(&crate::normalize_project_path(&raced.trusted_project_root));
+        *authority_race_injection().lock().unwrap() = Some(raced_root_id);
+        let raced_result = register_asset_mutation_approval_at(raced, now);
+        assert_eq!(raced_result.reason, "trust_revoked");
+        assert!(raced_result.approval_token.is_none());
+        assert!(raced_result.registration_id.is_empty());
+    }
+
+    #[test]
+    fn asset_native_gate_blocks_registration_and_forward_but_allows_owned_rollback() {
+        clear_registry();
+        let now = 75;
+        let disabled = registration("gate-disabled", now);
+        let blocked = register_asset_mutation_approval_with_gate_at(disabled, now, false);
+        assert_eq!(blocked.reason, "feature_disabled");
+        assert!(blocked.approval_token.is_none());
+        assert!(blocked.registration_id.is_empty());
+
+        let input = registration("gate-recovery", now);
+        let registered = register_asset_mutation_approval_at(input.clone(), now);
+        let token = registered.approval_token.as_deref().unwrap();
+        assert_eq!(
+            authorize_asset_mutation_with_gate_at(
+                step(
+                    &input,
+                    &registered.registration_id,
+                    "execute",
+                    0,
+                    Some(token),
+                ),
+                now + 1,
+                false,
+            )
+            .reason,
+            "feature_disabled"
+        );
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(
+                    &input,
+                    &registered.registration_id,
+                    "execute",
+                    0,
+                    Some(token),
+                ),
+                now + 1,
+            )
+            .status,
+            "accepted_by_native_guard"
+        );
+        record_asset_mutation_outcome_at(
+            outcome(&registered.registration_id, "execute", "op-0", true),
+            now + 2,
+        );
+        assert_eq!(
+            authorize_asset_mutation_with_gate_at(
+                step(&input, &registered.registration_id, "rollback", 0, None),
+                now + 3,
+                false,
+            )
+            .status,
+            "accepted_by_native_guard"
+        );
+    }
+
+    #[test]
+    fn asset_every_guard_rechecks_observation_and_process_liveness() {
+        clear_registry();
+        let now = 82;
+
+        let stopped = registration("guard-stopped", now);
+        let stopped_registration = register_asset_mutation_approval_at(stopped.clone(), now);
+        stop_editor_observation_session(EditorObservationSessionIdInput {
+            session_id: stopped.editor_session_id.clone(),
+        })
+        .unwrap();
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(
+                    &stopped,
+                    &stopped_registration.registration_id,
+                    "execute",
+                    0,
+                    stopped_registration.approval_token.as_deref(),
+                ),
+                now + 1,
+            )
+            .reason,
+            "observation_session_stopped"
+        );
+
+        let exited = registration("guard-exited", now);
+        let exited_registration = register_asset_mutation_approval_at(exited.clone(), now);
+        remove_asset_mutation_process_fixture(&exited.editor_session_id);
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(
+                    &exited,
+                    &exited_registration.registration_id,
+                    "execute",
+                    0,
+                    exited_registration.approval_token.as_deref(),
+                ),
+                now + 1,
+            )
+            .reason,
+            "process_exited"
+        );
+
+        let changed = registration("guard-project", now);
+        let changed_registration = register_asset_mutation_approval_at(changed.clone(), now);
+        mismatch_asset_mutation_project_fixture(&changed.editor_session_id);
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(
+                    &changed,
+                    &changed_registration.registration_id,
+                    "execute",
+                    0,
+                    changed_registration.approval_token.as_deref(),
+                ),
+                now + 1,
+            )
+            .reason,
+            "observation_project_mismatch"
+        );
+    }
+
+    #[test]
+    fn asset_transaction_and_recovery_deadlines_are_absolute() {
+        clear_registry();
+        let now = 90;
+        let input = registration("absolute-lease", now);
+        let trusted_root = resolve_trusted_root_binding(&input.trusted_project_root).unwrap();
+        let registered = register_asset_mutation_approval_at(input.clone(), now);
+        let token = registered.approval_token.as_deref().unwrap();
+        let started_at = now + 1;
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(
+                    &input,
+                    &registered.registration_id,
+                    "execute",
+                    0,
+                    Some(token),
+                ),
+                started_at,
+            )
+            .status,
+            "accepted_by_native_guard"
+        );
+        record_asset_mutation_outcome_at(
+            outcome(&registered.registration_id, "execute", "op-0", true),
+            started_at + 1,
+        );
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(&input, &registered.registration_id, "execute", 1, None),
+                started_at + TRANSACTION_LEASE_MS,
+            )
+            .reason,
+            "transaction_expired"
+        );
+
+        let recovery_at = started_at + TRANSACTION_LEASE_MS + 1;
+        register_asset_mutation_observation_fixture(
+            &trusted_root,
+            &input.project_binding_id,
+            "absolute-lease",
+            recovery_at,
+        );
+        assert_eq!(
+            authorize_asset_mutation_with_gate_at(
+                step(&input, &registered.registration_id, "rollback", 0, None),
+                recovery_at,
+                false,
+            )
+            .status,
+            "accepted_by_native_guard"
+        );
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(&input, &registered.registration_id, "rollback", 0, None),
+                started_at + RECOVERY_LEASE_MS,
+            )
+            .reason,
+            "recovery_expired"
+        );
+    }
+
+    #[test]
+    fn asset_guard_and_evidence_fail_closed_after_trust_revocation() {
+        clear_registry();
+        let now = 95;
+        let input = registration("trust-revoked", now);
+        let registered = register_asset_mutation_approval_at(input.clone(), now);
+        let token = registered.approval_token.as_deref().unwrap();
+        trusted_roots()
+            .lock()
+            .unwrap()
+            .remove(&registered.trusted_root_id);
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(
+                    &input,
+                    &registered.registration_id,
+                    "execute",
+                    0,
+                    Some(token),
+                ),
+                now + 1,
+            )
+            .reason,
+            "trust_revoked"
+        );
+        assert_eq!(
+            read_asset_content_evidence_at(
+                ReadAssetContentEvidenceInput {
+                    registration_id: registered.registration_id,
+                    asset_path: "/Game/Test01".to_string(),
+                },
+                now + 1,
+            )
+            .reason,
+            "trust_revoked"
+        );
+    }
+
+    #[test]
+    fn asset_guard_revalidates_authority_immediately_before_acceptance() {
+        clear_registry();
+        let now = 97;
+        let input = registration("authority-race", now);
+        let registered = register_asset_mutation_approval_at(input.clone(), now);
+        let token = registered.approval_token.as_deref().unwrap();
+        *authority_race_injection().lock().unwrap() = Some(registered.trusted_root_id.clone());
+
+        let result = authorize_asset_mutation_at(
+            step(
+                &input,
+                &registered.registration_id,
+                "execute",
+                0,
+                Some(token),
+            ),
+            now + 1,
+        );
+
+        assert_eq!(result.reason, "trust_revoked");
+        let registry = approval_registry().lock().unwrap();
+        let record = registry.records.get(&registered.registration_id).unwrap();
+        assert!(!record.token_consumed);
+        assert!(record.in_flight.is_none());
+    }
+
+    #[test]
+    fn asset_registration_contract_rejects_caller_authority_fields() {
+        clear_registry();
+        let mut value = serde_json::to_value(registration("caller-authority", 99)).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.insert("pidHash".to_string(), serde_json::json!("pid:forged"));
+        object.insert(
+            "observedEditorSessionId".to_string(),
+            serde_json::json!("editor-observation:forged"),
+        );
+        object.insert(
+            "observedPidHash".to_string(),
+            serde_json::json!("pid:forged"),
+        );
+        object.insert(
+            "assetMutationGateEnabled".to_string(),
+            serde_json::json!(true),
+        );
+        assert!(serde_json::from_value::<RegisterAssetMutationApprovalInput>(value).is_err());
     }
 
     #[test]
@@ -1658,12 +2259,101 @@ mod tests {
         clear_registry();
         let now = 125;
         let mut value = serde_json::to_value(registration("caller-token-red", now)).unwrap();
-        value
-            .as_object_mut()
-            .unwrap()
-            .insert("approvalToken".to_string(), serde_json::json!("caller-chosen-token"));
+        value.as_object_mut().unwrap().insert(
+            "approvalToken".to_string(),
+            serde_json::json!("caller-chosen-token"),
+        );
 
         assert!(serde_json::from_value::<RegisterAssetMutationApprovalInput>(value).is_err());
+    }
+
+    #[test]
+    fn asset_registration_cancel_is_token_bound_and_only_retires_unstarted_records() {
+        let now = 9_250;
+        let input = registration("cancel-unstarted", now);
+        let registered = register_asset_mutation_approval_at(input.clone(), now);
+        let token = registered.approval_token.clone().unwrap();
+
+        let wrong = cancel_asset_mutation_approval_at(
+            CancelAssetMutationApprovalInput {
+                registration_id: registered.registration_id.clone(),
+                approval_token: "0".repeat(64),
+            },
+            now,
+        );
+        assert_eq!(wrong.status, "blocked");
+        assert_eq!(wrong.reason, "approval_token_unknown");
+        assert!(approval_registry()
+            .lock()
+            .unwrap()
+            .records
+            .contains_key(&registered.registration_id));
+
+        let unknown = cancel_asset_mutation_approval_at(
+            CancelAssetMutationApprovalInput {
+                registration_id: "asset-registration:unknown".to_string(),
+                approval_token: token.clone(),
+            },
+            now,
+        );
+        assert_eq!(unknown.reason, "approval_registration_unknown");
+
+        let cancelled = cancel_asset_mutation_approval_at(
+            CancelAssetMutationApprovalInput {
+                registration_id: registered.registration_id.clone(),
+                approval_token: token,
+            },
+            now,
+        );
+        assert_eq!(cancelled.status, "cancelled");
+        let registry = approval_registry().lock().unwrap();
+        assert!(!registry.records.contains_key(&registered.registration_id));
+        assert!(!registry
+            .terminal_evidence
+            .contains_key(&registered.registration_id));
+        drop(registry);
+
+        for variant in [
+            "token-consumed",
+            "execute-started",
+            "in-flight",
+            "ownership",
+        ] {
+            let variant_input = registration(&format!("cancel-{variant}"), now);
+            let variant_registration = register_asset_mutation_approval_at(variant_input, now);
+            let variant_token = variant_registration.approval_token.clone().unwrap();
+            {
+                let mut registry = approval_registry().lock().unwrap();
+                let record = registry
+                    .records
+                    .get_mut(&variant_registration.registration_id)
+                    .unwrap();
+                match variant {
+                    "token-consumed" => record.token_consumed = true,
+                    "execute-started" => record.execute_started = true,
+                    "in-flight" => record.in_flight = Some(("execute".to_string(), 0)),
+                    "ownership" => record.successful_execute.push(0),
+                    _ => unreachable!(),
+                }
+            }
+            let blocked = cancel_asset_mutation_approval_at(
+                CancelAssetMutationApprovalInput {
+                    registration_id: variant_registration.registration_id.clone(),
+                    approval_token: variant_token,
+                },
+                now,
+            );
+            assert_eq!(blocked.status, "blocked", "variant={variant}");
+            assert_eq!(
+                blocked.reason, "approval_registration_started",
+                "variant={variant}"
+            );
+            assert!(approval_registry()
+                .lock()
+                .unwrap()
+                .records
+                .contains_key(&variant_registration.registration_id));
+        }
     }
 
     #[test]
@@ -1887,15 +2577,6 @@ mod tests {
         changed.project_binding_id = "project-other".to_string();
         cases.push((changed, "project_binding_mismatch"));
         let mut changed = base.clone();
-        changed.trusted_root_id = "root-other".to_string();
-        cases.push((changed, "trusted_root_binding_mismatch"));
-        let mut changed = base.clone();
-        changed.observed_editor_session_id = "editor-other".to_string();
-        cases.push((changed, "observation_session_mismatch"));
-        let mut changed = base.clone();
-        changed.observed_pid_hash = "pid-other".to_string();
-        cases.push((changed, "observation_pid_mismatch"));
-        let mut changed = base.clone();
         changed.aggregate_dry_run_hash = hex('f', 64);
         cases.push((changed, "aggregate_dry_run_hash_mismatch"));
         let mut changed = base.clone();
@@ -1927,7 +2608,13 @@ mod tests {
         let input = registration("binding-matrix", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
         let token = registered.approval_token.as_deref().unwrap();
-        let base = step(&input, &registered.registration_id, "execute", 0, Some(token));
+        let base = step(
+            &input,
+            &registered.registration_id,
+            "execute",
+            0,
+            Some(token),
+        );
 
         let mut cases: Vec<(AssetMutationGuardInput, &str)> = Vec::new();
         let mut changed = base.clone();
@@ -1939,21 +2626,6 @@ mod tests {
         let mut changed = base.clone();
         changed.project_binding_id = "project-other".to_string();
         cases.push((changed, "project_binding_mismatch"));
-        let mut changed = base.clone();
-        changed.trusted_root_id = "root-other".to_string();
-        cases.push((changed, "trusted_root_binding_mismatch"));
-        let mut changed = base.clone();
-        changed.editor_session_id = "editor-other".to_string();
-        cases.push((changed, "observation_session_mismatch"));
-        let mut changed = base.clone();
-        changed.observed_editor_session_id = "editor-observed-other".to_string();
-        cases.push((changed, "observation_session_mismatch"));
-        let mut changed = base.clone();
-        changed.pid_hash = "pid-other".to_string();
-        cases.push((changed, "observation_pid_mismatch"));
-        let mut changed = base.clone();
-        changed.observed_pid_hash = "pid-observed-other".to_string();
-        cases.push((changed, "observation_pid_mismatch"));
         let mut changed = base.clone();
         changed.aggregate_dry_run_hash = hex('f', 64);
         cases.push((changed, "aggregate_dry_run_hash_mismatch"));
@@ -2238,8 +2910,6 @@ mod tests {
         let registered = register_asset_mutation_approval_at(input.clone(), now);
         let evidence = read_asset_content_evidence(ReadAssetContentEvidenceInput {
             registration_id: registered.registration_id.clone(),
-            project_binding_id: input.project_binding_id.clone(),
-            trusted_root_id: registered.trusted_root_id.clone(),
             asset_path: "/Game/Test01".to_string(),
         });
         assert_eq!(evidence.status, "observed");
@@ -2251,15 +2921,11 @@ mod tests {
 
         let blocked = read_asset_content_evidence(ReadAssetContentEvidenceInput {
             registration_id: registered.registration_id.clone(),
-            project_binding_id: input.project_binding_id.clone(),
-            trusted_root_id: registered.trusted_root_id.clone(),
             asset_path: "/Game/Secret/Other".to_string(),
         });
         assert_eq!(blocked.reason, "asset_path_not_bound");
         let traversal = read_asset_content_evidence(ReadAssetContentEvidenceInput {
             registration_id: registered.registration_id,
-            project_binding_id: input.project_binding_id,
-            trusted_root_id: registered.trusted_root_id,
             asset_path: "/Game/../Secret.ini".to_string(),
         });
         assert_eq!(traversal.reason, "asset_path_invalid");
@@ -2339,14 +3005,10 @@ mod tests {
 
         let evidence_input = ReadAssetContentEvidenceInput {
             registration_id: registered.registration_id.clone(),
-            project_binding_id: input.project_binding_id.clone(),
-            trusted_root_id: registered.trusted_root_id.clone(),
             asset_path: "/Game/Test01".to_string(),
         };
         let manifest_input = SnapshotAssetContentManifestInput {
             registration_id: registered.registration_id.clone(),
-            project_binding_id: input.project_binding_id.clone(),
-            trusted_root_id: registered.trusted_root_id.clone(),
         };
         let evidence = read_asset_content_evidence_at(evidence_input.clone(), terminal_at + 1);
         assert_eq!(evidence.status, "observed");
@@ -2368,7 +3030,6 @@ mod tests {
         for forbidden in [
             token,
             input.editor_session_id.as_str(),
-            input.pid_hash.as_str(),
             input.aggregate_dry_run_hash.as_str(),
             input.aggregate_args_hash.as_str(),
         ] {
@@ -2395,30 +3056,6 @@ mod tests {
             "approval_registration_unknown"
         );
 
-        let mut wrong_project = evidence_input.clone();
-        wrong_project.project_binding_id = "project-other".to_string();
-        assert_eq!(
-            read_asset_content_evidence_at(wrong_project, terminal_at + 2).reason,
-            "project_binding_mismatch"
-        );
-        let mut wrong_root = evidence_input.clone();
-        wrong_root.trusted_root_id = "trusted-root:other".to_string();
-        assert_eq!(
-            read_asset_content_evidence_at(wrong_root, terminal_at + 2).reason,
-            "trusted_root_binding_mismatch"
-        );
-        let mut wrong_manifest_project = manifest_input.clone();
-        wrong_manifest_project.project_binding_id = "project-other".to_string();
-        assert_eq!(
-            snapshot_asset_content_manifest_at(wrong_manifest_project, terminal_at + 2).reason,
-            "project_binding_mismatch"
-        );
-        let mut wrong_manifest_root = manifest_input.clone();
-        wrong_manifest_root.trusted_root_id = "trusted-root:other".to_string();
-        assert_eq!(
-            snapshot_asset_content_manifest_at(wrong_manifest_root, terminal_at + 2).reason,
-            "trusted_root_binding_mismatch"
-        );
         let mut unbound = evidence_input.clone();
         unbound.asset_path = "/Game/Secret/Other".to_string();
         assert_eq!(

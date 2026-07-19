@@ -28,9 +28,10 @@ describe("TitleBar", () => {
       expect(screen.getByText("Custom")).toBeTruthy();
     });
 
-    it("renders the MVP15 Complete badge", () => {
+    it("renders the MVP15 Rework badge without claiming completion", () => {
       renderTitleBar();
-      expect(screen.getByText("MVP15 Complete")).toBeTruthy();
+      expect(screen.getByText("MVP15 Rework")).toBeTruthy();
+      expect(screen.queryByText("MVP15 Complete")).toBeNull();
     });
 
     it("renders the Native FS OK badge", () => {

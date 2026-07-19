@@ -1,6 +1,6 @@
-# MVP15 Prep - Real UE Sandbox Asset Mutation Pilot
+# MVP15 Prep - Real UE Sandbox Asset Mutation Pilot (Historical)
 
-> Historical preparation document. This file records the scope posture used before MVP15 implementation. MVP15 subsequently completed final acceptance in MVP15C / 09Z; current delivered scope and remaining prohibitions are defined by the acceptance, verification, risk, and handoff documents.
+> Historical preparation document. This file records the scope posture used before MVP15 implementation. MVP15C / 09Z later completed the former happy-path lifecycle, but MVP15C-11 has reopened native authority acceptance. Current status, blockers, delivered scope, and remaining prohibitions are defined by the acceptance, verification, risk, plugin-baseline, and handoff documents.
 
 ## Historical Objective
 
