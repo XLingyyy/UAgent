@@ -71,4 +71,4 @@ Fresh 11A automated evidence includes TypeScript typecheck/lint, shared 32, runt
 
 ## Progression
 
-C13E1 content and repository checkpoint remain the prior accepted/published checkpoint. The current C14A implementation, documentation, and report await supervisor review/checkpoint; the implementation Agent did not stage, commit, push, claim review completion, or decide progression. MVP15 remains blocked by the product-UI lifecycle and plugin provenance/live-fingerprint gaps. MVP16 implementation stays prohibited until a later supervisor checkpoint closes G13 and G16 and formally re-accepts MVP15.
+Supervisor review accepts the C14/C14A implementation at verified commit `37c29cbc7961218bfd71d1809178359952a75e18`; its documentation closeout is published in the same task checkpoint. MVP15 remains blocked by the product-UI lifecycle and plugin provenance/live-fingerprint gaps. MVP16 implementation stays prohibited until a later task closes G13 and G16 and formally re-accepts MVP15.

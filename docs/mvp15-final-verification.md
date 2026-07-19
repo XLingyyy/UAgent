@@ -8,7 +8,7 @@
 - Current environment result: C14 observed the task-owned module/listener environment, then closed every task-bound process and listener. Pre/post full/business/cache aggregates remained exact at `191 / 163 / 28`; the 28-entry path/size/SHA/mtime manifest was byte-identical. Source/task Config, Content, and Binaries stayed exact, and user UE/shared Zen were not controlled.
 - Current MCP result: the authoritative active-byte mapping remains `BLOCKED_BY_MCP_SCHEMA`. The product adapter implements deterministic `uagent.mvp15.live-asset-toolset-fingerprint.v1`, and C14A hardens reconnect retraction plus blocked-result redaction. The controlled C14 attempt's one initialization request encountered a pre-discovery transport/environment failure, so it produced no descriptor/schema decision, accepted SHA, or per-tool summary. Active unsigned module hashes also do not match the observed validly Epic-signed sibling set, and no authoritative manifest/source/build attestation maps those active bytes.
 - Prior accepted checkpoint: C13E1 verified implementation commit `12159b9b5eb31829208df5c01c7fc97f157398c2`; its exclusion/remote closeout remains historical accepted evidence.
-- Current checkpoint: C14A is pending supervisor review/checkpoint. Its working tree is not staged, committed, pushed, or review-passed; no current supervisor SHA is claimed.
+- Current checkpoint: supervisor review accepted C14/C14A verified implementation commit `37c29cbc7961218bfd71d1809178359952a75e18`; its SHA-backfill documentation closeout is published in the same task checkpoint.
 - Ready for next stage: `NO`.
 
 ## Historical 09Z Record
@@ -77,7 +77,16 @@ The five authority scan ids are `mvp15-native-trust-authority-boundary`, `mvp15-
 - Product adapter: the historical C14 attempt sent one `initialize` request, then encountered a pre-discovery transport/environment failure. `list_toolsets`, `describe_toolset`, generic `call_tool`, exact asset calls, registration, token, dry-run, execute, verify, rollback, replay, and mutation were all `0`. No descriptor/schema decision or live fingerprint evidence exists; the fail-closed getter retained `sha256: null`, zero accepted tools, and no raw schema publication. C14A did not launch UE/UAgent, connect live MCP, or perform any mutation-family action.
 - Mapping audit: active modules reproduce the C12 hashes but are unsigned. A valid Epic-signed sibling set was observed; all six hashes differ, so it does not map the active bytes. No official package manifest, source revision, repository revision, or build attestation closed the mapping.
 - Closeout: pre/post Route A validator returned exact full/business/cache `191 / 163 / 28`, empty errors/unclassified, and 28 valid headers. The identical 28-entry manifest proves path/size/SHA/mtime stability. Task-bound UE/UAgent/CrashReportClient/listener ownership returned to zero; source/task protected aggregates remained exact.
-- Remaining evidence: authoritative mapping is `BLOCKED_BY_MCP_SCHEMA`; a successful product-adapter live exact-six capture and fresh product-UI lifecycle remain absent. The current C14A checkpoint is pending supervisor review and has no implementation-Agent verdict.
+- Remaining evidence: authoritative mapping is `BLOCKED_BY_MCP_SCHEMA`; a successful product-adapter live exact-six capture and fresh product-UI lifecycle remain absent. The C14/C14A implementation checkpoint is supervisor-accepted; this does not change G13/G16 or overall readiness.
+
+## C14A Supervisor Closeout - 2026-07-20
+
+- Verified implementation commit: `37c29cbc7961218bfd71d1809178359952a75e18`.
+- Independent targeted verification: runtime fingerprint plus MVP15 runtime `92/92`; shared contracts `5/5`; desktop adapter plus MVP15 store from the required `apps/desktop` working directory `71 passed / 3 skipped`.
+- One broader desktop targeted command was first invoked from the repository root and returned three `ENOENT` failures because `Mvp15Store.test.tsx` intentionally resolves fixture/source paths relative to the desktop package working directory. The same files passed from the documented package cwd, and the full workspace desktop suite passed `679 / 3 skipped`; this was a command-context failure, not a product or assertion failure.
+- Independent full verification: `pnpm typecheck`, `pnpm test`, desktop web build, sequential `pnpm lint`, `git diff --check`, and side-effect scan all pass. Workspace totals are shared `33`, MCP `46`, runtime `805`, and desktop `679 passed / 3 skipped`; final scan is 301 files / 3,906 allowed / 0 blocked / 926 review.
+- Boundary review: reconnect retracts old discovery/facade/binding/fingerprint before synchronous notification; blocked issues publish only allowlisted names and stable counts; adversarial raw names and malformed/proxy inputs accept no SHA and leak no canary. `external/**`, `.agent-bus/**`, private supervisor material, evidence, logs, env files, and build output are excluded.
+- Real-environment classification remains unchanged: C14 stopped at a pre-discovery transport/environment failure with no schema decision; authoritative active-byte mapping independently remains `BLOCKED_BY_MCP_SCHEMA`; C14A performed no UE/live/mutation action.
 
 ## C12-C13E Real-environment Readiness Ledger
 
@@ -112,4 +121,4 @@ Separate negative ledgers must record:
 
 ## Current Progression
 
-This is not final MVP15 acceptance. C14A hardens and automatically verifies the fail-closed fingerprint authority/redaction boundary, but the historical C14 controlled request did not reach discovery and provided no schema evidence; independently, the mapping audit could not connect the active unsigned bytes to the different signed sibling set. No fresh product-UI mutation lifecycle, authoritative official plugin mapping, or accepted live descriptor fingerprint exists. C13E1 is the prior accepted checkpoint; C14A awaits supervisor review/checkpoint. Acceptance remains `BLOCKED` and ready for next stage `NO`.
+This is not final MVP15 acceptance. Supervisor review accepts the C14/C14A fingerprint authority/redaction implementation at verified commit `37c29cbc7961218bfd71d1809178359952a75e18`, but the historical C14 controlled request did not reach discovery and provided no schema evidence; independently, the mapping audit could not connect the active unsigned bytes to the different signed sibling set. No fresh product-UI mutation lifecycle, authoritative official plugin mapping, or accepted live descriptor fingerprint exists. Acceptance remains `BLOCKED` and ready for next stage `NO`.
