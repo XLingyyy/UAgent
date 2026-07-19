@@ -7,7 +7,7 @@
 - Current fresh product-UI mutation smoke: not run.
 - Current environment result: C13E produced valid one-launch readiness evidence at `+94.338s`, exact pre/post business/cache inventories, and clean process/port closeout. C13E1 then repaired the supervisor-identified validator defects without another UE launch: native inspection errors now fail with `PATH_INSPECTION_FAILED`, all invalid header branches report `header.valid: false`, the expanded matrix passes 23/23, and the retained copy revalidates read-only at exact `191 / 163 / 28` with zero cache size/SHA/mtime change. Supervisor review accepted this containment result at verified implementation commit `12159b9b5eb31829208df5c01c7fc97f157398c2`; it is readiness evidence, not a product-smoke pass.
 - Current MCP result: `BLOCKED_BY_MCP_SCHEMA` until the identified project-local bytes have an authoritative official source/artifact mapping and product-adapter discovery publishes a stable live exact-six descriptor fingerprint.
-- Current checkpoint result: `BLOCKED_BY_NETWORK`; verified implementation commit `12159b9b5eb31829208df5c01c7fc97f157398c2` and documentation closeout commit `dc118b276794a4141a308aaaa17e8b289e374a55` exist locally, but 13 push attempts failed at the GitHub `schannel` TLS handshake. The latest ten alternated default and HTTP/1.1 modes; `origin/main` remains unchanged.
+- Current checkpoint result: `COMPLETE`; verified implementation commit `12159b9b5eb31829208df5c01c7fc97f157398c2` is recorded. The accidental external-only commit was removed from `main` with an exact `--force-with-lease`, local external files were preserved and ignored, exclusion commit `af457cad6c870c62b333bfba82df4fb38d83c6b1` was published, and local/remote divergence was verified at 0/0 before this final documentation closeout.
 - Ready for next stage: `NO`.
 
 ## Historical 09Z Record
@@ -61,9 +61,10 @@ The five authority scan ids are `mvp15-native-trust-authority-boundary`, `mvp15-
 - `node --test scripts/mvp15-python-cache-surface.test.mjs`: `PASS`, 23/23.
 - Retained-copy validator in the approved read-only host context: `PASS`, `ok:true`, `classificationComplete:true`, exact full/business/cache `191 / 163 / 28`, zero errors/unclassified, and all 28 headers valid. Pre/post cache path/size/SHA/mtime values were identical. The restricted sandbox run correctly failed closed with `PATH_INSPECTION_FAILED` rather than classifying an uninspectable ancestor as safe.
 - `pnpm typecheck`, sequential `pnpm lint`, `pnpm test`, `pnpm --filter @uagent/desktop web:build`, `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --check`, `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml`, and `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml -- --test-threads=1`: `PASS`. Workspace summary remains shared 32, MCP 46, runtime 789, desktop 671 passed with 2 existing skips, and Rust 139/139.
-- `node scripts/side-effect-scan.mjs`: `PASS`, 300 files / 3,891 allowed / 0 blocked / 925 review.
+- `node scripts/side-effect-scan.mjs`: `PASS`, final documentation-synchronized result 300 files / 3,896 allowed / 0 blocked / 925 review.
 - `git diff --check`: `PASS`, with Windows LF/CRLF notices only. Full diff and current-state documents were inspected; `external/`, `.agent-bus/**`, private supervisor material, evidence, logs, and build output were excluded from the checkpoint.
 - Side effects during C13E1 repair/review: no UE, UAgent product, Zen, MCP, native, registration/token, mutation, or product-UI action was launched or invoked.
+- Checkpoint recovery: 13 initial HTTPS attempts failed at the GitHub TLS handshake. A later manual push accidentally included one external-only commit containing local plugin/build material; supervisor review detected it before acceptance. The branch was restored to the exact pre-incident parent while preserving local files, `external/` was added to `.gitignore`, and `origin/main` was corrected with an exact lease. `git ls-tree` confirms `external/`, `.agent-bus/`, and supervisor-private paths are absent from the corrected tip.
 
 ## C12-C13E Real-environment Readiness Ledger
 
@@ -98,4 +99,4 @@ Separate negative ledgers must record:
 
 ## Current Progression
 
-This is not final MVP15 acceptance. The 11A code and automated gates pass, and C12-C13E1 establish progressively stronger real build, module, task-copy, DDC, process, listener, and exact fail-closed dual-aggregate inventory facts. C13E1 content is supervisor-accepted and the two-step local checkpoint is prepared, but the required push is `BLOCKED_BY_NETWORK`; no fresh product-UI mutation lifecycle, authoritative official plugin mapping, or live descriptor fingerprint exists. Acceptance remains `BLOCKED` and ready for next stage `NO`.
+This is not final MVP15 acceptance. The 11A code and automated gates pass, and C12-C13E1 establish progressively stronger real build, module, task-copy, DDC, process, listener, and exact fail-closed dual-aggregate inventory facts. C13E1 content and repository checkpoint are supervisor-accepted and published, but no fresh product-UI mutation lifecycle, authoritative official plugin mapping, or live descriptor fingerprint exists. Acceptance remains `BLOCKED` and ready for next stage `NO`.

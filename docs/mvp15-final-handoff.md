@@ -38,7 +38,6 @@ Fresh 11A automated evidence includes TypeScript typecheck/lint, shared 32, runt
 ## Current Blockers
 
 - `BLOCKED_BY_MCP_SCHEMA`: project-local descriptor/module bytes are identified, but their authoritative official source/artifact mapping and the live product-adapter canonical contract fingerprint are not recorded.
-- `BLOCKED_BY_NETWORK`: the verified implementation and documentation closeout commits exist locally, but 13 `origin/main` push attempts failed at the GitHub `schannel` TLS handshake; the latest ten alternated default and HTTP/1.1 modes.
 
 ## Residual Risks
 
@@ -55,4 +54,4 @@ Fresh 11A automated evidence includes TypeScript typecheck/lint, shared 32, runt
 
 ## Progression Decision
 
-C13E1 content is accepted and its local two-step checkpoint is prepared, but the task cannot receive final `PASS` until the GitHub push succeeds and remote divergence is verified. No progression decision is made for MVP15 because the product-UI lifecycle and plugin provenance/fingerprint blockers also remain. MVP16 implementation stays prohibited; only research and planning are allowed until a later supervisor checkpoint closes G13 and G16 and formally re-accepts MVP15.
+C13E1 content and repository checkpoint are accepted and published; the accidental external-only commit was removed from `main`, local external files remain intact and ignored, and the corrected remote was verified without divergence. No progression decision is made for MVP15 because the product-UI lifecycle and plugin provenance/fingerprint blockers remain. MVP16 implementation stays prohibited; only research and planning are allowed until a later supervisor checkpoint closes G13 and G16 and formally re-accepts MVP15.
