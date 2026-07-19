@@ -1,11 +1,11 @@
-# MVP15 Final Verification Candidate
+# MVP15 Final Verification
 
 ## Current State
 
 - Public stage: `MVP15 - Native Authority Binding Rework`.
 - Acceptance: `BLOCKED`.
 - Current fresh product-UI mutation smoke: not run.
-- Current environment result: C13E produced valid one-launch readiness evidence at `+94.338s`, exact pre/post business/cache inventories, and clean process/port closeout. C13E1 then repaired the supervisor-identified validator defects without another UE launch: native inspection errors now fail with `PATH_INSPECTION_FAILED`, all invalid header branches report `header.valid: false`, the expanded matrix passes 23/23, and the retained copy revalidates read-only at exact `191 / 163 / 28` with zero cache size/SHA/mtime change. This remains an implementation candidate pending supervisor review and is readiness evidence, not a product-smoke pass.
+- Current environment result: C13E produced valid one-launch readiness evidence at `+94.338s`, exact pre/post business/cache inventories, and clean process/port closeout. C13E1 then repaired the supervisor-identified validator defects without another UE launch: native inspection errors now fail with `PATH_INSPECTION_FAILED`, all invalid header branches report `header.valid: false`, the expanded matrix passes 23/23, and the retained copy revalidates read-only at exact `191 / 163 / 28` with zero cache size/SHA/mtime change. Supervisor review accepted this containment result at verified implementation commit `12159b9edd652bd8d8679e28415029ce3917f04d`; it is readiness evidence, not a product-smoke pass.
 - Current MCP result: `BLOCKED_BY_MCP_SCHEMA` until the identified project-local bytes have an authoritative official source/artifact mapping and product-adapter discovery publishes a stable live exact-six descriptor fingerprint.
 - Ready for next stage: `NO`.
 
@@ -54,6 +54,16 @@ The native hardening also detects ordinary same-path root replacement and PID re
 
 The five authority scan ids are `mvp15-native-trust-authority-boundary`, `mvp15-observation-authority-boundary`, `mvp15-native-gate-boundary`, `mvp15-transaction-liveness-boundary`, and `mvp15-pretrust-root-ref-boundary`.
 
+## C13E1 Supervisor Closeout Ledger - 2026-07-19
+
+- Verified implementation commit: `12159b9edd652bd8d8679e28415029ce3917f04d`.
+- `node --test scripts/mvp15-python-cache-surface.test.mjs`: `PASS`, 23/23.
+- Retained-copy validator in the approved read-only host context: `PASS`, `ok:true`, `classificationComplete:true`, exact full/business/cache `191 / 163 / 28`, zero errors/unclassified, and all 28 headers valid. Pre/post cache path/size/SHA/mtime values were identical. The restricted sandbox run correctly failed closed with `PATH_INSPECTION_FAILED` rather than classifying an uninspectable ancestor as safe.
+- `pnpm typecheck`, sequential `pnpm lint`, `pnpm test`, `pnpm --filter @uagent/desktop web:build`, `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --check`, `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml`, and `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml -- --test-threads=1`: `PASS`. Workspace summary remains shared 32, MCP 46, runtime 789, desktop 671 passed with 2 existing skips, and Rust 139/139.
+- `node scripts/side-effect-scan.mjs`: `PASS`, 300 files / 3,891 allowed / 0 blocked / 925 review.
+- `git diff --check`: `PASS`, with Windows LF/CRLF notices only. Full diff and current-state documents were inspected; `external/`, `.agent-bus/**`, private supervisor material, evidence, logs, and build output were excluded from the checkpoint.
+- Side effects during C13E1 repair/review: no UE, UAgent product, Zen, MCP, native, registration/token, mutation, or product-UI action was launched or invoked.
+
 ## C12-C13E Real-environment Readiness Ledger
 
 - C12 identified UE `5.8.0` promoted build/changelist `55116800`, descriptor-reported `Unreal MCP` `1.0`, BuildId `55116800`, and six project-local module SHA-256 values. It did not establish official source/artifact provenance or a product-adapter live descriptor inventory.
@@ -85,6 +95,6 @@ Separate negative ledgers must record:
 - stopped observation registration rejection and token/MCP/Content delta zero;
 - task-owned process exit rejection before MCP, or an honest `BLOCKED_BY_ENVIRONMENT` result when no task-owned UE process exists.
 
-## Candidate Progression
+## Current Progression
 
-This is not final acceptance. The 11A code and automated gates pass, and C12-C13E1 establish progressively stronger real build, module, task-copy, DDC, process, listener, and exact fail-closed dual-aggregate inventory facts. The C13E1 validator repair is an implementation candidate pending supervisor review; no fresh product-UI mutation lifecycle, authoritative official plugin mapping, or live descriptor fingerprint exists. Acceptance remains `BLOCKED` and ready for next stage `NO`.
+This is not final MVP15 acceptance. The 11A code and automated gates pass, and C12-C13E1 establish progressively stronger real build, module, task-copy, DDC, process, listener, and exact fail-closed dual-aggregate inventory facts. C13E1 is supervisor-accepted and checkpointed, but no fresh product-UI mutation lifecycle, authoritative official plugin mapping, or live descriptor fingerprint exists. Acceptance remains `BLOCKED` and ready for next stage `NO`.

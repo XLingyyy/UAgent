@@ -24,13 +24,13 @@ The sources for these repository expectations are `packages/runtime/src/mvp15-mc
 
 ## Task-copy Python Cache Integrity Contract
 
-C13E defines a separate task-copy integrity surface for readiness and later product smoke. `scripts/mvp15-python-cache-contract.json` names exactly 28 CPython 3.11 timestamp-mode cache/source pairs in four `__pycache__` directories. Supervisor review found two defects in the initial validator; the C13E1 implementation candidate now propagates native `lstat`/`realpath` inspection failures as `PATH_INSPECTION_FAILED`, reports `header.valid: false` for every failed header condition, passes 23/23 targeted tests, and revalidates the retained copy read-only without changing cache size/SHA/mtime. Subject to supervisor acceptance, the following two-layer rule is the pre/post containment gate:
+C13E defines a separate task-copy integrity surface for readiness and later product smoke. `scripts/mvp15-python-cache-contract.json` names exactly 28 CPython 3.11 timestamp-mode cache/source pairs in four `__pycache__` directories. Supervisor review found two defects in the initial validator; C13E1 now propagates native `lstat`/`realpath` inspection failures as `PATH_INSPECTION_FAILED`, reports `header.valid: false` for every failed header condition, passes 23/23 targeted tests, and revalidates the retained copy read-only without changing cache size/SHA/mtime. Supervisor review accepted the following two-layer rule as the pre/post containment gate at verified implementation commit `12159b9edd652bd8d8679e28415029ce3917f04d`:
 
 - business layer: exactly `163 / 364,816,387 / 550ca685525243e88f9f549cd4230f698aa13c08e11985555664b31d2f13f383` after excluding only the contracted cache paths;
 - cache layer: exactly `28 / 673,559 / b1e57b7aec0d3252cd3466c28a57e6b6111cccf3253d31b7833350cfbcc30339`, with every cache and source regular, non-link, non-reparse, correctly paired, and header-compatible;
 - full Plugins layer: exactly `191 / 365,489,946 / 0468b036a24f3a0b761ed61e8dd0b82a7be535fa4282250679ddd70fc5e9889c`, with zero unclassified entries.
 
-This candidate is intentionally narrow and does not accept a 29th cache file, a different ABI, a missing or moved source, a changed business/cache file, an unverifiable path, a link/reparse substitution, or any broad Plugins write side effect. A native inspection error is a hard failure, never an unknown-but-safe result. The contract also does not prove the official plugin source/artifact mapping or the product-adapter live six-descriptor fingerprint required below.
+This contract is intentionally narrow and does not accept a 29th cache file, a different ABI, a missing or moved source, a changed business/cache file, an unverifiable path, a link/reparse substitution, or any broad Plugins write side effect. A native inspection error is a hard failure, never an unknown-but-safe result. The contract also does not prove the official plugin source/artifact mapping or the product-adapter live six-descriptor fingerprint required below.
 
 ## Repository Expectation Fingerprint
 

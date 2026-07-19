@@ -1,4 +1,4 @@
-# MVP15 Native Authority Binding Rework Handoff Candidate
+# MVP15 Native Authority Binding Rework Handoff
 
 Current stage: **MVP15 - Native Authority Binding Rework**. Acceptance is `BLOCKED`; ready for next stage is `NO`.
 
@@ -8,7 +8,7 @@ Current stage: **MVP15 - Native Authority Binding Rework**. Acceptance is `BLOCK
 - The narrow write scope remains `/Game/UAgentSandbox/<run-id>/**`; `/Game/Test01` remains read-only.
 - Exact six-tool allowlisting, strict result parsing, inverse ownership, read-only evidence, redaction, and recorded-only replay remain required capabilities.
 
-## Delivered C11 Candidate Implementation
+## Delivered C11/11A Implementation
 
 - Native trusted-root resolver and revocation-aware root authority.
 - Live observation/process binding at registration and before every execute/rollback MCP call.
@@ -28,7 +28,7 @@ Fresh 11A automated evidence includes TypeScript typecheck/lint, shared 32, runt
 - C13C did not close cleanly: task Plugins gained 28 generated Python bytecode cache files. The retained copy and evidence were preserved without unauthorized cleanup.
 - C13D exactly removed the C13C residue, restored the 163-file Plugins baseline, and used one child-only bytecode-suppressed launch with zero retries and no live heavy worker. Readiness was observed at `+115.030s`; immediate closeout then regenerated the same 28 files, so `PYTHONDONTWRITEBYTECODE=1` did not contain the embedded UE Python runtime. The second-generation residue was preserved and the result is `BLOCKED_BY_ENVIRONMENT` / `BYTECODE_SUPPRESSION_FAILED`.
 - C13E produced a narrow dual-aggregate candidate and valid one-launch ledger: exact 163-file business state plus exact 28-file cache state, readiness at `+94.338s`, matching pre/post inventories, clean process/port closeout, and zero product/MCP/native/mutation actions. Supervisor review did not accept its validator because native `realpath` errors fail open and header mismatch results can still claim `valid: true`.
-- C13E1 repaired that candidate without launching UE or touching the retained cache: native `lstat`/`realpath` errors now produce `PATH_INSPECTION_FAILED` and a nonzero exit, every failed header branch reports `valid: false`, the expanded matrix passes 23/23, and a fresh read-only retained-copy run remains exact at `191 = 163 + 28` with zero size/SHA/mtime change.
+- C13E1 repaired that validator without launching UE or touching the retained cache: native `lstat`/`realpath` errors now produce `PATH_INSPECTION_FAILED` and a nonzero exit, every failed header branch reports `valid: false`, the expanded matrix passes 23/23, and a fresh read-only retained-copy run remains exact at `191 = 163 + 28` with zero size/SHA/mtime change. Supervisor review accepted the result at verified implementation commit `12159b9edd652bd8d8679e28415029ce3917f04d`.
 
 ## Pending Acceptance Evidence
 
@@ -38,7 +38,6 @@ Fresh 11A automated evidence includes TypeScript typecheck/lint, shared 32, runt
 ## Current Blockers
 
 - `BLOCKED_BY_MCP_SCHEMA`: project-local descriptor/module bytes are identified, but their authoritative official source/artifact mapping and the live product-adapter canonical contract fingerprint are not recorded.
-- Supervisor review/checkpoints are not yet recorded.
 
 ## Residual Risks
 
@@ -55,4 +54,4 @@ Fresh 11A automated evidence includes TypeScript typecheck/lint, shared 32, runt
 
 ## Progression Decision
 
-No progression decision is made by this candidate. After all current blockers are cleared, the implementation handoff may claim at most `PARTIAL`; supervisor review, checkpoint SHA backfill, and push remain mandatory before any final completion state can be restored.
+C13E1 is accepted and checkpointed, but no progression decision is made for MVP15 because the product-UI lifecycle and plugin provenance/fingerprint blockers remain. MVP16 implementation stays prohibited; only research and planning are allowed until a later supervisor checkpoint closes G13 and G16 and formally re-accepts MVP15.
