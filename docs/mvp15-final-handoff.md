@@ -38,7 +38,7 @@ Fresh 11A automated evidence includes TypeScript typecheck/lint, shared 32, runt
 ## Current Blockers
 
 - `BLOCKED_BY_MCP_SCHEMA`: project-local descriptor/module bytes are identified, but their authoritative official source/artifact mapping and the live product-adapter canonical contract fingerprint are not recorded.
-- `BLOCKED_BY_NETWORK`: the verified implementation and documentation closeout commits exist locally, but three `origin/main` push attempts failed at the GitHub `schannel` TLS handshake.
+- `BLOCKED_BY_NETWORK`: the verified implementation and documentation closeout commits exist locally, but 13 `origin/main` push attempts failed at the GitHub `schannel` TLS handshake; the latest ten alternated default and HTTP/1.1 modes.
 
 ## Residual Risks
 
