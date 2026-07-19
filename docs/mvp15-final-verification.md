@@ -5,9 +5,9 @@
 - Public stage: `MVP15 - Native Authority Binding Rework`.
 - Acceptance: `BLOCKED`.
 - Current fresh product-UI mutation smoke: not run.
-- Current environment result: C13E produced valid one-launch readiness evidence at `+94.338s`, exact pre/post business/cache inventories, and clean process/port closeout. C13E1 then repaired the supervisor-identified validator defects without another UE launch: native inspection errors now fail with `PATH_INSPECTION_FAILED`, all invalid header branches report `header.valid: false`, the expanded matrix passes 23/23, and the retained copy revalidates read-only at exact `191 / 163 / 28` with zero cache size/SHA/mtime change. Supervisor review accepted this containment result at verified implementation commit `12159b9edd652bd8d8679e28415029ce3917f04d`; it is readiness evidence, not a product-smoke pass.
+- Current environment result: C13E produced valid one-launch readiness evidence at `+94.338s`, exact pre/post business/cache inventories, and clean process/port closeout. C13E1 then repaired the supervisor-identified validator defects without another UE launch: native inspection errors now fail with `PATH_INSPECTION_FAILED`, all invalid header branches report `header.valid: false`, the expanded matrix passes 23/23, and the retained copy revalidates read-only at exact `191 / 163 / 28` with zero cache size/SHA/mtime change. Supervisor review accepted this containment result at verified implementation commit `12159b9b5eb31829208df5c01c7fc97f157398c2`; it is readiness evidence, not a product-smoke pass.
 - Current MCP result: `BLOCKED_BY_MCP_SCHEMA` until the identified project-local bytes have an authoritative official source/artifact mapping and product-adapter discovery publishes a stable live exact-six descriptor fingerprint.
-- Current checkpoint result: `BLOCKED_BY_NETWORK`; verified implementation commit `12159b9edd652bd8d8679e28415029ce3917f04d` and documentation closeout commit `dc118b2` exist locally, but three push attempts failed at the GitHub `schannel` TLS handshake and `origin/main` remains unchanged.
+- Current checkpoint result: `BLOCKED_BY_NETWORK`; verified implementation commit `12159b9b5eb31829208df5c01c7fc97f157398c2` and documentation closeout commit `dc118b276794a4141a308aaaa17e8b289e374a55` exist locally, but three push attempts failed at the GitHub `schannel` TLS handshake and `origin/main` remains unchanged.
 - Ready for next stage: `NO`.
 
 ## Historical 09Z Record
@@ -57,7 +57,7 @@ The five authority scan ids are `mvp15-native-trust-authority-boundary`, `mvp15-
 
 ## C13E1 Supervisor Closeout Ledger - 2026-07-19
 
-- Verified implementation commit: `12159b9edd652bd8d8679e28415029ce3917f04d`.
+- Verified implementation commit: `12159b9b5eb31829208df5c01c7fc97f157398c2`.
 - `node --test scripts/mvp15-python-cache-surface.test.mjs`: `PASS`, 23/23.
 - Retained-copy validator in the approved read-only host context: `PASS`, `ok:true`, `classificationComplete:true`, exact full/business/cache `191 / 163 / 28`, zero errors/unclassified, and all 28 headers valid. Pre/post cache path/size/SHA/mtime values were identical. The restricted sandbox run correctly failed closed with `PATH_INSPECTION_FAILED` rather than classifying an uninspectable ancestor as safe.
 - `pnpm typecheck`, sequential `pnpm lint`, `pnpm test`, `pnpm --filter @uagent/desktop web:build`, `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --check`, `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml`, and `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml -- --test-threads=1`: `PASS`. Workspace summary remains shared 32, MCP 46, runtime 789, desktop 671 passed with 2 existing skips, and Rust 139/139.
