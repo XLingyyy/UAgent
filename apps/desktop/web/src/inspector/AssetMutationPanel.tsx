@@ -22,6 +22,7 @@ export function AssetMutationPanel() {
   const execution = mvp15?.latestExecution ?? null;
   const verification = mvp15?.latestVerification ?? null;
   const replay = mvp15?.replaySummary ?? null;
+  const companion = mvp15?.companion ?? null;
   const bindingStatus = changeSet?.externalBindingStatus ?? dryRun?.externalBindingStatus ?? "local_fixture";
   const runtimeMode = mvp15?.["executionMode"];
   const realMode = runtimeMode === "real";
@@ -32,9 +33,10 @@ export function AssetMutationPanel() {
     mvp14.status.heartbeat?.processAlive === true;
   const nativeRegistrationStatus = changeSet?.nativeApprovalRegistrationStatus ?? (realMode ? "required" : "not_required");
   const bindingApprovable = realMode ? bindingBound : changeSet?.state === "approval_required";
-  const canApprove = changeSet?.state === "approval_required" && bindingApprovable;
+  const companionReady = !realMode || (companion?.status === "verified" && companion.liveFingerprintReady);
+  const canApprove = changeSet?.state === "approval_required" && bindingApprovable && companionReady;
   const canExecute = changeSet?.state === "approved"
-    && (!realMode || (bindingBound && activeObservation && nativeRegistrationStatus === "registered"));
+    && (!realMode || (bindingBound && activeObservation && nativeRegistrationStatus === "registered" && companionReady));
   const canVerify = (changeSet?.state === "executed" || changeSet?.state === "rollback_available")
     && (!realMode || bindingBound);
   const hasReversibleRollbackAction = changeSet?.rollbackPlan.actions.some((action) => (
@@ -148,6 +150,22 @@ export function AssetMutationPanel() {
         </li>
         {runtimeMode && <li className="ua-utility-placeholder__item">Execution mode: {runtimeMode}</li>}
         <li className="ua-utility-placeholder__item">Binding: {bindingLabel}</li>
+        {companion && (
+          <>
+            <li className="ua-utility-placeholder__item">Companion plugin: {companion.status}</li>
+            <li className="ua-utility-placeholder__item">
+              Companion contract: {companion.pluginVersion ?? "unverified"} / {companion.contractVersion ?? "unverified"}
+            </li>
+            <li className="ua-utility-placeholder__item">
+              Manifest SHA: {companion.manifestSha256Prefix ? `${companion.manifestSha256Prefix}…` : "unverified"}
+            </li>
+            <li className="ua-utility-placeholder__item">
+              Live fingerprint: {companion.liveFingerprintSha256Prefix ? `${companion.liveFingerprintSha256Prefix}…` : "unverified"}
+            </li>
+            <li className="ua-utility-placeholder__item">Current generation: {companion.currentGeneration}</li>
+            {companion.blocker && <li className="ua-utility-placeholder__item">Companion blocker: {companion.blocker}</li>}
+          </>
+        )}
         {aggregatePrefix && <li className="ua-utility-placeholder__item">Aggregate dry-run: {aggregatePrefix}…</li>}
         {realMode && (
           <li className="ua-utility-placeholder__item">
@@ -158,9 +176,11 @@ export function AssetMutationPanel() {
         {mvp15?.runId && <li className="ua-utility-placeholder__item">Run: {mvp15.runId}</li>}
         {readyMcpInventory && (
           <>
-            <li className="ua-utility-placeholder__item">Exact facade contracts: ready</li>
             <li className="ua-utility-placeholder__item">
-              Exact facade tools ({readyMcpInventory.availableTools.length}/6): {readyMcpInventory.availableTools.join(", ")}
+              Live exact-six contract: {companion?.liveFingerprintReady ? "ready" : "attestation required"}
+            </li>
+            <li className="ua-utility-placeholder__item">
+              Exact-six tools ({readyMcpInventory.availableTools.length}/6): {readyMcpInventory.availableTools.join(", ")}
             </li>
             <li className="ua-utility-placeholder__item">Input schemas: ready</li>
             <li className="ua-utility-placeholder__item">Dry-run schemas: ready</li>

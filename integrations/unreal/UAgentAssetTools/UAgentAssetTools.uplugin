@@ -1,0 +1,49 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1.0",
+  "FriendlyName": "UAgent Asset Tools Companion",
+  "Description": "UAgent-owned, sandbox-only exact-six asset tools for UE 5.8.",
+  "Category": "UAgent",
+  "CreatedBy": "UAgent",
+  "CreatedByURL": "",
+  "DocsURL": "",
+  "MarketplaceURL": "",
+  "SupportURL": "",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "IsExperimentalVersion": false,
+  "Installed": false,
+  "EnabledByDefault": false,
+  "ExplicitlyLoaded": false,
+  "SupportsContentBrowser": false,
+  "EngineVersion": "5.8.0",
+  "Plugins": [
+    {
+      "Name": "ModelContextProtocol",
+      "Enabled": true
+    },
+    {
+      "Name": "EditorScriptingUtilities",
+      "Enabled": true
+    },
+    {
+      "Name": "ToolsetRegistry",
+      "Enabled": true
+    }
+  ],
+  "Modules": [
+    {
+      "Name": "UAgentAssetTools",
+      "Type": "Editor",
+      "LoadingPhase": "Default",
+      "PlatformAllowList": ["Win64"]
+    },
+    {
+      "Name": "UAgentAssetToolsTests",
+      "Type": "Editor",
+      "LoadingPhase": "PostEngineInit",
+      "PlatformAllowList": ["Win64"]
+    }
+  ]
+}

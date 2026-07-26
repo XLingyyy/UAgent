@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "uagent.ue-companion-plugin.build-manifest.v1",
+  "title": "UAgentAssetTools build manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "pluginId", "pluginVersion", "contractVersion", "sourceCommit", "sourceTreeSha256", "dirty", "ueVersion", "ueBuildId", "targetPlatform", "configuration", "compiler", "windowsSdk", "buildCommandFingerprint", "uplugin", "schema", "moduleIndex", "modules", "toolNames", "generatedAt", "builder", "manifestSha256"],
+  "properties": {
+    "schemaVersion": { "const": "uagent.ue-companion-plugin.build-manifest.v1" },
+    "pluginId": { "const": "UAgentAssetTools" },
+    "pluginVersion": { "const": "0.1.0" },
+    "contractVersion": { "const": "mvp15d.asset-tools.v1" },
+    "sourceCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sourceTreeSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "dirty": { "const": false },
+    "ueVersion": { "const": "5.8.0" },
+    "ueBuildId": { "const": "55116800" },
+    "targetPlatform": { "const": "Win64" },
+    "configuration": { "const": "Development" },
+    "compiler": { "const": "MSVC" },
+    "windowsSdk": { "const": "Windows SDK" },
+    "buildCommandFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "uplugin": { "$ref": "#/$defs/artifact" },
+    "schema": { "$ref": "#/$defs/artifact" },
+    "moduleIndex": { "$ref": "#/$defs/artifact" },
+    "modules": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/moduleArtifact" } },
+    "toolNames": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "ue.asset.create_folder" },
+        { "const": "ue.asset.duplicate" },
+        { "const": "ue.asset.rename" },
+        { "const": "ue.asset.move" },
+        { "const": "ue.asset.delete" },
+        { "const": "ue.asset.save" }
+      ],
+      "minItems": 6,
+      "maxItems": 6,
+      "items": false
+    },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "builder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+       "properties": { "kind": { "enum": ["local", "ci"] }, "name": { "type": "string", "pattern": "^[A-Za-z0-9._ -]+$" } }
+    },
+    "manifestSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "size", "sha256"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "moduleArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "size", "sha256"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+\\.dll$" },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "uagent.mvp15d.native-binding-test-vector.v2",
+  "bindingMaterial": {
+    "contract": "mvp15d-native-accepted-plan-v2",
+    "registrationId": "asset-approval:deterministic-native-plan",
+    "changeSetId": "change-native-binding-contract",
+    "runId": "run-native-binding-contract",
+    "projectBindingId": "project-native-binding-contract",
+    "mcpBinding": "mcp-binding:fixture-1",
+    "aggregateDryRunHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "aggregateArgsHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "operations": [
+      {
+        "operationId": "op-0",
+        "kind": "create_folder",
+        "toolName": "ue.asset.create_folder",
+        "pluginDryRunHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "argsHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sourceAssetPath": null,
+        "assetPath": "/Game/UAgentSandbox/run-native-binding-contract",
+        "targetAssetPath": null,
+        "rollbackAction": "cleanup_empty_folder",
+        "rollbackToolName": "ue.asset.delete",
+        "saveAll": false,
+        "bulk": false
+      },
+      {
+        "operationId": "op-1",
+        "kind": "duplicate",
+        "toolName": "ue.asset.duplicate",
+        "pluginDryRunHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "argsHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sourceAssetPath": "/Game/Test01",
+        "assetPath": null,
+        "targetAssetPath": "/Game/UAgentSandbox/run-native-binding-contract/Test01Copy",
+        "rollbackAction": "delete_duplicate",
+        "rollbackToolName": "ue.asset.delete",
+        "saveAll": false,
+        "bulk": false
+      },
+      {
+        "operationId": "op-2",
+        "kind": "rename",
+        "toolName": "ue.asset.rename",
+        "pluginDryRunHash": "cccccccccccccccccccccccccccccccccccccccc",
+        "argsHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "sourceAssetPath": null,
+        "assetPath": "/Game/UAgentSandbox/run-native-binding-contract/Test01Copy",
+        "targetAssetPath": "/Game/UAgentSandbox/run-native-binding-contract/Test01Renamed",
+        "rollbackAction": "rename_back",
+        "rollbackToolName": "ue.asset.rename",
+        "saveAll": false,
+        "bulk": false
+      },
+      {
+        "operationId": "op-3",
+        "kind": "move",
+        "toolName": "ue.asset.move",
+        "pluginDryRunHash": "dddddddddddddddddddddddddddddddddddddddd",
+        "argsHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "sourceAssetPath": null,
+        "assetPath": "/Game/UAgentSandbox/run-native-binding-contract/Test01Renamed",
+        "targetAssetPath": "/Game/UAgentSandbox/run-native-binding-contract/Final/Test01Renamed",
+        "rollbackAction": "move_back",
+        "rollbackToolName": "ue.asset.move",
+        "saveAll": false,
+        "bulk": false
+      },
+      {
+        "operationId": "op-4",
+        "kind": "save",
+        "toolName": "ue.asset.save",
+        "pluginDryRunHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "argsHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "sourceAssetPath": null,
+        "assetPath": "/Game/UAgentSandbox/run-native-binding-contract/Final/Test01Renamed",
+        "targetAssetPath": null,
+        "rollbackAction": "none",
+        "rollbackToolName": null,
+        "saveAll": false,
+        "bulk": false
+      }
+    ],
+    "companion": {
+      "connectionGeneration": 17,
+      "sessionGeneration": 29,
+      "fingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+      "sourceIdentity": "4444444444444444444444444444444444444444444444444444444444444444",
+      "manifestIdentity": "2222222222222222222222222222222222222222222222222222222222222222",
+      "pluginIdentity": "5555555555555555555555555555555555555555555555555555555555555555",
+      "packageIdentity": "6666666666666666666666666666666666666666666666666666666666666666"
+    }
+  },
+  "nativeGuardFacts": {
+    "acceptedPlanBinding": "0ba61fe88d86a20cb8ccf4d4296ef10f68cf7bc896c29513e58569b02ab13698",
+    "nativeRegistrationId": "asset-approval:deterministic-native-plan",
+    "nativePhase": "execute",
+    "nativeOperationIndex": 0,
+    "nativeOperationCount": 5,
+    "nativeCreatedAt": 190,
+    "connectionGeneration": 17,
+    "sessionGeneration": 29,
+    "nativeSourceIdentity": "4444444444444444444444444444444444444444444444444444444444444444",
+    "nativeManifestIdentity": "2222222222222222222222222222222222222222222222222222222222222222",
+    "nativePluginIdentity": "5555555555555555555555555555555555555555555555555555555555555555",
+    "nativePackageIdentity": "6666666666666666666666666666666666666666666666666666666666666666"
+  }
+}

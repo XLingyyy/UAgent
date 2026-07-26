@@ -1,11 +1,14 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 use crate::{
     resolve_trusted_root_binding, resolve_trusted_root_binding_by_id,
-    ue_editor_process::validate_asset_mutation_observation_at,
+    ue_editor_process::{
+        observe_native_loaded_modules_for_asset_mutation, validate_asset_mutation_observation_at,
+        validate_native_asset_mutation_observation_for_root, NativeLoadedModuleObservation,
+    },
 };
 
 const REQUIRED_OPERATION_KINDS: [&str; 5] =
@@ -15,6 +18,54 @@ const TRANSACTION_LEASE_MS: u64 = 15 * 60_000;
 const RECOVERY_LEASE_MS: u64 = 20 * 60_000;
 const TERMINAL_EVIDENCE_LEASE_MS: u64 = 60_000;
 const APPROVAL_TOKEN_BYTES: usize = 32;
+const MAX_COMPANION_MANIFEST_BYTES: u64 = 256 * 1024;
+const MAX_COMPANION_ARTIFACT_BYTES: u64 = 256 * 1024 * 1024;
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub struct Mvp15CompanionAttestationInput {
+    pub trusted_root_id: String,
+    pub editor_session_id: Option<String>,
+    pub attestation_generation: Option<u64>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub struct Mvp15CompanionApprovalRetractionInput {
+    pub attestation_generation: Option<u64>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Mvp15CompanionArtifact {
+    pub name: String,
+    pub size: u64,
+    pub sha256: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Mvp15CompanionAttestationResult {
+    pub status: String,
+    pub reason: String,
+    pub manifest: Option<serde_json::Value>,
+    pub installed_modules: Vec<Mvp15CompanionArtifact>,
+    pub loaded_modules: Vec<Mvp15CompanionArtifact>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Mvp15CompanionApprovalRetractionResult {
+    pub status: String,
+    pub reason: String,
+    pub applied: bool,
+    pub requested_attestation_generation: Option<u64>,
+    pub minimum_attestation_generation: u64,
+    pub generation: u64,
+    pub revoked_approval_count: usize,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,6 +95,7 @@ pub struct AssetMutationCommandResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct AssetMutationApprovalOperation {
     pub operation_id: String,
     pub kind: String,
@@ -68,6 +120,7 @@ pub struct RegisterAssetMutationApprovalInput {
     pub project_binding_id: String,
     pub trusted_project_root: String,
     pub editor_session_id: String,
+    pub mcp_binding: String,
     pub aggregate_dry_run_hash: String,
     pub aggregate_args_hash: String,
     pub requested_ttl_ms: u64,
@@ -115,6 +168,7 @@ pub struct AssetMutationGuardInput {
     pub change_set_id: String,
     pub run_id: String,
     pub project_binding_id: String,
+    pub mcp_binding: String,
     pub aggregate_dry_run_hash: String,
     pub aggregate_args_hash: String,
     pub operation: AssetMutationApprovalOperation,
@@ -131,17 +185,29 @@ pub struct AssetMutationGuardResult {
     pub operation_index: usize,
     pub operation_count: usize,
     pub evidence_id: Option<String>,
+    /// Opaque, native-derived binding for the exact guarded operation. The
+    /// companion may retain it in its ledger, but it reveals neither the
+    /// approval token nor a renderer-supplied process identity.
+    pub accepted_plan_binding: Option<String>,
+    pub native_created_at: Option<u64>,
+    pub connection_generation: Option<u64>,
+    pub session_generation: Option<u64>,
+    pub native_source_identity: Option<String>,
+    pub native_manifest_identity: Option<String>,
+    pub native_plugin_identity: Option<String>,
+    pub native_package_identity: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct RecordAssetMutationOutcomeInput {
     pub registration_id: String,
     pub phase: String,
     pub operation_id: String,
     pub success: bool,
-    #[serde(default)]
     pub side_effect_observed: bool,
+    pub effect_state: String,
     pub rollback_available: bool,
     pub evidence_id: Option<String>,
     pub reason_code: Option<String>,
@@ -156,6 +222,7 @@ pub struct RecordAssetMutationOutcomeResult {
     pub phase: String,
     pub operation_id: String,
     pub rollback_available: bool,
+    pub effect_state: String,
     pub terminal: bool,
 }
 
@@ -207,6 +274,7 @@ pub struct AssetContentManifestResult {
 #[derive(Debug, Clone)]
 struct ApprovalRecord {
     token_hash: String,
+    native_created_at: u64,
     change_set_id: String,
     run_id: String,
     project_binding_id: String,
@@ -215,10 +283,13 @@ struct ApprovalRecord {
     canonical_root: PathBuf,
     content_root: PathBuf,
     editor_session_id: String,
+    mcp_binding: String,
     process_id: String,
     pid_hash: String,
     aggregate_dry_run_hash: String,
     aggregate_args_hash: String,
+    companion_binding: Option<CompanionApprovalBinding>,
+    companion_retracted: bool,
     expires_at: u64,
     transaction_deadline: Option<u64>,
     recovery_deadline: Option<u64>,
@@ -231,6 +302,31 @@ struct ApprovalRecord {
     rollback_started: bool,
     rolled_back: Vec<usize>,
     in_flight: Option<(String, usize)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CompanionApprovalBinding {
+    generation: u64,
+    attestation_generation: u64,
+    fingerprint: String,
+    trusted_root_id: String,
+    editor_session_id: String,
+    process_id: String,
+    pid_hash: String,
+    process_start_time: u64,
+    manifest_sha256: String,
+    descriptor_identity: String,
+    source_identity: String,
+    plugin_identity: String,
+    package_identity: String,
+}
+
+#[derive(Default)]
+struct CompanionApprovalAuthority {
+    generation: u64,
+    minimum_attestation_generation: u64,
+    binding: Option<CompanionApprovalBinding>,
+    companion_required: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -258,11 +354,22 @@ struct EvidenceAccess {
 struct ApprovalRegistry {
     records: HashMap<String, ApprovalRecord>,
     terminal_evidence: HashMap<String, TerminalEvidenceLease>,
+    companion_authority: CompanionApprovalAuthority,
 }
 
 fn approval_registry() -> &'static Mutex<ApprovalRegistry> {
     static REGISTRY: OnceLock<Mutex<ApprovalRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(ApprovalRegistry::default()))
+}
+
+#[cfg(test)]
+pub(crate) fn reset_registry_for_test() {
+    *approval_registry()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = ApprovalRegistry::default();
+    *authority_race_injection()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = None;
 }
 
 #[cfg(test)]
@@ -339,6 +446,97 @@ fn cancel_asset_mutation_approval_at(
     }
 }
 
+/// Retract the native companion binding before a renderer publishes a blocked,
+/// stale, disconnected, or replacement companion state.  Existing companion
+/// approvals are retained as explicit revoked records. Forward execution remains
+/// unavailable, while an exact inverse for an already-observed owned effect keeps
+/// its bounded native recovery lease.
+#[tauri::command]
+pub fn retract_mvp15_companion_approvals(
+    input: Mvp15CompanionApprovalRetractionInput,
+) -> Mvp15CompanionApprovalRetractionResult {
+    match retract_companion_approvals(input.attestation_generation) {
+        Ok(retraction) => Mvp15CompanionApprovalRetractionResult {
+            status: if retraction.applied {
+                "retracted".to_string()
+            } else {
+                "stale".to_string()
+            },
+            reason: if retraction.applied {
+                "companion_approval_retracted".to_string()
+            } else {
+                "companion_retraction_stale".to_string()
+            },
+            applied: retraction.applied,
+            requested_attestation_generation: retraction.requested_attestation_generation,
+            minimum_attestation_generation: retraction.minimum_attestation_generation,
+            generation: retraction.generation,
+            revoked_approval_count: retraction.revoked_approval_count,
+        },
+        Err(()) => Mvp15CompanionApprovalRetractionResult {
+            status: "blocked".to_string(),
+            reason: "native_authority_unavailable".to_string(),
+            applied: false,
+            requested_attestation_generation: input.attestation_generation,
+            minimum_attestation_generation: 0,
+            generation: 0,
+            revoked_approval_count: 0,
+        },
+    }
+}
+
+struct CompanionApprovalRetraction {
+    applied: bool,
+    requested_attestation_generation: Option<u64>,
+    minimum_attestation_generation: u64,
+    generation: u64,
+    revoked_approval_count: usize,
+}
+
+fn retract_companion_approvals(
+    attestation_generation: Option<u64>,
+) -> Result<CompanionApprovalRetraction, ()> {
+    let mut registry = approval_registry().lock().map_err(|_| ())?;
+    if let Some(attestation_generation) = attestation_generation {
+        if attestation_generation < registry.companion_authority.minimum_attestation_generation {
+            return Ok(CompanionApprovalRetraction {
+                applied: false,
+                requested_attestation_generation: Some(attestation_generation),
+                minimum_attestation_generation: registry
+                    .companion_authority
+                    .minimum_attestation_generation,
+                generation: registry.companion_authority.generation,
+                revoked_approval_count: 0,
+            });
+        }
+    }
+    let next_generation = registry
+        .companion_authority
+        .generation
+        .checked_add(1)
+        .ok_or(())?;
+    if let Some(attestation_generation) = attestation_generation {
+        registry.companion_authority.minimum_attestation_generation = attestation_generation;
+    }
+    registry.companion_authority.generation = next_generation;
+    registry.companion_authority.binding = None;
+    registry.companion_authority.companion_required = true;
+    let mut revoked_approval_count = 0;
+    for record in registry.records.values_mut() {
+        if record.companion_binding.is_some() && !record.companion_retracted {
+            record.companion_retracted = true;
+            revoked_approval_count += 1;
+        }
+    }
+    Ok(CompanionApprovalRetraction {
+        applied: true,
+        requested_attestation_generation: attestation_generation,
+        minimum_attestation_generation: registry.companion_authority.minimum_attestation_generation,
+        generation: registry.companion_authority.generation,
+        revoked_approval_count,
+    })
+}
+
 #[tauri::command]
 pub fn execute_asset_mutation(input: AssetMutationGuardInput) -> AssetMutationGuardResult {
     if input.phase != "execute" {
@@ -367,6 +565,933 @@ fn native_asset_mutation_enabled() -> bool {
     std::env::var("UAGENT_ENABLE_ASSET_MUTATION")
         .map(|value| value == "1")
         .unwrap_or(false)
+}
+
+/**
+ * Native, trusted-root-bound source of companion package evidence.  It accepts no
+ * renderer-provided manifest, module path, PID, or hash.  A positive result is
+ * possible only after the native observation registry has revalidated one live UE
+ * process and the OS module table identifies the exact installed companion DLL.
+ */
+#[tauri::command]
+pub fn attest_mvp15_companion(
+    input: Mvp15CompanionAttestationInput,
+) -> Mvp15CompanionAttestationResult {
+    let Some(attestation_generation) = input.attestation_generation.filter(|value| *value > 0)
+    else {
+        return finalize_companion_attestation(
+            blocked_companion_attestation("companion_generation_required"),
+            None,
+            None,
+        );
+    };
+    let trusted_root = match resolve_trusted_root_binding_by_id(&input.trusted_root_id) {
+        Ok(binding) => binding,
+        Err(_) => {
+            return finalize_companion_attestation(
+                blocked_companion_attestation("trusted_root_required"),
+                None,
+                Some(attestation_generation),
+            )
+        }
+    };
+    let candidate = trusted_root
+        .canonical_root
+        .join("Plugins")
+        .join("UAgentAssetTools");
+    let plugin_root = match std::fs::canonicalize(candidate) {
+        Ok(path) if path.starts_with(&trusted_root.canonical_root) && path.is_dir() => path,
+        _ => {
+            return finalize_companion_attestation(
+                blocked_companion_attestation("companion_plugin_not_installed"),
+                None,
+                Some(attestation_generation),
+            )
+        }
+    };
+    let Some(editor_session_id) = input
+        .editor_session_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return finalize_companion_attestation(
+            blocked_companion_attestation("companion_observation_required"),
+            None,
+            Some(attestation_generation),
+        );
+    };
+    let native_modules = match observe_native_loaded_modules_for_asset_mutation(
+        editor_session_id,
+        &trusted_root.root_id,
+    ) {
+        Ok(modules) => modules,
+        Err(reason) => {
+            return finalize_companion_attestation(
+                blocked_companion_attestation(redact_companion_observation_reason(reason)),
+                None,
+                Some(attestation_generation),
+            )
+        }
+    };
+    let mut result =
+        attest_companion_plugin_root_with_loaded_modules(&plugin_root, &native_modules);
+    if result.status != "observed" {
+        return finalize_companion_attestation(result, None, Some(attestation_generation));
+    }
+    // Hashing the installed image happens after the first OS module snapshot.
+    // Re-enumerate and re-hash the expected loaded modules before publishing so
+    // a DLL replacement/unload/reload cannot keep a stale positive result merely
+    // because the editor PID itself survived.
+    let post_hash_modules = match observe_native_loaded_modules_for_asset_mutation(
+        editor_session_id,
+        &trusted_root.root_id,
+    ) {
+        Ok(modules) => modules,
+        Err(reason) => {
+            return finalize_companion_attestation(
+                blocked_companion_attestation(redact_companion_observation_reason(reason)),
+                None,
+                Some(attestation_generation),
+            )
+        }
+    };
+    let post_hash_loaded_modules = match verify_loaded_companion_modules(
+        &plugin_root,
+        &result.installed_modules,
+        &post_hash_modules,
+    ) {
+        Ok(modules) => modules,
+        Err(reason) => {
+            return finalize_companion_attestation(
+                blocked_companion_attestation(reason),
+                None,
+                Some(attestation_generation),
+            )
+        }
+    };
+    if !same_companion_artifact_identity(&result.loaded_modules, &post_hash_loaded_modules) {
+        return finalize_companion_attestation(
+            blocked_companion_attestation("loaded_module_identity_changed_after_hash"),
+            None,
+            Some(attestation_generation),
+        );
+    }
+    result.loaded_modules = post_hash_loaded_modules;
+    // Revalidate the same native process identity once more before publishing it
+    // or binding future approvals to the companion generation.
+    let final_observation = match validate_native_asset_mutation_observation_for_root(
+        editor_session_id,
+        &trusted_root.root_id,
+    ) {
+        Ok(binding) => binding,
+        Err(reason) => {
+            return finalize_companion_attestation(
+                blocked_companion_attestation(redact_companion_observation_reason(reason)),
+                None,
+                Some(attestation_generation),
+            )
+        }
+    };
+    let companion_binding = companion_binding_from_attestation(
+        &trusted_root.root_id,
+        &final_observation,
+        &result,
+        attestation_generation,
+    );
+    finalize_companion_attestation(result, companion_binding, Some(attestation_generation))
+}
+
+fn same_companion_artifact_identity(
+    left: &[Mvp15CompanionArtifact],
+    right: &[Mvp15CompanionArtifact],
+) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|(left, right)| {
+            left.name == right.name && left.size == right.size && left.sha256 == right.sha256
+        })
+}
+
+fn blocked_companion_attestation(reason: &str) -> Mvp15CompanionAttestationResult {
+    Mvp15CompanionAttestationResult {
+        status: "blocked".to_string(),
+        reason: reason.to_string(),
+        manifest: None,
+        installed_modules: Vec::new(),
+        loaded_modules: Vec::new(),
+    }
+}
+
+fn finalize_companion_attestation(
+    result: Mvp15CompanionAttestationResult,
+    binding: Option<CompanionApprovalBinding>,
+    attestation_generation: Option<u64>,
+) -> Mvp15CompanionAttestationResult {
+    if result.status != "observed" {
+        let _ = retract_companion_approvals(attestation_generation);
+        return result;
+    }
+    let Some(binding) = binding else {
+        let _ = retract_companion_approvals(attestation_generation);
+        return blocked_companion_attestation("companion_native_authority_unavailable");
+    };
+    match activate_companion_approval_binding(binding) {
+        Ok(()) => result,
+        Err("companion_attestation_stale") => {
+            blocked_companion_attestation("companion_attestation_stale")
+        }
+        Err(_) => {
+            let _ = retract_companion_approvals(attestation_generation);
+            blocked_companion_attestation("companion_native_authority_unavailable")
+        }
+    }
+}
+
+fn companion_binding_from_attestation(
+    trusted_root_id: &str,
+    observation: &crate::ue_editor_process::AssetMutationObservationBinding,
+    result: &Mvp15CompanionAttestationResult,
+    attestation_generation: u64,
+) -> Option<CompanionApprovalBinding> {
+    let manifest = result.manifest.as_ref()?;
+    let manifest_sha256 = manifest.get("manifestSha256")?.as_str()?;
+    if !is_lower_hex(manifest_sha256, 64) {
+        return None;
+    }
+    let process_start_time = observation.process_start_time?;
+    let descriptor_identity = companion_descriptor_identity(manifest)?;
+    let source_identity = companion_source_identity(manifest)?;
+    let plugin_identity = companion_plugin_identity(manifest)?;
+    let package_identity = companion_package_identity(manifest)?;
+    let fingerprint = sha256_bytes(
+        format!(
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            trusted_root_id,
+            observation.session_id,
+            observation.process_id,
+            observation.pid_hash,
+            process_start_time,
+            manifest_sha256,
+            descriptor_identity,
+            source_identity,
+            plugin_identity,
+            package_identity,
+        )
+        .as_bytes(),
+    );
+    Some(CompanionApprovalBinding {
+        generation: 0,
+        attestation_generation,
+        fingerprint,
+        trusted_root_id: trusted_root_id.to_string(),
+        editor_session_id: observation.session_id.clone(),
+        process_id: observation.process_id.clone(),
+        pid_hash: observation.pid_hash.clone(),
+        process_start_time,
+        manifest_sha256: manifest_sha256.to_string(),
+        descriptor_identity,
+        source_identity,
+        plugin_identity,
+        package_identity,
+    })
+}
+
+fn companion_source_identity(manifest: &serde_json::Value) -> Option<String> {
+    let record = manifest.as_object()?;
+    let source_commit = record.get("sourceCommit")?.as_str()?;
+    let source_tree_sha256 = record.get("sourceTreeSha256")?.as_str()?;
+    let build_command_fingerprint = record.get("buildCommandFingerprint")?.as_str()?;
+    if !is_lower_hex(source_commit, 40)
+        || !is_lower_hex(source_tree_sha256, 64)
+        || !is_lower_hex(build_command_fingerprint, 64)
+    {
+        return None;
+    }
+    let canonical = serde_json::json!({
+        "buildCommandFingerprint": build_command_fingerprint,
+        "sourceCommit": source_commit,
+        "sourceTreeSha256": source_tree_sha256,
+    });
+    serde_json::to_vec(&canonical)
+        .ok()
+        .map(|bytes| sha256_bytes(&bytes))
+}
+
+fn companion_plugin_identity(manifest: &serde_json::Value) -> Option<String> {
+    let identity = manifest.get("uplugin")?.get("sha256")?.as_str()?;
+    is_lower_hex(identity, 64).then(|| identity.to_string())
+}
+
+fn companion_package_identity(manifest: &serde_json::Value) -> Option<String> {
+    let canonical = serde_json::json!({
+        "moduleIndex": manifest.get("moduleIndex")?,
+        "modules": manifest.get("modules")?,
+        "schema": manifest.get("schema")?,
+        "uplugin": manifest.get("uplugin")?,
+    });
+    serde_json::to_vec(&canonical)
+        .ok()
+        .map(|bytes| sha256_bytes(&bytes))
+}
+
+/// The native-attested companion manifest already names the exact generated
+/// schema and facade inventory.  Keep a separate canonical digest in the
+/// approval binding so a later descriptor/manifest substitution cannot be
+/// masked by a coincidental session identity match.
+fn companion_descriptor_identity(manifest: &serde_json::Value) -> Option<String> {
+    let record = manifest.as_object()?;
+    let artifact_sha = |field: &str| {
+        let value = record.get(field)?.get("sha256")?.as_str()?;
+        is_lower_hex(value, 64).then_some(value)
+    };
+    let schema_sha256 = artifact_sha("schema")?;
+    let uplugin_sha256 = artifact_sha("uplugin")?;
+    let tool_names = record
+        .get("toolNames")?
+        .as_array()?
+        .iter()
+        .map(serde_json::Value::as_str)
+        .collect::<Option<Vec<_>>>()?;
+    if tool_names.is_empty()
+        || tool_names
+            .iter()
+            .any(|name| name.is_empty() || name.len() > 128)
+    {
+        return None;
+    }
+    let canonical = serde_json::json!({
+        "schemaSha256": schema_sha256,
+        "toolNames": tool_names,
+        "upluginSha256": uplugin_sha256,
+    });
+    serde_json::to_vec(&canonical)
+        .ok()
+        .map(|bytes| sha256_bytes(&bytes))
+}
+
+fn activate_companion_approval_binding(
+    mut binding: CompanionApprovalBinding,
+) -> Result<(), &'static str> {
+    let mut registry = approval_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable")?;
+    if binding.attestation_generation <= registry.companion_authority.minimum_attestation_generation
+    {
+        return Err("companion_attestation_stale");
+    }
+    registry.companion_authority.generation = registry
+        .companion_authority
+        .generation
+        .checked_add(1)
+        .ok_or("native_authority_unavailable")?;
+    binding.generation = registry.companion_authority.generation;
+    registry.companion_authority.minimum_attestation_generation = binding.attestation_generation;
+    registry.companion_authority.companion_required = true;
+    for record in registry.records.values_mut() {
+        if record.companion_binding.is_some() && !record.companion_retracted {
+            record.companion_retracted = true;
+        }
+    }
+    registry.companion_authority.binding = Some(binding);
+    Ok(())
+}
+
+fn companion_binding_for_registration(
+    authority: &CompanionApprovalAuthority,
+    trusted_root_id: &str,
+    observation: &crate::ue_editor_process::AssetMutationObservationBinding,
+) -> Result<Option<CompanionApprovalBinding>, &'static str> {
+    let Some(binding) = authority.binding.as_ref() else {
+        if authority.companion_required {
+            return Err("companion_attestation_required");
+        }
+        // Legacy direct-native approvals predate the companion route.  They are
+        // intentionally unbound; a companion-backed approval always binds when
+        // a verified companion generation is current for this observation.
+        return Ok(None);
+    };
+    if binding.trusted_root_id != trusted_root_id
+        || binding.editor_session_id != observation.session_id
+        || binding.process_id != observation.process_id
+        || binding.pid_hash != observation.pid_hash
+        || observation.process_start_time != Some(binding.process_start_time)
+    {
+        return Err("companion_attestation_required");
+    }
+    Ok(Some(binding.clone()))
+}
+
+fn companion_record_has_forward_authority(
+    authority: &CompanionApprovalAuthority,
+    record: &ApprovalRecord,
+) -> bool {
+    let Some(record_binding) = record.companion_binding.as_ref() else {
+        return !authority.companion_required;
+    };
+    !record.companion_retracted
+        && authority
+            .binding
+            .as_ref()
+            .is_some_and(|current| current == record_binding)
+}
+
+fn companion_record_authorizes_phase(
+    authority: &CompanionApprovalAuthority,
+    record: &ApprovalRecord,
+    phase: &str,
+) -> bool {
+    companion_record_has_forward_authority(authority, record)
+        || (phase == "rollback"
+            && record.execute_started
+            && remaining_rollback_indices(record).next().is_some())
+}
+
+#[cfg(test)]
+fn attest_companion_plugin_root(plugin_root: &Path) -> Mvp15CompanionAttestationResult {
+    // Unit fixtures are deliberately negative-only.  The production command
+    // above cannot reach this path: it always requires a live native session.
+    attest_companion_plugin_root_with_loaded_modules(plugin_root, &[])
+}
+
+fn attest_companion_plugin_root_with_loaded_modules(
+    plugin_root: &Path,
+    native_modules: &[NativeLoadedModuleObservation],
+) -> Mvp15CompanionAttestationResult {
+    let manifest_path = plugin_root.join("UAgentAssetTools.build.json");
+    let manifest_metadata = match std::fs::symlink_metadata(&manifest_path) {
+        Ok(metadata)
+            if metadata.file_type().is_file()
+                && !metadata.file_type().is_symlink()
+                && metadata.len() <= MAX_COMPANION_MANIFEST_BYTES =>
+        {
+            metadata
+        }
+        _ => return blocked_companion_attestation("companion_manifest_not_available"),
+    };
+    let _ = manifest_metadata;
+    let manifest_bytes = match std::fs::read(&manifest_path) {
+        Ok(bytes) => bytes,
+        Err(_) => return blocked_companion_attestation("companion_manifest_read_failed"),
+    };
+    let manifest: serde_json::Value = match serde_json::from_slice(&manifest_bytes) {
+        Ok(value) => value,
+        Err(_) => return blocked_companion_attestation("companion_manifest_invalid"),
+    };
+    let Some(record) = manifest.as_object() else {
+        return blocked_companion_attestation("companion_manifest_invalid");
+    };
+    const MANIFEST_FIELDS: [&str; 22] = [
+        "schemaVersion",
+        "pluginId",
+        "pluginVersion",
+        "contractVersion",
+        "sourceCommit",
+        "sourceTreeSha256",
+        "dirty",
+        "ueVersion",
+        "ueBuildId",
+        "targetPlatform",
+        "configuration",
+        "compiler",
+        "windowsSdk",
+        "buildCommandFingerprint",
+        "uplugin",
+        "schema",
+        "moduleIndex",
+        "modules",
+        "toolNames",
+        "generatedAt",
+        "builder",
+        "manifestSha256",
+    ];
+    let keys = record.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    if keys.len() != MANIFEST_FIELDS.len()
+        || !MANIFEST_FIELDS.iter().all(|field| keys.contains(field))
+    {
+        return blocked_companion_attestation("companion_manifest_shape_invalid");
+    }
+    if let Err(reason) = validate_companion_manifest_metadata(record) {
+        return blocked_companion_attestation(reason);
+    }
+    let uplugin =
+        match parse_companion_artifact(record.get("uplugin"), Some("UAgentAssetTools.uplugin")) {
+            Ok(artifact) => artifact,
+            Err(reason) => return blocked_companion_attestation(reason),
+        };
+    let schema = match parse_companion_artifact(
+        record.get("schema"),
+        Some("uagent-asset-tools.schema.json"),
+    ) {
+        Ok(artifact) => artifact,
+        Err(reason) => return blocked_companion_attestation(reason),
+    };
+    let module_index =
+        match parse_companion_artifact(record.get("moduleIndex"), Some("UnrealEditor.modules")) {
+            Ok(artifact) => artifact,
+            Err(reason) => return blocked_companion_attestation(reason),
+        };
+    if !verify_companion_artifact(plugin_root.join(&uplugin.name), &uplugin)
+        || !verify_companion_artifact(plugin_root.join("Resources").join(&schema.name), &schema)
+        || !verify_companion_artifact(
+            plugin_root
+                .join("Binaries")
+                .join("Win64")
+                .join(&module_index.name),
+            &module_index,
+        )
+    {
+        return blocked_companion_attestation("companion_artifact_hash_mismatch");
+    }
+    let Some(module_values) = record.get("modules").and_then(serde_json::Value::as_array) else {
+        return blocked_companion_attestation("companion_modules_invalid");
+    };
+    if module_values.is_empty() {
+        return blocked_companion_attestation("companion_modules_invalid");
+    }
+    let mut installed_modules = Vec::with_capacity(module_values.len());
+    let mut names = BTreeSet::new();
+    let mut previous_name = String::new();
+    for value in module_values {
+        let artifact = match parse_companion_artifact(Some(value), None) {
+            Ok(artifact) if artifact.name.ends_with(".dll") => artifact,
+            Ok(_) => return blocked_companion_attestation("companion_modules_invalid"),
+            Err(reason) => return blocked_companion_attestation(reason),
+        };
+        if !previous_name.is_empty() && artifact.name <= previous_name
+            || !names.insert(artifact.name.clone())
+        {
+            return blocked_companion_attestation("companion_modules_invalid");
+        }
+        previous_name = artifact.name.clone();
+        if !verify_companion_artifact(
+            plugin_root
+                .join("Binaries")
+                .join("Win64")
+                .join(&artifact.name),
+            &artifact,
+        ) {
+            return blocked_companion_attestation("companion_artifact_hash_mismatch");
+        }
+        installed_modules.push(artifact);
+    }
+    let module_index_path = plugin_root
+        .join("Binaries")
+        .join("Win64")
+        .join(&module_index.name);
+    let module_index_json: serde_json::Value = match std::fs::read(&module_index_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    {
+        Some(value) => value,
+        None => return blocked_companion_attestation("companion_module_index_invalid"),
+    };
+    let Some(module_index_record) = module_index_json.as_object() else {
+        return blocked_companion_attestation("companion_module_index_invalid");
+    };
+    let module_index_keys = module_index_record
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let expected_module_index_keys = BTreeSet::from(["BuildId", "Modules"]);
+    let Some(module_mappings) = module_index_record
+        .get("Modules")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return blocked_companion_attestation("companion_module_index_invalid");
+    };
+    if module_index_keys != expected_module_index_keys
+        || module_index_record
+            .get("BuildId")
+            .and_then(serde_json::Value::as_str)
+            != Some("55116800")
+        || module_mappings.len() != names.len()
+        || names.iter().any(|file_name| {
+            let Some(module_name) = file_name
+                .strip_prefix("UnrealEditor-")
+                .and_then(|value| value.strip_suffix(".dll"))
+            else {
+                return true;
+            };
+            module_mappings
+                .get(module_name)
+                .and_then(serde_json::Value::as_str)
+                != Some(file_name.as_str())
+        })
+    {
+        return blocked_companion_attestation("companion_module_index_invalid");
+    }
+    let binaries_root = plugin_root.join("Binaries").join("Win64");
+    let entries = match std::fs::read_dir(&binaries_root) {
+        Ok(entries) => entries,
+        Err(_) => return blocked_companion_attestation("companion_package_layout_invalid"),
+    };
+    let mut actual_names = BTreeSet::new();
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => return blocked_companion_attestation("companion_package_layout_invalid"),
+        };
+        let metadata = match std::fs::symlink_metadata(entry.path()) {
+            Ok(metadata)
+                if metadata.file_type().is_file() && !metadata.file_type().is_symlink() =>
+            {
+                metadata
+            }
+            _ => return blocked_companion_attestation("companion_package_layout_invalid"),
+        };
+        let _ = metadata;
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            return blocked_companion_attestation("companion_package_layout_invalid");
+        };
+        actual_names.insert(name);
+    }
+    let mut expected_package_names = names.clone();
+    expected_package_names.insert(module_index.name);
+    if actual_names != expected_package_names {
+        return blocked_companion_attestation("companion_package_layout_invalid");
+    }
+
+    let loaded_modules =
+        match verify_loaded_companion_modules(plugin_root, &installed_modules, native_modules) {
+            Ok(modules) => modules,
+            Err(reason) => return blocked_companion_attestation(reason),
+        };
+    Mvp15CompanionAttestationResult {
+        status: "observed".to_string(),
+        reason: "loaded_module_identity_verified".to_string(),
+        manifest: Some(manifest),
+        installed_modules,
+        loaded_modules,
+    }
+}
+
+fn redact_companion_observation_reason(reason: &str) -> &'static str {
+    match reason {
+        "observation_session_stopped" => "companion_observation_stopped",
+        "observation_session_expired" | "native_process_observation_stale" => {
+            "companion_observation_stale"
+        }
+        "process_exited" => "companion_process_not_running",
+        "native_process_observation_required" => "companion_native_observation_required",
+        "platform_unsupported" => "companion_native_observation_unavailable",
+        _ => "companion_native_observation_unavailable",
+    }
+}
+
+fn verify_loaded_companion_modules(
+    plugin_root: &Path,
+    installed_modules: &[Mvp15CompanionArtifact],
+    native_modules: &[NativeLoadedModuleObservation],
+) -> Result<Vec<Mvp15CompanionArtifact>, &'static str> {
+    let mut loaded_modules = Vec::with_capacity(installed_modules.len());
+    for expected in installed_modules {
+        let candidates = native_modules
+            .iter()
+            .filter(|candidate| candidate.basename == expected.name)
+            .collect::<Vec<_>>();
+        let [candidate] = candidates.as_slice() else {
+            return Err(if candidates.is_empty() {
+                "loaded_module_not_observed"
+            } else {
+                "loaded_module_identity_ambiguous"
+            });
+        };
+        let installed_path = plugin_root
+            .join("Binaries")
+            .join("Win64")
+            .join(&expected.name);
+        let canonical_installed_path = std::fs::canonicalize(installed_path)
+            .map_err(|_| "companion_artifact_hash_mismatch")?;
+        if candidate.size != expected.size
+            || !companion_paths_equivalent(&candidate.canonical_path, &canonical_installed_path)
+        {
+            return Err("loaded_module_identity_mismatch");
+        }
+        let metadata = std::fs::symlink_metadata(&candidate.canonical_path)
+            .map_err(|_| "loaded_module_identity_mismatch")?;
+        if !metadata.file_type().is_file()
+            || metadata.file_type().is_symlink()
+            || metadata.len() != expected.size
+            || metadata.len() > MAX_COMPANION_ARTIFACT_BYTES
+        {
+            return Err("loaded_module_identity_mismatch");
+        }
+        let bytes = std::fs::read(&candidate.canonical_path)
+            .map_err(|_| "loaded_module_identity_mismatch")?;
+        let sha256 = sha256_bytes(&bytes);
+        if sha256 != expected.sha256 {
+            return Err("loaded_module_identity_mismatch");
+        }
+        loaded_modules.push(Mvp15CompanionArtifact {
+            name: candidate.basename.clone(),
+            size: metadata.len(),
+            sha256,
+        });
+    }
+    Ok(loaded_modules)
+}
+
+fn companion_paths_equivalent(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        left.to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy())
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+fn validate_companion_manifest_metadata(
+    record: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), &'static str> {
+    const TOOL_NAMES: [&str; 6] = [
+        "ue.asset.create_folder",
+        "ue.asset.duplicate",
+        "ue.asset.rename",
+        "ue.asset.move",
+        "ue.asset.delete",
+        "ue.asset.save",
+    ];
+    let valid_identity = manifest_string(record, "schemaVersion")
+        == Some("uagent.ue-companion-plugin.build-manifest.v1")
+        && manifest_string(record, "pluginId") == Some("UAgentAssetTools")
+        && manifest_string(record, "pluginVersion") == Some("0.1.0")
+        && manifest_string(record, "contractVersion") == Some("mvp15d.asset-tools.v1")
+        && record.get("dirty").and_then(serde_json::Value::as_bool) == Some(false)
+        && manifest_string(record, "ueVersion") == Some("5.8.0")
+        && manifest_string(record, "ueBuildId") == Some("55116800")
+        && manifest_string(record, "targetPlatform") == Some("Win64")
+        && manifest_string(record, "configuration") == Some("Development")
+        && manifest_string(record, "compiler") == Some("MSVC")
+        && manifest_string(record, "windowsSdk") == Some("Windows SDK")
+        && manifest_string(record, "sourceCommit").is_some_and(|value| is_lower_hex(value, 40))
+        && manifest_string(record, "sourceTreeSha256").is_some_and(|value| is_lower_hex(value, 64))
+        && manifest_string(record, "buildCommandFingerprint")
+            .is_some_and(|value| is_lower_hex(value, 64))
+        && manifest_string(record, "generatedAt").is_some_and(is_canonical_companion_timestamp);
+    if !valid_identity {
+        return Err("companion_manifest_identity_invalid");
+    }
+    let Some(tool_names) = record
+        .get("toolNames")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Err("companion_manifest_tool_names_invalid");
+    };
+    if tool_names.len() != TOOL_NAMES.len()
+        || tool_names
+            .iter()
+            .zip(TOOL_NAMES)
+            .any(|(value, expected)| value.as_str() != Some(expected))
+    {
+        return Err("companion_manifest_tool_names_invalid");
+    }
+    let Some(builder) = record.get("builder").and_then(serde_json::Value::as_object) else {
+        return Err("companion_manifest_builder_invalid");
+    };
+    if builder.len() != 2
+        || !builder.contains_key("kind")
+        || !builder.contains_key("name")
+        || !matches!(manifest_string(builder, "kind"), Some("local" | "ci"))
+        || !manifest_string(builder, "name").is_some_and(is_safe_companion_metadata)
+    {
+        return Err("companion_manifest_builder_invalid");
+    }
+    let Some(declared_self_hash) = manifest_string(record, "manifestSha256") else {
+        return Err("companion_manifest_self_hash_invalid");
+    };
+    if !is_lower_hex(declared_self_hash, 64) {
+        return Err("companion_manifest_self_hash_invalid");
+    }
+    let Some(computed_self_hash) = companion_manifest_self_hash(record) else {
+        return Err("companion_manifest_self_hash_invalid");
+    };
+    if declared_self_hash != computed_self_hash {
+        return Err("companion_manifest_self_hash_mismatch");
+    }
+    Ok(())
+}
+
+fn manifest_string<'a>(
+    record: &'a serde_json::Map<String, serde_json::Value>,
+    field: &str,
+) -> Option<&'a str> {
+    record.get(field).and_then(serde_json::Value::as_str)
+}
+
+fn companion_manifest_self_hash(
+    record: &serde_json::Map<String, serde_json::Value>,
+) -> Option<String> {
+    let mut without_self_hash = record.clone();
+    without_self_hash.remove("manifestSha256")?;
+    let mut canonical = String::new();
+    if !append_canonical_companion_json(
+        &serde_json::Value::Object(without_self_hash),
+        &mut canonical,
+    ) {
+        return None;
+    }
+    Some(sha256_bytes(canonical.as_bytes()))
+}
+
+fn append_canonical_companion_json(value: &serde_json::Value, output: &mut String) -> bool {
+    match value {
+        serde_json::Value::Null => {
+            output.push_str("null");
+            true
+        }
+        serde_json::Value::Bool(value) => {
+            output.push_str(if *value { "true" } else { "false" });
+            true
+        }
+        serde_json::Value::Number(value) => {
+            let Some(value) = value.as_u64() else {
+                return false;
+            };
+            output.push_str(&value.to_string());
+            true
+        }
+        serde_json::Value::String(value) => match serde_json::to_string(value) {
+            Ok(encoded) => {
+                output.push_str(&encoded);
+                true
+            }
+            Err(_) => false,
+        },
+        serde_json::Value::Array(values) => {
+            output.push('[');
+            for (index, value) in values.iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
+                }
+                if !append_canonical_companion_json(value, output) {
+                    return false;
+                }
+            }
+            output.push(']');
+            true
+        }
+        serde_json::Value::Object(record) => {
+            let mut keys = record.keys().collect::<Vec<_>>();
+            keys.sort_unstable();
+            output.push('{');
+            for (index, key) in keys.iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
+                }
+                let Ok(encoded_key) = serde_json::to_string(key) else {
+                    return false;
+                };
+                output.push_str(&encoded_key);
+                output.push(':');
+                let Some(value) = record.get(*key) else {
+                    return false;
+                };
+                if !append_canonical_companion_json(value, output) {
+                    return false;
+                }
+            }
+            output.push('}');
+            true
+        }
+    }
+}
+
+fn is_canonical_companion_timestamp(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 24
+        && [4, 7, 10, 13, 16, 19, 23]
+            .iter()
+            .zip([b'-', b'-', b'T', b':', b':', b'.', b'Z'])
+            .all(|(index, expected)| bytes[*index] == expected)
+        && bytes
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| ![4, 7, 10, 13, 16, 19, 23].contains(index))
+            .all(|(_, byte)| byte.is_ascii_digit())
+}
+
+fn is_safe_companion_metadata(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric()
+                || matches!(character, ' ' | '.' | '(' | ')' | '_' | '-')
+        })
+}
+
+fn is_safe_mcp_binding(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 512
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, ':' | '.' | '_' | '-')
+        })
+}
+
+fn parse_companion_artifact(
+    value: Option<&serde_json::Value>,
+    expected_name: Option<&str>,
+) -> Result<Mvp15CompanionArtifact, &'static str> {
+    let Some(record) = value.and_then(serde_json::Value::as_object) else {
+        return Err("companion_artifact_invalid");
+    };
+    if record.len() != 3
+        || !["name", "size", "sha256"]
+            .iter()
+            .all(|key| record.contains_key(*key))
+    {
+        return Err("companion_artifact_invalid");
+    }
+    let Some(name) = record.get("name").and_then(serde_json::Value::as_str) else {
+        return Err("companion_artifact_invalid");
+    };
+    let Some(size) = record.get("size").and_then(serde_json::Value::as_u64) else {
+        return Err("companion_artifact_invalid");
+    };
+    let Some(sha256) = record.get("sha256").and_then(serde_json::Value::as_str) else {
+        return Err("companion_artifact_invalid");
+    };
+    if !is_safe_companion_file_name(name)
+        || expected_name.is_some_and(|expected| expected != name)
+        || !is_lower_hex(sha256, 64)
+    {
+        return Err("companion_artifact_invalid");
+    }
+    Ok(Mvp15CompanionArtifact {
+        name: name.to_string(),
+        size,
+        sha256: sha256.to_string(),
+    })
+}
+
+fn verify_companion_artifact(path: PathBuf, expected: &Mvp15CompanionArtifact) -> bool {
+    let metadata = match std::fs::symlink_metadata(&path) {
+        Ok(metadata)
+            if metadata.file_type().is_file()
+                && !metadata.file_type().is_symlink()
+                && metadata.len() == expected.size
+                && metadata.len() <= MAX_COMPANION_ARTIFACT_BYTES =>
+        {
+            metadata
+        }
+        _ => return false,
+    };
+    let _ = metadata;
+    match std::fs::read(path) {
+        Ok(bytes) => sha256_bytes(&bytes) == expected.sha256,
+        Err(_) => false,
+    }
+}
+
+fn is_safe_companion_file_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && name.len() <= 255
+        && name.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
 }
 
 #[cfg(test)]
@@ -423,30 +1548,64 @@ fn record_asset_mutation_outcome_at(
     {
         return blocked_outcome(&input, "sensitive_outcome_blocked");
     }
-    if input.phase == "execute" && !input.success {
-        let has_inverse = inverse_operation(&record.operations[index]).is_some();
-        let partial_failure_is_owned = input.side_effect_observed
-            && input.rollback_available
-            && has_inverse
-            && input
-                .evidence_id
-                .as_deref()
-                .map(str::trim)
-                .is_some_and(|value| !value.is_empty())
-            && input
-                .reason_code
-                .as_deref()
-                .map(str::trim)
-                .is_some_and(|value| !value.is_empty() && value != "none");
-        if input.side_effect_observed != partial_failure_is_owned
-            || input.rollback_available != partial_failure_is_owned
-        {
-            return blocked_outcome(&input, "partial_failure_contract_invalid");
+    let has_inverse = inverse_operation(&record.operations[index]).is_some();
+    let has_failure_evidence = input
+        .evidence_id
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty())
+        && input
+            .reason_code
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty() && value != "none");
+    let effect_state_valid = match input.effect_state.as_str() {
+        // A successful UE call still requires a post-call observation.  Forward
+        // success may retain its stored inverse; a successful inverse is terminal
+        // for that individual action and must not claim a new forward inverse.
+        "known_effect" => {
+            input.success
+            && input.side_effect_observed
+            // The authoritative inverse availability is recomputed from the
+            // stored accepted plan below; callers may not create an inverse by
+            // choosing this boolean.
+            && (input.phase == "execute" || !input.rollback_available)
         }
+        // A failed call may enter bounded recovery only when the exact owned
+        // inverse and stable effect evidence exist.  This is the only partial
+        // effect shape accepted by native.
+        "known_partial" => {
+            !input.success
+                && input.side_effect_observed
+                && input.rollback_available
+                && has_inverse
+                && has_failure_evidence
+        }
+        // Complete observation of no effect is distinct from an inconclusive
+        // response.  Neither can create an inverse or ownership entry.
+        "known_none" => {
+            !input.success
+                && !input.side_effect_observed
+                && !input.rollback_available
+                && has_failure_evidence
+        }
+        // The call crossed the guard but no final state could be observed.  Keep
+        // the registration alive for the existing bounded recovery window and
+        // never normalize this into a zero-effect outcome.
+        "unknown" => {
+            !input.success
+                && !input.side_effect_observed
+                && !input.rollback_available
+                && has_failure_evidence
+        }
+        _ => false,
+    };
+    if !effect_state_valid {
+        return blocked_outcome(&input, "effect_state_contract_invalid");
     }
     record.in_flight = None;
     if input.phase == "execute" {
-        if input.success || (input.side_effect_observed && input.rollback_available) {
+        if input.success || input.effect_state == "known_partial" {
             record.successful_execute.push(index);
         }
         if input.success {
@@ -469,6 +1628,8 @@ fn record_asset_mutation_outcome_at(
         status: "recorded".to_string(),
         reason: if input.success {
             "operation_succeeded"
+        } else if input.effect_state == "unknown" {
+            "operation_effect_unknown"
         } else {
             "operation_failed"
         }
@@ -477,6 +1638,7 @@ fn record_asset_mutation_outcome_at(
         phase: input.phase,
         operation_id: input.operation_id,
         rollback_available,
+        effect_state: input.effect_state,
         terminal,
     };
     if let Some(lease) = terminal_lease {
@@ -682,8 +1844,13 @@ fn register_asset_mutation_approval_with_gate_at(
     let trusted_root_id = trusted_root.root_id.clone();
     let registration_digest = sha256_bytes(
         format!(
-            "{}|{}|{}|{}|{}",
-            token_hash, input.change_set_id, input.run_id, input.aggregate_dry_run_hash, expires_at
+            "{}|{}|{}|{}|{}|{}",
+            token_hash,
+            input.change_set_id,
+            input.run_id,
+            input.mcp_binding,
+            input.aggregate_dry_run_hash,
+            expires_at
         )
         .as_bytes(),
     );
@@ -731,6 +1898,14 @@ fn register_asset_mutation_approval_with_gate_at(
     {
         return blocked_registration("native_authority_unavailable");
     }
+    let companion_binding = match companion_binding_for_registration(
+        &registry.companion_authority,
+        &trusted_root_id,
+        &final_observation,
+    ) {
+        Ok(binding) => binding,
+        Err(reason) => return blocked_registration(reason),
+    };
     if registry
         .records
         .values()
@@ -747,6 +1922,7 @@ fn register_asset_mutation_approval_with_gate_at(
         registration_id.clone(),
         ApprovalRecord {
             token_hash,
+            native_created_at: issued_at,
             change_set_id: input.change_set_id,
             run_id: input.run_id,
             project_binding_id: input.project_binding_id,
@@ -755,10 +1931,13 @@ fn register_asset_mutation_approval_with_gate_at(
             canonical_root,
             content_root,
             editor_session_id: observation.session_id,
+            mcp_binding: input.mcp_binding,
             process_id: observation.process_id,
             pid_hash: observation.pid_hash,
             aggregate_dry_run_hash: input.aggregate_dry_run_hash,
             aggregate_args_hash: input.aggregate_args_hash,
+            companion_binding,
+            companion_retracted: false,
             expires_at,
             transaction_deadline: None,
             recovery_deadline: None,
@@ -794,7 +1973,19 @@ fn authorize_asset_mutation_with_gate_at(
         return blocked_guard(&input, "feature_disabled");
     }
     let snapshot = match approval_registry().lock() {
-        Ok(registry) => registry.records.get(&input.registration_id).cloned(),
+        Ok(registry) => {
+            let Some(record) = registry.records.get(&input.registration_id) else {
+                return blocked_guard(&input, "approval_registration_unknown");
+            };
+            if !companion_record_authorizes_phase(
+                &registry.companion_authority,
+                record,
+                &input.phase,
+            ) {
+                return blocked_guard(&input, "companion_attestation_retracted");
+            }
+            Some(record.clone())
+        }
         Err(_) => return blocked_guard(&input, "native_authority_unavailable"),
     };
     let Some(snapshot) = snapshot else {
@@ -864,6 +2055,15 @@ fn authorize_asset_mutation_with_gate_at(
         Ok(registry) => registry,
         Err(_) => return blocked_guard(&input, "native_authority_unavailable"),
     };
+    let companion_current = registry
+        .records
+        .get(&input.registration_id)
+        .is_some_and(|record| {
+            companion_record_authorizes_phase(&registry.companion_authority, record, &input.phase)
+        });
+    if !companion_current {
+        return blocked_guard(&input, "companion_attestation_retracted");
+    }
     let Some(record) = registry.records.get_mut(&input.registration_id) else {
         return blocked_guard(&input, "approval_registration_unknown");
     };
@@ -917,6 +2117,9 @@ fn authorize_asset_mutation_with_gate_at(
     }
     if record.project_binding_id != input.project_binding_id {
         return blocked_guard(&input, "project_binding_mismatch");
+    }
+    if record.mcp_binding != input.mcp_binding {
+        return blocked_guard(&input, "mcp_binding_mismatch");
     }
     if record.aggregate_dry_run_hash != input.aggregate_dry_run_hash {
         return blocked_guard(&input, "aggregate_dry_run_hash_mismatch");
@@ -1008,7 +2211,108 @@ fn authorize_asset_mutation_with_gate_at(
             &input.phase,
             &format!("{}:{}", input.registration_id, input.operation.operation_id),
         )),
+        accepted_plan_binding: Some(native_accepted_plan_binding(&input.registration_id, record)),
+        native_created_at: Some(record.native_created_at),
+        connection_generation: record
+            .companion_binding
+            .as_ref()
+            .map(|binding| binding.generation),
+        session_generation: record
+            .companion_binding
+            .as_ref()
+            .map(|binding| binding.attestation_generation),
+        native_source_identity: record
+            .companion_binding
+            .as_ref()
+            .map(|binding| binding.source_identity.clone()),
+        native_manifest_identity: record
+            .companion_binding
+            .as_ref()
+            .map(|binding| binding.manifest_sha256.clone()),
+        native_plugin_identity: record
+            .companion_binding
+            .as_ref()
+            .map(|binding| binding.plugin_identity.clone()),
+        native_package_identity: record
+            .companion_binding
+            .as_ref()
+            .map(|binding| binding.package_identity.clone()),
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+struct NativeAcceptedPlanBindingMaterial {
+    contract: String,
+    registration_id: String,
+    change_set_id: String,
+    run_id: String,
+    project_binding_id: String,
+    mcp_binding: String,
+    aggregate_dry_run_hash: String,
+    aggregate_args_hash: String,
+    operations: Vec<AssetMutationApprovalOperation>,
+    companion: Option<NativeAcceptedPlanCompanionMaterial>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+struct NativeAcceptedPlanCompanionMaterial {
+    connection_generation: u64,
+    session_generation: u64,
+    fingerprint: String,
+    source_identity: String,
+    manifest_identity: String,
+    plugin_identity: String,
+    package_identity: String,
+}
+
+fn native_accepted_plan_binding_material(
+    registration_id: &str,
+    record: &ApprovalRecord,
+) -> NativeAcceptedPlanBindingMaterial {
+    let companion =
+        record
+            .companion_binding
+            .as_ref()
+            .map(|binding| NativeAcceptedPlanCompanionMaterial {
+                connection_generation: binding.generation,
+                session_generation: binding.attestation_generation,
+                fingerprint: binding.fingerprint.clone(),
+                source_identity: binding.source_identity.clone(),
+                manifest_identity: binding.manifest_sha256.clone(),
+                plugin_identity: binding.plugin_identity.clone(),
+                package_identity: binding.package_identity.clone(),
+            });
+    NativeAcceptedPlanBindingMaterial {
+        contract: "mvp15d-native-accepted-plan-v2".to_string(),
+        registration_id: registration_id.to_string(),
+        change_set_id: record.change_set_id.clone(),
+        run_id: record.run_id.clone(),
+        project_binding_id: record.project_binding_id.clone(),
+        mcp_binding: record.mcp_binding.clone(),
+        aggregate_dry_run_hash: record.aggregate_dry_run_hash.clone(),
+        aggregate_args_hash: record.aggregate_args_hash.clone(),
+        operations: record.operations.clone(),
+        companion,
+    }
+}
+
+fn hash_native_accepted_plan_binding_material(
+    material: &NativeAcceptedPlanBindingMaterial,
+) -> String {
+    let serialized =
+        serde_json::to_vec(material).expect("accepted native plan material must serialize");
+    sha256_bytes(&serialized)
+}
+
+fn native_accepted_plan_binding(registration_id: &str, record: &ApprovalRecord) -> String {
+    hash_native_accepted_plan_binding_material(&native_accepted_plan_binding_material(
+        registration_id,
+        record,
+    ))
 }
 
 fn validate_registration(input: &RegisterAssetMutationApprovalInput, _now: u64) -> Option<String> {
@@ -1017,10 +2321,14 @@ fn validate_registration(input: &RegisterAssetMutationApprovalInput, _now: u64) 
         &input.run_id,
         &input.project_binding_id,
         &input.editor_session_id,
+        &input.mcp_binding,
     ] {
         if value.trim().is_empty() {
             return Some("approval_binding_incomplete".to_string());
         }
+    }
+    if !is_safe_mcp_binding(&input.mcp_binding) {
+        return Some("mcp_binding_invalid".to_string());
     }
     if input.requested_ttl_ms == 0 {
         return Some("approval_ttl_invalid".to_string());
@@ -1447,6 +2755,14 @@ fn blocked_guard(input: &AssetMutationGuardInput, reason: &str) -> AssetMutation
         operation_index: input.operation_index,
         operation_count: input.operation_count,
         evidence_id: None,
+        accepted_plan_binding: None,
+        native_created_at: None,
+        connection_generation: None,
+        session_generation: None,
+        native_source_identity: None,
+        native_manifest_identity: None,
+        native_plugin_identity: None,
+        native_package_identity: None,
     }
 }
 
@@ -1461,6 +2777,7 @@ fn blocked_outcome(
         phase: input.phase.clone(),
         operation_id: input.operation_id.clone(),
         rollback_available: false,
+        effect_state: input.effect_state.clone(),
         terminal: false,
     }
 }
@@ -1651,8 +2968,40 @@ mod tests {
     };
     use std::sync::Arc;
 
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    #[serde(deny_unknown_fields)]
+    struct NativeBindingTestVector {
+        schema_version: String,
+        binding_material: NativeAcceptedPlanBindingMaterial,
+        native_guard_facts: NativeBindingGuardFacts,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    #[serde(deny_unknown_fields)]
+    struct NativeBindingGuardFacts {
+        accepted_plan_binding: String,
+        native_registration_id: String,
+        native_phase: String,
+        native_operation_index: usize,
+        native_operation_count: usize,
+        native_created_at: u64,
+        connection_generation: u64,
+        session_generation: u64,
+        native_source_identity: String,
+        native_manifest_identity: String,
+        native_plugin_identity: String,
+        native_package_identity: String,
+    }
+
     fn hex(character: char, length: usize) -> String {
         std::iter::repeat(character).take(length).collect()
+    }
+
+    fn drift_lower_hex(value: &str) -> String {
+        let replacement = if value.starts_with('a') { "b" } else { "a" };
+        format!("{replacement}{}", &value[1..])
     }
 
     fn test_root(label: &str) -> PathBuf {
@@ -1662,6 +3011,608 @@ mod tests {
         std::fs::create_dir_all(root.join("Content")).unwrap();
         std::fs::write(root.join("Game.uproject"), "{}").unwrap();
         root
+    }
+
+    fn companion_artifact(name: &str, bytes: &[u8]) -> serde_json::Value {
+        serde_json::json!({
+            "name": name,
+            "size": bytes.len(),
+            "sha256": sha256_bytes(bytes),
+        })
+    }
+
+    fn write_companion_manifest(root: &Path, manifest: &mut serde_json::Value) {
+        let record = manifest.as_object_mut().unwrap();
+        let self_hash = companion_manifest_self_hash(record).unwrap();
+        record.insert(
+            "manifestSha256".to_string(),
+            serde_json::Value::String(self_hash),
+        );
+        std::fs::write(
+            root.join("UAgentAssetTools.build.json"),
+            serde_json::to_vec(manifest).unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn companion_package_root(label: &str) -> (PathBuf, serde_json::Value) {
+        static NEXT_ROOT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let suffix = NEXT_ROOT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "uagent-companion-{label}-{}-{suffix}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("Resources")).unwrap();
+        std::fs::create_dir_all(root.join("Binaries").join("Win64")).unwrap();
+        let uplugin = b"plugin descriptor";
+        let schema = b"contract schema";
+        let module = b"companion module";
+        let module_index = br#"{"BuildId":"55116800","Modules":{"UAgentAssetTools":"UnrealEditor-UAgentAssetTools.dll"}}"#;
+        std::fs::write(root.join("UAgentAssetTools.uplugin"), uplugin).unwrap();
+        std::fs::write(
+            root.join("Resources/uagent-asset-tools.schema.json"),
+            schema,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("Binaries/Win64/UnrealEditor-UAgentAssetTools.dll"),
+            module,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("Binaries/Win64/UnrealEditor.modules"),
+            module_index,
+        )
+        .unwrap();
+        let mut manifest = serde_json::json!({
+            "schemaVersion": "uagent.ue-companion-plugin.build-manifest.v1",
+            "pluginId": "UAgentAssetTools",
+            "pluginVersion": "0.1.0",
+            "contractVersion": "mvp15d.asset-tools.v1",
+            "sourceCommit": hex('a', 40),
+            "sourceTreeSha256": hex('b', 64),
+            "dirty": false,
+            "ueVersion": "5.8.0",
+            "ueBuildId": "55116800",
+            "targetPlatform": "Win64",
+            "configuration": "Development",
+            "compiler": "MSVC",
+            "windowsSdk": "Windows SDK",
+            "buildCommandFingerprint": hex('c', 64),
+            "uplugin": companion_artifact("UAgentAssetTools.uplugin", uplugin),
+            "schema": companion_artifact("uagent-asset-tools.schema.json", schema),
+            "moduleIndex": companion_artifact("UnrealEditor.modules", module_index),
+            "modules": [companion_artifact("UnrealEditor-UAgentAssetTools.dll", module)],
+            "toolNames": [
+                "ue.asset.create_folder",
+                "ue.asset.duplicate",
+                "ue.asset.rename",
+                "ue.asset.move",
+                "ue.asset.delete",
+                "ue.asset.save"
+            ],
+            "generatedAt": "2026-07-20T00:00:00.000Z",
+            "builder": { "kind": "local", "name": "native-test" },
+            "manifestSha256": ""
+        });
+        write_companion_manifest(&root, &mut manifest);
+        (root, manifest)
+    }
+
+    #[test]
+    fn companion_attestation_rejects_manifest_and_package_tampering_before_readiness() {
+        let _test_guard = clear_registry();
+        let (root, mut manifest) = companion_package_root("attestation");
+        let observed = attest_companion_plugin_root(&root);
+        assert_eq!(observed.status, "blocked");
+        assert_eq!(observed.reason, "loaded_module_not_observed");
+        assert!(observed.installed_modules.is_empty());
+        assert!(observed.manifest.is_none());
+
+        manifest
+            .as_object_mut()
+            .unwrap()
+            .insert("unexpected".to_string(), serde_json::Value::Bool(true));
+        std::fs::write(
+            root.join("UAgentAssetTools.build.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            attest_companion_plugin_root(&root).reason,
+            "companion_manifest_shape_invalid"
+        );
+
+        let (root, mut manifest) = companion_package_root("dirty");
+        manifest
+            .as_object_mut()
+            .unwrap()
+            .insert("dirty".to_string(), serde_json::Value::Bool(true));
+        write_companion_manifest(&root, &mut manifest);
+        assert_eq!(
+            attest_companion_plugin_root(&root).reason,
+            "companion_manifest_identity_invalid"
+        );
+
+        let (root, mut manifest) = companion_package_root("self-hash");
+        manifest.as_object_mut().unwrap().insert(
+            "manifestSha256".to_string(),
+            serde_json::Value::String(hex('0', 64)),
+        );
+        std::fs::write(
+            root.join("UAgentAssetTools.build.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            attest_companion_plugin_root(&root).reason,
+            "companion_manifest_self_hash_mismatch"
+        );
+
+        let (root, _) = companion_package_root("artifact");
+        std::fs::write(
+            root.join("Binaries/Win64/UnrealEditor-UAgentAssetTools.dll"),
+            b"changed companion module",
+        )
+        .unwrap();
+        assert_eq!(
+            attest_companion_plugin_root(&root).reason,
+            "companion_artifact_hash_mismatch"
+        );
+
+        let (root, _) = companion_package_root("extra");
+        std::fs::write(
+            root.join("Binaries/Win64/UnrealEditor-UAgentAssetTools.pdb"),
+            b"debug",
+        )
+        .unwrap();
+        assert_eq!(
+            attest_companion_plugin_root(&root).reason,
+            "companion_package_layout_invalid"
+        );
+    }
+
+    #[test]
+    fn companion_post_hash_module_identity_requires_exact_membership_and_hashes() {
+        let _test_guard = clear_registry();
+        let before = vec![Mvp15CompanionArtifact {
+            name: "UnrealEditor-UAgentAssetTools.dll".to_string(),
+            size: 17,
+            sha256: hex('a', 64),
+        }];
+        assert!(same_companion_artifact_identity(&before, &before));
+        assert!(!same_companion_artifact_identity(
+            &before,
+            &[Mvp15CompanionArtifact {
+                name: "UnrealEditor-UAgentAssetTools.dll".to_string(),
+                size: 17,
+                sha256: hex('b', 64),
+            }],
+        ));
+        assert!(!same_companion_artifact_identity(&before, &[]));
+    }
+
+    #[test]
+    fn companion_native_module_bridge_rejects_fixture_observations() {
+        let _test_guard = clear_registry();
+        let input = registration("companion-fixture", 44);
+        let trusted_root = resolve_trusted_root_binding(&input.trusted_project_root).unwrap();
+        assert_eq!(
+            validate_native_asset_mutation_observation_for_root(
+                &input.editor_session_id,
+                &trusted_root.root_id,
+            )
+            .unwrap_err(),
+            "native_process_observation_required"
+        );
+    }
+
+    #[test]
+    fn companion_binding_fingerprints_descriptor_manifest_and_process_start() {
+        let _test_guard = clear_registry();
+        let (root, manifest) = companion_package_root("binding-fingerprint");
+        let observation = crate::ue_editor_process::AssetMutationObservationBinding {
+            session_id: "session:binding".to_string(),
+            process_id: "process:binding".to_string(),
+            project_id: "project:binding".to_string(),
+            root_id: "root:binding".to_string(),
+            canonical_root: root.clone(),
+            pid_hash: "pid:binding".to_string(),
+            pid: Some(77),
+            process_start_time: Some(170),
+            process_source: "native".to_string(),
+        };
+        let result = Mvp15CompanionAttestationResult {
+            status: "observed".to_string(),
+            reason: "loaded_module_identity_verified".to_string(),
+            manifest: Some(manifest.clone()),
+            installed_modules: Vec::new(),
+            loaded_modules: Vec::new(),
+        };
+        let binding = companion_binding_from_attestation("root:binding", &observation, &result, 4)
+            .expect("verified native observation and manifest should bind");
+        assert_eq!(binding.process_start_time, 170);
+        assert!(is_lower_hex(&binding.manifest_sha256, 64));
+        assert!(is_lower_hex(&binding.descriptor_identity, 64));
+        assert!(is_lower_hex(&binding.source_identity, 64));
+        assert!(is_lower_hex(&binding.plugin_identity, 64));
+        assert!(is_lower_hex(&binding.package_identity, 64));
+
+        let mut changed_manifest = manifest;
+        changed_manifest["toolNames"][0] =
+            serde_json::Value::String("ue.asset.changed".to_string());
+        let changed_result = Mvp15CompanionAttestationResult {
+            manifest: Some(changed_manifest),
+            ..result.clone()
+        };
+        let changed_descriptor =
+            companion_binding_from_attestation("root:binding", &observation, &changed_result, 4)
+                .expect("descriptor identity calculation should remain deterministic");
+        assert_ne!(
+            binding.descriptor_identity,
+            changed_descriptor.descriptor_identity
+        );
+
+        let restarted_observation = crate::ue_editor_process::AssetMutationObservationBinding {
+            process_start_time: Some(171),
+            ..observation
+        };
+        let restarted =
+            companion_binding_from_attestation("root:binding", &restarted_observation, &result, 4)
+                .expect("restarted process identity should bind independently");
+        assert_ne!(binding.fingerprint, restarted.fingerprint);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn companion_blocked_transition_revokes_bound_approval_before_any_guard_can_accept_it() {
+        let _test_guard = clear_registry();
+        let now = 45;
+        let input = registration("companion-retraction", now);
+        let registered = register_asset_mutation_approval_at(input.clone(), now);
+        let binding = CompanionApprovalBinding {
+            generation: 7,
+            attestation_generation: 7,
+            fingerprint: hex('f', 64),
+            trusted_root_id: registered.trusted_root_id.clone(),
+            editor_session_id: input.editor_session_id.clone(),
+            process_id: "process:asset-fixture:companion-retraction".to_string(),
+            pid_hash: "pid:asset-fixture:companion-retraction".to_string(),
+            process_start_time: 45,
+            manifest_sha256: hex('a', 64),
+            descriptor_identity: hex('b', 64),
+            source_identity: hex('c', 64),
+            plugin_identity: hex('d', 64),
+            package_identity: hex('e', 64),
+        };
+        {
+            let mut registry = approval_registry().lock().unwrap();
+            registry.companion_authority.generation = binding.generation;
+            registry.companion_authority.minimum_attestation_generation =
+                binding.attestation_generation;
+            registry.companion_authority.binding = Some(binding.clone());
+            registry.companion_authority.companion_required = true;
+            registry
+                .records
+                .get_mut(&registered.registration_id)
+                .unwrap()
+                .companion_binding = Some(binding);
+        }
+
+        let blocked = finalize_companion_attestation(
+            blocked_companion_attestation("companion_observation_stale"),
+            None,
+            Some(7),
+        );
+        assert_eq!(blocked.status, "blocked");
+        assert_eq!(blocked.reason, "companion_observation_stale");
+        let registry = approval_registry().lock().unwrap();
+        assert_eq!(registry.companion_authority.generation, 8);
+        assert_eq!(
+            registry.companion_authority.minimum_attestation_generation,
+            7
+        );
+        assert!(registry.companion_authority.binding.is_none());
+        assert!(
+            registry
+                .records
+                .get(&registered.registration_id)
+                .unwrap()
+                .companion_retracted
+        );
+        drop(registry);
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(
+                    &input,
+                    &registered.registration_id,
+                    "execute",
+                    0,
+                    registered.approval_token.as_deref(),
+                ),
+                now + 1,
+            )
+            .reason,
+            "companion_attestation_retracted"
+        );
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(&input, &registered.registration_id, "rollback", 0, None,),
+                now + 1,
+            )
+            .reason,
+            "companion_attestation_retracted"
+        );
+    }
+
+    #[test]
+    fn stale_companion_attestation_cannot_replace_a_newer_native_binding() {
+        let _test_guard = clear_registry();
+        let current = CompanionApprovalBinding {
+            generation: 9,
+            attestation_generation: 9,
+            fingerprint: hex('a', 64),
+            trusted_root_id: "root:current".to_string(),
+            editor_session_id: "session:current".to_string(),
+            process_id: "process:current".to_string(),
+            pid_hash: "pid:current".to_string(),
+            process_start_time: 90,
+            manifest_sha256: hex('c', 64),
+            descriptor_identity: hex('d', 64),
+            source_identity: hex('e', 64),
+            plugin_identity: hex('f', 64),
+            package_identity: hex('1', 64),
+        };
+        {
+            let mut registry = approval_registry().lock().unwrap();
+            registry.companion_authority.generation = current.generation;
+            registry.companion_authority.minimum_attestation_generation =
+                current.attestation_generation;
+            registry.companion_authority.binding = Some(current.clone());
+        }
+        let stale = CompanionApprovalBinding {
+            generation: 0,
+            attestation_generation: 8,
+            fingerprint: hex('b', 64),
+            trusted_root_id: "root:stale".to_string(),
+            editor_session_id: "session:stale".to_string(),
+            process_id: "process:stale".to_string(),
+            pid_hash: "pid:stale".to_string(),
+            process_start_time: 80,
+            manifest_sha256: hex('e', 64),
+            descriptor_identity: hex('f', 64),
+            source_identity: hex('1', 64),
+            plugin_identity: hex('2', 64),
+            package_identity: hex('3', 64),
+        };
+        assert_eq!(
+            activate_companion_approval_binding(stale),
+            Err("companion_attestation_stale")
+        );
+        let registry = approval_registry().lock().unwrap();
+        assert_eq!(
+            registry.companion_authority.binding.as_ref(),
+            Some(&current)
+        );
+        assert_eq!(registry.companion_authority.generation, 9);
+        assert_eq!(
+            registry.companion_authority.minimum_attestation_generation,
+            9
+        );
+    }
+
+    #[test]
+    fn stale_companion_retraction_is_explicit_and_preserves_newer_native_authority() {
+        let _test_guard = clear_registry();
+        let current = CompanionApprovalBinding {
+            generation: 12,
+            attestation_generation: 19,
+            fingerprint: hex('a', 64),
+            trusted_root_id: "root:current-retraction".to_string(),
+            editor_session_id: "session:current-retraction".to_string(),
+            process_id: "process:current-retraction".to_string(),
+            pid_hash: "pid:current-retraction".to_string(),
+            process_start_time: 190,
+            manifest_sha256: hex('b', 64),
+            descriptor_identity: hex('c', 64),
+            source_identity: hex('d', 64),
+            plugin_identity: hex('e', 64),
+            package_identity: hex('f', 64),
+        };
+        {
+            let mut registry = approval_registry().lock().unwrap();
+            registry.companion_authority.generation = current.generation;
+            registry.companion_authority.minimum_attestation_generation =
+                current.attestation_generation;
+            registry.companion_authority.binding = Some(current.clone());
+        }
+
+        let stale = retract_mvp15_companion_approvals(Mvp15CompanionApprovalRetractionInput {
+            attestation_generation: Some(18),
+        });
+        assert_eq!(stale.status, "stale");
+        assert_eq!(stale.reason, "companion_retraction_stale");
+        assert!(!stale.applied);
+        assert_eq!(stale.requested_attestation_generation, Some(18));
+        assert_eq!(stale.minimum_attestation_generation, 19);
+        assert_eq!(stale.generation, 12);
+        assert_eq!(stale.revoked_approval_count, 0);
+        assert_eq!(
+            approval_registry()
+                .lock()
+                .unwrap()
+                .companion_authority
+                .binding
+                .as_ref(),
+            Some(&current)
+        );
+
+        let applied = retract_mvp15_companion_approvals(Mvp15CompanionApprovalRetractionInput {
+            attestation_generation: Some(19),
+        });
+        assert_eq!(applied.status, "retracted");
+        assert!(applied.applied);
+        assert_eq!(applied.requested_attestation_generation, Some(19));
+        assert_eq!(applied.minimum_attestation_generation, 19);
+        assert_eq!(applied.generation, 13);
+        assert!(approval_registry()
+            .lock()
+            .unwrap()
+            .companion_authority
+            .binding
+            .is_none());
+    }
+
+    #[test]
+    fn unconditional_companion_retraction_establishes_zero_authority_without_lowering_the_floor() {
+        let _test_guard = clear_registry();
+        let current = CompanionApprovalBinding {
+            generation: 12,
+            attestation_generation: 19,
+            fingerprint: hex('a', 64),
+            trusted_root_id: "root:baseline".to_string(),
+            editor_session_id: "session:baseline".to_string(),
+            process_id: "process:baseline".to_string(),
+            pid_hash: "pid:baseline".to_string(),
+            process_start_time: 190,
+            manifest_sha256: hex('b', 64),
+            descriptor_identity: hex('c', 64),
+            source_identity: hex('d', 64),
+            plugin_identity: hex('e', 64),
+            package_identity: hex('f', 64),
+        };
+        {
+            let mut registry = approval_registry().lock().unwrap();
+            registry.companion_authority.generation = current.generation;
+            registry.companion_authority.minimum_attestation_generation =
+                current.attestation_generation;
+            registry.companion_authority.binding = Some(current.clone());
+            registry.companion_authority.companion_required = true;
+        }
+
+        let baseline = retract_mvp15_companion_approvals(Mvp15CompanionApprovalRetractionInput {
+            attestation_generation: None,
+        });
+        assert_eq!(baseline.status, "retracted");
+        assert_eq!(baseline.reason, "companion_approval_retracted");
+        assert!(baseline.applied);
+        assert_eq!(baseline.requested_attestation_generation, None);
+        assert_eq!(baseline.minimum_attestation_generation, 19);
+        assert_eq!(baseline.generation, 13);
+        let registry = approval_registry().lock().unwrap();
+        assert!(registry.companion_authority.binding.is_none());
+        assert!(registry.companion_authority.companion_required);
+        assert_eq!(
+            registry.companion_authority.minimum_attestation_generation,
+            19
+        );
+        drop(registry);
+
+        let mut same_generation = current.clone();
+        same_generation.generation = 0;
+        assert_eq!(
+            activate_companion_approval_binding(same_generation),
+            Err("companion_attestation_stale")
+        );
+        let mut newer = current;
+        newer.generation = 0;
+        newer.attestation_generation = 20;
+        assert_eq!(activate_companion_approval_binding(newer), Ok(()));
+        let registry = approval_registry().lock().unwrap();
+        assert_eq!(
+            registry.companion_authority.minimum_attestation_generation,
+            20
+        );
+        assert_eq!(registry.companion_authority.generation, 14);
+    }
+
+    #[test]
+    fn companion_retraction_blocks_registration_and_execute_but_keeps_exact_owned_rollback() {
+        let _test_guard = clear_registry();
+        let now = 198;
+        let input = registration("retraction-recovery", now);
+        let registered = register_asset_mutation_approval_at(input.clone(), now);
+        bind_registration_to_companion(&registered.registration_id, 17, 29);
+        let token = registered.approval_token.as_deref().unwrap();
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(
+                    &input,
+                    &registered.registration_id,
+                    "execute",
+                    0,
+                    Some(token),
+                ),
+                now + 1,
+            )
+            .status,
+            "accepted_by_native_guard"
+        );
+        assert_eq!(
+            record_asset_mutation_outcome_at(
+                outcome(&registered.registration_id, "execute", "op-0", true),
+                now + 2,
+            )
+            .status,
+            "recorded"
+        );
+
+        let retracted = retract_mvp15_companion_approvals(Mvp15CompanionApprovalRetractionInput {
+            attestation_generation: None,
+        });
+        assert!(retracted.applied);
+        assert_eq!(retracted.revoked_approval_count, 1);
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(&input, &registered.registration_id, "execute", 1, None,),
+                now + 3,
+            )
+            .reason,
+            "companion_attestation_retracted"
+        );
+
+        let new_registration = registration("retraction-new-registration", now + 3);
+        assert_eq!(
+            register_asset_mutation_approval_at(new_registration, now + 3).reason,
+            "companion_attestation_required"
+        );
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(&input, &registered.registration_id, "rollback", 1, None,),
+                now + 4,
+            )
+            .reason,
+            "rollback_out_of_order"
+        );
+        let mut wrong_inverse = step(&input, &registered.registration_id, "rollback", 0, None);
+        wrong_inverse.operation.asset_path =
+            Some(format!("/Game/UAgentSandbox/{}/foreign", input.run_id));
+        assert_eq!(
+            authorize_asset_mutation_at(wrong_inverse, now + 4).reason,
+            "rollback_binding_mismatch"
+        );
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(&input, &registered.registration_id, "rollback", 0, None,),
+                now + 4,
+            )
+            .status,
+            "accepted_by_native_guard"
+        );
+        assert_eq!(
+            record_asset_mutation_outcome_at(
+                outcome(&registered.registration_id, "rollback", "op-0", true),
+                now + 5,
+            )
+            .status,
+            "recorded"
+        );
+        assert!(!approval_registry()
+            .lock()
+            .unwrap()
+            .records
+            .contains_key(&registered.registration_id));
     }
 
     fn operation(
@@ -1771,6 +3722,7 @@ mod tests {
             project_binding_id,
             trusted_project_root: root_ref,
             editor_session_id: observation.session_id,
+            mcp_binding: "mcp-binding:fixture-1".to_string(),
             aggregate_dry_run_hash: hex('d', 64),
             aggregate_args_hash: hex('e', 64),
             requested_ttl_ms: 1_000,
@@ -1799,6 +3751,7 @@ mod tests {
             change_set_id: registration.change_set_id.clone(),
             run_id: registration.run_id.clone(),
             project_binding_id: registration.project_binding_id.clone(),
+            mcp_binding: registration.mcp_binding.clone(),
             aggregate_dry_run_hash: registration.aggregate_dry_run_hash.clone(),
             aggregate_args_hash: registration.aggregate_args_hash.clone(),
             operation,
@@ -1816,44 +3769,130 @@ mod tests {
             phase: phase.to_string(),
             operation_id: operation_id.to_string(),
             success,
-            side_effect_observed: false,
+            side_effect_observed: success,
+            effect_state: if success {
+                "known_effect".to_string()
+            } else {
+                "known_none".to_string()
+            },
             rollback_available: false,
             evidence_id: Some(format!("evidence:{phase}:{operation_id}")),
-            reason_code: None,
+            reason_code: (!success).then(|| "operation_failed".to_string()),
         }
     }
 
-    thread_local! {
-        static REGISTRY_TEST_GUARD: std::cell::RefCell<Option<std::sync::MutexGuard<'static, ()>>> =
-            std::cell::RefCell::new(None);
+    fn clear_registry() -> std::sync::MutexGuard<'static, ()> {
+        crate::reset_shared_registries_for_test()
     }
 
-    fn registry_test_mutex() -> &'static Mutex<()> {
-        static TEST_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
-        TEST_MUTEX.get_or_init(|| Mutex::new(()))
+    fn remap_registration_for_binding_contract(from: &str, to: &str) {
+        let mut registry = approval_registry().lock().unwrap();
+        let record = registry
+            .records
+            .remove(from)
+            .expect("registered fixture must exist before deterministic remap");
+        assert!(registry.records.insert(to.to_string(), record).is_none());
     }
 
-    fn clear_registry() {
-        REGISTRY_TEST_GUARD.with(|slot| {
-            let mut guard = slot.borrow_mut();
-            if guard.is_none() {
-                *guard = Some(
-                    registry_test_mutex()
-                        .lock()
-                        .unwrap_or_else(|error| error.into_inner()),
-                );
-            }
-        });
-        let mut registry = approval_registry()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        registry.records.clear();
-        registry.terminal_evidence.clear();
+    fn bind_registration_to_companion(
+        registration_id: &str,
+        connection_generation: u64,
+        session_generation: u64,
+    ) -> CompanionApprovalBinding {
+        bind_registration_to_companion_material(
+            registration_id,
+            &NativeAcceptedPlanCompanionMaterial {
+                connection_generation,
+                session_generation,
+                fingerprint: hex('1', 64),
+                source_identity: hex('4', 64),
+                manifest_identity: hex('2', 64),
+                plugin_identity: hex('5', 64),
+                package_identity: hex('6', 64),
+            },
+        )
+    }
+
+    fn bind_registration_to_companion_material(
+        registration_id: &str,
+        companion: &NativeAcceptedPlanCompanionMaterial,
+    ) -> CompanionApprovalBinding {
+        let mut registry = approval_registry().lock().unwrap();
+        let record = registry
+            .records
+            .get(registration_id)
+            .expect("registered fixture must exist")
+            .clone();
+        let binding = CompanionApprovalBinding {
+            generation: companion.connection_generation,
+            attestation_generation: companion.session_generation,
+            fingerprint: companion.fingerprint.clone(),
+            trusted_root_id: record.trusted_root_id,
+            editor_session_id: record.editor_session_id,
+            process_id: record.process_id,
+            pid_hash: record.pid_hash,
+            process_start_time: 1_234_567,
+            manifest_sha256: companion.manifest_identity.clone(),
+            descriptor_identity: hex('3', 64),
+            source_identity: companion.source_identity.clone(),
+            plugin_identity: companion.plugin_identity.clone(),
+            package_identity: companion.package_identity.clone(),
+        };
+        registry.companion_authority.generation = binding.generation;
+        registry.companion_authority.minimum_attestation_generation =
+            binding.attestation_generation;
+        registry.companion_authority.binding = Some(binding.clone());
+        registry.companion_authority.companion_required = true;
+        registry
+            .records
+            .get_mut(registration_id)
+            .expect("registered fixture must remain present")
+            .companion_binding = Some(binding.clone());
+        binding
+    }
+
+    fn native_binding_test_vector() -> NativeBindingTestVector {
+        serde_json::from_str(include_str!(
+            "../../../../packages/shared/test-fixtures/mvp15d-native-binding-v2.json"
+        ))
+        .expect("canonical native binding test vector must parse")
+    }
+
+    fn registration_from_binding_material(
+        material: &NativeAcceptedPlanBindingMaterial,
+        now: u64,
+    ) -> RegisterAssetMutationApprovalInput {
+        let mut input = registration("native-binding-contract", now);
+        input.change_set_id = material.change_set_id.clone();
+        input.run_id = material.run_id.clone();
+        input.project_binding_id = material.project_binding_id.clone();
+        input.mcp_binding = material.mcp_binding.clone();
+        input.aggregate_dry_run_hash = material.aggregate_dry_run_hash.clone();
+        input.aggregate_args_hash = material.aggregate_args_hash.clone();
+        input.operations = material.operations.clone();
+        input
+    }
+
+    fn guard_facts(result: &AssetMutationGuardResult) -> Option<NativeBindingGuardFacts> {
+        Some(NativeBindingGuardFacts {
+            accepted_plan_binding: result.accepted_plan_binding.clone()?,
+            native_registration_id: result.registration_id.clone(),
+            native_phase: result.phase.clone(),
+            native_operation_index: result.operation_index,
+            native_operation_count: result.operation_count,
+            native_created_at: result.native_created_at?,
+            connection_generation: result.connection_generation?,
+            session_generation: result.session_generation?,
+            native_source_identity: result.native_source_identity.clone()?,
+            native_manifest_identity: result.native_manifest_identity.clone()?,
+            native_plugin_identity: result.native_plugin_identity.clone()?,
+            native_package_identity: result.native_package_identity.clone()?,
+        })
     }
 
     #[test]
     fn asset_registration_requires_native_root_and_live_observation_authority() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 50;
 
         let untrusted = registration("authority-untrusted", now);
@@ -1924,7 +3963,7 @@ mod tests {
 
     #[test]
     fn asset_native_gate_blocks_registration_and_forward_but_allows_owned_rollback() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 75;
         let disabled = registration("gate-disabled", now);
         let blocked = register_asset_mutation_approval_with_gate_at(disabled, now, false);
@@ -1981,7 +4020,7 @@ mod tests {
 
     #[test]
     fn asset_every_guard_rechecks_observation_and_process_liveness() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 82;
 
         let stopped = registration("guard-stopped", now);
@@ -2044,7 +4083,7 @@ mod tests {
 
     #[test]
     fn asset_transaction_and_recovery_deadlines_are_absolute() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 90;
         let input = registration("absolute-lease", now);
         let trusted_root = resolve_trusted_root_binding(&input.trusted_project_root).unwrap();
@@ -2106,7 +4145,7 @@ mod tests {
 
     #[test]
     fn asset_guard_and_evidence_fail_closed_after_trust_revocation() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 95;
         let input = registration("trust-revoked", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
@@ -2144,7 +4183,7 @@ mod tests {
 
     #[test]
     fn asset_guard_revalidates_authority_immediately_before_acceptance() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 97;
         let input = registration("authority-race", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
@@ -2171,7 +4210,7 @@ mod tests {
 
     #[test]
     fn asset_registration_contract_rejects_caller_authority_fields() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let mut value = serde_json::to_value(registration("caller-authority", 99)).unwrap();
         let object = value.as_object_mut().unwrap();
         object.insert("pidHash".to_string(), serde_json::json!("pid:forged"));
@@ -2192,7 +4231,7 @@ mod tests {
 
     #[test]
     fn asset_approval_registry_rejects_forged_expired_and_mismatched_binding() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 100;
         let input = registration("reject-forged", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
@@ -2256,7 +4295,7 @@ mod tests {
 
     #[test]
     fn asset_approval_registry_rejects_a_caller_chosen_registration_token() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 125;
         let mut value = serde_json::to_value(registration("caller-token-red", now)).unwrap();
         value.as_object_mut().unwrap().insert(
@@ -2269,6 +4308,7 @@ mod tests {
 
     #[test]
     fn asset_registration_cancel_is_token_bound_and_only_retires_unstarted_records() {
+        let _test_guard = clear_registry();
         let now = 9_250;
         let input = registration("cancel-unstarted", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
@@ -2358,7 +4398,7 @@ mod tests {
 
     #[test]
     fn asset_approval_registry_rejects_a_ttl_above_the_native_cap() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 150;
         let mut input = registration("ttl-red", now);
         input.requested_ttl_ms = MAX_APPROVAL_TTL_MS + 1;
@@ -2371,7 +4411,7 @@ mod tests {
 
     #[test]
     fn asset_approval_registry_expires_before_first_execute_and_removes_record() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 160;
         let input = registration("expires-before-execute", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
@@ -2398,7 +4438,7 @@ mod tests {
 
     #[test]
     fn asset_approval_registry_continues_ordered_execute_after_token_ttl() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 165;
         let input = registration("execute-after-expiry", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
@@ -2455,7 +4495,7 @@ mod tests {
 
     #[test]
     fn asset_approval_registry_completes_rollback_after_token_ttl_and_deletes_record() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 170;
         let input = registration("rollback-after-expiry", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
@@ -2535,7 +4575,7 @@ mod tests {
 
     #[test]
     fn asset_approval_registry_preserves_all_guards_after_token_ttl() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 172;
         let input = registration("guards-after-expiry", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
@@ -2577,6 +4617,9 @@ mod tests {
         changed.project_binding_id = "project-other".to_string();
         cases.push((changed, "project_binding_mismatch"));
         let mut changed = base.clone();
+        changed.mcp_binding = "mcp-binding:other".to_string();
+        cases.push((changed, "mcp_binding_mismatch"));
+        let mut changed = base.clone();
         changed.aggregate_dry_run_hash = hex('f', 64);
         cases.push((changed, "aggregate_dry_run_hash_mismatch"));
         let mut changed = base.clone();
@@ -2603,7 +4646,7 @@ mod tests {
 
     #[test]
     fn asset_approval_registry_rejects_every_exact_binding_mismatch() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 175;
         let input = registration("binding-matrix", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
@@ -2627,6 +4670,9 @@ mod tests {
         changed.project_binding_id = "project-other".to_string();
         cases.push((changed, "project_binding_mismatch"));
         let mut changed = base.clone();
+        changed.mcp_binding = "mcp-binding:other".to_string();
+        cases.push((changed, "mcp_binding_mismatch"));
+        let mut changed = base.clone();
         changed.aggregate_dry_run_hash = hex('f', 64);
         cases.push((changed, "aggregate_dry_run_hash_mismatch"));
         let mut changed = base.clone();
@@ -2649,8 +4695,467 @@ mod tests {
     }
 
     #[test]
+    fn native_accepted_plan_binding_has_literal_stable_execute_and_rollback_contract() {
+        let _test_guard = clear_registry();
+        let now = 190;
+        let vector = native_binding_test_vector();
+        assert_eq!(
+            vector.schema_version,
+            "uagent.mvp15d.native-binding-test-vector.v2"
+        );
+        let expected_binding = vector.native_guard_facts.accepted_plan_binding.as_str();
+        assert_eq!(
+            hash_native_accepted_plan_binding_material(&vector.binding_material),
+            expected_binding
+        );
+
+        let input = registration_from_binding_material(&vector.binding_material, now);
+        let registered = register_asset_mutation_approval_at(input.clone(), now);
+        let token = registered.approval_token.as_deref().unwrap();
+        let registration_id = vector.binding_material.registration_id.as_str();
+        remap_registration_for_binding_contract(&registered.registration_id, registration_id);
+        let companion = vector
+            .binding_material
+            .companion
+            .as_ref()
+            .expect("canonical vector must bind companion provenance");
+        bind_registration_to_companion_material(registration_id, companion);
+        let actual_material = {
+            let registry = approval_registry().lock().unwrap();
+            native_accepted_plan_binding_material(
+                registration_id,
+                registry.records.get(registration_id).unwrap(),
+            )
+        };
+        assert_eq!(actual_material, vector.binding_material);
+
+        for index in 0..input.operations.len() {
+            let authorized = authorize_asset_mutation_at(
+                step(
+                    &input,
+                    registration_id,
+                    "execute",
+                    index,
+                    (index == 0).then_some(token),
+                ),
+                now + 1,
+            );
+            assert_eq!(authorized.status, "accepted_by_native_guard");
+            assert_eq!(
+                authorized.accepted_plan_binding.as_deref(),
+                Some(expected_binding)
+            );
+            if index == 0 {
+                assert_eq!(
+                    guard_facts(&authorized).as_ref(),
+                    Some(&vector.native_guard_facts)
+                );
+            }
+            assert_eq!(
+                record_asset_mutation_outcome(outcome(
+                    registration_id,
+                    "execute",
+                    &input.operations[index].operation_id,
+                    true,
+                ))
+                .status,
+                "recorded"
+            );
+        }
+
+        for index in [3usize, 2, 1, 0] {
+            let authorized = authorize_asset_mutation_at(
+                step(&input, registration_id, "rollback", index, None),
+                now + 2,
+            );
+            assert_eq!(authorized.status, "accepted_by_native_guard");
+            assert_eq!(
+                authorized.accepted_plan_binding.as_deref(),
+                Some(expected_binding)
+            );
+            assert_eq!(
+                record_asset_mutation_outcome(outcome(
+                    registration_id,
+                    "rollback",
+                    &input.operations[index].operation_id,
+                    true,
+                ))
+                .status,
+                "recorded"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_native_binding_material_rejects_every_independent_bound_fact_drift() {
+        let _test_guard = clear_registry();
+        let vector = native_binding_test_vector();
+        let material = vector.binding_material;
+        let expected = vector.native_guard_facts.accepted_plan_binding;
+        assert_eq!(
+            hash_native_accepted_plan_binding_material(&material),
+            expected
+        );
+
+        macro_rules! reject_material {
+            ($label:expr, |$candidate:ident| $body:block) => {{
+                let mut $candidate = material.clone();
+                $body
+                assert_ne!(
+                    hash_native_accepted_plan_binding_material(&$candidate),
+                    expected,
+                    "{} drift must not retain the canonical binding",
+                    $label
+                );
+            }};
+        }
+
+        reject_material!("contract", |candidate| {
+            candidate.contract = "mvp15d-native-accepted-plan-v3".to_string();
+        });
+        reject_material!("registrationId", |candidate| {
+            candidate.registration_id =
+                "asset-approval:deterministic-native-plan-drift".to_string();
+        });
+        reject_material!("changeSetId", |candidate| {
+            candidate.change_set_id.push_str("-drift");
+        });
+        reject_material!("runId", |candidate| {
+            candidate.run_id.push_str("-drift");
+        });
+        reject_material!("projectBindingId", |candidate| {
+            candidate.project_binding_id.push_str("-drift");
+        });
+        reject_material!("mcpBinding", |candidate| {
+            candidate.mcp_binding.push_str("-drift");
+        });
+        reject_material!("aggregateDryRunHash", |candidate| {
+            candidate.aggregate_dry_run_hash = drift_lower_hex(&candidate.aggregate_dry_run_hash);
+        });
+        reject_material!("aggregateArgsHash", |candidate| {
+            candidate.aggregate_args_hash = drift_lower_hex(&candidate.aggregate_args_hash);
+        });
+        reject_material!("operations.count", |candidate| {
+            candidate.operations.pop();
+        });
+        reject_material!("operations.order", |candidate| {
+            candidate.operations.swap(0, 1);
+        });
+
+        for index in 0..material.operations.len() {
+            reject_material!(format!("operations[{index}].operationId"), |candidate| {
+                candidate.operations[index].operation_id.push_str("-drift");
+            });
+            reject_material!(format!("operations[{index}].kind"), |candidate| {
+                candidate.operations[index].kind = if candidate.operations[index].kind == "move" {
+                    "rename".to_string()
+                } else {
+                    "move".to_string()
+                };
+            });
+            reject_material!(format!("operations[{index}].toolName"), |candidate| {
+                candidate.operations[index].tool_name =
+                    if candidate.operations[index].tool_name == "ue.asset.move" {
+                        "ue.asset.rename".to_string()
+                    } else {
+                        "ue.asset.move".to_string()
+                    };
+            });
+            reject_material!(
+                format!("operations[{index}].pluginDryRunHash"),
+                |candidate| {
+                    candidate.operations[index].plugin_dry_run_hash =
+                        drift_lower_hex(&candidate.operations[index].plugin_dry_run_hash);
+                }
+            );
+            reject_material!(format!("operations[{index}].argsHash"), |candidate| {
+                candidate.operations[index].args_hash =
+                    drift_lower_hex(&candidate.operations[index].args_hash);
+            });
+            reject_material!(
+                format!("operations[{index}].sourceAssetPath"),
+                |candidate| {
+                    candidate.operations[index].source_asset_path =
+                        Some("/Game/CanonicalDrift/Source".to_string());
+                }
+            );
+            reject_material!(format!("operations[{index}].assetPath"), |candidate| {
+                candidate.operations[index].asset_path =
+                    Some("/Game/UAgentSandbox/CanonicalDrift/Asset".to_string());
+            });
+            reject_material!(
+                format!("operations[{index}].targetAssetPath"),
+                |candidate| {
+                    candidate.operations[index].target_asset_path =
+                        Some("/Game/UAgentSandbox/CanonicalDrift/Target".to_string());
+                }
+            );
+            reject_material!(format!("operations[{index}].rollbackAction"), |candidate| {
+                candidate.operations[index].rollback_action =
+                    if candidate.operations[index].rollback_action == "move_back" {
+                        "rename_back".to_string()
+                    } else {
+                        "move_back".to_string()
+                    };
+            });
+            reject_material!(
+                format!("operations[{index}].rollbackToolName"),
+                |candidate| {
+                    candidate.operations[index].rollback_tool_name =
+                        if candidate.operations[index].rollback_tool_name.as_deref()
+                            == Some("ue.asset.move")
+                        {
+                            Some("ue.asset.rename".to_string())
+                        } else {
+                            Some("ue.asset.move".to_string())
+                        };
+                }
+            );
+            reject_material!(format!("operations[{index}].saveAll"), |candidate| {
+                candidate.operations[index].save_all = !candidate.operations[index].save_all;
+            });
+            reject_material!(format!("operations[{index}].bulk"), |candidate| {
+                candidate.operations[index].bulk = !candidate.operations[index].bulk;
+            });
+        }
+
+        reject_material!("companion.presence", |candidate| {
+            candidate.companion = None;
+        });
+        reject_material!("companion.connectionGeneration", |candidate| {
+            candidate.companion.as_mut().unwrap().connection_generation += 1;
+        });
+        reject_material!("companion.sessionGeneration", |candidate| {
+            candidate.companion.as_mut().unwrap().session_generation += 1;
+        });
+        reject_material!("companion.fingerprint", |candidate| {
+            let companion = candidate.companion.as_mut().unwrap();
+            companion.fingerprint = drift_lower_hex(&companion.fingerprint);
+        });
+        reject_material!("companion.sourceIdentity", |candidate| {
+            let companion = candidate.companion.as_mut().unwrap();
+            companion.source_identity = drift_lower_hex(&companion.source_identity);
+        });
+        reject_material!("companion.manifestIdentity", |candidate| {
+            let companion = candidate.companion.as_mut().unwrap();
+            companion.manifest_identity = drift_lower_hex(&companion.manifest_identity);
+        });
+        reject_material!("companion.pluginIdentity", |candidate| {
+            let companion = candidate.companion.as_mut().unwrap();
+            companion.plugin_identity = drift_lower_hex(&companion.plugin_identity);
+        });
+        reject_material!("companion.packageIdentity", |candidate| {
+            let companion = candidate.companion.as_mut().unwrap();
+            companion.package_identity = drift_lower_hex(&companion.package_identity);
+        });
+    }
+
+    #[test]
+    fn canonical_native_guard_fact_tuple_rejects_every_independent_drift() {
+        let _test_guard = clear_registry();
+        let expected = native_binding_test_vector().native_guard_facts;
+
+        macro_rules! reject_guard_facts {
+            ($label:expr, |$candidate:ident| $body:block) => {{
+                let mut $candidate = expected.clone();
+                $body
+                assert_ne!(
+                    $candidate, expected,
+                    "{} drift must not match the canonical native guard tuple",
+                    $label
+                );
+            }};
+        }
+
+        reject_guard_facts!("acceptedPlanBinding", |candidate| {
+            candidate.accepted_plan_binding = drift_lower_hex(&candidate.accepted_plan_binding);
+        });
+        reject_guard_facts!("nativeRegistrationId", |candidate| {
+            candidate.native_registration_id.push_str("-drift");
+        });
+        reject_guard_facts!("nativePhase", |candidate| {
+            candidate.native_phase = "rollback".to_string();
+        });
+        reject_guard_facts!("nativeOperationIndex", |candidate| {
+            candidate.native_operation_index += 1;
+        });
+        reject_guard_facts!("nativeOperationCount", |candidate| {
+            candidate.native_operation_count += 1;
+        });
+        reject_guard_facts!("nativeCreatedAt", |candidate| {
+            candidate.native_created_at += 1;
+        });
+        reject_guard_facts!("connectionGeneration", |candidate| {
+            candidate.connection_generation += 1;
+        });
+        reject_guard_facts!("sessionGeneration", |candidate| {
+            candidate.session_generation += 1;
+        });
+        reject_guard_facts!("nativeSourceIdentity", |candidate| {
+            candidate.native_source_identity = drift_lower_hex(&candidate.native_source_identity);
+        });
+        reject_guard_facts!("nativeManifestIdentity", |candidate| {
+            candidate.native_manifest_identity =
+                drift_lower_hex(&candidate.native_manifest_identity);
+        });
+        reject_guard_facts!("nativePluginIdentity", |candidate| {
+            candidate.native_plugin_identity = drift_lower_hex(&candidate.native_plugin_identity);
+        });
+        reject_guard_facts!("nativePackageIdentity", |candidate| {
+            candidate.native_package_identity = drift_lower_hex(&candidate.native_package_identity);
+        });
+    }
+
+    #[test]
+    fn native_guard_rejects_wrong_binding_context_replay_and_stale_authority() {
+        let _test_guard = clear_registry();
+        let now = 195;
+        let input = registration("native-binding-negative", now);
+        let registered = register_asset_mutation_approval_at(input.clone(), now);
+        let token = registered.approval_token.as_deref().unwrap();
+        let registration_id = "asset-approval:deterministic-native-negative";
+        remap_registration_for_binding_contract(&registered.registration_id, registration_id);
+        let binding = bind_registration_to_companion(registration_id, 31, 47);
+        let base = step(&input, registration_id, "execute", 0, Some(token));
+
+        let mut wrong_phase = base.clone();
+        wrong_phase.phase = "invalid".to_string();
+        assert_eq!(
+            authorize_asset_mutation_at(wrong_phase, now + 1).reason,
+            "phase_mismatch"
+        );
+
+        let mut wrong_index = base.clone();
+        wrong_index.operation_index = 1;
+        wrong_index.operation = input.operations[1].clone();
+        assert_eq!(
+            authorize_asset_mutation_at(wrong_index, now + 1).reason,
+            "operation_out_of_order"
+        );
+
+        let mut wrong_registration = base.clone();
+        wrong_registration.registration_id = "asset-approval:unknown".to_string();
+        assert_eq!(
+            authorize_asset_mutation_at(wrong_registration, now + 1).reason,
+            "approval_registration_unknown"
+        );
+
+        {
+            let mut registry = approval_registry().lock().unwrap();
+            registry
+                .records
+                .get_mut(registration_id)
+                .unwrap()
+                .editor_session_id = "editor-observation:unknown".to_string();
+        }
+        assert_eq!(
+            authorize_asset_mutation_at(base.clone(), now + 1).reason,
+            "observation_session_unknown"
+        );
+        approval_registry()
+            .lock()
+            .unwrap()
+            .records
+            .get_mut(registration_id)
+            .unwrap()
+            .editor_session_id = binding.editor_session_id.clone();
+
+        {
+            let mut registry = approval_registry().lock().unwrap();
+            registry
+                .companion_authority
+                .binding
+                .as_mut()
+                .unwrap()
+                .manifest_sha256 = hex('9', 64);
+        }
+        assert_eq!(
+            authorize_asset_mutation_at(base.clone(), now + 1).reason,
+            "companion_attestation_retracted"
+        );
+        approval_registry()
+            .lock()
+            .unwrap()
+            .companion_authority
+            .binding = Some(binding.clone());
+
+        {
+            let mut registry = approval_registry().lock().unwrap();
+            registry
+                .companion_authority
+                .binding
+                .as_mut()
+                .unwrap()
+                .generation += 1;
+        }
+        assert_eq!(
+            authorize_asset_mutation_at(base.clone(), now + 1).reason,
+            "companion_attestation_retracted"
+        );
+        approval_registry()
+            .lock()
+            .unwrap()
+            .companion_authority
+            .binding = Some(binding.clone());
+
+        {
+            let mut registry = approval_registry().lock().unwrap();
+            registry
+                .companion_authority
+                .binding
+                .as_mut()
+                .unwrap()
+                .attestation_generation += 1;
+        }
+        assert_eq!(
+            authorize_asset_mutation_at(base.clone(), now + 1).reason,
+            "companion_attestation_retracted"
+        );
+        approval_registry()
+            .lock()
+            .unwrap()
+            .companion_authority
+            .binding = Some(binding.clone());
+
+        let accepted = authorize_asset_mutation_at(base.clone(), now + 1);
+        assert_eq!(accepted.status, "accepted_by_native_guard");
+        assert_eq!(
+            authorize_asset_mutation_at(base, now + 1).reason,
+            "operation_in_flight"
+        );
+        assert_eq!(
+            record_asset_mutation_outcome(outcome(registration_id, "execute", "op-0", true,))
+                .status,
+            "recorded"
+        );
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(&input, registration_id, "execute", 0, None),
+                now + 1,
+            )
+            .reason,
+            "execute_replay"
+        );
+        approval_registry()
+            .lock()
+            .unwrap()
+            .records
+            .get_mut(registration_id)
+            .unwrap()
+            .companion_retracted = true;
+        assert_eq!(
+            authorize_asset_mutation_at(
+                step(&input, registration_id, "execute", 1, None),
+                now + 1,
+            )
+            .reason,
+            "companion_attestation_retracted"
+        );
+    }
+
+    #[test]
     fn asset_approval_registry_allows_five_steps_once_and_reverse_rollback_without_save() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 200;
         let input = registration("lifecycle", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
@@ -2662,6 +5167,13 @@ mod tests {
                 now + 1,
             );
             assert_eq!(authorized.status, "accepted_by_native_guard");
+            assert!(authorized
+                .accepted_plan_binding
+                .as_deref()
+                .is_some_and(|value| value.len() == 64
+                    && value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())));
             let recorded = record_asset_mutation_outcome(outcome(
                 &registered.registration_id,
                 "execute",
@@ -2719,7 +5231,7 @@ mod tests {
 
     #[test]
     fn asset_approval_registry_halts_partial_execution_and_rolls_back_only_successes() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 300;
         let input = registration("partial", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
@@ -2738,33 +5250,31 @@ mod tests {
             .reason,
             "operation_out_of_order"
         );
-        assert_eq!(
-            authorize_asset_mutation_at(
-                step(
-                    &input,
-                    &registered.registration_id,
-                    "execute",
-                    0,
-                    Some(&issued_token)
-                ),
-                now + 1
-            )
-            .status,
-            "accepted_by_native_guard"
+        let first_execute = authorize_asset_mutation_at(
+            step(
+                &input,
+                &registered.registration_id,
+                "execute",
+                0,
+                Some(&issued_token),
+            ),
+            now + 1,
         );
+        assert_eq!(first_execute.status, "accepted_by_native_guard");
         record_asset_mutation_outcome(outcome(
             &registered.registration_id,
             "execute",
             "op-0",
             true,
         ));
+        let failed_execute = authorize_asset_mutation_at(
+            step(&input, &registered.registration_id, "execute", 1, None),
+            now + 1,
+        );
+        assert_eq!(failed_execute.status, "accepted_by_native_guard");
         assert_eq!(
-            authorize_asset_mutation_at(
-                step(&input, &registered.registration_id, "execute", 1, None),
-                now + 1
-            )
-            .status,
-            "accepted_by_native_guard"
+            failed_execute.accepted_plan_binding,
+            first_execute.accepted_plan_binding
         );
         record_asset_mutation_outcome(outcome(
             &registered.registration_id,
@@ -2788,19 +5298,20 @@ mod tests {
             .reason,
             "rollback_out_of_order"
         );
+        let recovery = authorize_asset_mutation_at(
+            step(&input, &registered.registration_id, "rollback", 0, None),
+            now + 1,
+        );
+        assert_eq!(recovery.status, "accepted_by_native_guard");
         assert_eq!(
-            authorize_asset_mutation_at(
-                step(&input, &registered.registration_id, "rollback", 0, None),
-                now + 1
-            )
-            .status,
-            "accepted_by_native_guard"
+            recovery.accepted_plan_binding,
+            first_execute.accepted_plan_binding
         );
     }
 
     #[test]
     fn asset_approval_registry_rolls_back_the_failed_step_when_a_side_effect_was_observed() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 350;
         let input = registration("partial-side-effect", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);
@@ -2825,18 +5336,20 @@ mod tests {
             operation_id: "op-0".to_string(),
             success: false,
             side_effect_observed: true,
+            effect_state: "known_partial".to_string(),
             rollback_available: false,
             evidence_id: Some("evidence:execute:op-0".to_string()),
             reason_code: Some("mutation_failed".to_string()),
         });
         assert_eq!(invalid_partial.status, "blocked");
-        assert_eq!(invalid_partial.reason, "partial_failure_contract_invalid");
+        assert_eq!(invalid_partial.reason, "effect_state_contract_invalid");
         let recorded = record_asset_mutation_outcome(RecordAssetMutationOutcomeInput {
             registration_id: registered.registration_id.clone(),
             phase: "execute".to_string(),
             operation_id: "op-0".to_string(),
             success: false,
             side_effect_observed: true,
+            effect_state: "known_partial".to_string(),
             rollback_available: true,
             evidence_id: Some("evidence:execute:op-0".to_string()),
             reason_code: Some("mutation_failed".to_string()),
@@ -2854,7 +5367,7 @@ mod tests {
 
     #[test]
     fn asset_approval_registry_concurrent_first_step_is_atomic() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 400;
         let input = Arc::new(registration("concurrent", now));
         let registered = register_asset_mutation_approval_at((*input).clone(), now);
@@ -2899,7 +5412,7 @@ mod tests {
 
     #[test]
     fn asset_content_evidence_is_byte_safe_bounded_and_redacted() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 500;
         let input = registration("evidence", now);
         std::fs::write(
@@ -2939,7 +5452,7 @@ mod tests {
 
     #[test]
     fn asset_terminal_rollback_keeps_bounded_read_only_verification_available() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 550;
         let terminal_at = now + 10_000;
         let input = registration("terminal-evidence", now);
@@ -3131,7 +5644,7 @@ mod tests {
 
     #[test]
     fn asset_registration_rejects_non_sandbox_save_all_bulk_and_path_chain() {
-        clear_registry();
+        let _test_guard = clear_registry();
         let now = 600;
         let mut input = registration("invalid-save", now);
         input.operations[4].save_all = true;
@@ -3155,6 +5668,7 @@ mod tests {
 
     #[test]
     fn legacy_execution_guard_never_accepts_an_arbitrary_non_empty_token() {
+        let _test_guard = clear_registry();
         let input = AssetMutationCommandInput {
             tool_name: "ue.asset.create_folder".to_string(),
             asset_path: Some("/Game/UAgentSandbox/run-legacy".to_string()),
@@ -3170,5 +5684,33 @@ mod tests {
         let result = classify_asset_mutation(input, true);
         assert_eq!(result.status, "blocked");
         assert_eq!(result.reason, "approval_token_unknown");
+    }
+
+    #[test]
+    fn every_asset_mutation_test_declares_the_shared_registry_guard() {
+        let _test_guard = clear_registry();
+        let test_attribute = ["#[", "test]"].concat();
+        let source = include_str!("asset_mutation.rs");
+        for test in source.split(&test_attribute).skip(1) {
+            let signature_end = test
+                .find('{')
+                .expect("every test declaration must have a function body");
+            let signature = &test[..signature_end];
+            let name = signature
+                .split_whitespace()
+                .skip_while(|part| *part != "fn")
+                .nth(1)
+                .and_then(|part| part.split('(').next())
+                .unwrap_or("unknown_test");
+            let first_statement = test[signature_end + 1..]
+                .split(';')
+                .next()
+                .unwrap_or_default()
+                .trim();
+            assert_eq!(
+                first_statement, "let _test_guard = clear_registry()",
+                "{name} must acquire the repository shared-registry test guard before setup"
+            );
+        }
     }
 }

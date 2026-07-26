@@ -868,6 +868,7 @@ mod tests {
 
     #[test]
     fn approval_token_binds_command_and_cwd() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         let token = test_approve("", "git status", ".");
 
         // Wrong command should fail
@@ -898,6 +899,7 @@ mod tests {
 
     #[test]
     fn approve_terminal_proposal_rejects_non_allowlisted_command() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         reset_terminal_state();
         let result = propose_terminal_command(TerminalProposeCommandInput {
             command: "pnpm --version".to_string(),
@@ -938,6 +940,7 @@ mod tests {
 
     #[test]
     fn issued_token_allows_one_allowlisted_real_execution() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         let token = test_approve("", "git status", ".");
         let result = execute_terminal_command_real(TerminalRealExecuteInput {
             command: "git status".to_string(),
@@ -961,6 +964,7 @@ mod tests {
 
     #[test]
     fn real_execution_blocks_non_allowlisted_command_before_spawn() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         // Token is issued for a known allowlisted command
         let token = test_approve("", "git status", ".");
         // Execution then tries a non-allowlisted command, first caught by token command mismatch
@@ -986,6 +990,7 @@ mod tests {
 
     #[test]
     fn execute_rejects_wrong_proposal_id_via_token() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         // Token issued for proposal-1, but we pass a different proposal_id embedded in token
         let token = test_approve("", "git status", ".");
         // Manually craft token with wrong proposal id
@@ -1002,6 +1007,7 @@ mod tests {
 
     #[test]
     fn duplicate_approval_is_rejected_without_reissuing_token() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         reset_terminal_state();
         let proposal_id = test_propose("git status", ".");
         let first = approve_terminal_proposal(ApproveTerminalProposalInput {
@@ -1027,6 +1033,7 @@ mod tests {
 
     #[test]
     fn expired_proposal_cannot_be_approved() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         reset_terminal_state();
         let proposal_id = test_propose("git status", ".");
         {
@@ -1048,6 +1055,7 @@ mod tests {
 
     #[test]
     fn expired_token_cannot_execute() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         reset_terminal_state();
         let proposal_id = test_propose("git status", ".");
         let token = approve_terminal_proposal(ApproveTerminalProposalInput {

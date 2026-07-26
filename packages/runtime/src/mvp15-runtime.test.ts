@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AssetChangeSet, AssetMutationOperation, AssetVerificationResult } from "@uagent/shared";
 import * as RuntimeExports from "./index.js";
 import { validateRealExternalBinding } from "./mvp15-asset-changeset.js";
@@ -29,6 +33,95 @@ import {
   type DryRunBindingContext,
   type DryRunBindingInput,
 } from "./index.js";
+
+type NativeBindingVector = {
+  schemaVersion: string;
+  bindingMaterial: {
+    contract: string;
+    registrationId: string;
+    changeSetId: string;
+    runId: string;
+    projectBindingId: string;
+    mcpBinding: string;
+    aggregateDryRunHash: string;
+    aggregateArgsHash: string;
+    operations: Array<{
+      operationId: string;
+      kind: string;
+      toolName: string;
+      pluginDryRunHash: string;
+      argsHash: string;
+      sourceAssetPath: string | null;
+      assetPath: string | null;
+      targetAssetPath: string | null;
+      rollbackAction: string;
+      rollbackToolName: string | null;
+      saveAll: boolean;
+      bulk: boolean;
+    }>;
+    companion: {
+      connectionGeneration: number;
+      sessionGeneration: number;
+      fingerprint: string;
+      sourceIdentity: string;
+      manifestIdentity: string;
+      pluginIdentity: string;
+      packageIdentity: string;
+    };
+  };
+  nativeGuardFacts: {
+    acceptedPlanBinding: string;
+    nativeRegistrationId: string;
+    nativePhase: "execute";
+    nativeOperationIndex: number;
+    nativeOperationCount: number;
+    nativeCreatedAt: number;
+    connectionGeneration: number;
+    sessionGeneration: number;
+    nativeSourceIdentity: string;
+    nativeManifestIdentity: string;
+    nativePluginIdentity: string;
+    nativePackageIdentity: string;
+  };
+};
+
+const NATIVE_BINDING_VECTOR = JSON.parse(
+  readFileSync(
+    resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../shared/test-fixtures/mvp15d-native-binding-v2.json",
+    ),
+    "utf8",
+  ),
+) as NativeBindingVector;
+const NATIVE_VECTOR_FACTS = NATIVE_BINDING_VECTOR.nativeGuardFacts;
+const NATIVE_ACCEPTED_PLAN_BINDING = NATIVE_VECTOR_FACTS.acceptedPlanBinding;
+const NATIVE_SOURCE_IDENTITY = NATIVE_VECTOR_FACTS.nativeSourceIdentity;
+const NATIVE_MANIFEST_IDENTITY = NATIVE_VECTOR_FACTS.nativeManifestIdentity;
+const NATIVE_PLUGIN_IDENTITY = NATIVE_VECTOR_FACTS.nativePluginIdentity;
+const NATIVE_PACKAGE_IDENTITY = NATIVE_VECTOR_FACTS.nativePackageIdentity;
+
+function nativeCallFacts(
+  registrationId: string,
+  phase: "execute" | "rollback",
+  operationIndex: number,
+  operationCount = 5,
+) {
+  return {
+    acceptedPlanBinding: NATIVE_ACCEPTED_PLAN_BINDING,
+    nativeRegistrationId: registrationId,
+    nativePhase: phase,
+    nativeOperationIndex: operationIndex,
+    nativeOperationCount: operationCount,
+    nativeCreatedAt: NATIVE_VECTOR_FACTS.nativeCreatedAt,
+    connectionGeneration: NATIVE_VECTOR_FACTS.connectionGeneration,
+    sessionGeneration: NATIVE_VECTOR_FACTS.sessionGeneration,
+    nativeSourceIdentity: NATIVE_SOURCE_IDENTITY,
+    nativeManifestIdentity: NATIVE_MANIFEST_IDENTITY,
+    nativePluginIdentity: NATIVE_PLUGIN_IDENTITY,
+    nativePackageIdentity: NATIVE_PACKAGE_IDENTITY,
+  } as const;
+}
 
 function createPassingExternalVerification(): AssetMutationExternalVerificationAdapter {
   return {
@@ -127,6 +220,7 @@ function structuredDryRunResult(
   runId: string,
   assetPathBefore: string | null,
   assetPathAfter: string | null,
+  operationId = "operation:fixture",
 ): Record<string, unknown> {
   const wouldRead = operationKind === "duplicate_asset" && assetPathBefore ? [assetPathBefore] : [];
   const wouldModify = operationKind === "delete_sandbox_asset"
@@ -134,13 +228,25 @@ function structuredDryRunResult(
     : (operationKind === "rename_asset" || operationKind === "move_asset")
       ? (assetPathBefore && assetPathAfter ? [assetPathBefore, assetPathAfter] : [])
       : (assetPathAfter ? [assetPathAfter] : []);
+  const rollback = (() => {
+    switch (operationKind) {
+      case "create_folder": return { available: true, inverseOperation: "cleanup_empty_folder" };
+      case "duplicate_asset": return { available: true, inverseOperation: "delete_duplicate" };
+      case "rename_asset": return { available: true, inverseOperation: "rename_back" };
+      case "move_asset": return { available: true, inverseOperation: "move_back" };
+      default: return { available: false, inverseOperation: "none" };
+    }
+  })();
   return {
     blocked: false,
     status: "dry_run_completed",
+    reasonCode: "none",
     toolName,
     operation: pluginOperationKind(operationKind),
+    phase: "dry_run",
     changeSetId,
     runId,
+    operationId,
     sandboxRoot: `/Game/UAgentSandbox/${runId}`,
     wouldChange: true,
     wouldModify,
@@ -150,13 +256,18 @@ function structuredDryRunResult(
       sandboxTargets: wouldModify,
       externalTargets: [],
     },
-    rollbackPlan: { executionEnabled: false, inverseOperation: "restore", summary: "rollback" },
+    rollbackPlan: { strategy: "ledger_inverse", executionEnabled: false, inverseOperation: rollback.inverseOperation },
     externalEvidenceQueries: [{ queryKind: "asset_registry_snapshot", readOnly: true, paths: [...wouldRead, ...wouldModify] }],
     dryRunHash: fakeSha1(`${toolName}|${operationKind}|${changeSetId}|${runId}|${assetPathBefore ?? ""}|${assetPathAfter ?? ""}`),
     hashAlgorithm: "sha1",
     schemaVersion: "mvp15c.dry-run.v1",
     approvalRequired: true,
+    sideEffectObserved: false,
+    effectState: "known_none",
+    rollbackAvailable: rollback.available,
+    rollbackStatus: rollback.available ? "available" : "not_available",
     implementationStatus: "execution_capable",
+    evidenceId: `asset-evidence:dry-run:${operationId}`,
   };
 }
 
@@ -179,7 +290,16 @@ function nativeIssuedTokenFields(seed: string) {
   };
 }
 
-const FIXTURE_MCP_BINDING = "mcp-binding:fixture";
+function nativePreparedRegistrationFields(seed: string) {
+  const issuedAt = Date.now();
+  return {
+    issuedApprovalToken: seed.repeat(64),
+    issuedAt,
+    expiresAt: issuedAt + 60_000,
+  };
+}
+
+const FIXTURE_MCP_BINDING = NATIVE_BINDING_VECTOR.bindingMaterial.mcpBinding;
 
 function mcpBindingOptions() {
   return {
@@ -224,6 +344,7 @@ function structuredExecuteResult(
     phase: "execute",
     changeSetId: String(args.changeSetId ?? ""),
     runId,
+    operationId: String(args.operationId ?? ""),
     sandboxRoot: `/Game/UAgentSandbox/${runId}`,
     wouldChange: true,
     wouldModify,
@@ -245,6 +366,7 @@ function structuredExecuteResult(
     approvalRequired: true,
     evidenceId: `asset-evidence:execute:${operation}`,
     sideEffectObserved: true,
+    effectState: "known_effect",
     rollbackAvailable,
     rollbackStatus: rollbackAvailable ? "available" : "none",
     implementationStatus: "execution_capable",
@@ -272,6 +394,512 @@ function fiveOperationInput(runId: string) {
     ],
   };
 }
+
+function bindingVectorFiveOperationInput() {
+  const material = NATIVE_BINDING_VECTOR.bindingMaterial;
+  const [create, duplicate, rename, move, save] = material.operations;
+  if (!create || !duplicate || !rename || !move || !save) {
+    throw new Error("mvp15d_native_binding_vector_operation_count");
+  }
+  return {
+    projectId: material.projectBindingId,
+    trustedRootId: "root:fixture",
+    editorSessionId: "editor-session:1",
+    pidHash: "pid:fixture",
+    runId: material.runId,
+    operations: [
+      { kind: "create_folder" as const, assetPathAfter: create.assetPath! },
+      {
+        kind: "duplicate_asset" as const,
+        assetPathBefore: duplicate.sourceAssetPath!,
+        assetPathAfter: duplicate.targetAssetPath!,
+      },
+      {
+        kind: "rename_asset" as const,
+        assetPathBefore: rename.assetPath!,
+        assetPathAfter: rename.targetAssetPath!,
+      },
+      {
+        kind: "move_asset" as const,
+        assetPathBefore: move.assetPath!,
+        assetPathAfter: move.targetAssetPath!,
+      },
+      {
+        kind: "save_single_asset" as const,
+        assetPathBefore: save.assetPath!,
+        assetPathAfter: save.assetPath!,
+      },
+    ],
+  };
+}
+
+function canonicalNativeBindingChangeSet(): AssetChangeSet {
+  const material = NATIVE_BINDING_VECTOR.bindingMaterial;
+  const operationKinds = [
+    "create_folder",
+    "duplicate_asset",
+    "rename_asset",
+    "move_asset",
+    "save_single_asset",
+  ] as const;
+  const operations = material.operations.map((binding, index) => {
+    const kind = operationKinds[index]!;
+    const assetPathBefore =
+      kind === "duplicate_asset"
+        ? binding.sourceAssetPath
+        : kind === "rename_asset" || kind === "move_asset" || kind === "save_single_asset"
+          ? binding.assetPath
+          : null;
+    const assetPathAfter =
+      kind === "create_folder"
+        ? binding.assetPath
+        : kind === "save_single_asset"
+          ? binding.assetPath
+          : binding.targetAssetPath;
+    return {
+      id: binding.operationId,
+      kind,
+      assetPathBefore,
+      assetPathAfter,
+      sandboxRoot: "/Game/UAgentSandbox",
+      manifestEntryId: null,
+      dryRunHash: binding.pluginDryRunHash,
+      argsHash: binding.argsHash,
+      summary: `canonical native binding operation ${index}`,
+      provenance: {
+        exactToolName: binding.toolName,
+        dryRunHash: binding.pluginDryRunHash,
+        dryRunHashSource: "ue_mcp_exact_tool",
+        dryRunHashAlgorithm: "sha1",
+        dryRunSchemaVersion: "mvp15c.dry-run.v1",
+        argsHash: binding.argsHash,
+      },
+    } satisfies AssetMutationOperation;
+  });
+  return {
+    id: material.changeSetId,
+    projectId: material.projectBindingId,
+    trustedRootId: "root:fixture",
+    editorSessionId: "editor-session:1",
+    pidHash: "pid:fixture",
+    dryRunId: "dry-run:canonical-native-binding",
+    runId: material.runId,
+    state: "approved",
+    operations,
+    risk: "medium_sandbox",
+    approval: {
+      approvalId: "asset-approval:canonical-native-binding",
+      changeSetId: material.changeSetId,
+      projectId: material.projectBindingId,
+      trustedRootId: "root:fixture",
+      editorSessionId: "editor-session:1",
+      pidHash: "pid:fixture",
+      runId: material.runId,
+      operationKind: "create_folder",
+      assetPaths: operations.flatMap((operation) =>
+        [operation.assetPathBefore, operation.assetPathAfter].filter(
+          (value): value is string => value !== null,
+        ),
+      ),
+      dryRunHash: material.aggregateDryRunHash,
+      argsHash: material.aggregateArgsHash,
+      manifestEntryIds: [],
+      orderedOperationIds: operations.map((operation) => operation.id),
+      orderedOperationKinds: operations.map((operation) => operation.kind),
+      aggregateDryRunHash: material.aggregateDryRunHash,
+      aggregateArgsHash: material.aggregateArgsHash,
+      externalBindingStatus: "external_bound",
+      actor: "canonical-native-binding-fixture",
+      reason: "Canonical native binding vector",
+      issuedAt: 100,
+      expiresAt: 60_100,
+      status: "issued",
+      tokenHash: "f".repeat(64),
+    },
+    rollbackPlan: {
+      id: "asset-rollback-plan:canonical-native-binding",
+      changeSetId: material.changeSetId,
+      actions: [],
+      cleanupRequired: false,
+      summary: "Canonical native binding vector rollback fixture",
+    },
+    verification: null,
+    evidenceIds: [],
+    redaction: {
+      redacted: true,
+      replacedPaths: 0,
+      replacedSecrets: 0,
+    },
+    aggregateDryRunHash: material.aggregateDryRunHash,
+    aggregateArgsHash: material.aggregateArgsHash,
+  } as AssetChangeSet;
+}
+
+describe("MVP15D canonical native binding vector", () => {
+  it("recomputes the Rust material hash and rejects every independently drifted bound fact", () => {
+    const material = NATIVE_BINDING_VECTOR.bindingMaterial;
+    const hashMaterial = (value: unknown) =>
+      createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex");
+    expect(NATIVE_BINDING_VECTOR.schemaVersion).toBe(
+      "uagent.mvp15d.native-binding-test-vector.v2",
+    );
+    expect(hashMaterial(material)).toBe(NATIVE_VECTOR_FACTS.acceptedPlanBinding);
+    expect(NATIVE_VECTOR_FACTS).toEqual({
+      acceptedPlanBinding: hashMaterial(material),
+      nativeRegistrationId: material.registrationId,
+      nativePhase: "execute",
+      nativeOperationIndex: 0,
+      nativeOperationCount: material.operations.length,
+      nativeCreatedAt: 190,
+      connectionGeneration: material.companion.connectionGeneration,
+      sessionGeneration: material.companion.sessionGeneration,
+      nativeSourceIdentity: material.companion.sourceIdentity,
+      nativeManifestIdentity: material.companion.manifestIdentity,
+      nativePluginIdentity: material.companion.pluginIdentity,
+      nativePackageIdentity: material.companion.packageIdentity,
+    });
+
+    const scalarPaths: Array<Array<string | number>> = [];
+    const collectScalarPaths = (value: unknown, path: Array<string | number>) => {
+      if (Array.isArray(value)) {
+        value.forEach((entry, index) => collectScalarPaths(entry, [...path, index]));
+        return;
+      }
+      if (value !== null && typeof value === "object") {
+        Object.entries(value).forEach(([key, entry]) =>
+          collectScalarPaths(entry, [...path, key]),
+        );
+        return;
+      }
+      scalarPaths.push(path);
+    };
+    collectScalarPaths(material, []);
+    const driftAtPath = (path: Array<string | number>) => {
+      const drifted = structuredClone(material) as unknown as Record<string | number, unknown>;
+      let cursor = drifted;
+      for (const key of path.slice(0, -1)) {
+        cursor = cursor[key] as Record<string | number, unknown>;
+      }
+      const key = path.at(-1)!;
+      const current = cursor[key];
+      cursor[key] =
+        current === null
+          ? "drifted"
+          : typeof current === "string"
+            ? `${current}:drifted`
+            : typeof current === "number"
+              ? current + 1
+              : !current;
+      return drifted;
+    };
+    for (const path of scalarPaths) {
+      expect(hashMaterial(driftAtPath(path)), path.join(".")).not.toBe(
+        NATIVE_VECTOR_FACTS.acceptedPlanBinding,
+      );
+    }
+
+    const reordered = structuredClone(material);
+    [reordered.operations[0], reordered.operations[1]] = [
+      reordered.operations[1]!,
+      reordered.operations[0]!,
+    ];
+    expect(hashMaterial(reordered)).not.toBe(NATIVE_VECTOR_FACTS.acceptedPlanBinding);
+    const shortened = structuredClone(material);
+    shortened.operations.pop();
+    expect(hashMaterial(shortened)).not.toBe(NATIVE_VECTOR_FACTS.acceptedPlanBinding);
+    const withoutCompanion = { ...structuredClone(material), companion: null };
+    expect(hashMaterial(withoutCompanion)).not.toBe(NATIVE_VECTOR_FACTS.acceptedPlanBinding);
+  });
+
+  it("registers and forwards the exact canonical material tuple through the TypeScript adapter", async () => {
+    const material = NATIVE_BINDING_VECTOR.bindingMaterial;
+    const nativeInputs: Record<string, unknown>[] = [];
+    const mcpInputs: Record<string, unknown>[] = [];
+    let registeredMaterial: Record<string, unknown> | null = null;
+    const adapter = createMvp15McpAssetMutationAdapter({
+      tools: [
+        "ue.asset.create_folder",
+        "ue.asset.duplicate",
+        "ue.asset.rename",
+        "ue.asset.move",
+        "ue.asset.delete",
+        "ue.asset.save",
+      ].map((name) => ({
+        name,
+        inputSchema: { type: "object" },
+        dryRunSchema: { type: "object" },
+        rollbackContract: { type: "reverse_operation" },
+        affectedAssetsSchema: { type: "array" },
+        evidenceQuery: { type: "read_only" },
+      })),
+      assetMutationGateEnabled: true,
+      captureMcpBinding: () => material.mcpBinding,
+      isMcpBindingCurrent: (binding) => binding === material.mcpBinding,
+      nativeGuard: (async (input: Record<string, unknown>) => {
+        nativeInputs.push(structuredClone(input));
+        if (input.command === "register") {
+          const registeredOperations = (
+            input.operations as NativeBindingVector["bindingMaterial"]["operations"]
+          ).map((operation) => ({
+            operationId: operation.operationId,
+            kind: operation.kind,
+            toolName: operation.toolName,
+            pluginDryRunHash: operation.pluginDryRunHash,
+            argsHash: operation.argsHash,
+            sourceAssetPath: operation.sourceAssetPath,
+            assetPath: operation.assetPath,
+            targetAssetPath: operation.targetAssetPath,
+            rollbackAction: operation.rollbackAction,
+            rollbackToolName: operation.rollbackToolName,
+            saveAll: operation.saveAll,
+            bulk: operation.bulk,
+          }));
+          registeredMaterial = {
+            contract: material.contract,
+            registrationId: NATIVE_VECTOR_FACTS.nativeRegistrationId,
+            changeSetId: input.changeSetId,
+            runId: input.runId,
+            projectBindingId: input.projectBindingId,
+            mcpBinding: input.mcpBinding,
+            aggregateDryRunHash: input.aggregateDryRunHash,
+            aggregateArgsHash: input.aggregateArgsHash,
+            operations: registeredOperations,
+            companion: material.companion,
+          };
+          return {
+            status: "registered",
+            reason: null,
+            registrationId: NATIVE_VECTOR_FACTS.nativeRegistrationId,
+            operationCount: material.operations.length,
+            ...nativeIssuedTokenFields("f"),
+          };
+        }
+        if (input.command === "record_outcome") {
+          return {
+            status: "recorded",
+            reason: "operation_outcome_recorded",
+            registrationId: NATIVE_VECTOR_FACTS.nativeRegistrationId,
+            phase: input.phase,
+            operationId: input.operationId,
+            rollbackAvailable: true,
+            terminal: false,
+          };
+        }
+        const operationIndex = Number(input.operationIndex);
+        const operation = input.operation as { operationId?: string };
+        expect(input).toMatchObject({
+          registrationId: material.registrationId,
+          changeSetId: material.changeSetId,
+          runId: material.runId,
+          projectBindingId: material.projectBindingId,
+          mcpBinding: material.mcpBinding,
+          aggregateDryRunHash: material.aggregateDryRunHash,
+          aggregateArgsHash: material.aggregateArgsHash,
+          operation: material.operations[operationIndex],
+        });
+        return {
+          status: "accepted_by_native_guard",
+          reason: null,
+          registrationId: material.registrationId,
+          phase: "execute",
+          operationId: operation.operationId,
+          operationIndex,
+          operationCount: material.operations.length,
+          evidenceId: `native:canonical-vector:${operationIndex}`,
+          ...NATIVE_VECTOR_FACTS,
+          nativeOperationIndex: operationIndex,
+        };
+      }) as never,
+      callTool: async (toolName, args) => {
+        mcpInputs.push(structuredClone(args));
+        return { structuredContent: structuredExecuteResult(toolName, args) };
+      },
+    });
+    const changeSet = canonicalNativeBindingChangeSet();
+    const prepared = await adapter.prepareExecute!({
+      changeSet,
+      approvalToken: null,
+      editorSessionId: changeSet.editorSessionId,
+      pidHash: changeSet.pidHash,
+      dryRunHash: material.aggregateDryRunHash,
+      operationIndex: 0,
+      operationCount: material.operations.length,
+    });
+    expect(prepared).toMatchObject({ ok: true, reason: null });
+    expect(registeredMaterial).toEqual(material);
+    expect(
+      createHash("sha256").update(JSON.stringify(registeredMaterial), "utf8").digest("hex"),
+    ).toBe(NATIVE_VECTOR_FACTS.acceptedPlanBinding);
+    for (const [operationIndex, operation] of changeSet.operations.entries()) {
+      const result = await adapter.execute(operation, {
+        changeSet,
+        approvalToken: operationIndex === 0 ? prepared.issuedApprovalToken! : null,
+        editorSessionId: changeSet.editorSessionId,
+        pidHash: changeSet.pidHash,
+        dryRunHash: operation.dryRunHash,
+        operationIndex,
+        operationCount: material.operations.length,
+      });
+      expect(result, operation.id).toMatchObject({ ok: true, reason: null });
+    }
+    expect(nativeInputs.filter(({ command }) => command === "register")).toHaveLength(1);
+    expect(mcpInputs).toHaveLength(material.operations.length);
+    for (const [operationIndex, args] of mcpInputs.entries()) {
+      expect(args).toMatchObject({
+        acceptedPlanBinding: NATIVE_VECTOR_FACTS.acceptedPlanBinding,
+        nativeRegistrationId: material.registrationId,
+        nativePhase: "execute",
+        nativeOperationIndex: operationIndex,
+        nativeOperationCount: material.operations.length,
+        nativeCreatedAt: NATIVE_VECTOR_FACTS.nativeCreatedAt,
+        connectionGeneration: material.companion.connectionGeneration,
+        sessionGeneration: material.companion.sessionGeneration,
+        nativeSourceIdentity: material.companion.sourceIdentity,
+        nativeManifestIdentity: material.companion.manifestIdentity,
+        nativePluginIdentity: material.companion.pluginIdentity,
+        nativePackageIdentity: material.companion.packageIdentity,
+      });
+    }
+  });
+
+  it("accepts the canonical native guard tuple and rejects each independently drifted fact", async () => {
+    const vectorBinder: AssetMutationExternalBinder = {
+      call: async (input) => ({
+        structuredContent: structuredDryRunResult(
+          input.exactToolName,
+          input.operationKind as AssetMutationOperationKindForHelper,
+          input.context.changeSetId,
+          input.context.runId,
+          input.assetPathBefore,
+          input.assetPathAfter,
+          input.operationId,
+        ),
+      }),
+    };
+    const driftCases = Object.keys(NATIVE_VECTOR_FACTS).map((key) => ({ key }));
+    const legallyDriftFact = (key: string, current: string | number) => {
+      if (typeof current === "number") return current + 1;
+      if (key === "nativePhase") return current === "execute" ? "rollback" : "execute";
+      if (/^[0-9a-f]{64}$/.test(current)) {
+        return `${current[0] === "0" ? "1" : "0"}${current.slice(1)}`;
+      }
+      return `${current}:drifted`;
+    };
+
+    for (const candidate of [
+      { key: "canonical" },
+      ...driftCases,
+    ]) {
+      const mcpCall = vi.fn(async (toolName: string, args: Record<string, unknown>) => ({
+        structuredContent: structuredExecuteResult(toolName, args),
+      }));
+      const service = createAssetChangeSetService({
+        executionMode: "real",
+        manifest: createAssetManifestRegistry(),
+        adapter: createMvp15McpAssetMutationAdapter({
+          tools: [
+            "ue.asset.create_folder",
+            "ue.asset.duplicate",
+            "ue.asset.rename",
+            "ue.asset.move",
+            "ue.asset.delete",
+            "ue.asset.save",
+          ].map((name) => ({
+            name,
+            inputSchema: { type: "object" },
+            dryRunSchema: { type: "object" },
+            rollbackContract: { type: "reverse_operation" },
+            affectedAssetsSchema: { type: "array" },
+            evidenceQuery: { type: "read_only" },
+          })),
+          assetMutationGateEnabled: true,
+          ...mcpBindingOptions(),
+          nativeGuard: (async (input: Record<string, unknown>) => {
+            if (input.command === "register") {
+              return {
+                status: "registered",
+                reason: null,
+                registrationId: NATIVE_VECTOR_FACTS.nativeRegistrationId,
+                operationCount: NATIVE_VECTOR_FACTS.nativeOperationCount,
+                ...nativeIssuedTokenFields("f"),
+              };
+            }
+            if (input.command === "record_outcome") {
+              return {
+                status: "recorded",
+                reason: "native_guard_fact_rejected",
+                registrationId: NATIVE_VECTOR_FACTS.nativeRegistrationId,
+                phase: "execute",
+                operationId: input.operationId,
+                rollbackAvailable: false,
+                terminal: false,
+              };
+            }
+            const operationId = (
+              input.operation as { operationId?: unknown } | undefined
+            )?.operationId;
+            const facts: Record<string, string | number> = {
+              ...NATIVE_VECTOR_FACTS,
+              nativeOperationIndex: Number(input.operationIndex),
+            };
+            if (candidate.key !== "canonical" && Number(input.operationIndex) > 0) {
+              facts[candidate.key] = legallyDriftFact(candidate.key, facts[candidate.key]!);
+            }
+            return {
+              status: "accepted_by_native_guard",
+              reason: null,
+              registrationId: NATIVE_VECTOR_FACTS.nativeRegistrationId,
+              phase: "execute",
+              operationId,
+              operationIndex: input.operationIndex,
+              operationCount: NATIVE_VECTOR_FACTS.nativeOperationCount,
+              evidenceId: "native:canonical-vector",
+              ...facts,
+            };
+          }) as never,
+          callTool: mcpCall,
+        }),
+        externalVerification: createPassingExternalVerification(),
+      });
+      const dryRun = service.dryRun(bindingVectorFiveOperationInput());
+      await service.bindExternalDryRun({
+        changeSetId: dryRun.changeSet.id,
+        binder: vectorBinder,
+      });
+      service.preview(dryRun.changeSet.id);
+      const approval = service.approve({
+        changeSetId: dryRun.changeSet.id,
+        actor: "tester",
+        reason: `native-vector-${candidate.key}`,
+      });
+      expect(approval.status).toBe("approved");
+      const registered = await service.registerApproval({
+        changeSetId: dryRun.changeSet.id,
+        editorSessionId: dryRun.changeSet.editorSessionId,
+        pidHash: dryRun.changeSet.pidHash,
+      });
+      expect(registered.status).toBe("registered");
+      expect(registered.approvalToken).toMatch(/^[0-9a-f]{64}$/);
+      const result = await service.execute({
+        changeSetId: dryRun.changeSet.id,
+        approvalToken: registered.approvalToken!,
+        editorSessionId: "editor-session:1",
+        pidHash: "pid:fixture",
+      });
+
+      if (candidate.key === "canonical") {
+        expect(result.status, candidate.key).toBe("executed");
+        expect(mcpCall, candidate.key).toHaveBeenCalledTimes(5);
+      } else {
+        expect(result.status, candidate.key).toBe("failed");
+        expect(result.reason, candidate.key).toMatch(
+          /native_(accepted_plan_binding|call_facts)_(invalid|changed)/,
+        );
+        expect(mcpCall, candidate.key).toHaveBeenCalledTimes(1);
+      }
+    }
+  });
+});
 
 describe("MVP15 sandbox asset policy", () => {
   it("allows only canonical UAgentSandbox game/content paths and blocks escapes", () => {
@@ -638,6 +1266,33 @@ describe("MVP15 MCP exact allowlist", () => {
 });
 
 describe("MVP15 strict external dry-run binding", () => {
+  it("uses the checked-in C++ resource schema as the cross-layer output contract", () => {
+    const resourceSchemaPath = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../integrations/unreal/UAgentAssetTools/Resources/uagent-asset-tools.schema.json",
+    );
+    const resourceSchema = JSON.parse(readFileSync(resourceSchemaPath, "utf8")) as {
+      properties: { toolNames: { prefixItems: Array<{ const: string }> } };
+      $defs: { output: { required: string[]; properties: { rollbackPlan: { required: string[]; properties: Record<string, unknown> } } } };
+    };
+    const runtimeContract = RuntimeExports.createMvp15DToolContract("ue.asset.create_folder").outputSchema as {
+      required: string[];
+      properties: { rollbackPlan: { required: string[]; properties: Record<string, unknown> } };
+    };
+
+    expect(resourceSchema.properties.toolNames.prefixItems.map((item) => item.const)).toEqual([
+      "ue.asset.create_folder",
+      "ue.asset.duplicate",
+      "ue.asset.rename",
+      "ue.asset.move",
+      "ue.asset.delete",
+      "ue.asset.save",
+    ]);
+    expect(runtimeContract.required).toEqual(resourceSchema.$defs.output.required);
+    expect(runtimeContract.properties.rollbackPlan.required).toEqual(resourceSchema.$defs.output.properties.rollbackPlan.required);
+    expect(runtimeContract.properties.rollbackPlan.properties.summary).toBeUndefined();
+  });
+
   it("accepts the canonical C++ exact-facade create-folder Dry-run result", () => {
     const context: DryRunBindingContext = {
       changeSetId: "cs-cpp-exact-facade",
@@ -658,11 +1313,13 @@ describe("MVP15 strict external dry-run binding", () => {
       phase: "dry_run",
       changeSetId: context.changeSetId,
       runId: context.runId,
+      operationId: "operation-cpp-exact-facade",
       dryRunHash: "a".repeat(40),
       evidenceId: "evidence-cpp-exact-facade",
       sideEffectObserved: false,
-      rollbackAvailable: false,
-      rollbackStatus: "not_available",
+      effectState: "known_none",
+      rollbackAvailable: true,
+      rollbackStatus: "available",
       implementationStatus: "execution_capable",
       hashAlgorithm: "sha1",
       schemaVersion: "mvp15c.dry-run.v1",
@@ -677,8 +1334,8 @@ describe("MVP15 strict external dry-run binding", () => {
         externalTargets: [],
       },
       rollbackPlan: {
-        strategy: "registry_owned_inverse",
-        inverseOperation: "registry_owned_inverse",
+        strategy: "ledger_inverse",
+        inverseOperation: "cleanup_empty_folder",
         executionEnabled: false,
       },
       externalEvidenceQueries: [{
@@ -748,7 +1405,9 @@ describe("MVP15 strict external dry-run binding", () => {
 
     expect(result).toEqual({
       ok: false,
-      reason: "mcp_dry_run_contract_mismatch:implementationStatus",
+      reason: value === undefined
+        ? "mcp_dry_run_contract_mismatch:shape"
+        : "mcp_dry_run_contract_mismatch:implementationStatus",
     });
   });
 
@@ -1007,6 +1666,7 @@ describe("MVP15 strict external dry-run binding", () => {
             input.context.runId,
             input.assetPathBefore,
             input.assetPathAfter,
+            input.operationId,
           ),
         }),
       },
@@ -1053,6 +1713,7 @@ describe("MVP15 strict external dry-run binding", () => {
               input.context.runId,
               input.assetPathBefore,
               input.assetPathAfter,
+              input.operationId,
             ),
           };
         },
@@ -1094,6 +1755,7 @@ describe("MVP15 strict external dry-run binding", () => {
             input.context.runId,
             input.assetPathBefore,
             input.assetPathAfter,
+            input.operationId,
           ),
         }),
       },
@@ -1181,6 +1843,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
         input.context.runId,
         input.assetPathBefore,
         input.assetPathAfter,
+        input.operationId,
       ),
     }),
   };
@@ -1195,9 +1858,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
           ok: true,
           reason: null,
           evidenceId: "asset-evidence:registration:test",
-          issuedApprovalToken: "a".repeat(64),
-          issuedAt: Date.now(),
-          expiresAt: Date.now() + 60_000,
+          ...nativePreparedRegistrationFields("a"),
           externalRegistration: {
             registrationId: "asset-registration:test",
           },
@@ -1406,7 +2067,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
             return { status: "recorded", reason: "operation_failed", registrationId: input.registrationId, phase: input.phase, operationId: input.operationId, rollbackAvailable: false, terminal: false };
           }
           const operationId = (input.operation as { operationId?: unknown } | undefined)?.operationId;
-          return { status: "accepted_by_native_guard", reason: null, registrationId: "asset-registration:a08", phase: "execute", operationId, operationIndex: 0, operationCount: 5, evidenceId: "native:a08" };
+          return { status: "accepted_by_native_guard", reason: null, registrationId: "asset-registration:a08", phase: "execute", operationId, operationIndex: 0, operationCount: 5, evidenceId: "native:a08", ...nativeCallFacts("asset-registration:a08", "execute", 0) };
         }) as never,
         callTool: mcpCall,
       }),
@@ -1484,7 +2145,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
           inFlight = { phase: input.phase as "execute" | "rollback", index };
           if (input.phase === "execute" && index === 1) currentBinding = "mcp-binding:drifted";
           const operationId = (input.operation as { operationId: string }).operationId;
-          return { status: "accepted_by_native_guard", reason: null, registrationId: input.registrationId, phase: input.phase, operationId, operationIndex: index, operationCount: 5, evidenceId: `native:${String(input.phase)}:${index}` };
+          return { status: "accepted_by_native_guard", reason: null, registrationId: input.registrationId, phase: input.phase, operationId, operationIndex: index, operationCount: 5, evidenceId: `native:${String(input.phase)}:${index}`, ...nativeCallFacts(String(input.registrationId), input.phase as "execute" | "rollback", index) };
         }) as never,
         callTool: async (toolName, args) => {
           mcpCalls.push({ toolName, args });
@@ -1549,8 +2210,67 @@ describe("MVP15 service boundary and deferred real gates", () => {
     expect(nativeCalls.filter((call) => call.command === "record_outcome")).toHaveLength(3);
   });
 
+  it("rechecks the exact descriptor inventory after native guard and before MCP dispatch", async () => {
+    const runId = "run-pre-effect-schema";
+    const tools = ["ue.asset.create_folder", "ue.asset.duplicate", "ue.asset.rename", "ue.asset.move", "ue.asset.delete", "ue.asset.save"].map((name) => ({
+      name,
+      inputSchema: { type: "object" },
+      dryRunSchema: { type: "object" },
+      rollbackContract: { type: "reverse_operation" },
+      affectedAssetsSchema: { type: "array" },
+      evidenceQuery: { type: "read_only" },
+    }));
+    const nativeCalls: Array<Record<string, unknown>> = [];
+    const mcpCall = vi.fn(async (toolName: string, args: Record<string, unknown>) => ({
+      structuredContent: structuredExecuteResult(toolName, args),
+    }));
+    const service = createAssetChangeSetService({
+      executionMode: "real",
+      manifest: createAssetManifestRegistry(),
+      adapter: createMvp15McpAssetMutationAdapter({
+        tools,
+        assetMutationGateEnabled: true,
+        ...mcpBindingOptions(),
+        nativeGuard: (async (input: Record<string, unknown>) => {
+          nativeCalls.push(input);
+          if (input.command === "register") {
+            return { status: "registered", reason: null, registrationId: "asset-registration:pre-effect-schema", operationCount: 5, ...nativeIssuedTokenFields("a") };
+          }
+          if (input.command === "record_outcome") {
+            return { status: "recorded", reason: "operation_failed", registrationId: input.registrationId, phase: input.phase, operationId: input.operationId, rollbackAvailable: false, terminal: false };
+          }
+          // Simulate descriptor refresh/removal during the await between guard and
+          // dispatch. The adapter must settle the guard without calling MCP.
+          tools.splice(0, 1);
+          const operationId = (input.operation as { operationId?: unknown } | undefined)?.operationId;
+          return { status: "accepted_by_native_guard", reason: null, registrationId: "asset-registration:pre-effect-schema", phase: "execute", operationId, operationIndex: input.operationIndex, operationCount: 5, evidenceId: "native:pre-effect-schema", ...nativeCallFacts("asset-registration:pre-effect-schema", "execute", Number(input.operationIndex)) };
+        }) as never,
+        callTool: mcpCall,
+      }),
+      externalVerification: createPassingExternalVerification(),
+    });
+    const dryRun = service.dryRun(fiveOperationInput(runId));
+    await service.bindExternalDryRun({ changeSetId: dryRun.changeSet.id, binder: validBinder });
+    service.preview(dryRun.changeSet.id);
+    const approval = service.approve({ changeSetId: dryRun.changeSet.id, actor: "tester", reason: "pre-effect-schema" });
+    const registered = await registerRealApproval(service, approval);
+
+    const result = await service.execute({
+      changeSetId: dryRun.changeSet.id,
+      approvalToken: registered.approvalToken!,
+      editorSessionId: "editor-session:1",
+      pidHash: "pid:fixture",
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.reason).toBe("mcp_schema_changed");
+    expect(result.changeSet?.operations[0]?.blockedReason).toBe("mcp_schema_changed");
+    expect(nativeCalls.map((call) => call.command)).toEqual(["register", "guard", "record_outcome"]);
+    expect(mcpCall).not.toHaveBeenCalled();
+  });
+
   it("registers one approval and executes the canonical five-operation real sequence without leaking the token to MCP", async () => {
-    const runId = "run-real-five";
+    const runId = NATIVE_BINDING_VECTOR.bindingMaterial.runId;
     const nativeEvents: string[] = [];
     const mcpCalls: Array<{ toolName: string; args: Record<string, unknown> }> = [];
     const service = createAssetChangeSetService({
@@ -1581,7 +2301,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
             return {
               status: "registered",
               reason: null,
-              registrationId: "asset-registration:five",
+               registrationId: NATIVE_VECTOR_FACTS.nativeRegistrationId,
               operationCount: 5,
               ...nativeIssuedTokenFields("b"),
             };
@@ -1590,7 +2310,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
             return {
               status: "recorded",
               reason: null,
-              registrationId: "asset-registration:five",
+               registrationId: NATIVE_VECTOR_FACTS.nativeRegistrationId,
               phase: "execute",
               operationId: input.operationId,
               rollbackAvailable: true,
@@ -1600,12 +2320,17 @@ describe("MVP15 service boundary and deferred real gates", () => {
           return {
             status: "accepted_by_native_guard",
             reason: null,
-            registrationId: "asset-registration:five",
+             registrationId: NATIVE_VECTOR_FACTS.nativeRegistrationId,
             phase: "execute",
             operationId: guardedOperationId,
             operationIndex: input.operationIndex,
             operationCount: 5,
             evidenceId: `native:${String(guardedOperationId)}`,
+             ...nativeCallFacts(
+               NATIVE_VECTOR_FACTS.nativeRegistrationId,
+               "execute",
+               Number(input.operationIndex),
+             ),
           };
         }) as never,
         callTool: async (toolName, args) => {
@@ -1615,7 +2340,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
       }),
       externalVerification: createPassingExternalVerification(),
     });
-    const dryRun = service.dryRun(fiveOperationInput(runId));
+    const dryRun = service.dryRun(bindingVectorFiveOperationInput());
     await service.bindExternalDryRun({ changeSetId: dryRun.changeSet.id, binder: validBinder });
     service.preview(dryRun.changeSet.id);
     const approval = service.approve({ changeSetId: dryRun.changeSet.id, actor: "tester", reason: "five-step" });
@@ -1645,6 +2370,32 @@ describe("MVP15 service boundary and deferred real gates", () => {
       "guard:4", "record_outcome:4",
     ]);
     expect(mcpCalls.every(({ args }) => !Object.prototype.hasOwnProperty.call(args, "approvalToken"))).toBe(true);
+    expect(mcpCalls.every(({ args }) => args.acceptedPlanBinding === NATIVE_ACCEPTED_PLAN_BINDING)).toBe(true);
+    expect(mcpCalls.map(({ args }) => ({
+      nativeRegistrationId: args.nativeRegistrationId,
+      nativePhase: args.nativePhase,
+      nativeOperationIndex: args.nativeOperationIndex,
+      nativeOperationCount: args.nativeOperationCount,
+      nativeCreatedAt: args.nativeCreatedAt,
+      connectionGeneration: args.connectionGeneration,
+      sessionGeneration: args.sessionGeneration,
+      nativeSourceIdentity: args.nativeSourceIdentity,
+      nativeManifestIdentity: args.nativeManifestIdentity,
+      nativePluginIdentity: args.nativePluginIdentity,
+      nativePackageIdentity: args.nativePackageIdentity,
+    }))).toEqual(Array.from({ length: 5 }, (_, operationIndex) => ({
+      nativeRegistrationId: NATIVE_VECTOR_FACTS.nativeRegistrationId,
+      nativePhase: "execute",
+      nativeOperationIndex: operationIndex,
+      nativeOperationCount: 5,
+      nativeCreatedAt: NATIVE_VECTOR_FACTS.nativeCreatedAt,
+      connectionGeneration: NATIVE_VECTOR_FACTS.connectionGeneration,
+      sessionGeneration: NATIVE_VECTOR_FACTS.sessionGeneration,
+      nativeSourceIdentity: NATIVE_SOURCE_IDENTITY,
+      nativeManifestIdentity: NATIVE_MANIFEST_IDENTITY,
+      nativePluginIdentity: NATIVE_PLUGIN_IDENTITY,
+      nativePackageIdentity: NATIVE_PACKAGE_IDENTITY,
+    })));
     expect(mcpCalls.every(({ args }) => args.runId === runId && args.dryRun === false && args.execute === true && args.rollback === false)).toBe(true);
   });
 
@@ -1676,7 +2427,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
           if (input.command === "record_outcome") {
             return { status: "recorded", reason: null, registrationId: "asset-registration:partial", phase: "execute", operationId: input.operationId, rollbackAvailable: true, terminal: input.success === false };
           }
-          return { status: "accepted_by_native_guard", reason: null, registrationId: "asset-registration:partial", phase: "execute", operationId: guardedOperationId, operationIndex: input.operationIndex, operationCount: 5, evidenceId: `native:${String(guardedOperationId)}` };
+          return { status: "accepted_by_native_guard", reason: null, registrationId: "asset-registration:partial", phase: "execute", operationId: guardedOperationId, operationIndex: input.operationIndex, operationCount: 5, evidenceId: `native:${String(guardedOperationId)}`, ...nativeCallFacts("asset-registration:partial", "execute", Number(input.operationIndex)) };
         }) as never,
         callTool: async (toolName, args) => {
           mcpCalls.push({ toolName, args });
@@ -1699,26 +2450,29 @@ describe("MVP15 service boundary and deferred real gates", () => {
     const nativeCountAfterFailure = nativeCalls.length;
     const replay = await service.execute(executeInput);
 
-    expect(result.status).toBe("failed");
-    expect(result.reason).toBe("mcp_call_failed");
+    expect(result.status).toBe("unknown_effect");
+    expect(result.reason).toBe("mcp_call_effect_unknown");
     expect(JSON.stringify(result)).not.toContain("private");
     expect(nativeCalls).toContainEqual(expect.objectContaining({
       command: "record_outcome",
       operationIndex: 1,
       operationId: dryRun.changeSet.operations[1]?.id,
       success: false,
-      reasonCode: "mcp_call_failed",
+      effectState: "unknown",
+      reasonCode: "mcp_call_effect_unknown",
     }));
-    expect(result.changeSet?.state).toBe("rollback_available");
+    expect(result.changeSet?.state).toBe("unknown_effect");
     expect(result.changeSet?.operations.map((operation) => operation.executionStatus)).toEqual([
       "executed",
-      "failed",
+      "unknown_effect",
       "pending",
       "pending",
       "pending",
     ]);
     expect(result.changeSet?.operations[0]?.executionEvidenceId).toBe("asset-evidence:execute:create_folder");
-    expect(result.changeSet?.operations[1]?.executionEvidenceId).toBe(`asset-evidence:block:${dryRun.changeSet.operations[1]?.id}`);
+    expect(result.changeSet?.operations[1]?.executionEvidenceId).toBe(`asset-evidence:unconfirmed:${dryRun.changeSet.operations[1]?.id}`);
+    expect(result.changeSet?.operations[1]?.blockedReason).toBe("mcp_call_effect_unknown");
+    expect(result.changeSet?.operations[1]?.partialSideEffectObserved).toBeUndefined();
     expect(mcpCalls).toHaveLength(2);
     expect(manifest.list()).toHaveLength(1);
     expect(manifest.list()[0]?.sourceOperationId).toBe(dryRun.changeSet.operations[0]?.id);
@@ -1755,7 +2509,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
             return { status: "recorded", reason: null, registrationId: "asset-registration:partial-side-effect", phase: input.phase, operationId: input.operationId, rollbackAvailable: true, terminal: false };
           }
           const operationId = (input.operation as { operationId?: unknown } | undefined)?.operationId;
-          return { status: "accepted_by_native_guard", reason: null, registrationId: "asset-registration:partial-side-effect", phase: input.phase, operationId, operationIndex: input.operationIndex, operationCount: 5, evidenceId: `native:${String(input.phase)}:${String(input.operationIndex)}` };
+          return { status: "accepted_by_native_guard", reason: null, registrationId: "asset-registration:partial-side-effect", phase: input.phase, operationId, operationIndex: input.operationIndex, operationCount: 5, evidenceId: `native:${String(input.phase)}:${String(input.operationIndex)}`, ...nativeCallFacts("asset-registration:partial-side-effect", input.phase as "execute" | "rollback", Number(input.operationIndex)) };
         }) as never,
         callTool: async (toolName, args) => {
           mcpCalls.push({ toolName, args });
@@ -1773,10 +2527,11 @@ describe("MVP15 service boundary and deferred real gates", () => {
           }
           return {
             structuredContent: structuredExecuteResult(toolName, args, {
-              blocked: true,
-              status: "partial_failure",
-              reasonCode: "mutation_failed",
-              rollbackAvailable: true,
+                blocked: false,
+                status: "partial_failure",
+                reasonCode: "mutation_failed",
+                effectState: "known_partial",
+                rollbackAvailable: true,
               rollbackStatus: "available",
             }),
           };
@@ -1834,7 +2589,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
 
     expect(rolledBack.status).toBe("rolled_back");
     expect(mcpCalls).toHaveLength(2);
-    expect(mcpCalls[1]).toMatchObject({ toolName: "ue.asset.create_folder", args: { rollback: true } });
+    expect(mcpCalls[1]).toMatchObject({ toolName: "ue.asset.delete", args: { rollback: true } });
   });
 
   it("fails closed before MCP when the native guard accepts with a mismatched operation binding", async () => {
@@ -1870,6 +2625,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
             operationIndex: input.operationIndex,
             operationCount: 5,
             evidenceId: "native:guard-mismatch",
+            acceptedPlanBinding: NATIVE_ACCEPTED_PLAN_BINDING,
           };
         }) as never,
         callTool: async (toolName, args) => {
@@ -1896,6 +2652,104 @@ describe("MVP15 service boundary and deferred real gates", () => {
     expect(result.reason).toBe("native_guard_result_invalid");
     expect(mcpCalls).toBe(0);
   });
+
+  it.each([
+    [
+      "accepted plan binding is omitted",
+      () => ({}),
+      "native_accepted_plan_binding_invalid",
+    ],
+    [
+      "one native identity is omitted",
+      (input: Record<string, unknown>) => {
+        return Object.fromEntries(
+          Object.entries(
+            nativeCallFacts(
+              "asset-registration:plan-binding-missing",
+              "execute",
+              Number(input.operationIndex),
+            ),
+          ).filter(([field]) => field !== "nativeSourceIdentity"),
+        );
+      },
+      "native_call_facts_invalid",
+    ],
+    [
+      "native operation index is wrong",
+      (input: Record<string, unknown>) => ({
+        ...nativeCallFacts(
+          "asset-registration:plan-binding-missing",
+          "execute",
+          Number(input.operationIndex),
+        ),
+        nativeOperationIndex: Number(input.operationIndex) + 1,
+      }),
+      "native_call_facts_invalid",
+    ],
+  ] as const)(
+    "fails closed before MCP when %s",
+    async (_caseName, nativeFacts, expectedReason) => {
+    const runId = "run-native-plan-binding-missing";
+    let mcpCalls = 0;
+    const service = createAssetChangeSetService({
+      executionMode: "real",
+      manifest: createAssetManifestRegistry(),
+      adapter: createMvp15McpAssetMutationAdapter({
+        tools: ["ue.asset.create_folder", "ue.asset.duplicate", "ue.asset.rename", "ue.asset.move", "ue.asset.delete", "ue.asset.save"].map((name) => ({
+          name,
+          inputSchema: { type: "object" },
+          dryRunSchema: { type: "object" },
+          rollbackContract: { type: "reverse_operation" },
+          affectedAssetsSchema: { type: "array" },
+          evidenceQuery: { type: "read_only" },
+        })),
+        assetMutationGateEnabled: true,
+        ...mcpBindingOptions(),
+        nativeGuard: (async (input: Record<string, unknown>) => {
+          if (input.command === "register") {
+            return { status: "registered", reason: null, registrationId: "asset-registration:plan-binding-missing", operationCount: 5, ...nativeIssuedTokenFields("9") };
+          }
+          if (input.command === "record_outcome") {
+            return { status: "recorded", reason: "operation_failed", registrationId: input.registrationId, phase: input.phase, operationId: input.operationId, rollbackAvailable: false, terminal: false };
+          }
+          const operationId = (input.operation as { operationId?: unknown } | undefined)?.operationId;
+          return {
+            status: "accepted_by_native_guard",
+            reason: null,
+            registrationId: "asset-registration:plan-binding-missing",
+            phase: "execute",
+            operationId,
+             operationIndex: input.operationIndex,
+             operationCount: 5,
+             evidenceId: "native:plan-binding-missing",
+             ...nativeFacts(input),
+           };
+        }) as never,
+        callTool: async (toolName, args) => {
+          mcpCalls += 1;
+          return { structuredContent: structuredExecuteResult(toolName, args) };
+        },
+      }),
+      externalVerification: createPassingExternalVerification(),
+    });
+    const dryRun = service.dryRun(fiveOperationInput(runId));
+    await service.bindExternalDryRun({ changeSetId: dryRun.changeSet.id, binder: validBinder });
+    service.preview(dryRun.changeSet.id);
+    const approval = service.approve({ changeSetId: dryRun.changeSet.id, actor: "tester", reason: "native-plan-binding-missing" });
+    const registered = await registerRealApproval(service, approval);
+
+    const result = await service.execute({
+      changeSetId: dryRun.changeSet.id,
+      approvalToken: registered.approvalToken!,
+      editorSessionId: "editor-session:1",
+      pidHash: "pid:fixture",
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.reason).toBe(expectedReason);
+    expect(mcpCalls).toBe(0);
+    },
+  );
 
   it.each([
     ["unknown object", () => ({})],
@@ -1932,7 +2786,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
           const guardedOperationId = (input.operation as { operationId?: unknown } | undefined)?.operationId;
           if (input.command === "register") return { status: "registered", reason: null, registrationId: `asset-registration:${runId}`, operationCount: 5, ...nativeIssuedTokenFields("f") };
           if (input.command === "record_outcome") return { status: "recorded", reason: null, registrationId: `asset-registration:${runId}`, phase: "execute", operationId: input.operationId, rollbackAvailable: false, terminal: true };
-          return { status: "accepted_by_native_guard", reason: null, registrationId: `asset-registration:${runId}`, phase: "execute", operationId: guardedOperationId, operationIndex: input.operationIndex, operationCount: 5, evidenceId: "native:malformed" };
+          return { status: "accepted_by_native_guard", reason: null, registrationId: `asset-registration:${runId}`, phase: "execute", operationId: guardedOperationId, operationIndex: input.operationIndex, operationCount: 5, evidenceId: "native:malformed", ...nativeCallFacts(`asset-registration:${runId}`, "execute", Number(input.operationIndex)) };
         }) as never,
         callTool: async (toolName, args) => {
           mcpCalls += 1;
@@ -1948,9 +2802,10 @@ describe("MVP15 service boundary and deferred real gates", () => {
     const registered = await registerRealApproval(service, approval);
     const result = await service.execute({ changeSetId: dryRun.changeSet.id, approvalToken: registered.approvalToken!, editorSessionId: "editor-session:1", pidHash: "pid:fixture" });
 
-    expect(result.status).toBe("failed");
-    expect(result.reason).toBe("mcp_tool_result_invalid");
-    expect(result.changeSet?.state).toBe("failed");
+    expect(result.status).toBe("unknown_effect");
+    expect(result.reason).toBe("mcp_tool_result_effect_unknown");
+    expect(result.changeSet?.operations[0]?.partialSideEffectObserved).toBeUndefined();
+    expect(result.changeSet?.state).toBe("unknown_effect");
     expect(mcpCalls).toBe(1);
     expect(manifest.list()).toEqual([]);
   });
@@ -2148,9 +3003,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
           ok: true,
           reason: null,
           evidenceId: "native-registration:phase-e-red",
-          issuedApprovalToken: "1".repeat(64),
-          issuedAt: Date.now(),
-          expiresAt: Date.now() + 60_000,
+          ...nativePreparedRegistrationFields("1"),
           externalRegistration: { registrationId: "registration:phase-e-red" },
         }),
         cancelPreparedRegistration: () => ({ ok: true, reason: null, evidenceId: "native-registration:phase-e-red:cancelled" }),
@@ -2193,7 +3046,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
       executionMode: "real",
       manifest: createAssetManifestRegistry(),
       adapter: {
-        prepareExecute: () => ({ ok: true, reason: null, evidenceId: "native-registration:phase-e", issuedApprovalToken: "2".repeat(64), issuedAt: Date.now(), expiresAt: Date.now() + 60_000, externalRegistration: { registrationId: "registration:phase-e" } }),
+        prepareExecute: () => ({ ok: true, reason: null, evidenceId: "native-registration:phase-e", ...nativePreparedRegistrationFields("2"), externalRegistration: { registrationId: "registration:phase-e" } }),
         execute: (operation: AssetMutationOperation) => ({ ok: true, reason: null, evidenceId: `execute:${operation.id}` }),
         rollback: (operation: AssetMutationOperation) => ({ ok: true, reason: null, evidenceId: `rollback:${operation.id}` }),
       },
@@ -2271,7 +3124,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
             return { status: "recorded", reason: null, registrationId: "asset-registration:phase-f", phase: input.phase, operationId: input.operationId, rollbackAvailable: input.phase === "execute", terminal: false };
           }
           const operation = input.operation as { operationId?: string } | undefined;
-          return { status: "accepted_by_native_guard", reason: null, registrationId: "asset-registration:phase-f", phase: input.phase, operationId: operation?.operationId, operationIndex: input.operationIndex, operationCount: 5, evidenceId: `native:${String(input.phase)}:${String(input.operationIndex)}` };
+          return { status: "accepted_by_native_guard", reason: null, registrationId: "asset-registration:phase-f", phase: input.phase, operationId: operation?.operationId, operationIndex: input.operationIndex, operationCount: 5, evidenceId: `native:${String(input.phase)}:${String(input.operationIndex)}`, ...nativeCallFacts("asset-registration:phase-f", input.phase as "execute" | "rollback", Number(input.operationIndex)) };
         }) as never,
         callTool: async (toolName, args) => {
           mcpCalls.push({ toolName, args });
@@ -2326,10 +3179,10 @@ describe("MVP15 service boundary and deferred real gates", () => {
 
     expect(rolledBack.status).toBe("rolled_back");
     expect(rolledBack.changeSet?.state).toBe("rolled_back");
-    expect(mcpCalls.map((call) => call.toolName)).toEqual(["ue.asset.move", "ue.asset.rename", "ue.asset.duplicate", "ue.asset.create_folder"]);
+    expect(mcpCalls.map((call) => call.toolName)).toEqual(["ue.asset.move", "ue.asset.rename", "ue.asset.delete", "ue.asset.delete"]);
     expect(mcpCalls.every((call) => call.args.dryRun === false && call.args.execute === false && call.args.rollback === true)).toBe(true);
-    expect(mcpCalls[0]?.args).toMatchObject({ assetPath: `/Game/UAgentSandbox/${runId}/HeroRenamed`, targetAssetPath: `/Game/UAgentSandbox/${runId}/Sub/HeroRenamed` });
-    expect(mcpCalls[2]?.args).toMatchObject({ sourceAssetPath: "/Game/Test01", targetAssetPath: `/Game/UAgentSandbox/${runId}/HeroCopy` });
+    expect(mcpCalls[0]?.args).toMatchObject({ assetPath: `/Game/UAgentSandbox/${runId}/Sub/HeroRenamed`, targetAssetPath: `/Game/UAgentSandbox/${runId}/HeroRenamed` });
+    expect(mcpCalls[2]?.args).toMatchObject({ assetPath: `/Game/UAgentSandbox/${runId}/HeroCopy` });
     expect(nativeCalls.filter((call) => call.command === "guard").map((call) => ({
       phase: call.phase,
       operationIndex: call.operationIndex,
@@ -2379,7 +3232,8 @@ describe("MVP15 service boundary and deferred real gates", () => {
       operationCount: 5,
     }, { ok: true, toolName: "ue.asset.move", args, assetPath: operation.assetPathBefore, targetAssetPath: operation.assetPathAfter } as never);
 
-    expect(result.reason).toBe("mcp_tool_result_invalid");
+    expect(result.reason).toBe("mcp_tool_result_effect_unknown");
+    expect(result.sideEffectObserved).toBeUndefined();
   });
 
   it("recognizes the literal C++ partial-failure shape as rollback-owned", () => {
@@ -2394,11 +3248,12 @@ describe("MVP15 service boundary and deferred real gates", () => {
       execute: true,
       rollback: false,
       dryRunHash: operation.dryRunHash,
+      operationId: operation.id,
       folderPath: runRoot,
     };
     const raw = {
       structuredContent: {
-        blocked: true,
+        blocked: false,
         status: "partial_failure",
         reasonCode: "mutation_failed",
         toolName: "ue.asset.create_folder",
@@ -2406,9 +3261,11 @@ describe("MVP15 service boundary and deferred real gates", () => {
         phase: "execute",
         changeSetId: changeSet.id,
         runId,
+        operationId: operation.id,
         dryRunHash: operation.dryRunHash,
         evidenceId: "evidence-cpp-partial-literal",
         sideEffectObserved: true,
+        effectState: "known_partial",
         rollbackAvailable: true,
         rollbackStatus: "available",
         implementationStatus: "execution_capable",
@@ -2420,7 +3277,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
         wouldRead: [],
         wouldChange: true,
         affectedAssets: { readOnlySources: [], sandboxTargets: [runRoot], externalTargets: [] },
-        rollbackPlan: { strategy: "registry_owned_inverse", inverseOperation: "registry_owned_inverse", executionEnabled: true },
+        rollbackPlan: { strategy: "ledger_inverse", inverseOperation: "cleanup_empty_folder", executionEnabled: true },
         externalEvidenceQueries: [{ queryKind: "asset_registry_snapshot", readOnly: true, paths: [runRoot] }],
       },
     };
@@ -2438,6 +3295,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
     expect(result.ok).toBe(false);
     expect(result.reason).toBe("mcp_tool_partial_failure:mutation_failed");
     expect(result.sideEffectObserved).toBe(true);
+    expect(result.effectState).toBe("known_partial");
   });
 
   it("recognizes the literal C++ pre-mutation blocked shape without rollback ownership", () => {
@@ -2452,6 +3310,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
       execute: true,
       rollback: false,
       dryRunHash: operation.dryRunHash,
+      operationId: operation.id,
       folderPath: runRoot,
     };
     const raw = {
@@ -2464,9 +3323,11 @@ describe("MVP15 service boundary and deferred real gates", () => {
         phase: "execute",
         changeSetId: changeSet.id,
         runId,
+        operationId: operation.id,
         dryRunHash: operation.dryRunHash,
         evidenceId: "evidence-cpp-blocked-literal",
         sideEffectObserved: false,
+        effectState: "known_none",
         rollbackAvailable: false,
         rollbackStatus: "not_available",
         implementationStatus: "execution_capable",
@@ -2478,7 +3339,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
         wouldRead: [],
         wouldChange: false,
         affectedAssets: { readOnlySources: [], sandboxTargets: [], externalTargets: [] },
-        rollbackPlan: { strategy: "registry_owned_inverse", inverseOperation: "registry_owned_inverse", executionEnabled: false },
+        rollbackPlan: { strategy: "ledger_inverse", inverseOperation: "cleanup_empty_folder", executionEnabled: false },
         externalEvidenceQueries: [{ queryKind: "asset_registry_snapshot", readOnly: true, paths: [] }],
       },
     };
@@ -2496,10 +3357,74 @@ describe("MVP15 service boundary and deferred real gates", () => {
     expect(result.ok).toBe(false);
     expect(result.reason).toBe("mcp_tool_blocked:backend_unavailable");
     expect(result.sideEffectObserved).toBe(false);
+    expect(result.effectState).toBe("known_none");
     expect(result.stateOnFailure).toBe("failed");
   });
 
-  it("returns explicit no-ownership results for null unknown and malformed plugin output", () => {
+  it("recognizes the literal C++ unknown-observation shape without downgrading it to no effect", () => {
+    const runId = "run-cpp-unknown-literal";
+    const changeSet = createReadyService().dryRun(fiveOperationInput(runId)).changeSet;
+    const operation = { ...changeSet.operations[0]!, dryRunHash: "d".repeat(40) };
+    const runRoot = `/Game/UAgentSandbox/${runId}`;
+    const args = {
+      changeSetId: changeSet.id,
+      runId,
+      dryRun: false,
+      execute: true,
+      rollback: false,
+      dryRunHash: operation.dryRunHash,
+      operationId: operation.id,
+      folderPath: runRoot,
+    };
+    const raw = {
+      structuredContent: {
+        blocked: true,
+        status: "blocked",
+        reasonCode: "forward_effect_observation_unavailable",
+        toolName: "ue.asset.create_folder",
+        operation: "create_folder",
+        phase: "execute",
+        changeSetId: changeSet.id,
+        runId,
+        operationId: operation.id,
+        dryRunHash: operation.dryRunHash,
+        evidenceId: "evidence-cpp-unknown-literal",
+        sideEffectObserved: false,
+        effectState: "unknown",
+        rollbackAvailable: false,
+        rollbackStatus: "not_available",
+        implementationStatus: "execution_capable",
+        hashAlgorithm: "sha1",
+        schemaVersion: "mvp15c.dry-run.v1",
+        approvalRequired: true,
+        sandboxRoot: runRoot,
+        wouldModify: [],
+        wouldRead: [],
+        wouldChange: false,
+        affectedAssets: { readOnlySources: [], sandboxTargets: [], externalTargets: [] },
+        rollbackPlan: { strategy: "ledger_inverse", inverseOperation: "cleanup_empty_folder", executionEnabled: false },
+        externalEvidenceQueries: [{ queryKind: "asset_registry_snapshot", readOnly: true, paths: [] }],
+      },
+    };
+
+    const result = validateMvp15PluginExecutionResult(raw, operation, {
+      changeSet,
+      approvalToken: null,
+      editorSessionId: changeSet.editorSessionId,
+      pidHash: changeSet.pidHash,
+      dryRunHash: operation.dryRunHash,
+      operationIndex: 0,
+      operationCount: 5,
+    }, { ok: true, toolName: "ue.asset.create_folder", args, assetPath: runRoot, targetAssetPath: null } as never);
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("mcp_tool_effect_unknown:forward_effect_observation_unavailable");
+    expect(result.effectState).toBe("unknown");
+    expect(result.sideEffectObserved).toBeUndefined();
+    expect(result.rollbackAvailable).toBe(false);
+  });
+
+  it("marks null, unknown, and malformed plugin output as effect-unconfirmed", () => {
     const runId = "run-cpp-malformed-literal";
     const changeSet = createReadyService().dryRun(fiveOperationInput(runId)).changeSet;
     const operation = { ...changeSet.operations[0]!, dryRunHash: "c".repeat(40) };
@@ -2511,7 +3436,8 @@ describe("MVP15 service boundary and deferred real gates", () => {
     for (const raw of [null, { unknown: true }, { structuredContent: { blocked: true } }]) {
       const result = validateMvp15PluginExecutionResult(raw, operation, context, call);
       expect(result.ok).toBe(false);
-      expect(result.sideEffectObserved).toBe(false);
+      expect(result.reason).toBe("mcp_tool_result_effect_unknown");
+      expect(result.sideEffectObserved).toBeUndefined();
       expect(result.stateOnFailure).toBe("failed");
     }
   });
@@ -2528,7 +3454,7 @@ describe("MVP15 service boundary and deferred real gates", () => {
       adapter: {
         prepareExecute: () => {
           prepareCalls += 1;
-          return { ok: true, reason: null, evidenceId: "native-registration:phase-f-partial", issuedApprovalToken: "4".repeat(64), issuedAt: Date.now(), expiresAt: Date.now() + 60_000, externalRegistration: { registrationId: "registration:phase-f-partial" } };
+          return { ok: true, reason: null, evidenceId: "native-registration:phase-f-partial", ...nativePreparedRegistrationFields("4"), externalRegistration: { registrationId: "registration:phase-f-partial" } };
         },
         execute: (operation: AssetMutationOperation, context) => context.operationIndex === 2
           ? { ok: false, reason: "mcp_tool_partial_failure:test", evidenceId: `execute-failed:${operation.id}`, sideEffectObserved: true, rollbackAvailable: true }
@@ -2738,7 +3664,7 @@ describe("MVP15 asset ChangeSet service", () => {
         expect(dryArgs).not.toHaveProperty("dryRunHash");
         expect(dryArgs).not.toHaveProperty("approvalToken");
         void argsDryRun;
-        return { structuredContent: structuredDryRunResult(input.exactToolName, input.operationKind as AssetMutationOperationKindForHelper, changeSetRef.id, runId, input.assetPathBefore, input.assetPathAfter) };
+        return { structuredContent: structuredDryRunResult(input.exactToolName, input.operationKind as AssetMutationOperationKindForHelper, changeSetRef.id, runId, input.assetPathBefore, input.assetPathAfter, input.operationId) };
       },
     };
     const service = createAssetChangeSetService({
@@ -2979,7 +3905,42 @@ describe("MVP15 asset ChangeSet service", () => {
     expect(calls).toEqual([]);
   });
 
-  it("fails execution when the adapter returns an execution failure", async () => {
+  it("rejects a same-run manifest entry whose source operation is not in this ChangeSet", async () => {
+    const calls: string[] = [];
+    const manifest = createAssetManifestRegistry();
+    const runId = "run-foreign-ledger";
+    manifest.registerCreated({
+      projectId: "project:fixture",
+      editorSessionId: "editor-session:1",
+      runId,
+      assetPath: `/Game/UAgentSandbox/${runId}/ForeignOwned`,
+      sourceOperationId: "foreign-operation",
+      evidenceId: "asset-evidence:foreign-operation",
+    });
+    const service = createAssetChangeSetService({
+      now: () => 1,
+      manifest,
+      adapter: {
+        execute: (operation) => {
+          calls.push(operation.id);
+          return { ok: true, reason: null, evidenceId: `asset-evidence:execute:${operation.id}` };
+        },
+        rollback: (operation) => ({ ok: true, reason: null, evidenceId: `asset-evidence:rollback:${operation.id}` }),
+      },
+    });
+
+    const { executed } = await executeApprovedChangeSet(service, [{
+      kind: "rename_asset",
+      assetPathBefore: `/Game/UAgentSandbox/${runId}/ForeignOwned`,
+      assetPathAfter: `/Game/UAgentSandbox/${runId}/Renamed`,
+    }], runId);
+
+    expect(executed.status).toBe("blocked");
+    expect(executed.reason).toBe("manifest_source_operation_required");
+    expect(calls).toEqual([]);
+  });
+
+  it("keeps an untagged adapter execution failure effect-unknown", async () => {
     const manifest = createAssetManifestRegistry();
     const service = createAssetChangeSetService({
       now: () => 1,
@@ -2992,9 +3953,44 @@ describe("MVP15 asset ChangeSet service", () => {
 
     const { executed } = await executeApprovedChangeSet(service, [{ kind: "create_folder", assetPathAfter: "/Game/UAgentSandbox/run-1" }]);
 
-    expect(executed.status).toBe("failed");
+    expect(executed.status).toBe("unknown_effect");
     expect(executed.reason).toBe("adapter_execute_failed");
-    expect(executed.changeSet?.state).toBe("rollback_available");
+    expect(executed.changeSet?.state).toBe("unknown_effect");
+    expect(manifest.list()).toHaveLength(0);
+  });
+
+  it("records an observed but non-reversible partial failure without fabricating rollback ownership", async () => {
+    const manifest = createAssetManifestRegistry();
+    const service = createAssetChangeSetService({
+      now: () => 1,
+      manifest,
+      adapter: {
+        execute: (operation) => ({
+          ok: false,
+          reason: "native_outcome_failed_after_observed_effect",
+          evidenceId: `asset-evidence:unsettled:${operation.id}`,
+          stateOnFailure: "failed",
+          sideEffectObserved: true,
+          rollbackAvailable: false,
+        }),
+        rollback: (operation) => ({ ok: true, reason: null, evidenceId: `asset-evidence:rollback:${operation.id}` }),
+      },
+    });
+
+    const { executed } = await executeApprovedChangeSet(service, [{
+      kind: "create_folder",
+      assetPathAfter: "/Game/UAgentSandbox/run-unsettled-effect",
+    }], "run-unsettled-effect");
+
+    expect(executed.status).toBe("failed");
+    expect(executed.reason).toBe("native_outcome_failed_after_observed_effect");
+    expect(executed.changeSet?.state).toBe("unknown_effect");
+    expect(executed.changeSet?.operations[0]).toMatchObject({
+      executionStatus: "partial_failure",
+      partialSideEffectObserved: true,
+      blockedReason: "native_outcome_failed_after_observed_effect",
+      manifestEntryId: null,
+    });
     expect(manifest.list()).toHaveLength(0);
   });
 

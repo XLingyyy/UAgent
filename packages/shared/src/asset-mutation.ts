@@ -73,7 +73,7 @@ export interface AssetMutationOperation {
   summary: string;
   blockedReason?: string | null;
   /** Per-operation execution result for the Changes audit. Pending also covers operations not reached after an earlier failure. */
-  executionStatus?: "pending" | "executed" | "partial_failure" | "failed" | "blocked";
+  executionStatus?: "pending" | "executed" | "partial_failure" | "unknown_effect" | "failed" | "blocked";
   /** Exact-tool evidence for this operation only; never substitute an aggregate execution evidence id. */
   executionEvidenceId?: string | null;
   /** True only when the exact plugin reported a failed operation with an observed, reversible side effect. */
@@ -99,6 +99,12 @@ export type AssetChangeSetState =
   | "verifying"
   | "verified"
   | "failed"
+  /**
+   * A guarded MCP call crossed the execution boundary but its final effect
+   * could not be observed.  This is deliberately distinct from `failed`: the
+   * service retains any proven prior ownership and halts for bounded recovery.
+   */
+  | "unknown_effect"
   | "rollback_available"
   | "rolled_back"
   | "discarded";
@@ -186,7 +192,7 @@ export interface AssetApproval {
 export interface AssetExecutionResult {
   id: string;
   changeSetId: string;
-  status: "executed" | "blocked" | "failed";
+  status: "executed" | "blocked" | "unknown_effect" | "failed";
   reason: string | null;
   executedAt: number;
   affectedAssets: string[];
@@ -290,11 +296,11 @@ export interface AssetMutationApprovalOperationBinding {
   toolName: string;
   pluginDryRunHash: string;
   argsHash: string;
-  sourceAssetPath?: string | null;
-  assetPath?: string | null;
-  targetAssetPath?: string | null;
+  sourceAssetPath: string | null;
+  assetPath: string | null;
+  targetAssetPath: string | null;
   rollbackAction: "cleanup_empty_folder" | "delete_duplicate" | "rename_back" | "move_back" | "none";
-  rollbackToolName?: string | null;
+  rollbackToolName: string | null;
   saveAll: false;
   bulk: false;
 }
@@ -307,6 +313,8 @@ export interface AssetMutationApprovalRegistrationRequest {
   trustedRootRef: string;
   /** Opaque native observation reference. Native resolves process and PID authority. */
   editorSessionId: string;
+  /** Opaque desktop-owned connection/session generation captured before native registration. */
+  mcpBinding: string;
   aggregateDryRunHash: string;
   aggregateArgsHash: string;
   requestedTtlMs: number;
@@ -333,6 +341,8 @@ export interface AssetMutationOperationGuardRequest {
   changeSetId: string;
   runId: string;
   projectBindingId: string;
+  /** Must exactly match the binding retained by native at registration time. */
+  mcpBinding: string;
   aggregateDryRunHash: string;
   aggregateArgsHash: string;
   operation: AssetMutationApprovalOperationBinding;
@@ -347,6 +357,23 @@ export interface AssetMutationOperationGuardResult {
   operationIndex?: number;
   operationCount?: number;
   evidenceId?: string | null;
+  /**
+   * Native accepted-plan identity. It is deliberately absent from dry-run
+   * hashes, stays stable for the registered plan, and is relayed unchanged.
+   */
+  acceptedPlanBinding?: string | null;
+  nativeRegistrationId?: string | null;
+  nativePhase?: "execute" | "rollback" | null;
+  nativeOperationIndex?: number;
+  nativeOperationCount?: number;
+  /** Native registration creation time as Unix epoch milliseconds. */
+  nativeCreatedAt?: number;
+  connectionGeneration?: number;
+  sessionGeneration?: number;
+  nativeSourceIdentity?: string | null;
+  nativeManifestIdentity?: string | null;
+  nativePluginIdentity?: string | null;
+  nativePackageIdentity?: string | null;
 }
 
 export interface AssetMutationOutcomeRequest {
@@ -355,6 +382,12 @@ export interface AssetMutationOutcomeRequest {
   operationId: string;
   success: boolean;
   sideEffectObserved: boolean;
+  /**
+   * `known_none` is allowed only after a complete post-call observation.
+   * `known_partial` carries a proven owned effect. `unknown` prevents the
+   * native registry from treating transport/result uncertainty as zero effect.
+   */
+  effectState: "known_none" | "known_effect" | "known_partial" | "unknown";
   rollbackAvailable: boolean;
   evidenceId?: string | null;
   reasonCode?: string | null;
@@ -367,6 +400,7 @@ export interface AssetMutationOutcomeResult {
   phase?: "execute" | "rollback" | null;
   operationId?: string | null;
   rollbackAvailable?: boolean;
+  effectState?: "known_none" | "known_effect" | "known_partial" | "unknown";
   terminal?: boolean;
 }
 
@@ -380,8 +414,14 @@ export interface AssetMutationPluginExecutionResult {
   phase: "execute" | "rollback";
   changeSetId: string;
   runId: string;
+  operationId: string;
   sandboxRoot: string;
   sideEffectObserved: boolean;
+  /**
+   * Native companion observation classification.  The renderer must not infer a
+   * known no-effect result from a missing or malformed value.
+   */
+  effectState: "known_none" | "known_effect" | "known_partial" | "unknown";
   wouldChange: boolean;
   wouldModify: string[];
   wouldRead: string[];

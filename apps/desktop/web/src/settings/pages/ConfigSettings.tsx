@@ -25,10 +25,61 @@ export function ConfigSettings() {
           {section.id === "danger-zone" && <ResetWorkspaceDisplay />}
         </SettingsSection>
       ))}
+      <CompanionPluginStatusDisplay />
       <div className="ua-settings-page__note">
         This is a UI-only mock. No configuration is saved or applied.
       </div>
     </SettingsPageLayout>
+  );
+}
+
+function CompanionPluginStatusDisplay() {
+  const companion = useRuntimeStore((state) => state.mvp15.companion);
+  const labels = {
+    not_installed: "Not installed",
+    installed_unverified: "Installed unverified",
+    verified: "Verified",
+    incompatible: "Incompatible",
+    update_required: "Update required",
+  } as const;
+  return (
+    <section className="ua-settings-page__static-stack" aria-label="UAgent UE Companion Plugin">
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">UAgent UE Companion Plugin</span>
+        <span className="ua-settings-page__static-value">
+          {labels[companion.status]}
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Plugin / contract</span>
+        <span className="ua-settings-page__static-value">
+          {companion.pluginVersion ?? "unverified"} / {companion.contractVersion ?? "unverified"}
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Manifest SHA</span>
+        <span className="ua-settings-page__static-value">
+          {companion.manifestSha256Prefix ? `${companion.manifestSha256Prefix}…` : "unverified"}
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Live fingerprint</span>
+        <span className="ua-settings-page__static-value">
+          {companion.liveFingerprintSha256Prefix ? `${companion.liveFingerprintSha256Prefix}…` : "unverified"}
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Generation / tools</span>
+        <span className="ua-settings-page__static-value">
+          {companion.currentGeneration} / {companion.toolCount} ({companion.perToolSummaryCount} summaries)
+        </span>
+      </div>
+      {companion.blocker && (
+        <p className="ua-settings-page__provider-help-text" role="status">
+          {companion.blocker}: {companion.reason}
+        </p>
+      )}
+    </section>
   );
 }
 

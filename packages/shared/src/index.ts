@@ -89,6 +89,26 @@ export type {
   AssetContentManifestObservation,
   AssetExternalVerificationBaseline,
 } from "./asset-mutation.js";
+export type {
+  UAgentCompanionArtifactHash,
+  UAgentCompanionBlockerCode,
+  UAgentCompanionBuildManifest,
+  UAgentCompanionIdentity,
+  UAgentCompanionStatus,
+  UAgentCompanionStatusCode,
+  UAgentCompanionToolContract,
+  UAgentCompanionToolName,
+} from "./mvp15d-companion.js";
+export {
+  UAGENT_COMPANION_CONTRACT_VERSION,
+  UAGENT_COMPANION_IDENTITY_SCHEMA_VERSION,
+  UAGENT_COMPANION_MANIFEST_SCHEMA_VERSION,
+  UAGENT_COMPANION_PLUGIN_ID,
+  UAGENT_COMPANION_PLUGIN_VERSION,
+  UAGENT_COMPANION_TOOL_NAMES,
+  UAGENT_COMPANION_UE_BUILD_ID,
+  UAGENT_COMPANION_UE_VERSION,
+} from "./mvp15d-companion.js";
 export {
   ASSET_MUTATION_OPERATION_KINDS,
   ASSET_MUTATION_RISKS,

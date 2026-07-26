@@ -34,7 +34,7 @@ pub fn mcp_streamable_http_request(
     post_streamable_http(input)
 }
 
-fn post_streamable_http(input: McpHttpRequestInput) -> Result<McpHttpRequestResult, String> {
+pub fn post_streamable_http(input: McpHttpRequestInput) -> Result<McpHttpRequestResult, String> {
     validate_local_mcp_endpoint(&input.endpoint)?;
 
     let protocol_version = input

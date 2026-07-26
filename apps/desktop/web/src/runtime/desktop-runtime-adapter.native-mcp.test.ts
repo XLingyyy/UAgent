@@ -20,6 +20,17 @@ describe("DesktopRuntimeAdapter native MCP bridge", () => {
       if (command === "browser_capability_status") {
         return { enabled: false, mode: "disabled", reason: "test_disabled" };
       }
+      if (command === "retract_mvp15_companion_approvals") {
+        return {
+          status: "retracted",
+          reason: "companion_approval_retracted",
+          applied: true,
+          requestedAttestationGeneration: null,
+          minimumAttestationGeneration: 0,
+          generation: 1,
+          revokedApprovalCount: 0,
+        };
+      }
       expect(command).toBe("mcp_streamable_http_request");
       const input = (payload as { input: NativeMcpCall }).input;
       calls.push(input);
@@ -116,6 +127,17 @@ describe("DesktopRuntimeAdapter native MCP bridge", () => {
     const nativeInvokeMock = vi.fn(async (...[command]: [string, unknown?]): Promise<unknown> => {
       if (command === "terminal_capability_status" || command === "browser_capability_status") {
         return { enabled: false, mode: "disabled", reason: "test_disabled" };
+      }
+      if (command === "retract_mvp15_companion_approvals") {
+        return {
+          status: "retracted",
+          reason: "companion_approval_retracted",
+          applied: true,
+          requestedAttestationGeneration: null,
+          minimumAttestationGeneration: 0,
+          generation: 1,
+          revokedApprovalCount: 0,
+        };
       }
       throw new Error("native bridge should not be called");
     });

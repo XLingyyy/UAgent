@@ -477,6 +477,7 @@ mod tests {
 
     #[test]
     fn browser_preview_trusted_file_allowed_and_redacted() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         let unique = format!(
             "uagent_browser_trusted_{}_{}",
             std::process::id(),
@@ -514,6 +515,7 @@ mod tests {
 
     #[test]
     fn browser_preview_file_outside_trusted_root_blocked() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         let unique = format!(
             "uagent_browser_outside_{}_{}",
             std::process::id(),

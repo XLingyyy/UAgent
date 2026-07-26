@@ -25,6 +25,18 @@ fn process_registry() -> &'static Mutex<HashMap<String, DiscoveredProcessRecord>
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+#[cfg(test)]
+pub(crate) fn reset_registries_for_test() {
+    observation_registry()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clear();
+    process_registry()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clear();
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ObservationSessionRecord {
     session_id: String,
@@ -101,6 +113,23 @@ pub(crate) struct AssetMutationObservationBinding {
     pub root_id: String,
     pub canonical_root: PathBuf,
     pub pid_hash: String,
+    // These values are deliberately internal-only.  They are copied from the
+    // native process record after its lifecycle identity has been checked, so
+    // another native boundary can inspect that exact process without accepting
+    // a renderer-supplied PID.
+    pub pid: Option<u32>,
+    pub process_start_time: Option<u64>,
+    pub process_source: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct NativeLoadedModuleObservation {
+    // Module paths never leave the native boundary.  The companion attestation
+    // code uses them only to compare the loaded image with its installed,
+    // canonical artifact before publishing a redacted basename/size/hash.
+    pub basename: String,
+    pub canonical_path: PathBuf,
+    pub size: u64,
 }
 
 #[allow(dead_code)]
@@ -217,7 +246,62 @@ where
         root_id: session.root_id,
         canonical_root: trusted_root.canonical_root,
         pid_hash: session.pid_hash,
+        pid: process.pid,
+        process_start_time: process.process_start_time,
+        process_source: process.source,
     })
+}
+
+/// Enumerate modules only after binding the request to a live, native UE
+/// observation.  Fixture observations are intentionally rejected: fixtures may
+/// exercise negative paths but must never become a source of positive loaded
+/// module evidence.
+pub(crate) fn observe_native_loaded_modules_for_asset_mutation(
+    session_id: &str,
+    expected_root_id: &str,
+) -> Result<Vec<NativeLoadedModuleObservation>, &'static str> {
+    let before = validate_native_asset_mutation_observation_for_root(session_id, expected_root_id)?;
+    let pid = before.pid.ok_or("native_process_observation_required")?;
+    let modules = enumerate_native_loaded_modules(pid)?;
+
+    // Module enumeration and the later artifact hash are meaningful only while
+    // the same positively identified process remains current.  Revalidate the
+    // PID/start-time binding before handing the observations to the caller.
+    let after = validate_native_asset_mutation_observation_for_root(session_id, expected_root_id)?;
+    if before.pid != after.pid
+        || before.process_start_time != after.process_start_time
+        || before.pid_hash != after.pid_hash
+        || before.process_id != after.process_id
+    {
+        return Err("native_process_observation_stale");
+    }
+    Ok(modules)
+}
+
+pub(crate) fn validate_native_asset_mutation_observation_for_root(
+    session_id: &str,
+    expected_root_id: &str,
+) -> Result<AssetMutationObservationBinding, &'static str> {
+    // Derive the expected project binding from the native observation record,
+    // rather than accepting an extra renderer-provided project identifier.
+    let session = observation_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable")?
+        .get(session_id)
+        .cloned()
+        .ok_or("observation_session_unknown")?;
+    if session.root_id != expected_root_id || session.source != "native" {
+        return Err("native_process_observation_required");
+    }
+    let binding =
+        validate_asset_mutation_observation(session_id, &session.project_id, expected_root_id)?;
+    if binding.process_source != "native"
+        || binding.pid.is_none()
+        || binding.process_start_time.is_none()
+    {
+        return Err("native_process_observation_required");
+    }
+    Ok(binding)
 }
 
 fn commit_observation_renewal(
@@ -1194,6 +1278,123 @@ fn enumerate_native_processes() -> Result<Vec<NativeProcessCandidate>, String> {
     Err("platform_unsupported".to_string())
 }
 
+#[cfg(windows)]
+#[repr(C)]
+#[allow(non_snake_case)]
+struct ModuleEntry32W {
+    dwSize: u32,
+    th32ModuleID: u32,
+    th32ProcessID: u32,
+    GlblcntUsage: u32,
+    ProccntUsage: u32,
+    modBaseAddr: *mut u8,
+    modBaseSize: u32,
+    hModule: isize,
+    szModule: [u16; 256],
+    szExePath: [u16; 260],
+}
+
+#[cfg(windows)]
+const TH32CS_SNAPMODULE: u32 = 0x0000_0008;
+#[cfg(windows)]
+const TH32CS_SNAPMODULE32: u32 = 0x0000_0010;
+#[cfg(windows)]
+const ERROR_NO_MORE_FILES: u32 = 18;
+#[cfg(windows)]
+const INVALID_HANDLE_VALUE: isize = -1;
+
+#[cfg(windows)]
+#[link(name = "Kernel32")]
+unsafe extern "system" {
+    fn CreateToolhelp32Snapshot(flags: u32, process_id: u32) -> isize;
+    fn Module32FirstW(snapshot: isize, entry: *mut ModuleEntry32W) -> i32;
+    fn Module32NextW(snapshot: isize, entry: *mut ModuleEntry32W) -> i32;
+    fn CloseHandle(handle: isize) -> i32;
+    fn GetLastError() -> u32;
+}
+
+#[cfg(windows)]
+struct ModuleSnapshotHandle(isize);
+
+#[cfg(windows)]
+impl Drop for ModuleSnapshotHandle {
+    fn drop(&mut self) {
+        // The handle has already been checked against INVALID_HANDLE_VALUE.
+        unsafe {
+            let _ = CloseHandle(self.0);
+        }
+    }
+}
+
+/// Read the OS module table for one already-attested PID.  This function has no
+/// renderer inputs and does not publish raw paths; callers must still compare
+/// each returned module against a verified installed companion artifact.
+#[cfg(windows)]
+fn enumerate_native_loaded_modules(
+    pid: u32,
+) -> Result<Vec<NativeLoadedModuleObservation>, &'static str> {
+    use std::os::windows::ffi::OsStringExt;
+
+    let raw_snapshot =
+        unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid) };
+    if raw_snapshot == INVALID_HANDLE_VALUE {
+        return Err("native_module_enumeration_unavailable");
+    }
+    let _snapshot = ModuleSnapshotHandle(raw_snapshot);
+    let mut entry: ModuleEntry32W = unsafe { std::mem::zeroed() };
+    entry.dwSize = std::mem::size_of::<ModuleEntry32W>() as u32;
+    let first = unsafe { Module32FirstW(raw_snapshot, &mut entry) };
+    if first == 0 {
+        return Err("native_module_enumeration_unavailable");
+    }
+
+    let mut modules = Vec::new();
+    loop {
+        let path_end = entry
+            .szExePath
+            .iter()
+            .position(|value| *value == 0)
+            .ok_or("native_module_enumeration_unavailable")?;
+        let raw_path = std::ffi::OsString::from_wide(&entry.szExePath[..path_end]);
+        let canonical_path = std::fs::canonicalize(PathBuf::from(raw_path))
+            .map_err(|_| "native_module_enumeration_unavailable")?;
+        let metadata = std::fs::symlink_metadata(&canonical_path)
+            .map_err(|_| "native_module_enumeration_unavailable")?;
+        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+            return Err("native_module_enumeration_unavailable");
+        }
+        let basename = canonical_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty())
+            .ok_or("native_module_enumeration_unavailable")?
+            .to_string();
+        modules.push(NativeLoadedModuleObservation {
+            basename,
+            canonical_path,
+            size: metadata.len(),
+        });
+
+        entry = unsafe { std::mem::zeroed() };
+        entry.dwSize = std::mem::size_of::<ModuleEntry32W>() as u32;
+        if unsafe { Module32NextW(raw_snapshot, &mut entry) } == 0 {
+            let error = unsafe { GetLastError() };
+            if error == ERROR_NO_MORE_FILES {
+                break;
+            }
+            return Err("native_module_enumeration_unavailable");
+        }
+    }
+    Ok(modules)
+}
+
+#[cfg(not(windows))]
+fn enumerate_native_loaded_modules(
+    _pid: u32,
+) -> Result<Vec<NativeLoadedModuleObservation>, &'static str> {
+    Err("platform_unsupported")
+}
+
 fn allowed_editor_display_name(name: &str) -> Option<String> {
     if name.eq_ignore_ascii_case("UnrealEditor.exe") {
         Some("UnrealEditor.exe".to_string())
@@ -1447,11 +1648,10 @@ mod tests {
         }
     }
 
-    fn reset() {
-        trusted_roots().lock().unwrap().clear();
-        observation_registry().lock().unwrap().clear();
-        process_registry().lock().unwrap().clear();
+    fn reset() -> std::sync::MutexGuard<'static, ()> {
+        let test_guard = crate::reset_shared_registries_for_test();
         trust("fixture://lyra-starter");
+        test_guard
     }
 
     fn attach_fixture() -> (String, String, u64) {
@@ -1509,7 +1709,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_discover_attach_status_snapshot_stop_are_read_only() {
-        reset();
+        let _test_guard = reset();
         let discovery = discover_editor_processes(config()).unwrap();
         let process = discovery.processes.first().unwrap().clone();
         let attached = attach_editor_process(EditorAttachInput {
@@ -1546,7 +1746,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_status_does_not_revive_stop_during_lifecycle_check() {
-        reset();
+        let _test_guard = reset();
         let (session_id, _, created_at) = attach_fixture();
         let process_id = observation_registry()
             .lock()
@@ -1628,7 +1828,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_validator_process_removal_does_not_partially_renew() {
-        reset();
+        let _test_guard = reset();
         let created_at = 100;
         let (session_id, root_id, root) = registered_asset_fixture("process-removal", created_at);
         let before_session = observation_registry()
@@ -1667,7 +1867,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_validator_identity_replacement_does_not_renew_either_record() {
-        reset();
+        let _test_guard = reset();
         let created_at = 200;
         let (session_id, root_id, root) =
             registered_asset_fixture("identity-replacement", created_at);
@@ -1723,7 +1923,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_validator_renews_both_records_to_one_deadline() {
-        reset();
+        let _test_guard = reset();
         let created_at = 300;
         let (session_id, root_id, root) = registered_asset_fixture("renew-success", created_at);
         let now = created_at + 1;
@@ -1750,6 +1950,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_blocks_untrusted_root_escape_network_and_launch_gate() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         trusted_roots().lock().unwrap().clear();
         assert_eq!(
             validate_editor_attach_config(config()).unwrap().reason,
@@ -1776,7 +1977,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_rejects_forged_attach_descriptor() {
-        reset();
+        let _test_guard = reset();
         let discovery = discover_editor_processes(config()).unwrap();
         let process = discovery.processes.first().unwrap().clone();
 
@@ -1809,6 +2010,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_requires_existing_real_uproject_inside_trusted_root() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         trusted_roots().lock().unwrap().clear();
         let root = std::env::temp_dir().join(format!("uagent-mvp14-{}", now_millis()));
         std::fs::create_dir_all(&root).unwrap();
@@ -1845,7 +2047,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_real_root_discovery_degrades_without_fake_native_process() {
-        reset();
+        let _test_guard = reset();
         let (input, root) = real_project_config();
 
         let discovery = discover_editor_processes(input).unwrap();
@@ -1867,7 +2069,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_native_candidate_matching_redacts_raw_paths() {
-        reset();
+        let _test_guard = reset();
         let (input, root) = real_project_config();
         let validation =
             validate_config_details(input.clone()).expect("real config should validate");
@@ -1919,7 +2121,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_native_candidate_project_mismatch_returns_no_descriptor() {
-        reset();
+        let _test_guard = reset();
         let (input, root) = real_project_config();
         let validation =
             validate_config_details(input.clone()).expect("real config should validate");
@@ -1953,7 +2155,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_native_lifecycle_rechecks_candidate_metadata() {
-        reset();
+        let _test_guard = reset();
         let (input, root) = real_project_config();
         let validation =
             validate_config_details(input.clone()).expect("real config should validate");
@@ -2014,7 +2216,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_non_fixture_status_and_snapshot_degrade_without_lifecycle_observation() {
-        reset();
+        let _test_guard = reset();
         let (input, root) = real_project_config();
         let validation = validate_config(input.clone());
         let root_id = validation.root_id.unwrap();
@@ -2061,7 +2263,7 @@ mod tests {
 
     #[test]
     fn ue_editor_process_launch_blocks_forged_executable_and_bad_args_before_non_execution() {
-        reset();
+        let _test_guard = reset();
         std::env::set_var("UAGENT_ENABLE_UE_EDITOR_LAUNCH", "1");
 
         let mut forged_executable = config();

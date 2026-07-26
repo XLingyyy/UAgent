@@ -3,6 +3,7 @@ import {
   createAssetChangeSetService,
   createAssetManifestRegistry,
   createFixtureAssetMutationAdapter,
+  createMvp15DCompanionStatus,
   parseBuildOutputToDiagnostics,
   type AssetChangeSetService,
   type AssetMutationReplaySummary,
@@ -50,6 +51,7 @@ import type {
   AssetVerificationResult,
   UEProjectMetadata,
   WorkspaceChangeSetV2,
+  UAgentCompanionStatus,
 } from "@uagent/shared";
 import { createDefaultTextMutationPolicy } from "@uagent/shared";
 
@@ -177,6 +179,7 @@ export interface Mvp15RuntimeState {
   sourceAssetPath: string | null;
   runId: string | null;
   mcpInventory: Mvp15McpAssetToolInventory | null;
+  companion: UAgentCompanionStatus;
   manifestEntries: AssetManifestEntry[];
   changeSets: AssetChangeSet[];
   activeChangeSet: AssetChangeSet | null;
@@ -393,6 +396,7 @@ export function createEmptyMvp15State(): Mvp15RuntimeState {
     sourceAssetPath: null,
     runId: null,
     mcpInventory: null,
+    companion: createMvp15DCompanionStatus(),
     manifestEntries: [],
     changeSets: [],
     activeChangeSet: null,

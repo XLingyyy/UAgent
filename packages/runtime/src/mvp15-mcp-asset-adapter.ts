@@ -44,6 +44,7 @@ export interface Mvp15McpAssetToolDescriptorLike {
   evidenceQuery?: unknown;
   annotations?: unknown;
   "x-uagent-contract"?: unknown;
+  "x-uagent-plugin"?: unknown;
 }
 
 export interface Mvp15McpAssetToolDescriptor {
@@ -56,6 +57,7 @@ export interface Mvp15McpAssetToolDescriptor {
   affectedAssetsSchema?: unknown;
   evidenceQuery?: unknown;
   annotations?: Record<string, unknown>;
+  companionIdentity?: unknown;
 }
 
 export interface Mvp15McpAssetToolDecision {
@@ -73,6 +75,7 @@ export interface Mvp15McpAssetToolDecision {
 export interface Mvp15McpAssetToolInventory {
   status: "ready" | "blocked_by_mcp_schema";
   availableTools: Mvp15McpAssetToolName[];
+  duplicateTools: Mvp15McpAssetToolName[];
   missingTools: Mvp15McpAssetToolName[];
   missingSchemas: Mvp15McpAssetToolName[];
   missingDryRunSchemas: Mvp15McpAssetToolName[];
@@ -122,6 +125,33 @@ export interface Mvp15McpAssetMutationAdapterOptions {
   callTool: (toolName: Mvp15McpAssetToolName, args: Record<string, unknown>) => Mvp15McpAssetToolCallResult | Promise<Mvp15McpAssetToolCallResult | unknown>;
 }
 
+interface Mvp15NativeCompanionCallFacts {
+  acceptedPlanBinding: string;
+  nativeRegistrationId: string;
+  nativePhase: "execute" | "rollback";
+  nativeOperationIndex: number;
+  nativeOperationCount: number;
+  nativeCreatedAt: number;
+  connectionGeneration: number;
+  sessionGeneration: number;
+  nativeSourceIdentity: string;
+  nativeManifestIdentity: string;
+  nativePluginIdentity: string;
+  nativePackageIdentity: string;
+}
+
+type Mvp15StableNativeCompanionFacts = Pick<
+  Mvp15NativeCompanionCallFacts,
+  | "acceptedPlanBinding"
+  | "nativeCreatedAt"
+  | "connectionGeneration"
+  | "sessionGeneration"
+  | "nativeSourceIdentity"
+  | "nativeManifestIdentity"
+  | "nativePluginIdentity"
+  | "nativePackageIdentity"
+>;
+
 export function classifyMvp15McpAssetTool(input: Mvp15McpAssetToolInput): Mvp15McpAssetToolDecision {
   const allowlisted = MVP15_ASSET_TOOL_ALLOWLIST.includes(input.toolName as (typeof MVP15_ASSET_TOOL_ALLOWLIST)[number]);
   const affectedAssetArgs = collectAffectedAssetArgs(input.args ?? {});
@@ -157,6 +187,14 @@ export function normalizeMvp15McpAssetToolDescriptor(
   const outputContract = asObjectRecord(outputSchema?.["x-uagent-contract"]);
   const annotations = asObjectRecord(tool.annotations);
   const annotationContract = asObjectRecord(annotations?.["x-uagent-contract"]);
+  const companionIdentity = firstDefined(
+    tool["x-uagent-plugin"],
+    descriptorContract?.["x-uagent-plugin"],
+    outputSchema?.["x-uagent-plugin"],
+    outputContract?.["x-uagent-plugin"],
+    annotations?.["x-uagent-plugin"],
+    annotationContract?.["x-uagent-plugin"],
+  );
   const inputSchema = asObjectRecord(tool.inputSchema);
   const inputContract = asObjectRecord(inputSchema?.["x-uagent-contract"]);
 
@@ -215,6 +253,7 @@ export function normalizeMvp15McpAssetToolDescriptor(
       annotationContract?.evidenceQuery,
       inputContract?.evidenceQuery,
     ),
+    ...(companionIdentity !== undefined ? { companionIdentity } : {}),
     ...(annotations ? { annotations } : {}),
   };
 }
@@ -222,8 +261,15 @@ export function normalizeMvp15McpAssetToolDescriptor(
 export function createMvp15McpAssetToolInventory(
   tools: readonly Mvp15McpAssetToolDescriptorLike[],
 ): Mvp15McpAssetToolInventory {
-  const byName = new Map(tools.map(normalizeMvp15McpAssetToolDescriptor).map((tool) => [tool.name, tool]));
+  const normalized = tools.map(normalizeMvp15McpAssetToolDescriptor);
+  const byName = new Map<string, Mvp15McpAssetToolDescriptor>();
+  const counts = new Map<string, number>();
+  for (const tool of normalized) {
+    counts.set(tool.name, (counts.get(tool.name) ?? 0) + 1);
+    if (!byName.has(tool.name)) byName.set(tool.name, tool);
+  }
   const availableTools: Mvp15McpAssetToolName[] = [];
+  const duplicateTools: Mvp15McpAssetToolName[] = [];
   const missingTools: Mvp15McpAssetToolName[] = [];
   const missingSchemas: Mvp15McpAssetToolName[] = [];
   const missingDryRunSchemas: Mvp15McpAssetToolName[] = [];
@@ -233,6 +279,12 @@ export function createMvp15McpAssetToolInventory(
 
   for (const toolName of MVP15_ASSET_TOOL_ALLOWLIST) {
     const tool = byName.get(toolName);
+    if ((counts.get(toolName) ?? 0) !== 1) {
+      if ((counts.get(toolName) ?? 0) > 1) duplicateTools.push(toolName);
+      if (!tool) missingTools.push(toolName);
+      decisions.push(decision({ toolName, inputSchema: null, dryRunSchema: null }, true, "blocked", (counts.get(toolName) ?? 0) > 1 ? "duplicate_tool" : "missing_tool", []));
+      continue;
+    }
     if (!tool) {
       missingTools.push(toolName);
       decisions.push(decision({ toolName, inputSchema: null, dryRunSchema: null }, true, "blocked", "missing_tool", []));
@@ -271,8 +323,9 @@ export function createMvp15McpAssetToolInventory(
   }
 
   return {
-    status: missingTools.length || missingSchemas.length || missingDryRunSchemas.length || missingRollbackContracts.length || missingEvidenceQueries.length ? "blocked_by_mcp_schema" : "ready",
+    status: duplicateTools.length || missingTools.length || missingSchemas.length || missingDryRunSchemas.length || missingRollbackContracts.length || missingEvidenceQueries.length ? "blocked_by_mcp_schema" : "ready",
     availableTools,
+    duplicateTools,
     missingTools,
     missingSchemas,
     missingDryRunSchemas,
@@ -286,7 +339,15 @@ export function createMvp15McpAssetMutationAdapter(
   options: Mvp15McpAssetMutationAdapterOptions,
 ): AssetMutationAdapter {
   const toolByName = new Map(options.tools.map(normalizeMvp15McpAssetToolDescriptor).map((tool) => [tool.name, tool]));
-  const registrations = new Map<string, { registrationId: string; operationCount: number; mcpBinding: string }>();
+  const registrations = new Map<
+    string,
+    {
+      registrationId: string;
+      operationCount: number;
+      mcpBinding: string;
+      nativeFacts: Mvp15StableNativeCompanionFacts | null;
+    }
+  >();
 
   async function cancelNativeRegistration(
     changeSetId: string,
@@ -335,6 +396,7 @@ export function createMvp15McpAssetMutationAdapter(
         operationId: operation.id,
         success: false,
         sideEffectObserved: false,
+        effectState: "known_none",
         rollbackAvailable: false,
         evidenceId: `asset-evidence:block:${operation.id}`,
         reasonCode,
@@ -381,6 +443,7 @@ export function createMvp15McpAssetMutationAdapter(
         projectBindingId: changeSet.projectId,
         trustedRootRef: changeSet.trustedRootId,
         editorSessionId: changeSet.editorSessionId,
+        mcpBinding,
         aggregateDryRunHash: changeSet.aggregateDryRunHash,
         aggregateArgsHash: changeSet.aggregateArgsHash,
         requestedTtlMs: approval.expiresAt - approval.issuedAt,
@@ -429,6 +492,7 @@ export function createMvp15McpAssetMutationAdapter(
       registrationId: result.registrationId,
       operationCount: operations.length,
       mcpBinding,
+      nativeFacts: null,
     });
     return {
       ok: true,
@@ -448,6 +512,8 @@ export function createMvp15McpAssetMutationAdapter(
     context: AssetMutationAdapterContext,
     rollback = false,
   ): Promise<AssetMutationAdapterResult> {
+    const inventory = createMvp15McpAssetToolInventory(options.tools);
+    if (inventory.status !== "ready") return blockedResult("blocked_by_mcp_schema:inventory_not_ready", operation.id);
     const call = rollback ? mapRollbackOperationToToolCall(operation, context) : mapOperationToToolCall(operation, context);
     if (!call.ok) return blockedResult(call.reason, operation.id);
     const tool = toolByName.get(call.toolName);
@@ -484,6 +550,7 @@ export function createMvp15McpAssetMutationAdapter(
           changeSetId: context.changeSet.id,
           runId: context.changeSet.runId,
           projectBindingId: context.changeSet.projectId,
+          mcpBinding: registration.mcpBinding,
           aggregateDryRunHash: context.changeSet.aggregateDryRunHash ?? "",
           aggregateArgsHash: context.changeSet.aggregateArgsHash ?? "",
           operation: guardOperation,
@@ -525,10 +592,118 @@ export function createMvp15McpAssetMutationAdapter(
       );
       return settlement ?? blockedResult("mcp_binding_changed", operation.id, guard.evidenceId ?? undefined);
     }
+    if (!isNativeAcceptedPlanBinding(guard.acceptedPlanBinding)) {
+      const settlement = await settleNoSideEffectFailure(
+        registration.registrationId,
+        rollback ? "rollback" : "execute",
+        operation,
+        context.operationIndex,
+        "native_accepted_plan_binding_invalid",
+      );
+      return settlement ?? blockedResult("native_accepted_plan_binding_invalid", operation.id, guard.evidenceId ?? undefined);
+    }
+    const nativeCallFacts = normalizeNativeCompanionCallFacts(
+      guard,
+      registration.registrationId,
+      rollback ? "rollback" : "execute",
+      context.operationIndex,
+      context.operationCount,
+    );
+    if (!nativeCallFacts) {
+      const settlement = await settleNoSideEffectFailure(
+        registration.registrationId,
+        rollback ? "rollback" : "execute",
+        operation,
+        context.operationIndex,
+        "native_call_facts_invalid",
+      );
+      return settlement ?? blockedResult(
+        "native_call_facts_invalid",
+        operation.id,
+        guard.evidenceId ?? undefined,
+      );
+    }
+    const stableNativeFacts = toStableNativeCompanionFacts(nativeCallFacts);
+    if (
+      registration.nativeFacts &&
+      !sameStableNativeCompanionFacts(registration.nativeFacts, stableNativeFacts)
+    ) {
+      const settlement = await settleNoSideEffectFailure(
+        registration.registrationId,
+        rollback ? "rollback" : "execute",
+        operation,
+        context.operationIndex,
+        "native_call_facts_changed",
+      );
+      return settlement ?? blockedResult(
+        "native_call_facts_changed",
+        operation.id,
+        guard.evidenceId ?? undefined,
+      );
+    }
+    registration.nativeFacts ??= stableNativeFacts;
+    // The native guard creates this binding only after it has verified the
+    // registered order, dry-run hash, desktop MCP binding, and companion
+    // identity. The complete native fact set is forwarded unchanged to the
+    // companion's execute/rollback input.
+    const boundCall: Extract<ToolCallPlan, { ok: true }> = {
+      ...call,
+      args: {
+        ...call.args,
+        ...nativeCallFacts,
+      },
+    };
+
+    // The native guard is intentionally before the effect.  Re-read the mutable
+    // desktop descriptor inventory after that await so a schema/route change cannot
+    // leave a previously safe snapshot authorizing a later MCP mutation.
+    const preEffectInventory = createMvp15McpAssetToolInventory(options.tools);
+    if (preEffectInventory.status !== "ready") {
+      const settlement = await settleNoSideEffectFailure(
+        registration.registrationId,
+        rollback ? "rollback" : "execute",
+        operation,
+        context.operationIndex,
+        "mcp_schema_changed",
+      );
+      return settlement ?? blockedResult("mcp_schema_changed", operation.id, guard.evidenceId ?? undefined);
+    }
+    const preEffectTool = options.tools
+      .map(normalizeMvp15McpAssetToolDescriptor)
+      .find((candidate) => candidate.name === boundCall.toolName);
+    if (!preEffectTool) {
+      const settlement = await settleNoSideEffectFailure(
+        registration.registrationId,
+        rollback ? "rollback" : "execute",
+        operation,
+        context.operationIndex,
+        "mcp_schema_changed",
+      );
+      return settlement ?? blockedResult("mcp_schema_changed", operation.id, guard.evidenceId ?? undefined);
+    }
+    const preEffectPolicy = classifyMvp15McpAssetTool({
+      toolName: boundCall.toolName,
+      inputSchema: preEffectTool.inputSchema ?? null,
+      dryRunSchema: preEffectTool.dryRunSchema,
+      rollbackContract: preEffectTool.rollbackContract,
+      affectedAssetsSchema: preEffectTool.affectedAssetsSchema,
+      evidenceQuery: preEffectTool.evidenceQuery,
+      args: boundCall.args,
+    });
+    if (preEffectPolicy.decision === "blocked") {
+      const settlement = await settleNoSideEffectFailure(
+        registration.registrationId,
+        rollback ? "rollback" : "execute",
+        operation,
+        context.operationIndex,
+        "mcp_asset_policy_changed",
+      );
+      return settlement ?? blockedResult("mcp_asset_policy_changed", operation.id, guard.evidenceId ?? undefined);
+    }
 
     let raw: unknown;
     try {
-      raw = await options.callTool(call.toolName, call.args);
+      raw = await options.callTool(boundCall.toolName, boundCall.args);
     } catch {
       if (registration && guardOperation) {
         const phase = rollback ? "rollback" : "execute";
@@ -542,12 +717,13 @@ export function createMvp15McpAssetMutationAdapter(
             operationId: operation.id,
             success: false,
             sideEffectObserved: false,
+            effectState: "unknown",
             rollbackAvailable: false,
             evidenceId: `asset-evidence:block:${operation.id}`,
-            reasonCode: "mcp_call_failed",
+            reasonCode: "mcp_call_effect_unknown",
           });
         } catch {
-          return blockedResult("native_outcome_failed", operation.id);
+          return unknownEffectResult("native_outcome_failed_after_mcp_call", operation.id);
         }
         if (
           failedOutcome.status !== "recorded"
@@ -555,12 +731,12 @@ export function createMvp15McpAssetMutationAdapter(
           || failedOutcome.phase !== phase
           || failedOutcome.operationId !== operation.id
         ) {
-          return blockedResult(nativeFailureReason("native_outcome_", failedOutcome.reason), operation.id);
+          return unknownEffectResult("native_outcome_failed_after_mcp_call", operation.id);
         }
       }
-      return blockedResult("mcp_call_failed", operation.id);
+      return unknownEffectResult("mcp_call_effect_unknown", operation.id);
     }
-    const normalized = validateMvp15PluginExecutionResult(raw, operation, context, call);
+    const normalized = validateMvp15PluginExecutionResult(raw, operation, context, boundCall);
     if (registration && guardOperation) {
       const phase = rollback ? "rollback" : "execute";
       let outcome: Mvp15NativeAssetGuardResult;
@@ -573,11 +749,21 @@ export function createMvp15McpAssetMutationAdapter(
           operationId: operation.id,
           success: normalized.ok,
           sideEffectObserved: normalized.sideEffectObserved === true,
+          // The companion's tagged observation is authoritative.  In
+          // particular, `sideEffectObserved: false` is not sufficient to turn
+          // an unconfirmed post-call result into a known no-effect outcome.
+          effectState: normalized.effectState ?? "unknown",
           rollbackAvailable: normalized.rollbackAvailable === true,
           evidenceId: normalized.evidenceId,
           reasonCode: normalized.reason,
         });
       } catch {
+        if (normalized.effectState === "known_effect" || normalized.effectState === "known_partial") {
+          return observedEffectWithoutInverseResult("native_outcome_failed_after_observed_effect", operation.id, normalized.evidenceId);
+        }
+        if (normalized.effectState === "unknown") {
+          return unknownEffectResult("native_outcome_failed_after_mcp_call", operation.id, normalized.evidenceId);
+        }
         return blockedResult("native_outcome_failed", operation.id, normalized.evidenceId);
       }
       if (
@@ -586,6 +772,12 @@ export function createMvp15McpAssetMutationAdapter(
         || outcome.phase !== phase
         || outcome.operationId !== operation.id
       ) {
+        if (normalized.effectState === "known_effect" || normalized.effectState === "known_partial") {
+          return observedEffectWithoutInverseResult("native_outcome_result_invalid_after_observed_effect", operation.id, normalized.evidenceId);
+        }
+        if (normalized.effectState === "unknown") {
+          return unknownEffectResult("native_outcome_result_invalid_after_mcp_call", operation.id, normalized.evidenceId);
+        }
         return blockedResult(nativeFailureReason("native_outcome_", outcome.reason), operation.id, normalized.evidenceId);
       }
     }
@@ -631,6 +823,44 @@ function blockedResult(reason: string, operationId: string, evidenceId?: string)
     evidenceId: isSafeOpaqueIdentifier(evidenceId) ? evidenceId : `asset-evidence:block:${operationId}`,
     stateOnFailure: "failed",
     sideEffectObserved: false,
+    effectState: "known_none",
+    rollbackAvailable: false,
+  };
+}
+
+/**
+ * An MCP call passed the native guard but did not return a trustworthy outcome.
+ * This is intentionally distinct from a tool-confirmed no-effect result: we retain
+ * a redacted failure reason while refusing to fabricate ledger ownership.  The
+ * service preserves its bounded recovery route rather than converting this
+ * uncertainty into a terminal no-effect failure.
+ */
+function unknownEffectResult(reason: string, operationId: string, evidenceId?: string): AssetMutationAdapterResult {
+  return {
+    ok: false,
+    reason,
+    evidenceId: isSafeOpaqueIdentifier(evidenceId) ? evidenceId : `asset-evidence:unconfirmed:${operationId}`,
+    // The ChangeSet state machine promotes this tagged result to
+    // `unknown_effect` and may retry only already-owned inverses.  Do not label
+    // the uncertain operation itself as rollback-available.
+    stateOnFailure: "failed",
+    effectState: "unknown",
+    rollbackAvailable: false,
+  };
+}
+
+/**
+ * The plugin proved an effect, but native outcome settlement did not complete.  The
+ * audit must disclose the observed effect without treating it as rollback-owned.
+ */
+function observedEffectWithoutInverseResult(reason: string, operationId: string, evidenceId?: string): AssetMutationAdapterResult {
+  return {
+    ok: false,
+    reason,
+    evidenceId: isSafeOpaqueIdentifier(evidenceId) ? evidenceId : `asset-evidence:unsettled:${operationId}`,
+    stateOnFailure: "rollback_available",
+    sideEffectObserved: true,
+    effectState: "known_partial",
     rollbackAvailable: false,
   };
 }
@@ -648,6 +878,79 @@ function isSafeOpaqueIdentifier(value: unknown): value is string {
     && /^[A-Za-z0-9:._-]+$/.test(value);
 }
 
+function isNativeAcceptedPlanBinding(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
+function normalizeNativeCompanionCallFacts(
+  guard: AssetMutationOperationGuardResult,
+  registrationId: string,
+  phase: "execute" | "rollback",
+  operationIndex: number,
+  operationCount: number,
+): Mvp15NativeCompanionCallFacts | null {
+  if (
+    !isNativeAcceptedPlanBinding(guard.acceptedPlanBinding)
+    || guard.nativeRegistrationId !== registrationId
+    || guard.nativePhase !== phase
+    || guard.nativeOperationIndex !== operationIndex
+    || guard.nativeOperationCount !== operationCount
+    || !isPositiveSafeInteger(guard.nativeCreatedAt)
+    || !isPositiveSafeInteger(guard.connectionGeneration)
+    || !isPositiveSafeInteger(guard.sessionGeneration)
+    || !isNativeAcceptedPlanBinding(guard.nativeSourceIdentity)
+    || !isNativeAcceptedPlanBinding(guard.nativeManifestIdentity)
+    || !isNativeAcceptedPlanBinding(guard.nativePluginIdentity)
+    || !isNativeAcceptedPlanBinding(guard.nativePackageIdentity)
+  ) {
+    return null;
+  }
+  return {
+    acceptedPlanBinding: guard.acceptedPlanBinding,
+    nativeRegistrationId: guard.nativeRegistrationId,
+    nativePhase: guard.nativePhase,
+    nativeOperationIndex: guard.nativeOperationIndex,
+    nativeOperationCount: guard.nativeOperationCount,
+    nativeCreatedAt: guard.nativeCreatedAt,
+    connectionGeneration: guard.connectionGeneration,
+    sessionGeneration: guard.sessionGeneration,
+    nativeSourceIdentity: guard.nativeSourceIdentity,
+    nativeManifestIdentity: guard.nativeManifestIdentity,
+    nativePluginIdentity: guard.nativePluginIdentity,
+    nativePackageIdentity: guard.nativePackageIdentity,
+  };
+}
+
+function toStableNativeCompanionFacts(
+  facts: Mvp15NativeCompanionCallFacts,
+): Mvp15StableNativeCompanionFacts {
+  return {
+    acceptedPlanBinding: facts.acceptedPlanBinding,
+    nativeCreatedAt: facts.nativeCreatedAt,
+    connectionGeneration: facts.connectionGeneration,
+    sessionGeneration: facts.sessionGeneration,
+    nativeSourceIdentity: facts.nativeSourceIdentity,
+    nativeManifestIdentity: facts.nativeManifestIdentity,
+    nativePluginIdentity: facts.nativePluginIdentity,
+    nativePackageIdentity: facts.nativePackageIdentity,
+  };
+}
+
+function sameStableNativeCompanionFacts(
+  left: Mvp15StableNativeCompanionFacts,
+  right: Mvp15StableNativeCompanionFacts,
+): boolean {
+  return Object.keys(left).every(
+    (key) =>
+      left[key as keyof Mvp15StableNativeCompanionFacts] ===
+      right[key as keyof Mvp15StableNativeCompanionFacts],
+  );
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
 export function validateMvp15PluginExecutionResult(
   raw: unknown,
   operation: AssetMutationOperation,
@@ -660,15 +963,18 @@ export function validateMvp15PluginExecutionResult(
   }
   const result = structured as unknown as AssetMutationPluginExecutionResult;
   const allowedTopLevelKeys = new Set([
-    "blocked", "status", "reasonCode", "toolName", "operation", "phase", "changeSetId", "runId",
+    "blocked", "status", "reasonCode", "toolName", "operation", "phase", "changeSetId", "runId", "operationId",
     "sandboxRoot", "wouldChange", "wouldModify", "wouldRead", "affectedAssets", "rollbackPlan",
     "externalEvidenceQueries", "dryRunHash", "hashAlgorithm", "schemaVersion", "approvalRequired",
-    "evidenceId", "sideEffectObserved", "rollbackAvailable", "rollbackStatus", "implementationStatus",
+    "evidenceId", "sideEffectObserved", "effectState", "rollbackAvailable", "rollbackStatus", "implementationStatus",
   ]);
-  const expectedOperation = pluginOperationForKind(operation.kind);
-  const expectedModify = expectedModifiedPaths(operation);
-  const expectedRead = operation.kind === "duplicate_asset" && operation.assetPathBefore ? [operation.assetPathBefore] : [];
   const rollback = call.args.rollback === true;
+  // An inverse is validated against the actual MCP dispatch, not the forward
+  // operation label.  In particular both cleanup_empty_folder and
+  // delete_duplicate dispatch through ue.asset.delete.
+  const expectedOperation = rollback ? pluginOperationForToolName(call.toolName) : pluginOperationForKind(operation.kind);
+  const expectedModify = expectedModifiedPaths(operation, rollback);
+  const expectedRead = !rollback && operation.kind === "duplicate_asset" && operation.assetPathBefore ? [operation.assetPathBefore] : [];
   const rollbackAvailable = rollback ? false : operation.kind !== "save_single_asset";
   const expectedEvidencePaths = [...expectedRead, ...expectedModify];
   const commonChecks = [
@@ -681,8 +987,13 @@ export function validateMvp15PluginExecutionResult(
     result.phase === (rollback ? "rollback" : "execute"),
     result.changeSetId === context.changeSet.id,
     result.runId === context.changeSet.runId,
+    result.operationId === operation.id,
     result.sandboxRoot === `/Game/UAgentSandbox/${context.changeSet.runId}`,
     typeof result.sideEffectObserved === "boolean",
+    result.effectState === "known_none"
+      || result.effectState === "known_effect"
+      || result.effectState === "known_partial"
+      || result.effectState === "unknown",
     typeof result.wouldChange === "boolean",
     Array.isArray(result.wouldModify),
     Array.isArray(result.wouldRead),
@@ -728,6 +1039,7 @@ export function validateMvp15PluginExecutionResult(
     && result.status === (rollback ? "rolled_back" : "executed")
     && result.reasonCode === "none"
     && result.sideEffectObserved === true
+    && result.effectState === "known_effect"
     && result.wouldChange === true
     && impactsMatch
     && result.rollbackAvailable === rollbackAvailable
@@ -735,10 +1047,11 @@ export function validateMvp15PluginExecutionResult(
     && result.rollbackStatus === (rollback ? "completed" : rollbackAvailable ? "available" : "none");
   const partialFailureShape = !rollback
     && rollbackAvailable
-    && result.blocked === true
+    && result.blocked === false
     && result.status === "partial_failure"
     && result.reasonCode !== "none"
     && result.sideEffectObserved === true
+    && result.effectState === "known_partial"
     && result.wouldChange === true
     && impactsMatch
     && result.rollbackAvailable === true
@@ -748,11 +1061,38 @@ export function validateMvp15PluginExecutionResult(
     && result.status === "blocked"
     && result.reasonCode !== "none"
     && result.sideEffectObserved === false
+    && result.effectState === "known_none"
     && result.wouldChange === false
     && impactsAreEmpty
     && result.rollbackAvailable === false
     && result.rollbackPlan.executionEnabled === false
     && (result.rollbackStatus === "not_available" || result.rollbackStatus === "failed");
+  const unknownEffectShape = result.effectState === "unknown"
+    && (
+      (
+        result.blocked === true
+        && result.status === "blocked"
+        && result.reasonCode !== "none"
+        && result.sideEffectObserved === false
+        && result.wouldChange === false
+        && impactsAreEmpty
+        && result.rollbackAvailable === false
+        && result.rollbackPlan.executionEnabled === false
+        && (result.rollbackStatus === "not_available" || result.rollbackStatus === "failed")
+      )
+      || (
+        !rollback
+        && result.blocked === false
+        && result.status === "partial_failure"
+        && result.reasonCode !== "none"
+        && result.sideEffectObserved === false
+        && result.wouldChange === true
+        && impactsMatch
+        && result.rollbackAvailable === false
+        && result.rollbackPlan.executionEnabled === false
+        && result.rollbackStatus === "none"
+      )
+    );
 
   if (partialFailureShape) {
     return {
@@ -761,6 +1101,7 @@ export function validateMvp15PluginExecutionResult(
       evidenceId: result.evidenceId,
       stateOnFailure: "rollback_available",
       sideEffectObserved: true,
+      effectState: "known_partial",
       rollbackAvailable: true,
     };
   }
@@ -771,8 +1112,12 @@ export function validateMvp15PluginExecutionResult(
       evidenceId: result.evidenceId,
       stateOnFailure: "failed",
       sideEffectObserved: false,
+      effectState: "known_none",
       rollbackAvailable: false,
     };
+  }
+  if (unknownEffectShape) {
+    return unknownEffectResult(`mcp_tool_effect_unknown:${result.reasonCode}`, operation.id, result.evidenceId);
   }
   if (!successShape) return invalidToolResult(operation.id);
   return {
@@ -780,19 +1125,13 @@ export function validateMvp15PluginExecutionResult(
     reason: null,
     evidenceId: result.evidenceId,
     sideEffectObserved: true,
+    effectState: "known_effect",
     rollbackAvailable,
   };
 }
 
 function invalidToolResult(operationId: string): AssetMutationAdapterResult {
-  return {
-    ok: false,
-    reason: "mcp_tool_result_invalid",
-    evidenceId: `asset-evidence:block:${operationId}`,
-    stateOnFailure: "failed",
-    sideEffectObserved: false,
-    rollbackAvailable: false,
-  };
+  return unknownEffectResult("mcp_tool_result_effect_unknown", operationId);
 }
 
 function extractStrictStructuredContent(raw: unknown): Record<string, unknown> | null {
@@ -829,9 +1168,12 @@ function stringArraysEqual(actual: unknown, expected: string[]): boolean {
     && actual.every((value, index) => typeof value === "string" && value === expected[index]);
 }
 
-function expectedModifiedPaths(operation: AssetMutationOperation): string[] {
+function expectedModifiedPaths(operation: AssetMutationOperation, rollback = false): string[] {
   if (operation.kind === "rename_asset" || operation.kind === "move_asset") {
-    return operation.assetPathBefore && operation.assetPathAfter ? [operation.assetPathBefore, operation.assetPathAfter] : [];
+    if (!operation.assetPathBefore || !operation.assetPathAfter) return [];
+    return rollback
+      ? [operation.assetPathAfter, operation.assetPathBefore]
+      : [operation.assetPathBefore, operation.assetPathAfter];
   }
   if (operation.kind === "delete_sandbox_asset") return operation.assetPathBefore ? [operation.assetPathBefore] : [];
   const path = operation.assetPathAfter ?? operation.assetPathBefore;
@@ -847,6 +1189,15 @@ function pluginOperationForKind(kind: AssetMutationOperation["kind"]): string {
   return "create_folder";
 }
 
+function pluginOperationForToolName(toolName: Mvp15McpAssetToolName): string {
+  if (toolName === "ue.asset.create_folder") return "create_folder";
+  if (toolName === "ue.asset.duplicate") return "duplicate";
+  if (toolName === "ue.asset.rename") return "rename";
+  if (toolName === "ue.asset.move") return "move";
+  if (toolName === "ue.asset.save") return "save";
+  return "delete";
+}
+
 function toNativeApprovalOperation(operation: AssetMutationOperation): AssetMutationApprovalOperationBinding | null {
   const provenance = operation.provenance;
   if (!provenance || provenance.exactToolName !== exactToolForOperation(operation.kind)) return null;
@@ -854,6 +1205,10 @@ function toNativeApprovalOperation(operation: AssetMutationOperation): AssetMuta
     operationId: operation.id,
     pluginDryRunHash: provenance.dryRunHash,
     argsHash: provenance.argsHash,
+    sourceAssetPath: null,
+    assetPath: null,
+    targetAssetPath: null,
+    rollbackToolName: null,
     saveAll: false as const,
     bulk: false as const,
   };
@@ -882,6 +1237,10 @@ function toNativeRollbackOperation(operation: AssetMutationOperation): AssetMuta
     operationId: operation.id,
     pluginDryRunHash: provenance.dryRunHash,
     argsHash: provenance.argsHash,
+    sourceAssetPath: null,
+    assetPath: null,
+    targetAssetPath: null,
+    rollbackToolName: null,
     rollbackAction: "none" as const,
     saveAll: false as const,
     bulk: false as const,
@@ -924,6 +1283,7 @@ function mapOperationToToolCall(operation: AssetMutationOperation, context: Asse
   const common = {
     changeSetId: context.changeSet.id,
     runId: context.changeSet.runId,
+	operationId: operation.id,
     dryRun: false,
     execute: true,
     rollback: false,
@@ -954,22 +1314,23 @@ function mapRollbackOperationToToolCall(operation: AssetMutationOperation, conte
   const common = {
     changeSetId: context.changeSet.id,
     runId: context.changeSet.runId,
+	operationId: operation.id,
     dryRun: false,
     execute: false,
     rollback: true,
     dryRunHash: context.dryRunHash,
   };
   if (operation.kind === "create_folder") {
-    return planned("ue.asset.create_folder", { ...common, folderPath: operation.assetPathAfter }, operation.assetPathAfter, null);
+    return planned("ue.asset.delete", { ...common, assetPath: operation.assetPathAfter }, operation.assetPathAfter, null);
   }
   if (operation.kind === "duplicate_asset") {
-    return planned("ue.asset.duplicate", { ...common, sourceAssetPath: operation.assetPathBefore, targetAssetPath: operation.assetPathAfter }, operation.assetPathBefore, operation.assetPathAfter);
+    return planned("ue.asset.delete", { ...common, assetPath: operation.assetPathAfter }, operation.assetPathAfter, null);
   }
   if (operation.kind === "rename_asset") {
-    return planned("ue.asset.rename", { ...common, assetPath: operation.assetPathBefore, targetAssetPath: operation.assetPathAfter }, operation.assetPathBefore, operation.assetPathAfter);
+    return planned("ue.asset.rename", { ...common, assetPath: operation.assetPathAfter, targetAssetPath: operation.assetPathBefore }, operation.assetPathAfter, operation.assetPathBefore);
   }
   if (operation.kind === "move_asset") {
-    return planned("ue.asset.move", { ...common, assetPath: operation.assetPathBefore, targetAssetPath: operation.assetPathAfter }, operation.assetPathBefore, operation.assetPathAfter);
+    return planned("ue.asset.move", { ...common, assetPath: operation.assetPathAfter, targetAssetPath: operation.assetPathBefore }, operation.assetPathAfter, operation.assetPathBefore);
   }
   return { ok: false, reason: `mcp_asset_policy_blocked:rollback_unsupported:${operation.kind}` };
 }

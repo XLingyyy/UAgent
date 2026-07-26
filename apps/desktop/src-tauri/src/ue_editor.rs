@@ -790,12 +790,14 @@ mod tests {
         }
     }
 
-    fn reset_editor_state() {
+    fn reset_editor_state() -> std::sync::MutexGuard<'static, ()> {
+        let test_guard = crate::reset_shared_registries_for_test();
         trusted_roots().lock().unwrap().clear();
         session_registry().lock().unwrap().clear();
         proposal_registry().lock().unwrap().clear();
         approval_registry().lock().unwrap().clear();
         trust("fixture://lyra-starter");
+        test_guard
     }
 
     fn approved_state_only_operation() -> (String, BoundEditorOperationApproval) {
@@ -831,6 +833,7 @@ mod tests {
 
     #[test]
     fn ue_editor_requires_trusted_root() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         trusted_roots().lock().unwrap().clear();
         let result = validate_editor_config_with_feature(
             input("fixture://lyra-starter", "Game.uproject"),
@@ -842,6 +845,7 @@ mod tests {
 
     #[test]
     fn ue_editor_blocks_root_escape_network_and_missing_uproject() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         trusted_roots().lock().unwrap().clear();
         trust("fixture://lyra-starter");
         assert_eq!(
@@ -866,6 +870,7 @@ mod tests {
 
     #[test]
     fn ue_editor_session_lifecycle_and_state_only_execution() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         trusted_roots().lock().unwrap().clear();
         session_registry().lock().unwrap().clear();
         proposal_registry().lock().unwrap().clear();
@@ -920,7 +925,7 @@ mod tests {
 
     #[test]
     fn ue_editor_blocks_reapprove_after_execute_and_second_execute() {
-        reset_editor_state();
+        let _test_guard = reset_editor_state();
         let (proposal_id, approval) = approved_state_only_operation();
         let executed = execute_editor_operation(ExecuteEditorOperationInput {
             proposal_id: proposal_id.clone(),
@@ -952,7 +957,7 @@ mod tests {
 
     #[test]
     fn ue_editor_cancel_blocks_later_approve_and_execute() {
-        reset_editor_state();
+        let _test_guard = reset_editor_state();
         let (proposal_id, approval) = approved_state_only_operation();
         let cancelled = cancel_editor_operation(EditorOperationApprovalInput {
             proposal_id: proposal_id.clone(),
@@ -972,7 +977,8 @@ mod tests {
         assert_eq!(execute.status, "blocked");
         assert_eq!(execute.reason, "proposal_not_executable");
 
-        reset_editor_state();
+        drop(_test_guard);
+        let _test_guard = reset_editor_state();
         let session = start_session(
             input("fixture://lyra-starter", "Game.uproject"),
             "attached",
@@ -1003,7 +1009,7 @@ mod tests {
 
     #[test]
     fn ue_editor_blocks_forged_token_args_mismatch_and_expired_or_mismatched_session() {
-        reset_editor_state();
+        let _test_guard = reset_editor_state();
         let (proposal_id, mut approval) = approved_state_only_operation();
         approval.token = "forged".to_string();
         let forged = execute_editor_operation(ExecuteEditorOperationInput {
@@ -1060,6 +1066,7 @@ mod tests {
 
     #[test]
     fn ue_editor_blocks_asset_write_operations() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         trusted_roots().lock().unwrap().clear();
         session_registry().lock().unwrap().clear();
         trust("fixture://lyra-starter");
@@ -1080,6 +1087,7 @@ mod tests {
 
     #[test]
     fn ue_editor_validates_real_project_inside_trusted_root() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         trusted_roots().lock().unwrap().clear();
         let unique = format!(
             "uagent-editor-{}",

@@ -1,6 +1,6 @@
 pub(crate) mod asset_mutation;
 pub(crate) mod browser;
-pub(crate) mod mcp;
+pub mod mcp;
 pub(crate) mod screenshot;
 pub(crate) mod terminal;
 pub(crate) mod text_mutation;
@@ -80,6 +80,27 @@ impl TrustedRootRegistry {
 pub(crate) fn trusted_roots() -> &'static Mutex<TrustedRootRegistry> {
     static ROOTS: std::sync::OnceLock<Mutex<TrustedRootRegistry>> = std::sync::OnceLock::new();
     ROOTS.get_or_init(|| Mutex::new(TrustedRootRegistry::default()))
+}
+
+#[cfg(test)]
+fn shared_registry_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static TEST_MUTEX: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
+    TEST_MUTEX
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
+#[cfg(test)]
+pub(crate) fn reset_shared_registries_for_test() -> std::sync::MutexGuard<'static, ()> {
+    let test_guard = shared_registry_test_guard();
+    trusted_roots()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clear();
+    asset_mutation::reset_registry_for_test();
+    ue_editor_process::reset_registries_for_test();
+    test_guard
 }
 
 fn cancel_flags() -> &'static Mutex<HashMap<String, bool>> {
@@ -441,6 +462,54 @@ fn trust_native_project_root(input: TrustRootInput) -> Result<TrustRootResult, S
         display_root: display,
         trust_state: "trusted".to_string(),
     })
+}
+
+/// Narrow mutation-incapable command boundary used by the task-owned MVP15D
+/// product-adapter evidence bridge. Keeping the dispatch in this crate makes the
+/// bridge exercise the same trusted-root, process-observation, attestation, and
+/// retraction registries as the Tauri commands.
+pub fn mvp15d_task_native_invoke(
+    command: &str,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    fn decode<T: serde::de::DeserializeOwned>(input: serde_json::Value) -> Result<T, String> {
+        serde_json::from_value(input).map_err(|_| "bridge_native_input_invalid".to_string())
+    }
+
+    fn encode<T: Serialize>(result: T) -> Result<serde_json::Value, String> {
+        serde_json::to_value(result).map_err(|_| "bridge_native_result_invalid".to_string())
+    }
+
+    match command {
+        "trust_native_project_root" => {
+            encode(trust_native_project_root(decode::<TrustRootInput>(input)?)?)
+        }
+        "discover_editor_processes" => {
+            encode(ue_editor_process::discover_editor_processes(decode::<
+                ue_editor_process::EditorProcessConfigInput,
+            >(
+                input
+            )?)?)
+        }
+        "attach_editor_process" => encode(ue_editor_process::attach_editor_process(decode::<
+            ue_editor_process::EditorAttachInput,
+        >(
+            input
+        )?)?),
+        "attest_mvp15_companion" => {
+            encode(asset_mutation::attest_mvp15_companion(decode::<
+                asset_mutation::Mvp15CompanionAttestationInput,
+            >(input)?))
+        }
+        "retract_mvp15_companion_approvals" => {
+            encode(asset_mutation::retract_mvp15_companion_approvals(decode::<
+                asset_mutation::Mvp15CompanionApprovalRetractionInput,
+            >(
+                input
+            )?))
+        }
+        _ => Err("bridge_native_command_not_allowed".to_string()),
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1527,6 +1596,8 @@ pub fn run() {
             asset_mutation::record_asset_mutation_outcome,
             asset_mutation::read_asset_content_evidence,
             asset_mutation::snapshot_asset_content_manifest,
+            asset_mutation::attest_mvp15_companion,
+            asset_mutation::retract_mvp15_companion_approvals,
             mcp::mcp_streamable_http_request,
         ])
         .run(tauri::generate_context!())
@@ -1580,6 +1651,7 @@ mod tests {
 
     #[test]
     fn trusted_root_resolver_rejects_same_path_object_replacement() {
+        let _test_guard = reset_shared_registries_for_test();
         trusted_roots().lock().unwrap().clear();
         let root = create_real_project_validation_test_root();
         let root_ref = root.path.to_string_lossy().to_string();
@@ -1644,6 +1716,7 @@ mod tests {
 
     #[test]
     fn preview_rejects_untrusted_fixture_root() {
+        let _test_guard = reset_shared_registries_for_test();
         trusted_roots().lock().unwrap().clear();
 
         let preview = preview_native_project_file(PreviewProjectFileInput {
@@ -2149,10 +2222,78 @@ mod tests {
         );
     }
 
+    #[test]
+    fn shared_registry_tests_use_the_deterministic_reset_boundary() {
+        let _test_guard = reset_shared_registries_for_test();
+        let test_attribute = ["#[", "test]"].concat();
+        let sources = [
+            ("lib.rs", include_str!("lib.rs")),
+            ("asset_mutation.rs", include_str!("asset_mutation.rs")),
+            ("browser.rs", include_str!("browser.rs")),
+            ("terminal.rs", include_str!("terminal.rs")),
+            ("text_mutation.rs", include_str!("text_mutation.rs")),
+            ("ue_editor.rs", include_str!("ue_editor.rs")),
+            ("ue_editor_process.rs", include_str!("ue_editor_process.rs")),
+            ("watcher.rs", include_str!("watcher.rs")),
+        ];
+        let shared_registry_markers = [
+            "trusted_roots()",
+            "trust_native_project_root(",
+            "register_asset_mutation_observation_fixture(",
+            "observation_registry()",
+            "process_registry()",
+            "start_watcher(",
+            "register_asset_mutation_approval_at(",
+            "authorize_asset_mutation_at(",
+            "record_asset_mutation_outcome",
+            "retract_mvp15_companion_approvals(",
+            "activate_companion_approval_binding(",
+        ];
+        let accepted_boundaries = [
+            "let _test_guard = reset_shared_registries_for_test()",
+            "let _test_guard = crate::reset_shared_registries_for_test()",
+            "let _test_guard = clear_registry()",
+            "let _test_guard = reset()",
+            "let _test_guard = reset_native_text_mutation_state()",
+            "let _test_guard = reset_editor_state()",
+        ];
+
+        for (file, source) in sources {
+            for test in source.split(&test_attribute).skip(1) {
+                if !shared_registry_markers
+                    .iter()
+                    .any(|marker| test.contains(marker))
+                {
+                    continue;
+                }
+                let signature_end = test
+                    .find('{')
+                    .expect("every test declaration must have a function body");
+                let signature = &test[..signature_end];
+                let name = signature
+                    .split_whitespace()
+                    .skip_while(|part| *part != "fn")
+                    .nth(1)
+                    .and_then(|part| part.split('(').next())
+                    .unwrap_or("unknown_test");
+                let first_statement = test[signature_end + 1..]
+                    .split(';')
+                    .next()
+                    .unwrap_or_default()
+                    .trim();
+                assert!(
+                    accepted_boundaries.contains(&first_statement),
+                    "{file}::{name} must initialize every shared registry while holding the repository guard"
+                );
+            }
+        }
+    }
+
     // --- Watcher integration tests (unit tests in watcher.rs) ---
 
     #[test]
     fn watcher_integration_real_diff() {
+        let _test_guard = reset_shared_registries_for_test();
         // Integration test: start watcher on temp dir, create file, read diff
         let unique = format!(
             "uagent-watcher-int-{}",

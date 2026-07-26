@@ -1,5 +1,39 @@
 # MVP15 UE MCP Plugin Baseline
 
+## Independent UAgent Companion Baseline — MVP15D
+
+Rework 7 is `NEEDS_FIX` because repository documentation/report facts were
+inconsistent, while code and retained evidence validation passed. Rework 8 is
+`IN_PROGRESS`, source-checkpoint acceptance is `BLOCKED`, Ready is `NO`, and the
+current blocker is `PENDING_SUPERVISOR_CHECKPOINT`. Retained D0 supports current
+task
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`
+(previous task
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7`).
+`external/mvp15d-rework7-d0-20260726_190100` selects Direct with 129 indexed
+artifacts and mutation zero; transcript-index SHA-256 is
+`b87e0a8a4d685b0cbddd55c8ea5ed4e944b9feba7aaa9d9176e23e2dfdeb0f99`.
+Retained build `external/mvp15d-rework7-build-20260726_203000` and UE
+`external/mvp15d-rework7-ue-20260726_190100` close
+`BLOCKED_BY_EVIDENCE_RETENTION`; UE capture SHA-256 is
+`8794de55d0bc3444015116918b92e957070e684ac014f7f9551c07762af1cbb8`.
+
+These implementation results address the Rework 5 observer/native authority,
+cross-language binding, create-to-identity ownership, Rust isolation, and
+process-closeout findings. No final clean 15A package, installed/loaded package
+identity proof, or real product-mutation result exists. D13, 15A, 15B, and 15C
+remain prohibited.
+
+The repository working tree carries `integrations/unreal/UAgentAssetTools`,
+independent from Epic's plugin and with no Epic signing/vendor claim. Historical
+Rework 3 source work added task-only Direct and Toolset probes, inverse and
+cleanup hardening, and native module enumeration; its supervisor verdict was
+`NEEDS_FIX`. The four historical captures are UE Commandlet Automation markers,
+not UAgent product-adapter evidence. They do not make this an accepted plugin
+baseline or route decision.
+
+A clean source commit/tree remains required only for later final 15A packaging.
+
 This document separates repository-defined expectations from facts that must be collected from the real UE/MCP environment. It contains no local absolute path, process id, endpoint credential, token, or secret.
 
 ## Repository-defined Target
@@ -37,7 +71,27 @@ This contract is intentionally narrow and does not accept a 29th cache file, a d
 Canonicalization for this repository-side expectation uses UTF-8 JSON with object keys sorted lexicographically, no insignificant whitespace, and arrays kept in the order shown below:
 
 ```json
-{"aggregateBindingSchemaVersion":"uagent.mvp15.external-dry-run-binding.v1","dryRunHashAlgorithm":"sha1","dryRunHashSource":"ue_mcp_exact_tool","dryRunSchemaVersion":"mvp15c.dry-run.v1","requiredContractFields":["inputSchema","dryRunSchema","rollbackContract","affectedAssetsSchema","evidenceQuery"],"tools":["ue.asset.create_folder","ue.asset.duplicate","ue.asset.rename","ue.asset.move","ue.asset.delete","ue.asset.save"]}
+{
+  "aggregateBindingSchemaVersion": "uagent.mvp15.external-dry-run-binding.v1",
+  "dryRunHashAlgorithm": "sha1",
+  "dryRunHashSource": "ue_mcp_exact_tool",
+  "dryRunSchemaVersion": "mvp15c.dry-run.v1",
+  "requiredContractFields": [
+    "inputSchema",
+    "dryRunSchema",
+    "rollbackContract",
+    "affectedAssetsSchema",
+    "evidenceQuery"
+  ],
+  "tools": [
+    "ue.asset.create_folder",
+    "ue.asset.duplicate",
+    "ue.asset.rename",
+    "ue.asset.move",
+    "ue.asset.delete",
+    "ue.asset.save"
+  ]
+}
 ```
 
 SHA-256: `42703e1fdd8d6198f6b72ba3dfdb8d3e4c2246ed604ac317ab1b76e1ca43e9cb`.
@@ -52,41 +106,41 @@ C12-C13E established and preserved the following real-environment byte identity 
 - Active project-local descriptor: friendly name `Unreal MCP`, descriptor-reported version `1.0`, vendor string `Epic Games, Inc.`, descriptor SHA-256 `74420534edcd6baafcb48e0af919d53b84891bdade7b97869b0ef485c3ea1518`.
 - Six task/user-loaded project-local module hashes:
 
-| Module | SHA-256 |
-| --- | --- |
-| `UnrealEditor-ModelContextProtocol.dll` | `ee4ca6e01b82f2a4c83f09f92de5281181e9ac51fb0322ab25364f26f078ce16` |
-| `UnrealEditor-ModelContextProtocolEditor.dll` | `957dee36ef9701f4a52f5c416ed741535ba84948ede7c8ba8fc40322279e7c40` |
+| Module                                             | SHA-256                                                            |
+| -------------------------------------------------- | ------------------------------------------------------------------ |
+| `UnrealEditor-ModelContextProtocol.dll`            | `ee4ca6e01b82f2a4c83f09f92de5281181e9ac51fb0322ab25364f26f078ce16` |
+| `UnrealEditor-ModelContextProtocolEditor.dll`      | `957dee36ef9701f4a52f5c416ed741535ba84948ede7c8ba8fc40322279e7c40` |
 | `UnrealEditor-ModelContextProtocolEditorTests.dll` | `df8a4476438b39b57fbb5dc0f49b9a668fcddc02c24c2fba835b0717419cda0b` |
-| `UnrealEditor-ModelContextProtocolEngine.dll` | `814e15ba551c8e1450d1152695273de85959101fb9b173fd633ef1bce91489a1` |
+| `UnrealEditor-ModelContextProtocolEngine.dll`      | `814e15ba551c8e1450d1152695273de85959101fb9b173fd633ef1bce91489a1` |
 | `UnrealEditor-ModelContextProtocolEngineTests.dll` | `e8de89e8762372964add2832677d065783d8952868e4f35b0e3deddb18d630ac` |
-| `UnrealEditor-ModelContextProtocolTests.dll` | `ad832127dd48b7ce2341de4ad6ccbafdb02c2afcf77462cb9ca4f41e3993900a` |
+| `UnrealEditor-ModelContextProtocolTests.dll`       | `ad832127dd48b7ce2341de4ad6ccbafdb02c2afcf77462cb9ca4f41e3993900a` |
 
 These hashes reproducibly identify the active project-local bytes, but the descriptor vendor/version strings and matching BuildId do not prove an official source commit or authoritative official artifact mapping. C14 Authenticode inspection found that all six active modules are unsigned. A separate sibling set is validly signed by Epic Games, Inc., uses the same UE build family, and has six different SHA-256 values. That proves the sibling set's publisher identity, not a mapping from the active bytes to an official package or source build. No package manifest, official source revision, repository revision, or build attestation was present to bridge that gap.
 
-### C14 authoritative mapping matrix
+### Historical C14 authoritative mapping matrix
 
-| Evidence | Observed fact | Authority decision |
-| --- | --- | --- |
-| Active descriptor/version/BuildId | Stable descriptor SHA, version `1.0`, and build `55116800` | Identity only; insufficient provenance |
-| Active six module hashes | Reproduces the loaded project-local bytes; Authenticode status is unsigned | Stable identity only; insufficient provenance |
-| Signed sibling six modules | Valid Epic Games, Inc. code-signing chain and matching engine build family | Authoritative for the sibling bytes only |
-| Active-to-sibling comparison | Every module hash differs | Explicitly does not map active bytes to the signed sibling set |
-| Official package/source/build record | Not found in the inspected material | Required mapping remains missing |
+| Evidence                             | Observed fact                                                              | Authority decision                                             |
+| ------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Active descriptor/version/BuildId    | Stable descriptor SHA, version `1.0`, and build `55116800`                 | Identity only; insufficient provenance                         |
+| Active six module hashes             | Reproduces the loaded project-local bytes; Authenticode status is unsigned | Stable identity only; insufficient provenance                  |
+| Signed sibling six modules           | Valid Epic Games, Inc. code-signing chain and matching engine build family | Authoritative for the sibling bytes only                       |
+| Active-to-sibling comparison         | Every module hash differs                                                  | Explicitly does not map active bytes to the signed sibling set |
+| Official package/source/build record | Not found in the inspected material                                        | Required mapping remains missing                               |
 
 The mapping can close only if an official package manifest names the exact active hashes, the exact active binaries carry a valid Epic signature, or an official source revision plus build attestation reproducibly maps to those exact hashes.
 
-| Required fact | Current value | Consequence |
-| --- | --- | --- |
-| Exact UE version/build | UE `5.8.0`, promoted `55116800` | Known environment fact; not a product-smoke pass |
-| Active descriptor/module binary identity | Descriptor and six module SHA-256 values recorded above | Active bytes are reproducible |
-| Official source commit or authoritative artifact mapping | Missing; signed sibling bytes do not hash-match the active unsigned bytes | `BLOCKED_BY_MCP_SCHEMA` |
-| Fresh-smoke plugin build binding | Missing | Fresh product smoke cannot be accepted |
-| Canonical product-adapter live six-descriptor fingerprint | Implementation present; controlled live result has no accepted SHA | `BLOCKED_BY_MCP_SCHEMA` |
-| Per-tool schema/contract version or stable per-field fingerprint | Redacted per-tool SHA summaries are implemented, but no live descriptors were accepted | Schema compatibility is not yet reproduced live |
+| Required fact                                                    | Current value                                                                                                        | Consequence                                                                              |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Exact UE version/build                                           | UE `5.8.0`, promoted `55116800`                                                                                      | Known environment fact; not a product-smoke pass                                         |
+| Active descriptor/module binary identity                         | Descriptor and six module SHA-256 values recorded above                                                              | Active bytes are reproducible                                                            |
+| Official source commit or authoritative artifact mapping         | Missing; signed sibling bytes do not hash-match the active unsigned bytes                                            | `BLOCKED_BY_MCP_SCHEMA`                                                                  |
+| Fresh-smoke plugin build binding                                 | Missing                                                                                                              | Final clean installed/loaded identity remains a later 15A gate                           |
+| Canonical product-adapter live six-descriptor fingerprint        | Rework 7 retained D0 records four independently indexed sessions, zero mutation, and Direct; final 15B installed-build binding has not run | PARTIAL |
+| Per-tool schema/contract version or stable per-field fingerprint | Rework 7 D0 and five-session `48/48` UE matrix exercise the exact-six contract; `PENDING_SUPERVISOR_CHECKPOINT` remains | IMPLEMENTED for the source checkpoint; final installed-build identity remains later work |
 
 A statement that a plugin is running locally, a descriptor vendor string, or module hashes alone are not official provenance. Acceptance still requires the authoritative mapping plus the fresh live contract fingerprint.
 
-## C14 Product Fingerprint Contract
+## Historical C14 Product Fingerprint Contract
 
 - Publication schema: `uagent.mvp15.live-asset-toolset-fingerprint.v1`.
 - Canonical root payload: the publication schema version plus six tool payloads in the exact repository allowlist order.

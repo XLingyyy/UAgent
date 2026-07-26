@@ -50,6 +50,7 @@ export interface McpToolDescriptor {
   affectedAssetsSchema?: Record<string, unknown>;
   evidenceQuery?: Record<string, unknown>;
   "x-uagent-contract"?: Record<string, unknown>;
+  "x-uagent-plugin"?: Record<string, unknown>;
   annotations?: Record<string, unknown>;
 }
 

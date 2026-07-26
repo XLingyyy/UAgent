@@ -1,5 +1,45 @@
 # UAgent MVP Roadmap
 
+## MVP15D - UAgent UE Companion Plugin Rework 8
+
+Status: Rework 7 is `NEEDS_FIX` because repository documentation/report facts
+were inconsistent while product code and retained evidence validation passed.
+Previous task:
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7`. Current
+task:
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`. Rework 8
+is `IN_PROGRESS`; source-checkpoint acceptance `BLOCKED`; Ready for next stage
+`NO`.
+
+- Epic `ModelContextProtocol` remains untouched. The selected companion
+  registration route is `direct`; Toolset Registry remains outside the selected
+  production path.
+- Retained Rework 7 D0 at
+  `external/mvp15d-rework7-d0-20260726_190100` records four real
+  product-adapter sessions, 129 indexed artifacts, zero mutation, Direct,
+  transcript-index SHA-256
+  `b87e0a8a4d685b0cbddd55c8ea5ed4e944b9feba7aaa9d9176e23e2dfdeb0f99`,
+  and `hashes.json` SHA-256
+  `d393ce454385b32d07fa1a08ac7b8f39f897052dc3ff68daf785fc60d8077106`.
+- The build/source/manifest bundle at
+  `external/mvp15d-rework7-build-20260726_203000` has bundle SHA-256
+  `ef86e59c05068f9610050a2afa44bf3237d3fd78e82262cf6d3be6660223420b`,
+  60 files total (59 inventory-tracked payload files plus `inventory.json`),
+  byte-equal source snapshots, zero process/port/marker residuals, and unchanged
+  empty Content.
+- UE evidence at `external/mvp15d-rework7-ue-20260726_190100` records five
+  isolated sessions, `48/48`, six processes per ledger, residual zero, unchanged
+  Content, and capture SHA-256
+  `8794de55d0bc3444015116918b92e957070e684ac014f7f9551c07762af1cbb8`.
+- Typecheck, lint, build, two consecutive workspace tests, ten fresh default
+  Cargo runs, the serial diagnostic, tooling `23/23`, build-bundle `10/10`, and
+  targeted authority/vector/process checks exit 0. The historical supervisor
+  first workspace-test attempt exited `134`; subsequent runs passed.
+- `BLOCKED_BY_EVIDENCE_RETENTION` is closed. The current source-checkpoint
+  blocker is `PENDING_SUPERVISOR_CHECKPOINT`.
+- No final 15A package or separately authorized product-UI mutation lifecycle
+  exists. D13, 15A, 15B, and 15C remain prohibited.
+
 ## MVP0 - Project Foundation
 
 - TypeScript monorepo baseline with pnpm workspaces
@@ -236,7 +276,7 @@ Non-goals:
 - Broad mutating MCP `tools/call`.
 - Provider live defaults, automatic provider-output apply, automatic git operations, dependency installs, or CI workflow changes.
 
-## MVP15 - Native Authority Binding Rework
+## Historical Baseline — MVP15 Native Authority Binding Rework
 
 - **Sandbox Asset Contracts**: Adds asset mutation dry-run plans, sandbox asset paths, asset ChangeSet lifecycle, approval token binding, verification, rollback, evidence, audit, and replay-only summaries.
 - **Sandbox Path Policy**: Allows `create_folder` only at the exact `/Game/UAgentSandbox/<run-id>` root and all later writes only at strict descendants, with mapped `/Content/UAgentSandbox/**` disk paths. Blocks the global root, cross-run/root-prefix confusion, traversal, non-sandbox assets, generated/cache paths, project-wide saves, and broad/bulk asset operations.
@@ -244,13 +284,13 @@ Non-goals:
 - **Exact-tool Facade**: Wrapper-only endpoints may be adapted only when `describe_toolset` supplies fixed exact method ids, schema versions, input schemas, dry-run schemas, rollback contracts, affected asset schemas, and evidence queries for all six asset operations.
 - **Runtime Asset Mutation Service**: Provides deterministic dry-run, preview, approve/register, exact-tool execute, external verify, inverse rollback, manifest, and recorded replay summary behavior; the native-issued raw token is held only until the first execute attempt and never enters ChangeSets, UI/audit, MCP, or replay.
 - **Native Asset Mutation Guard Rework**: Resolve trusted roots and UE observation/process facts from native registries, require `UAGENT_ENABLE_ASSET_MUTATION=1`, recheck liveness before every MCP mutation call, retain a maximum 60-second first-execute token, and enforce absolute 15-minute forward / 20-minute recovery deadlines.
-- **Partial Failure / Cleanup Contract**: Only an exact `partial_failure` with `sideEffectObserved:true`, rollback availability, evidence, and a registered inverse receives ownership. Run-root cleanup recursively removes only an asset-free exact registered directory tree and fails closed on assets, cross-run targets, escapes, or reparse points.
-- **Desktop UI Integration**: Inspector Assets and Changes surfaces expose `executed`, `verified`, `rollback_available`, `rolled_back`, stable blocked reasons, redacted per-operation audit, and recorded-only replay with zero runtime side effects.
+- **Partial Failure / Cleanup Contract**: Only an exact `partial_failure` with `sideEffectObserved:true`, rollback availability, evidence, and a registered inverse receives ownership. Cleanup removes only handle-bound, exact-empty registered leaves in reverse ownership order and fails closed on assets, foreign identity, nonempty/enumeration failure, cross-run targets, escapes, or reparse points.
+- **Desktop UI Integration**: Inspector Assets and Changes surfaces expose `executed`, `verified`, `rollback_available`, `rolled_back`, stable blocked reasons, redacted per-operation audit, and recorded-only replay with zero runtime side effects. The working tree contains inherited visible Companion status/contract/hash/fingerprint/generation copy in `AssetMutationPanel` and `ConfigSettings` plus matching assertions. Rework 7 did not edit those files or the five TitleBar-coupled files; the inherited copy is not acceptance evidence.
 - **Scenario Matrix**: Runtime matrix covers at least 60 scenarios / 240 assertions across allowed paths, denied paths, stale manifest, approval expiry, execution, verification, rollback, replay, exact inventory, facade, and MCP adapter boundaries.
 - **Security Regression**: Side-effect scan covers non-empty-token fake verification, unknown-result fail-open, sandbox-only writes, non-sandbox asset paths, Save All, bulk operations, generic wrapper mutation, replay execute/rollback, raw evidence path/identity leakage, provider live defaults, manifest-only real verification, native trust/observation/gate authority, transaction liveness, and pre-trust root references.
 - **Reproducible Plugin Baseline**: Repository expectations and missing live identity fields are tracked in [MVP15 UE MCP Plugin Baseline](mvp15-ue-mcp-plugin-baseline.md); an unidentified running plugin is not sufficient acceptance evidence.
 
-Status: `BLOCKED` in the MVP15 native authority rework. The 09Z `PASS_REAL_SMOKE` ledger is historical happy-path evidence only. C11/11A native authority implementation and the complete automated regression passed. C12 identified UE `5.8.0` promoted build `55116800` and six project-local module hashes; C13 retained a task copy; C13B proved isolated task-local DDC and task-owned module/listener startup, although cold-cache port readiness occurred at about `+602.9s`; C13C reached warm readiness at `+33.408s` but left 28 Python bytecode files; C13D proved child-only suppression ineffective. C13E produced a stable `191 = 163 business + 28 cache` one-launch ledger at `+94.338s`, and C13E1 repaired the two supervisor-identified validator defects and was supervisor-accepted. C14 added a deterministic exact-six product-adapter fingerprint; C14A retracts all prior discovery/facade/binding/fingerprint authority before the first reconnect notification and redacts blocked issues to allowlisted names, stable flags, and counts, with adversarial malformed-input coverage. The controlled C14 task-owned Connect/Discover attempt issued one initialization request and then encountered a pre-discovery transport/environment failure, so it produced no schema decision or live fingerprint and all discovery/mutation-family counts remained zero. Separately, the signed Epic sibling modules do not hash-match the active unsigned project-local modules, and no authoritative manifest or source/build attestation maps the active bytes; that mapping gap remains `BLOCKED_BY_MCP_SCHEMA`. Supervisor review accepted the implementation at verified commit `37c29cbc7961218bfd71d1809178359952a75e18` and published its documentation closeout. Remaining R10 prerequisites are authoritative official mapping, a successful product-adapter live exact-six capture, and fresh product-UI happy/negative lifecycle evidence. Ready for the next stage: `NO`. MVP16 is limited to research and planning until MVP15 is formally re-accepted.
+Historical status before the MVP15D source-checkpoint rework was `BLOCKED`. The 09Z `PASS_REAL_SMOKE` ledger is historical happy-path evidence only. C11/11A native authority implementation and the complete automated regression passed. C12 identified UE `5.8.0` promoted build `55116800` and six project-local module hashes; C13 retained a task copy; C13B proved isolated task-local DDC and task-owned module/listener startup, although cold-cache port readiness occurred at about `+602.9s`; C13C reached warm readiness at `+33.408s` but left 28 Python bytecode files; C13D proved child-only suppression ineffective. C13E produced a stable `191 = 163 business + 28 cache` one-launch ledger at `+94.338s`, and C13E1 repaired the two supervisor-identified validator defects and was supervisor-accepted. C14 added a deterministic exact-six product-adapter fingerprint; C14A retracts all prior discovery/facade/binding/fingerprint authority before the first reconnect notification and redacts blocked issues to allowlisted names, stable flags, and counts, with adversarial malformed-input coverage. The controlled C14 task-owned Connect/Discover attempt issued one initialization request and then encountered a pre-discovery transport/environment failure, so it produced no schema decision or live fingerprint and all discovery/mutation-family counts remained zero. Separately, the signed Epic sibling modules do not hash-match the active unsigned project-local modules, and no authoritative manifest or source/build attestation maps the active bytes; that mapping gap remains `BLOCKED_BY_MCP_SCHEMA`. Supervisor review accepted the historical C14/C14A implementation at verified commit `37c29cbc7961218bfd71d1809178359952a75e18` and published its documentation closeout. Those facts do not accept the MVP15D source checkpoint. Current source-checkpoint status, D0 route evidence, and next-stage prohibition are defined by the MVP15D section at the top of this roadmap.
 
 Goals:
 
@@ -261,7 +301,7 @@ Goals:
 
 Non-goals:
 
-- Non-sandbox asset writes, Save All, SavePackage on arbitrary packages, broad/bulk asset operations, Blueprint compile execution, generic MCP mutation, provider-output auto-apply, default live provider access, automatic git operations, dependency installation, and CI workflow changes. The accepted pilot's exact, approval-bound move/rename and rollback cleanup operations under its registered run root are delivered capabilities, not part of this prohibition.
+- Non-sandbox asset writes, Save All, SavePackage on arbitrary packages, broad/bulk asset operations, Blueprint compile execution, generic MCP mutation, provider-output auto-apply, default live provider access, automatic git operations, dependency installation, and CI workflow changes. The historical pilot design discussed exact approval-bound move/rename and rollback cleanup under a registered run root; it does not accept the current MVP15D source checkpoint or authorize D13/15A/15B/15C work.
 
 ## Non-Goals
 

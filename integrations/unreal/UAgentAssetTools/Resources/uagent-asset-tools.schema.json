@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "uagent.ue-companion-plugin.asset-tools.v1",
+  "title": "UAgentAssetTools exact-six contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["toolNames", "identitySchema", "input", "output", "dryRun", "rollback", "evidence"],
+  "properties": {
+    "toolNames": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "ue.asset.create_folder" },
+        { "const": "ue.asset.duplicate" },
+        { "const": "ue.asset.rename" },
+        { "const": "ue.asset.move" },
+        { "const": "ue.asset.delete" },
+        { "const": "ue.asset.save" }
+      ],
+      "minItems": 6,
+      "maxItems": 6,
+      "items": false
+    },
+    "identitySchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "pluginId", "pluginVersion", "contractVersion", "sourceCommit", "sourceTreeSha256", "buildManifestSha256", "buildCommandFingerprint", "loadedModuleName", "loadedModuleSha256", "ueBuildId"],
+      "properties": {
+        "schemaVersion": { "const": "uagent.ue-companion-plugin.identity.v1" },
+        "pluginId": { "const": "UAgentAssetTools" },
+        "pluginVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "contractVersion": { "const": "mvp15d.asset-tools.v1" },
+        "sourceCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "sourceTreeSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "buildManifestSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "buildCommandFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "loadedModuleName": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+\\.dll$" },
+        "loadedModuleSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "ueBuildId": { "const": "55116800" }
+      }
+    },
+    "input": { "$ref": "#/$defs/input" },
+    "output": { "$ref": "#/$defs/output" },
+    "dryRun": { "$ref": "#/$defs/dryRun" },
+    "rollback": { "$ref": "#/$defs/rollback" },
+    "evidence": { "$ref": "#/$defs/evidence" }
+  },
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changeSetId", "runId", "operationId", "dryRun", "execute", "rollback"],
+      "properties": {
+        "changeSetId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]+$" },
+        "runId": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+        "operationId": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+        "dryRun": { "type": "boolean" },
+        "execute": { "type": "boolean" },
+        "rollback": { "type": "boolean" },
+        "dryRunHash": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "acceptedPlanBinding": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "nativeRegistrationId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,256}$" },
+        "nativePhase": { "enum": ["execute", "rollback"] },
+        "nativeOperationIndex": { "type": "integer", "minimum": 0 },
+        "nativeOperationCount": { "type": "integer", "minimum": 1 },
+        "nativeCreatedAt": { "type": "integer", "minimum": 1 },
+        "connectionGeneration": { "type": "integer", "minimum": 1 },
+        "sessionGeneration": { "type": "integer", "minimum": 1 },
+        "nativeSourceIdentity": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "nativeManifestIdentity": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "nativePluginIdentity": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "nativePackageIdentity": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "folderPath": { "type": "string", "pattern": "^/Game/UAgentSandbox/[A-Za-z0-9_-]+$" },
+        "sourceAssetPath": { "const": "/Game/Test01" },
+        "assetPath": { "type": "string", "pattern": "^/Game/UAgentSandbox/[A-Za-z0-9_-]+(?:/.+)?$" },
+        "targetAssetPath": { "type": "string", "pattern": "^/Game/UAgentSandbox/[A-Za-z0-9_-]+/.+$" },
+        "saveAll": { "const": false }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["dryRun"],
+            "properties": { "dryRun": { "const": false } }
+          },
+          "then": {
+            "required": [
+              "dryRunHash",
+              "acceptedPlanBinding",
+              "nativeRegistrationId",
+              "nativePhase",
+              "nativeOperationIndex",
+              "nativeOperationCount",
+              "nativeCreatedAt",
+              "connectionGeneration",
+              "sessionGeneration",
+              "nativeSourceIdentity",
+              "nativeManifestIdentity",
+              "nativePluginIdentity",
+              "nativePackageIdentity"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": ["dryRun"],
+            "properties": { "dryRun": { "const": true } }
+          },
+          "then": {
+            "allOf": [
+              { "not": { "required": ["dryRunHash"] } },
+              { "not": { "required": ["acceptedPlanBinding"] } },
+              { "not": { "required": ["nativeRegistrationId"] } },
+              { "not": { "required": ["nativePhase"] } },
+              { "not": { "required": ["nativeOperationIndex"] } },
+              { "not": { "required": ["nativeOperationCount"] } },
+              { "not": { "required": ["nativeCreatedAt"] } },
+              { "not": { "required": ["connectionGeneration"] } },
+              { "not": { "required": ["sessionGeneration"] } },
+              { "not": { "required": ["nativeSourceIdentity"] } },
+              { "not": { "required": ["nativeManifestIdentity"] } },
+              { "not": { "required": ["nativePluginIdentity"] } },
+              { "not": { "required": ["nativePackageIdentity"] } }
+            ]
+          }
+        }
+      ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blocked", "status", "reasonCode", "toolName", "operation", "phase", "changeSetId", "runId", "operationId", "sandboxRoot", "wouldChange", "wouldRead", "wouldModify", "affectedAssets", "rollbackPlan", "externalEvidenceQueries", "dryRunHash", "hashAlgorithm", "schemaVersion", "approvalRequired", "sideEffectObserved", "effectState", "rollbackAvailable", "rollbackStatus", "implementationStatus", "evidenceId"],
+      "properties": {
+        "blocked": { "type": "boolean" },
+        "status": { "type": "string" },
+        "reasonCode": { "type": "string" },
+        "toolName": { "enum": ["ue.asset.create_folder", "ue.asset.duplicate", "ue.asset.rename", "ue.asset.move", "ue.asset.delete", "ue.asset.save"] },
+        "operation": { "type": "string" },
+        "phase": { "enum": ["dry_run", "execute", "rollback"] },
+        "changeSetId": { "type": "string" },
+        "runId": { "type": "string" },
+        "operationId": { "type": "string" },
+        "sandboxRoot": { "type": "string", "pattern": "^/Game/UAgentSandbox/" },
+        "wouldChange": { "type": "boolean" },
+        "wouldRead": { "type": "array", "items": { "type": "string" } },
+        "wouldModify": { "type": "array", "items": { "type": "string" } },
+        "affectedAssets": {
+          "type": "object", "additionalProperties": false,
+          "required": ["readOnlySources", "sandboxTargets", "externalTargets"],
+          "properties": {
+            "readOnlySources": { "type": "array", "items": { "type": "string" } },
+            "sandboxTargets": { "type": "array", "items": { "type": "string" } },
+            "externalTargets": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "rollbackPlan": {
+          "type": "object", "additionalProperties": false,
+          "required": ["strategy", "inverseOperation", "executionEnabled"],
+          "properties": {
+            "strategy": { "const": "ledger_inverse" },
+            "inverseOperation": { "type": "string", "pattern": "^[a-z_]+$" },
+            "executionEnabled": { "type": "boolean" }
+          }
+        },
+        "externalEvidenceQueries": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["queryKind", "readOnly", "paths"],
+            "properties": {
+              "queryKind": { "const": "asset_registry_snapshot" },
+              "readOnly": { "const": true },
+              "paths": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "dryRunHash": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "hashAlgorithm": { "const": "sha1" },
+        "schemaVersion": { "const": "mvp15c.dry-run.v1" },
+        "approvalRequired": { "const": true },
+        "sideEffectObserved": { "type": "boolean" },
+        "effectState": { "type": "string", "enum": ["known_none", "known_effect", "known_partial", "unknown"] },
+        "rollbackAvailable": { "type": "boolean" },
+        "rollbackStatus": { "type": "string" },
+        "implementationStatus": { "const": "execution_capable" },
+        "evidenceId": { "type": "string" }
+      }
+    },
+    "dryRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "dryRunHash"],
+      "properties": {
+        "status": { "enum": ["dry_run_completed", "blocked"] },
+        "dryRunHash": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy", "inverseOperation", "executionEnabled"],
+      "properties": {
+        "strategy": { "const": "ledger_inverse" },
+        "inverseOperation": { "type": "string" },
+        "executionEnabled": { "type": "boolean" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["queryKind", "readOnly"],
+      "properties": { "queryKind": { "const": "asset_registry_snapshot" }, "readOnly": { "const": true } }
+    }
+  }
+}

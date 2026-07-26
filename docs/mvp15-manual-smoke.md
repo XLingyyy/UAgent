@@ -1,14 +1,87 @@
 # MVP15 Native Authority Binding Rework Manual Smoke
 
-This is the repeatable product-UI procedure, not a claim that the current run passed. Current acceptance is `BLOCKED`. C13-C13E established a retained task copy and task-owned launch/readiness facts; supervisor-accepted C13E1 repaired the dual-aggregate validator. C14 then implemented the redacted deterministic product-adapter fingerprint and performed a narrower read-only attempt. Route A remained exact, but the single initialization request encountered a pre-discovery transport/environment failure, so it supplied no schema decision or live hash and every asset/lifecycle action count was zero. C14A only hardens automated reconnect retraction and blocked-result redaction; it did not launch UE/UAgent, connect live MCP, or perform mutation. Official active-byte mapping remains `BLOCKED_BY_MCP_SCHEMA`, while successful product-adapter contract capture and the R10 product lifecycle remain independently open; the 09Z `PASS_REAL_SMOKE` ledger is historical only.
+## Current MVP15D Rework 8 Manual-smoke Boundary
 
-## C14 Read-only Discovery Boundary
+Rework 7 is `NEEDS_FIX` because repository documentation/report facts were
+inconsistent, while code and retained evidence validation passed. Rework 8 is
+`IN_PROGRESS`, source-checkpoint acceptance is `BLOCKED`, Ready is `NO`, and the
+current blocker is `PENDING_SUPERVISOR_CHECKPOINT`.
+Previous/current task IDs are
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7` and
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`.
+`BLOCKED_BY_EVIDENCE_RETENTION` is closed by retained D0
+`external/mvp15d-rework7-d0-20260726_190100`, build
+`external/mvp15d-rework7-build-20260726_203000`, and UE
+`external/mvp15d-rework7-ue-20260726_190100`. D0 records 129 indexed artifacts,
+zero mutation, and Direct. UE records five sessions, `48/48`, six processes per
+ledger, residual zero, unchanged empty Content, and capture SHA-256
+`8794de55d0bc3444015116918b92e957070e684ac014f7f9551c07762af1cbb8`.
+
+These implementation results do not authorize the product-UI mutation procedure below.
+No supervisor checkpoint, final clean 15A package, or authorized real product
+mutation exists. D13, 15A, 15B, and 15C remain prohibited.
+
+## Historical Rework 3 Supervisor Boundary - NEEDS_FIX
+
+Rework 3 has four task-owned UE Commandlet probe markers with zero reported
+mutation and four UE Automation tests. They are not UAgent product-adapter D0 and
+do not authorize this manual product-UI procedure. Ownership, partial-effect,
+native revocation, positive loaded-module, and Automation gates remain open.
+Rework 4 must pass before a supervisor source checkpoint; D13/15A/15B/15C and
+real product mutation remain prohibited.
+
+## Historical Rework 2 Review Note - 2026-07-20
+
+The repeatable procedure targets the independent `UAgentAssetTools` companion
+and its exact-six identity/fingerprint. The first source checkpoint, Rework 1,
+and Rework 2 failed supervisor review and did not run this procedure. UE 5.8 tooling and the
+retained task-owned project are present outside PATH, so D0 is `IN_PROGRESS`,
+not `BLOCKED_BY_ENVIRONMENT`; 15A/15B/15C remain blocked on a later accepted
+source checkpoint. Rework 2 preserves native `blocked` status but can leave a
+previously accepted companion fingerprint published. No positive or negative real mutation ledger is claimed;
+real mutation remains forbidden until D0 and the corrected rollback contract pass.
+
+At Rework 2, this was the repeatable product-UI procedure rather than a claim that
+the then-current run passed; its acceptance record was `BLOCKED`. The remaining
+paragraph preserves that historical evidence context. Rework 3 source controls do
+not authorize the product-UI procedure: a clean checkpoint and independently
+trusted D0 evidence are still required. C13-C13E established a retained task copy
+and task-owned launch/readiness facts; supervisor-accepted C13E1 repaired the
+dual-aggregate validator. C14 then implemented the redacted deterministic
+product-adapter fingerprint and performed a narrower read-only attempt. Route A
+remained exact, but the single initialization request encountered a pre-discovery
+transport/environment failure, so it supplied no schema decision or live hash and
+every asset/lifecycle action count was zero. C14A only hardens automated reconnect
+retraction and blocked-result redaction; it did not launch UE/UAgent, connect live
+MCP, or perform mutation. Official active-byte mapping remains
+`BLOCKED_BY_MCP_SCHEMA`, while successful product-adapter contract capture and the
+R10 product lifecycle remain independently open; the 09Z `PASS_REAL_SMOKE` ledger
+is historical only.
+
+## Historical C14 Read-only Discovery Boundary
 
 C14 is not the happy-path mutation lifecycle below. Its authorized boundary was product Connect/Discover plus discovery-only `list_toolsets` and `describe_toolset`. Generic `call_tool` asset dispatch, registration, approval token, dry-run, execute, verify, rollback, replay, mutation, Content input, Save All, and Blueprint compile were prohibited. The actual attempt stopped at initialization and recorded all later counts as zero. A blocked or unavailable live fingerprint must remain blocked; never replace it with fixture or hand-assembled descriptors.
 
-## C14A Automated Hardening Boundary
+## Historical C14A Automated Hardening Boundary
 
-C14A is getter/adapter hardening, not another live attempt and not the R10 mutation lifecycle. Its automated tests require the first synchronous reconnect success/error notification and invalid-endpoint notification to expose null SHA, byte length, binding, discovery, and facade/tool inventory. Blocked publication may expose allowlisted duplicate names and stable counts only; URL, Windows-path, `token=`, `Bearer`, primitive, non-string, throwing/proxy-like, cyclic, and non-JSON adversarial inputs must never produce an accepted SHA or serialized canary. No UI copy or snapshot changes are required because the fingerprint is exposed only through the desktop adapter getter.
+C14A is getter/adapter hardening, not another live attempt and not the R10 mutation lifecycle. Its automated tests require the first synchronous reconnect success/error notification and invalid-endpoint notification to expose null SHA, byte length, binding, discovery, and facade/tool inventory. Blocked publication may expose allowlisted duplicate names and stable counts only; URL, Windows-path, `token=`, `Bearer`, primitive, non-string, throwing/proxy-like, cyclic, and non-JSON adversarial inputs must never produce an accepted SHA or serialized canary. That historical task ended at the desktop adapter getter and did not define the current MVP15D UI surface; the current working-tree UI changes are recorded below.
+
+## Current MVP15D UI and Runner Checks
+
+- `AssetMutationPanel` visibly reports Companion status, contract, manifest hash
+  prefix, live fingerprint prefix, generation, blocker, and exact-six
+  attestation readiness. `ConfigSettings` visibly reports the Companion plugin
+  status, plugin/contract, manifest/live-fingerprint prefixes, and
+  generation/tool summary. Their changed assertions must remain in the UI test
+  ledger.
+- The committed TitleBar baseline for this source-checkpoint remains
+  `MVP15 Rework`. Separate TitleBar/window-control diffs are outside MVP15D and
+  must not be used as Companion-state evidence.
+- Each of the five Rework 7 UE Automation sessions has a unique task marker
+  and a complete marker-bound descendant creation/parent/first-observation/exit
+  ledger with final residual count zero. A basename-only or final point-in-time
+  process scan does not satisfy this check. The retained ledgers record six
+  processes per session and final residual zero.
 
 ## Preconditions
 
@@ -71,4 +144,7 @@ Each negative case uses an independent registration/run and must prove before/af
 - Historical result: `PASS_REAL_SMOKE`.
 - Historical run: `ui-mrpovp9e-1`.
 - Scope: former happy path only; not accepted as C11 authority or fresh smoke evidence.
-- Current TitleBar expectation during implementation: `MVP15 Rework`.
+- Current committed TitleBar badge expectation remains `MVP15 Rework`. Neither
+  Rework 7 nor documentation-only Rework 8 edited any of the five
+  TitleBar-coupled files; separate inherited
+  TitleBar/window-controls work is outside this checkpoint.

@@ -145,7 +145,20 @@ export interface AssetMutationAdapterResult {
   reason: string | null;
   evidenceId: string;
   stateOnFailure?: "failed" | "rollback_available";
+  /**
+   * `true` is reserved for a tool result that positively observed its owned effect.
+   * `false` means the tool positively reported no effect.  Omit the value when a
+   * transport or result-validation failure leaves the effect unconfirmed; callers
+   * must not manufacture manifest ownership or an inverse from that uncertainty.
+   */
   sideEffectObserved?: boolean;
+  /**
+   * The adapter must distinguish a complete observation of no effect from an
+   * indeterminate post-call boundary.  Omitted is treated as `unknown` for
+   * compatibility with older adapters, never as a proven zero effect.
+   */
+  effectState?: "known_none" | "known_effect" | "known_partial" | "unknown";
+  /** True only when the exact tool and native ledger both retained a usable inverse. */
   rollbackAvailable?: boolean;
   externalRegistration?: AssetMutationExternalRegistrationBinding;
   issuedApprovalToken?: string;
@@ -666,6 +679,7 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
         const validated = validatePluginDryRunResult(unwrapped, {
           expectedToolName: payload.toolName,
           expectedOperationKind: op.kind,
+		  expectedOperationId: op.id,
           context: ctx,
           operation: op,
         });
@@ -888,7 +902,11 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
         );
         evidenceIds.push(result.evidenceId);
         let manifestEntry: AssetManifestEntry | null = null;
-        if (result.ok || result.sideEffectObserved === true) {
+        // A failed tool result may prove an owned partial effect, but that proof only
+        // creates rollback ownership when the exact tool also retained an inverse.
+        // Transport/result-validation uncertainty deliberately does not create a
+        // manifest entry that a later rollback could mistake for owned state.
+        if (result.ok || (result.sideEffectObserved === true && result.rollbackAvailable === true)) {
           if (op.kind === "create_folder" || op.kind === "create_test_asset") {
             manifestEntry = options.manifest.registerCreated({
               projectId: current.projectId,
@@ -916,19 +934,42 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
             if (entry && op.kind === "delete_sandbox_asset") manifestEntry = options.manifest.markDeleted(entry.id, result.evidenceId);
           }
         }
+        const effectState = result.ok
+          ? "known_effect" as const
+          : result.effectState ?? (result.sideEffectObserved === true ? "known_partial" : result.sideEffectObserved === false ? "known_none" : "unknown");
         const processedOperation = {
           ...op,
           manifestEntryId: manifestEntry?.id ?? op.manifestEntryId,
-          executionStatus: result.ok ? "executed" as const : result.sideEffectObserved === true ? "partial_failure" as const : "failed" as const,
+          executionStatus: result.ok
+            ? "executed" as const
+            : effectState === "unknown"
+              ? "unknown_effect" as const
+              : result.sideEffectObserved === true
+                ? "partial_failure" as const
+                : "failed" as const,
           executionEvidenceId: result.evidenceId,
           partialSideEffectObserved: result.sideEffectObserved === true || undefined,
+          blockedReason: result.ok ? null : result.reason ?? "adapter_execute_failed",
         };
         if (!result.ok) {
           nextOps.push(processedOperation);
-          const execution = createExecutionResult(nextId("asset-execution"), current, nextOps, evidenceIds, "failed", result.reason ?? "adapter_execute_failed", now());
-          const failureState = options.executionMode === "real"
-            ? hasRollbackOwnership(nextOps) ? "rollback_available" : "failed"
-            : result.stateOnFailure ?? "rollback_available";
+          const executionStatus = effectState === "unknown" ? "unknown_effect" as const : "failed" as const;
+          const execution = createExecutionResult(nextId("asset-execution"), current, nextOps, evidenceIds, executionStatus, result.reason ?? "adapter_execute_failed", now());
+          // A partial result is only rollback-owned after the exact native inverse
+          // was retained and materialized as a manifest entry.  A tool may have
+          // observed an effect but lose the native settlement response; do not
+          // advertise an unavailable rollback as recovery in that case.
+          const partialRecoveryOwned = effectState === "known_partial"
+            && result.rollbackAvailable === true
+            && hasRollbackOwnership(nextOps);
+          const failureState = effectState === "unknown"
+            || (effectState === "known_partial" && !partialRecoveryOwned)
+            ? "unknown_effect" as const
+            : effectState === "known_partial"
+              ? "rollback_available" as const
+              : options.executionMode === "real"
+              ? hasRollbackOwnership(nextOps) ? "rollback_available" as const : "failed" as const
+              : result.stateOnFailure ?? "rollback_available";
           const changeSet = store({
             ...current,
             state: failureState,
@@ -936,7 +977,7 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
             approval: current.approval ? { ...current.approval, status: "used" } : null,
             evidenceIds: [...current.evidenceIds, ...evidenceIds],
           });
-          return boundary({ status: "failed", reason: execution.reason, changeSet, execution });
+          return boundary({ status: executionStatus, reason: execution.reason, changeSet, execution });
         }
         nextOps.push(processedOperation);
       }
@@ -997,7 +1038,7 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
       const current = changeSets.get(changeSetId);
       if (!current) return { status: "blocked", reason: "changeset_required", changeSet: null };
       if (options.executionMode === "real") {
-        if (!["executed", "verified", "rollback_available"].includes(current.state)) {
+        if (!["executed", "verified", "unknown_effect", "rollback_available"].includes(current.state)) {
           return boundary({ status: "blocked", reason: "rollback_state_invalid", changeSet: current });
         }
         const registration = externalRegistrations.get(changeSetId);
@@ -1589,6 +1630,10 @@ function resolveManifestOwnership(
   if (!entry) return { ok: false, entry: null, reason: "manifest_entry_required" };
   if (entry.projectId !== changeSet.projectId) return { ok: false, entry: null, reason: "manifest_project_mismatch" };
   if (entry.editorSessionId !== changeSet.editorSessionId) return { ok: false, entry: null, reason: "manifest_session_mismatch" };
+  if (entry.runId !== changeSet.runId) return { ok: false, entry: null, reason: "manifest_run_mismatch" };
+  if (!changeSet.operations.some((candidate) => candidate.id === entry.sourceOperationId)) {
+    return { ok: false, entry: null, reason: "manifest_source_operation_required" };
+  }
   if (entry.currentState === "deleted" || entry.currentState === "rolled_back") return { ok: false, entry: null, reason: "manifest_state_mismatch" };
   if (operation.kind === "rename_asset" || operation.kind === "move_asset") {
     if (!operation.assetPathBefore || !operation.assetPathAfter || entry.assetPath !== operation.assetPathBefore) {
@@ -1615,6 +1660,9 @@ function resolveRollbackManifestOwnership(
   if (entry.projectId !== changeSet.projectId) return { ok: false, entry: null, reason: "rollback_manifest_project_mismatch" };
   if (entry.editorSessionId !== changeSet.editorSessionId) return { ok: false, entry: null, reason: "rollback_manifest_session_mismatch" };
   if (entry.runId !== changeSet.runId) return { ok: false, entry: null, reason: "rollback_manifest_run_mismatch" };
+  if (!changeSet.operations.some((candidate) => candidate.id === entry.sourceOperationId)) {
+    return { ok: false, entry: null, reason: "rollback_manifest_source_operation_required" };
+  }
   if (entry.currentState === "rolled_back") return { ok: false, entry: null, reason: "rollback_manifest_state_mismatch" };
   if (!operation.assetPathAfter || entry.assetPath !== operation.assetPathAfter) {
     return { ok: false, entry: null, reason: "rollback_manifest_path_mismatch" };
@@ -1668,7 +1716,10 @@ function mergeOperations(current: AssetMutationOperation[], processed: AssetMuta
 }
 
 function hasRollbackOwnership(operations: AssetMutationOperation[]): boolean {
-  return operations.some((operation) => Boolean(operation.manifestEntryId));
+  return operations.some((operation) => (
+    Boolean(operation.manifestEntryId)
+    && operation.kind !== "save_single_asset"
+  ));
 }
 
 function createRollbackPlan(changeSetId: string, operations: AssetMutationOperation[]): AssetRollbackPlan {

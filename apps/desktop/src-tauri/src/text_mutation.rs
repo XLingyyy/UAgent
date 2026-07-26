@@ -959,11 +959,13 @@ mod tests {
         root
     }
 
-    fn reset_native_text_mutation_state() {
+    fn reset_native_text_mutation_state() -> std::sync::MutexGuard<'static, ()> {
+        let test_guard = crate::reset_shared_registries_for_test();
         backups().lock().unwrap().clear();
         change_set_registry().lock().unwrap().clear();
         approval_registry().lock().unwrap().clear();
         crate::trusted_roots().lock().unwrap().clear();
+        test_guard
     }
 
     fn approval_for(
@@ -1042,7 +1044,7 @@ mod tests {
 
     #[test]
     fn allowed_ini_apply_and_rollback_restore_before_hash() {
-        reset_native_text_mutation_state();
+        let _test_guard = reset_native_text_mutation_state();
         let root = trusted_temp_project_root("allowed");
         let target = root.join("Config").join("DefaultGame.ini");
         fs::write(&target, "Value=true\n").unwrap();
@@ -1091,7 +1093,7 @@ mod tests {
 
     #[test]
     fn untrusted_root_preview_apply_and_rollback_are_blocked_without_writing() {
-        reset_native_text_mutation_state();
+        let _test_guard = reset_native_text_mutation_state();
         let root = temp_project_root("untrusted-root");
         let target = root.join("Config").join("DefaultGame.ini");
         fs::write(&target, "Value=true\n").unwrap();
@@ -1149,7 +1151,7 @@ mod tests {
 
     #[test]
     fn trusted_root_happy_path_preview_approve_apply_and_rollback() {
-        reset_native_text_mutation_state();
+        let _test_guard = reset_native_text_mutation_state();
         let root = trusted_temp_project_root("trusted-happy-path");
         let target = root.join("Config").join("DefaultGame.ini");
         fs::write(&target, "Value=true\n").unwrap();
@@ -1194,7 +1196,7 @@ mod tests {
 
     #[test]
     fn apply_rejects_forged_replayed_root_mismatched_and_after_hash_mismatched_tokens() {
-        reset_native_text_mutation_state();
+        let _test_guard = reset_native_text_mutation_state();
         let root = trusted_temp_project_root("approval-bindings-a");
         let other_root = trusted_temp_project_root("approval-bindings-b");
         let target = root.join("Config").join("DefaultGame.ini");
@@ -1297,7 +1299,7 @@ mod tests {
 
     #[test]
     fn preview_result_redacts_secret_and_omits_raw_content_fields() {
-        reset_native_text_mutation_state();
+        let _test_guard = reset_native_text_mutation_state();
         let root = trusted_temp_project_root("redacted-preview");
         let target = root.join("Config").join("DefaultGame.ini");
         fs::write(&target, "Authorization=Bearer sk-secret\nValue=true\n").unwrap();
@@ -1333,7 +1335,7 @@ mod tests {
 
     #[test]
     fn apply_rejects_wrong_approval_token_without_writing() {
-        reset_native_text_mutation_state();
+        let _test_guard = reset_native_text_mutation_state();
         let root = trusted_temp_project_root("approval-wrong-token");
         let target = root.join("Config").join("DefaultGame.ini");
         fs::write(&target, "Value=true\n").unwrap();
@@ -1369,7 +1371,7 @@ mod tests {
 
     #[test]
     fn apply_rejects_genuinely_expired_approval_without_writing() {
-        reset_native_text_mutation_state();
+        let _test_guard = reset_native_text_mutation_state();
         let root = trusted_temp_project_root("approval-expired");
         let target = root.join("Config").join("DefaultGame.ini");
         fs::write(&target, "Value=true\n").unwrap();
@@ -1403,7 +1405,7 @@ mod tests {
 
     #[test]
     fn apply_rejects_malformed_approval_window_without_writing() {
-        reset_native_text_mutation_state();
+        let _test_guard = reset_native_text_mutation_state();
         let root = trusted_temp_project_root("approval-malformed");
         let target = root.join("Config").join("DefaultGame.ini");
         fs::write(&target, "Value=true\n").unwrap();
@@ -1439,7 +1441,7 @@ mod tests {
 
     #[test]
     fn apply_rejects_after_hash_replaced_after_approval_without_writing() {
-        reset_native_text_mutation_state();
+        let _test_guard = reset_native_text_mutation_state();
         let root = trusted_temp_project_root("approval-after-hash");
         let target = root.join("Config").join("DefaultGame.ini");
         fs::write(&target, "Value=true\n").unwrap();
@@ -1475,7 +1477,7 @@ mod tests {
 
     #[test]
     fn rollback_blocks_hash_swapped_multi_file_without_writing() {
-        reset_native_text_mutation_state();
+        let _test_guard = reset_native_text_mutation_state();
         let root = trusted_temp_project_root("rollback-swapped");
         let game = root.join("Game.uproject");
         let config = root.join("Config").join("DefaultGame.ini");
@@ -1540,7 +1542,7 @@ mod tests {
 
     #[test]
     fn blocks_binary_outside_root_and_stale_hash() {
-        reset_native_text_mutation_state();
+        let _test_guard = reset_native_text_mutation_state();
         let root = trusted_temp_project_root("blocked");
         fs::write(root.join("Content").join("Hero.uasset"), [0u8, 1, 2]).unwrap();
         fs::write(root.join("Config").join("DefaultGame.ini"), "Value=true\n").unwrap();
@@ -1590,7 +1592,7 @@ mod tests {
 
     #[test]
     fn replay_status_does_not_apply_or_rollback_again() {
-        reset_native_text_mutation_state();
+        let _test_guard = reset_native_text_mutation_state();
         let root = trusted_temp_project_root("replay");
         fs::write(root.join("Config").join("DefaultGame.ini"), "Value=true\n").unwrap();
 

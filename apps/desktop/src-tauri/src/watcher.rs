@@ -444,6 +444,7 @@ mod tests {
 
     #[test]
     fn test_untrusted_root_blocked() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         let result = start_watcher(WatcherStartInput {
             project_id: "proj1".to_string(),
             root_ref: "C:/Untrusted".to_string(),
@@ -474,6 +475,7 @@ mod tests {
 
     #[test]
     fn test_root_not_found_blocked() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         trusted_roots()
             .lock()
             .unwrap()
@@ -581,6 +583,7 @@ mod tests {
 
     #[test]
     fn test_watcher_real_start_stop_and_diff_on_temp_dir() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         let unique = format!(
             "uagent-watcher-{}",
             std::time::SystemTime::now()
@@ -647,6 +650,7 @@ mod tests {
 
     #[test]
     fn test_get_watcher_session_info() {
+        let _test_guard = crate::reset_shared_registries_for_test();
         let unique = format!(
             "uagent-watch-info-{}",
             std::time::SystemTime::now()

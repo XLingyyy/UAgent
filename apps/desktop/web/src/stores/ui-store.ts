@@ -164,13 +164,42 @@ function toNativeApplyOperation(operation: ChangeOperationV2): NativeApplyTextMu
   };
 }
 
-function isMvp15RealReady(state: RuntimeStoreState): boolean {
+function isMvp15RealCandidate(state: RuntimeStoreState): boolean {
   return (
     state.mvp15.gate.mode === "sandbox-enabled" &&
     state.mvp14.session?.mode === "attached" &&
     state.mvp14.status?.status === "ready" &&
     state.mvp14.status.heartbeat?.processAlive === true
   );
+}
+
+function isMvp15RealReady(state: RuntimeStoreState, runtimeClient: DesktopRuntimeAdapter): boolean {
+  const liveCompanion = runtimeClient.getMvp15DCompanionStatus?.() ?? state.mvp15.companion;
+  const liveFingerprint = runtimeClient.getMvp15DLiveCompanionFingerprint?.();
+  return (
+    isMvp15RealCandidate(state)
+    && state.mvp15.companion.status === "verified"
+    && state.mvp15.companion.identityAttested
+    && state.mvp15.companion.liveFingerprintReady
+    && liveCompanion.status === "verified"
+    && liveCompanion.identityAttested
+    && liveCompanion.liveFingerprintReady
+    && liveCompanion.currentGeneration === state.mvp15.companion.currentGeneration
+    && liveFingerprint?.status === "ready"
+    && liveFingerprint.identity !== null
+    && liveFingerprint.discoveryGeneration === liveCompanion.currentGeneration
+  );
+}
+
+function getMvp15RealServiceBlocker(
+  state: RuntimeStoreState,
+  runtimeClient: DesktopRuntimeAdapter,
+): string | null {
+  if (state.mvp15.executionMode !== "real") return null;
+  if (!isMvp15RealReady(state, runtimeClient)) return "companion_attestation_required";
+  const inventory = getMvp15McpAssetInventory(runtimeClient);
+  if (!inventory) return "mcp_discovery_required";
+  return inventory.status === "ready" ? null : formatMvp15InventoryBlocker(inventory);
 }
 
 function getMvp15ObservedPidHash(state: RuntimeStoreState): string | null {
@@ -185,6 +214,8 @@ function sanitizeMvp15AssetName(name: string): string {
 }
 
 function formatMvp15InventoryBlocker(inventory: ReturnType<typeof createMvp15McpAssetToolInventory>): string {
+  const firstDuplicateTool = inventory.duplicateTools[0];
+  if (firstDuplicateTool) return `blocked_by_mcp_schema:duplicate_tool:${firstDuplicateTool}`;
   const firstMissingTool = inventory.missingTools[0];
   if (firstMissingTool) return `blocked_by_mcp_schema:missing_tool:${firstMissingTool}`;
   const firstMissingSchema = inventory.missingSchemas[0];
@@ -361,6 +392,13 @@ function createUIStateBundle(
     mvp15: refreshMvp15DerivedState(applyMvp15McpInventory(runtimeBaseState.mvp15, initialMvp15Inventory)),
     ...initialState?.runtime,
   });
+  runtimeStore.setState((previousState) => ({
+    ...previousState,
+    mvp15: {
+      ...previousState.mvp15,
+      companion: runtimeClient.getMvp15DCompanionStatus?.() ?? previousState.mvp15.companion,
+    },
+  }));
   const mvp12ApprovalByChangeSetId = new Map<string, NativeBoundChangeSetApproval>();
   const mvp13SessionRegistry = createEditorSessionRegistry({
     featureEnabled: true,
@@ -406,6 +444,36 @@ function createUIStateBundle(
       mvp15ApprovalTokenExpiryByChangeSetId.delete(changeSetId);
     }, delay));
   };
+  const blockMvp15RealServiceAction = (reason: string) => {
+    runningGeneration += 1;
+    clearAllMvp15ApprovalTokens();
+    runtimeStore.setState((previousState) => ({
+      ...previousState,
+      mvp15: refreshMvp15DerivedState({
+        ...previousState.mvp15,
+        lastError: reason,
+      }),
+    }));
+  };
+  const ensureMvp15RealServiceReady = async (): Promise<string | null> => {
+    const before = runtimeStore.getState();
+    if (before.mvp15.executionMode !== "real") return null;
+    if (getMvp15RealServiceBlocker(before, runtimeClient) === null) return null;
+    const trustedRootId = before.mvp14.session?.rootId;
+    const editorSessionId = before.mvp14.session?.sessionId;
+    if (!isMvp15RealCandidate(before) || !trustedRootId || !editorSessionId || !runtimeClient.refreshMvp15DCompanionAttestation) {
+      const reason = "companion_attestation_required";
+      blockMvp15RealServiceAction(reason);
+      return reason;
+    }
+    await runtimeClient.refreshMvp15DCompanionAttestation(trustedRootId, editorSessionId);
+    const reason = getMvp15RealServiceBlocker(runtimeStore.getState(), runtimeClient);
+    if (reason) {
+      blockMvp15RealServiceAction(reason);
+      return reason;
+    }
+    return null;
+  };
   let mvp15RunCounter = 0;
   let runningGeneration = 0;
   runtimeClient.subscribe((snapshot) => {
@@ -420,10 +488,24 @@ function createUIStateBundle(
   });
   runtimeClient.subscribeMcp((mcp) => {
     const mvp15Inventory = getMvp15McpAssetInventory(runtimeClient);
+    const liveCompanion = runtimeClient.getMvp15DCompanionStatus?.();
+    const previousMvp15 = runtimeStore.getState().mvp15;
+    const companionRetracted = previousMvp15.companion.status === "verified" && (
+      liveCompanion?.status !== "verified"
+      || liveCompanion.currentGeneration !== previousMvp15.companion.currentGeneration
+      || liveCompanion.liveFingerprintSha256Prefix !== previousMvp15.companion.liveFingerprintSha256Prefix
+    );
+    if (mcp.status !== "connected" || companionRetracted || mvp15Inventory?.status === "blocked_by_mcp_schema") {
+      runningGeneration += 1;
+      clearAllMvp15ApprovalTokens();
+    }
     runtimeStore.setState((previousState) => ({
       ...previousState,
       mcp,
-      mvp15: refreshMvp15DerivedState(applyMvp15McpInventory(previousState.mvp15, mvp15Inventory)),
+      mvp15: refreshMvp15DerivedState({
+        ...applyMvp15McpInventory(previousState.mvp15, mvp15Inventory),
+        companion: liveCompanion ?? previousState.mvp15.companion,
+      }),
       mockOnlyWarning:
         mcp.status === "connected"
           ? "MCP read-only runtime / no provider call"
@@ -1861,7 +1943,7 @@ function createUIStateBundle(
       }));
     },
     runMvp15AssetDryRun: async (sourceAssetPathInput) => {
-      const sourceAssetPath = sourceAssetPathInput?.trim() ?? "";
+      const sourceAssetPath = typeof sourceAssetPathInput === "string" ? sourceAssetPathInput.trim() : "";
       if (!sourceAssetPath) {
         runtimeStore.setState((previousState) => ({
           ...previousState,
@@ -1885,8 +1967,44 @@ function createUIStateBundle(
         return;
       }
       const activeGeneration = (runningGeneration += 1);
-      const state = runtimeStore.getState();
-      const realReady = isMvp15RealReady(state);
+      let state = runtimeStore.getState();
+      const realCandidate = isMvp15RealCandidate(state);
+      if (realCandidate) {
+        const trustedRootId = state.mvp14.session?.rootId;
+        const editorSessionId = state.mvp14.session?.sessionId;
+        if (!trustedRootId || !editorSessionId || !runtimeClient.refreshMvp15DCompanionAttestation) {
+          clearAllMvp15ApprovalTokens();
+          runtimeStore.setState((previousState) => ({
+            ...previousState,
+            mvp15: refreshMvp15DerivedState({
+              ...previousState.mvp15,
+              executionMode: "real",
+              sourceAssetPath,
+              mcpInventory: getMvp15McpAssetInventory(runtimeClient),
+              lastError: "companion_attestation_required",
+            }),
+          }));
+          return;
+        }
+        await runtimeClient.refreshMvp15DCompanionAttestation(trustedRootId, editorSessionId);
+        if (runningGeneration !== activeGeneration) return;
+        state = runtimeStore.getState();
+        if (!isMvp15RealReady(state, runtimeClient)) {
+          clearAllMvp15ApprovalTokens();
+          runtimeStore.setState((previousState) => ({
+            ...previousState,
+            mvp15: refreshMvp15DerivedState({
+              ...previousState.mvp15,
+              executionMode: "real",
+              sourceAssetPath,
+              mcpInventory: getMvp15McpAssetInventory(runtimeClient),
+              lastError: "companion_attestation_required",
+            }),
+          }));
+          return;
+        }
+      }
+      const realReady = realCandidate && isMvp15RealReady(state, runtimeClient);
       const mcpTools = realReady ? getMvp15McpAssetTools(runtimeClient) : [];
       let mcpInventory: Mvp15McpAssetToolInventory | null = null;
       let observedPidHash: string | null = null;
@@ -2052,6 +2170,7 @@ function createUIStateBundle(
       }
     },
     approveMvp15AssetChangeSet: async () => {
+      if (await ensureMvp15RealServiceReady()) return;
       const mvp15 = runtimeStore.getState().mvp15;
       const changeSet = mvp15.activeChangeSet;
       if (!changeSet) {
@@ -2112,6 +2231,7 @@ function createUIStateBundle(
       }
     },
     executeMvp15AssetChangeSet: async () => {
+      if (await ensureMvp15RealServiceReady()) return;
       const mvp15 = runtimeStore.getState().mvp15;
       const changeSet = mvp15.activeChangeSet;
       const token = changeSet ? mvp15ApprovalTokenByChangeSetId.get(changeSet.id) : null;
@@ -2143,6 +2263,7 @@ function createUIStateBundle(
       }));
     },
     verifyMvp15AssetChangeSet: async () => {
+      if (await ensureMvp15RealServiceReady()) return;
       const mvp15 = runtimeStore.getState().mvp15;
       const changeSet = mvp15.activeChangeSet;
       if (!changeSet) {
@@ -2166,6 +2287,7 @@ function createUIStateBundle(
       }));
     },
     rollbackMvp15AssetChangeSet: async () => {
+      if (await ensureMvp15RealServiceReady()) return;
       const mvp15 = runtimeStore.getState().mvp15;
       const changeSet = mvp15.activeChangeSet;
       if (!changeSet) {

@@ -373,6 +373,29 @@ export {
   type ExternalBindingOperation,
   type PluginDryRunResult,
 } from "./mvp15-mcp-dry-run-binding.js";
+export {
+  attestMvp15DCompanion,
+  canonicalizeMvp15DJson,
+  computeMvp15DManifestSha256,
+  createMvp15DCompanionLiveFingerprint,
+  createMvp15DCompanionStatus,
+  createMvp15DCompanionToolDescriptors,
+  createMvp15DToolContract,
+  extractMvp15DIdentity,
+  MVP15D_COMPANION_FINGERPRINT_SCHEMA_VERSION,
+  validateMvp15DCompanionInput,
+  validateMvp15DIdentity,
+  validateMvp15DManifest,
+  type Mvp15DCompanionAttestationInput,
+  type Mvp15DCompanionDescriptorLike,
+  type Mvp15DCompanionFingerprint,
+  type Mvp15DCompanionFingerprintSource,
+  type Mvp15DCompanionPhase,
+  type Mvp15DInputValidation,
+  type Mvp15DInputValidationFailure,
+  type Mvp15DInputValidationSuccess,
+  type Mvp15DManifestValidation,
+} from "./mvp15d-companion.js";
 
 export type AgentStatus = "idle" | "thinking" | "acting" | "waiting" | "finished" | "error";
 

@@ -1,5 +1,78 @@
 # UAgent Development Guide
 
+## MVP15D Companion Plugin Source / Build Workflow
+
+`integrations/unreal/UAgentAssetTools` targets UE `5.8.0` / BuildId `55116800`,
+is disabled by default, and packages only runtime DLLs plus the contract schema
+through `Config/FilterPlugin.ini`. Rework 6 is `NEEDS_FIX` because its D0/build
+roots were unavailable. Rework 7 is `NEEDS_FIX` because repository
+documentation/report facts were inconsistent, while code and retained evidence
+validation passed. Rework 8 is `IN_PROGRESS`, source-checkpoint acceptance is
+`BLOCKED`, Ready is `NO`, and the current blocker is
+`PENDING_SUPERVISOR_CHECKPOINT`.
+Previous/current task IDs are
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7` and
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`.
+
+Retained roots are `external/mvp15d-rework7-d0-20260726_190100`,
+`external/mvp15d-rework7-build-20260726_203000`, and
+`external/mvp15d-rework7-ue-20260726_190100`. D0 records four sessions, 129
+indexed artifacts, zero mutation, and Direct. The build bundle contains 60 files
+total (59 inventory-tracked payload files plus `inventory.json`), with byte-equal
+source snapshots and zero process/port/marker residuals. UE
+records five sessions, `48/48`, six processes per ledger, residual zero, and
+unchanged empty Content. `BLOCKED_BY_EVIDENCE_RETENTION` is closed.
+
+Ten fresh ordinary Cargo processes and the serial diagnostic each exit 0 at 154
+library plus 2 bridge tests. Typecheck, lint, build, two workspace-test
+processes, tooling `23/23`, build-bundle `10/10`, and targeted checks also exit 0.
+The historical supervisor first workspace-test attempt exited `134`; subsequent
+runs passed. No final clean 15A package exists, and real product mutation is not
+authorized. D13, 15A, 15B, and 15C remain prohibited.
+
+### Rework 7 verification helpers
+
+```bash
+# D0: produce four real product-adapter sessions in a fresh task-owned project/output.
+node scripts/mvp15d-product-adapter-runner.mjs --project <task-project.uproject> --output <fresh-temp-UAgent-MVP15D-Rework7-directory> --native-bridge <native-bridge>
+# D0: optionally re-index already-produced, redacted DesktopRuntimeAdapter transcripts.
+node scripts/mvp15d-d0-capture.mjs --session-root <desktop-boundary-snapshot> --output <fresh-external-mvp15d-rework7-d0-directory>
+# D0: independently validate the resulting hash-indexed task root (no signer/key argument).
+node scripts/mvp15d-d0-spike.mjs --task-root <task-root>
+# Rework 7: retain the task-only build/source/manifest review bundle.
+node scripts/mvp15d-build-bundle.mjs validate --task-root <fresh-external-mvp15d-rework7-build-directory> --repository <repository>
+# Rework 7: run the full task-owned UE matrix across five isolated sessions.
+node scripts/mvp15d-ue-automation.mjs --project <task-project> --output <fresh-external-mvp15d-rework7-ue-directory>
+```
+
+### Future 15A package helpers (prohibited during Rework 7)
+
+```bash
+node scripts/mvp15d-plugin-build.mjs --source <clean-source-archive> --package <task-package> --runuat <UE-5.8-RunUAT.bat>
+node scripts/mvp15d-manifest.mjs create --source <clean-source-archive> --package-root <task-package> --runuat <UE-5.8-RunUAT.bat>
+node scripts/mvp15d-manifest.mjs verify --source <clean-source-archive> --package-root <task-package> --runuat <UE-5.8-RunUAT.bat>
+```
+
+The D0 spike must remain real product-adapter evidence and report zero mutation
+actions; supporting UE Automation cannot replace it. Resolve the fixed UE 5.8
+installation explicitly for the Automation runner; it is not required to be on
+PATH. The build/manifest helpers derive the clean commit/tree
+from Git, invoke RunUAT without a shell, reject non-DLL/debug/source package
+residue, and rehash the manifest artifacts.
+A dirty working tree is never a valid final manifest source. 15A/15B/15C are
+not part of this source checkpoint. After
+a supervisor-created source commit and separate authorization, use the documented
+task-owned disposable project for those later stages and keep Epic/user-owned
+projects, shared Zen, credentials, binaries, logs, and local absolute paths out
+of the repository.
+
+The Rework 7 UE runner must give each of its five sessions a unique task marker
+and validate a complete marker-bound descendant process ledger, including
+creation/parent identity, first observation, exit, and final residual count.
+Basename-only ownership or a final point-in-time process scan is insufficient.
+The fresh project must remain below `%TEMP%\UAgent-MVP15D-Rework7-*`, and local
+evidence must remain below the ignored `external/mvp15d-rework7-*` boundary.
+
 ## Prerequisites
 
 - Node.js >= 20.0.0
@@ -144,9 +217,9 @@ pnpm --filter @uagent/desktop test:watch
 
 The desktop app includes UI shell smoke tests using Testing Library (`@testing-library/react`) with a jsdom environment.
 
-### MVP15 Asset Mutation Checks
+### MVP15 Source-checkpoint Verification
 
-Run the complete fresh ledger from the repository root when changing the sandbox asset mutation pilot or its authority boundary:
+Run the source-checkpoint checks from the repository root when changing the sandbox asset mutation pilot or its authority boundary. These commands do not replace D0 product-adapter evidence and do not authorize D13/15A/15B/15C:
 
 ```bash
 git status --short
@@ -155,6 +228,7 @@ git diff --stat
 git diff --check
 pnpm typecheck
 pnpm lint
+pnpm build
 pnpm --filter @uagent/shared test
 pnpm --filter @uagent/runtime test
 pnpm --filter @uagent/mcp-client test
@@ -163,17 +237,40 @@ pnpm test
 pnpm --filter @uagent/desktop web:build
 cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --check
 cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml asset_mutation -- --test-threads=1
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml ue_editor_process -- --test-threads=1
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml -- --test-threads=1
+node --test scripts/mvp15d-tooling.test.mjs
+node --check scripts/mvp15d-product-adapter-runner.mjs
+node --check scripts/mvp15d-d0-capture.mjs
+node --check scripts/mvp15d-d0-spike.mjs
+node --check scripts/mvp15d-ue-automation.mjs
 node scripts/side-effect-scan.mjs
 ```
 
+Run the ordinary default Cargo command in ten consecutive fresh processes and
+record each exit plus library/integration counts. Do not set
+`RUST_TEST_THREADS=1`, retry away a failure, or replace the default gate with the
+serial diagnostic.
+
 The side-effect scan includes five C11 structural categories for native trust, observation authority, the native gate, transaction liveness, and pre-trust root mapping. Its Rust checks target only the production authority files; legacy TS/JS keyword categories do not broadly scan Rust implementation text.
 
-11A lifecycle tests must remain deterministic: observation races use explicit hooks/barriers and Rust registry suites run with `--test-threads=1`; MCP facade races use deferred promises. Any local rejection after an accepted native guard must settle the no-side-effect outcome before returning, and any stale unpublished registration must verify token-bound native cancellation rather than relying on TTL cleanup.
+The ordinary default `cargo test` invocation is the acceptance gate. Serial
+`--test-threads=1` runs remain useful targeted diagnostics but do not replace the
+default gate. Observation races use explicit hooks/barriers and isolated
+registries; MCP facade races use deferred promises. Any local rejection after an
+accepted native guard must settle the no-side-effect outcome before returning,
+and any stale unpublished registration must verify token-bound native
+cancellation rather than relying on TTL cleanup.
 
-### MVP15 Task-owned UE Readiness-only Check
+The current working tree contains inherited visible Companion
+status/contract/hash/fingerprint/generation copy in `AssetMutationPanel` and
+`ConfigSettings`; run their changed UI assertions and report them as UI
+copy/test updates. Rework 7 did not edit those files or the five separate
+TitleBar-coupled files.
+
+### Historical MVP15C Task-owned UE Readiness-only Check
 
 A readiness-only check is an environment containment step, not product acceptance. Use a verified disposable or retained task copy, keep its configured task listener isolated, and place the writable DDC inside that copy. Set `UE-LocalDataCachePath` only in the task UE child environment and pass both `-ddc=NoZenLocalFallback` and `-LocalDataCachePath=<task-ddc>` through an argument-list API with `shell=false`. Do not alter permanent environment variables, shared Zen, the source project, or copied Config/Content/Plugins/Binaries. C13D proved that `PYTHONDONTWRITEBYTECODE=1` does not suppress this embedded-runtime cache surface, so it must not be treated as a cleanliness assertion or pass condition.
 
@@ -189,7 +286,7 @@ Use a monotonic 600-second deadline with lightweight process/module/port/log/imm
 
 C13C reused a warm task-local DDC and observed readiness at `+33.408s`, then generated 28 Python bytecode cache files. C13D exactly removed that residue, restored the 163-file Plugins baseline, and observed readiness at `+115.030s` with one child-only `PYTHONDONTWRITEBYTECODE=1` launch and zero retries; the embedded UE runtime regenerated the same 28 files. C13E retained that surface and produced exact 163-business/28-cache inventories through one `+94.338s` launch, with clean process/port closeout. C13E1 repairs the validator without another UE launch: any `lstat` or native `realpath` inspection error produces stable `PATH_INSPECTION_FAILED` output and a nonzero exit, while short/magic/flags/kind/source-metadata header failures all produce `header.valid: false`. The expanded 23-test matrix and fresh retained-copy read-only run pass, with the 28 cache path/size/SHA/mtime values unchanged.
 
-### MVP15 Live Descriptor Fingerprint
+### Historical MVP15C Live Descriptor Fingerprint
 
 Use `createMvp15LiveAssetToolsetFingerprint` only with raw direct discovery plus reviewed facade candidates. Do not sort, deduplicate, discard unexpected `ue.asset.*` names, or manufacture missing fields before this boundary. The function requires the exact allowlist order, a non-empty descriptor schema version, object-valued `inputSchema`, `dryRunSchema`, `rollbackContract`, `affectedAssetsSchema`, and `evidenceQuery`, plus non-empty facade `toolsetId`/`methodId`/`schemaVersion` when facade fallback is selected. It recursively sorts plain JSON object keys, preserves array order, rejects unsupported/non-finite/cyclic/non-JSON values and primitive/non-string/throwing proxy-like descriptors, and returns no SHA for every incomplete, duplicate, unexpected, reordered, malformed, or invalid input.
 
@@ -210,4 +307,4 @@ Unset or omit the variable for the required gate-OFF negative smoke. Values othe
 
 The smoke must use product UI `validate -> add -> confirmTrust`, attach a live observation, mutate only `/Game/UAgentSandbox/<run-id>/**`, verify external Content evidence, cross the original token TTL without crossing the transaction cap, exercise inverse rollback, and confirm replay delta zero and non-sandbox stability. Follow `docs/mvp15-manual-smoke.md` and record the plugin identity/fingerprint required by `docs/mvp15-ue-mcp-plugin-baseline.md`.
 
-The 2026-07-18 MVP15C / 09Z `PASS_REAL_SMOKE` result is historical happy-path evidence, not current authority verification. Current acceptance is `BLOCKED`; task-owned warm readiness, a supervisor-accepted fail-closed dual-aggregate validator, and a C14A-hardened deterministic fingerprint implementation exist, but the fresh product-UI lifecycle remains open. The active UE/build/module bytes are known, while authoritative official mapping remains `BLOCKED_BY_MCP_SCHEMA` and a successful product-adapter live fingerprint is absent. Never convert a readiness-only, pre-discovery transport failure, skipped, unavailable, blocked, or supervisor-rejected run into a schema rejection or product-smoke pass.
+The 2026-07-18 MVP15C / 09Z `PASS_REAL_SMOKE` result is historical happy-path evidence, not current authority verification. Rework 7 is `NEEDS_FIX` for documentation/report inconsistency despite validated code and retained evidence; Rework 8 is `IN_PROGRESS`, while source-checkpoint acceptance remains `BLOCKED` on `PENDING_SUPERVISOR_CHECKPOINT`. The active UE/build/module bytes are known, while authoritative official mapping, the final clean 15A identity, and the separately authorized product-UI lifecycle remain later gates. Never convert a readiness-only, pre-discovery transport failure, skipped, unavailable, blocked, or supervisor-rejected run into a schema rejection or product-smoke pass.

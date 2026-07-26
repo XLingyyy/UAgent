@@ -51,6 +51,7 @@ const SANDBOX_ROOT = "/Game/UAgentSandbox";
 export interface DryRunBindingContext {
   changeSetId: string;
   runId: string;
+  operationId?: string;
   projectId: string;
   trustedRootId: string;
   editorSessionId: string;
@@ -93,8 +94,10 @@ export interface PluginDryRunResult {
   message?: string;
   toolName: string;
   operation: string;
+  phase?: string;
   changeSetId: string;
   runId: string;
+  operationId: string;
   sandboxRoot: string;
   wouldChange: boolean;
   wouldModify?: string[];
@@ -105,16 +108,21 @@ export interface PluginDryRunResult {
     externalTargets?: string[];
   };
   rollbackPlan?: {
+    strategy?: string;
     executionEnabled?: boolean;
     inverseOperation?: string;
-    summary?: string;
   };
   externalEvidenceQueries?: Array<{ queryKind?: string; readOnly?: boolean; paths?: string[] }>;
   dryRunHash: string;
   hashAlgorithm: string;
   schemaVersion: string;
   approvalRequired: boolean;
+  sideEffectObserved?: boolean;
+  effectState?: "known_none" | "known_effect" | "known_partial" | "unknown";
+  rollbackAvailable?: boolean;
+  rollbackStatus?: string;
   implementationStatus: "execution_capable";
+  evidenceId?: string;
 }
 
 export interface ExternalBindingOperation {
@@ -135,6 +143,7 @@ export function buildExactDryRunPayload(input: DryRunBindingInput): DryRunBindin
   const common = {
     changeSetId: ctx.changeSetId,
     runId: ctx.runId,
+    operationId: input.operationId,
     dryRun: true,
     execute: false,
     rollback: false,
@@ -296,6 +305,8 @@ function extractStructuredContent(raw: unknown): unknown {
 export interface DryRunValidationContext {
   expectedToolName: string;
   expectedOperationKind: AssetMutationOperationKind;
+  /** Required by real binding callers; optional only for backwards-compatible isolated contract tests. */
+  expectedOperationId?: string;
   context: DryRunBindingContext;
   /**
    * The path-bearing operation used to derive the exact impact arrays. Callers may instead
@@ -329,13 +340,20 @@ export function validatePluginDryRunResult(
   }
   const expectedTargets = ctx.expectedSandboxTargets ?? expectedSandboxTargets(ctx.operation!);
   const expectedSources = ctx.expectedReadOnlySources ?? expectedReadOnlySources(ctx.operation!);
+  const expectedRollback = expectedDryRunRollback(ctx.expectedOperationKind);
+  const record = result as unknown as Record<string, unknown>;
+  const expectedEvidencePaths = [...expectedSources, ...expectedTargets];
 
   const checks: Array<[boolean, string]> = [
+    [hasExactKeys(record, PLUGIN_DRY_RUN_RESULT_FIELDS), "shape"],
     [result.status === "dry_run_completed", "status"],
+    [result.reasonCode === "none", "reasonCode"],
     [result.toolName === ctx.expectedToolName, "toolName"],
     [expectedOp !== null && result.operation === expectedOp, "operation"],
+    [result.phase === "dry_run", "phase"],
     [result.changeSetId === ctx.context.changeSetId, "changeSetId"],
     [result.runId === ctx.context.runId, "runId"],
+	[!ctx.expectedOperationId || result.operationId === ctx.expectedOperationId, "operationId"],
     [result.sandboxRoot === `${SANDBOX_ROOT}/${ctx.context.runId}`, "sandboxRoot"],
     [result.wouldChange === true, "wouldChange"],
     [arraysExactlyEqual(result.wouldModify, expectedTargets), "wouldModify"],
@@ -344,14 +362,27 @@ export function validatePluginDryRunResult(
     [arraysExactlyEqual(result.affectedAssets?.sandboxTargets, expectedTargets), "affectedAssets.sandboxTargets"],
     [arraysExactlyEqual(result.affectedAssets?.readOnlySources, expectedSources), "affectedAssets.readOnlySources"],
     [arraysExactlyEqual(result.affectedAssets?.externalTargets, []), "affectedAssets.externalTargets"],
+    [result.rollbackPlan?.strategy === "ledger_inverse", "rollbackPlan.strategy"],
     [result.rollbackPlan?.executionEnabled === false, "rollbackPlan.executionEnabled"],
-    [Array.isArray(result.externalEvidenceQueries) && result.externalEvidenceQueries.length > 0, "externalEvidenceQueries"],
-    [Array.isArray(result.externalEvidenceQueries) && result.externalEvidenceQueries.every((q) => q.readOnly === true), "externalEvidenceQueries.readOnly"],
+    [result.rollbackPlan?.inverseOperation === expectedRollback.inverseOperation, "rollbackPlan.inverseOperation"],
+    [Array.isArray(result.externalEvidenceQueries) && result.externalEvidenceQueries.length === 1, "externalEvidenceQueries"],
+    [Array.isArray(result.externalEvidenceQueries) && result.externalEvidenceQueries.every((q) => (
+      isObject(q)
+      && hasExactKeys(q, EXTERNAL_EVIDENCE_QUERY_FIELDS)
+      && q.queryKind === "asset_registry_snapshot"
+      && q.readOnly === true
+      && arraysExactlyEqual(q.paths, expectedEvidencePaths)
+    )), "externalEvidenceQueries.shape"],
     [typeof result.dryRunHash === "string" && SHA1_HEX_RE.test(result.dryRunHash), "dryRunHash"],
     [result.hashAlgorithm === "sha1", "hashAlgorithm"],
     [result.schemaVersion === "mvp15c.dry-run.v1", "schemaVersion"],
     [result.approvalRequired === true, "approvalRequired"],
+    [result.sideEffectObserved === false, "sideEffectObserved"],
+    [result.effectState === "known_none", "effectState"],
+    [result.rollbackAvailable === expectedRollback.available, "rollbackAvailable"],
+    [result.rollbackStatus === (expectedRollback.available ? "available" : "not_available"), "rollbackStatus"],
     [result.implementationStatus === "execution_capable", "implementationStatus"],
+    [isSafeEvidenceId(result.evidenceId), "evidenceId"],
   ];
   for (const [passed, field] of checks) {
     if (!passed) return { ok: false, reason: `mcp_dry_run_contract_mismatch:${field}` };
@@ -369,6 +400,30 @@ export function validatePluginDryRunResult(
     },
     pluginResult: result,
   };
+}
+
+const PLUGIN_DRY_RUN_RESULT_FIELDS = [
+  "blocked", "status", "reasonCode", "toolName", "operation", "phase", "changeSetId", "runId", "operationId",
+  "sandboxRoot", "wouldChange", "wouldRead", "wouldModify", "affectedAssets", "rollbackPlan", "externalEvidenceQueries",
+  "dryRunHash", "hashAlgorithm", "schemaVersion", "approvalRequired", "sideEffectObserved", "effectState", "rollbackAvailable",
+  "rollbackStatus", "implementationStatus", "evidenceId",
+] as const;
+
+const EXTERNAL_EVIDENCE_QUERY_FIELDS = ["queryKind", "readOnly", "paths"] as const;
+
+function expectedDryRunRollback(kind: AssetMutationOperationKind): { available: boolean; inverseOperation: string } {
+  switch (kind) {
+    case "create_folder": return { available: true, inverseOperation: "cleanup_empty_folder" };
+    case "duplicate_asset": return { available: true, inverseOperation: "delete_duplicate" };
+    case "rename_asset": return { available: true, inverseOperation: "rename_back" };
+    case "move_asset": return { available: true, inverseOperation: "move_back" };
+    case "create_test_asset": return { available: true, inverseOperation: "delete_created_asset" };
+    case "save_single_asset":
+    case "delete_sandbox_asset":
+      return { available: false, inverseOperation: "none" };
+    default:
+      return { available: false, inverseOperation: "none" };
+  }
 }
 
 /** Wait/read sandbox target paths a binding operation expects to be modified. */
@@ -506,6 +561,20 @@ export function nextBindingGeneration(): number {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  const keys = Object.keys(value);
+  return keys.length === allowed.length
+    && allowed.every((key) => Object.prototype.hasOwnProperty.call(value, key))
+    && keys.every((key) => allowed.includes(key));
+}
+
+function isSafeEvidenceId(value: unknown): boolean {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 256
+    && /^[A-Za-z0-9:._-]+$/.test(value);
 }
 
 function arraysExactlyEqual(value: unknown, expected: string[]): boolean {
