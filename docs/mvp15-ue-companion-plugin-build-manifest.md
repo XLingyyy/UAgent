@@ -3,13 +3,17 @@
 ## Status
 
 This document separates current MVP15D D2 source-contract work from later final
-15A packaging. Rework 7 is `NEEDS_FIX` because repository documentation/report
-facts were inconsistent, while code and retained evidence validation passed.
-Rework 8 is `IN_PROGRESS`, source-checkpoint acceptance is `BLOCKED`, Ready is
-`NO`, and the current blocker is `PENDING_SUPERVISOR_CHECKPOINT`.
+15A packaging. Rework 8 is `NEEDS_FIX` because the current acceptance manifest
+file SHA conflicted with retained evidence and the other current repository
+documents, while code and retained evidence validation passed. Rework 9 and the
+D0-D12 source checkpoint are `COMPLETE`. Ready for the next MVP stage remains
+`NO` because G13/G16 and 15A-15C remain separately gated.
 Previous/current task IDs are
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7` and
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`.
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` and
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`.
+Verified implementation/content checkpoint
+`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
+documentation closeout checkpoint.
 
 The retained Rework 7 task-only build/source/manifest bundle is
 `external/mvp15d-rework7-build-20260726_203000`. It contains 60 files total (59
@@ -98,7 +102,7 @@ uses stable evidence identifiers; the current implementation verification and
 status ledgers may retain task-owned D0/UE evidence roots required for
 checkpoint review.
 
-## Future 15A reproducible flow (not authorized during Rework 7)
+## Future 15A reproducible flow (not authorized during Rework 9)
 
 1. Supervisor reviews and commits the source checkpoint. The commit SHA is the
    only valid `sourceCommit` for final packaging.

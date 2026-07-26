@@ -1,14 +1,15 @@
 # MVP15 Native Authority Binding Rework Manual Smoke
 
-## Current MVP15D Rework 8 Manual-smoke Boundary
+## Current MVP15D Source-checkpoint-complete Manual-smoke Boundary
 
-Rework 7 is `NEEDS_FIX` because repository documentation/report facts were
-inconsistent, while code and retained evidence validation passed. Rework 8 is
-`IN_PROGRESS`, source-checkpoint acceptance is `BLOCKED`, Ready is `NO`, and the
-current blocker is `PENDING_SUPERVISOR_CHECKPOINT`.
+Rework 8 is `NEEDS_FIX` because the current acceptance manifest file SHA
+conflicted with retained evidence and the other current repository documents,
+while code and retained evidence validation passed. Rework 9 and the D0-D12
+source checkpoint are `COMPLETE`. Ready for the next MVP stage remains `NO`
+because G13/G16 and 15A-15C remain separately gated.
 Previous/current task IDs are
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7` and
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`.
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` and
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`.
 `BLOCKED_BY_EVIDENCE_RETENTION` is closed by retained D0
 `external/mvp15d-rework7-d0-20260726_190100`, build
 `external/mvp15d-rework7-build-20260726_203000`, and UE
@@ -17,9 +18,12 @@ zero mutation, and Direct. UE records five sessions, `48/48`, six processes per
 ledger, residual zero, unchanged empty Content, and capture SHA-256
 `8794de55d0bc3444015116918b92e957070e684ac014f7f9551c07762af1cbb8`.
 
-These implementation results do not authorize the product-UI mutation procedure below.
-No supervisor checkpoint, final clean 15A package, or authorized real product
-mutation exists. D13, 15A, 15B, and 15C remain prohibited.
+These implementation results do not authorize the product-UI mutation procedure
+below. Verified implementation/content checkpoint
+`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
+documentation closeout checkpoint. No final clean 15A package or authorized
+real product mutation exists. D13, 15A, 15B, and 15C remain prohibited until
+separately authorized.
 
 ## Historical Rework 3 Supervisor Boundary - NEEDS_FIX
 
@@ -145,6 +149,6 @@ Each negative case uses an independent registration/run and must prove before/af
 - Historical run: `ui-mrpovp9e-1`.
 - Scope: former happy path only; not accepted as C11 authority or fresh smoke evidence.
 - Current committed TitleBar badge expectation remains `MVP15 Rework`. Neither
-  Rework 7 nor documentation-only Rework 8 edited any of the five
+  Rework 7 nor documentation-only Rework 8/Rework 9 edited any of the five
   TitleBar-coupled files; separate inherited
   TitleBar/window-controls work is outside this checkpoint.

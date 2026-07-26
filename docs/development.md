@@ -5,14 +5,14 @@
 `integrations/unreal/UAgentAssetTools` targets UE `5.8.0` / BuildId `55116800`,
 is disabled by default, and packages only runtime DLLs plus the contract schema
 through `Config/FilterPlugin.ini`. Rework 6 is `NEEDS_FIX` because its D0/build
-roots were unavailable. Rework 7 is `NEEDS_FIX` because repository
-documentation/report facts were inconsistent, while code and retained evidence
-validation passed. Rework 8 is `IN_PROGRESS`, source-checkpoint acceptance is
-`BLOCKED`, Ready is `NO`, and the current blocker is
-`PENDING_SUPERVISOR_CHECKPOINT`.
+roots were unavailable. Rework 8 is `NEEDS_FIX` because the current acceptance
+manifest file SHA conflicted with retained evidence and the other current
+repository documents, while code and retained evidence validation passed.
+Rework 9 and the D0-D12 source checkpoint are `COMPLETE`. Ready for the next MVP
+stage remains `NO` because G13/G16 and 15A-15C remain separately gated.
 Previous/current task IDs are
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7` and
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`.
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` and
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`.
 
 Retained roots are `external/mvp15d-rework7-d0-20260726_190100`,
 `external/mvp15d-rework7-build-20260726_203000`, and
@@ -22,6 +22,9 @@ total (59 inventory-tracked payload files plus `inventory.json`), with byte-equa
 source snapshots and zero process/port/marker residuals. UE
 records five sessions, `48/48`, six processes per ledger, residual zero, and
 unchanged empty Content. `BLOCKED_BY_EVIDENCE_RETENTION` is closed.
+Verified implementation/content checkpoint
+`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
+documentation closeout checkpoint on `main`.
 
 Ten fresh ordinary Cargo processes and the serial diagnostic each exit 0 at 154
 library plus 2 bridge tests. Typecheck, lint, build, two workspace-test
@@ -307,4 +310,4 @@ Unset or omit the variable for the required gate-OFF negative smoke. Values othe
 
 The smoke must use product UI `validate -> add -> confirmTrust`, attach a live observation, mutate only `/Game/UAgentSandbox/<run-id>/**`, verify external Content evidence, cross the original token TTL without crossing the transaction cap, exercise inverse rollback, and confirm replay delta zero and non-sandbox stability. Follow `docs/mvp15-manual-smoke.md` and record the plugin identity/fingerprint required by `docs/mvp15-ue-mcp-plugin-baseline.md`.
 
-The 2026-07-18 MVP15C / 09Z `PASS_REAL_SMOKE` result is historical happy-path evidence, not current authority verification. Rework 7 is `NEEDS_FIX` for documentation/report inconsistency despite validated code and retained evidence; Rework 8 is `IN_PROGRESS`, while source-checkpoint acceptance remains `BLOCKED` on `PENDING_SUPERVISOR_CHECKPOINT`. The active UE/build/module bytes are known, while authoritative official mapping, the final clean 15A identity, and the separately authorized product-UI lifecycle remain later gates. Never convert a readiness-only, pre-discovery transport failure, skipped, unavailable, blocked, or supervisor-rejected run into a schema rejection or product-smoke pass.
+The 2026-07-18 MVP15C / 09Z `PASS_REAL_SMOKE` result is historical happy-path evidence, not current authority verification. Rework 8 is `NEEDS_FIX` because its current acceptance manifest file SHA conflicted with retained evidence and the other current repository documents; Rework 9 and the D0-D12 source checkpoint are `COMPLETE`. The active UE/build/module bytes are known, while authoritative official mapping, the final clean 15A identity, and the separately authorized product-UI lifecycle remain later gates. Never convert a readiness-only, pre-discovery transport failure, skipped, unavailable, blocked, or supervisor-rejected run into a schema rejection or product-smoke pass.

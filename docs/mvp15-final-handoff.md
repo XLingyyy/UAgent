@@ -1,15 +1,16 @@
 # MVP15 Native Authority Binding Rework Handoff
 
-## Current MVP15D Rework 8 Documentation Handoff — IN_PROGRESS — 2026-07-26
+## Current MVP15D Rework 9 Source-checkpoint Handoff — COMPLETE — 2026-07-26
 
-Rework 7 is `NEEDS_FIX` because repository documentation/report facts were
-inconsistent, while product code and retained evidence validation passed.
+Rework 8 is `NEEDS_FIX` because the current acceptance manifest file SHA
+conflicted with retained evidence and the other current repository documents,
+while product code and retained evidence validation passed.
 Previous task:
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7`. Rework 8
-is `IN_PROGRESS`; current task is
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`.
-Source-checkpoint acceptance is `BLOCKED`, Ready is `NO`, and no checkpoint was
-staged, committed, or pushed.
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`. Current task
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9` and the
+D0-D12 source checkpoint are `COMPLETE`. Verified implementation/content commit
+`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
+documentation closeout checkpoint on `main`.
 
 `BLOCKED_BY_EVIDENCE_RETENTION` is closed. Retained roots are
 `external/mvp15d-rework7-d0-20260726_190100`,
@@ -27,15 +28,16 @@ capture SHA-256
 All requested workspace, Rust, tooling, build-bundle, targeted, syntax, and
 side-effect gates exit 0. Two consecutive workspace tests record shared 33,
 MCP 46, runtime 825, desktop 725 passed / 3 skipped. The historical supervisor
-first attempt exited `134`; subsequent runs passed. The current blocker is
-`PENDING_SUPERVISOR_CHECKPOINT`.
+first attempt exited `134`; subsequent runs passed. No source-checkpoint blocker
+remains.
 
 No final 15A package, product-UI mutation lifecycle, or stage-advance decision is
-claimed. D13, 15A, 15B, and 15C remain prohibited. The working tree contains
+claimed. Ready for the next MVP stage remains `NO`; D13, 15A, 15B, and 15C
+remain prohibited until separately authorized. The working tree contains
 inherited Companion status/contract/hash/fingerprint/generation copy changes in
 `AssetMutationPanel` and `ConfigSettings`, with corresponding UI assertions.
-Neither Rework 7 nor documentation-only Rework 8 edited those files or the five
-TitleBar-coupled files.
+Rework 7 and documentation-only Rework 8/Rework 9 did not edit those files or
+the five TitleBar-coupled files.
 
 ## Historical MVP15D Rework 4 Handoff - NEEDS_FIX - 2026-07-24
 
@@ -96,8 +98,9 @@ No final acceptance or `Ready YES` is claimed. Fixture and historical 09Z
 evidence do not substitute for the required live evidence.
 
 Historical baseline stage: **MVP15 - Native Authority Binding Rework**. The
-current Rework 8 source checkpoint is summarized above as `BLOCKED`;
-Ready for next stage remains `NO`.
+current Rework 9 D0-D12 source checkpoint is summarized above as `COMPLETE`;
+Ready for the next MVP stage remains `NO` because G13/G16 and 15A-15C remain
+gated.
 
 ## Delivered Historical Baseline
 
@@ -148,7 +151,8 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
   plugin bytes and a final installed-build product-adapter live exact six-tool
   fingerprint.
 - Fresh product-UI happy-path and negative ledgers.
-- Supervisor assessment and checkpoint for the Rework 7 implementation evidence.
+- Final installed/loaded identity and product-lifecycle evidence; the D0-D12
+  supervisor source checkpoint is complete.
 
 ## Current Later-stage Gates
 
@@ -175,9 +179,11 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 The C14/C14A implementation is a historical predecessor checkpoint at verified
 commit `37c29cbc7961218bfd71d1809178359952a75e18`; its documentation closeout is
-published in that historical task checkpoint. Rework 6 is `NEEDS_FIX`; Rework 7
-implementation evidence awaits `PENDING_SUPERVISOR_CHECKPOINT`. MVP15 remains unready
-for the next stage because the product-UI lifecycle and final
-plugin provenance/live-fingerprint gates are also open. MVP16 implementation
-stays prohibited until a later task closes G13 and G16 and a supervisor records
-the stage change.
+published in that historical task checkpoint. Rework 8 is `NEEDS_FIX`; Rework 9
+and the D0-D12 source checkpoint are `COMPLETE` at verified implementation
+commit `b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` plus the published
+documentation closeout checkpoint. MVP15 remains unready for the next stage
+because the G13 product-UI lifecycle and G16 final plugin
+provenance/live-fingerprint gates are open. MVP16 implementation stays
+prohibited until a later task closes those gates and a supervisor records the
+stage change.

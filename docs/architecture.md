@@ -2,21 +2,25 @@
 
 ## MVP15D Companion Trust Chain
 
-### Current Rework 8 Status
+### Current Rework 9 Status — Source Checkpoint Complete
 
-Rework 7 is `NEEDS_FIX` because repository documentation/report facts were
-inconsistent, while code and retained evidence validation passed. Rework 8 is
-`IN_PROGRESS`, source-checkpoint acceptance is `BLOCKED`, Ready is `NO`, and the
-current blocker is `PENDING_SUPERVISOR_CHECKPOINT`.
+Rework 8 is `NEEDS_FIX` because the current acceptance manifest file SHA
+conflicted with retained evidence and the other current repository documents,
+while code and retained evidence validation passed. Rework 9 and the D0-D12
+source checkpoint are `COMPLETE`. Ready for the next MVP stage remains `NO`
+because G13/G16 and 15A-15C remain separately gated.
 Previous/current task IDs are
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7` and
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`.
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` and
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`.
 `BLOCKED_BY_EVIDENCE_RETENTION` is closed by retained D0
 `external/mvp15d-rework7-d0-20260726_190100`, build
 `external/mvp15d-rework7-build-20260726_203000`, and UE
 `external/mvp15d-rework7-ue-20260726_190100`. D0 records 129 indexed artifacts,
 zero mutation, and Direct. UE records five sessions, `48/48`, six processes per
 ledger, residual zero, and unchanged empty Content.
+Verified implementation/content checkpoint
+`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
+documentation closeout checkpoint on `main`.
 
 The Rework 5 supervisor review identified these authority gaps: a task-only
 observer could forward a mutation guard while public live identity was
@@ -37,9 +41,9 @@ creation/exit/residual ledger. Renderer restart begins with native zero
 authority; partial/unknown effects retain only bounded inverse recovery, and
 run-root cleanup remains handle-bound and exact-empty. Verification includes ten
 fresh ordinary Cargo runs, the retained four-session D0 set, and the five-session
-UE matrix. Rework 8 changes documentation only. No supervisor checkpoint, final
-15A package, or authorized real product mutation exists. D13, 15A, 15B, and 15C remain
-prohibited.
+UE matrix. Rework 9 changes documentation only and closes the source checkpoint.
+No final 15A package or authorized real product mutation exists. D13, 15A, 15B,
+and 15C remain prohibited until separately authorized.
 
 ### Historical Rework 3 Supervisor Review Note
 

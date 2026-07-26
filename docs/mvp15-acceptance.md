@@ -1,27 +1,30 @@
 # MVP15 Acceptance - Native Authority Binding Rework
 
-Current stage: **MVP15D - UAgent UE Companion Plugin Rework 8**.
+Current stage: **MVP15D - UAgent UE Companion Plugin Source Checkpoint Complete**.
 
 Previous task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7` has
-supervisor verdict `NEEDS_FIX` because repository documentation/report facts
-were inconsistent, while code and retained evidence validation passed. Current
-task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` is
-`IN_PROGRESS`; source-checkpoint acceptance is `BLOCKED`, Ready is `NO`, and
-the remaining source-checkpoint blocker is `PENDING_SUPERVISOR_CHECKPOINT`.
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` has
+supervisor verdict `NEEDS_FIX` because this document recorded a stale retained
+build-manifest file SHA-256, while code, retained evidence, and automated
+implementation gates passed validation. Current task
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9` and the
+D0-D12 source checkpoint are `COMPLETE`. Ready for the next MVP stage remains
+`NO` because G13/G16 and 15A-15C remain separately gated.
 The retained Rework 7 D0, build, and UE roots close
 `BLOCKED_BY_EVIDENCE_RETENTION`. D13, 15A, 15B, and 15C remain prohibited.
+Verified implementation/content checkpoint
+`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
+documentation closeout checkpoint on `main`.
 
 ## MVP15D Current Gate Override
 
 | Gate    | Requirement                                                                                                                     | Status  | Evidence                                                                                                                                                                                      | Open item                                                                                                                      |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| D0      | Four real product-adapter registration/tool-search combinations, Refresh/reconnect/renderer restart stale retraction, and ADR selection. | IMPLEMENTED | Retained D0 `external/mvp15d-rework7-d0-20260726_190100` validates four combinations, 129 indexed artifacts, zero mutation, and Direct; transcript index `b87e0a8...` and route decision `3fee196...`. | `PENDING_SUPERVISOR_CHECKPOINT`. |
-| D1-D4   | Independent plugin skeleton, task-only build manifest contract, companion identity, and exact-six registration selected by D0.      | IMPLEMENTED | Retained build/source/manifest bundle `external/mvp15d-rework7-build-20260726_203000` has 60 files total (59 inventory-tracked payload files plus `inventory.json`) and validates byte equality, manifest self-hash, compiled modules, and zero closeout residuals. | Final clean 15A package identity remains later, separately authorized work. |
-| D5-D8   | Exact run-root policy, five-operation dry-run, native binding, execution, ownership ledger, and inverse rollback.               | IMPLEMENTED | Rework 7 preserves the canonical tuple, atomic create-to-identity ownership, partial/unknown-effect handling, native retraction, and run-root cleanup; UE records `48/48`, unchanged Content, and zero residuals. | `PENDING_SUPERVISOR_CHECKPOINT`. |
-| D9-D12  | Provenance/fingerprint/product status UI and automated security scan.                                                           | IMPLEMENTED | Two workspace-test processes pass at shared 33 / MCP 46 / runtime 825 / desktop 725 + 3 skipped; ten default Cargo runs and serial pass at 154+2; tooling is `23/23`, build-bundle `10/10`, side-effect blocked count zero. | Historical supervisor exit `134` is retained; `PENDING_SUPERVISOR_CHECKPOINT`. |
-| 15A-15C | Clean build/install/load, product-adapter live fingerprint, and fresh UI lifecycle.                                             | BLOCKED | Not run. D13 and 15A/15B/15C remain prohibited during Rework 8.                                                                                                                               | Continue only after a supervisor source checkpoint and separate authorization.                                                 |
+| D0      | Four real product-adapter registration/tool-search combinations, Refresh/reconnect/renderer restart stale retraction, and ADR selection. | COMPLETE | Retained D0 `external/mvp15d-rework7-d0-20260726_190100` validates four combinations, 129 indexed artifacts, zero mutation, and Direct; transcript index `b87e0a8...` and route decision `3fee196...`. | None for source checkpoint. |
+| D1-D4   | Independent plugin skeleton, task-only build manifest contract, companion identity, and exact-six registration selected by D0.      | COMPLETE | Retained build/source/manifest bundle `external/mvp15d-rework7-build-20260726_203000` has 60 files total (59 inventory-tracked payload files plus `inventory.json`) and validates byte equality, manifest self-hash, compiled modules, and zero closeout residuals. | Final clean 15A package identity remains later, separately authorized work. |
+| D5-D8   | Exact run-root policy, five-operation dry-run, native binding, execution, ownership ledger, and inverse rollback.               | COMPLETE | Rework 7 preserves the canonical tuple, atomic create-to-identity ownership, partial/unknown-effect handling, native retraction, and run-root cleanup; UE records `48/48`, unchanged Content, and zero residuals. | None for source checkpoint. |
+| D9-D12  | Provenance/fingerprint/product status UI and automated security scan.                                                           | COMPLETE | Two workspace-test processes pass at shared 33 / MCP 46 / runtime 825 / desktop 725 + 3 skipped; ten default Cargo runs and serial pass at 154+2; tooling is `23/23`, build-bundle `10/10`, side-effect blocked count zero. | Historical supervisor exit `134` is retained as a residual process-stability fact. |
+| 15A-15C | Clean build/install/load, product-adapter live fingerprint, and fresh UI lifecycle.                                             | BLOCKED | Not run. D13 and 15A/15B/15C remain prohibited pending separate authorization.                                                                                                                 | Source checkpoint is complete; continue only after separate authorization.                                                     |
 
 ## Historical Supporting Gate Evidence
 
@@ -43,24 +46,24 @@ rework.
 | G8 rollback ownership                 | Only exact owned effects receive inverse rollback.                                                                                | PARTIAL        | Historical automated and 09Z evidence exists.                                                                                                                                                                                                                                                                                                                                | Repeat after recovery-lease changes.                                                           |
 | G9 evidence authority                 | Active evidence revalidates native root/path authority; terminal evidence remains read-only.                                      | BLOCKED        | Historical terminal evidence does not prove revoked-root rejection.                                                                                                                                                                                                                                                                                                          | Fresh authority and path tests required.                                                       |
 | G10 replay zero delta                 | Replay must not call native, MCP, provider, verify, or rollback paths.                                                            | PARTIAL        | Historical replay delta is `0/0/0/0/0`.                                                                                                                                                                                                                                                                                                                                      | Repeat in the fresh run.                                                                       |
-| G11 side-effect scan                  | All legacy and five authority-bypass categories have zero blocked findings.                                                       | IMPLEMENTED    | Rework 8 read-only scan exits 0 at 1,039 files / 0 blocked / 1,655 review findings. | `PENDING_SUPERVISOR_CHECKPOINT`. |
-| G12 full automated verification       | Typecheck, lint, package/workspace tests, web build, Rust fmt/check/tests, and scan pass.                                         | IMPLEMENTED    | Typecheck/lint/build exit 0; two workspace tests pass at shared 33, MCP 46, runtime 825, desktop 725 passed / 3 skipped. Ten ordinary Cargo runs and the serial run each record 154 library plus 2 bridge tests; tooling is `23/23`; build-bundle tests are `10/10`. | Historical supervisor exit `134` remains recorded; `PENDING_SUPERVISOR_CHECKPOINT`. |
+| G11 side-effect scan                  | All legacy and five authority-bypass categories have zero blocked findings.                                                       | IMPLEMENTED    | Supervisor read-only scan exits 0 at 1,039 files / 4,639 allowed / 0 blocked / 1,655 review findings. | None for source checkpoint. |
+| G12 full automated verification       | Typecheck, lint, package/workspace tests, web build, Rust fmt/check/tests, and scan pass.                                         | IMPLEMENTED    | Typecheck/lint/build exit 0; two workspace tests pass at shared 33, MCP 46, runtime 825, desktop 725 passed / 3 skipped. Ordinary and serial Cargo each record 154 library plus 2 bridge tests; combined evidence tooling is `33/33`. | Historical supervisor exit `134` remains recorded as a residual process-stability fact. |
 
 ## Current Progression Gates
 
 | Gate                                         | Requirement                                                                                                                        | Current status | Current evidence                                                                                                                                     | Open item                                                                                                                          |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | G13 real UE smoke result                     | Complete a fresh product-UI dry-run, execute, verify, rollback, replay, stop, and ownership lifecycle plus negative smokes.        | BLOCKED        | No current product mutation is authorized.                                                                                                           | The separately authorized product-UI lifecycle remains later work after source checkpoint.                                         |
-| G14 documentation consistency                | Public current-state documents agree and preserve historical evidence.                                                             | IMPLEMENTED    | Rework 8 corrections record the Rework 7 `NEEDS_FIX` verdict, retained evidence, exit `134`, warnings, Content/process closeout, exact recomputed facts, prohibitions, and current blocker. | `PENDING_SUPERVISOR_CHECKPOINT`. |
-| G15 checkpoint integrity                     | Supervisor records content checkpoint, SHA backfill closeout, and push.                                                            | BLOCKED        | Rework 8 documentation is recorded; nothing is staged, committed, or pushed by the implementation Agent. | Supervisor must review and create the checkpoint. |
+| G14 documentation consistency                | Public current-state documents agree and preserve historical evidence.                                                             | COMPLETE       | Supervisor review confirms the corrected retained manifest SHA, exact recomputed evidence facts, current-state alignment, stale-state scan, and historical labels. | None. |
+| G15 checkpoint integrity                     | Supervisor records content checkpoint, SHA backfill closeout, and push.                                                            | COMPLETE       | Verified implementation commit `b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` and the Rework 9 documentation closeout checkpoint are published together on `main`. | None. |
 | G16 authority provenance and plugin baseline | Native root/observation/gate provenance is proven and the exact companion build and six-tool contract are reproducibly identified. | PARTIAL        | Rework 7 D0/build/UE evidence covers readiness, renderer reconstruction and retraction, canonical binding, physical identity, and process closeout. | Final clean installed/loaded 15A package identity and product lifecycle remain later-stage work. |
 
 ## Current Source-checkpoint Posture
 
-- Previous Rework 7 task: `NEEDS_FIX` because repository documentation/report
-  facts were inconsistent while code and retained evidence validation passed.
-- Current Rework 8 task: `IN_PROGRESS`; source-checkpoint acceptance `BLOCKED`;
-  Ready `NO`; current blocker `PENDING_SUPERVISOR_CHECKPOINT`.
+- Previous Rework 8 task: `NEEDS_FIX` because its current acceptance manifest
+  file SHA conflicted with retained evidence and other current documents.
+- Current Rework 9 task and source-checkpoint acceptance: `COMPLETE`. Ready for
+  the next MVP stage remains `NO` because G13/G16 and 15A-15C remain gated.
 - Durable D0: `external/mvp15d-rework7-d0-20260726_190100`, four sessions, 129
   indexed artifacts, 130 files including `hashes.json`, mutation zero, Direct;
   transcript index
@@ -71,7 +74,7 @@ rework.
   (59 inventory-tracked payload files plus `inventory.json`),
   bundle `ef86e59c05068f9610050a2afa44bf3237d3fd78e82262cf6d3be6660223420b`,
   manifest file
-  `6cc5da492996a5f45dd5b73a75ed1fa5ae4a5981e1d99c860bb1f20911bf1207`,
+  `236f1da71961fd697e81ad0a6d9f53f82076b71019e74400eed8b95f0d69ac84`,
   source bundle
   `93b3bb310ef17b18adb85b413360890648a9ab614301cedbf19ba81fb42146f6`,
   and process/port/marker residual zero.
@@ -85,11 +88,14 @@ rework.
 - Historical 09Z result: `PASS_REAL_SMOKE` for the old happy path only.
 - Rework 5 and Rework 6 evidence remain historical context only; neither is
   substituted for the retained Rework 7 ledgers.
-- `BLOCKED_BY_EVIDENCE_RETENTION` is closed. Formal source-checkpoint acceptance
-  still requires the supervisor checkpoint.
+- `BLOCKED_BY_EVIDENCE_RETENTION` is closed. No source-checkpoint blocker
+  remains.
+- Verified implementation/content checkpoint
+  `b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
+  documentation closeout checkpoint.
 - UI scope: `AssetMutationPanel` and `ConfigSettings` contain inherited visible
-  Companion copy/test changes. Rework 7 did not edit those files or the five
-  TitleBar-coupled files.
+  Companion copy/test changes. Rework 7 and documentation-only Rework 8/Rework 9
+  did not edit those files or the five TitleBar-coupled files.
 - Historical real-environment evidence: C14 preserved exact `191 / 163 / 28` full/business/cache aggregates and the identical 28-entry path/size/SHA/mtime manifest before and after its task-owned UE run. Exact modules and the task-owned listener were observed; task-bound processes and listener ownership returned to zero. The product adapter sent one initialization request, then encountered a pre-discovery transport/environment failure. It produced no descriptor/schema decision. All asset and lifecycle action counts are zero; this is not a product-smoke pass. C14A did not start UE/UAgent or connect to live MCP.
 - Current known schema/provenance facts: the active project-local bytes and UE build remain reproducibly identified. Signed Epic sibling binaries do not match those active hashes; the missing authoritative mapping remains `BLOCKED_BY_MCP_SCHEMA`. The historical C14A publication implementation does not establish a live descriptor set, accepted SHA, or per-tool summary.
 - Historical predecessor checkpoint: supervisor review accepted C14/C14A verified implementation commit `37c29cbc7961218bfd71d1809178359952a75e18`; its SHA-backfill documentation closeout is published in that historical task checkpoint. It is not current MVP15D checkpoint evidence. Local workflow, private material, and `external/**` remain excluded.
@@ -98,7 +104,7 @@ rework.
   is required only for later final 15A packaging; D13, 15A, 15B, and 15C remain
   prohibited.
 
-Automated tests and task-owned D0/UE evidence do not substitute for the separately
-authorized product-UI lifecycle. The source checkpoint remains with the
-supervisor; MVP15 is not ready for the next stage until later G13/G16 evidence
-and a supervisor checkpoint record that change.
+Automated tests and task-owned D0/UE evidence do not substitute for the
+separately authorized product-UI lifecycle. The D0-D12 source checkpoint is
+accepted; MVP15 is not ready for the next stage until later G13/G16 evidence and
+a supervisor checkpoint record that change.

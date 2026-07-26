@@ -1,15 +1,16 @@
 # UAgent MVP Roadmap
 
-## MVP15D - UAgent UE Companion Plugin Rework 8
+## MVP15D - UAgent UE Companion Plugin Source Checkpoint Complete
 
-Status: Rework 7 is `NEEDS_FIX` because repository documentation/report facts
-were inconsistent while product code and retained evidence validation passed.
+Status: Rework 8 is `NEEDS_FIX` because its current acceptance manifest file SHA
+conflicted with retained evidence and the other current repository documents,
+while product code and retained evidence validation passed.
 Previous task:
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7`. Current
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`. Current
 task:
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`. Rework 8
-is `IN_PROGRESS`; source-checkpoint acceptance `BLOCKED`; Ready for next stage
-`NO`.
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`. Rework 9
+and the D0-D12 source checkpoint are `COMPLETE`; Ready for the next MVP stage
+remains `NO` because G13/G16 and 15A-15C remain separately gated.
 
 - Epic `ModelContextProtocol` remains untouched. The selected companion
   registration route is `direct`; Toolset Registry remains outside the selected
@@ -35,8 +36,11 @@ is `IN_PROGRESS`; source-checkpoint acceptance `BLOCKED`; Ready for next stage
   Cargo runs, the serial diagnostic, tooling `23/23`, build-bundle `10/10`, and
   targeted authority/vector/process checks exit 0. The historical supervisor
   first workspace-test attempt exited `134`; subsequent runs passed.
-- `BLOCKED_BY_EVIDENCE_RETENTION` is closed. The current source-checkpoint
-  blocker is `PENDING_SUPERVISOR_CHECKPOINT`.
+- `BLOCKED_BY_EVIDENCE_RETENTION` is closed. No source-checkpoint blocker
+  remains.
+- Verified implementation/content checkpoint
+  `b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
+  documentation closeout checkpoint on `main`.
 - No final 15A package or separately authorized product-UI mutation lifecycle
   exists. D13, 15A, 15B, and 15C remain prohibited.
 

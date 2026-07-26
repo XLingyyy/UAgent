@@ -2,14 +2,14 @@
 
 ## Independent UAgent Companion Baseline — MVP15D
 
-Rework 7 is `NEEDS_FIX` because repository documentation/report facts were
-inconsistent, while code and retained evidence validation passed. Rework 8 is
-`IN_PROGRESS`, source-checkpoint acceptance is `BLOCKED`, Ready is `NO`, and the
-current blocker is `PENDING_SUPERVISOR_CHECKPOINT`. Retained D0 supports current
-task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`
+Rework 8 is `NEEDS_FIX` because the current acceptance manifest file SHA
+conflicted with retained evidence and the other current repository documents,
+while code and retained evidence validation passed. Rework 9 and the D0-D12
+source checkpoint are `COMPLETE`. Ready for the next MVP stage remains `NO`
+because G13/G16 and 15A-15C remain separately gated. Retained D0 supports task
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`
 (previous task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7`).
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`).
 `external/mvp15d-rework7-d0-20260726_190100` selects Direct with 129 indexed
 artifacts and mutation zero; transcript-index SHA-256 is
 `b87e0a8a4d685b0cbddd55c8ea5ed4e944b9feba7aaa9d9176e23e2dfdeb0f99`.
@@ -17,6 +17,9 @@ Retained build `external/mvp15d-rework7-build-20260726_203000` and UE
 `external/mvp15d-rework7-ue-20260726_190100` close
 `BLOCKED_BY_EVIDENCE_RETENTION`; UE capture SHA-256 is
 `8794de55d0bc3444015116918b92e957070e684ac014f7f9551c07762af1cbb8`.
+Verified implementation/content checkpoint
+`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
+documentation closeout checkpoint.
 
 These implementation results address the Rework 5 observer/native authority,
 cross-language binding, create-to-identity ownership, Rust isolation, and
@@ -136,7 +139,7 @@ The mapping can close only if an official package manifest names the exact activ
 | Official source commit or authoritative artifact mapping         | Missing; signed sibling bytes do not hash-match the active unsigned bytes                                            | `BLOCKED_BY_MCP_SCHEMA`                                                                  |
 | Fresh-smoke plugin build binding                                 | Missing                                                                                                              | Final clean installed/loaded identity remains a later 15A gate                           |
 | Canonical product-adapter live six-descriptor fingerprint        | Rework 7 retained D0 records four independently indexed sessions, zero mutation, and Direct; final 15B installed-build binding has not run | PARTIAL |
-| Per-tool schema/contract version or stable per-field fingerprint | Rework 7 D0 and five-session `48/48` UE matrix exercise the exact-six contract; `PENDING_SUPERVISOR_CHECKPOINT` remains | IMPLEMENTED for the source checkpoint; final installed-build identity remains later work |
+| Per-tool schema/contract version or stable per-field fingerprint | Rework 7 D0 and five-session `48/48` UE matrix exercise the exact-six contract; the Rework 9 source checkpoint is complete | IMPLEMENTED for the source checkpoint; final installed-build identity remains later work |
 
 A statement that a plugin is running locally, a descriptor vendor string, or module hashes alone are not official provenance. Acceptance still requires the authoritative mapping plus the fresh live contract fingerprint.
 

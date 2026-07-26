@@ -1,15 +1,19 @@
 # MVP15 Native Authority Binding Rework Risk Register
 
-## Current MVP15D Rework 8 Risks
+## Current MVP15D Source-checkpoint-complete Risks
 
-Rework 7 is `NEEDS_FIX` because repository documentation/report facts were
-inconsistent, while code and retained evidence validation passed. Rework 8 is
-`IN_PROGRESS`, source-checkpoint acceptance is `BLOCKED`, Ready is `NO`, and the
-current blocker is `PENDING_SUPERVISOR_CHECKPOINT`. No final clean 15A package
+Rework 8 is `NEEDS_FIX` because the current acceptance manifest file SHA
+conflicted with retained evidence and the other current repository documents,
+while code and retained evidence validation passed. Rework 9 and the D0-D12
+source checkpoint are `COMPLETE`. Ready for the next MVP stage remains `NO`
+because G13/G16 and 15A-15C remain separately gated. No final clean 15A package
 or product-mutation result exists. D13, 15A, 15B, and 15C remain prohibited.
 Previous/current task IDs are
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7` and
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`.
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` and
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`.
+Verified implementation/content checkpoint
+`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
+documentation closeout checkpoint.
 
 | Risk                                                  | Risk disposition | Mitigation / evidence                                                                                                                                                                                                                |
 | ----------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -22,7 +26,7 @@ Previous/current task IDs are
 | Evidence retention / review verifiability             | MITIGATED        | Durable D0/build/UE roots validate in place; build inventory self-hash is `096e92b42f28eda7c227efde9747c33dd7c3c2f8d1e08988af77588f09b83303`. `BLOCKED_BY_EVIDENCE_RETENTION` is closed. |
 | Workspace-test process stability                      | MITIGATED        | Historical supervisor attempt exited `134`; two consecutive Rework 7 full-workspace processes exit 0 with identical counts. |
 | Default Rust test isolation                           | MITIGATED        | Ten fresh default Cargo processes and the serial diagnostic each pass at 154 library plus 2 bridge tests. |
-| Real product mutation or later-stage evidence         | DEFERRED         | Real product mutation and D13/15A/15B/15C remain prohibited during Rework 8. |
+| Real product mutation or later-stage evidence         | DEFERRED         | Real product mutation and D13/15A/15B/15C remain prohibited during Rework 9. |
 
 A dirty implementation worktree is not the current blocker. It is rejected when a
 later final-package flow requires a clean source commit/tree.
@@ -41,7 +45,7 @@ later final-package flow requires a clean source commit/tree.
 
 The historical supervisor verdict for Rework 3 was `NEEDS_FIX`. These historical
 findings informed later Rework 4-6 work; they do not describe the validated
-Rework 7 evidence or the current Rework 8 documentation correction.
+Rework 7 evidence or the current Rework 9 documentation correction.
 
 ## Historical Native-authority Risk Baseline
 
@@ -81,9 +85,9 @@ C14A remains historical implementation evidence at verified commit
 decision. Rework 7 is `NEEDS_FIX` for documentation/report inconsistency while
 its retained evidence mitigates
 the authority, vector, creation-identity, Rust-isolation, and process-ledger
-findings. Rework 8 is `IN_PROGRESS`; source-checkpoint acceptance remains
-`BLOCKED` while the supervisor
-checkpoint is `PENDING_SUPERVISOR_CHECKPOINT`, and Ready remains `NO`. The active
+findings. Rework 8 is `NEEDS_FIX` for the stale acceptance manifest file SHA;
+Rework 9 and the D0-D12 source checkpoint are `COMPLETE`; Ready for the next MVP
+stage remains `NO` while G13/G16 and 15A-15C remain gated. The active
 unsigned modules remain unmapped to the different signed sibling bytes, so
 official mapping remains `BLOCKED_BY_MCP_SCHEMA`; a clean source is required for
 the later final 15A package.

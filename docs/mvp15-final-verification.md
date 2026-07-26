@@ -1,15 +1,20 @@
 # MVP15 Final Verification
 
-## Current MVP15D Rework 8 Documentation Verification — IN_PROGRESS — 2026-07-26
+## Current MVP15D Rework 9 Source-checkpoint Verification — COMPLETE — 2026-07-26
 
 Previous task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7` received
-`NEEDS_FIX` because repository documentation/report facts were inconsistent,
-while code and retained D0/build/UE evidence validation passed.
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` received
+`NEEDS_FIX` because the current acceptance manifest file SHA conflicted with
+retained evidence and the other current repository documents, while code,
+retained D0/build/UE evidence, and automated implementation gates passed.
 Current task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` is
-`IN_PROGRESS`; source-checkpoint acceptance is `BLOCKED`, Ready is `NO`, and
-the current blocker is `PENDING_SUPERVISOR_CHECKPOINT`.
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9` and the
+D0-D12 source checkpoint are `COMPLETE`. Ready for the next MVP stage remains
+`NO` because G13/G16 and 15A-15C remain separately gated.
+
+Verified implementation commit SHA:
+`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e`. It is published with this
+Rework 9 documentation closeout checkpoint on branch `main`.
 
 `BLOCKED_BY_EVIDENCE_RETENTION` is closed by retained, in-place validated
 evidence:
@@ -50,19 +55,44 @@ evidence:
   are 4,865 bytes with SHA-256
   `771168ec8b6e7215672a4d839fa675d88f9207876e2c51513b26d6c58da56a1b`.
 
-Node `v24.14.1`, pnpm `11.9.0`, typecheck, lint, build, two consecutive
-workspace tests, Rust format, ten fresh default Cargo runs, serial Cargo,
-tooling `23/23`, build-bundle `10/10`, targeted authority/vector checks, and the
-side-effect scan exit 0 at 1,039 files / 0 blocked / 1,655 review findings.
-Workspace tests record shared 33, MCP 46, runtime 825,
-desktop 725 passed / 3 skipped; existing TitleBar `act(...)` and >500 kB chunk
-warnings remain non-failing. The historical supervisor first test attempt
-exited `134` after shared 33; later reruns passed.
+### Supervisor verification ledger
 
-Neither Rework 7 nor documentation-only Rework 8 edited the five
-TitleBar-coupled files. Inherited
-`AssetMutationPanel` / `ConfigSettings` UI diffs are unrelated. D13, 15A, 15B,
-15C, final packaging, product-UI mutation, and stage advance remain unauthorized.
+| Command / evidence | Result | Actual summary |
+| --- | --- | --- |
+| `node scripts/mvp15d-d0-spike.mjs --task-root external/mvp15d-rework7-d0-20260726_190100` | PASS | Four combinations, Direct, mutation zero, transcript index `b87e0a8...`. |
+| `node scripts/mvp15d-ue-automation.mjs --task-root external/mvp15d-rework7-ue-20260726_190100` | PASS | Five sessions, 48/48, capture `8794de5...`. |
+| `node scripts/mvp15d-build-bundle.mjs validate --repository G:\UAgent --task-root external/mvp15d-rework7-build-20260726_203000` | PASS | 60 files; exact inventory, manifest, source, Content, process, port, and marker validation; residual zero. |
+| `node --test scripts/mvp15d-tooling.test.mjs scripts/mvp15d-build-bundle.test.mjs` | PASS | 33/33. |
+| `pnpm typecheck` | PASS | Four workspace projects. |
+| `pnpm lint` | PASS | Exit 0. |
+| `pnpm build` | PASS | 258 modules; existing non-failing chunk-size warning retained. |
+| `pnpm test` twice | PASS | Both runs: shared 33, MCP 46, runtime 825, desktop 725 passed / 3 skipped; inherited TitleBar `act(...)` warnings retained. |
+| `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check` | PASS | Exit 0. |
+| Default and serial `cargo test` | PASS | Each supervisor run: 154 library plus 2 bridge tests. Retained Rework 7 ledger also records ten fresh default passes. |
+| `node scripts/side-effect-scan.mjs` | PASS | 1,039 files / 4,639 allowed / 0 blocked / 1,655 review. |
+| `git diff --check` | PASS | No whitespace error; LF/CRLF notices only. |
+| Manifest/fixture/hash recomputation | PASS | Retained manifest file `236f1da...`; both canonical fixtures are 4,865 bytes at `771168e...`; all bundle and TitleBar hashes match. |
+| Current-document and stale-state scan | PASS | Correct manifest/hash facts, Rework 9 closeout status, acceptance/risk vocabulary, and historical labels agree. |
+| Fresh product-UI mutation smoke | SKIPPED | Not authorized in this source-checkpoint task; G13 and 15A-15C remain gated. |
+
+The historical supervisor first workspace-test attempt exited `134` after
+shared 33; later complete runs passed. This remains a residual
+process-stability fact and does not alter the verified results above.
+
+Rework 7 and documentation-only Rework 8/Rework 9 did not edit the five
+TitleBar-coupled files. Inherited `AssetMutationPanel` / `ConfigSettings` UI
+changes are part of verified commit `b1c4e4a...`; inherited TitleBar/window
+control changes remain outside this checkpoint and unstaged.
+
+### Final judgment
+
+- Rework 9: `COMPLETE`.
+- D0-D12 source-checkpoint acceptance: `COMPLETE`.
+- Source-checkpoint blocker: none.
+- Ready for the next MVP stage: `NO`.
+- Remaining blockers/risks: G13 fresh product lifecycle, G16 final installed
+  provenance/live fingerprint, and 15A-15C remain unrun and separately gated.
+- Real product mutation, final packaging, and stage advance remain unauthorized.
 
 ## Historical MVP15D Rework 6 Implementation Verification — NEEDS_FIX — 2026-07-26
 
@@ -311,7 +341,7 @@ The historical canonical provenance build attempt rejected its worktree with
 tree, but it does not block Rework 4 source remediation. No sealed final
 manifest, trusted signed D0 envelope, selected production registration route,
 real product-UI smoke, or later D13/15A/15B/15C result is claimed by this
-historical report. The current Rework 8-required status is recorded at the top of
+historical report. The current Rework 9-required status is recorded at the top of
 this document.
 
 ## Historical Rework 3 Reported Command Ledger - 2026-07-20
@@ -550,9 +580,10 @@ request did not reach discovery and provided no schema evidence. Independently,
 the mapping audit could not connect the active unsigned bytes to the different
 signed sibling set. Rework 7 retained D0/build/UE and command ledgers address the
 authority, binding, creation-identity, Rust-isolation, process-ledger, and
-implementation findings as validated evidence. Rework 8 corrects the
-documentation/report facts only. No fresh product-UI mutation
+implementation findings as validated evidence. Rework 8 is `NEEDS_FIX` for its
+stale acceptance manifest file SHA; Rework 9 corrects that documentation conflict
+and closes the D0-D12 source checkpoint. No fresh product-UI mutation
 lifecycle, authoritative official plugin mapping, or final installed-build live
-descriptor fingerprint exists. Rework 7 is `NEEDS_FIX`; Rework 8 is `IN_PROGRESS`;
-source-checkpoint acceptance is `BLOCKED` on
-`PENDING_SUPERVISOR_CHECKPOINT`, and Ready for next stage remains `NO`.
+descriptor fingerprint exists. Rework 9 and source-checkpoint acceptance are
+`COMPLETE`; Ready for the next MVP stage remains `NO` because G13/G16 and
+15A-15C remain gated.

@@ -1,20 +1,20 @@
 # ADR: UAgentAssetTools Companion Registration Route
 
-- Status: `IMPLEMENTED` — Rework 7 retained D0 confirms Direct; Rework 8 documentation correction is `IN_PROGRESS`; `PENDING_SUPERVISOR_CHECKPOINT`
+- Status: `COMPLETE` — Rework 7 retained D0 confirms Direct; Rework 8 is `NEEDS_FIX`; Rework 9 closes the D0-D12 source checkpoint
 - Date: 2026-07-26
-- Scope: MVP15D D0-D12 source checkpoint Rework 8 documentation correction
+- Scope: MVP15D D0-D12 source checkpoint Rework 9 documentation correction
 - Decision owner: implementation Agent; final acceptance remains with supervisor
 
-## Current Rework 8 Decision Status
+## Current Rework 9 Decision Status
 
-Rework 7 is `NEEDS_FIX` because repository documentation/report facts were
-inconsistent, while code and retained evidence validation passed. Rework 8 is
-`IN_PROGRESS`, source-checkpoint acceptance is `BLOCKED`, Ready is `NO`, and the
-current blocker is `PENDING_SUPERVISOR_CHECKPOINT`. Retained D0 supports current
-task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`
+Rework 8 is `NEEDS_FIX` because the current acceptance manifest file SHA
+conflicted with retained evidence and the other current repository documents,
+while code and retained evidence validation passed. Rework 9 and the D0-D12
+source checkpoint are `COMPLETE`. Ready for the next MVP stage remains `NO`
+because G13/G16 and 15A-15C remain separately gated. Retained D0 supports task
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`
 (previous task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-7`).
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`).
 `external/mvp15d-rework7-d0-20260726_190100` records four product-adapter
 sessions, 129 indexed artifacts, mutation count zero, and
 `selectedRoute=direct`.
@@ -22,6 +22,9 @@ Transcript-index SHA-256 is
 `b87e0a8a4d685b0cbddd55c8ea5ed4e944b9feba7aaa9d9176e23e2dfdeb0f99`;
 `hashes.json` is
 `d393ce454385b32d07fa1a08ac7b8f39f897052dc3ff68daf785fc60d8077106`.
+Verified implementation/content checkpoint
+`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
+documentation closeout checkpoint.
 No final clean 15A package or real product-mutation result exists. D13, 15A,
 15B, and 15C remain prohibited.
 
