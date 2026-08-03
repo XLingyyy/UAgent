@@ -5,9 +5,9 @@ Boundary and Report Closure**.
 
 Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
 its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
-Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
-supervisor checkpoint` in a dirty pre-checkpoint tree. G14 is `IMPLEMENTED`;
-G15 is `IN_PROGRESS`; G16 is `PARTIAL`.
+Source/Tooling Rework 8 is `COMPLETE` at implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`; supervisor verdict is `PASS`.
+G14 is `IMPLEMENTED`; G15 is `COMPLETE`; G16 is `PARTIAL`.
 Real UE 5.8.1 compatibility and overall final acceptance remain `PARTIAL`;
 D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`; D16 is
 `IN_PROGRESS`; Ready is `NO`.
@@ -23,8 +23,8 @@ are capability facts; real product discovery, UE execution, Tool Search, and
 the asset lifecycle did not run (`SKIPPED_BY_TASK_BOUNDARY`).
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is deferred
-until the supervisor creates the Rework 8 checkpoint and issues a new clean-commit
-task. Real mutation remains prohibited.
+to a new clean-checkout task based on the Rework 8 implementation commit. Real
+mutation remains prohibited.
 
 Persisted verification reopens schemas, bytes, hashes, process/artifact facts,
 events, and summaries. It returns `*_persisted_consistency_verified` and
@@ -50,11 +50,11 @@ No serialized field or caller argument can substitute for that receipt.
 | Source/tooling Rework 5            | Checkpoint attestation and UE ledger closeout.                                                                                           | PARTIAL     | Historical supervisor verdict `NEEDS_FIX`; observer timing, path privacy, and source closure remained open.                                                                                                                                                                                  | Superseded by later source/tooling reworks.                                                                      |
 | Source/tooling Rework 6            | Live process identity, exact companion observation, bound path-free atomic ledger, and initial source closure.                           | PARTIAL     | Historical supervisor verdict `NEEDS_FIX`; no checkpoint was created. Caller-manufactured production origin, an observer CLI authority bypass, incomplete transitive source coverage, ancestor reparse acceptance, and fail-open cleanup remained.                                           | Closed at source level by Final Source/Tooling Rework 7.                                                         |
 | Source/tooling Rework 7            | Publisher provenance, downstream cross-binding, transitive source closure, ancestor-reparse rejection, and cleanup closure.              | PARTIAL     | Supervisor `NEEDS_FIX`; no checkpoint. The source/observer/cleanup facts remain accepted, while its persisted verifier accepted a coherent hand-authored full chain and therefore did not establish same-process launch ownership.                                                           | Closed at source level by Rework 8.                                                                              |
-| Source/tooling Rework 8            | Separate persisted consistency from same-process fixed-producer launch authority and close the report contract.                          | IMPLEMENTED | Exported/CLI verification returns explicit persisted consistency with `productionLaunchAuthorityVerified: false`; only `executeLivePhase()` can consume the private single-use receipt and return owned-launch status. A full hand-authored chain is a direct negative authority regression. | Supervisor checkpoint, then a separate clean-commit read-only compatibility task.                                |
-| D13 / 15A                          | Clean build/install/load and authoritative manifest identity.                                                                            | BLOCKED     | Historical Rework 2 observed a build and physical DLL load, but its evidence root is invalid and no clean current manifest/install/load equality proof exists before the supervisor checkpoint.                                                                                              | Publish the source checkpoint, use the final build/manifest tooling, and verify installed == loaded == manifest. |
+| Source/tooling Rework 8            | Separate persisted consistency from same-process fixed-producer launch authority and close the report contract.                          | COMPLETE    | Exported/CLI verification returns explicit persisted consistency with `productionLaunchAuthorityVerified: false`; only `executeLivePhase()` can consume the private single-use receipt and return owned-launch status. Implementation commit `98c8b387e1124a519977849d48ab824e4e6bb9c5` is checkpointed. | Proceed with a separate clean-checkout read-only compatibility task.                                              |
+| D13 / 15A                          | Clean build/install/load and authoritative manifest identity.                                                                            | BLOCKED     | Historical Rework 2 observed a build and physical DLL load, but its evidence root is invalid and no clean current manifest/install/load equality proof exists from the published implementation commit.                                                                                       | Use the published implementation commit with the final build/manifest tooling, and verify installed == loaded == manifest. |
 | D14 / 15B                          | Current-generation product-adapter exact-six live fingerprint.                                                                           | PLANNED     | Not run because D13 / 15A did not pass.                                                                                                                                                                                                                                                      | Run only after a new final 15A package passes.                                                                   |
 | D15 / 15C                          | Fresh rendered product-UI lifecycle, negatives, replay, and cleanup.                                                                     | PLANNED     | Not run; mutation count remains zero.                                                                                                                                                                                                                                                        | Run only after 15A and 15B pass.                                                                                 |
-| D16                                | Repository documentation and final delivery.                                                                                             | IN_PROGRESS | Rework 7 historical `PARTIAL` / supervisor `NEEDS_FIX`, Rework 8 two-level authority semantics, the mandatory report contract, security cleanup, and deferred live work are synchronized.                                                                                                    | Supervisor checkpoint and later live evidence remain outstanding.                                                |
+| D16                                | Repository documentation and final delivery.                                                                                             | IN_PROGRESS | Rework 7 historical `PARTIAL` / supervisor `NEEDS_FIX`, Rework 8 two-level authority semantics, mandatory report contract, checkpoint, security cleanup, and deferred live work are synchronized.                                                                                             | Later live evidence remains outstanding.                                                                         |
 
 ## Historical Supporting Gate Evidence
 
@@ -84,8 +84,8 @@ rework.
 | Gate                                         | Requirement                                                                                                                        | Current status | Current evidence                                                                                                                                                                                                                                  | Open item                                                    |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | G13 real UE smoke result                     | Complete a fresh product-UI dry-run, execute, verify, rollback, replay, stop, and ownership lifecycle plus negative smokes.        | BLOCKED        | Not run because the final 15A hard gate failed; mutation count is zero.                                                                                                                                                                           | Recover 15A and 15B first, then use a fresh isolated UI run. |
-| G14 documentation consistency                | Public current-state documents agree and preserve historical evidence.                                                             | IMPLEMENTED    | Rework 7 is historical/current-predecessor `PARTIAL` with supervisor `NEEDS_FIX`; Rework 8 two-level authority semantics, source boundary, cleanup, report headings, and deferred live work are synchronized; the full stale-state scan is clean. | Preserve this state through the supervisor checkpoint.       |
-| G15 checkpoint integrity                     | Supervisor records content checkpoint, SHA backfill closeout, and push.                                                            | IN_PROGRESS    | Final Source/Tooling Rework 8 source is implemented and awaits the supervisor checkpoint. Implementation commit is `PENDING_SUPERVISOR_CHECKPOINT`; the old `b1c4e4a...` / Rework 9 checkpoint remains historical D0-D12 evidence only.           | Supervisor commit, SHA backfill, and push.                   |
+| G14 documentation consistency                | Public current-state documents agree and preserve historical evidence.                                                             | IMPLEMENTED    | Rework 7 is historical/current-predecessor `PARTIAL` with supervisor `NEEDS_FIX`; Rework 8 two-level authority semantics, source boundary, cleanup, report headings, and deferred live work are synchronized; the full stale-state scan is clean. | Preserve this state in later tasks.                          |
+| G15 checkpoint integrity                     | Supervisor records content checkpoint, SHA backfill closeout, and push.                                                            | COMPLETE       | Rework 8 implementation commit `98c8b387e1124a519977849d48ab824e4e6bb9c5` is recorded by this documentation closeout and published on `main`; the old `b1c4e4a...` / Rework 9 checkpoint remains historical D0-D12 evidence only.                      | None.                                                       |
 | G16 authority provenance and plugin baseline | Native root/observation/gate provenance is proven and the exact companion build and six-tool contract are reproducibly identified. | PARTIAL        | Same-process launch ownership is separated from retained consistency and regression-covered; current clean installed/loaded/exact-six live evidence does not yet exist.                                                                           | Run the full read-only matrix from the new clean checkpoint. |
 
 ## Current UE 5.8.1 Rework and Final D13-D16 Posture
@@ -95,10 +95,11 @@ rework.
   `PARTIAL`; no checkpoint was created.
 - Final Source/Tooling Rework 7: `PARTIAL`; supervisor `NEEDS_FIX`; no
   checkpoint.
-- Current task:
+- Completed task:
   `TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-8-AUTHORITATIVE-LAUNCH-BOUNDARY-AND-REPORT-CLOSURE`;
-  source implementation `IMPLEMENTED, awaiting supervisor checkpoint`.
-- G14: `IMPLEMENTED`; G15: `IN_PROGRESS`; G16: `PARTIAL`.
+  `COMPLETE`; supervisor `PASS`; implementation commit
+  `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
+- G14: `IMPLEMENTED`; G15: `COMPLETE`; G16: `PARTIAL`.
 - Desktop Tauri icon validation and MSI/NSIS bundling: `IMPLEMENTED`.
 - UE 5.8.1 compatibility: `PARTIAL`; the Rework 2 attempt is historical and
   cannot satisfy the current clean-commit matrix.
@@ -124,5 +125,5 @@ rework.
   product retractions, UI mutation, and replay were not run.
 - Read-only retained historical Source Checkpoint Rework 7 D0/build/UE validators pass and preserve Direct,
   `48/48`, and zero historical residual. They are not final evidence.
-- Recovery requires the supervisor checkpoint, followed by a new
-  clean-commit read-only compatibility task. Real mutation remains prohibited.
+- Recovery continues with a new clean-checkout read-only compatibility task
+  based on the published implementation commit. Real mutation remains prohibited.

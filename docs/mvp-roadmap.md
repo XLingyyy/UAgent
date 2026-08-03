@@ -4,12 +4,12 @@
 
 - Final Source/Tooling Rework 7: historical/current predecessor `PARTIAL` with
   supervisor `NEEDS_FIX`; no checkpoint was created.
-- Final Source/Tooling Rework 8 source implementation: `IMPLEMENTED, awaiting
-supervisor checkpoint` (dirty pre-checkpoint; clean rebuild pending supervisor).
+- Final Source/Tooling Rework 8: `COMPLETE`; supervisor `PASS`; implementation
+  commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 - G14 documentation consistency: `IMPLEMENTED` after the current evidence and
   stale-state reconciliation.
-- G15 checkpoint integrity: `IN_PROGRESS` (post-checkpoint clean commit
-  attribution is `PENDING_SUPERVISOR_CHECKPOINT`).
+- G15 checkpoint integrity: `COMPLETE`; implementation and documentation
+  closeout are published together.
 - G16 authority provenance and plugin baseline: `PARTIAL`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
   module BuildId `55116800`.
@@ -70,8 +70,8 @@ closed alternative and is not a production fallback. Retained historical Source 
 D0/build/UE validators continue to pass read-only, but those historical bundles
 cannot satisfy final 15A-15C.
 
-Recovery requires the Rework 8 supervisor checkpoint, then a new clean-commit
-read-only 5.8.1 task covering both Tool Search modes, exact-six/product
+The next recovery step is a new clean-checkout read-only 5.8.1 task from the
+Rework 8 implementation commit, covering both Tool Search modes, exact-six/product
 retractions, response framing, clean inventory, and the real loaded-module
 observer. Only a later separately authorized task may consider real 15C
 mutation.

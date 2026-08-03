@@ -6,9 +6,9 @@
 `56057345`, compatible changelist `55116800`, and module BuildId `55116800`.
 Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`
 with supervisor verdict `NEEDS_FIX`; no checkpoint was created. Final
-Source/Tooling Rework 8 source
-implementation is `IMPLEMENTED, awaiting supervisor checkpoint` in a dirty
-pre-checkpoint tree. `scripts/mvp15d-source-identity.mjs` and `build.rs` bind
+Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
+commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
+`scripts/mvp15d-source-identity.mjs` and `build.rs` bind
 the compiled source identity to
 `uagent.mvp15d.production-source-boundary.v2`: 335 production files discovered
 from 14 approved roots plus 28 exact files, 9 exclusion classes, 126 excluded
@@ -16,7 +16,7 @@ entries, and a complete 356-entry production/Git watch set. New production
 files and deleted tracked production files cannot leave the identity unchanged;
 normal repositories, linked worktrees, symbolic/detached HEAD, loose refs,
 packed refs, and same-branch commits are covered. G14 is `IMPLEMENTED`; G15 is
-`IN_PROGRESS`; G16 is `PARTIAL`. UE 5.8.1 compatibility and overall acceptance
+`COMPLETE`; G16 is `PARTIAL`. UE 5.8.1 compatibility and overall acceptance
 remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C are
 `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 

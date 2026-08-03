@@ -4,10 +4,9 @@
 
 Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
 its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
-Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
-supervisor checkpoint` in a
-dirty pre-checkpoint tree. G14 is `IMPLEMENTED`; G15 is
-`IN_PROGRESS`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
+Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
+commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; G15 is
+`COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
 acceptance remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C
 are `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 
@@ -65,8 +64,9 @@ cleanup hardening, and native module enumeration; its supervisor verdict was
 not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
-A supervisor-created Rework 8 checkpoint plus a new clean-commit read-only
-task are required before the full UE 5.8.1 compatibility matrix. Real mutation
+A new clean-checkout read-only task based on Rework 8 implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5` is required before the full UE 5.8.1
+compatibility matrix. Real mutation
 remains prohibited and belongs to a later separate task.
 
 This document separates repository-defined expectations from facts that must be collected from the real UE/MCP environment. It contains no local absolute path, process id, endpoint credential, token, or secret.

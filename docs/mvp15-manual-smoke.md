@@ -4,10 +4,9 @@
 
 Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
 its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
-Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
-supervisor checkpoint` in a
-dirty pre-checkpoint tree. G14 is `IMPLEMENTED`; G15 is
-`IN_PROGRESS`; G16 is `PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and
+Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
+commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; G15 is
+`COMPLETE`; G16 is `PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and
 D15 / 15C remain `PLANNED`; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility
 and overall acceptance remain `PARTIAL`; Ready is `NO`.
 
@@ -35,8 +34,8 @@ inverse operations, zero verify mutation, and replay delta `0 / 0 / 0 / 0 /
 read-only supporting evidence.
 
 The unsafe predecessor evidence root was invalidated and removed for
-`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility must wait
-for the Rework 8 supervisor checkpoint and a new clean-commit task. Real UE, Tool Search,
+`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility must use a
+new clean-checkout task based on the Rework 8 implementation commit. Real UE, Tool Search,
 and mutation are `SKIPPED_BY_TASK_BOUNDARY`; mutation remains prohibited until
 a later separate task.
 
@@ -189,6 +188,7 @@ Each negative case uses an independent registration/run and must prove before/af
 - Historical run: `ui-mrpovp9e-1`.
 - Scope: former happy path only; not accepted as C11 authority or fresh smoke evidence.
 - Current committed TitleBar badge expectation remains `MVP15 Rework`. Neither
-  Rework 7 nor documentation-only Rework 8/Rework 9 edited any of the five
+  historical Source Checkpoint Rework 7 nor documentation-only Source Checkpoint
+  Rework 8/Rework 9 edited any of the five
   TitleBar-coupled files; separate inherited
   TitleBar/window-controls work is outside this checkpoint.

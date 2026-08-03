@@ -6,9 +6,8 @@
 
 Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`
 with supervisor verdict `NEEDS_FIX`; no checkpoint was created. Final
-Source/Tooling Rework 8 source
-implementation is `IMPLEMENTED, awaiting supervisor checkpoint` in a dirty
-pre-checkpoint tree. G14 is `IMPLEMENTED`; G15 is `IN_PROGRESS`; G16 is
+Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
+commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; G15 is `COMPLETE`; G16 is
 `PARTIAL`. UE 5.8.1 compatibility and overall acceptance remain `PARTIAL`;
 D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C are `PLANNED`; D16 is
 `IN_PROGRESS`; Ready remains `NO`.
@@ -125,8 +124,8 @@ Tauri MSI/NSIS remain preserved. The real release binary capability probes
 made zero MCP calls, zero network calls, and zero asset operations. No real UE
 session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
-Full read-only compatibility follows only after the supervisor checkpoint and
-push in a new clean-commit task.
+Full read-only compatibility follows in a new clean-checkout task based on the
+Rework 8 implementation commit.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted

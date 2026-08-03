@@ -6,13 +6,14 @@ AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent p
 
 Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
 its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
-Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
-supervisor checkpoint`. G14 is `IMPLEMENTED`; G15 is `IN_PROGRESS`; G16 is
+Source/Tooling Rework 8 is `COMPLETE` at implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`; supervisor verdict is `PASS`.
+G14 is `IMPLEMENTED`; G15 is `COMPLETE`; G16 is
 `PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain
 `PLANNED`; D16 remains `IN_PROGRESS`; UE 5.8.1 compatibility and overall MVP15
 acceptance remain `PARTIAL`; Ready for the next stage is `NO`.
 
-The dirty pre-checkpoint Tauri build embeds
+The verified pre-checkpoint Tauri build embedded
 `uagent.mvp15d.source-identity.v2`: base/compiled commit
 `d308d80a994079dc22af2b982e70ae416d832e4f`, resolved head ref, honest
 `sourceDirty: true`, and SHA-256
@@ -26,8 +27,8 @@ external roots stay outside it. A new production file is included
 automatically, and deletion of a tracked production file marks the identity
 dirty. `build.rs` consumes the complete 356-entry source/Git watch set,
 including normal or linked-worktree Git metadata, symbolic or detached HEAD,
-loose refs, and packed refs. Only a supervisor checkpoint followed by a clean
-rebuild can complete G15.
+loose refs, and packed refs. The checkpoint closes G15. A separate clean-checkout
+rebuild from the implementation commit remains required for G16 and D13 / 15A.
 
 The loaded-module publisher still has one write-capable production path. It
 publishes only after the owned live process is re-observed and the task marker,
@@ -75,8 +76,8 @@ The UE 5.8.1 evidence collector uses a closed allowlist, deterministic
 redaction, independent verification, and secret/path rejection. The unsafe
 predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root was created.
-Full read-only compatibility is deferred until the supervisor creates the
-Rework 8 checkpoint and issues a clean-commit task. Real UE, Tool Search, and mutation
+Full read-only compatibility is deferred to a new clean-checkout task based on
+the Rework 8 implementation commit. Real UE, Tool Search, and mutation
 are `SKIPPED_BY_TASK_BOUNDARY`; real mutation remains prohibited.
 
 The tracked multi-size ICO and actual Tauri MSI/NSIS packaging remain accepted
@@ -105,7 +106,7 @@ C14 implemented deterministic `uagent.mvp15.live-asset-toolset-fingerprint.v1` p
 3. **Runtime Asset Service**: Deterministic dry-run, ephemeral native-issued approval token handoff, execute, verify, rollback, manifest, replay summary, and scenario matrix support.
 4. **Native Guard Rework**: Native commands are bound to authoritative trusted-root and live observation registries, a strict `UAGENT_ENABLE_ASSET_MUTATION=1` gate, a 60-second one-time token, and absolute 15-minute forward / 20-minute recovery deadlines. Automated C11 coverage is present; C12-C13E1 add accepted real build, module, task-copy, DDC, process, listener, and fail-closed dual-layer Plugins containment evidence, while provenance and fresh product-UI acceptance remain blocked.
 5. **MCP Schema Adapters**: Exact allowlist for dry-run, execute, and rollback-capable sandbox asset tools with strict state-specific structured results, required `sideEffectObserved`, read-only evidence queries, and a redacted session/generation-bound exact-six fingerprint publication; generic wrapper mutation remains blocked.
-6. **Desktop UI / Store**: Inspector Assets and Changes surfaces expose `executed`, `verified`, `rollback_available`, `rolled_back`, stable blocked reasons, redacted operation audit, and recorded replay summaries. The working tree also contains inherited visible Companion status/contract/hash/fingerprint/generation copy in `AssetMutationPanel` and `ConfigSettings`, with matching UI assertions; Rework 7 and documentation-only Rework 8/Rework 9 did not edit those files or the five TitleBar-coupled files, and the inherited changes do not establish acceptance.
+6. **Desktop UI / Store**: Inspector Assets and Changes surfaces expose `executed`, `verified`, `rollback_available`, `rolled_back`, stable blocked reasons, redacted operation audit, and recorded replay summaries. The working tree also contains inherited visible Companion status/contract/hash/fingerprint/generation copy in `AssetMutationPanel` and `ConfigSettings`, with matching UI assertions; historical Source Checkpoint Rework 7 and documentation-only Source Checkpoint Rework 8/Rework 9 did not edit those files or the five TitleBar-coupled files, and the inherited changes do not establish acceptance.
 7. **Scenario Matrix / Side-effect Scan / Docs**: Security checks also cover native trust, observation provenance, native gate authority, transaction liveness, and pre-trust root mapping regressions.
 
 Controlled text writes remain approval-gated and limited to trusted fixture/temp roots or explicitly trusted project roots. Non-sandbox UE assets, Save All, bulk asset operations, arbitrary shell expansion, provider live defaults, automatic git operations, replay re-execute, and raw secret/path leakage remain blocked.

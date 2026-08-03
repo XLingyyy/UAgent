@@ -1,18 +1,18 @@
 # MVP15 Native Authority Binding Rework Handoff
 
-## Current MVP15D Final Source/Tooling Rework 8 Source Handoff — 2026-08-03 (dirty pre-checkpoint)
+## Current MVP15D Final Source/Tooling Rework 8 Source Handoff — 2026-08-03 (checkpoint closeout)
 
 Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
 its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
-Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
-supervisor checkpoint`. G14 is
-`IMPLEMENTED`; G15 is `IN_PROGRESS`; G16 is `PARTIAL`.
+Source/Tooling Rework 8 is `COMPLETE` at implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`; supervisor verdict is `PASS`.
+G14 is `IMPLEMENTED`; G15 is `COMPLETE`; G16 is `PARTIAL`.
 Real UE 5.8.1 compatibility and overall acceptance remain `PARTIAL`; D13 /
 15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`; D16 remains
-`IN_PROGRESS`; Ready is `NO`. The release binary truthfully reports a dirty
-pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
-transitive production boundary; only the supervisor's clean
-implementation-commit rebuild satisfies G15 source attribution.
+`IN_PROGRESS`; Ready is `NO`. The verified release binary truthfully reported a
+dirty pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
+transitive production boundary. A separate clean-checkout rebuild from the
+implementation commit remains required for G16 and D13 / 15A.
 
 The handoff preserves the default-off production Tauri bridge, native-generated
 runtime events, one-time nonce and authenticated driver transport, asynchronous
@@ -45,8 +45,8 @@ regressions pass with zero current residues. No real UE session, Tool Search,
 full product discovery, or mutation lifecycle ran
 (`SKIPPED_BY_TASK_BOUNDARY`). The unsafe predecessor evidence root was
 invalidated and removed for `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no
-replacement live root was created. The supervisor must create the source
-Rework 8 checkpoint before issuing a new clean-commit read-only compatibility task.
+replacement live root was created. The next task may use the published Rework 8
+implementation commit for a clean-checkout read-only compatibility run.
 Real mutation remains prohibited and requires a later separate task.
 
 Identity v2 / manifest v3, engine `5.8.1`, engine CL `56057345`, compatible CL
@@ -90,7 +90,8 @@ claimed. Ready for the next MVP stage remains `NO`; D13, 15A, 15B, and 15C
 remain prohibited until separately authorized. The working tree contains
 inherited Companion status/contract/hash/fingerprint/generation copy changes in
 `AssetMutationPanel` and `ConfigSettings`, with corresponding UI assertions.
-Rework 7 and documentation-only Rework 8/Rework 9 did not edit those files or
+Historical Source Checkpoint Rework 7 and documentation-only Source Checkpoint
+Rework 8/Rework 9 did not edit those files or
 the five TitleBar-coupled files.
 
 ## Historical MVP15D Rework 4 Handoff - NEEDS_FIX - 2026-07-24
@@ -201,10 +202,8 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 ## Current Remaining Evidence
 
-- Supervisor source checkpoint, SHA backfill, and any push for the implemented
-  Final Source/Tooling Rework 8 source/tooling.
-- A sealed final package and live manifest/install/load equality from the new
-  checkpoint.
+- A sealed final package and live manifest/install/load equality from a clean
+  checkout of implementation commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 - Fresh current-task UE Automation output, exact-six product-adapter capture,
   and rendered product-UI happy/negative/replay/cleanup evidence.
 - A retained final inventory produced and verified from those live source
@@ -212,10 +211,10 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 ## Current Later-stage Gates
 
-- D13 / 15A remains `BLOCKED` pending the source checkpoint and a compliant live
+- D13 / 15A remains `BLOCKED` pending a compliant clean-checkout live
   build/install/load verification.
 - D14 / 15B and D15 / 15C remain `PLANNED`; the hard gate prevented execution.
-- D16 remains `IN_PROGRESS`; G14 is `IMPLEMENTED`, G15 is `IN_PROGRESS`, and
+- D16 remains `IN_PROGRESS`; G14 is `IMPLEMENTED`, G15 is `COMPLETE`, and
   G16 is `PARTIAL`.
 
 ## Residual Risks
@@ -236,10 +235,11 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 The D0-D12 `b1c4e4a...` / Rework 9 checkpoint remains valid historical
 evidence. Final Source/Tooling Rework 7 is the historical/current predecessor
 `PARTIAL` with supervisor verdict `NEEDS_FIX`, and no checkpoint was created.
-Final Source/Tooling Rework 8 source implementation and G14 are `IMPLEMENTED` (awaiting supervisor
-checkpoint); G15 is `IN_PROGRESS`; G16 is `PARTIAL`.
+Final Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at
+implementation commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`; G14 is
+`IMPLEMENTED`, G15 is `COMPLETE`, and G16 is `PARTIAL`.
 D13 / 15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`; D16
 remains `IN_PROGRESS`; real UE 5.8.1 compatibility and overall acceptance
-remain `PARTIAL`; Ready remains `NO`. The supervisor checkpoint must precede a
-new clean-commit read-only compatibility run. No next-stage or
+remain `PARTIAL`; Ready remains `NO`. A new clean-checkout read-only
+compatibility run is the next permitted task. No next-stage or
 mutation work is authorized.

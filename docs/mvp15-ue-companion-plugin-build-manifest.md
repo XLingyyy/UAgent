@@ -4,12 +4,11 @@
 
 Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
 its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
-Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
-supervisor checkpoint` in a
-dirty pre-checkpoint tree. The build wrapper and native/runtime
+Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
+commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`. The build wrapper and native/runtime
 consumers use manifest v3 and identity v2 with independent engine version
 `5.8.1`, engine changelist `56057345`, compatible changelist `55116800`, and
-module BuildId `55116800`. G14 is `IMPLEMENTED`; G15 is `IN_PROGRESS`; G16 is
+module BuildId `55116800`. G14 is `IMPLEMENTED`; G15 is `COMPLETE`; G16 is
 `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`;
 D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility and overall acceptance
 remain `PARTIAL`; Ready is `NO`.
@@ -82,8 +81,8 @@ short-lived incomplete identities, 40 explicit exit events, one exit closed by
 
 `BLOCKED_BY_EVIDENCE_RETENTION` remains closed for historical Source Checkpoint Rework 7.
 `BLOCKED_BY_PLUGIN_PROVENANCE` and `BLOCKED_BY_SOURCE_BYTE_IDENTITY` describe
-historical live-evidence gaps; the current source implementation closes the
-authority-meaning and transitive-boundary defects pending supervisor checkpoint.
+historical live-evidence gaps; the Rework 8 checkpoint closes the
+authority-meaning and transitive-boundary defects.
 `BLOCKED_BY_BUILD_ENVIRONMENT` remains open until a
 compliant live build passes.
 
@@ -183,6 +182,6 @@ checkpoint review.
 - UE/native/session/root/gate failure: `BLOCKED_BY_ENVIRONMENT`.
 
 No clean current manifest, installed/loaded equality proof, or live exact-six
-fingerprint exists. Those facts must be produced from the supervisor-published
-Final Source/Tooling Rework 8 checkpoint in the separate clean-commit
+fingerprint exists. Those facts must be produced from implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5` in a separate clean-checkout
 read-only task.

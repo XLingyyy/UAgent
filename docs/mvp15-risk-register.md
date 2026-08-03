@@ -4,10 +4,9 @@
 
 Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
 its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
-Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
-supervisor checkpoint` in a
-dirty pre-checkpoint tree. G14 is `IMPLEMENTED`; G15 is
-`IN_PROGRESS`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
+Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
+commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; G15 is
+`COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
 acceptance remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C
 are `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 
@@ -39,8 +38,8 @@ are `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 | UE 5.8.1 exact-six/product compatibility              | OPEN             | Source adapters are implemented, while the full clean-commit live matrix remains unrun. Historical Rework 2 partial observations cannot establish current compatibility.                                                                                                                                                                                          |
 | Real product mutation or later-stage evidence         | DEFERRED         | 15B/15C were skipped by the failed 15A hard gate; mutation count is zero.                                                                                                                                                                                                                                                                                         |
 
-Final Source/Tooling Rework 8 source implementation awaits the supervisor
-checkpoint. Live acceptance requires a separate clean-commit task,
+Final Source/Tooling Rework 8 is checkpointed at implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`. Live acceptance requires a separate clean-checkout task,
 manifest-backed build, and a new strict evidence root. Real mutation remains
 prohibited.
 
@@ -91,8 +90,8 @@ MVP15D source-checkpoint risks above or supply current D0-D12 evidence.
 
 D13 / 15A is `BLOCKED`. Final Source/Tooling Rework 7 is the historical/current
 predecessor `PARTIAL` with supervisor verdict `NEEDS_FIX`, and no checkpoint was
-created. Final Source/Tooling Rework 8 source implementation and G14 are `IMPLEMENTED`
-(awaiting supervisor checkpoint); G15 is `IN_PROGRESS`; G16 is `PARTIAL`. The historical D0-D12
+created. Final Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS`;
+G14 is `IMPLEMENTED`, G15 is `COMPLETE`, and G16 is `PARTIAL`. The historical D0-D12
 checkpoint and historical Source Checkpoint Rework 7 evidence remain valid prerequisites, while no clean
 current live exact-six fingerprint exists. D14 / 15B and D15 / 15C remain
 `PLANNED`; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility and overall

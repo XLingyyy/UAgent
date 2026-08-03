@@ -1,17 +1,17 @@
 # MVP15 Final Verification
 
-## Current MVP15D Final Source/Tooling Rework 8 Authoritative Launch Boundary and Report Closure — 2026-08-03 (dirty pre-checkpoint)
+## Current MVP15D Final Source/Tooling Rework 8 Authoritative Launch Boundary and Report Closure — 2026-08-03 (checkpoint closeout)
 
 ### Verification identity
 
 - Task: `TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-8-AUTHORITATIVE-LAUNCH-BOUNDARY-AND-REPORT-CLOSURE`
 - REPORT: `REPORT-TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-8-AUTHORITATIVE-LAUNCH-BOUNDARY-AND-REPORT-CLOSURE-20260803-121253.md`
 - Branch / base HEAD: `main` / `d308d80a994079dc22af2b982e70ae416d832e4f`
-- Implementation commit: `PENDING_SUPERVISOR_CHECKPOINT`
+- Implementation commit: `98c8b387e1124a519977849d48ab824e4e6bb9c5`
 - Final Source/Tooling Rework 7: historical/current predecessor `PARTIAL`;
   supervisor verdict `NEEDS_FIX`; no checkpoint was created.
-- Current source implementation: `IMPLEMENTED, awaiting supervisor checkpoint`.
-- G14: `IMPLEMENTED`; G15: `IN_PROGRESS`; G16: `PARTIAL`; D13 / 15A:
+- Current task: `COMPLETE`; supervisor verdict: `PASS`.
+- G14: `IMPLEMENTED`; G15: `COMPLETE`; G16: `PARTIAL`; D13 / 15A:
   `BLOCKED`; D14 / 15B and D15 / 15C: `PLANNED`; D16: `IN_PROGRESS`.
 - UE 5.8.1 compatibility / overall MVP15: `PARTIAL`; Ready: `NO`.
 
@@ -19,7 +19,8 @@
 
 - Schema: `uagent.mvp15d.source-identity.v2`.
 - Boundary: `uagent.mvp15d.production-source-boundary.v2`.
-- Base/compiled commit: `d308d80a994079dc22af2b982e70ae416d832e4f`.
+- Verified pre-checkpoint build base/compiled commit:
+  `d308d80a994079dc22af2b982e70ae416d832e4f`.
 - Resolved head ref: `refs/heads/main`.
 - Task source tree SHA-256:
   `ccf061de9f2583d26b9562a9739255f04b288c84672603424859c04fee686099`.
@@ -186,14 +187,16 @@ warning. No validation command is represented as real UE compatibility.
 - Real UE 5.8.1 compatibility still lacks a clean checkpoint build/install/load,
   exact-six Tool Search evidence, product retractions, and the authorized UI
   lifecycle. The dirty release capability probes cannot satisfy D13-D15.
-- No SHA backfill, Git stage, commit, push, or PR was performed.
+- The implementation verification preceded the checkpoint; the supervisor then
+  created implementation commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`,
+  backfilled this record, and published the documentation closeout with it.
 
 ### Implementation assessment and next steps
 
-Final Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
-supervisor checkpoint`. The supervisor still owns formal review, the content
-checkpoint, SHA backfill, and any push. After that checkpoint, a separate
-clean-commit task may rebuild and perform the read-only UE 5.8.1 matrix. Real
+Final Source/Tooling Rework 8 is `COMPLETE`; supervisor verdict is `PASS`, and
+G15 checkpoint integrity is `COMPLETE`. A separate clean-checkout task may now
+rebuild from implementation commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`
+and perform the read-only UE 5.8.1 matrix. Real
 mutation remains prohibited. Overall MVP15 and UE compatibility remain
 `PARTIAL`; Ready remains `NO`.
 
@@ -230,7 +233,7 @@ top of this file.
   exact Git watch set **22** paths.
 - Source dirty status: `true` (working tree contains the Rework 1-6 task diff)
 - Resolved source head ref: `refs/heads/main`
-- Implementation commit: `PENDING_SUPERVISOR_CHECKPOINT`
+- Implementation commit: none; the historical Rework 6 task was rejected.
 
 This is a dirty pre-checkpoint source verification. The release binary was
 built from the current task source tree; it truthfully records
@@ -380,7 +383,7 @@ Real UE runs and asset mutation remain `SKIPPED_BY_TASK_BOUNDARY`.
 - a same-branch commit changes the resolved ref bytes (and therefore the next
   compiled identity path) without touching source files — proven by the
   same-branch, packed-ref, and linked-worktree regressions;
-- the supervisor post-checkpoint clean rebuild is `PENDING_SUPERVISOR_CHECKPOINT`;
+- the supervisor did not create a Rework 6 checkpoint or clean rebuild;
 - the UE loaded-module ledger is produced by the real live observer while the
   task-owned process is alive, published through one exclusive atomic writer,
   and directly authored or fixture ledgers are rejected.
@@ -447,8 +450,8 @@ The following facts are retained as history only:
 - Base HEAD: `d308d80a994079dc22af2b982e70ae416d832e4f`
 - Pre-checkpoint task-source-tree SHA-256 (six-file inventory):
   `ce5b40a2b56ed3c8cffea3102674c68095ac3d3ac25662387e3b7523f1f1fd02`
-- Source dirty status: `true`; implementation commit was
-  `PENDING_SUPERVISOR_CHECKPOINT`; no checkpoint was created.
+- Source dirty status: `true`; no implementation commit or checkpoint was
+  created.
 
 Rework 5's claimed findings that Rework 6 corrected: the observer ran only
 after the Job runner and task-owned process had exited; real `Get-Process
@@ -547,7 +550,8 @@ The historical supervisor first workspace-test attempt exited `134` after
 shared 33; later complete runs passed. This remains a residual
 process-stability fact and does not alter the verified results above.
 
-Rework 7 and documentation-only Rework 8/Rework 9 did not edit the five
+Historical Source Checkpoint Rework 7 and documentation-only Source Checkpoint
+Rework 8/Rework 9 did not edit the five
 TitleBar-coupled files. Inherited `AssetMutationPanel` / `ConfigSettings` UI
 changes are part of verified commit `b1c4e4a...`; inherited TitleBar/window
 control changes remain outside this checkpoint and unstaged.
@@ -1044,12 +1048,13 @@ Separate negative ledgers must record:
 
 This is not final MVP15 acceptance. Final Source/Tooling Rework 7 is the
 historical/current predecessor `PARTIAL` with supervisor verdict `NEEDS_FIX`,
-and no checkpoint was created. Final Source/Tooling Rework 8 source
-implementation and G14 are `IMPLEMENTED`
-(awaiting supervisor checkpoint); G15 is `IN_PROGRESS`; G16 is `PARTIAL`. The
+and no checkpoint was created. Final Source/Tooling Rework 8 is `COMPLETE` with
+supervisor `PASS` at implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`; G14 is `IMPLEMENTED`, G15 is
+`COMPLETE`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
-complete current G15. No clean current-generation exact-six fingerprint or
+replace the current Rework 8 checkpoint. No clean current-generation exact-six fingerprint or
 full live rendered product-UI lifecycle exists. D13 / 15A remains `BLOCKED`;
 D14 / 15B and D15 / 15C remain `PLANNED`; D16 remains `IN_PROGRESS`; real UE
 5.8.1 compatibility and overall acceptance remain `PARTIAL`; Ready remains
