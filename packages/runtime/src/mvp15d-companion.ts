@@ -2,19 +2,22 @@ import type {
   UAgentCompanionArtifactHash,
   UAgentCompanionBuildManifest,
   UAgentCompanionIdentity,
+  UAgentCompanionManifestArtifact,
   UAgentCompanionStatus,
   UAgentCompanionToolContract,
   UAgentCompanionToolName,
 } from "@uagent/shared";
 import {
   UAGENT_COMPANION_CONTRACT_VERSION,
+  UAGENT_COMPANION_COMPATIBLE_CHANGELIST,
+  UAGENT_COMPANION_ENGINE_CHANGELIST,
+  UAGENT_COMPANION_ENGINE_VERSION,
   UAGENT_COMPANION_IDENTITY_SCHEMA_VERSION,
   UAGENT_COMPANION_MANIFEST_SCHEMA_VERSION,
+  UAGENT_COMPANION_MODULE_BUILD_ID,
   UAGENT_COMPANION_PLUGIN_ID,
   UAGENT_COMPANION_PLUGIN_VERSION,
   UAGENT_COMPANION_TOOL_NAMES,
-  UAGENT_COMPANION_UE_BUILD_ID,
-  UAGENT_COMPANION_UE_VERSION,
 } from "@uagent/shared";
 import {
   createMvp15LiveAssetToolsetFingerprint,
@@ -95,15 +98,19 @@ const SAFE_CHANGE_SET_ID = /^[A-Za-z0-9._:-]+$/;
 const SAFE_ARTIFACT_NAME = /^[A-Za-z0-9_.-]+$/;
 const SAFE_METADATA = /^[A-Za-z0-9 .()_-]+$/;
 const MANIFEST_FIELDS = [
-  "schemaVersion", "pluginId", "pluginVersion", "contractVersion", "sourceCommit", "sourceTreeSha256",
-  "dirty", "ueVersion", "ueBuildId", "targetPlatform", "configuration", "compiler", "windowsSdk",
-  "buildCommandFingerprint", "uplugin", "schema", "moduleIndex", "modules", "toolNames", "generatedAt", "builder", "manifestSha256",
+  "schemaVersion", "taskGeneration", "taskId", "pluginId", "pluginVersion", "contractVersion", "sourceCommit", "sourceTreeSha256",
+  "physicalFixtures", "dirty", "engineVersion", "engineChangelist", "compatibleChangelist", "moduleBuildId",
+  "targetPlatform", "configuration", "compiler", "windowsSdk", "buildCommandFingerprint",
+  "buildEvidenceArtifacts", "artifacts", "modules", "toolNames", "generatedAt", "builder", "manifestSelfSha256",
 ] as const;
 const IDENTITY_FIELDS = [
-  "schemaVersion", "pluginId", "pluginVersion", "contractVersion", "sourceCommit", "buildManifestSha256", "ueBuildId",
+  "schemaVersion", "pluginId", "pluginVersion", "contractVersion", "sourceCommit", "buildManifestSha256",
+  "engineVersion", "engineChangelist", "compatibleChangelist", "moduleBuildId",
   "sourceTreeSha256", "buildCommandFingerprint", "loadedModuleName", "loadedModuleSha256",
 ] as const;
 const ARTIFACT_FIELDS = ["name", "size", "sha256"] as const;
+const MANIFEST_ARTIFACT_FIELDS = ["path", "size", "sha256"] as const;
+const PHYSICAL_FIXTURE_FIELDS = ["path", "size", "sha256", "gitObjectSha256"] as const;
 const BUILDER_FIELDS = ["kind", "name"] as const;
 const INPUT_COMMON_FIELDS = ["changeSetId", "runId", "operationId", "dryRun", "execute", "rollback"] as const;
 const SANDBOX_RUN_ROOT_PATTERN = "^/Game/UAgentSandbox/[A-Za-z0-9_-]+$";
@@ -136,11 +143,11 @@ function canonicalize(value: unknown, seen: Set<object>): string {
   }
 }
 
-export function computeMvp15DManifestSha256(manifest: Omit<UAgentCompanionBuildManifest, "manifestSha256"> | UAgentCompanionBuildManifest): string {
+export function computeMvp15DManifestSha256(manifest: Omit<UAgentCompanionBuildManifest, "manifestSelfSha256"> | UAgentCompanionBuildManifest): string {
   const record = toPlainRecord(manifest);
   if (!record) throw new Error("manifest_not_plain_object");
   const withoutSelfHash: Record<string, unknown> = { ...record };
-  delete withoutSelfHash.manifestSha256;
+  delete withoutSelfHash.manifestSelfSha256;
   return createSha256Hash(canonicalizeMvp15DJson(withoutSelfHash));
 }
 
@@ -176,9 +183,14 @@ export function validateMvp15DManifest(value: unknown): Mvp15DManifestValidation
     || record.pluginId !== UAGENT_COMPANION_PLUGIN_ID
     || record.pluginVersion !== UAGENT_COMPANION_PLUGIN_VERSION
     || record.contractVersion !== UAGENT_COMPANION_CONTRACT_VERSION
+    || record.taskGeneration !== "final-d13-d16"
+    || typeof record.taskId !== "string"
+    || !/^TASK-MVP15D-[A-Z0-9-]+$/.test(record.taskId)
     || record.dirty !== false
-    || record.ueVersion !== UAGENT_COMPANION_UE_VERSION
-    || record.ueBuildId !== UAGENT_COMPANION_UE_BUILD_ID
+    || record.engineVersion !== UAGENT_COMPANION_ENGINE_VERSION
+    || record.engineChangelist !== UAGENT_COMPANION_ENGINE_CHANGELIST
+    || record.compatibleChangelist !== UAGENT_COMPANION_COMPATIBLE_CHANGELIST
+    || record.moduleBuildId !== UAGENT_COMPANION_MODULE_BUILD_ID
     || record.targetPlatform !== "Win64"
     || record.configuration !== "Development") {
     return invalidManifest("manifest_identity_mismatch");
@@ -186,53 +198,64 @@ export function validateMvp15DManifest(value: unknown): Mvp15DManifestValidation
   if (typeof record.sourceCommit !== "string" || !HEX40.test(record.sourceCommit)
     || typeof record.sourceTreeSha256 !== "string" || !HEX64.test(record.sourceTreeSha256)
     || typeof record.buildCommandFingerprint !== "string" || !HEX64.test(record.buildCommandFingerprint)
-    || typeof record.generatedAt !== "string" || !isCanonicalTimestamp(record.generatedAt)
-    || typeof record.compiler !== "string" || !SAFE_METADATA.test(record.compiler)
-    || typeof record.windowsSdk !== "string" || !SAFE_METADATA.test(record.windowsSdk)) {
+    || typeof record.generatedAt !== "string" || !isCanonicalTimestamp(record.generatedAt)) {
     return invalidManifest("manifest_hash_or_toolchain_invalid");
   }
-  const uplugin = parseArtifact(record.uplugin);
-  const schema = parseArtifact(record.schema);
-  const moduleIndex = parseArtifact(record.moduleIndex);
-  const modules = toPlainArray(record.modules)?.map(parseArtifact) ?? null;
+  const compiler = parseToolchain(record.compiler, "MSVC");
+  const windowsSdk = parseToolchain(record.windowsSdk, "Windows SDK");
+  const physicalFixtures = toPlainArray(record.physicalFixtures)?.map(parsePhysicalFixture) ?? null;
+  const buildEvidenceArtifacts =
+    toPlainArray(record.buildEvidenceArtifacts)?.map(parseManifestArtifact) ?? null;
+  const artifacts = toPlainArray(record.artifacts)?.map(parseManifestArtifact) ?? null;
+  const modules = toPlainArray(record.modules)?.map(parseManifestArtifact) ?? null;
   const toolNames = toPlainArray(record.toolNames);
   const builder = toPlainRecord(record.builder);
-  if (!uplugin || !schema || !moduleIndex || !modules || modules.length === 0 || modules.some((module) => module === null)
-    || uplugin.name !== "UAgentAssetTools.uplugin"
-    || schema.name !== "uagent-asset-tools.schema.json"
-    || moduleIndex.name !== "UnrealEditor.modules"
-    || !hasCanonicalArtifactNames([uplugin, schema, moduleIndex, ...(modules as UAgentCompanionArtifactHash[])])
+  if (!compiler || !windowsSdk
+    || !physicalFixtures || physicalFixtures.length !== 2 || physicalFixtures.some((item) => item === null)
+    || !buildEvidenceArtifacts || buildEvidenceArtifacts.length < 3 || buildEvidenceArtifacts.some((item) => item === null)
+    || !artifacts || artifacts.length < 4 || artifacts.some((item) => item === null)
+    || !modules || modules.length === 0 || modules.some((module) => module === null)
+    || !hasCanonicalManifestPaths(artifacts as UAgentCompanionManifestArtifact[])
+    || !hasCanonicalManifestPaths(modules as UAgentCompanionManifestArtifact[])
+    || !(artifacts as UAgentCompanionManifestArtifact[]).some(({ path }) => path === "UAgentAssetTools.uplugin")
+    || !(artifacts as UAgentCompanionManifestArtifact[]).some(({ path }) => path === "Resources/uagent-asset-tools.schema.json")
+    || !(artifacts as UAgentCompanionManifestArtifact[]).some(({ path }) => path === "Binaries/Win64/UnrealEditor.modules")
+    || !(modules as UAgentCompanionManifestArtifact[]).every(({ path }) => /^Binaries\/Win64\/UnrealEditor-[A-Za-z0-9_.-]+\.dll$/.test(path))
     || !isExactToolNames(toolNames)
     || !builder || !hasAllFields(builder, BUILDER_FIELDS) || !hasOnlyFields(builder, BUILDER_FIELDS)
     || !["local", "ci"].includes(builder.kind as string)
     || typeof builder.name !== "string"
     || !SAFE_METADATA.test(builder.name)
-    || typeof record.manifestSha256 !== "string" || !HEX64.test(record.manifestSha256)) {
+    || typeof record.manifestSelfSha256 !== "string" || !HEX64.test(record.manifestSelfSha256)) {
     return invalidManifest("manifest_artifact_invalid");
   }
   const manifest: UAgentCompanionBuildManifest = {
     schemaVersion: UAGENT_COMPANION_MANIFEST_SCHEMA_VERSION,
+    taskGeneration: "final-d13-d16",
+    taskId: record.taskId,
     pluginId: UAGENT_COMPANION_PLUGIN_ID,
     pluginVersion: UAGENT_COMPANION_PLUGIN_VERSION,
     contractVersion: UAGENT_COMPANION_CONTRACT_VERSION,
     sourceCommit: record.sourceCommit,
     sourceTreeSha256: record.sourceTreeSha256,
+    physicalFixtures: physicalFixtures as UAgentCompanionBuildManifest["physicalFixtures"],
     dirty: false,
-    ueVersion: UAGENT_COMPANION_UE_VERSION,
-    ueBuildId: UAGENT_COMPANION_UE_BUILD_ID,
+    engineVersion: UAGENT_COMPANION_ENGINE_VERSION,
+    engineChangelist: UAGENT_COMPANION_ENGINE_CHANGELIST,
+    compatibleChangelist: UAGENT_COMPANION_COMPATIBLE_CHANGELIST,
+    moduleBuildId: UAGENT_COMPANION_MODULE_BUILD_ID,
     targetPlatform: "Win64",
     configuration: "Development",
-    compiler: record.compiler,
-    windowsSdk: record.windowsSdk,
+    compiler,
+    windowsSdk,
     buildCommandFingerprint: record.buildCommandFingerprint,
-    uplugin,
-    schema,
-    moduleIndex,
-    modules: modules as UAgentCompanionArtifactHash[],
+    buildEvidenceArtifacts: buildEvidenceArtifacts as UAgentCompanionManifestArtifact[],
+    artifacts: artifacts as UAgentCompanionManifestArtifact[],
+    modules: modules as UAgentCompanionManifestArtifact[],
     toolNames: toolNames as UAgentCompanionToolName[],
     generatedAt: record.generatedAt,
     builder: { kind: builder.kind as "local" | "ci", name: builder.name },
-    manifestSha256: record.manifestSha256,
+    manifestSelfSha256: record.manifestSelfSha256,
   };
   let canonicalSha256: string;
   try {
@@ -240,7 +263,7 @@ export function validateMvp15DManifest(value: unknown): Mvp15DManifestValidation
   } catch {
     return invalidManifest("manifest_canonicalization_invalid");
   }
-  if (canonicalSha256 !== manifest.manifestSha256) return invalidManifest("manifest_self_hash_mismatch", canonicalSha256);
+  if (canonicalSha256 !== manifest.manifestSelfSha256) return invalidManifest("manifest_self_hash_mismatch", canonicalSha256);
   return { valid: true, reason: null, canonicalSha256, manifest };
 }
 
@@ -405,7 +428,7 @@ export function attestMvp15DCompanion(input: Mvp15DCompanionAttestationInput): {
         blocker: "BLOCKED_BY_MCP_SCHEMA",
         pluginVersion: manifest.pluginVersion,
         contractVersion: manifest.contractVersion,
-        manifestSha256Prefix: prefix(manifest.manifestSha256),
+        manifestSha256Prefix: prefix(manifest.manifestSelfSha256),
         currentGeneration: normalized.discoveryGeneration,
         toolCount: fingerprint.toolCount,
         perToolSummaryCount: fingerprint.perToolSummaryCount,
@@ -423,7 +446,7 @@ export function attestMvp15DCompanion(input: Mvp15DCompanionAttestationInput): {
         blocker: "BLOCKED_BY_PLUGIN_PROVENANCE",
         pluginVersion: manifest.pluginVersion,
         contractVersion: manifest.contractVersion,
-        manifestSha256Prefix: prefix(manifest.manifestSha256),
+        manifestSha256Prefix: prefix(manifest.manifestSelfSha256),
         currentGeneration: normalized.discoveryGeneration,
         toolCount: fingerprint.toolCount,
         perToolSummaryCount: fingerprint.perToolSummaryCount,
@@ -440,7 +463,7 @@ export function attestMvp15DCompanion(input: Mvp15DCompanionAttestationInput): {
         blocker: "BLOCKED_BY_PLUGIN_IDENTITY",
         pluginVersion: manifest.pluginVersion,
         contractVersion: manifest.contractVersion,
-        manifestSha256Prefix: prefix(manifest.manifestSha256),
+        manifestSha256Prefix: prefix(manifest.manifestSelfSha256),
         currentGeneration: normalized.discoveryGeneration,
         toolCount: fingerprint.toolCount,
         perToolSummaryCount: fingerprint.perToolSummaryCount,
@@ -456,7 +479,7 @@ export function attestMvp15DCompanion(input: Mvp15DCompanionAttestationInput): {
         blocker: "BLOCKED_BY_PLUGIN_IDENTITY",
         pluginVersion: manifest.pluginVersion,
         contractVersion: manifest.contractVersion,
-        manifestSha256Prefix: prefix(manifest.manifestSha256),
+        manifestSha256Prefix: prefix(manifest.manifestSelfSha256),
         currentGeneration: normalized.discoveryGeneration,
         toolCount: fingerprint.toolCount,
         perToolSummaryCount: fingerprint.perToolSummaryCount,
@@ -473,7 +496,7 @@ export function attestMvp15DCompanion(input: Mvp15DCompanionAttestationInput): {
         blocker: "BLOCKED_BY_MCP_SCHEMA",
         pluginVersion: manifest.pluginVersion,
         contractVersion: manifest.contractVersion,
-        manifestSha256Prefix: prefix(manifest.manifestSha256),
+        manifestSha256Prefix: prefix(manifest.manifestSelfSha256),
         currentGeneration: normalized.discoveryGeneration,
         toolCount: fingerprint.toolCount,
         perToolSummaryCount: fingerprint.perToolSummaryCount,
@@ -488,7 +511,7 @@ export function attestMvp15DCompanion(input: Mvp15DCompanionAttestationInput): {
       blocker: null,
       pluginVersion: manifest.pluginVersion,
       contractVersion: manifest.contractVersion,
-      manifestSha256Prefix: prefix(manifest.manifestSha256),
+      manifestSha256Prefix: prefix(manifest.manifestSelfSha256),
       liveFingerprintSha256Prefix: prefix(fingerprint.sha256),
       currentGeneration: normalized.discoveryGeneration,
       toolCount: fingerprint.toolCount,
@@ -504,14 +527,17 @@ function identityMatchesManifest(identity: Mvp15DCompanionIdentityEvidence, mani
     && identity.pluginVersion === manifest.pluginVersion
     && identity.contractVersion === manifest.contractVersion
     && identity.sourceCommit === manifest.sourceCommit
-    && identity.buildManifestSha256 === manifest.manifestSha256
-    && identity.ueBuildId === manifest.ueBuildId
+    && identity.buildManifestSha256 === manifest.manifestSelfSha256
+    && identity.engineVersion === manifest.engineVersion
+    && identity.engineChangelist === manifest.engineChangelist
+    && identity.compatibleChangelist === manifest.compatibleChangelist
+    && identity.moduleBuildId === manifest.moduleBuildId
     && identity.sourceTreeSha256 === manifest.sourceTreeSha256
     && identity.buildCommandFingerprint === manifest.buildCommandFingerprint
-    && manifest.modules.some((module) => module.name === identity.loadedModuleName && module.sha256 === identity.loadedModuleSha256);
+    && manifest.modules.some((module) => module.path.endsWith(`/${identity.loadedModuleName}`) && module.sha256 === identity.loadedModuleSha256);
 }
 
-function compareModuleSet(expected: readonly UAgentCompanionArtifactHash[], actual: readonly unknown[]): boolean {
+function compareModuleSet(expected: readonly UAgentCompanionManifestArtifact[], actual: readonly unknown[]): boolean {
   const observedValues = toPlainArray(actual);
   if (!observedValues || expected.length !== observedValues.length) return false;
   const actualByName = new Map<string, UAgentCompanionArtifactHash>();
@@ -521,7 +547,7 @@ function compareModuleSet(expected: readonly UAgentCompanionArtifactHash[], actu
     actualByName.set(artifact.name, artifact);
   }
   return expected.every((module) => {
-    const observed = actualByName.get(module.name);
+    const observed = actualByName.get(module.path.split("/").at(-1) ?? "");
     return observed?.size === module.size && observed.sha256 === module.sha256;
   });
 }
@@ -893,7 +919,10 @@ function parseMvp15DIdentity(value: unknown): Mvp15DCompanionIdentityEvidence | 
     || record.pluginId !== UAGENT_COMPANION_PLUGIN_ID
     || record.pluginVersion !== UAGENT_COMPANION_PLUGIN_VERSION
     || record.contractVersion !== UAGENT_COMPANION_CONTRACT_VERSION
-    || record.ueBuildId !== UAGENT_COMPANION_UE_BUILD_ID
+    || record.engineVersion !== UAGENT_COMPANION_ENGINE_VERSION
+    || record.engineChangelist !== UAGENT_COMPANION_ENGINE_CHANGELIST
+    || record.compatibleChangelist !== UAGENT_COMPANION_COMPATIBLE_CHANGELIST
+    || record.moduleBuildId !== UAGENT_COMPANION_MODULE_BUILD_ID
     || typeof record.sourceCommit !== "string"
     || !HEX40.test(record.sourceCommit)
     || typeof record.buildManifestSha256 !== "string"
@@ -915,7 +944,10 @@ function parseMvp15DIdentity(value: unknown): Mvp15DCompanionIdentityEvidence | 
     contractVersion: UAGENT_COMPANION_CONTRACT_VERSION,
     sourceCommit: record.sourceCommit,
     buildManifestSha256: record.buildManifestSha256,
-    ueBuildId: UAGENT_COMPANION_UE_BUILD_ID,
+    engineVersion: UAGENT_COMPANION_ENGINE_VERSION,
+    engineChangelist: UAGENT_COMPANION_ENGINE_CHANGELIST,
+    compatibleChangelist: UAGENT_COMPANION_COMPATIBLE_CHANGELIST,
+    moduleBuildId: UAGENT_COMPANION_MODULE_BUILD_ID,
     sourceTreeSha256: record.sourceTreeSha256,
     buildCommandFingerprint: record.buildCommandFingerprint,
     loadedModuleName: record.loadedModuleName,
@@ -934,9 +966,71 @@ function parseArtifact(value: unknown): UAgentCompanionArtifactHash | null {
   return { name: record.name, size: record.size, sha256: record.sha256 };
 }
 
-function hasCanonicalArtifactNames(artifacts: readonly UAgentCompanionArtifactHash[]): boolean {
-  const names = new Set<string>();
-  return artifacts.every((artifact) => !names.has(artifact.name) && (names.add(artifact.name), true));
+function parseManifestArtifact(value: unknown): UAgentCompanionManifestArtifact | null {
+  const record = toPlainRecord(value);
+  if (
+    !record ||
+    !hasAllFields(record, MANIFEST_ARTIFACT_FIELDS) ||
+    !hasOnlyFields(record, MANIFEST_ARTIFACT_FIELDS) ||
+    typeof record.path !== "string" ||
+    !/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(record.path) ||
+    typeof record.size !== "number" ||
+    !Number.isSafeInteger(record.size) ||
+    record.size < 0 ||
+    typeof record.sha256 !== "string" ||
+    !HEX64.test(record.sha256)
+  ) {
+    return null;
+  }
+  return { path: record.path, size: record.size, sha256: record.sha256 };
+}
+
+function parsePhysicalFixture(
+  value: unknown,
+): (UAgentCompanionManifestArtifact & { gitObjectSha256: string }) | null {
+  const record = toPlainRecord(value);
+  if (
+    !record ||
+    !hasAllFields(record, PHYSICAL_FIXTURE_FIELDS) ||
+    !hasOnlyFields(record, PHYSICAL_FIXTURE_FIELDS)
+  ) {
+    return null;
+  }
+  const artifact = parseManifestArtifact({
+    path: record.path,
+    size: record.size,
+    sha256: record.sha256,
+  });
+  if (!artifact || typeof record.gitObjectSha256 !== "string" || !HEX64.test(record.gitObjectSha256)) {
+    return null;
+  }
+  return { ...artifact, gitObjectSha256: record.gitObjectSha256 };
+}
+
+function parseToolchain<const TName extends string>(
+  value: unknown,
+  expectedName: TName,
+): { name: TName; version: string } | null {
+  const record = toPlainRecord(value);
+  if (
+    !record ||
+    !hasAllFields(record, ["name", "version"]) ||
+    !hasOnlyFields(record, ["name", "version"]) ||
+    record.name !== expectedName ||
+    typeof record.version !== "string" ||
+    !/^\d+(?:\.\d+){1,3}$/.test(record.version)
+  ) {
+    return null;
+  }
+  return { name: expectedName, version: record.version };
+}
+
+function hasCanonicalManifestPaths(artifacts: readonly UAgentCompanionManifestArtifact[]): boolean {
+  const paths = new Set<string>();
+  return artifacts.every((artifact) => {
+    const key = artifact.path.toLowerCase();
+    return !paths.has(key) && (paths.add(key), true);
+  });
 }
 
 function isExactToolNames(value: unknown): value is readonly UAgentCompanionToolName[] {

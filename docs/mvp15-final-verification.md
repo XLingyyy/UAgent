@@ -1,6 +1,474 @@
 # MVP15 Final Verification
 
-## Current MVP15D Rework 9 Source-checkpoint Verification — COMPLETE — 2026-07-26
+## Current MVP15D Final Source/Tooling Rework 8 Authoritative Launch Boundary and Report Closure — 2026-08-03 (dirty pre-checkpoint)
+
+### Verification identity
+
+- Task: `TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-8-AUTHORITATIVE-LAUNCH-BOUNDARY-AND-REPORT-CLOSURE`
+- REPORT: `REPORT-TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-8-AUTHORITATIVE-LAUNCH-BOUNDARY-AND-REPORT-CLOSURE-20260803-121253.md`
+- Branch / base HEAD: `main` / `d308d80a994079dc22af2b982e70ae416d832e4f`
+- Implementation commit: `PENDING_SUPERVISOR_CHECKPOINT`
+- Final Source/Tooling Rework 7: historical/current predecessor `PARTIAL`;
+  supervisor verdict `NEEDS_FIX`; no checkpoint was created.
+- Current source implementation: `IMPLEMENTED, awaiting supervisor checkpoint`.
+- G14: `IMPLEMENTED`; G15: `IN_PROGRESS`; G16: `PARTIAL`; D13 / 15A:
+  `BLOCKED`; D14 / 15B and D15 / 15C: `PLANNED`; D16: `IN_PROGRESS`.
+- UE 5.8.1 compatibility / overall MVP15: `PARTIAL`; Ready: `NO`.
+
+### Production source identity and watch closure
+
+- Schema: `uagent.mvp15d.source-identity.v2`.
+- Boundary: `uagent.mvp15d.production-source-boundary.v2`.
+- Base/compiled commit: `d308d80a994079dc22af2b982e70ae416d832e4f`.
+- Resolved head ref: `refs/heads/main`.
+- Task source tree SHA-256:
+  `ccf061de9f2583d26b9562a9739255f04b288c84672603424859c04fee686099`.
+- Dirty: `true`; repository closed: `true`.
+- Inventory: 335 production files, discovered from 14 approved roots plus 28
+  exact files. Nine exact exclusion classes account for 126 excluded entries.
+- Watch set: 356 entries, covering every production file and the applicable
+  repository/worktree Git-dir marker, `HEAD`, loose branch ref, and
+  `packed-refs` paths.
+- Boundary coverage includes the native bridge, bundled renderer and rendered
+  Settings controls/CSS/assets, desktop/runtime/MCP/shared dependencies,
+  Cargo/pnpm/Tauri/Vite/TypeScript/workspace configuration and locks, final
+  producer/observer/Job/manifest/build/verification scripts, and companion
+  plugin source/resources/descriptor/build inputs.
+- Exact exclusions cover tests, docs, local workflow data, generated output,
+  `target`, `dist`, evidence, logs, caches, installers, secrets, and external
+  roots. A new production file is included automatically; deletion of a tracked
+  production file marks the identity dirty.
+- The 20-test source suite covers every representative transitive input,
+  unclassified new production files, production deletion, excluded-test
+  deletion, normal repositories, linked worktrees, symbolic/detached HEAD,
+  loose and packed refs, same-branch commits, and dirty/clean identity.
+
+### Persisted consistency and owned launch authority
+
+- There is one write-capable production loaded-module publisher. It consumes
+  the Job runner's early identity, re-observes the live process, explicitly
+  requires PID and creation FILETIME equality, recomputes executable bytes, and
+  independently derives source, project, manifest, package, install, fixed
+  producer/helper/observer, and Job facts.
+- Production publication requires an in-process branded authority created only
+  after those checks. That publisher brand is an in-process precondition and is
+  not claimed to survive JSON serialization. Injected observations and pure
+  builders remain `fixtureUsed: true`; the standalone write-capable observer CLI
+  is disabled.
+- `mvp15d-manifest.mjs verify` reports
+  `installed_loaded_structural_verified` with
+  `productionLaunchAuthorityVerified: false`. It does not treat structural JSON as
+  production-origin proof.
+- Exported `verifyUeProductionArtifactConsistency()` and
+  `verifyPhaseSummary()`, public `validate*` callers, and CLI `verify` reopen and
+  rehash the ledger, then cross-bind
+  relative path/size/SHA, task/marker/session/generation, source identity, early
+  PID/creation/executable identity, project, actual manifest, package/install
+  inventories, exact sorted modules, fixed producer/helper/observer/Job source
+  descriptors, zero Job residues, and terminal event/report. Their result is
+  explicitly `*_persisted_consistency_verified` with
+  `productionLaunchAuthorityVerified: false`.
+- A fully coherent hand-authored chain with exact bytes and coordinated public
+  hashes passes persisted consistency, while direct exported calls and CLI
+  `verify` cannot return `*_owned_launch_verified`. Mutating a public binding
+  hash fails consistency; coordinating every public JSON fact still cannot mint
+  the private launch receipt.
+- Only `executeLivePhase()` checks output absence, selects the fixed producer
+  and arguments, calls the real non-injected launcher, validates the actual child
+  PID/termination/events, completes persisted cross-binding, and consumes an
+  unexported single-use `WeakSet` receipt. That same-process call alone can
+  return `*_owned_launch_verified` with
+  `productionLaunchAuthorityVerified: true`.
+- The safe no-UE receipt fixture returns
+  `owned_launch_receipt_fixture_verified` with fixture status and
+  `productionLaunchAuthorityVerified: false`; it claims no UE compatibility,
+  Tool Search, exact-six, or mutation result. Structural failures continue to
+  use `FINAL_UE_PRODUCTION_PROVENANCE_INVALID` where applicable.
+- This is deterministic task-workflow provenance inside the owned run. It does
+  not claim resistance to an administrator who can replace all source and local
+  artifacts.
+
+### Windows observation, reparse, cleanup, and residues
+
+- Unit observer tests: `7/7` passed, including explicit PID and creation
+  mismatch rejection and the fixture/production authority separation.
+- Real Windows integration tests: `6/6` passed. They exercise live module
+  enumeration, unrelated-module reduction, extra/shadow rejection, PID
+  mismatch/reuse/exit paths, and real intermediate `Binaries` and `Win64`
+  junction rejection.
+- Every path component from the trusted installed root to the module is checked
+  before hashing; leaf links and ancestor symlink/junction/mount/reparse points
+  fail closed.
+- The integration lifecycle retains the child/Job promise before awaited
+  assertions, forces or awaits Job closeout in `finally`, uses bounded retries
+  for handle release, and fails on any remaining exact fixture directory or
+  matching marker process.
+- Fifteen inherited `uagent-observer-integration-*` directories plus one
+  transient test residue were removed after exact `%TEMP%` containment, prefix,
+  realpath, directory-type, and no-live-owner checks. Final task fixture scan:
+  zero matching observer/source/final/provenance/UE-report/icon directories and
+  zero matching task-marker processes.
+- Historical Source Checkpoint Rework 7 temp roots from 2026-07-26 are retained
+  as out-of-scope historical artifacts and were not treated as current residue.
+
+### Actual release capability results
+
+- Fresh release binary: `apps/desktop/src-tauri/target/release/uagent.exe`,
+  11,624,448 bytes, SHA-256
+  `0fc54cdf21dd7b4293ff7002a277372409805ccf5ef46371b50b05e6a8dcd001`.
+- Native capability probe: 4 events; event 1,687 bytes; SHA-256
+  `9918f8cbfb254576b16ed0be518f492de7f1422c1909e5aefb07dd3e48500996`;
+  renderer `false`.
+- Normal-product capture: 9 events; event 2,771 bytes; SHA-256
+  `db204e99555539c3269a2c1fdd26e31ded78e6180c10236d3092989593251bbd`;
+  renderer `true`.
+- Rendered UI lifecycle: 9 events; event 2,707 bytes; SHA-256
+  `f9dc12c343f1c86be5f281d58caf17e57ac7489d1e75f5b88c00bb20aa219e2d`;
+  renderer `true`.
+- All three report `runtime_capability_verified`, exit 0, zero residual
+  processes/files, zero MCP calls, zero network calls, and zero asset
+  operations. No synthetic callback was used. The UI phase located the actual
+  project-root controls; the product phase verified the normal
+  Connect -> Initialize -> Discover -> Normalize -> Fingerprint surface.
+- Real UE, Tool Search, and mutation: `SKIPPED_BY_TASK_BOUNDARY`.
+
+### Fresh command and verification ledger
+
+| Command                                                                                                                  | Result                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `pnpm typecheck`                                                                                                         | exit 0                                                                        |
+| `pnpm lint`                                                                                                              | exit 0                                                                        |
+| `pnpm test`                                                                                                              | exit 0; shared 33, runtime 825, MCP client 46, desktop 734 passed / 3 skipped |
+| `pnpm --filter @uagent/shared test`                                                                                      | exit 0; 33 passed                                                             |
+| `pnpm --filter @uagent/runtime test`                                                                                     | exit 0; 825 passed                                                            |
+| `pnpm --filter @uagent/mcp-client test`                                                                                  | exit 0; 46 passed                                                             |
+| `pnpm --filter @uagent/desktop test`                                                                                     | exit 0; 734 passed / 3 skipped                                                |
+| `pnpm --filter @uagent/desktop web:build`                                                                                | exit 0; 259 modules transformed; chunk-size warning only                      |
+| `pnpm --filter @uagent/desktop tauri:build`                                                                              | `SKIPPED_BY_TASK_BOUNDARY`; Rework 8 did not require packaging                |
+| `cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml`                                                    | exit 0                                                                        |
+| `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml`                                                          | exit 0                                                                        |
+| `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml`                                                           | exit 0; 159 library plus 2 bridge tests                                       |
+| `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml -- --test-threads=1`                                       | exit 0; 159 library plus 2 bridge tests                                       |
+| `node --test scripts/mvp15d-tooling.test.mjs scripts/mvp15d-build-bundle.test.mjs scripts/mvp15d-final-tooling.test.mjs` | exit 0; 104/104                                                               |
+| `node --test scripts/mvp15d-ue581-evidence-inventory.test.mjs`                                                           | not rerun standalone; accepted Rework 7 result remains 43/43                  |
+| `node --test scripts/mvp15d-source-identity.test.mjs`                                                                    | exit 0; 20/20                                                                 |
+| `node --test scripts/mvp15d-loaded-module-observer.test.mjs`                                                             | exit 0; 7/7                                                                   |
+| `node --test scripts/mvp15d-loaded-module-observer.integration.test.mjs`                                                 | exit 0; 6/6                                                                   |
+| `node scripts/mvp15d-icon-validate.mjs`                                                                                  | exit 0; ICO 16/24/32/48/64/128/256, 372,526 bytes                             |
+| focused renderer bridge/adapter/store Vitest                                                                             | covered by the fresh desktop suite; 734 passed / 3 skipped                    |
+| three actual release capability probes                                                                                   | exit 0; all three verified with zero side effects/residuals                   |
+| `node scripts/side-effect-scan.mjs`                                                                                      | exit 0; 1,544 files / 5,074 allowed / 0 blocked / 1,824 review                |
+| `git diff --check`                                                                                                       | exit 0                                                                        |
+| frozen-file SHA-256 and cached-diff checks                                                                               | all five hashes match the task; cached diff empty                             |
+
+The desktop suite emits existing React `act(...)` warnings around TitleBar
+tests. They do not fail a test. Vite emits only its existing large-chunk
+warning. No validation command is represented as real UE compatibility.
+
+### Frozen files, prohibited state, and residual risk
+
+- Frozen SHA-256 values remain:
+  - `TitleBar.tsx`:
+    `6b60419d14fb8437e70a55b288db393de80927b36683c88a40666e3d54c0a77e`
+  - `TitleBar.test.tsx`:
+    `fb4e6d414851c0f0e1c969650610398889f2762641871558d6ce83b8dd90be91`
+  - `mvp6-scenarios.test.tsx`:
+    `3e8183337773692a1953872820b3ffe22045164f89c1eeb6819f564775c57d04`
+  - `mvp7-scenarios.test.tsx`:
+    `7899c2e70f03d61179cdf4fc56181cae144a2fd0ada12620cf643cb02faabc60`
+  - `mvp9-scenarios.test.tsx`:
+    `2a3295b0846c8e6edc21fc98f88e8da871bbe3f570b4e65487109757c1a1ca48`
+- All five are unstaged. No task file under `.agent-bus`, supervisor-private
+  material, desktop workflow prompt, external evidence, installer, build output,
+  environment file, secret, or credential is staged or submitted.
+- The unsafe predecessor compatibility root remains absent. No replacement
+  live evidence root was created.
+- Real UE 5.8.1 compatibility still lacks a clean checkpoint build/install/load,
+  exact-six Tool Search evidence, product retractions, and the authorized UI
+  lifecycle. The dirty release capability probes cannot satisfy D13-D15.
+- No SHA backfill, Git stage, commit, push, or PR was performed.
+
+### Implementation assessment and next steps
+
+Final Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
+supervisor checkpoint`. The supervisor still owns formal review, the content
+checkpoint, SHA backfill, and any push. After that checkpoint, a separate
+clean-commit task may rebuild and perform the read-only UE 5.8.1 matrix. Real
+mutation remains prohibited. Overall MVP15 and UE compatibility remain
+`PARTIAL`; Ready remains `NO`.
+
+## Historical MVP15D Final Source/Tooling Rework 6 Source Verification — NEEDS_FIX — 2026-07-31
+
+The section below preserves the implementation-time Rework 6 record. Its
+current-looking claims were rejected by the supervisor: a caller could
+manufacture production origin, the exported observer CLI bypassed early
+identity, the 18-file list omitted transitive production inputs, ancestor
+reparse points were accepted, cleanup warnings passed while 15 temp directories
+remained, and the report identity/counts conflicted. No checkpoint was created.
+
+At implementation time, this rejected record claimed Final Source/Tooling
+Rework 6 and G14 were `IMPLEMENTED, awaiting supervisor checkpoint`. The
+supervisor later classified Rework 6 as historical `PARTIAL` with verdict
+`NEEDS_FIX`; no checkpoint was created. The current state is recorded at the
+top of this file.
+
+### Rejected historical verification identity
+
+- Verification date: 2026-07-31
+- Task:
+  `TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-6-LIVE-OBSERVER-AND-SOURCE-CLOSURE`
+- Report (rejected wildcard identity):
+  `REPORT-TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-6-LIVE-OBSERVER-AND-SOURCE-CLOSURE-*`
+- Branch: `main`
+- Base HEAD: `d308d80a994079dc22af2b982e70ae416d832e4f`
+- Rework 5 supervisor verdict: `NEEDS_FIX`; no Git checkpoint was created and
+  the staged state remains empty.
+- Pre-checkpoint task-source-tree SHA-256:
+  `84b2ba7e16eaa0d4ab830a317171bbba0463b9a9ce5543b528541e6cf8bd3118`
+- Exact pre-checkpoint source inventory: version
+  `uagent.mvp15d.source-identity.v1`, **18** inventoried production files,
+  exact Git watch set **22** paths.
+- Source dirty status: `true` (working tree contains the Rework 1-6 task diff)
+- Resolved source head ref: `refs/heads/main`
+- Implementation commit: `PENDING_SUPERVISOR_CHECKPOINT`
+
+This is a dirty pre-checkpoint source verification. The release binary was
+built from the current task source tree; it truthfully records
+`sourceDirty: true` and `base HEAD d308d80a`. The base HEAD does NOT contain
+the runtime bridge; only the supervisor's post-checkpoint clean-commit rebuild
+can satisfy G15 source attribution. No fake or future implementation commit
+SHA is inserted here.
+
+### Rejected historical source-identity claim
+
+The Tauri build embeds four compiled-time identity values produced by the
+repository-owned deterministic helper `scripts/mvp15d-source-identity.mjs`:
+
+- `UAGENT_SOURCE_COMMIT` (base / compiled commit);
+- `UAGENT_SOURCE_TREE_SHA256` (exact, sorted, directory-closed SHA-256 over the
+  18 inventoried production files);
+- `UAGENT_SOURCE_DIRTY` (working-tree dirty state of those inventoried inputs);
+- `UAGENT_SOURCE_HEAD_REF` (resolved symbolic head ref, or `HEAD` when detached).
+
+The 18-file inventory covers every production file whose bytes can change the
+claims emitted by the three capability probes or the future UE loaded-module
+ledger: `Cargo.toml`, `build.rs`, `lib.rs`, `mvp15d_runtime_bridge.rs`,
+`main.tsx`, `AppShell.tsx`, `desktop-runtime-adapter.ts`,
+`mvp15d-runtime-bridge.ts`, the identity helper, the live producer helper, the
+final runner, the three final producer adapters, the Windows Job process
+runner, the loaded-module observer, the manifest contract, and the plugin
+build tool. The concrete inclusion/exclusion ledger is recorded in the helper
+and in the Rework 6 report.
+
+`build.rs` consumes the helper's **exact validated Git watch set** (the `.git`
+directory or worktree gitfile, the actual Git-dir `HEAD` file, the resolved
+loose branch ref file in the correct git/common directory, the applicable
+`packed-refs` file, and every inventoried production file). It never
+synthesizes `.git/HEAD` child paths when `.git` is a file. A same-branch
+commit, worktree ref moves, or packed-refs changes therefore invalidate and
+refresh the compiled identity deterministically, without manually changing
+source files. Ordinary-repository, linked-worktree, loose-ref, packed-ref,
+symbolic-HEAD, and detached-HEAD regressions all pass.
+
+### Rejected historical Rework 6 defect-closure claim
+
+- **P0 live observation**: the Windows Job runner now publishes an early
+  task-owned process identity file
+  (`uagent.mvp15d.windows-job-process-identity.v1`) after process creation and
+  before waiting for job closeout, using an exclusive temp + fsync + rename
+  atomic protocol. The producer validates that identity (marker, session,
+  generation, root PID, creation FILETIME, executable identity) and begins
+  module observation while the process is alive; it independently awaits the
+  Job closeout ledger. Observation failure fails the phase but never prevents
+  the Job closeout from proving zero residual processes.
+- **P0 exact reduction**: the observer selects only modules that are candidates
+  for the approved companion set by exact canonical installed-root and
+  approved manifest identity, ignores unrelated UE/Windows/graphics/runtime
+  modules, and rejects missing approved modules, duplicate/shadow copies,
+  extra companion candidates, links/reparse points, path escape, inaccessible
+  observation, process-exit races, and PID reuse. Ledger `size`/`sha256` are
+  the canonical on-disk byte length and SHA-256; `ModuleMemorySize` is never
+  compared as the disk byte length.
+- **P0 bound path-free ledger**: the ledger binds schema and production origin,
+  task ID, task marker, source commit/tree/dirty identity, session/generation,
+  PID plus creation identity and executable SHA-256, redacted project identity,
+  manifest/package/installed-root identity, and serializes only sorted
+  approved relative logical module facts with `fixtureUsed: false`. One
+  repository-owned exclusive atomic writer publishes the ledger (temp +
+  fsync + rename; pre-existing temp/final rejected; failed temp cleaned). A
+  raw absolute path anywhere in the ledger is rejected before writing.
+- **P0 source closure**: the six-file inventory was replaced by the exact
+  18-file production inventory; the Git resolver outputs the validated watch
+  set including worktree gitfiles and the resolved loose/packed ref file.
+- **P0 documentation consistency**: every repository document now records the
+  Rework 4 / Rework 5 `NEEDS_FIX` verdicts as `PARTIAL` history and Rework 6
+  as the current implementation; the full stale-state scan is clean.
+
+### Historical Rework 6 Windows observer run (cleanup claim rejected)
+
+`scripts/mvp15d-loaded-module-observer.integration.test.mjs` starts harmless
+task-owned fixture processes through the actual Windows Job runner, loads
+task-owned copied/renamed DLLs from a temporary approved install root, and
+executes the real `Get-Process -Module` enumeration path while the process is
+alive. Result: **3 / 3 PASS** (live identity + exact reduction + atomic ledger
+
+- zero residue; extra companion candidate and shadow copy rejected; PID reuse,
+  process exit, and inaccessible observation rejected). The elevated probe
+  environment could not produce the access-denied case for PID 4; that rejection
+  path is additionally proven by the injected unit tests. All fixture processes
+  and temporary files closed cleanly (each Job closeout ledger recorded
+  `FinalResidualCount 0`).
+
+### Historical Rework 6 capability probes (dirty pre-checkpoint)
+
+| Phase            | Event count | Event-file SHA-256                                                 | mcp/network/asset | Renderer    | Result |
+| ---------------- | ----------- | ------------------------------------------------------------------ | ----------------- | ----------- | ------ |
+| capability-probe | 4           | `7fa3df3beae73f26e9d25044da734dec656035d31b273490e49b595fb2e21ab3` | 0 / 0 / 0         | not started | PASS   |
+| product-capture  | 9           | `31d51d3d357e99d5fd2cd29bfd70d61be29d3de223a1d931844b3a81e0f8a982` | 0 / 0 / 0         | started     | PASS   |
+| ui-lifecycle     | 9           | `a058cd0a795ebdb8ac5e8a5e0865fbeb23e787eb94d9cea8da1185d28b9d05fc` | 0 / 0 / 0         | started     | PASS   |
+
+- Release executable: `uagent.exe`, size `11624448`, SHA-256
+  `82cb6aed05342950f83b462b61ec28f279bf322dc6fe63c19dcd1a23f1b60d52` (fresh
+  build from the Rework 6 tree; embeds the 18-file identity above);
+- Each run used a one-time random nonce (event-file hashes are per-run);
+- ui-lifecycle capability-only genuinely located the rendered
+  `Project root reference` control and the `Validate` / `Trust` buttons on the
+  Settings `config` page (the renderer opens it on a capability request), then
+  recorded `rendered_driver_bound`; the controls are located but not clicked
+  in capability-only mode;
+- product-capture capability verified the complete required operation surface
+  (Connect -> Initialize -> Discover -> Normalize -> Fingerprint + the
+  normalization getter) without opening MCP/network/asset;
+- every phase validated the early Job identity while the process was live;
+- process closeout was clean (exit 0, Job residual 0) for all three phases and
+  all transport/metadata/transcript/log directories were empty afterwards.
+
+Synthetic callback status: NONE — the release integration executes the actual
+fresh `uagent.exe` without test launch injection or synthetic runtime events.
+Real UE runs and asset mutation remain `SKIPPED_BY_TASK_BOUNDARY`.
+
+### Historical Rework 6 command ledger
+
+| Command                                                                                                                  | Result                                         |
+| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| `pnpm typecheck`                                                                                                         | PASS (4 workspace projects)                    |
+| `pnpm lint`                                                                                                              | PASS                                           |
+| `pnpm test`                                                                                                              | PASS, desktop 734 (3 skipped)                  |
+| `pnpm --filter @uagent/shared test`                                                                                      | PASS, 33                                       |
+| `pnpm --filter @uagent/runtime test`                                                                                     | PASS, 825                                      |
+| `pnpm --filter @uagent/mcp-client test`                                                                                  | PASS, 46                                       |
+| `pnpm --filter @uagent/desktop test`                                                                                     | PASS, 734 (3 skipped)                          |
+| `pnpm --filter @uagent/desktop web:build`                                                                                | PASS                                           |
+| `pnpm --filter @uagent/desktop tauri:build`                                                                              | PASS (release + MSI/NSIS)                      |
+| `cargo fmt --check`                                                                                                      | PASS                                           |
+| `cargo check`                                                                                                            | PASS                                           |
+| `cargo test`                                                                                                             | PASS, 159 + 2                                  |
+| `cargo test -- --test-threads=1`                                                                                         | PASS, 159 + 2                                  |
+| `node --test scripts/mvp15d-tooling.test.mjs scripts/mvp15d-build-bundle.test.mjs scripts/mvp15d-final-tooling.test.mjs` | PASS, 98                                       |
+| `node --test scripts/mvp15d-ue581-evidence-inventory.test.mjs`                                                           | PASS, 43                                       |
+| `node --test scripts/mvp15d-source-identity.test.mjs`                                                                    | PASS, 13                                       |
+| `node --test scripts/mvp15d-loaded-module-observer.test.mjs`                                                             | PASS, 7                                        |
+| `node --test scripts/mvp15d-loaded-module-observer.integration.test.mjs`                                                 | PASS, 3 (real Windows live-process regression) |
+| `node scripts/mvp15d-icon-validate.mjs`                                                                                  | PASS                                           |
+| `node scripts/side-effect-scan.mjs`                                                                                      | PASS, 1544 files / 0 blocked / 1781 review     |
+| `git diff --check`                                                                                                       | PASS (LF/CRLF notices only)                    |
+
+### Source Attribution Status
+
+- Dirty pre-checkpoint binaries truthfully report `sourceDirty: true` and can
+  never claim base HEAD contains the runtime bridge;
+- a same-branch commit changes the resolved ref bytes (and therefore the next
+  compiled identity path) without touching source files — proven by the
+  same-branch, packed-ref, and linked-worktree regressions;
+- the supervisor post-checkpoint clean rebuild is `PENDING_SUPERVISOR_CHECKPOINT`;
+- the UE loaded-module ledger is produced by the real live observer while the
+  task-owned process is alive, published through one exclusive atomic writer,
+  and directly authored or fixture ledgers are rejected.
+
+### Side-effect Scan / Invariants
+
+- Frozen hashes for the five TitleBar-coupled files remain byte-identical,
+  unstaged, and unmodified:
+  - `TitleBar.tsx` `6b60419d14fb8437e70a55b288db393de80927b36683c88a40666e3d54c0a77e`
+  - `TitleBar.test.tsx` `fb4e6d414851c0f0e1c969650610398889f2762641871558d6ce83b8dd90be91`
+  - `mvp6-scenarios.test.tsx` `3e8183337773692a1953872820b3ffe22045164f89c1eeb6819f564775c57d04`
+  - `mvp7-scenarios.test.tsx` `7899c2e70f03d61179cdf4fc56181cae144a2fd0ada12620cf643cb02faabc60`
+  - `mvp9-scenarios.test.tsx` `2a3295b0846c8e6edc21fc98f88e8da871bbe3f570b4e65487109757c1a1ca48`
+- unsafe predecessor evidence root remains absent for
+  `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live evidence root was
+  created;
+- cached diff remains empty; no stage/commit/push occurred;
+- no ordinary-launch behavior change: the task bridge stays default-off and
+  ordinary startup does not open Settings.
+
+### UE Compatibility / Mutation / Real Smoke Status
+
+- Full real UE 5.8.1 compatibility: `PARTIAL` (not run in this task;
+  `SKIPPED_BY_TASK_BOUNDARY`);
+- real asset / product / mutation lifecycle: NOT RUN (prohibited;
+  `SKIPPED_BY_TASK_BOUNDARY`);
+- Tool Search: NOT RUN (`SKIPPED_BY_TASK_BOUNDARY`);
+- real/manual/supervisor UE smoke: pending supervisor checkpoint;
+- UE Automation report-ledger path: repaired at source level only; the real
+  matrix remains post-checkpoint.
+
+### Blockers and Residual Risk
+
+- Base HEAD `d308d80a` does not contain the bridge; the clean implementation
+  commit is required for G15 source attribution.
+- Real UE 5.8.1 execution, Tool Search, and the full read-only matrix remain
+  post-checkpoint; compatibility stays `PARTIAL`.
+- The loaded-module ledger's real UE observation executes only in the later
+  clean-commit real UE task; this task proves the live identity protocol, the
+  exact reduction, and the atomic writer against real Windows fixture
+  processes.
+
+### Recovery / Next Steps
+
+1. Supervisor creates the implementation commit from this pre-checkpoint source.
+2. Supervisor reruns a fresh clean build bound to that implementation SHA.
+3. Supervisor repeats the actual-binary handshakes and backfills the
+   implementation SHA into the `Implementation commit` field above.
+4. Supervisor creates the documentation closeout commit and pushes both.
+5. A later clean-commit read-only task runs the full UE 5.8.1 matrix,
+   Tool Search, and the real loaded-module observer.
+
+Real mutation remains prohibited until a later separate task.
+
+## Historical MVP15D Rework 5 Source Verification — NEEDS_FIX — 2026-07-31
+
+This section is historical. The Rework 5 supervisor verdict is `NEEDS_FIX`;
+Final Source/Tooling Rework 5 is `PARTIAL` and does not describe current
+implementation. Rework 6 closed its findings (see the current section above).
+The following facts are retained as history only:
+
+- Task:
+  `TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-5-CHECKPOINT-ATTESTATION-AND-UE-LEDGER-CLOSEOUT`
+- Base HEAD: `d308d80a994079dc22af2b982e70ae416d832e4f`
+- Pre-checkpoint task-source-tree SHA-256 (six-file inventory):
+  `ce5b40a2b56ed3c8cffea3102674c68095ac3d3ac25662387e3b7523f1f1fd02`
+- Source dirty status: `true`; implementation commit was
+  `PENDING_SUPERVISOR_CHECKPOINT`; no checkpoint was created.
+
+Rework 5's claimed findings that Rework 6 corrected: the observer ran only
+after the Job runner and task-owned process had exited; real `Get-Process
+-Module` enumeration returned ordinary UE/Windows modules while the reducer
+rejected every non-companion module; `ModuleMemorySize` was compared to the
+on-disk byte length; the ledger serialized absolute module paths, omitted the
+required source/marker/creation/project/manifest/package/install/origin
+bindings, and wrote directly to a visible final pathname; the six-file source
+identity omitted `AppShell.tsx`, `main.tsx`, and the production
+observer/producer/process-runner path; `build.rs` did not consume the actual
+resolved Git ref and constructed invalid `.git/*` child paths for linked
+worktrees; and acceptance/risk documents called the rejected Rework 4 and the
+incomplete Rework 5 state `IMPLEMENTED`.
+
+Historical capability probes from Rework 5 (old binary, event hashes per-run):
+capability-probe 4 events, product-capture 9 events, ui-lifecycle 9 events,
+all with 0/0/0 mcp/network/asset and clean closeout. These remain historical
+evidence only; the current section records the fresh Rework 6 probes.
+
+## Historical MVP15D Rework 9 Source-checkpoint Verification — COMPLETE — 2026-07-26
 
 Previous task
 `TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` received
@@ -57,23 +525,23 @@ evidence:
 
 ### Supervisor verification ledger
 
-| Command / evidence | Result | Actual summary |
-| --- | --- | --- |
-| `node scripts/mvp15d-d0-spike.mjs --task-root external/mvp15d-rework7-d0-20260726_190100` | PASS | Four combinations, Direct, mutation zero, transcript index `b87e0a8...`. |
-| `node scripts/mvp15d-ue-automation.mjs --task-root external/mvp15d-rework7-ue-20260726_190100` | PASS | Five sessions, 48/48, capture `8794de5...`. |
-| `node scripts/mvp15d-build-bundle.mjs validate --repository G:\UAgent --task-root external/mvp15d-rework7-build-20260726_203000` | PASS | 60 files; exact inventory, manifest, source, Content, process, port, and marker validation; residual zero. |
-| `node --test scripts/mvp15d-tooling.test.mjs scripts/mvp15d-build-bundle.test.mjs` | PASS | 33/33. |
-| `pnpm typecheck` | PASS | Four workspace projects. |
-| `pnpm lint` | PASS | Exit 0. |
-| `pnpm build` | PASS | 258 modules; existing non-failing chunk-size warning retained. |
-| `pnpm test` twice | PASS | Both runs: shared 33, MCP 46, runtime 825, desktop 725 passed / 3 skipped; inherited TitleBar `act(...)` warnings retained. |
-| `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check` | PASS | Exit 0. |
-| Default and serial `cargo test` | PASS | Each supervisor run: 154 library plus 2 bridge tests. Retained Rework 7 ledger also records ten fresh default passes. |
-| `node scripts/side-effect-scan.mjs` | PASS | 1,039 files / 4,639 allowed / 0 blocked / 1,655 review. |
-| `git diff --check` | PASS | No whitespace error; LF/CRLF notices only. |
-| Manifest/fixture/hash recomputation | PASS | Retained manifest file `236f1da...`; both canonical fixtures are 4,865 bytes at `771168e...`; all bundle and TitleBar hashes match. |
-| Current-document and stale-state scan | PASS | Correct manifest/hash facts, Rework 9 closeout status, acceptance/risk vocabulary, and historical labels agree. |
-| Fresh product-UI mutation smoke | SKIPPED | Not authorized in this source-checkpoint task; G13 and 15A-15C remain gated. |
+| Command / evidence                                                                                                               | Result  | Actual summary                                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node scripts/mvp15d-d0-spike.mjs --task-root external/mvp15d-rework7-d0-20260726_190100`                                        | PASS    | Four combinations, Direct, mutation zero, transcript index `b87e0a8...`.                                                                           |
+| `node scripts/mvp15d-ue-automation.mjs --task-root external/mvp15d-rework7-ue-20260726_190100`                                   | PASS    | Five sessions, 48/48, capture `8794de5...`.                                                                                                        |
+| `node scripts/mvp15d-build-bundle.mjs validate --repository G:\UAgent --task-root external/mvp15d-rework7-build-20260726_203000` | PASS    | 60 files; exact inventory, manifest, source, Content, process, port, and marker validation; residual zero.                                         |
+| `node --test scripts/mvp15d-tooling.test.mjs scripts/mvp15d-build-bundle.test.mjs`                                               | PASS    | 33/33.                                                                                                                                             |
+| `pnpm typecheck`                                                                                                                 | PASS    | Four workspace projects.                                                                                                                           |
+| `pnpm lint`                                                                                                                      | PASS    | Exit 0.                                                                                                                                            |
+| `pnpm build`                                                                                                                     | PASS    | 258 modules; existing non-failing chunk-size warning retained.                                                                                     |
+| `pnpm test` twice                                                                                                                | PASS    | Both runs: shared 33, MCP 46, runtime 825, desktop 725 passed / 3 skipped; inherited TitleBar `act(...)` warnings retained.                        |
+| `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check`                                                   | PASS    | Exit 0.                                                                                                                                            |
+| Default and serial `cargo test`                                                                                                  | PASS    | Each supervisor run: 154 library plus 2 bridge tests. Retained historical Source Checkpoint Rework 7 ledger also records ten fresh default passes. |
+| `node scripts/side-effect-scan.mjs`                                                                                              | PASS    | 1,498 files / 4,794 allowed / 0 blocked / 1,730 review.                                                                                            |
+| `git diff --check`                                                                                                               | PASS    | No whitespace error; LF/CRLF notices only.                                                                                                         |
+| Manifest/fixture/hash recomputation                                                                                              | PASS    | Retained manifest file `236f1da...`; both canonical fixtures are 4,865 bytes at `771168e...`; all bundle and TitleBar hashes match.                |
+| Current-document and stale-state scan                                                                                            | PASS    | Correct manifest/hash facts, Rework 9 closeout status, acceptance/risk vocabulary, and historical labels agree.                                    |
+| Fresh product-UI mutation smoke                                                                                                  | SKIPPED | Not authorized in this source-checkpoint task; G13 and 15A-15C remain gated.                                                                       |
 
 The historical supervisor first workspace-test attempt exited `134` after
 shared 33; later complete runs passed. This remains a residual
@@ -111,36 +579,36 @@ they are not TitleBar changes and do not establish acceptance.
 
 Fresh Rework 6 implementation evidence:
 
-| Command / evidence | Exit / result | Exact summary |
-| ------------------ | ------------- | ------------- |
-| `pnpm typecheck` | 0 | All workspace typechecks completed. |
-| `pnpm lint` | 0 | Workspace lint completed. |
-| `pnpm build` | 0 | 258 modules; 702.74 kB output with the existing non-failing chunk-size warning. |
-| `pnpm test` | 0 | Shared 33, MCP client 46, runtime 825, desktop 725 passed / 3 skipped; existing TitleBar React `act(...)` warnings remain non-failing and out of scope. |
-| `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check` | 0 | Rust formatting check completed. |
-| Ten independent ordinary default Cargo processes | 0 for every run | Every run completed 154 library tests plus 2 bridge integration tests. |
-| Serial Cargo diagnostic | 0 | 154 library tests plus 2 bridge integration tests. |
-| `node --test scripts/mvp15d-tooling.test.mjs` | 0 | `14/14`. |
-| Four task-specified `node --check` commands | 0 for every command | Product-adapter runner, D0 capture, D0 spike, and UE Automation scripts parsed successfully. |
-| `node scripts/side-effect-scan.mjs` | 0 | 1,038 files; 4,521 allowed; 0 blocked; 1,630 review findings. |
-| `git diff --check` | 0 | No whitespace errors; line-ending notices only. |
-| UE current project compile | 0 | `external/mvp15d-rework6-final-20260726_013626/ue-project-build.log`. |
-| UE incremental rebuild | 0 | `external/mvp15d-rework6-final-20260726_013626/ue-project-rebuild.log`. |
+| Command / evidence                                                       | Exit / result       | Exact summary                                                                                                                                           |
+| ------------------------------------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`                                                         | 0                   | All workspace typechecks completed.                                                                                                                     |
+| `pnpm lint`                                                              | 0                   | Workspace lint completed.                                                                                                                               |
+| `pnpm build`                                                             | 0                   | 258 modules; 702.74 kB output with the existing non-failing chunk-size warning.                                                                         |
+| `pnpm test`                                                              | 0                   | Shared 33, MCP client 46, runtime 825, desktop 725 passed / 3 skipped; existing TitleBar React `act(...)` warnings remain non-failing and out of scope. |
+| `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check` | 0                   | Rust formatting check completed.                                                                                                                        |
+| Ten independent ordinary default Cargo processes                         | 0 for every run     | Every run completed 154 library tests plus 2 bridge integration tests.                                                                                  |
+| Serial Cargo diagnostic                                                  | 0                   | 154 library tests plus 2 bridge integration tests.                                                                                                      |
+| `node --test scripts/mvp15d-tooling.test.mjs`                            | 0                   | `14/14`.                                                                                                                                                |
+| Four task-specified `node --check` commands                              | 0 for every command | Product-adapter runner, D0 capture, D0 spike, and UE Automation scripts parsed successfully.                                                            |
+| `node scripts/side-effect-scan.mjs`                                      | 0                   | 1,038 files; 4,521 allowed; 0 blocked; 1,630 review findings.                                                                                           |
+| `git diff --check`                                                       | 0                   | No whitespace errors; line-ending notices only.                                                                                                         |
+| UE current project compile                                               | 0                   | `external/mvp15d-rework6-final-20260726_013626/ue-project-build.log`.                                                                                   |
+| UE incremental rebuild                                                   | 0                   | `external/mvp15d-rework6-final-20260726_013626/ue-project-rebuild.log`.                                                                                 |
 
 Ordinary default Cargo fresh-process ledger:
 
 | Run | Exit | Library | Bridge |
 | --- | ---- | ------- | ------ |
-| 1 | 0 | 154 | 2 |
-| 2 | 0 | 154 | 2 |
-| 3 | 0 | 154 | 2 |
-| 4 | 0 | 154 | 2 |
-| 5 | 0 | 154 | 2 |
-| 6 | 0 | 154 | 2 |
-| 7 | 0 | 154 | 2 |
-| 8 | 0 | 154 | 2 |
-| 9 | 0 | 154 | 2 |
-| 10 | 0 | 154 | 2 |
+| 1   | 0    | 154     | 2      |
+| 2   | 0    | 154     | 2      |
+| 3   | 0    | 154     | 2      |
+| 4   | 0    | 154     | 2      |
+| 5   | 0    | 154     | 2      |
+| 6   | 0    | 154     | 2      |
+| 7   | 0    | 154     | 2      |
+| 8   | 0    | 154     | 2      |
+| 9   | 0    | 154     | 2      |
+| 10  | 0    | 154     | 2      |
 
 Fresh D0 evidence:
 
@@ -341,8 +809,8 @@ The historical canonical provenance build attempt rejected its worktree with
 tree, but it does not block Rework 4 source remediation. No sealed final
 manifest, trusted signed D0 envelope, selected production registration route,
 real product-UI smoke, or later D13/15A/15B/15C result is claimed by this
-historical report. The current Rework 9-required status is recorded at the top of
-this document.
+historical report. Current Rework 3 source-checkpoint readiness is recorded at
+the top of this document.
 
 ## Historical Rework 3 Reported Command Ledger - 2026-07-20
 
@@ -562,7 +1030,8 @@ implementation baseline, the plugin identity from
 fingerprint, authoritative root/observation provenance, native gate state, five
 forward guards/calls/results, four inverse guards/calls/results, source and
 Content evidence, cross-token-TTL rollback, replay five-channel delta, and
-process ownership. It is not part of the Rework 7 source-checkpoint evidence.
+process ownership. It is not part of the historical Source Checkpoint Rework 7
+evidence or the current Final Source/Tooling Rework 8 capability-only evidence.
 
 Separate negative ledgers must record:
 
@@ -573,17 +1042,15 @@ Separate negative ledgers must record:
 
 ## Current Progression
 
-This is not final MVP15 acceptance. The C14/C14A fingerprint
-authority/redaction implementation is historical predecessor evidence at
-verified commit `37c29cbc7961218bfd71d1809178359952a75e18`; its controlled
-request did not reach discovery and provided no schema evidence. Independently,
-the mapping audit could not connect the active unsigned bytes to the different
-signed sibling set. Rework 7 retained D0/build/UE and command ledgers address the
-authority, binding, creation-identity, Rust-isolation, process-ledger, and
-implementation findings as validated evidence. Rework 8 is `NEEDS_FIX` for its
-stale acceptance manifest file SHA; Rework 9 corrects that documentation conflict
-and closes the D0-D12 source checkpoint. No fresh product-UI mutation
-lifecycle, authoritative official plugin mapping, or final installed-build live
-descriptor fingerprint exists. Rework 9 and source-checkpoint acceptance are
-`COMPLETE`; Ready for the next MVP stage remains `NO` because G13/G16 and
-15A-15C remain gated.
+This is not final MVP15 acceptance. Final Source/Tooling Rework 7 is the
+historical/current predecessor `PARTIAL` with supervisor verdict `NEEDS_FIX`,
+and no checkpoint was created. Final Source/Tooling Rework 8 source
+implementation and G14 are `IMPLEMENTED`
+(awaiting supervisor checkpoint); G15 is `IN_PROGRESS`; G16 is `PARTIAL`. The
+`b1c4e4a...` /
+Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
+complete current G15. No clean current-generation exact-six fingerprint or
+full live rendered product-UI lifecycle exists. D13 / 15A remains `BLOCKED`;
+D14 / 15B and D15 / 15C remain `PLANNED`; D16 remains `IN_PROGRESS`; real UE
+5.8.1 compatibility and overall acceptance remain `PARTIAL`; Ready remains
+`NO`.

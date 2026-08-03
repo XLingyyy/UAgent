@@ -2,20 +2,60 @@
 
 ## Status
 
-This document separates current MVP15D D2 source-contract work from later final
-15A packaging. Rework 8 is `NEEDS_FIX` because the current acceptance manifest
-file SHA conflicted with retained evidence and the other current repository
-documents, while code and retained evidence validation passed. Rework 9 and the
-D0-D12 source checkpoint are `COMPLETE`. Ready for the next MVP stage remains
-`NO` because G13/G16 and 15A-15C remain separately gated.
-Previous/current task IDs are
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` and
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`.
-Verified implementation/content checkpoint
-`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
-documentation closeout checkpoint.
+Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
+its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
+Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
+supervisor checkpoint` in a
+dirty pre-checkpoint tree. The build wrapper and native/runtime
+consumers use manifest v3 and identity v2 with independent engine version
+`5.8.1`, engine changelist `56057345`, compatible changelist `55116800`, and
+module BuildId `55116800`. G14 is `IMPLEMENTED`; G15 is `IN_PROGRESS`; G16 is
+`PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`;
+D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility and overall acceptance
+remain `PARTIAL`; Ready is `NO`.
 
-The retained Rework 7 task-only build/source/manifest bundle is
+The compiled pre-checkpoint identity uses
+`uagent.mvp15d.production-source-boundary.v2`: 335 production files discovered
+from 14 roots plus 28 exact files, 9 exclusion classes, 126 excluded entries,
+and 356 source/Git watches. It includes the companion source, resources,
+descriptor, and build inputs along with the transitive desktop and final-tooling
+inputs. New production files and tracked production deletion cannot remain
+unhashed.
+
+The v3 source contract invokes the validated caller-supplied `RunUAT.bat` with
+the exact ordered `BuildPlugin`, absolute plugin/package,
+`-TargetPlatforms=Win64`, and `-Rocket` arguments. Its fingerprint binds the
+launcher bytes, ordered-argument hash, detached-clean source commit/tree,
+physical fixture bytes, descriptor, package output identity, UE/BuildId,
+compiler, SDK, platform, and configuration. Live results retain redacted source
+transcripts and fail closed on missing toolchain evidence, nonzero exit, or
+partial output.
+
+Manifest v3 recomputes every shipped artifact, rejects source/Intermediate/
+HostProject/extra/link/reparse/case-colliding/secret-bearing entries, and emits
+distinct canonical self and manifest-file hashes. Installed verification
+requires one complete project copy and rejects Engine/user shadow copies.
+Structural loaded-module verification reports
+`installed_loaded_structural_verified` with
+`productionLaunchAuthorityVerified: false`; it cannot establish production
+launch ownership. Final Source/Tooling Rework 8 preserves the sole owned live
+publisher after explicit PID/creation equality and independent derivation of
+source, project, manifest, package, install, executable, producer/helper/
+observer, and Job facts. Exported/CLI verification rehashes the ledger and
+cross-binds all artifacts, exact modules, event/report, and zero Job residue,
+but it remains persisted consistency with launch authority false. Only the
+same-process fixed non-injected launch can consume the private receipt and
+return owned-launch authority. A coherent hand-authored chain may satisfy
+persisted consistency but cannot acquire that receipt. The historical
+Rework 2 UE 5.8.1 BuildPlugin run passed.
+BuildPlugin omitted `UnrealEditor.modules`; the wrapper creates or validates the
+deterministic module index against the independently read engine module BuildId.
+No Final Source/Tooling Rework 4/5/6/7/8 live build or clean current manifest was
+created. The
+release-binary capability handshakes bind the compiled source commit and record
+zero MCP/network/asset operations; they do not supply clean-package provenance.
+
+The retained historical Source Checkpoint Rework 7 task-only build/source/manifest bundle is
 `external/mvp15d-rework7-build-20260726_203000`. It contains 60 files total (59
 inventory-tracked payload files plus `inventory.json`) and has bundle SHA-256
 `ef86e59c05068f9610050a2afa44bf3237d3fd78e82262cf6d3be6660223420b`,
@@ -40,11 +80,20 @@ Job ledgers disclose 41 membership events, 29 complete identities, 12
 short-lived incomplete identities, 40 explicit exit events, one exit closed by
 `ACTIVE_PROCESS_ZERO`, and zero residual process.
 
-`BLOCKED_BY_EVIDENCE_RETENTION` is closed. D13, 15A, 15B, and 15C remain
-prohibited.
+`BLOCKED_BY_EVIDENCE_RETENTION` remains closed for historical Source Checkpoint Rework 7.
+`BLOCKED_BY_PLUGIN_PROVENANCE` and `BLOCKED_BY_SOURCE_BYTE_IDENTITY` describe
+historical live-evidence gaps; the current source implementation closes the
+authority-meaning and transitive-boundary defects pending supervisor checkpoint.
+`BLOCKED_BY_BUILD_ENVIRONMENT` remains open until a
+compliant live build passes.
 
-The retained Rework 5 source run used a task-only pre-checkpoint manifest
-with SHA-256
+The unsafe Rework 2 evidence root was invalidated and removed for
+`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. It is not manifest or compatibility
+evidence, and no Final Source/Tooling Rework 4/5/6/7/8 task created a replacement
+live root.
+
+Historical (Rework 5 era): the retained task-only pre-checkpoint manifest
+used SHA-256
 `9ef28df58bea41d14d78cf6591eba3c0f9d8da8d5e41a5e7dc49c9fbae1d83f9`,
 source-tree SHA-256
 `26585ddc64e874e72ff0ab46f8f85b3902366fd1324de52dd083b4fa79b30275`,
@@ -61,21 +110,19 @@ product-adapter D0, the full UE matrix, complete ownership, partial-effect
 recovery, completion-ordered revocation, and positive loaded-module integration
 remained open.
 
-The canonical build helper rejects a dirty worktree with `SOURCE_TREE_DIRTY`.
-That is correct for a final 15A package, but it does not block Rework 5 source
-integration history or Rework 7 review evidence. No final manifest, installed/loaded identity proof,
-or 15A result exists. The retained Rework 5 D0 evidence is a separate historical
-source-checkpoint artifact and is not a final build manifest. Rework 7 durable
-D0/build/UE evidence closes the retention defect; it does not create the later
-clean 15A manifest.
+The canonical build helper rejects a dirty worktree with `SOURCE_TREE_DIRTY`,
+but clean Git status alone did not protect physical checkout bytes from
+`core.autocrlf` conversion. Final provenance must validate physical source bytes
+and the exact command, compiler, SDK, UE, module set, manifest self hash, and
+manifest file hash.
 
 ## Review-only snapshots are not final manifests
 
-A historical Rework 5 review-only source snapshot may describe planned files or validation inputs,
-but it must not be named or represented as `UAgentAssetTools.build.json`, a clean
-package, installed/loaded identity proof, or D0 evidence. Only the future 15A
-flow below may create the final manifest from a clean, supervisor-approved source
-commit/tree.
+Historical Rework 5-era review-only source snapshots may describe planned files
+or validation inputs, but they must not be named or represented as
+`UAgentAssetTools.build.json`, a clean package, installed/loaded identity
+proof, or D0 evidence. Only the future 15A flow below may create the final
+manifest from a clean, supervisor-approved source commit/tree.
 
 ## Required manifest
 
@@ -86,12 +133,13 @@ and contain:
 - plugin id/version and independent `mvp15d.asset-tools.v1` contract version;
 - 40-lower-hex `sourceCommit`, 64-lower-hex `sourceTreeSha256`, and literal
   `dirty: false`;
-- UE `5.8.0`, BuildId `55116800`, Win64 Development configuration, non-sensitive
-  compiler/Windows SDK/build-command fingerprint;
+- engine `5.8.1`, engine changelist `56057345`, compatible changelist
+  `55116800`, module BuildId `55116800`, Win64 Development configuration, and
+  non-sensitive compiler/Windows SDK/build-command fingerprint;
 - `UAgentAssetTools.uplugin`, contract schema, and every packaged module's
   basename, byte size, and SHA-256;
 - ordered exact-six tool names, generated timestamp, non-sensitive builder
-  identity, and `manifestSha256`.
+  identity, and `manifestSelfSha256`.
 
 The self-hash rule is canonical UTF-8 JSON with lexicographically sorted object
 keys, preserved array order, no insignificant whitespace, and the
@@ -102,23 +150,21 @@ uses stable evidence identifiers; the current implementation verification and
 status ledgers may retain task-owned D0/UE evidence roots required for
 checkpoint review.
 
-## Future 15A reproducible flow (not authorized during Rework 9)
+## Required post-checkpoint 15A reproducible flow
 
-1. Supervisor reviews and commits the source checkpoint. The commit SHA is the
-   only valid `sourceCommit` for final packaging.
-2. Create a task-owned clean archive/snapshot from that commit. Do not package
-   the dirty implementation worktree.
-3. Run the official UE 5.8 command:
+1. Supervisor reviews, commits, backfills, and publishes this source checkpoint.
+2. Create a fresh no-hardlink clone with deterministic physical bytes and prove
+   both Git cleanliness and fixed fixture hashes.
+3. Run the exact official UE 5.8 command through the wrapper:
 
    ```text
-   RunUAT.bat BuildPlugin -Plugin=<clean-source>/integrations/unreal/UAgentAssetTools/UAgentAssetTools.uplugin -Package=<task-owned-package> -TargetPlatforms=Win64
+   RunUAT.bat BuildPlugin -Plugin=<clean-source>/integrations/unreal/UAgentAssetTools/UAgentAssetTools.uplugin -Package=<task-owned-package> -TargetPlatforms=Win64 -Rocket
    ```
 
-4. Only after the source checkpoint is accepted and 15A is separately authorized,
-   generate the manifest with `scripts/mvp15d-manifest.mjs create`; the helper
-   itself must verify the commit/tree/clean snapshot rather than trusting
-   caller-declared `dirty: false`.
-5. Run the repaired `scripts/mvp15d-manifest.mjs verify` against the real package
+4. Generate the manifest only after a complete sealed build; supply the retained
+   `build-command.json` and `build-result.json` so the helper recomputes real
+   compiler/SDK/UE/module facts and both manifest self/file hashes.
+5. Run `scripts/mvp15d-manifest.mjs verify` against the real package
    root so it rehashes every declared artifact, rejects extra/unlisted modules,
    and compare installed and loaded
    module basenames, sizes, and hashes with the manifest inside a new
@@ -136,5 +182,7 @@ checkpoint review.
 - initialize/discovery failure: `BLOCKED_BY_MCP_TRANSPORT`;
 - UE/native/session/root/gate failure: `BLOCKED_BY_ENVIRONMENT`.
 
-No manifest, installed module, loaded module, or live fingerprint result in this
-source checkpoint should be interpreted as a final acceptance result.
+No clean current manifest, installed/loaded equality proof, or live exact-six
+fingerprint exists. Those facts must be produced from the supervisor-published
+Final Source/Tooling Rework 8 checkpoint in the separate clean-commit
+read-only task.

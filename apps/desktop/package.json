@@ -8,6 +8,7 @@
     "build": "vite build --config web/vite.config.ts",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "icon:validate": "node ../../scripts/mvp15d-icon-validate.mjs",
     "web:dev": "vite --config web/vite.config.ts",
     "web:build": "vite build --config web/vite.config.ts",
     "web:preview": "vite preview --config web/vite.config.ts",

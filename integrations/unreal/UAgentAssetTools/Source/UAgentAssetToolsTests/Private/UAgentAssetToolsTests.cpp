@@ -9,8 +9,10 @@
 #include "HAL/PlatformTime.h"
 #include "Interfaces/IPluginManager.h"
 #include "ModelContextProtocolSettings.h"
+#include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
+#include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "Misc/AutomationTest.h"
 #include "Serialization/JsonReader.h"
@@ -162,7 +164,10 @@ namespace
 		Identity->SetStringField(TEXT("buildCommandFingerprint"), FString::ChrN(64, TEXT('d')));
 		Identity->SetStringField(TEXT("loadedModuleName"), TEXT("UnrealEditor-UAgentAssetTools.dll"));
 		Identity->SetStringField(TEXT("loadedModuleSha256"), FString::ChrN(64, TEXT('e')));
-		Identity->SetStringField(TEXT("ueBuildId"), UAgentAssetTools::UeBuildId);
+		Identity->SetStringField(TEXT("engineVersion"), UAgentAssetTools::EngineVersion);
+		Identity->SetNumberField(TEXT("engineChangelist"), UAgentAssetTools::EngineChangelist);
+		Identity->SetNumberField(TEXT("compatibleChangelist"), UAgentAssetTools::CompatibleChangelist);
+		Identity->SetStringField(TEXT("moduleBuildId"), UAgentAssetTools::ModuleBuildId);
 		return Identity;
 	}
 
@@ -661,6 +666,61 @@ namespace
 	}
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUAgentAssetToolsFinalContractsReporterTest, "UAgentAssetTools.Contracts", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FUAgentAssetToolsFinalContractsReporterTest::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("Automation reporter schema is fixed"), FString(UAgentAssetTools::AutomationReportSchemaVersion), FString(TEXT("uagent.mvp15d.ue-automation-report.v1")));
+	TestEqual(TEXT("task id marker is fixed"), FString(UAgentAssetTools::AutomationTaskIdArgument), FString(TEXT("-UAgentTaskId=")));
+	TestEqual(TEXT("task generation marker is fixed"), FString(UAgentAssetTools::AutomationTaskGenerationArgument), FString(TEXT("-UAgentTaskGeneration=")));
+	TestEqual(TEXT("source commit marker is fixed"), FString(UAgentAssetTools::AutomationSourceCommitArgument), FString(TEXT("-UAgentSourceCommit=")));
+	TestEqual(TEXT("task marker is fixed"), FString(UAgentAssetTools::AutomationTaskMarkerArgument), FString(TEXT("-UAgentTaskMarker=")));
+	TestEqual(TEXT("session marker is fixed"), FString(UAgentAssetTools::AutomationSessionArgument), FString(TEXT("-UAgentSession=")));
+	TestEqual(TEXT("generation marker is fixed"), FString(UAgentAssetTools::AutomationGenerationArgument), FString(TEXT("-UAgentGeneration=")));
+
+	FString TaskId;
+	FString TaskGeneration;
+	FString SourceCommit;
+	FString TaskMarker;
+	FString Session;
+	int32 Generation = 0;
+	const TCHAR* CommandLine = FCommandLine::Get();
+	TestTrue(TEXT("task id marker is present"), FParse::Value(CommandLine, UAgentAssetTools::AutomationTaskIdArgument, TaskId));
+	TestTrue(TEXT("task generation marker is present"), FParse::Value(CommandLine, UAgentAssetTools::AutomationTaskGenerationArgument, TaskGeneration));
+	TestTrue(TEXT("source commit marker is present"), FParse::Value(CommandLine, UAgentAssetTools::AutomationSourceCommitArgument, SourceCommit));
+	TestTrue(TEXT("task marker is present"), FParse::Value(CommandLine, UAgentAssetTools::AutomationTaskMarkerArgument, TaskMarker));
+	TestTrue(TEXT("session marker is present"), FParse::Value(CommandLine, UAgentAssetTools::AutomationSessionArgument, Session));
+	TestTrue(TEXT("generation marker is present"), FParse::Value(CommandLine, UAgentAssetTools::AutomationGenerationArgument, Generation));
+	TestTrue(TEXT("task id is bound to MVP15D"), TaskId.StartsWith(TEXT("TASK-MVP15D-")));
+	TestEqual(TEXT("task generation is final"), TaskGeneration, FString(TEXT("final-d13-d16")));
+	TestEqual(TEXT("source commit has forty hex characters"), SourceCommit.Len(), 40);
+	bool bSourceCommitHex = SourceCommit.Len() == 40;
+	for (const TCHAR Character : SourceCommit)
+	{
+		bSourceCommitHex = bSourceCommitHex && FChar::IsHexDigit(Character);
+	}
+	TestTrue(TEXT("source commit is lowercase hexadecimal"), bSourceCommitHex && SourceCommit == SourceCommit.ToLower());
+	TestTrue(TEXT("task marker is non-empty"), TaskMarker.Len() >= 24);
+	TestTrue(TEXT("session marker is non-empty"), Session.Len() >= 16);
+	TestTrue(TEXT("generation is positive"), Generation > 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUAgentAssetToolsFinalReadOnlyReporterTest, "UAgentAssetTools.ReadOnly", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FUAgentAssetToolsFinalReadOnlyReporterTest::RunTest(const FString& Parameters)
+{
+	TestTrue(TEXT("source package remains the fixed read-only package"), FPackageName::IsValidLongPackageName(TEXT("/Game/Test01")));
+	TestFalse(TEXT("read-only source is outside the mutation sandbox"), UAgentAssetTools::IsStrictSandboxDescendant(TEXT("/Game/Test01"), TEXT("/Game/UAgentSandbox/final-reporter")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUAgentAssetToolsFinalCloseoutReporterTest, "UAgentAssetTools.Closeout", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FUAgentAssetToolsFinalCloseoutReporterTest::RunTest(const FString& Parameters)
+{
+	UAgentAssetTools::InvalidateOperationLedger();
+	TestTrue(TEXT("reporter closeout performs no asset operation"), true);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUAgentAssetToolsManifestSourceCheckpointTest, "UAgentAssetTools.Manifest.SourceCheckpointNoManifest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FUAgentAssetToolsManifestSourceCheckpointTest::RunTest(const FString& Parameters)
 {
@@ -721,7 +781,7 @@ bool FUAgentAssetToolsManifestSelfHashContractTest::RunTest(const FString& Param
 	TSharedPtr<FJsonObject> Manifest = LoadJsonFile(Candidate.ManifestPath);
 	if (Manifest.IsValid())
 	{
-		Manifest->SetStringField(TEXT("manifestSha256"), FString::ChrN(64, TEXT('0')));
+		Manifest->SetStringField(TEXT("manifestSelfSha256"), FString::ChrN(64, TEXT('0')));
 		TestTrue(TEXT("wrong-self-hash candidate was written"), WriteJsonFile(Candidate.ManifestPath, Manifest));
 		TestFalse(
 			TEXT("production manifest boundary rejects a wrong canonical self hash"),

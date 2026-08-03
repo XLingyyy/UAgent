@@ -1,39 +1,50 @@
 # UAgent Development Guide
 
-## MVP15D Companion Plugin Source / Build Workflow
+## MVP15D Final Source and Evidence Tooling Workflow
 
-`integrations/unreal/UAgentAssetTools` targets UE `5.8.0` / BuildId `55116800`,
-is disabled by default, and packages only runtime DLLs plus the contract schema
-through `Config/FilterPlugin.ini`. Rework 6 is `NEEDS_FIX` because its D0/build
-roots were unavailable. Rework 8 is `NEEDS_FIX` because the current acceptance
-manifest file SHA conflicted with retained evidence and the other current
-repository documents, while code and retained evidence validation passed.
-Rework 9 and the D0-D12 source checkpoint are `COMPLETE`. Ready for the next MVP
-stage remains `NO` because G13/G16 and 15A-15C remain separately gated.
-Previous/current task IDs are
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` and
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`.
+`integrations/unreal/UAgentAssetTools` targets UE `5.8.1`: engine changelist
+`56057345`, compatible changelist `55116800`, and module BuildId `55116800`.
+Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`
+with supervisor verdict `NEEDS_FIX`; no checkpoint was created. Final
+Source/Tooling Rework 8 source
+implementation is `IMPLEMENTED, awaiting supervisor checkpoint` in a dirty
+pre-checkpoint tree. `scripts/mvp15d-source-identity.mjs` and `build.rs` bind
+the compiled source identity to
+`uagent.mvp15d.production-source-boundary.v2`: 335 production files discovered
+from 14 approved roots plus 28 exact files, 9 exclusion classes, 126 excluded
+entries, and a complete 356-entry production/Git watch set. New production
+files and deleted tracked production files cannot leave the identity unchanged;
+normal repositories, linked worktrees, symbolic/detached HEAD, loose refs,
+packed refs, and same-branch commits are covered. G14 is `IMPLEMENTED`; G15 is
+`IN_PROGRESS`; G16 is `PARTIAL`. UE 5.8.1 compatibility and overall acceptance
+remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C are
+`PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 
-Retained roots are `external/mvp15d-rework7-d0-20260726_190100`,
-`external/mvp15d-rework7-build-20260726_203000`, and
-`external/mvp15d-rework7-ue-20260726_190100`. D0 records four sessions, 129
-indexed artifacts, zero mutation, and Direct. The build bundle contains 60 files
-total (59 inventory-tracked payload files plus `inventory.json`), with byte-equal
-source snapshots and zero process/port/marker residuals. UE
-records five sessions, `48/48`, six processes per ledger, residual zero, and
-unchanged empty Content. `BLOCKED_BY_EVIDENCE_RETENTION` is closed.
-Verified implementation/content checkpoint
-`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
-documentation closeout checkpoint on `main`.
+Both canonical binding fixtures are now fixed to LF with repository
+attributes. A clean detached checkout must reproduce 4,865 bytes and SHA-256
+`771168ec8b6e7215672a4d839fa675d88f9207876e2c51513b26d6c58da56a1b`
+even when local `core.autocrlf=true`.
 
-Ten fresh ordinary Cargo processes and the serial diagnostic each exit 0 at 154
-library plus 2 bridge tests. Typecheck, lint, build, two workspace-test
-processes, tooling `23/23`, build-bundle `10/10`, and targeted checks also exit 0.
-The historical supervisor first workspace-test attempt exited `134`; subsequent
-runs passed. No final clean 15A package exists, and real product mutation is not
-authorized. D13, 15A, 15B, and 15C remain prohibited.
+The build wrapper invokes the caller-supplied `RunUAT.bat` through `cmd.exe`
+with shell expansion disabled and the exact ordered arguments:
 
-### Rework 7 verification helpers
+```text
+BuildPlugin
+-Plugin=<absolute-clean-plugin>
+-Package=<absolute-fresh-package>
+-TargetPlatforms=Win64
+-Rocket
+```
+
+Plan mode uses the same argument builder without reporting build completion.
+Live mode requires a task marker and final-generation evidence root, retains
+redacted stdout/stderr and optional external UAT-log derivatives, records child
+and wrapper exit codes, and deletes partial package output after nonzero UAT.
+The retained release Tauri binary was rebuilt for the Final Source/Tooling Rework 7
+capability gate. Real UE, Tool Search, and mutation were not run
+(`SKIPPED_BY_TASK_BOUNDARY`).
+
+### Historical Source Checkpoint Rework 7 verification helpers
 
 ```bash
 # D0: produce four real product-adapter sessions in a fresh task-owned project/output.
@@ -48,13 +59,99 @@ node scripts/mvp15d-build-bundle.mjs validate --task-root <fresh-external-mvp15d
 node scripts/mvp15d-ue-automation.mjs --project <task-project> --output <fresh-external-mvp15d-rework7-ue-directory>
 ```
 
-### Future 15A package helpers (prohibited during Rework 7)
+### Final-generation helpers
 
 ```bash
-node scripts/mvp15d-plugin-build.mjs --source <clean-source-archive> --package <task-package> --runuat <UE-5.8-RunUAT.bat>
-node scripts/mvp15d-manifest.mjs create --source <clean-source-archive> --package-root <task-package> --runuat <UE-5.8-RunUAT.bat>
-node scripts/mvp15d-manifest.mjs verify --source <clean-source-archive> --package-root <task-package> --runuat <UE-5.8-RunUAT.bat>
+node scripts/mvp15d-plugin-build.mjs --mode plan --source <clean-detached-source> --package <fresh-package> --runuat <RunUAT.bat> --ue-root <UE-root> --task-id <task-id>
+node scripts/mvp15d-plugin-build.mjs --mode live --source <clean-detached-source> --package <fresh-package> --runuat <RunUAT.bat> --ue-root <UE-root> --task-id <task-id> --evidence-root <final-root> --task-marker <marker>
+node scripts/mvp15d-manifest.mjs create --source <clean-detached-source> --package-root <sealed-package> --runuat <RunUAT.bat> --ue-root <UE-root> --build-ledger <build-command.json> --build-result <build-result.json>
+node scripts/mvp15d-manifest.mjs verify --source <clean-detached-source> --package-root <sealed-package> --runuat <RunUAT.bat> --ue-root <UE-root> --build-ledger <build-command.json> --build-result <build-result.json>
+node scripts/mvp15d-final-runner.mjs <preflight|build-plan|build|manifest-create|manifest-verify|project-create|package-install|ue-automation|product-capture|ui-lifecycle|inventory-create|inventory-verify|closeout> <explicit inputs>
+node scripts/mvp15d-ue581-evidence-inventory.mjs <create|verify> <explicit inputs>
+node scripts/mvp15d-icon-validate.mjs
 ```
+
+The runner-owned live adapters are
+`scripts/mvp15d-final-ue-automation-producer.mjs`,
+`scripts/mvp15d-final-product-capture-producer.mjs`, and
+`scripts/mvp15d-final-ui-lifecycle-producer.mjs`. Invoke them through
+`mvp15d-final-runner.mjs`; callers cannot replace their executable or supply a
+pre-authored live summary. Shared process/event/ledger mechanics live in
+`scripts/mvp15d-final-live-producer-helper.mjs`; it is not a caller-selectable
+fourth producer. The loaded-module observer's standalone write-capable CLI is
+disabled.
+
+Product and UI adapters use an asynchronous child lifecycle. On Windows, the
+helper starts the real runtime through
+`scripts/mvp15d-windows-job-process-runner.ps1`, observes the task-owned
+runtime event file for signed readiness, atomically creates one authenticated
+driver command, and waits for active-process-zero closeout. The Tauri bridge is
+default-off and accepts only the fixed ordered
+`mvp15d-final-runtime-bridge` argument contract plus
+`UAGENT_ENABLE_MVP15D_TASK_BRIDGE=1`.
+
+For UE Automation, the sole production loaded-module publisher consumes the
+Job runner's early identity and re-observes the live process. It explicitly
+requires PID and creation FILETIME equality and independently derives source,
+project, manifest, package, install, executable, producer, helper, observer,
+and Job facts before it can create the in-process publisher brand. Pure builders
+and injected observation always remain fixture-marked. The brand is not
+serialized. The published ledger uses exclusive atomic write/fsync/rename.
+Exported `verifyUeProductionArtifactConsistency()` / `verifyPhaseSummary()`,
+public `validate*` callers, and CLI `verify` rehash and cross-bind every
+artifact, exact module record, terminal event, and zero-residue Job closeout,
+then return `*_persisted_consistency_verified` with
+`productionLaunchAuthorityVerified: false`. A coherent hand-authored chain may
+satisfy this retained-file level. Only `executeLivePhase()` uses the fixed
+non-injected launcher and consumes the unexported single-use `WeakSet` receipt
+before returning `*_owned_launch_verified` with launch authority true.
+`mvp15d-manifest.mjs verify` likewise reports structural installed/loaded
+verification only.
+
+Module paths are checked component-by-component below the trusted installed
+root before hashing. Leaf links plus intermediate symlink, junction, mount,
+and reparse components fail closed. Windows integration cleanup must retain the
+Job handle before assertions, await or force closeout in `finally`, use bounded
+handle-release retries, and fail when its exact fixture directory or matching
+marker process remains.
+
+The release capability probe and rendered capability modes use a fresh
+one-time nonce and exclusive event file. They prove the actual binary,
+renderer, normal `createDesktopRuntimeAdapter` binding, and rendered driver
+exist while recording zero MCP calls, zero network calls, and zero asset
+operations. These commands are test-owned and clean their nonce, driver,
+runtime event file, and process tree after verification.
+
+UE live execution uses `-ReportExportPath` and the fixed
+`UAgentAssetTools.Contracts+UAgentAssetTools.ReadOnly+UAgentAssetTools.Closeout`
+matrix. The parser consumes only the official JSON report plus explicit UAgent
+task markers. UE stdout/stderr is ordinary log data and is retained only after
+deterministic redaction. A successful result also requires exact
+expected/passed/failed/skipped derivation, unchanged real Content-tree hashes,
+package/installed/loaded module equality, manifest/source identity, and the
+Automation process/executable binding.
+
+Manifest create/verify recomputes detached-clean Git identity, canonical
+physical bytes, exact command evidence, toolchain identity, all shipped
+artifacts, and separate manifest self/file hashes. Installed verification
+requires exactly one project copy and independently hashes loaded modules.
+Structural loaded-module verification is insufficient for final acceptance.
+Each formal live phase is dispatched to its repository-owned producer adapter,
+which uses a fixed executable and validated arguments with shell expansion
+disabled. Final summaries require retained raw or deterministically redacted
+source artifacts produced through a process/session/generation-bound producer
+ledger. Arbitrary live `--input`, fixture origin, caller-authored success,
+mixed ownership/generation, hash drift, missing terminal events, and closeout
+residue are rejected.
+
+Inventory creation accepts only the documented file/directory allowlist,
+including required empty directories. It rejects unknown entries, unexpected
+generated trees, links/reparse points, case collisions, escapes, raw secrets,
+raw local paths, and credential-bearing endpoints. Required redaction stores
+only the derivative, deterministic ledger, and raw-source size/hash facts; the
+raw source is not retained. Verification independently recomputes the semantic
+summary in a new Node process and rejects semantic, manifest/package/module, or
+inventory/hash drift.
 
 The D0 spike must remain real product-adapter evidence and report zero mutation
 actions; supporting UE Automation cannot replace it. Resolve the fixed UE 5.8
@@ -64,12 +161,13 @@ from Git, invoke RunUAT without a shell, reject non-DLL/debug/source package
 residue, and rehash the manifest artifacts.
 A dirty working tree is never a valid final manifest source. 15A/15B/15C are
 not part of this source checkpoint. After
-a supervisor-created source commit and separate authorization, use the documented
-task-owned disposable project for those later stages and keep Epic/user-owned
-projects, shared Zen, credentials, binaries, logs, and local absolute paths out
-of the repository.
+a supervisor-created and pushed source commit, a new task may run the full
+read-only UE 5.8.1 compatibility matrix in a documented task-owned disposable
+project. Real mutation remains prohibited until a later separate task. Keep
+Epic/user-owned projects, shared Zen, credentials, binaries, logs, and local
+absolute paths out of the repository.
 
-The Rework 7 UE runner must give each of its five sessions a unique task marker
+The historical Source Checkpoint Rework 7 UE runner must give each of its five sessions a unique task marker
 and validate a complete marker-bound descendant process ledger, including
 creation/parent identity, first observation, exit, and final residual count.
 Basename-only ownership or a final point-in-time process scan is insufficient.
@@ -244,7 +342,9 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml asset_mutation -- --test-threads=1
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml ue_editor_process -- --test-threads=1
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml -- --test-threads=1
-node --test scripts/mvp15d-tooling.test.mjs
+node --test scripts/mvp15d-tooling.test.mjs scripts/mvp15d-build-bundle.test.mjs scripts/mvp15d-final-tooling.test.mjs
+node --test scripts/mvp15d-ue581-evidence-inventory.test.mjs
+node scripts/mvp15d-icon-validate.mjs
 node --check scripts/mvp15d-product-adapter-runner.mjs
 node --check scripts/mvp15d-d0-capture.mjs
 node --check scripts/mvp15d-d0-spike.mjs
@@ -310,4 +410,4 @@ Unset or omit the variable for the required gate-OFF negative smoke. Values othe
 
 The smoke must use product UI `validate -> add -> confirmTrust`, attach a live observation, mutate only `/Game/UAgentSandbox/<run-id>/**`, verify external Content evidence, cross the original token TTL without crossing the transaction cap, exercise inverse rollback, and confirm replay delta zero and non-sandbox stability. Follow `docs/mvp15-manual-smoke.md` and record the plugin identity/fingerprint required by `docs/mvp15-ue-mcp-plugin-baseline.md`.
 
-The 2026-07-18 MVP15C / 09Z `PASS_REAL_SMOKE` result is historical happy-path evidence, not current authority verification. Rework 8 is `NEEDS_FIX` because its current acceptance manifest file SHA conflicted with retained evidence and the other current repository documents; Rework 9 and the D0-D12 source checkpoint are `COMPLETE`. The active UE/build/module bytes are known, while authoritative official mapping, the final clean 15A identity, and the separately authorized product-UI lifecycle remain later gates. Never convert a readiness-only, pre-discovery transport failure, skipped, unavailable, blocked, or supervisor-rejected run into a schema rejection or product-smoke pass.
+The 2026-07-18 MVP15C / 09Z `PASS_REAL_SMOKE` result is historical happy-path evidence, not current authority verification. Rework 8 is `NEEDS_FIX` because its then-current acceptance manifest file SHA conflicted with retained evidence and the other repository documents; Rework 9 and the D0-D12 source checkpoint are `COMPLETE` historical facts. The active UE/build/module bytes are known, while authoritative official mapping, the final clean 15A identity, and the separately authorized product-UI lifecycle remain later gates. Never convert a readiness-only, pre-discovery transport failure, skipped, unavailable, blocked, or supervisor-rejected run into a schema rejection or product-smoke pass.

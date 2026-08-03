@@ -2,30 +2,60 @@
 
 ## Independent UAgent Companion Baseline — MVP15D
 
-Rework 8 is `NEEDS_FIX` because the current acceptance manifest file SHA
-conflicted with retained evidence and the other current repository documents,
-while code and retained evidence validation passed. Rework 9 and the D0-D12
-source checkpoint are `COMPLETE`. Ready for the next MVP stage remains `NO`
-because G13/G16 and 15A-15C remain separately gated. Retained D0 supports task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`
-(previous task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`).
-`external/mvp15d-rework7-d0-20260726_190100` selects Direct with 129 indexed
-artifacts and mutation zero; transcript-index SHA-256 is
-`b87e0a8a4d685b0cbddd55c8ea5ed4e944b9feba7aaa9d9176e23e2dfdeb0f99`.
-Retained build `external/mvp15d-rework7-build-20260726_203000` and UE
-`external/mvp15d-rework7-ue-20260726_190100` close
-`BLOCKED_BY_EVIDENCE_RETENTION`; UE capture SHA-256 is
-`8794de55d0bc3444015116918b92e957070e684ac014f7f9551c07762af1cbb8`.
-Verified implementation/content checkpoint
-`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
-documentation closeout checkpoint.
+Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
+its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
+Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
+supervisor checkpoint` in a
+dirty pre-checkpoint tree. G14 is `IMPLEMENTED`; G15 is
+`IN_PROGRESS`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
+acceptance remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C
+are `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 
-These implementation results address the Rework 5 observer/native authority,
-cross-language binding, create-to-identity ownership, Rust isolation, and
-process-closeout findings. No final clean 15A package, installed/loaded package
-identity proof, or real product-mutation result exists. D13, 15A, 15B, and 15C
-remain prohibited.
+Identity v2 / manifest v3 independently bind engine `5.8.1`, engine changelist
+`56057345`, compatible changelist `55116800`, and module BuildId `55116800`.
+The historical Rework 2 inspection found valid Epic Games Authenticode
+signatures for the seven inspected engine MCP-related DLLs. The tracked icon
+and actual Tauri MSI/NSIS bundling remain accepted implementation facts.
+
+The source enforces LF canonical fixture bytes, exact
+`RunUAT.bat ... -Rocket` invocation, command/toolchain/source fingerprinting,
+deterministic module-index creation, strict manifest and installed/loaded
+equality, and fixed repository-owned adapters for UE Automation, normal-product
+capture, and rendered UI lifecycle/replay. The default-off release-binary
+bridge creates task/source/nonce-bound runtime events and rendered phases run
+asynchronously under a Windows Job. Producer ledgers and summaries are derived
+from bound raw events/transcripts; fixture origin cannot claim live. Final
+Source/Tooling Rework 8 preserves the sole production publisher, which
+re-observes the live PID, requires PID and creation FILETIME equality,
+independently derives every bound source/project/manifest/package/install/
+executable/producer/Job fact, and publishes through one exclusive atomic
+writer. The publisher's private brand is not serialized. Exported and CLI
+verification rehashes and cross-binds the retained chain but returns only
+persisted consistency with `productionLaunchAuthorityVerified: false`; a
+coherent hand-authored/copied chain may satisfy that level. Owned launch
+authority requires the same parent invocation, fixed non-injected producer
+launch, actual child result, full cross-binding, and an unexported single-use
+receipt. Ancestor junction/reparse paths still fail. Real Windows integration
+passes with zero current residues.
+
+The compiled identity covers a deterministic 335-file transitive production
+boundary and a 356-entry production/Git watch set. The boundary includes native,
+renderer, Settings, runtime/MCP/shared, configuration/lock, final tooling, and
+companion plugin inputs; new production files and tracked production deletion
+cannot leave the identity unchanged.
+
+The UE 5.8.1 inventory uses a closed file/directory allowlist, deterministic
+redaction, secret/path rejection, and independent verification. The unsafe
+predecessor evidence root was invalidated and removed for
+`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Actual release native/product-renderer/UI-
+renderer capability handshakes completed with zero MCP/network/asset
+operations. No real UE session, Tool Search, product discovery, compatibility
+matrix, or mutation ran (`SKIPPED_BY_TASK_BOUNDARY`).
+
+Retained historical Source Checkpoint Rework 7 D0/build/UE roots continue to validate read-only. D0 preserves
+Direct as the selected route with mutation zero; Toolset Registry is closed as
+an alternative and is not a fallback. Those roots are historical
+source-checkpoint evidence and cannot satisfy final 15A-15C.
 
 The repository working tree carries `integrations/unreal/UAgentAssetTools`,
 independent from Epic's plugin and with no Epic signing/vendor claim. Historical
@@ -35,13 +65,18 @@ cleanup hardening, and native module enumeration; its supervisor verdict was
 not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
-A clean source commit/tree remains required only for later final 15A packaging.
+A supervisor-created Rework 8 checkpoint plus a new clean-commit read-only
+task are required before the full UE 5.8.1 compatibility matrix. Real mutation
+remains prohibited and belongs to a later separate task.
 
 This document separates repository-defined expectations from facts that must be collected from the real UE/MCP environment. It contains no local absolute path, process id, endpoint credential, token, or secret.
 
 ## Repository-defined Target
 
-- Unreal Engine target family: `UE 5.8`; observed real-environment build: UE `5.8.0`, promoted changelist/BuildId `55116800`.
+- Unreal Engine current target: UE `5.8.1`; engine changelist `56057345`;
+  compatible changelist `55116800`; module BuildId `55116800`. Historical
+  Source Checkpoint Rework 7 used UE `5.8.0` / `55116800` and remains read-only historical
+  evidence.
 - Integration target: the official Unreal MCP plugin/server route described by the project.
 - Exact tool order:
   1. `ue.asset.create_folder`
@@ -101,7 +136,7 @@ SHA-256: `42703e1fdd8d6198f6b72ba3dfdb8d3e4c2246ed604ac317ab1b76e1ca43e9cb`.
 
 This hash fingerprints UAgent's expected inventory and version literals only. It is not the required live discovery fingerprint and does not identify a plugin binary.
 
-## Observed Real Plugin Identity and Remaining Gaps
+## Historical Observed Epic Plugin Identity and Remaining Gaps
 
 C12-C13E established and preserved the following real-environment byte identity without publishing local paths, PIDs, or endpoints:
 
@@ -132,14 +167,14 @@ These hashes reproducibly identify the active project-local bytes, but the descr
 
 The mapping can close only if an official package manifest names the exact active hashes, the exact active binaries carry a valid Epic signature, or an official source revision plus build attestation reproducibly maps to those exact hashes.
 
-| Required fact                                                    | Current value                                                                                                        | Consequence                                                                              |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Exact UE version/build                                           | UE `5.8.0`, promoted `55116800`                                                                                      | Known environment fact; not a product-smoke pass                                         |
-| Active descriptor/module binary identity                         | Descriptor and six module SHA-256 values recorded above                                                              | Active bytes are reproducible                                                            |
-| Official source commit or authoritative artifact mapping         | Missing; signed sibling bytes do not hash-match the active unsigned bytes                                            | `BLOCKED_BY_MCP_SCHEMA`                                                                  |
-| Fresh-smoke plugin build binding                                 | Missing                                                                                                              | Final clean installed/loaded identity remains a later 15A gate                           |
-| Canonical product-adapter live six-descriptor fingerprint        | Rework 7 retained D0 records four independently indexed sessions, zero mutation, and Direct; final 15B installed-build binding has not run | PARTIAL |
-| Per-tool schema/contract version or stable per-field fingerprint | Rework 7 D0 and five-session `48/48` UE matrix exercise the exact-six contract; the Rework 9 source checkpoint is complete | IMPLEMENTED for the source checkpoint; final installed-build identity remains later work |
+| Required historical C14 fact                                     | Historical C14 value                                                                                                                                    | Consequence                                                                              |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Exact UE version/build                                           | UE `5.8.0`, promoted `55116800`                                                                                                                         | Known environment fact; not a product-smoke pass                                         |
+| Active descriptor/module binary identity                         | Descriptor and six module SHA-256 values recorded above                                                                                                 | Active bytes are reproducible                                                            |
+| Official source commit or authoritative artifact mapping         | Missing; signed sibling bytes do not hash-match the active unsigned bytes                                                                               | `BLOCKED_BY_MCP_SCHEMA`                                                                  |
+| Fresh-smoke plugin build binding                                 | Missing                                                                                                                                                 | Final clean installed/loaded identity remains a later 15A gate                           |
+| Canonical product-adapter live six-descriptor fingerprint        | Rework 7 retained D0 records four independently indexed sessions, zero mutation, and Direct; final 15B installed-build binding has not run              | PARTIAL                                                                                  |
+| Per-tool schema/contract version or stable per-field fingerprint | Historical Source Checkpoint Rework 7 D0 and five-session `48/48` UE matrix exercise the exact-six contract; the Rework 9 source checkpoint is complete | IMPLEMENTED for the source checkpoint; final installed-build identity remains later work |
 
 A statement that a plugin is running locally, a descriptor vendor string, or module hashes alone are not official provenance. Acceptance still requires the authoritative mapping plus the fresh live contract fingerprint.
 

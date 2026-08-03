@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -753,7 +753,7 @@ fn companion_binding_from_attestation(
     attestation_generation: u64,
 ) -> Option<CompanionApprovalBinding> {
     let manifest = result.manifest.as_ref()?;
-    let manifest_sha256 = manifest.get("manifestSha256")?.as_str()?;
+    let manifest_sha256 = manifest.get("manifestSelfSha256")?.as_str()?;
     if !is_lower_hex(manifest_sha256, 64) {
         return None;
     }
@@ -816,17 +816,31 @@ fn companion_source_identity(manifest: &serde_json::Value) -> Option<String> {
         .map(|bytes| sha256_bytes(&bytes))
 }
 
+fn manifest_artifact_by_path<'a>(
+    manifest: &'a serde_json::Value,
+    expected_path: &str,
+) -> Option<&'a serde_json::Map<String, serde_json::Value>> {
+    manifest
+        .get("artifacts")?
+        .as_array()?
+        .iter()
+        .filter_map(serde_json::Value::as_object)
+        .find(|artifact| {
+            artifact.get("path").and_then(serde_json::Value::as_str) == Some(expected_path)
+        })
+}
+
 fn companion_plugin_identity(manifest: &serde_json::Value) -> Option<String> {
-    let identity = manifest.get("uplugin")?.get("sha256")?.as_str()?;
+    let identity = manifest_artifact_by_path(manifest, "UAgentAssetTools.uplugin")?
+        .get("sha256")?
+        .as_str()?;
     is_lower_hex(identity, 64).then(|| identity.to_string())
 }
 
 fn companion_package_identity(manifest: &serde_json::Value) -> Option<String> {
     let canonical = serde_json::json!({
-        "moduleIndex": manifest.get("moduleIndex")?,
+        "artifacts": manifest.get("artifacts")?,
         "modules": manifest.get("modules")?,
-        "schema": manifest.get("schema")?,
-        "uplugin": manifest.get("uplugin")?,
     });
     serde_json::to_vec(&canonical)
         .ok()
@@ -839,12 +853,14 @@ fn companion_package_identity(manifest: &serde_json::Value) -> Option<String> {
 /// masked by a coincidental session identity match.
 fn companion_descriptor_identity(manifest: &serde_json::Value) -> Option<String> {
     let record = manifest.as_object()?;
-    let artifact_sha = |field: &str| {
-        let value = record.get(field)?.get("sha256")?.as_str()?;
+    let artifact_sha = |path: &str| {
+        let value = manifest_artifact_by_path(manifest, path)?
+            .get("sha256")?
+            .as_str()?;
         is_lower_hex(value, 64).then_some(value)
     };
-    let schema_sha256 = artifact_sha("schema")?;
-    let uplugin_sha256 = artifact_sha("uplugin")?;
+    let schema_sha256 = artifact_sha("Resources/uagent-asset-tools.schema.json")?;
+    let uplugin_sha256 = artifact_sha("UAgentAssetTools.uplugin")?;
     let tool_names = record
         .get("toolNames")?
         .as_array()?
@@ -979,29 +995,33 @@ fn attest_companion_plugin_root_with_loaded_modules(
     let Some(record) = manifest.as_object() else {
         return blocked_companion_attestation("companion_manifest_invalid");
     };
-    const MANIFEST_FIELDS: [&str; 22] = [
+    const MANIFEST_FIELDS: [&str; 26] = [
         "schemaVersion",
+        "taskGeneration",
+        "taskId",
         "pluginId",
         "pluginVersion",
         "contractVersion",
         "sourceCommit",
         "sourceTreeSha256",
+        "physicalFixtures",
         "dirty",
-        "ueVersion",
-        "ueBuildId",
+        "engineVersion",
+        "engineChangelist",
+        "compatibleChangelist",
+        "moduleBuildId",
         "targetPlatform",
         "configuration",
         "compiler",
         "windowsSdk",
         "buildCommandFingerprint",
-        "uplugin",
-        "schema",
-        "moduleIndex",
+        "buildEvidenceArtifacts",
+        "artifacts",
         "modules",
         "toolNames",
         "generatedAt",
         "builder",
-        "manifestSha256",
+        "manifestSelfSha256",
     ];
     let keys = record.keys().map(String::as_str).collect::<BTreeSet<_>>();
     if keys.len() != MANIFEST_FIELDS.len()
@@ -1012,34 +1032,34 @@ fn attest_companion_plugin_root_with_loaded_modules(
     if let Err(reason) = validate_companion_manifest_metadata(record) {
         return blocked_companion_attestation(reason);
     }
-    let uplugin =
-        match parse_companion_artifact(record.get("uplugin"), Some("UAgentAssetTools.uplugin")) {
-            Ok(artifact) => artifact,
-            Err(reason) => return blocked_companion_attestation(reason),
-        };
-    let schema = match parse_companion_artifact(
-        record.get("schema"),
-        Some("uagent-asset-tools.schema.json"),
-    ) {
-        Ok(artifact) => artifact,
-        Err(reason) => return blocked_companion_attestation(reason),
+    let Some(package_values) = record
+        .get("artifacts")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return blocked_companion_attestation("companion_artifact_invalid");
     };
-    let module_index =
-        match parse_companion_artifact(record.get("moduleIndex"), Some("UnrealEditor.modules")) {
-            Ok(artifact) => artifact,
+    let mut package_artifacts = BTreeMap::new();
+    for value in package_values {
+        let (path, artifact) = match parse_companion_manifest_artifact(Some(value), None) {
+            Ok(value) => value,
             Err(reason) => return blocked_companion_attestation(reason),
         };
-    if !verify_companion_artifact(plugin_root.join(&uplugin.name), &uplugin)
-        || !verify_companion_artifact(plugin_root.join("Resources").join(&schema.name), &schema)
-        || !verify_companion_artifact(
-            plugin_root
-                .join("Binaries")
-                .join("Win64")
-                .join(&module_index.name),
-            &module_index,
-        )
-    {
-        return blocked_companion_attestation("companion_artifact_hash_mismatch");
+        if package_artifacts.insert(path.clone(), artifact).is_some() {
+            return blocked_companion_attestation("companion_artifact_invalid");
+        }
+        let expected = package_artifacts.get(&path).expect("inserted artifact");
+        if !verify_companion_artifact(plugin_root.join(path.replace('/', "\\")), expected) {
+            return blocked_companion_attestation("companion_artifact_hash_mismatch");
+        }
+    }
+    for required in [
+        "UAgentAssetTools.uplugin",
+        "Resources/uagent-asset-tools.schema.json",
+        "Binaries/Win64/UnrealEditor.modules",
+    ] {
+        if !package_artifacts.contains_key(required) {
+            return blocked_companion_attestation("companion_artifact_invalid");
+        }
     }
     let Some(module_values) = record.get("modules").and_then(serde_json::Value::as_array) else {
         return blocked_companion_attestation("companion_modules_invalid");
@@ -1051,11 +1071,22 @@ fn attest_companion_plugin_root_with_loaded_modules(
     let mut names = BTreeSet::new();
     let mut previous_name = String::new();
     for value in module_values {
-        let artifact = match parse_companion_artifact(Some(value), None) {
-            Ok(artifact) if artifact.name.ends_with(".dll") => artifact,
+        let (path, artifact) = match parse_companion_manifest_artifact(Some(value), None) {
+            Ok((path, artifact))
+                if path.starts_with("Binaries/Win64/UnrealEditor-") && path.ends_with(".dll") =>
+            {
+                (path, artifact)
+            }
             Ok(_) => return blocked_companion_attestation("companion_modules_invalid"),
             Err(reason) => return blocked_companion_attestation(reason),
         };
+        if path != format!("Binaries/Win64/{}", artifact.name)
+            || package_artifacts.get(&path).is_none_or(|package| {
+                package.size != artifact.size || package.sha256 != artifact.sha256
+            })
+        {
+            return blocked_companion_attestation("companion_modules_invalid");
+        }
         if !previous_name.is_empty() && artifact.name <= previous_name
             || !names.insert(artifact.name.clone())
         {
@@ -1073,10 +1104,10 @@ fn attest_companion_plugin_root_with_loaded_modules(
         }
         installed_modules.push(artifact);
     }
-    let module_index_path = plugin_root
-        .join("Binaries")
-        .join("Win64")
-        .join(&module_index.name);
+    if package_artifacts.len() != installed_modules.len() + 3 {
+        return blocked_companion_attestation("companion_artifact_invalid");
+    }
+    let module_index_path = plugin_root.join("Binaries/Win64/UnrealEditor.modules");
     let module_index_json: serde_json::Value = match std::fs::read(&module_index_path)
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -1145,7 +1176,7 @@ fn attest_companion_plugin_root_with_loaded_modules(
         actual_names.insert(name);
     }
     let mut expected_package_names = names.clone();
-    expected_package_names.insert(module_index.name);
+    expected_package_names.insert("UnrealEditor.modules".to_string());
     if actual_names != expected_package_names {
         return blocked_companion_attestation("companion_package_layout_invalid");
     }
@@ -1254,17 +1285,25 @@ fn validate_companion_manifest_metadata(
         "ue.asset.save",
     ];
     let valid_identity = manifest_string(record, "schemaVersion")
-        == Some("uagent.ue-companion-plugin.build-manifest.v1")
+        == Some("uagent.ue-companion-plugin.build-manifest.v3")
+        && manifest_string(record, "taskGeneration") == Some("final-d13-d16")
+        && manifest_string(record, "taskId").is_some_and(|value| value.starts_with("TASK-MVP15D-"))
         && manifest_string(record, "pluginId") == Some("UAgentAssetTools")
         && manifest_string(record, "pluginVersion") == Some("0.1.0")
         && manifest_string(record, "contractVersion") == Some("mvp15d.asset-tools.v1")
         && record.get("dirty").and_then(serde_json::Value::as_bool) == Some(false)
-        && manifest_string(record, "ueVersion") == Some("5.8.0")
-        && manifest_string(record, "ueBuildId") == Some("55116800")
+        && manifest_string(record, "engineVersion") == Some("5.8.1")
+        && record
+            .get("engineChangelist")
+            .and_then(serde_json::Value::as_u64)
+            == Some(56057345)
+        && record
+            .get("compatibleChangelist")
+            .and_then(serde_json::Value::as_u64)
+            == Some(55116800)
+        && manifest_string(record, "moduleBuildId") == Some("55116800")
         && manifest_string(record, "targetPlatform") == Some("Win64")
         && manifest_string(record, "configuration") == Some("Development")
-        && manifest_string(record, "compiler") == Some("MSVC")
-        && manifest_string(record, "windowsSdk") == Some("Windows SDK")
         && manifest_string(record, "sourceCommit").is_some_and(|value| is_lower_hex(value, 40))
         && manifest_string(record, "sourceTreeSha256").is_some_and(|value| is_lower_hex(value, 64))
         && manifest_string(record, "buildCommandFingerprint")
@@ -1272,6 +1311,30 @@ fn validate_companion_manifest_metadata(
         && manifest_string(record, "generatedAt").is_some_and(is_canonical_companion_timestamp);
     if !valid_identity {
         return Err("companion_manifest_identity_invalid");
+    }
+    let valid_toolchain = |field: &str, expected_name: &str| {
+        record
+            .get(field)
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|value| {
+                value.len() == 2
+                    && manifest_string(value, "name") == Some(expected_name)
+                    && manifest_string(value, "version").is_some_and(is_safe_companion_metadata)
+            })
+    };
+    if !valid_toolchain("compiler", "MSVC") || !valid_toolchain("windowsSdk", "Windows SDK") {
+        return Err("companion_manifest_identity_invalid");
+    }
+    if record
+        .get("physicalFixtures")
+        .and_then(serde_json::Value::as_array)
+        .is_none_or(|value| value.len() != 2)
+        || record
+            .get("buildEvidenceArtifacts")
+            .and_then(serde_json::Value::as_array)
+            .is_none_or(|value| value.len() < 3)
+    {
+        return Err("companion_manifest_artifact_invalid");
     }
     let Some(tool_names) = record
         .get("toolNames")
@@ -1298,7 +1361,7 @@ fn validate_companion_manifest_metadata(
     {
         return Err("companion_manifest_builder_invalid");
     }
-    let Some(declared_self_hash) = manifest_string(record, "manifestSha256") else {
+    let Some(declared_self_hash) = manifest_string(record, "manifestSelfSha256") else {
         return Err("companion_manifest_self_hash_invalid");
     };
     if !is_lower_hex(declared_self_hash, 64) {
@@ -1324,7 +1387,7 @@ fn companion_manifest_self_hash(
     record: &serde_json::Map<String, serde_json::Value>,
 ) -> Option<String> {
     let mut without_self_hash = record.clone();
-    without_self_hash.remove("manifestSha256")?;
+    without_self_hash.remove("manifestSelfSha256")?;
     let mut canonical = String::new();
     if !append_canonical_companion_json(
         &serde_json::Value::Object(without_self_hash),
@@ -1429,21 +1492,21 @@ fn is_safe_mcp_binding(value: &str) -> bool {
         })
 }
 
-fn parse_companion_artifact(
+fn parse_companion_manifest_artifact(
     value: Option<&serde_json::Value>,
-    expected_name: Option<&str>,
-) -> Result<Mvp15CompanionArtifact, &'static str> {
+    expected_path: Option<&str>,
+) -> Result<(String, Mvp15CompanionArtifact), &'static str> {
     let Some(record) = value.and_then(serde_json::Value::as_object) else {
         return Err("companion_artifact_invalid");
     };
     if record.len() != 3
-        || !["name", "size", "sha256"]
+        || !["path", "size", "sha256"]
             .iter()
             .all(|key| record.contains_key(*key))
     {
         return Err("companion_artifact_invalid");
     }
-    let Some(name) = record.get("name").and_then(serde_json::Value::as_str) else {
+    let Some(path) = record.get("path").and_then(serde_json::Value::as_str) else {
         return Err("companion_artifact_invalid");
     };
     let Some(size) = record.get("size").and_then(serde_json::Value::as_u64) else {
@@ -1452,17 +1515,28 @@ fn parse_companion_artifact(
     let Some(sha256) = record.get("sha256").and_then(serde_json::Value::as_str) else {
         return Err("companion_artifact_invalid");
     };
-    if !is_safe_companion_file_name(name)
-        || expected_name.is_some_and(|expected| expected != name)
+    let Some(name) = path.rsplit('/').next() else {
+        return Err("companion_artifact_invalid");
+    };
+    if path.is_empty()
+        || path.starts_with('/')
+        || path.contains('\\')
+        || path
+            .split('/')
+            .any(|part| !is_safe_companion_file_name(part))
+        || expected_path.is_some_and(|expected| expected != path)
         || !is_lower_hex(sha256, 64)
     {
         return Err("companion_artifact_invalid");
     }
-    Ok(Mvp15CompanionArtifact {
-        name: name.to_string(),
-        size,
-        sha256: sha256.to_string(),
-    })
+    Ok((
+        path.to_string(),
+        Mvp15CompanionArtifact {
+            name: name.to_string(),
+            size,
+            sha256: sha256.to_string(),
+        },
+    ))
 }
 
 fn verify_companion_artifact(path: PathBuf, expected: &Mvp15CompanionArtifact) -> bool {
@@ -3013,9 +3087,9 @@ mod tests {
         root
     }
 
-    fn companion_artifact(name: &str, bytes: &[u8]) -> serde_json::Value {
+    fn companion_artifact(path: &str, bytes: &[u8]) -> serde_json::Value {
         serde_json::json!({
-            "name": name,
+            "path": path,
             "size": bytes.len(),
             "sha256": sha256_bytes(bytes),
         })
@@ -3025,7 +3099,7 @@ mod tests {
         let record = manifest.as_object_mut().unwrap();
         let self_hash = companion_manifest_self_hash(record).unwrap();
         record.insert(
-            "manifestSha256".to_string(),
+            "manifestSelfSha256".to_string(),
             serde_json::Value::String(self_hash),
         );
         std::fs::write(
@@ -3066,24 +3140,50 @@ mod tests {
         )
         .unwrap();
         let mut manifest = serde_json::json!({
-            "schemaVersion": "uagent.ue-companion-plugin.build-manifest.v1",
+            "schemaVersion": "uagent.ue-companion-plugin.build-manifest.v3",
+            "taskGeneration": "final-d13-d16",
+            "taskId": "TASK-MVP15D-UAGENT-NATIVE-TEST",
             "pluginId": "UAgentAssetTools",
             "pluginVersion": "0.1.0",
             "contractVersion": "mvp15d.asset-tools.v1",
             "sourceCommit": hex('a', 40),
             "sourceTreeSha256": hex('b', 64),
+            "physicalFixtures": [
+                {
+                    "path": "fixture-a.json",
+                    "size": 1,
+                    "sha256": hex('1', 64),
+                    "gitObjectSha256": hex('1', 64)
+                },
+                {
+                    "path": "fixture-b.json",
+                    "size": 1,
+                    "sha256": hex('2', 64),
+                    "gitObjectSha256": hex('2', 64)
+                }
+            ],
             "dirty": false,
-            "ueVersion": "5.8.0",
-            "ueBuildId": "55116800",
+            "engineVersion": "5.8.1",
+            "engineChangelist": 56057345,
+            "compatibleChangelist": 55116800,
+            "moduleBuildId": "55116800",
             "targetPlatform": "Win64",
             "configuration": "Development",
-            "compiler": "MSVC",
-            "windowsSdk": "Windows SDK",
+            "compiler": { "name": "MSVC", "version": "14.44.35207" },
+            "windowsSdk": { "name": "Windows SDK", "version": "10.0.26100.0" },
             "buildCommandFingerprint": hex('c', 64),
-            "uplugin": companion_artifact("UAgentAssetTools.uplugin", uplugin),
-            "schema": companion_artifact("uagent-asset-tools.schema.json", schema),
-            "moduleIndex": companion_artifact("UnrealEditor.modules", module_index),
-            "modules": [companion_artifact("UnrealEditor-UAgentAssetTools.dll", module)],
+            "buildEvidenceArtifacts": [
+                companion_artifact("logs/stdout.log", b"log"),
+                companion_artifact("metadata/build-command.json", b"command"),
+                companion_artifact("metadata/build-result.json", b"result")
+            ],
+            "artifacts": [
+                companion_artifact("Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", module),
+                companion_artifact("Binaries/Win64/UnrealEditor.modules", module_index),
+                companion_artifact("Resources/uagent-asset-tools.schema.json", schema),
+                companion_artifact("UAgentAssetTools.uplugin", uplugin)
+            ],
+            "modules": [companion_artifact("Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", module)],
             "toolNames": [
                 "ue.asset.create_folder",
                 "ue.asset.duplicate",
@@ -3094,7 +3194,7 @@ mod tests {
             ],
             "generatedAt": "2026-07-20T00:00:00.000Z",
             "builder": { "kind": "local", "name": "native-test" },
-            "manifestSha256": ""
+            "manifestSelfSha256": ""
         });
         write_companion_manifest(&root, &mut manifest);
         (root, manifest)
@@ -3137,7 +3237,7 @@ mod tests {
 
         let (root, mut manifest) = companion_package_root("self-hash");
         manifest.as_object_mut().unwrap().insert(
-            "manifestSha256".to_string(),
+            "manifestSelfSha256".to_string(),
             serde_json::Value::String(hex('0', 64)),
         );
         std::fs::write(

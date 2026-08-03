@@ -7,7 +7,7 @@
     "frontendDist": "../web/dist",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "pnpm web:dev",
-    "beforeBuildCommand": "pnpm web:build"
+    "beforeBuildCommand": "pnpm icon:validate && pnpm web:build"
   },
   "app": {
     "windows": [
@@ -28,6 +28,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": "all",
+    "icon": [
+      "icons/icon.ico"
+    ]
   }
 }

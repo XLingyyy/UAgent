@@ -1,48 +1,80 @@
 # UAgent MVP Roadmap
 
-## MVP15D - UAgent UE Companion Plugin Source Checkpoint Complete
+## MVP15D - Final Source/Tooling Rework 8 Authoritative Launch Boundary and Report Closure
 
-Status: Rework 8 is `NEEDS_FIX` because its current acceptance manifest file SHA
-conflicted with retained evidence and the other current repository documents,
-while product code and retained evidence validation passed.
-Previous task:
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`. Current
-task:
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`. Rework 9
-and the D0-D12 source checkpoint are `COMPLETE`; Ready for the next MVP stage
-remains `NO` because G13/G16 and 15A-15C remain separately gated.
+- Final Source/Tooling Rework 7: historical/current predecessor `PARTIAL` with
+  supervisor `NEEDS_FIX`; no checkpoint was created.
+- Final Source/Tooling Rework 8 source implementation: `IMPLEMENTED, awaiting
+supervisor checkpoint` (dirty pre-checkpoint; clean rebuild pending supervisor).
+- G14 documentation consistency: `IMPLEMENTED` after the current evidence and
+  stale-state reconciliation.
+- G15 checkpoint integrity: `IN_PROGRESS` (post-checkpoint clean commit
+  attribution is `PENDING_SUPERVISOR_CHECKPOINT`).
+- G16 authority provenance and plugin baseline: `PARTIAL`.
+- UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
+  module BuildId `55116800`.
+- Desktop bundling: `IMPLEMENTED`; icon preflight, MSI, and NSIS passed.
+- Real UE 5.8.1 compatibility: `PARTIAL`; the Rework 2 read-only attempt is
+  historical and the full clean-commit matrix remains deferred.
+- D13 / 15A live execution: `BLOCKED`.
+- D14 / 15B: `PLANNED`; not run.
+- D15 / 15C: `PLANNED`; no asset mutation was attempted.
+- D16: `IN_PROGRESS`.
+- Overall MVP15 final acceptance: `PARTIAL`.
+- Ready for the next MVP stage: `NO`.
 
-- Epic `ModelContextProtocol` remains untouched. The selected companion
-  registration route is `direct`; Toolset Registry remains outside the selected
-  production path.
-- Retained Rework 7 D0 at
-  `external/mvp15d-rework7-d0-20260726_190100` records four real
-  product-adapter sessions, 129 indexed artifacts, zero mutation, Direct,
-  transcript-index SHA-256
-  `b87e0a8a4d685b0cbddd55c8ea5ed4e944b9feba7aaa9d9176e23e2dfdeb0f99`,
-  and `hashes.json` SHA-256
-  `d393ce454385b32d07fa1a08ac7b8f39f897052dc3ff68daf785fc60d8077106`.
-- The build/source/manifest bundle at
-  `external/mvp15d-rework7-build-20260726_203000` has bundle SHA-256
-  `ef86e59c05068f9610050a2afa44bf3237d3fd78e82262cf6d3be6660223420b`,
-  60 files total (59 inventory-tracked payload files plus `inventory.json`),
-  byte-equal source snapshots, zero process/port/marker residuals, and unchanged
-  empty Content.
-- UE evidence at `external/mvp15d-rework7-ue-20260726_190100` records five
-  isolated sessions, `48/48`, six processes per ledger, residual zero, unchanged
-  Content, and capture SHA-256
-  `8794de55d0bc3444015116918b92e957070e684ac014f7f9551c07762af1cbb8`.
-- Typecheck, lint, build, two consecutive workspace tests, ten fresh default
-  Cargo runs, the serial diagnostic, tooling `23/23`, build-bundle `10/10`, and
-  targeted authority/vector/process checks exit 0. The historical supervisor
-  first workspace-test attempt exited `134`; subsequent runs passed.
-- `BLOCKED_BY_EVIDENCE_RETENTION` is closed. No source-checkpoint blocker
-  remains.
-- Verified implementation/content checkpoint
-  `b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
-  documentation closeout checkpoint on `main`.
-- No final 15A package or separately authorized product-UI mutation lifecycle
-  exists. D13, 15A, 15B, and 15C remain prohibited.
+Rework 7 preserved the sole publisher, transitive source boundary, observer,
+reparse rejection, and cleanup controls, but its standalone verifier accepted a
+coherent fully hand-authored evidence chain. Rework 8 separates retained-file
+consistency from launch ownership. Exported verifiers and CLI `verify` return
+`*_persisted_consistency_verified` with
+`productionLaunchAuthorityVerified: false`; coordinated public JSON and hashes
+may prove consistency but cannot prove who launched the producer. Only the
+same-process `executeLivePhase()` path can return `*_owned_launch_verified`
+after fixed non-injected launch, actual child termination/event checks, full
+cross-binding, and consumption of an unexported single-use object-identity
+receipt. The publisher's earlier in-process brand is not claimed to survive
+serialization.
+
+The source identity now uses a deterministic production boundary: 335 files
+discovered from 14 roots plus 28 exact files, 9 exclusion classes, 126 excluded
+entries, and a 356-entry source/Git watch set. It covers transitive native,
+renderer, Settings, runtime/MCP/shared, build/lock/config, final tooling, and
+companion plugin inputs. New production files are included automatically and
+tracked production deletion makes the identity dirty. Normal repositories,
+worktrees, symbolic/detached HEAD, loose/packed refs, and same-branch commits
+are regression-covered.
+
+Real Windows fixture observation, PID/creation mismatch, intermediate
+`Binaries`/`Win64` junction rejection, and fail-closed cleanup regressions pass.
+Fifteen inherited fixture directories plus one transient residue were removed
+after exact target and no-live-owner checks; final matching process and temp
+counts are zero.
+
+Rework 4 supplies the production Tauri event-file bridge, real renderer/native
+handshake, asynchronous Windows Job-owned product/UI orchestration, and an
+official Unreal Automation report parser with exact UAgent task markers. The
+fresh release `uagent.exe` passed capability-only probes for native,
+normal-product renderer, and rendered UI boundaries with zero MCP, network,
+and asset operations and zero process/file residue. Capability evidence is
+kept distinct from live compatibility evidence; no real UE session or
+mutation ran.
+
+The compatibility inventory now enforces a closed file/directory allowlist,
+deterministic redaction, independent verification, and secret/path rejection.
+The unsafe predecessor evidence root was invalidated and removed for
+`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root exists.
+
+Direct remains the selected D0 registration route; Toolset Registry remains a
+closed alternative and is not a production fallback. Retained historical Source Checkpoint Rework 7
+D0/build/UE validators continue to pass read-only, but those historical bundles
+cannot satisfy final 15A-15C.
+
+Recovery requires the Rework 8 supervisor checkpoint, then a new clean-commit
+read-only 5.8.1 task covering both Tool Search modes, exact-six/product
+retractions, response framing, clean inventory, and the real loaded-module
+observer. Only a later separately authorized task may consider real 15C
+mutation.
 
 ## MVP0 - Project Foundation
 

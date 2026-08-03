@@ -1,6 +1,60 @@
 # MVP15 Native Authority Binding Rework Handoff
 
-## Current MVP15D Rework 9 Source-checkpoint Handoff — COMPLETE — 2026-07-26
+## Current MVP15D Final Source/Tooling Rework 8 Source Handoff — 2026-08-03 (dirty pre-checkpoint)
+
+Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
+its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
+Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
+supervisor checkpoint`. G14 is
+`IMPLEMENTED`; G15 is `IN_PROGRESS`; G16 is `PARTIAL`.
+Real UE 5.8.1 compatibility and overall acceptance remain `PARTIAL`; D13 /
+15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`; D16 remains
+`IN_PROGRESS`; Ready is `NO`. The release binary truthfully reports a dirty
+pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
+transitive production boundary; only the supervisor's clean
+implementation-commit rebuild satisfies G15 source attribution.
+
+The handoff preserves the default-off production Tauri bridge, native-generated
+runtime events, one-time nonce and authenticated driver transport, asynchronous
+Windows Job process ownership, an early task-owned process identity published
+while the process is alive, one branded live publisher path with
+explicit PID/creation matching and independently derived facts, a fully bound
+path-free loaded-module ledger with one exclusive atomic writer, complete
+downstream ledger/artifact cross-binding, actual
+release-binary native/product/UI capability handshakes, and official Unreal
+Automation report ingestion. The runner and transitive production boundary bind
+those events to producer ledgers, hashes, process closeout, deterministic
+redaction, and independent verification. The publisher brand is not serialized
+or presented as proof held by a later process. Persisted exported/CLI
+verification returns `*_persisted_consistency_verified` with
+`productionLaunchAuthorityVerified: false`; even a fully coherent hand-authored
+chain cannot receive the owned status. Only the same `executeLivePhase()`
+invocation that checked absent outputs, launched the fixed producer with the real
+non-injected launcher, checked the actual child and retained cross-binding, and
+consumed its private single-use `WeakSet` receipt can return
+`*_owned_launch_verified` with `productionLaunchAuthorityVerified: true`.
+`build.rs` consumes the validated
+356-entry Git/source watch set (worktrees, loose/packed refs,
+symbolic/detached HEAD), so a same-branch commit, production-file addition, or
+tracked production-file deletion deterministically invalidates the identity.
+
+Capability-only handshakes record zero MCP calls, zero network calls, zero asset
+operations, and zero residual processes. The real Windows fixture-process,
+PID/creation mismatch, intermediate junction/reparse, and fail-closed cleanup
+regressions pass with zero current residues. No real UE session, Tool Search,
+full product discovery, or mutation lifecycle ran
+(`SKIPPED_BY_TASK_BOUNDARY`). The unsafe predecessor evidence root was
+invalidated and removed for `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no
+replacement live root was created. The supervisor must create the source
+Rework 8 checkpoint before issuing a new clean-commit read-only compatibility task.
+Real mutation remains prohibited and requires a later separate task.
+
+Identity v2 / manifest v3, engine `5.8.1`, engine CL `56057345`, compatible CL
+`55116800`, module BuildId `55116800`, the exact `RunUAT.bat ... -Rocket`
+construction, deterministic module index, tracked ICO, actual Tauri MSI/NSIS
+bundling, and historical Source Checkpoint Rework 7 validation remain preserved.
+
+## Historical MVP15D Rework 9 Source-checkpoint Handoff — COMPLETE — 2026-07-26
 
 Rework 8 is `NEEDS_FIX` because the current acceptance manifest file SHA
 conflicted with retained evidence and the other current repository documents,
@@ -98,7 +152,7 @@ No final acceptance or `Ready YES` is claimed. Fixture and historical 09Z
 evidence do not substitute for the required live evidence.
 
 Historical baseline stage: **MVP15 - Native Authority Binding Rework**. The
-current Rework 9 D0-D12 source checkpoint is summarized above as `COMPLETE`;
+historical Rework 9 D0-D12 source checkpoint remains `COMPLETE`;
 Ready for the next MVP stage remains `NO` because G13/G16 and 15A-15C remain
 gated.
 
@@ -147,20 +201,22 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 ## Current Remaining Evidence
 
-- Authoritative official source/artifact mapping for the identified project-local
-  plugin bytes and a final installed-build product-adapter live exact six-tool
-  fingerprint.
-- Fresh product-UI happy-path and negative ledgers.
-- Final installed/loaded identity and product-lifecycle evidence; the D0-D12
-  supervisor source checkpoint is complete.
+- Supervisor source checkpoint, SHA backfill, and any push for the implemented
+  Final Source/Tooling Rework 8 source/tooling.
+- A sealed final package and live manifest/install/load equality from the new
+  checkpoint.
+- Fresh current-task UE Automation output, exact-six product-adapter capture,
+  and rendered product-UI happy/negative/replay/cleanup evidence.
+- A retained final inventory produced and verified from those live source
+  artifacts.
 
 ## Current Later-stage Gates
 
-- `BLOCKED_BY_MCP_SCHEMA`: project-local descriptor/module bytes are identified and canonical publication is implemented, but authoritative official active-byte mapping is absent.
-- Final identity gap: Rework 7 retained D0 evidence exists, while a clean
-  installed/loaded 15A package identity remains prohibited until separately
-  authorized.
-- Product lifecycle gap: the fresh product-UI happy/negative R10 lifecycle has not run.
+- D13 / 15A remains `BLOCKED` pending the source checkpoint and a compliant live
+  build/install/load verification.
+- D14 / 15B and D15 / 15C remain `PLANNED`; the hard gate prevented execution.
+- D16 remains `IN_PROGRESS`; G14 is `IMPLEMENTED`, G15 is `IN_PROGRESS`, and
+  G16 is `PARTIAL`.
 
 ## Residual Risks
 
@@ -177,13 +233,13 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 ## Progression
 
-The C14/C14A implementation is a historical predecessor checkpoint at verified
-commit `37c29cbc7961218bfd71d1809178359952a75e18`; its documentation closeout is
-published in that historical task checkpoint. Rework 8 is `NEEDS_FIX`; Rework 9
-and the D0-D12 source checkpoint are `COMPLETE` at verified implementation
-commit `b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` plus the published
-documentation closeout checkpoint. MVP15 remains unready for the next stage
-because the G13 product-UI lifecycle and G16 final plugin
-provenance/live-fingerprint gates are open. MVP16 implementation stays
-prohibited until a later task closes those gates and a supervisor records the
-stage change.
+The D0-D12 `b1c4e4a...` / Rework 9 checkpoint remains valid historical
+evidence. Final Source/Tooling Rework 7 is the historical/current predecessor
+`PARTIAL` with supervisor verdict `NEEDS_FIX`, and no checkpoint was created.
+Final Source/Tooling Rework 8 source implementation and G14 are `IMPLEMENTED` (awaiting supervisor
+checkpoint); G15 is `IN_PROGRESS`; G16 is `PARTIAL`.
+D13 / 15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`; D16
+remains `IN_PROGRESS`; real UE 5.8.1 compatibility and overall acceptance
+remain `PARTIAL`; Ready remains `NO`. The supervisor checkpoint must precede a
+new clean-commit read-only compatibility run. No next-stage or
+mutation work is authorized.

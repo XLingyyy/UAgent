@@ -1,29 +1,44 @@
 # MVP15 Native Authority Binding Rework Manual Smoke
 
-## Current MVP15D Source-checkpoint-complete Manual-smoke Boundary
+## Current MVP15D UE 5.8.1 Rework Manual-smoke Boundary
 
-Rework 8 is `NEEDS_FIX` because the current acceptance manifest file SHA
-conflicted with retained evidence and the other current repository documents,
-while code and retained evidence validation passed. Rework 9 and the D0-D12
-source checkpoint are `COMPLETE`. Ready for the next MVP stage remains `NO`
-because G13/G16 and 15A-15C remain separately gated.
-Previous/current task IDs are
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` and
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`.
-`BLOCKED_BY_EVIDENCE_RETENTION` is closed by retained D0
-`external/mvp15d-rework7-d0-20260726_190100`, build
-`external/mvp15d-rework7-build-20260726_203000`, and UE
-`external/mvp15d-rework7-ue-20260726_190100`. D0 records 129 indexed artifacts,
-zero mutation, and Direct. UE records five sessions, `48/48`, six processes per
-ledger, residual zero, unchanged empty Content, and capture SHA-256
-`8794de55d0bc3444015116918b92e957070e684ac014f7f9551c07762af1cbb8`.
+Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
+its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
+Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
+supervisor checkpoint` in a
+dirty pre-checkpoint tree. G14 is `IMPLEMENTED`; G15 is
+`IN_PROGRESS`; G16 is `PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and
+D15 / 15C remain `PLANNED`; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility
+and overall acceptance remain `PARTIAL`; Ready is `NO`.
 
-These implementation results do not authorize the product-UI mutation procedure
-below. Verified implementation/content checkpoint
-`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
-documentation closeout checkpoint. No final clean 15A package or authorized
-real product mutation exists. D13, 15A, 15B, and 15C remain prohibited until
-separately authorized.
+Rework 4 connects the fixed adapters to the actual release Tauri binary and
+rendered product/UI code through native-generated runtime events. Final
+Source/Tooling Rework 8 preserves the Rework 7 transitive source coverage and
+publisher controls while correcting launch authority:
+the sole branded publisher re-observes PID and creation identity, derives every
+source/project/manifest/package/install/process/producer/Job fact, and publishes
+the exact approved modules through one exclusive atomic writer. The final
+verifier rehashes and cross-binds the ledger and bound artifacts. Ancestor
+junction/reparse and residue conditions fail closed. The executed
+capability-only handshakes prove renderer readiness,
+driver binding, process ownership, early identity validation, and clean
+closeout while recording zero MCP calls, zero network calls, and zero asset
+operations. Persisted cross-binding proves retained consistency only and returns
+`productionLaunchAuthorityVerified: false`; only the same parent process that
+uses the fixed non-injected launcher and consumes its private receipt may return
+owned-launch authority. They do not authorize or execute the full procedure. Live
+exact-six registration, dry-run, execute, verify, rollback, replay, and
+mutation counts remain zero. Fixture validation enforces the later exact
+rendered path `validate -> add -> confirmTrust`, five forward operations, four
+inverse operations, zero verify mutation, and replay delta `0 / 0 / 0 / 0 /
+0`. Fixture results never claim live origin. Historical Source Checkpoint Rework 7 remains
+read-only supporting evidence.
+
+The unsafe predecessor evidence root was invalidated and removed for
+`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility must wait
+for the Rework 8 supervisor checkpoint and a new clean-commit task. Real UE, Tool Search,
+and mutation are `SKIPPED_BY_TASK_BOUNDARY`; mutation remains prohibited until
+a later separate task.
 
 ## Historical Rework 3 Supervisor Boundary - NEEDS_FIX
 
@@ -72,16 +87,41 @@ C14A is getter/adapter hardening, not another live attempt and not the R10 mutat
 
 ## Current MVP15D UI and Runner Checks
 
+- Each formal live phase uses a dedicated repository-owned adapter, fixed
+  executable, validated ordered arguments, a native-generated runtime event
+  transcript, raw UE/product events, and a
+  process/session/generation-bound producer ledger. Arbitrary input, fixture
+  origin, caller-authored success, drift, missing terminal events, and closeout
+  residue cannot claim owned launch authority. Exported and CLI verification of
+  retained files returns only `*_persisted_consistency_verified` and
+  `productionLaunchAuthorityVerified: false`.
+- Production loaded-module publication additionally requires the in-process
+  publisher brand and explicit PID/creation equality. That brand is not
+  serialized. Pure builders and injected observation remain fixture-marked;
+  structural manifest verification cannot establish launch ownership. The
+  private single-use launch receipt exists only in `executeLivePhase()` and no
+  public hash, nonce, PID, JSON object, or caller argument can recreate it.
+- The source checkpoint must identify the complete transitive production
+  boundary and Git watch set. The current identity covers 335 production files
+  and 356 watch entries; a new production file or tracked production deletion
+  must change the identity.
+- Before any module hash, reject a leaf link or a symlink/junction/reparse
+  ancestor below the installed root. After each Windows fixture, require its
+  exact base directory and marker process count to be zero.
 - `AssetMutationPanel` visibly reports Companion status, contract, manifest hash
   prefix, live fingerprint prefix, generation, blocker, and exact-six
   attestation readiness. `ConfigSettings` visibly reports the Companion plugin
   status, plugin/contract, manifest/live-fingerprint prefixes, and
   generation/tool summary. Their changed assertions must remain in the UI test
   ledger.
+- Release capability validation binds the real `uagent.exe`, native bridge
+  version, renderer readiness, source/task identity, nonce and event hashes,
+  Windows Job closeout, and zero side effects. It is not a substitute for this
+  later live product-UI smoke.
 - The committed TitleBar baseline for this source-checkpoint remains
   `MVP15 Rework`. Separate TitleBar/window-control diffs are outside MVP15D and
   must not be used as Companion-state evidence.
-- Each of the five Rework 7 UE Automation sessions has a unique task marker
+- Each of the five historical Source Checkpoint Rework 7 UE Automation sessions has a unique task marker
   and a complete marker-bound descendant creation/parent/first-observation/exit
   ledger with final residual count zero. A basename-only or final point-in-time
   process scan does not satisfy this check. The retained ledgers record six

@@ -1,6 +1,7 @@
 pub(crate) mod asset_mutation;
 pub(crate) mod browser;
 pub mod mcp;
+pub mod mvp15d_runtime_bridge;
 pub(crate) mod screenshot;
 pub(crate) mod terminal;
 pub(crate) mod text_mutation;
@@ -1537,9 +1538,26 @@ fn redact_preview_content(content: &str) -> RedactedContent {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    use mvp15d_runtime_bridge::{ManagedBridgeState, Startup};
+
+    let bridge_state = match mvp15d_runtime_bridge::prepare_from_environment() {
+        Ok(Startup::Ordinary) => None,
+        Ok(Startup::CapabilityCompleted) => return,
+        Ok(Startup::Rendered(state)) => Some(state),
+        Err(error) => {
+            eprintln!("{}", error.code());
+            std::process::exit(2);
+        }
+    };
+
     tauri::Builder::default()
+        .manage(ManagedBridgeState::new(bridge_state))
         .setup(|_app| Ok(()))
         .invoke_handler(tauri::generate_handler![
+            mvp15d_bridge_configuration,
+            mvp15d_bridge_take_driver_command,
+            mvp15d_bridge_record_renderer_step,
+            mvp15d_bridge_complete,
             validate_project_root,
             scan_project_index,
             preview_project_file,
@@ -1602,6 +1620,70 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[tauri::command]
+fn mvp15d_bridge_configuration(
+    state: tauri::State<'_, mvp15d_runtime_bridge::ManagedBridgeState>,
+) -> Result<mvp15d_runtime_bridge::RendererBridgeConfiguration, String> {
+    let guard = state
+        .lock()
+        .map_err(|_| "MVP15D_BRIDGE_STATE_UNAVAILABLE".to_string())?;
+    Ok(guard
+        .as_ref()
+        .map(mvp15d_runtime_bridge::BridgeState::renderer_configuration)
+        .unwrap_or_else(mvp15d_runtime_bridge::disabled_configuration))
+}
+
+#[tauri::command]
+fn mvp15d_bridge_take_driver_command(
+    state: tauri::State<'_, mvp15d_runtime_bridge::ManagedBridgeState>,
+) -> Result<Option<String>, String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "MVP15D_BRIDGE_STATE_UNAVAILABLE".to_string())?;
+    let bridge = guard
+        .as_mut()
+        .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?;
+    bridge
+        .claim_driver_command()
+        .map_err(|error| error.code().to_string())
+}
+
+#[tauri::command]
+fn mvp15d_bridge_record_renderer_step(
+    input: mvp15d_runtime_bridge::RendererStepInput,
+    state: tauri::State<'_, mvp15d_runtime_bridge::ManagedBridgeState>,
+) -> Result<mvp15d_runtime_bridge::RendererStepResult, String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "MVP15D_BRIDGE_STATE_UNAVAILABLE".to_string())?;
+    let bridge = guard
+        .as_mut()
+        .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?;
+    bridge
+        .record_renderer_step(input)
+        .map_err(|error| error.code().to_string())
+}
+
+#[tauri::command]
+fn mvp15d_bridge_complete(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, mvp15d_runtime_bridge::ManagedBridgeState>,
+) -> Result<(), String> {
+    {
+        let mut guard = state
+            .lock()
+            .map_err(|_| "MVP15D_BRIDGE_STATE_UNAVAILABLE".to_string())?;
+        let bridge = guard
+            .as_mut()
+            .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?;
+        bridge
+            .complete()
+            .map_err(|error| error.code().to_string())?;
+    }
+    app.exit(0);
+    Ok(())
 }
 
 #[cfg(test)]

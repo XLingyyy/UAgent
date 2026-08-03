@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./app/App";
+import { startMvp15dRuntimeBridge } from "./runtime/mvp15d-runtime-bridge";
 import "./styles/tokens.css";
 import "./styles/theme.css";
 import "./styles/animations.css";
@@ -11,3 +12,5 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <App />
   </React.StrictMode>,
 );
+
+void startMvp15dRuntimeBridge();

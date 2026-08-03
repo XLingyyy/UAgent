@@ -6,14 +6,16 @@
  */
 
 export const UAGENT_COMPANION_IDENTITY_SCHEMA_VERSION =
-  "uagent.ue-companion-plugin.identity.v1" as const;
+  "uagent.ue-companion-plugin.identity.v2" as const;
 export const UAGENT_COMPANION_MANIFEST_SCHEMA_VERSION =
-  "uagent.ue-companion-plugin.build-manifest.v1" as const;
+  "uagent.ue-companion-plugin.build-manifest.v3" as const;
 export const UAGENT_COMPANION_PLUGIN_ID = "UAgentAssetTools" as const;
 export const UAGENT_COMPANION_PLUGIN_VERSION = "0.1.0" as const;
 export const UAGENT_COMPANION_CONTRACT_VERSION = "mvp15d.asset-tools.v1" as const;
-export const UAGENT_COMPANION_UE_VERSION = "5.8.0" as const;
-export const UAGENT_COMPANION_UE_BUILD_ID = "55116800" as const;
+export const UAGENT_COMPANION_ENGINE_VERSION = "5.8.1" as const;
+export const UAGENT_COMPANION_ENGINE_CHANGELIST = 56057345 as const;
+export const UAGENT_COMPANION_COMPATIBLE_CHANGELIST = 55116800 as const;
+export const UAGENT_COMPANION_MODULE_BUILD_ID = "55116800" as const;
 
 export const UAGENT_COMPANION_TOOL_NAMES = [
   "ue.asset.create_folder",
@@ -33,7 +35,10 @@ export interface UAgentCompanionIdentity {
   contractVersion: string;
   sourceCommit: string;
   buildManifestSha256: string;
-  ueBuildId: typeof UAGENT_COMPANION_UE_BUILD_ID;
+  engineVersion: typeof UAGENT_COMPANION_ENGINE_VERSION;
+  engineChangelist: typeof UAGENT_COMPANION_ENGINE_CHANGELIST;
+  compatibleChangelist: typeof UAGENT_COMPANION_COMPATIBLE_CHANGELIST;
+  moduleBuildId: typeof UAGENT_COMPANION_MODULE_BUILD_ID;
 }
 
 export interface UAgentCompanionArtifactHash {
@@ -42,32 +47,50 @@ export interface UAgentCompanionArtifactHash {
   sha256: string;
 }
 
+export interface UAgentCompanionManifestArtifact {
+  path: string;
+  size: number;
+  sha256: string;
+}
+
 export interface UAgentCompanionBuildManifest {
   schemaVersion: typeof UAGENT_COMPANION_MANIFEST_SCHEMA_VERSION;
+  taskGeneration: "final-d13-d16";
+  taskId: string;
   pluginId: typeof UAGENT_COMPANION_PLUGIN_ID;
   pluginVersion: string;
   contractVersion: string;
   sourceCommit: string;
   sourceTreeSha256: string;
+  physicalFixtures: readonly (UAgentCompanionManifestArtifact & {
+    gitObjectSha256: string;
+  })[];
   dirty: false;
-  ueVersion: typeof UAGENT_COMPANION_UE_VERSION;
-  ueBuildId: typeof UAGENT_COMPANION_UE_BUILD_ID;
+  engineVersion: typeof UAGENT_COMPANION_ENGINE_VERSION;
+  engineChangelist: typeof UAGENT_COMPANION_ENGINE_CHANGELIST;
+  compatibleChangelist: typeof UAGENT_COMPANION_COMPATIBLE_CHANGELIST;
+  moduleBuildId: typeof UAGENT_COMPANION_MODULE_BUILD_ID;
   targetPlatform: "Win64";
   configuration: "Development";
-  compiler: string;
-  windowsSdk: string;
+  compiler: {
+    name: "MSVC";
+    version: string;
+  };
+  windowsSdk: {
+    name: "Windows SDK";
+    version: string;
+  };
   buildCommandFingerprint: string;
-  uplugin: UAgentCompanionArtifactHash;
-  schema: UAgentCompanionArtifactHash;
-  moduleIndex: UAgentCompanionArtifactHash;
-  modules: UAgentCompanionArtifactHash[];
+  buildEvidenceArtifacts: UAgentCompanionManifestArtifact[];
+  artifacts: UAgentCompanionManifestArtifact[];
+  modules: UAgentCompanionManifestArtifact[];
   toolNames: readonly UAgentCompanionToolName[];
   generatedAt: string;
   builder: {
     kind: "local" | "ci";
     name: string;
   };
-  manifestSha256: string;
+  manifestSelfSha256: string;
 }
 
 export type UAgentCompanionStatusCode =

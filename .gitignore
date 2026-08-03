@@ -32,6 +32,11 @@ node_modules/
 out/
 dist/
 
+# Keep the release-bundle application icon even though generic icon assets may
+# be ignored by developer-global rules.
+!apps/desktop/src-tauri/icons/
+!apps/desktop/src-tauri/icons/icon.ico
+
 # Environment and secrets
 .env
 .env.*

@@ -572,24 +572,40 @@ function exactAssetDiscoveryFixtures(
 
 function verifiedMvp15DNativeEvidence() {
   const base = {
-    schemaVersion: "uagent.ue-companion-plugin.build-manifest.v1" as const,
+    schemaVersion: "uagent.ue-companion-plugin.build-manifest.v3" as const,
+    taskGeneration: "final-d13-d16" as const,
+    taskId: "TASK-MVP15D-UAGENT-DESKTOP-ADAPTER-TEST",
     pluginId: "UAgentAssetTools" as const,
     pluginVersion: "0.1.0" as const,
     contractVersion: "mvp15d.asset-tools.v1" as const,
     sourceCommit: "a".repeat(40),
     sourceTreeSha256: "b".repeat(64),
+    physicalFixtures: [
+      { path: "fixture-a.json", size: 1, sha256: "2".repeat(64), gitObjectSha256: "2".repeat(64) },
+      { path: "fixture-b.json", size: 1, sha256: "3".repeat(64), gitObjectSha256: "3".repeat(64) },
+    ],
     dirty: false as const,
-    ueVersion: "5.8.0" as const,
-    ueBuildId: "55116800" as const,
+    engineVersion: "5.8.1" as const,
+    engineChangelist: 56057345 as const,
+    compatibleChangelist: 55116800 as const,
+    moduleBuildId: "55116800" as const,
     targetPlatform: "Win64" as const,
     configuration: "Development" as const,
-    compiler: "MSVC",
-    windowsSdk: "10.0",
+    compiler: { name: "MSVC" as const, version: "14.44.35207" },
+    windowsSdk: { name: "Windows SDK" as const, version: "10.0.26100.0" },
     buildCommandFingerprint: "c".repeat(64),
-    uplugin: { name: "UAgentAssetTools.uplugin", size: 1, sha256: "d".repeat(64) },
-    schema: { name: "uagent-asset-tools.schema.json", size: 2, sha256: "e".repeat(64) },
-    moduleIndex: { name: "UnrealEditor.modules", size: 3, sha256: "1".repeat(64) },
-    modules: [{ name: "UAgentAssetTools-Win64-Development.dll", size: 3, sha256: "f".repeat(64) }],
+    buildEvidenceArtifacts: [
+      { path: "logs/stdout.log", size: 1, sha256: "4".repeat(64) },
+      { path: "metadata/build-command.json", size: 1, sha256: "5".repeat(64) },
+      { path: "metadata/build-result.json", size: 1, sha256: "6".repeat(64) },
+    ],
+    artifacts: [
+      { path: "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", size: 3, sha256: "f".repeat(64) },
+      { path: "Binaries/Win64/UnrealEditor.modules", size: 3, sha256: "1".repeat(64) },
+      { path: "Resources/uagent-asset-tools.schema.json", size: 2, sha256: "e".repeat(64) },
+      { path: "UAgentAssetTools.uplugin", size: 1, sha256: "d".repeat(64) },
+    ],
+    modules: [{ path: "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", size: 3, sha256: "f".repeat(64) }],
     toolNames: [
       "ue.asset.create_folder",
       "ue.asset.duplicate",
@@ -603,25 +619,36 @@ function verifiedMvp15DNativeEvidence() {
   };
   const manifest = {
     ...base,
-    manifestSha256: Runtime.computeMvp15DManifestSha256({ ...base, manifestSha256: "" }),
+    manifestSelfSha256: Runtime.computeMvp15DManifestSha256({
+      ...base,
+      manifestSelfSha256: "",
+    }),
   };
+  const modules = manifest.modules.map((module) => ({
+    name: module.path.split("/").at(-1)!,
+    size: module.size,
+    sha256: module.sha256,
+  }));
   const identity = {
-    schemaVersion: "uagent.ue-companion-plugin.identity.v1" as const,
+    schemaVersion: "uagent.ue-companion-plugin.identity.v2" as const,
     pluginId: manifest.pluginId,
     pluginVersion: manifest.pluginVersion,
     contractVersion: manifest.contractVersion,
     sourceCommit: manifest.sourceCommit,
-    buildManifestSha256: manifest.manifestSha256,
-    ueBuildId: manifest.ueBuildId,
+    buildManifestSha256: manifest.manifestSelfSha256,
+    engineVersion: manifest.engineVersion,
+    engineChangelist: manifest.engineChangelist,
+    compatibleChangelist: manifest.compatibleChangelist,
+    moduleBuildId: manifest.moduleBuildId,
     sourceTreeSha256: manifest.sourceTreeSha256,
     buildCommandFingerprint: manifest.buildCommandFingerprint,
-    loadedModuleName: manifest.modules[0]!.name,
+    loadedModuleName: manifest.modules[0]!.path.split("/").at(-1)!,
     loadedModuleSha256: manifest.modules[0]!.sha256,
   };
   return {
     manifest,
-    installedModules: manifest.modules,
-    loadedModules: manifest.modules,
+    installedModules: modules,
+    loadedModules: modules,
     descriptors: Runtime.createMvp15DCompanionToolDescriptors(identity),
   };
 }

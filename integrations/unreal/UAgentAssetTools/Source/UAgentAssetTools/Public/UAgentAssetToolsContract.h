@@ -5,14 +5,23 @@
 
 namespace UAgentAssetTools
 {
-	static constexpr const TCHAR* IdentitySchemaVersion = TEXT("uagent.ue-companion-plugin.identity.v1");
-	static constexpr const TCHAR* ManifestSchemaVersion = TEXT("uagent.ue-companion-plugin.build-manifest.v1");
+	static constexpr const TCHAR* IdentitySchemaVersion = TEXT("uagent.ue-companion-plugin.identity.v2");
+	static constexpr const TCHAR* ManifestSchemaVersion = TEXT("uagent.ue-companion-plugin.build-manifest.v3");
 	static constexpr const TCHAR* PluginId = TEXT("UAgentAssetTools");
 	static constexpr const TCHAR* PluginVersion = TEXT("0.1.0");
 	static constexpr const TCHAR* ContractVersion = TEXT("mvp15d.asset-tools.v1");
-	static constexpr const TCHAR* UeVersion = TEXT("5.8.0");
-	static constexpr const TCHAR* UeBuildId = TEXT("55116800");
+	static constexpr const TCHAR* EngineVersion = TEXT("5.8.1");
+	static constexpr int32 EngineChangelist = 56057345;
+	static constexpr int32 CompatibleChangelist = 55116800;
+	static constexpr const TCHAR* ModuleBuildId = TEXT("55116800");
 	static constexpr const TCHAR* DryRunSchemaVersion = TEXT("mvp15c.dry-run.v1");
+	static constexpr const TCHAR* AutomationReportSchemaVersion = TEXT("uagent.mvp15d.ue-automation-report.v1");
+	static constexpr const TCHAR* AutomationTaskIdArgument = TEXT("-UAgentTaskId=");
+	static constexpr const TCHAR* AutomationTaskGenerationArgument = TEXT("-UAgentTaskGeneration=");
+	static constexpr const TCHAR* AutomationSourceCommitArgument = TEXT("-UAgentSourceCommit=");
+	static constexpr const TCHAR* AutomationTaskMarkerArgument = TEXT("-UAgentTaskMarker=");
+	static constexpr const TCHAR* AutomationSessionArgument = TEXT("-UAgentSession=");
+	static constexpr const TCHAR* AutomationGenerationArgument = TEXT("-UAgentGeneration=");
 
 	enum class EOperation : uint8
 	{

@@ -4,6 +4,7 @@ version = "0.0.1"
 description = "UAgent — AI Agent Host/Client aligned with UE5.8 Unreal MCP Server"
 edition = "2021"
 rust-version = "1.77.2"
+default-run = "uagent"
 
 [lib]
 name = "uagent_lib"
@@ -16,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 notify = { version = "6", features = [] }
 sysinfo = { version = "0.30", default-features = false }
 ureq = { version = "2", default-features = false }

@@ -2,25 +2,137 @@
 
 ## MVP15D Companion Trust Chain
 
-### Current Rework 9 Status — Source Checkpoint Complete
+### Current Final Source/Tooling Rework 8 Authoritative Launch Boundary / Report Closure
 
-Rework 8 is `NEEDS_FIX` because the current acceptance manifest file SHA
-conflicted with retained evidence and the other current repository documents,
-while code and retained evidence validation passed. Rework 9 and the D0-D12
-source checkpoint are `COMPLETE`. Ready for the next MVP stage remains `NO`
-because G13/G16 and 15A-15C remain separately gated.
-Previous/current task IDs are
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8` and
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`.
-`BLOCKED_BY_EVIDENCE_RETENTION` is closed by retained D0
-`external/mvp15d-rework7-d0-20260726_190100`, build
-`external/mvp15d-rework7-build-20260726_203000`, and UE
-`external/mvp15d-rework7-ue-20260726_190100`. D0 records 129 indexed artifacts,
-zero mutation, and Direct. UE records five sessions, `48/48`, six processes per
-ledger, residual zero, and unchanged empty Content.
-Verified implementation/content checkpoint
-`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
-documentation closeout checkpoint on `main`.
+Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`
+with supervisor verdict `NEEDS_FIX`; no checkpoint was created. Final
+Source/Tooling Rework 8 source
+implementation is `IMPLEMENTED, awaiting supervisor checkpoint` in a dirty
+pre-checkpoint tree. G14 is `IMPLEMENTED`; G15 is `IN_PROGRESS`; G16 is
+`PARTIAL`. UE 5.8.1 compatibility and overall acceptance remain `PARTIAL`;
+D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C are `PLANNED`; D16 is
+`IN_PROGRESS`; Ready remains `NO`.
+
+The implemented trust-chain source path is:
+
+```text
+clean source
+  -> exact RunUAT/-Rocket package
+  -> manifest
+  -> installed/loaded byte equality
+  -> live exact companion observation (early process identity)
+  -> current-generation exact-six fingerprint
+  -> native registration
+  -> product-UI lifecycle and rollback
+```
+
+`uagent.mvp15d.source-identity.v2` hashes the deterministic
+`uagent.mvp15d.production-source-boundary.v2`: 335 files discovered from 14
+approved production roots plus 28 exact files, with 9 documented exclusion
+classes and 126 excluded entries. It covers the native bridge, bundled renderer
+and Settings controls, desktop/runtime/MCP/shared production dependencies,
+build and lock configuration, final tooling chain, and companion plugin
+source/resources/build inputs. New files below an approved production root are
+included automatically; deletion of a tracked production file makes the
+identity dirty. The 356-entry watch set includes every production file plus
+normal/worktree Git-dir metadata, symbolic/detached HEAD, loose refs, and packed
+refs, and `build.rs` consumes it verbatim. `.gitattributes` fixes the two
+canonical checkout paths to LF.
+
+`mvp15d-plugin-build.mjs` uses the validated caller-supplied `RunUAT.bat` with
+the exact ordered `-Rocket` arguments and retains redacted source transcripts.
+`mvp15d-manifest.mjs` is explicitly a structural installed-module verifier; it
+does not label structurally valid JSON as production authority.
+`mvp15d-final-runner.mjs` performs the separate persisted cross-binding and
+dispatches each formal phase to a dedicated repository-owned adapter with a
+fixed executable and validated argument vector:
+`mvp15d-final-ue-automation-producer.mjs`,
+`mvp15d-final-product-capture-producer.mjs`, and
+`mvp15d-final-ui-lifecycle-producer.mjs`.
+
+The real Tauri binary recognizes only the ordered
+`mvp15d-final-runtime-bridge` contract while
+`UAGENT_ENABLE_MVP15D_TASK_BRIDGE=1` is present. It validates task, compiled
+source commit, direct-child evidence root, loopback endpoint/port,
+marker/session/generation, one-time nonce, exclusive event/driver paths, and
+the fixed product or UI path before ordinary GUI setup. Capability probe mode
+writes and fsyncs the canonical runtime event file without starting the
+renderer. Product/UI modes start the actual WebView, publish native readiness,
+accept one task-bound driver command, and record only native-generated ordered
+observations. Ordinary launches keep the bridge disabled.
+
+`mvp15d-final-live-producer-helper.mjs` launches rendered phases
+asynchronously and uses the repository Windows Job runner to own the full
+process tree, observe readiness, deliver the authenticated driver file, enforce
+timeouts, and verify active-process-zero closeout. The Job runner publishes an
+early task-owned process identity after creation and before closeout. The sole
+write-capable production publisher re-observes the live PID, explicitly binds
+PID and creation FILETIME, independently derives executable/source/project/
+manifest/package/install and fixed producer/helper/observer/Job facts, then
+creates an in-process branded publisher capability. That capability is not
+serialized and is not evidence that a later verifier owns the launch.
+Injected observation and pure builders remain fixture-marked structural paths;
+the standalone writer CLI is disabled. The observer enumerates the real Windows
+module list, reduces only the exact companion set by canonical installed-root
+and manifest identity, rejects shadow/extra/missing/leaf-link/ancestor-reparse/
+escape/exit/PID-reuse cases, and publishes a path-free ledger through exclusive
+temp-write, fsync, and rename.
+
+Exported verifiers and CLI `verify` rehash the ledger and cross-bind its
+relative path/size/SHA, task/marker/session/generation, source, early process and
+executable, project, manifest, package/install inventories, exact sorted
+modules, producer/helper/observer/Job identities, zero Job residues, and
+terminal event/report. This retained-file level returns
+`*_persisted_consistency_verified` and
+`productionLaunchAuthorityVerified: false`; a coherent hand-authored chain can
+satisfy it. Only `executeLivePhase()` can return `*_owned_launch_verified` with
+launch authority true after the same parent checks absent outputs, invokes the
+fixed producer through the real non-injected launcher, validates the actual
+child/result/events, completes persisted cross-binding, and consumes an
+unexported single-use `WeakSet` receipt. Public hashes, origin strings, PIDs,
+FILETIMEs, Job/event JSON, nonces, flags, or caller objects cannot mint the
+receipt. Replaced or internally inconsistent facts still fail closed. The
+guarantee is deterministic task-workflow provenance within the owned run; it
+does not claim resistance to an administrator who can replace the repository
+and every local artifact.
+The normal product bridge imports and invokes `createDesktopRuntimeAdapter`;
+capability-only mode binds that implementation without Connect or network
+activity. Live product mode uses its existing Connect -> Initialize ->
+Discover -> Normalize -> Fingerprint methods. The UI bridge drives the
+rendered validate -> add -> confirmTrust controls. The source checkpoint ran
+only capability handshakes and the real Windows fixture-process observer
+regression.
+
+UE results use Unreal Automation's separate `-ReportExportPath` JSON report
+plus exact task/source/session/generation markers and the fixed
+`UAgentAssetTools.Contracts`, `.ReadOnly`, and `.Closeout` companion tests.
+The producer derives the exact expected/passed/failed/skipped counts, hashes
+the real Content tree before and after execution, and binds package, manifest,
+installed modules, loaded modules, executable, and process identity before it
+emits a terminal event. Ordinary stdout/stderr remains log input for
+deterministic redaction and never serves as the structured result transport.
+
+The UE 5.8.1 evidence inventory is directory-closed and allowlist-based. It
+rejects unknown entries, raw secrets and local paths, links/reparse points, path
+escapes, and inventory drift, and independently verifies deterministic
+redaction. The unsafe predecessor evidence root was invalidated and removed for
+`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`.
+
+Current identity is engine `5.8.1`, engine CL `56057345`, compatible CL
+`55116800`, module BuildId `55116800`. Identity v2, manifest v3, deterministic
+module-index creation, exact `RunUAT.bat ... -Rocket`, the tracked ICO, and
+Tauri MSI/NSIS remain preserved. The real release binary capability probes
+made zero MCP calls, zero network calls, and zero asset operations. No real UE
+session, live product discovery, Tool Search, or mutation ran; those operations
+are `SKIPPED_BY_TASK_BOUNDARY`.
+Full read-only compatibility follows only after the supervisor checkpoint and
+push in a new clean-commit task.
+
+Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
+selected route. It is source-checkpoint evidence only and cannot be substituted
+for final 15A-15C.
+
+### Historical Rework 5-9 Source-checkpoint Record
 
 The Rework 5 supervisor review identified these authority gaps: a task-only
 observer could forward a mutation guard while public live identity was

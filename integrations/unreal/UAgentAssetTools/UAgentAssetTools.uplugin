@@ -17,7 +17,7 @@
   "EnabledByDefault": false,
   "ExplicitlyLoaded": false,
   "SupportsContentBrowser": false,
-  "EngineVersion": "5.8.0",
+  "EngineVersion": "5.8.1",
   "Plugins": [
     {
       "Name": "ModelContextProtocol",

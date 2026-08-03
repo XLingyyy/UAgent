@@ -215,7 +215,10 @@ namespace
 		FString BuildCommandFingerprint;
 		FString LoadedModuleName;
 		FString LoadedModuleSha256;
-		FString UeBuildId;
+		FString EngineVersion;
+		FString ModuleBuildId;
+		double EngineChangelist = -1.0;
+		double CompatibleChangelist = -1.0;
 		if (!Identity->TryGetStringField(TEXT("pluginId"), PluginId)
 			|| !Identity->TryGetStringField(TEXT("pluginVersion"), PluginVersion)
 			|| !Identity->TryGetStringField(TEXT("contractVersion"), ContractVersion)
@@ -225,13 +228,17 @@ namespace
 			|| !Identity->TryGetStringField(TEXT("buildCommandFingerprint"), BuildCommandFingerprint)
 			|| !Identity->TryGetStringField(TEXT("loadedModuleName"), LoadedModuleName)
 			|| !Identity->TryGetStringField(TEXT("loadedModuleSha256"), LoadedModuleSha256)
-			|| !Identity->TryGetStringField(TEXT("ueBuildId"), UeBuildId))
+			|| !Identity->TryGetStringField(TEXT("engineVersion"), EngineVersion)
+			|| !Identity->TryGetNumberField(TEXT("engineChangelist"), EngineChangelist)
+			|| !Identity->TryGetNumberField(TEXT("compatibleChangelist"), CompatibleChangelist)
+			|| !Identity->TryGetStringField(TEXT("moduleBuildId"), ModuleBuildId))
 		{
 			return FString();
 		}
 		return PluginId + TEXT("|") + PluginVersion + TEXT("|") + ContractVersion + TEXT("|")
 			+ SourceCommit + TEXT("|") + SourceTreeSha256 + TEXT("|") + ManifestSha256 + TEXT("|")
-			+ BuildCommandFingerprint + TEXT("|") + LoadedModuleName + TEXT("|") + LoadedModuleSha256 + TEXT("|") + UeBuildId;
+			+ BuildCommandFingerprint + TEXT("|") + LoadedModuleName + TEXT("|") + LoadedModuleSha256 + TEXT("|")
+			+ EngineVersion + TEXT("|") + FString::Printf(TEXT("%.0f|%.0f|"), EngineChangelist, CompatibleChangelist) + ModuleBuildId;
 	}
 
 	void ResolveOperationPaths(UAgentAssetTools::EOperation Operation, const TSharedPtr<FJsonObject>& Params, FString& OutBeforePath, FString& OutAfterPath)

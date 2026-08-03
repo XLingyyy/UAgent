@@ -271,17 +271,20 @@ namespace
 		}
 	}
 
-	bool VerifyArtifact(const TSharedPtr<FJsonObject>& Artifact, const FString& ExpectedName, const FString& Path, FString& OutSha256)
+	bool VerifyArtifact(const TSharedPtr<FJsonObject>& Artifact, const FString& ExpectedLogicalPath, const FString& Path, FString& OutSha256)
 	{
 		if (!Artifact.IsValid() || Artifact->Values.Num() != 3) return false;
-		FString Name;
+		FString LogicalPath;
 		FString Sha256;
 		double DeclaredSize = -1.0;
-		if (!Artifact->TryGetStringField(TEXT("name"), Name)
+		if (!Artifact->TryGetStringField(TEXT("path"), LogicalPath)
 			|| !Artifact->TryGetStringField(TEXT("sha256"), Sha256)
 			|| !Artifact->TryGetNumberField(TEXT("size"), DeclaredSize)
-			|| Name != ExpectedName
-			|| !IsSafeFileName(Name)
+			|| LogicalPath != ExpectedLogicalPath
+			|| LogicalPath.IsEmpty()
+			|| LogicalPath.StartsWith(TEXT("/"))
+			|| LogicalPath.Contains(TEXT("\\"))
+			|| LogicalPath.Contains(TEXT(".."))
 			|| !IsLowerHex(Sha256, 64)
 			|| !FMath::IsFinite(DeclaredSize)
 			|| FMath::FloorToDouble(DeclaredSize) != DeclaredSize
@@ -546,9 +549,11 @@ TSharedPtr<FJsonObject> FUAgentAssetToolsModule::LoadBuildIdentityCandidateInter
 	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ManifestText);
 	if (!FJsonSerializer::Deserialize(Reader, Manifest) || !Manifest.IsValid()) return Reject(TEXT("manifest_json_invalid"));
 	const TSet<FString> ExpectedManifestKeys = {
-		TEXT("schemaVersion"), TEXT("pluginId"), TEXT("pluginVersion"), TEXT("contractVersion"), TEXT("sourceCommit"), TEXT("sourceTreeSha256"),
-		TEXT("dirty"), TEXT("ueVersion"), TEXT("ueBuildId"), TEXT("targetPlatform"), TEXT("configuration"), TEXT("compiler"), TEXT("windowsSdk"),
-		TEXT("buildCommandFingerprint"), TEXT("uplugin"), TEXT("schema"), TEXT("moduleIndex"), TEXT("modules"), TEXT("toolNames"), TEXT("generatedAt"), TEXT("builder"), TEXT("manifestSha256"),
+		TEXT("schemaVersion"), TEXT("taskGeneration"), TEXT("taskId"), TEXT("pluginId"), TEXT("pluginVersion"), TEXT("contractVersion"),
+		TEXT("sourceCommit"), TEXT("sourceTreeSha256"), TEXT("physicalFixtures"), TEXT("dirty"), TEXT("engineVersion"),
+		TEXT("engineChangelist"), TEXT("compatibleChangelist"), TEXT("moduleBuildId"), TEXT("targetPlatform"), TEXT("configuration"),
+		TEXT("compiler"), TEXT("windowsSdk"), TEXT("buildCommandFingerprint"), TEXT("buildEvidenceArtifacts"), TEXT("artifacts"),
+		TEXT("modules"), TEXT("toolNames"), TEXT("generatedAt"), TEXT("builder"), TEXT("manifestSelfSha256"),
 	};
 	if (!HasExactKeys(Manifest, ExpectedManifestKeys)) return Reject(TEXT("manifest_fields_invalid"));
 	FString PluginId;
@@ -557,15 +562,17 @@ TSharedPtr<FJsonObject> FUAgentAssetToolsModule::LoadBuildIdentityCandidateInter
 	FString SourceCommit;
 	FString SourceTreeSha256;
 	FString ManifestSha256;
-	FString UeBuildId;
+	FString ModuleBuildId;
 	FString BuildCommandFingerprint;
 	FString SchemaVersion;
-	FString UeVersion;
+	FString EngineVersion;
+	FString TaskGeneration;
+	FString TaskId;
 	FString TargetPlatform;
 	FString Configuration;
-	FString Compiler;
-	FString WindowsSdk;
 	FString GeneratedAt;
+	double EngineChangelist = -1.0;
+	double CompatibleChangelist = -1.0;
 	bool bDirty = true;
 	if (!Manifest->TryGetStringField(TEXT("pluginId"), PluginId)
 		|| !Manifest->TryGetStringField(TEXT("schemaVersion"), SchemaVersion)
@@ -573,13 +580,15 @@ TSharedPtr<FJsonObject> FUAgentAssetToolsModule::LoadBuildIdentityCandidateInter
 		|| !Manifest->TryGetStringField(TEXT("contractVersion"), ContractVersionValue)
 		|| !Manifest->TryGetStringField(TEXT("sourceCommit"), SourceCommit)
 		|| !Manifest->TryGetStringField(TEXT("sourceTreeSha256"), SourceTreeSha256)
-		|| !Manifest->TryGetStringField(TEXT("manifestSha256"), ManifestSha256)
-		|| !Manifest->TryGetStringField(TEXT("ueBuildId"), UeBuildId)
-		|| !Manifest->TryGetStringField(TEXT("ueVersion"), UeVersion)
+		|| !Manifest->TryGetStringField(TEXT("manifestSelfSha256"), ManifestSha256)
+		|| !Manifest->TryGetStringField(TEXT("moduleBuildId"), ModuleBuildId)
+		|| !Manifest->TryGetStringField(TEXT("engineVersion"), EngineVersion)
+		|| !Manifest->TryGetStringField(TEXT("taskGeneration"), TaskGeneration)
+		|| !Manifest->TryGetStringField(TEXT("taskId"), TaskId)
+		|| !Manifest->TryGetNumberField(TEXT("engineChangelist"), EngineChangelist)
+		|| !Manifest->TryGetNumberField(TEXT("compatibleChangelist"), CompatibleChangelist)
 		|| !Manifest->TryGetStringField(TEXT("targetPlatform"), TargetPlatform)
 		|| !Manifest->TryGetStringField(TEXT("configuration"), Configuration)
-		|| !Manifest->TryGetStringField(TEXT("compiler"), Compiler)
-		|| !Manifest->TryGetStringField(TEXT("windowsSdk"), WindowsSdk)
 		|| !Manifest->TryGetStringField(TEXT("buildCommandFingerprint"), BuildCommandFingerprint)
 		|| !Manifest->TryGetStringField(TEXT("generatedAt"), GeneratedAt)
 		|| !Manifest->TryGetBoolField(TEXT("dirty"), bDirty)
@@ -587,12 +596,14 @@ TSharedPtr<FJsonObject> FUAgentAssetToolsModule::LoadBuildIdentityCandidateInter
 		|| PluginId != UAgentAssetTools::PluginId
 		|| PluginVersion != UAgentAssetTools::PluginVersion
 		|| ContractVersionValue != UAgentAssetTools::ContractVersion
-		|| UeVersion != UAgentAssetTools::UeVersion
-		|| UeBuildId != UAgentAssetTools::UeBuildId
+		|| TaskGeneration != TEXT("final-d13-d16")
+		|| !TaskId.StartsWith(TEXT("TASK-MVP15D-"))
+		|| EngineVersion != UAgentAssetTools::EngineVersion
+		|| EngineChangelist != UAgentAssetTools::EngineChangelist
+		|| CompatibleChangelist != UAgentAssetTools::CompatibleChangelist
+		|| ModuleBuildId != UAgentAssetTools::ModuleBuildId
 		|| TargetPlatform != TEXT("Win64")
 		|| Configuration != TEXT("Development")
-		|| Compiler != TEXT("MSVC")
-		|| WindowsSdk != TEXT("Windows SDK")
 		|| bDirty
 		|| !IsLowerHex(SourceCommit, 40)
 		|| !IsLowerHex(SourceTreeSha256, 64)
@@ -602,42 +613,52 @@ TSharedPtr<FJsonObject> FUAgentAssetToolsModule::LoadBuildIdentityCandidateInter
 	}
 	if (!IsLowerHex(BuildCommandFingerprint, 64) || GeneratedAt.Len() < 20 || !GeneratedAt.EndsWith(TEXT("Z"))) return Reject(TEXT("manifest_metadata_invalid"));
 
-	const TSharedPtr<FJsonObject>* UpluginArtifact = nullptr;
-	const TSharedPtr<FJsonObject>* SchemaArtifact = nullptr;
-	const TSharedPtr<FJsonObject>* ModuleIndexArtifact = nullptr;
 	const TSharedPtr<FJsonObject>* Builder = nullptr;
+	const TSharedPtr<FJsonObject>* Compiler = nullptr;
+	const TSharedPtr<FJsonObject>* WindowsSdk = nullptr;
+	const TArray<TSharedPtr<FJsonValue>>* PhysicalFixtures = nullptr;
+	const TArray<TSharedPtr<FJsonValue>>* BuildEvidenceArtifacts = nullptr;
+	const TArray<TSharedPtr<FJsonValue>>* PackageArtifacts = nullptr;
 	const TArray<TSharedPtr<FJsonValue>>* ModuleArtifacts = nullptr;
 	const TArray<TSharedPtr<FJsonValue>>* ToolNames = nullptr;
-	if (!Manifest->TryGetObjectField(TEXT("uplugin"), UpluginArtifact)
-		|| !Manifest->TryGetObjectField(TEXT("schema"), SchemaArtifact)
-		|| !Manifest->TryGetObjectField(TEXT("moduleIndex"), ModuleIndexArtifact)
-		|| !Manifest->TryGetObjectField(TEXT("builder"), Builder)
+	if (!Manifest->TryGetObjectField(TEXT("builder"), Builder)
+		|| !Manifest->TryGetObjectField(TEXT("compiler"), Compiler)
+		|| !Manifest->TryGetObjectField(TEXT("windowsSdk"), WindowsSdk)
+		|| !Manifest->TryGetArrayField(TEXT("physicalFixtures"), PhysicalFixtures)
+		|| !Manifest->TryGetArrayField(TEXT("buildEvidenceArtifacts"), BuildEvidenceArtifacts)
+		|| !Manifest->TryGetArrayField(TEXT("artifacts"), PackageArtifacts)
 		|| !Manifest->TryGetArrayField(TEXT("modules"), ModuleArtifacts)
 		|| !Manifest->TryGetArrayField(TEXT("toolNames"), ToolNames)
-		|| !UpluginArtifact || !SchemaArtifact || !ModuleIndexArtifact || !Builder || !ModuleArtifacts || !ToolNames)
+		|| !Builder || !Compiler || !WindowsSdk || !PhysicalFixtures || !BuildEvidenceArtifacts
+		|| !PackageArtifacts || !ModuleArtifacts || !ToolNames)
 	{
 		return Reject(TEXT("manifest_artifact_shape_invalid"));
 	}
 	const TSet<FString> BuilderKeys = { TEXT("kind"), TEXT("name") };
+	const TSet<FString> ToolchainKeys = { TEXT("name"), TEXT("version") };
 	FString BuilderKind;
 	FString BuilderName;
+	FString CompilerName;
+	FString CompilerVersion;
+	FString WindowsSdkName;
+	FString WindowsSdkVersion;
 	if (!HasExactKeys(*Builder, BuilderKeys)
 		|| !(*Builder)->TryGetStringField(TEXT("kind"), BuilderKind)
 		|| !(*Builder)->TryGetStringField(TEXT("name"), BuilderName)
 		|| (BuilderKind != TEXT("local") && BuilderKind != TEXT("ci"))
-		|| BuilderName.IsEmpty() || BuilderName.Len() > 128)
+		|| BuilderName.IsEmpty() || BuilderName.Len() > 128
+		|| !HasExactKeys(*Compiler, ToolchainKeys)
+		|| !(*Compiler)->TryGetStringField(TEXT("name"), CompilerName)
+		|| !(*Compiler)->TryGetStringField(TEXT("version"), CompilerVersion)
+		|| CompilerName != TEXT("MSVC") || CompilerVersion.IsEmpty()
+		|| !HasExactKeys(*WindowsSdk, ToolchainKeys)
+		|| !(*WindowsSdk)->TryGetStringField(TEXT("name"), WindowsSdkName)
+		|| !(*WindowsSdk)->TryGetStringField(TEXT("version"), WindowsSdkVersion)
+		|| WindowsSdkName != TEXT("Windows SDK") || WindowsSdkVersion.IsEmpty()
+		|| PhysicalFixtures->Num() != 2
+		|| BuildEvidenceArtifacts->Num() < 3)
 	{
 		return Reject(TEXT("manifest_builder_invalid"));
-	}
-
-	FString UpluginSha256;
-	FString SchemaSha256;
-	FString ModuleIndexSha256;
-	if (!VerifyArtifact(*UpluginArtifact, TEXT("UAgentAssetTools.uplugin"), FPaths::Combine(PluginRoot, TEXT("UAgentAssetTools.uplugin")), UpluginSha256)
-		|| !VerifyArtifact(*SchemaArtifact, TEXT("uagent-asset-tools.schema.json"), FPaths::Combine(PluginRoot, TEXT("Resources/uagent-asset-tools.schema.json")), SchemaSha256)
-		|| !VerifyArtifact(*ModuleIndexArtifact, TEXT("UnrealEditor.modules"), FPaths::Combine(PluginRoot, TEXT("Binaries/Win64/UnrealEditor.modules")), ModuleIndexSha256))
-	{
-		return Reject(TEXT("manifest_artifact_hash_mismatch"));
 	}
 
 	const TArray<FString> ExpectedTools = {
@@ -660,9 +681,16 @@ TSharedPtr<FJsonObject> FUAgentAssetToolsModule::LoadBuildIdentityCandidateInter
 	{
 		if (!Value.IsValid() || Value->Type != EJson::Object) return nullptr;
 		const TSharedPtr<FJsonObject> Artifact = Value->AsObject();
-		FString ModuleName;
-		if (!Artifact.IsValid() || !Artifact->TryGetStringField(TEXT("name"), ModuleName)
-			|| !IsSafeFileName(ModuleName) || !ModuleName.EndsWith(TEXT(".dll"))
+		FString ModuleLogicalPath;
+		if (!Artifact.IsValid() || !Artifact->TryGetStringField(TEXT("path"), ModuleLogicalPath)
+			|| !ModuleLogicalPath.StartsWith(TEXT("Binaries/Win64/UnrealEditor-"))
+			|| !ModuleLogicalPath.EndsWith(TEXT(".dll")))
+		{
+			return Reject(TEXT("manifest_module_list_invalid"));
+		}
+		const FString ModuleName = FPaths::GetCleanFilename(ModuleLogicalPath);
+		if (!IsSafeFileName(ModuleName)
+			|| ModuleLogicalPath != FString(TEXT("Binaries/Win64/")) + ModuleName
 			|| (!PreviousModuleName.IsEmpty() && ModuleName <= PreviousModuleName)
 			|| DeclaredModuleNames.Contains(ModuleName))
 		{
@@ -670,7 +698,7 @@ TSharedPtr<FJsonObject> FUAgentAssetToolsModule::LoadBuildIdentityCandidateInter
 		}
 		PreviousModuleName = ModuleName;
 		FString ModuleSha256;
-		if (!VerifyArtifact(Artifact, ModuleName, FPaths::Combine(BinariesDirectory, ModuleName), ModuleSha256)) return Reject(TEXT("manifest_module_hash_mismatch"));
+		if (!VerifyArtifact(Artifact, ModuleLogicalPath, FPaths::Combine(BinariesDirectory, ModuleName), ModuleSha256)) return Reject(TEXT("manifest_module_hash_mismatch"));
 		DeclaredModuleNames.Add(ModuleName);
 		const FString CandidateModulePath = FPaths::ConvertRelativePathToFull(FPaths::Combine(BinariesDirectory, ModuleName));
 		if (FPaths::IsSamePath(LoadedModulePath, CandidateModulePath))
@@ -678,6 +706,40 @@ TSharedPtr<FJsonObject> FUAgentAssetToolsModule::LoadBuildIdentityCandidateInter
 			LoadedModuleName = ModuleName;
 			LoadedModuleSha256 = ModuleSha256;
 		}
+	}
+	TSet<FString> ExpectedPackagePaths = {
+		TEXT("UAgentAssetTools.uplugin"),
+		TEXT("Resources/uagent-asset-tools.schema.json"),
+		TEXT("Binaries/Win64/UnrealEditor.modules"),
+	};
+	for (const FString& ModuleName : DeclaredModuleNames)
+	{
+		ExpectedPackagePaths.Add(FString(TEXT("Binaries/Win64/")) + ModuleName);
+	}
+	TSet<FString> ObservedPackagePaths;
+	if (PackageArtifacts->Num() != ExpectedPackagePaths.Num()) return Reject(TEXT("manifest_artifact_list_invalid"));
+	for (const TSharedPtr<FJsonValue>& Value : *PackageArtifacts)
+	{
+		if (!Value.IsValid() || Value->Type != EJson::Object) return Reject(TEXT("manifest_artifact_list_invalid"));
+		const TSharedPtr<FJsonObject> Artifact = Value->AsObject();
+		FString LogicalPath;
+		if (!Artifact.IsValid()
+			|| !Artifact->TryGetStringField(TEXT("path"), LogicalPath)
+			|| !ExpectedPackagePaths.Contains(LogicalPath)
+			|| ObservedPackagePaths.Contains(LogicalPath))
+		{
+			return Reject(TEXT("manifest_artifact_list_invalid"));
+		}
+		FString ArtifactSha256;
+		if (!VerifyArtifact(
+			Artifact,
+			LogicalPath,
+			FPaths::Combine(PluginRoot, LogicalPath),
+			ArtifactSha256))
+		{
+			return Reject(TEXT("manifest_artifact_hash_mismatch"));
+		}
+		ObservedPackagePaths.Add(LogicalPath);
 	}
 	FString ModuleIndexText;
 	TSharedPtr<FJsonObject> ModuleIndex;
@@ -689,12 +751,12 @@ TSharedPtr<FJsonObject> FUAgentAssetToolsModule::LoadBuildIdentityCandidateInter
 	const TSharedRef<TJsonReader<>> ModuleIndexReader = TJsonReaderFactory<>::Create(ModuleIndexText);
 	const TSet<FString> ModuleIndexKeys = { TEXT("BuildId"), TEXT("Modules") };
 	const TSharedPtr<FJsonObject>* ModuleMappings = nullptr;
-	FString ModuleBuildId;
+	FString ObservedModuleBuildId;
 	if (!FJsonSerializer::Deserialize(ModuleIndexReader, ModuleIndex)
 		|| !ModuleIndex.IsValid()
 		|| !HasExactKeys(ModuleIndex, ModuleIndexKeys)
-		|| !ModuleIndex->TryGetStringField(TEXT("BuildId"), ModuleBuildId)
-		|| ModuleBuildId != UeBuildId
+		|| !ModuleIndex->TryGetStringField(TEXT("BuildId"), ObservedModuleBuildId)
+		|| ObservedModuleBuildId != ModuleBuildId
 		|| !ModuleIndex->TryGetObjectField(TEXT("Modules"), ModuleMappings)
 		|| !ModuleMappings
 		|| (*ModuleMappings)->Values.Num() != DeclaredModuleNames.Num())
@@ -728,7 +790,7 @@ TSharedPtr<FJsonObject> FUAgentAssetToolsModule::LoadBuildIdentityCandidateInter
 	for (const auto& Pair : Manifest->Values)
 	{
 		const FString FieldName(Pair.Key.ToView());
-		if (FieldName != TEXT("manifestSha256")) ManifestWithoutSelfHash->SetField(FieldName, Pair.Value);
+		if (FieldName != TEXT("manifestSelfSha256")) ManifestWithoutSelfHash->SetField(FieldName, Pair.Value);
 	}
 	FString CanonicalManifest;
 	FString ComputedManifestSha256;
@@ -750,7 +812,10 @@ TSharedPtr<FJsonObject> FUAgentAssetToolsModule::LoadBuildIdentityCandidateInter
 	Identity->SetStringField(TEXT("buildCommandFingerprint"), BuildCommandFingerprint);
 	Identity->SetStringField(TEXT("loadedModuleName"), LoadedModuleName);
 	Identity->SetStringField(TEXT("loadedModuleSha256"), LoadedModuleSha256);
-	Identity->SetStringField(TEXT("ueBuildId"), UeBuildId);
+	Identity->SetStringField(TEXT("engineVersion"), EngineVersion);
+	Identity->SetNumberField(TEXT("engineChangelist"), EngineChangelist);
+	Identity->SetNumberField(TEXT("compatibleChangelist"), CompatibleChangelist);
+	Identity->SetStringField(TEXT("moduleBuildId"), ModuleBuildId);
 	return Identity;
 }
 

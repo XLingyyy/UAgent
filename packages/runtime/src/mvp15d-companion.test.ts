@@ -14,13 +14,15 @@ import {
 import * as Mvp15DCompanionModule from "./mvp15d-companion.js";
 import {
   UAGENT_COMPANION_CONTRACT_VERSION,
+  UAGENT_COMPANION_COMPATIBLE_CHANGELIST,
+  UAGENT_COMPANION_ENGINE_CHANGELIST,
+  UAGENT_COMPANION_ENGINE_VERSION,
   UAGENT_COMPANION_IDENTITY_SCHEMA_VERSION,
   UAGENT_COMPANION_MANIFEST_SCHEMA_VERSION,
+  UAGENT_COMPANION_MODULE_BUILD_ID,
   UAGENT_COMPANION_PLUGIN_ID,
   UAGENT_COMPANION_PLUGIN_VERSION,
   UAGENT_COMPANION_TOOL_NAMES,
-  UAGENT_COMPANION_UE_BUILD_ID,
-  UAGENT_COMPANION_UE_VERSION,
   type UAgentCompanionBuildManifest,
 } from "@uagent/shared";
 
@@ -30,7 +32,10 @@ const identityBase = {
   pluginVersion: UAGENT_COMPANION_PLUGIN_VERSION,
   contractVersion: UAGENT_COMPANION_CONTRACT_VERSION,
   sourceCommit: "a".repeat(40),
-  ueBuildId: UAGENT_COMPANION_UE_BUILD_ID,
+  engineVersion: UAGENT_COMPANION_ENGINE_VERSION,
+  engineChangelist: UAGENT_COMPANION_ENGINE_CHANGELIST,
+  compatibleChangelist: UAGENT_COMPANION_COMPATIBLE_CHANGELIST,
+  moduleBuildId: UAGENT_COMPANION_MODULE_BUILD_ID,
   sourceTreeSha256: "b".repeat(64),
   buildCommandFingerprint: "c".repeat(64),
   loadedModuleName: "UAgentAssetTools-Win64-Development.dll",
@@ -40,37 +45,67 @@ const identityBase = {
 function createManifest(): UAgentCompanionBuildManifest {
   const base = {
     schemaVersion: UAGENT_COMPANION_MANIFEST_SCHEMA_VERSION,
+    taskGeneration: "final-d13-d16" as const,
+    taskId: "TASK-MVP15D-UAGENT-TEST",
     pluginId: UAGENT_COMPANION_PLUGIN_ID,
     pluginVersion: UAGENT_COMPANION_PLUGIN_VERSION,
     contractVersion: UAGENT_COMPANION_CONTRACT_VERSION,
     sourceCommit: "a".repeat(40),
     sourceTreeSha256: "b".repeat(64),
+    physicalFixtures: [
+      { path: "fixture-a.json", size: 1, sha256: "2".repeat(64), gitObjectSha256: "2".repeat(64) },
+      { path: "fixture-b.json", size: 1, sha256: "3".repeat(64), gitObjectSha256: "3".repeat(64) },
+    ],
     dirty: false as const,
-    ueVersion: UAGENT_COMPANION_UE_VERSION,
-    ueBuildId: UAGENT_COMPANION_UE_BUILD_ID,
+    engineVersion: UAGENT_COMPANION_ENGINE_VERSION,
+    engineChangelist: UAGENT_COMPANION_ENGINE_CHANGELIST,
+    compatibleChangelist: UAGENT_COMPANION_COMPATIBLE_CHANGELIST,
+    moduleBuildId: UAGENT_COMPANION_MODULE_BUILD_ID,
     targetPlatform: "Win64" as const,
     configuration: "Development" as const,
-    compiler: "MSVC",
-    windowsSdk: "10.0",
+    compiler: { name: "MSVC" as const, version: "14.44.35207" },
+    windowsSdk: { name: "Windows SDK" as const, version: "10.0.26100.0" },
     buildCommandFingerprint: "c".repeat(64),
-    uplugin: { name: "UAgentAssetTools.uplugin", size: 1, sha256: "d".repeat(64) },
-    schema: { name: "uagent-asset-tools.schema.json", size: 2, sha256: "e".repeat(64) },
-    moduleIndex: { name: "UnrealEditor.modules", size: 3, sha256: "1".repeat(64) },
-    modules: [{ name: "UAgentAssetTools-Win64-Development.dll", size: 3, sha256: "f".repeat(64) }],
+    buildEvidenceArtifacts: [
+      { path: "logs/stdout.log", size: 1, sha256: "4".repeat(64) },
+      { path: "metadata/build-command.json", size: 1, sha256: "5".repeat(64) },
+      { path: "metadata/build-result.json", size: 1, sha256: "6".repeat(64) },
+    ],
+    artifacts: [
+      { path: "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", size: 3, sha256: "f".repeat(64) },
+      { path: "Binaries/Win64/UnrealEditor.modules", size: 3, sha256: "1".repeat(64) },
+      { path: "Resources/uagent-asset-tools.schema.json", size: 2, sha256: "e".repeat(64) },
+      { path: "UAgentAssetTools.uplugin", size: 1, sha256: "d".repeat(64) },
+    ],
+    modules: [{ path: "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", size: 3, sha256: "f".repeat(64) }],
     toolNames: UAGENT_COMPANION_TOOL_NAMES,
     generatedAt: "2026-07-20T00:00:00.000Z",
     builder: { kind: "local" as const, name: "test" },
   };
-  return { ...base, manifestSha256: computeMvp15DManifestSha256({ ...base, manifestSha256: "" }) };
+  return {
+    ...base,
+    manifestSelfSha256: computeMvp15DManifestSha256({
+      ...base,
+      manifestSelfSha256: "",
+    }),
+  };
+}
+
+function moduleEvidence(manifest: UAgentCompanionBuildManifest) {
+  return manifest.modules.map((module) => ({
+    name: module.path.split("/").at(-1)!,
+    size: module.size,
+    sha256: module.sha256,
+  }));
 }
 
 function createIdentity(manifest: UAgentCompanionBuildManifest): Mvp15DCompanionIdentityEvidence {
   return {
     ...identityBase,
-    buildManifestSha256: manifest.manifestSha256,
+    buildManifestSha256: manifest.manifestSelfSha256,
     sourceTreeSha256: manifest.sourceTreeSha256,
     buildCommandFingerprint: manifest.buildCommandFingerprint,
-    loadedModuleName: manifest.modules[0]!.name,
+    loadedModuleName: manifest.modules[0]!.path.split("/").at(-1)!,
     loadedModuleSha256: manifest.modules[0]!.sha256,
   };
 }
@@ -86,8 +121,8 @@ describe("MVP15D companion contracts", () => {
     const descriptors = createMvp15DCompanionToolDescriptors(identity);
     const result = attestMvp15DCompanion({
       manifest,
-      installedModules: manifest.modules,
-      loadedModules: manifest.modules,
+      installedModules: moduleEvidence(manifest),
+      loadedModules: moduleEvidence(manifest),
       directTools: descriptors,
       discoveryGeneration: 4,
     });
@@ -117,8 +152,8 @@ describe("MVP15D companion contracts", () => {
     }));
     const mismatch = attestMvp15DCompanion({
       manifest,
-      installedModules: manifest.modules,
-      loadedModules: manifest.modules,
+      installedModules: moduleEvidence(manifest),
+      loadedModules: moduleEvidence(manifest),
       directTools: stale,
       discoveryGeneration: 2,
     });
@@ -186,14 +221,14 @@ describe("MVP15D companion contracts", () => {
 
   it("rejects tampered, extra, and malformed manifest provenance fields", () => {
     const manifest = createManifest();
-    expect(validateMvp15DManifest({ ...manifest, manifestSha256: "0".repeat(64) }).valid).toBe(false);
+    expect(validateMvp15DManifest({ ...manifest, manifestSelfSha256: "0".repeat(64) }).valid).toBe(false);
     expect(validateMvp15DManifest({ ...manifest, unexpected: true })).toMatchObject({
       valid: false,
       reason: "manifest_field_extra",
     });
     expect(validateMvp15DManifest({
       ...manifest,
-      uplugin: { ...manifest.uplugin, unexpected: true },
+      artifacts: [{ ...manifest.artifacts[0], unexpected: true }, ...manifest.artifacts.slice(1)],
     })).toMatchObject({ valid: false, reason: "manifest_artifact_invalid" });
   });
 
@@ -208,8 +243,8 @@ describe("MVP15D companion contracts", () => {
     });
     expect(attestMvp15DCompanion({
       manifest,
-      installedModules: manifest.modules,
-      loadedModules: manifest.modules,
+      installedModules: moduleEvidence(manifest),
+      loadedModules: moduleEvidence(manifest),
       directTools: descriptors,
       discoveryGeneration: 3,
     }).status).toMatchObject({ status: "incompatible", reason: "companion_live_identity_mismatch" });

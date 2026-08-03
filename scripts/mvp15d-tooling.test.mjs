@@ -16,6 +16,8 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import test from "node:test";
+import "./mvp15d-final-tooling.test.mjs";
+import "./mvp15d-ue581-evidence-inventory.test.mjs";
 import {
   D0_COMBINATIONS,
   D0_ADAPTER_ARTIFACT_SCHEMA_VERSION,
@@ -1357,6 +1359,8 @@ test(
     const testRoot = mkdtempSync(join(tmpdir(), "UAgent-MVP15D-Rework7-job-helper-test-"));
     const stdoutPath = join(testRoot, "root.stdout.log");
     const stderrPath = join(testRoot, "root.stderr.log");
+    const identityPath = join(testRoot, "metadata", "early-identity.json");
+    mkdirSync(resolve(identityPath, ".."), { recursive: true });
     const marker = `uagent-mvp15d-rework7-helper-${randomBytes(16).toString("hex")}`;
     const childScript = "setTimeout(() => process.exit(0), 1500)";
     const parentScript = [
@@ -1390,6 +1394,12 @@ test(
           stderrPath,
           "-TaskMarker",
           marker,
+          "-IdentityPath",
+          identityPath,
+          "-Session",
+          `uagent-mvp15d-rework7-helper-${randomBytes(8).toString("hex")}`,
+          "-Generation",
+          "1",
           "-TimeoutMilliseconds",
           "10000",
         ],

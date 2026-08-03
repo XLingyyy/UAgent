@@ -20,12 +20,14 @@ import { ConfigSettings } from "../settings/pages/ConfigSettings";
 import { UIProvider, useOptionalRuntimeActions, useRuntimeStore } from "./ui-store";
 import {
   UAGENT_COMPANION_CONTRACT_VERSION,
+  UAGENT_COMPANION_COMPATIBLE_CHANGELIST,
+  UAGENT_COMPANION_ENGINE_CHANGELIST,
+  UAGENT_COMPANION_ENGINE_VERSION,
   UAGENT_COMPANION_IDENTITY_SCHEMA_VERSION,
   UAGENT_COMPANION_MANIFEST_SCHEMA_VERSION,
+  UAGENT_COMPANION_MODULE_BUILD_ID,
   UAGENT_COMPANION_PLUGIN_ID,
   UAGENT_COMPANION_PLUGIN_VERSION,
-  UAGENT_COMPANION_UE_BUILD_ID,
-  UAGENT_COMPANION_UE_VERSION,
 } from "@uagent/shared";
 
 const MVP15_TEST_TOOL_NAMES = MVP15_ASSET_TOOL_ALLOWLIST;
@@ -61,35 +63,59 @@ const MVP15_TEST_TOOL_CONTRACTS = {
 function createMvp15DCompanionEvidence() {
   const manifestBase = {
     schemaVersion: UAGENT_COMPANION_MANIFEST_SCHEMA_VERSION,
+    taskGeneration: "final-d13-d16" as const,
+    taskId: "TASK-MVP15D-UAGENT-DESKTOP-TEST",
     pluginId: UAGENT_COMPANION_PLUGIN_ID,
     pluginVersion: UAGENT_COMPANION_PLUGIN_VERSION,
     contractVersion: UAGENT_COMPANION_CONTRACT_VERSION,
     sourceCommit: "a".repeat(40),
     sourceTreeSha256: "b".repeat(64),
+    physicalFixtures: [
+      { path: "fixture-a.json", size: 1, sha256: "2".repeat(64), gitObjectSha256: "2".repeat(64) },
+      { path: "fixture-b.json", size: 1, sha256: "3".repeat(64), gitObjectSha256: "3".repeat(64) },
+    ],
     dirty: false as const,
-    ueVersion: UAGENT_COMPANION_UE_VERSION,
-    ueBuildId: UAGENT_COMPANION_UE_BUILD_ID,
+    engineVersion: UAGENT_COMPANION_ENGINE_VERSION,
+    engineChangelist: UAGENT_COMPANION_ENGINE_CHANGELIST,
+    compatibleChangelist: UAGENT_COMPANION_COMPATIBLE_CHANGELIST,
+    moduleBuildId: UAGENT_COMPANION_MODULE_BUILD_ID,
     targetPlatform: "Win64" as const,
     configuration: "Development" as const,
-    compiler: "MSVC",
-    windowsSdk: "Windows SDK (fixture)",
+    compiler: { name: "MSVC" as const, version: "14.44.35207" },
+    windowsSdk: { name: "Windows SDK" as const, version: "10.0.26100.0" },
     buildCommandFingerprint: "c".repeat(64),
-    uplugin: { name: "UAgentAssetTools.uplugin", size: 1, sha256: "d".repeat(64) },
-    schema: { name: "uagent-asset-tools.schema.json", size: 2, sha256: "e".repeat(64) },
-    moduleIndex: { name: "UnrealEditor.modules", size: 3, sha256: "1".repeat(64) },
-    modules: [{ name: "UAgentAssetTools-Win64-Development.dll", size: 3, sha256: "f".repeat(64) }],
+    buildEvidenceArtifacts: [
+      { path: "logs/stdout.log", size: 1, sha256: "4".repeat(64) },
+      { path: "metadata/build-command.json", size: 1, sha256: "5".repeat(64) },
+      { path: "metadata/build-result.json", size: 1, sha256: "6".repeat(64) },
+    ],
+    artifacts: [
+      { path: "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", size: 3, sha256: "f".repeat(64) },
+      { path: "Binaries/Win64/UnrealEditor.modules", size: 3, sha256: "1".repeat(64) },
+      { path: "Resources/uagent-asset-tools.schema.json", size: 2, sha256: "e".repeat(64) },
+      { path: "UAgentAssetTools.uplugin", size: 1, sha256: "d".repeat(64) },
+    ],
+    modules: [{ path: "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", size: 3, sha256: "f".repeat(64) }],
     toolNames: MVP15_TEST_TOOL_NAMES,
     generatedAt: "2026-07-20T00:00:00.000Z",
     builder: { kind: "local" as const, name: "desktop-test" },
   };
   const manifest = {
     ...manifestBase,
-    manifestSha256: computeMvp15DManifestSha256({ ...manifestBase, manifestSha256: "" }),
+    manifestSelfSha256: computeMvp15DManifestSha256({
+      ...manifestBase,
+      manifestSelfSha256: "",
+    }),
   };
+  const modules = manifest.modules.map((module) => ({
+    name: module.path.split("/").at(-1)!,
+    size: module.size,
+    sha256: module.sha256,
+  }));
   return {
     manifest,
-    installedModules: manifest.modules,
-    loadedModules: manifest.modules,
+    installedModules: modules,
+    loadedModules: modules,
     identity: {
       schemaVersion: UAGENT_COMPANION_IDENTITY_SCHEMA_VERSION,
       pluginId: UAGENT_COMPANION_PLUGIN_ID,
@@ -97,10 +123,13 @@ function createMvp15DCompanionEvidence() {
       contractVersion: UAGENT_COMPANION_CONTRACT_VERSION,
       sourceCommit: manifest.sourceCommit,
       sourceTreeSha256: manifest.sourceTreeSha256,
-      buildManifestSha256: manifest.manifestSha256,
-      ueBuildId: UAGENT_COMPANION_UE_BUILD_ID,
+      buildManifestSha256: manifest.manifestSelfSha256,
+      engineVersion: UAGENT_COMPANION_ENGINE_VERSION,
+      engineChangelist: UAGENT_COMPANION_ENGINE_CHANGELIST,
+      compatibleChangelist: UAGENT_COMPANION_COMPATIBLE_CHANGELIST,
+      moduleBuildId: UAGENT_COMPANION_MODULE_BUILD_ID,
       buildCommandFingerprint: manifest.buildCommandFingerprint,
-      loadedModuleName: manifest.modules[0]!.name,
+      loadedModuleName: manifest.modules[0]!.path.split("/").at(-1)!,
       loadedModuleSha256: manifest.modules[0]!.sha256,
     },
   };

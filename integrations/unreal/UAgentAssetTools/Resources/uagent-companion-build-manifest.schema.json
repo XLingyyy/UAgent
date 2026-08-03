@@ -1,28 +1,39 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "uagent.ue-companion-plugin.build-manifest.v1",
-  "title": "UAgentAssetTools build manifest",
+  "$id": "uagent.ue-companion-plugin.build-manifest.v3",
+  "title": "UAgentAssetTools final build manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "pluginId", "pluginVersion", "contractVersion", "sourceCommit", "sourceTreeSha256", "dirty", "ueVersion", "ueBuildId", "targetPlatform", "configuration", "compiler", "windowsSdk", "buildCommandFingerprint", "uplugin", "schema", "moduleIndex", "modules", "toolNames", "generatedAt", "builder", "manifestSha256"],
+  "required": [
+    "schemaVersion", "taskGeneration", "taskId", "pluginId", "pluginVersion",
+    "contractVersion", "sourceCommit", "sourceTreeSha256", "physicalFixtures",
+    "dirty", "engineVersion", "engineChangelist", "compatibleChangelist",
+    "moduleBuildId", "targetPlatform", "configuration", "compiler", "windowsSdk",
+    "buildCommandFingerprint", "buildEvidenceArtifacts", "artifacts", "modules",
+    "toolNames", "generatedAt", "builder", "manifestSelfSha256"
+  ],
   "properties": {
-    "schemaVersion": { "const": "uagent.ue-companion-plugin.build-manifest.v1" },
+    "schemaVersion": { "const": "uagent.ue-companion-plugin.build-manifest.v3" },
+    "taskGeneration": { "const": "final-d13-d16" },
+    "taskId": { "type": "string", "pattern": "^TASK-MVP15D-[A-Z0-9-]+$" },
     "pluginId": { "const": "UAgentAssetTools" },
     "pluginVersion": { "const": "0.1.0" },
     "contractVersion": { "const": "mvp15d.asset-tools.v1" },
     "sourceCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "sourceTreeSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "physicalFixtures": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/physicalFixture" } },
     "dirty": { "const": false },
-    "ueVersion": { "const": "5.8.0" },
-    "ueBuildId": { "const": "55116800" },
+    "engineVersion": { "const": "5.8.1" },
+    "engineChangelist": { "const": 56057345 },
+    "compatibleChangelist": { "const": 55116800 },
+    "moduleBuildId": { "const": "55116800" },
     "targetPlatform": { "const": "Win64" },
     "configuration": { "const": "Development" },
-    "compiler": { "const": "MSVC" },
-    "windowsSdk": { "const": "Windows SDK" },
+    "compiler": { "$ref": "#/$defs/toolchain" },
+    "windowsSdk": { "$ref": "#/$defs/toolchain" },
     "buildCommandFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "uplugin": { "$ref": "#/$defs/artifact" },
-    "schema": { "$ref": "#/$defs/artifact" },
-    "moduleIndex": { "$ref": "#/$defs/artifact" },
+    "buildEvidenceArtifacts": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/artifact" } },
+    "artifacts": { "type": "array", "minItems": 4, "items": { "$ref": "#/$defs/artifact" } },
     "modules": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/moduleArtifact" } },
     "toolNames": {
       "type": "array",
@@ -43,29 +54,48 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["kind", "name"],
-       "properties": { "kind": { "enum": ["local", "ci"] }, "name": { "type": "string", "pattern": "^[A-Za-z0-9._ -]+$" } }
+      "properties": {
+        "kind": { "enum": ["local", "ci"] },
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9._ -]+$" }
+      }
     },
-    "manifestSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+    "manifestSelfSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
   },
   "$defs": {
     "artifact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "size", "sha256"],
+      "required": ["path", "size", "sha256"],
       "properties": {
-        "name": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+        "path": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$" },
         "size": { "type": "integer", "minimum": 0 },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
     "moduleArtifact": {
+      "allOf": [
+        { "$ref": "#/$defs/artifact" },
+        { "properties": { "path": { "pattern": "^Binaries/Win64/UnrealEditor-[A-Za-z0-9_.-]+\\.dll$" } } }
+      ]
+    },
+    "physicalFixture": {
+      "allOf": [
+        { "$ref": "#/$defs/artifact" },
+        {
+          "required": ["gitObjectSha256"],
+          "properties": {
+            "gitObjectSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        }
+      ]
+    },
+    "toolchain": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "size", "sha256"],
+      "required": ["name", "version"],
       "properties": {
-        "name": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+\\.dll$" },
-        "size": { "type": "integer", "minimum": 0 },
-        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9 .()_-]+$" },
+        "version": { "type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+){1,3}$" }
       }
     }
   }

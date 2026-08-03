@@ -1,34 +1,32 @@
 # ADR: UAgentAssetTools Companion Registration Route
 
-- Status: `COMPLETE` — Rework 7 retained D0 confirms Direct; Rework 8 is `NEEDS_FIX`; Rework 9 closes the D0-D12 source checkpoint
-- Date: 2026-07-26
-- Scope: MVP15D D0-D12 source checkpoint Rework 9 documentation correction
+- Status: `COMPLETE` — Direct remains selected; UE 5.8.1 Final Source/Tooling
+  Rework 8 changes no route
+- Date: 2026-08-02
+- Scope: MVP15D registration-route decision under final source/tooling rework
 - Decision owner: implementation Agent; final acceptance remains with supervisor
 
-## Current Rework 9 Decision Status
+## Current Source/Tooling Rework Decision Status
 
-Rework 8 is `NEEDS_FIX` because the current acceptance manifest file SHA
-conflicted with retained evidence and the other current repository documents,
-while code and retained evidence validation passed. Rework 9 and the D0-D12
-source checkpoint are `COMPLETE`. Ready for the next MVP stage remains `NO`
-because G13/G16 and 15A-15C remain separately gated. Retained D0 supports task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`
-(previous task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`).
-`external/mvp15d-rework7-d0-20260726_190100` records four product-adapter
-sessions, 129 indexed artifacts, mutation count zero, and
-`selectedRoute=direct`.
-Transcript-index SHA-256 is
-`b87e0a8a4d685b0cbddd55c8ea5ed4e944b9feba7aaa9d9176e23e2dfdeb0f99`;
-`hashes.json` is
-`d393ce454385b32d07fa1a08ac7b8f39f897052dc3ff68daf785fc60d8077106`.
-Verified implementation/content checkpoint
-`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e` is published with the Rework 9
-documentation closeout checkpoint.
-No final clean 15A package or real product-mutation result exists. D13, 15A,
-15B, and 15C remain prohibited.
+Task
+`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-8-AUTHORITATIVE-LAUNCH-BOUNDARY-AND-REPORT-CLOSURE`
+does not reopen the D0 route decision. Direct remains the selected production
+registration route; Toolset Registry remains closed and no fallback is
+permitted.
 
-## Rework 7 D0 Decision Matrix
+Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
+its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
+Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
+supervisor checkpoint` in a dirty pre-checkpoint tree. Its release-binary
+capability bridge and two-level persisted-consistency / owned-launch authority
+reaches the existing normal-product adapter without changing Direct or strict
+exact-six retraction; no live registration ran. G14 is `IMPLEMENTED`; G15 is
+`IN_PROGRESS`; G16 is
+`PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`;
+D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility and overall acceptance
+remain `PARTIAL`; Ready is `NO`.
+
+## Historical Source Checkpoint Rework 7 D0 Decision Matrix
 
 | Registration route                      | Tool Search | Product session | Independent index | Mutation | Status      |
 | --------------------------------------- | ----------- | --------------- | ----------------- | -------- | ----------- |
@@ -37,10 +35,9 @@ No final clean 15A package or real product-mutation result exists. D13, 15A,
 | `UToolsetDefinition` / Toolset Registry | ON          | Recorded        | Validated         | 0        | IMPLEMENTED |
 | `UToolsetDefinition` / Toolset Registry | OFF         | Recorded        | Validated         | 0        | IMPLEMENTED |
 
-The four sessions form one matching current-source evidence set and select
-Direct. Toolset Registry remains an evaluated alternative and is not a
-production fallback. This implementation decision remains subject to the
-supervisor checkpoint. `BLOCKED_BY_EVIDENCE_RETENTION` is closed.
+The four sessions form one matching accepted-source evidence set and select
+Direct. Toolset Registry is an evaluated, closed alternative and is not a
+production fallback. `BLOCKED_BY_EVIDENCE_RETENTION` remains closed.
 
 UE 5.8 publishes generic Toolset Registry meta-tools under Tool Search and stock
 Toolset tools in eager mode. Those server capabilities are route-neutral. A
@@ -92,10 +89,10 @@ localhost MCP transport and public extension point.
 
 ### Historical Rework 2 interpretation
 
-The Rework 4 source validator is `scripts/mvp15d-d0-spike.mjs`. It validates a
-complete hash-indexed task-process/artifact/transcript chain emitted from the
-desktop/native connection-session-discovery boundary. It has no same-run signer
-or implementation-owned signing-key requirement. The paired
+The historical Rework 4 source validator is `scripts/mvp15d-d0-spike.mjs`. It
+validates a complete hash-indexed task-process/artifact/transcript chain
+emitted from the desktop/native connection-session-discovery boundary. It has
+no same-run signer or implementation-owned signing-key requirement. The paired
 `scripts/mvp15d-d0-capture.mjs` only indexes already-produced redacted product
 transcripts; it neither launches UE nor presents supporting UE Automation as D0
 evidence. Missing or incomplete combinations fail closed and no helper performs
@@ -109,7 +106,8 @@ Rework 1 supplied only a verifier and test-generated envelopes; Rework 2 changed
 only renderer blocked-result normalization. Neither added a product-adapter
 capture producer, and an implementation-created signature was not independent
 product evidence. The historical Rework 3 probe routes remain supporting-only;
-Rework 4 must capture the actual product lifecycle before this matrix can pass.
+the historical Rework 4 attempt was required to capture the actual product
+lifecycle before this matrix could pass.
 
 ## Historical Rework 3 Source Candidate (not a decision)
 
@@ -141,7 +139,8 @@ Only then may this ADR select one production route and close the other.
 ## Fallback closure
 
 D0 selects Direct for the production registration route. Toolset Registry is
-not an implicit or automatic fallback, and no generic wrapper is permitted. A
-clean source commit/tree remains a later final 15A packaging prerequisite, not a
-route-selection prerequisite. Supervisor assessment remains required for the
-source checkpoint.
+not an implicit or automatic fallback, and no generic wrapper is permitted. The
+historical Rework 2 15A attempt failed independently of this route decision.
+The Final Source/Tooling Rework 8 supervisor checkpoint, then a separate
+clean-commit read-only compatibility task, are required before
+package execution resumes. Real mutation remains prohibited.

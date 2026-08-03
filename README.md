@@ -2,69 +2,95 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP15D - UAgent UE Companion Plugin Source Checkpoint Complete
+## Current Stage: MVP15D - Final Source/Tooling Rework 8 Authoritative Launch Boundary and Report Closure
 
-Rework 8 is `NEEDS_FIX` because its current acceptance document recorded a stale
-retained build-manifest file SHA-256, while the product code, retained
-D0/build/UE evidence, and automated implementation gates passed validation. The
-previous task was
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-8`. The current
-task is
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-SOURCE-CHECKPOINT-REWORK-9`; Rework 9 and
-the D0-D12 source checkpoint are `COMPLETE`. Ready for the next MVP stage remains
-`NO` because G13/G16 and 15A-15C remain separately gated.
+Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
+its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
+Source/Tooling Rework 8 source implementation is `IMPLEMENTED, awaiting
+supervisor checkpoint`. G14 is `IMPLEMENTED`; G15 is `IN_PROGRESS`; G16 is
+`PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain
+`PLANNED`; D16 remains `IN_PROGRESS`; UE 5.8.1 compatibility and overall MVP15
+acceptance remain `PARTIAL`; Ready for the next stage is `NO`.
 
-`BLOCKED_BY_EVIDENCE_RETENTION` is closed by retained, in-place validated
-Rework 7 evidence. D0 is retained at
-`external/mvp15d-rework7-d0-20260726_190100`: four product-adapter sessions,
-129 indexed artifacts (130 files including `hashes.json`), zero mutation,
-`selectedRoute=direct`, transcript-index SHA-256
-`b87e0a8a4d685b0cbddd55c8ea5ed4e944b9feba7aaa9d9176e23e2dfdeb0f99`,
-`hashes.json` SHA-256
-`d393ce454385b32d07fa1a08ac7b8f39f897052dc3ff68daf785fc60d8077106`,
-and route-decision SHA-256
-`3fee1961461eefe12b68d45657eb0a73879cc009f004bac09076abae2b8b5ce4`.
+The dirty pre-checkpoint Tauri build embeds
+`uagent.mvp15d.source-identity.v2`: base/compiled commit
+`d308d80a994079dc22af2b982e70ae416d832e4f`, resolved head ref, honest
+`sourceDirty: true`, and SHA-256
+`ccf061de9f2583d26b9562a9739255f04b288c84672603424859c04fee686099`
+over the complete
+`uagent.mvp15d.production-source-boundary.v2`. The boundary currently contains
+335 production files discovered from 14 approved roots plus 28 exact files;
+9 exact exclusion classes account for 126 excluded entries. Tests, docs,
+workflow data, build output, evidence, caches, logs, installers, secrets, and
+external roots stay outside it. A new production file is included
+automatically, and deletion of a tracked production file marks the identity
+dirty. `build.rs` consumes the complete 356-entry source/Git watch set,
+including normal or linked-worktree Git metadata, symbolic or detached HEAD,
+loose refs, and packed refs. Only a supervisor checkpoint followed by a clean
+rebuild can complete G15.
 
-The retained build/source/manifest bundle is
-`external/mvp15d-rework7-build-20260726_203000`: 60 files total (59
-inventory-tracked payload files plus `inventory.json`), bundle SHA-256
-`ef86e59c05068f9610050a2afa44bf3237d3fd78e82262cf6d3be6660223420b`,
-inventory self-hash
-`096e92b42f28eda7c227efde9747c33dd7c3c2f8d1e08988af77588f09b83303`,
-and manifest file SHA-256
-`236f1da71961fd697e81ad0a6d9f53f82076b71019e74400eed8b95f0d69ac84`.
-The retained UE bundle at `external/mvp15d-rework7-ue-20260726_190100`
-records five sessions, `48/48` Automation cases, six processes per session,
-zero residuals, unchanged empty Content, and capture SHA-256
-`8794de55d0bc3444015116918b92e957070e684ac014f7f9551c07762af1cbb8`.
+The loaded-module publisher still has one write-capable production path. It
+publishes only after the owned live process is re-observed and the task marker,
+session/generation, root PID, creation FILETIME, executable bytes, project,
+source identity, manifest, package, installed inventory, producer/helper/
+observer/Job facts are independently derived. Its private publisher brand is an
+in-process condition and is not serialized. The standalone writer CLI is
+disabled; injected observation and pure builders remain fixture-marked.
 
-Typecheck, lint, build, two consecutive workspace-test processes, Rust format,
-ten fresh default Cargo processes, the serial diagnostic, tooling `23/23`,
-build-bundle tooling `10/10`, targeted authority/vector checks, and the
-side-effect scan completed with exit 0 at 1,039 files / 0 blocked / 1,655 review
-findings. The canonical C++/shared/compiled binding fixture is 4,865 bytes with
-SHA-256
-`771168ec8b6e7215672a4d839fa675d88f9207876e2c51513b26d6c58da56a1b`.
-The first historical supervisor workspace-test attempt exited `134` after
-shared 33 passed; its later reruns passed. No source-checkpoint blocker remains.
+Verification has two explicit levels. Exported verifiers and CLI `verify`
+reopen and cross-bind retained files and return a persisted-consistency status
+with `productionLaunchAuthorityVerified: false`. A coherent copied or
+hand-authored chain can satisfy that consistency level, so it is never described
+as owned live-production evidence. Only `executeLivePhase()` can return
+`*_owned_launch_verified` with `productionLaunchAuthorityVerified: true`: the
+same parent invocation must check absent outputs, select the fixed producer and
+arguments, use the real non-injected launcher, validate the actual child result,
+consume the events, complete persisted cross-binding, and consume a private
+single-use `WeakSet` receipt that is neither exported nor serialized. Public
+origin strings, hashes, PIDs, FILETIMEs, Job/event JSON, booleans, nonces, and
+caller objects cannot create that receipt.
 
-The verified implementation/content checkpoint is
-`b1c4e4a4b567d5018c0d0fa7fa1769a26e70f66e`; it is published with the Rework 9
-documentation closeout checkpoint on `main`. This accepts the D0-D12 source
-checkpoint only.
+The Windows observer rejects leaf links and every symlink/junction/reparse
+ancestor below the installed root. Real fixture-process and intermediate
+`Binaries`/`Win64` junction regressions pass. Cleanup retains the Job handle,
+forces or awaits closeout, retries only for Windows handle release, and fails
+when a process or directory remains. Fifteen inherited task fixture directories
+plus one transient test residue were removed after exact `%TEMP%` containment,
+name, and no-live-owner checks; the final matching process and fixture-directory
+counts are zero.
 
-Historical Rework 5 supervisor verification passed workspace lint, build, tests,
-Rust format, tooling, side-effect scan, and retained-evidence hash checks. Its
-ordinary parallel Rust suite failed at 146/147 and reproduced shared-registry
-interference. That review also found mutation authority reachable from the
-task-only observer while public identity was incompatible, missing native
-zero-authority startup/stale-retraction guarantees, mismatched
-Rust/TypeScript/C++ binding tuples, a directory create-to-identity adoption
-window, and incomplete per-session UE descendant-process closeout.
+The freshly rebuilt release `uagent.exe` passes all three capability-only
+handshakes — native startup, the normal-product renderer, and the rendered
+validate/add/trust controls — with zero MCP calls, zero network calls, zero
+asset operations, and zero residuals. The probes establish only the runtime
+boundary. They do not claim real product discovery, UE execution, Tool Search,
+or asset mutation.
 
-No final clean 15A package, authorized product-UI mutation lifecycle, or
-stage-advance decision exists. Real product mutation and D13, 15A, 15B, and 15C
-remain prohibited until separately authorized.
+UE Automation will continue to come from the official `-ReportExportPath` JSON
+report plus exact UAgent task markers and a fixed companion Automation matrix.
+Ordinary UE logs remain separate redacted logs and are never treated as pure
+JSONL. Full UE execution remains post-checkpoint.
+
+The UE 5.8.1 evidence collector uses a closed allowlist, deterministic
+redaction, independent verification, and secret/path rejection. The unsafe
+predecessor evidence root was invalidated and removed for
+`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root was created.
+Full read-only compatibility is deferred until the supervisor creates the
+Rework 8 checkpoint and issues a clean-commit task. Real UE, Tool Search, and mutation
+are `SKIPPED_BY_TASK_BOUNDARY`; real mutation remains prohibited.
+
+The tracked multi-size ICO and actual Tauri MSI/NSIS packaging remain accepted
+implementation facts. Identity v2 / manifest v3 independently preserve engine
+`5.8.1`, engine changelist `56057345`, compatible changelist `55116800`, and
+module BuildId `55116800`; exact `RunUAT.bat ... -Rocket` construction and the
+deterministic module index remain in place. Historical Source Checkpoint Rework 7 / UE 5.8.0
+validation retains its original meaning and does not satisfy the current live
+gates.
+
+Historical Source Checkpoint Rework 7 D0/build/UE evidence still validates in place. It preserves
+the selected Direct route and closes the Toolset Registry alternative for the
+accepted D0-D12 source checkpoint, but it does not substitute for final
+15A-15C evidence.
 
 ## Historical Stage: MVP15 - Native Authority Binding Rework
 
@@ -72,7 +98,7 @@ This historical stage reopened MVP15 for native authority binding acceptance and
 
 C13C reused that warm DDC and observed all launch-readiness conditions together at `+33.408s`, without connecting to MCP or performing product/native/mutation actions. C13D then proved that child-only `PYTHONDONTWRITEBYTECODE=1` does not suppress the UE embedded runtime's 28 generated cache files. C13E modeled route A as `163` byte-exact business files plus 28 source-mapped `cpython-311` cache paths and produced a clean one-launch ledger at `+94.338s`; supervisor review then found two validator defects. C13E1 repaired and closed those defects: every native path-inspection error fails with `PATH_INSPECTION_FAILED`, `header.valid` reflects the complete header result, the expanded 23-test matrix passes, and the retained `191 = 163 + 28` copy revalidates read-only with zero cache metadata change and no additional UE launch. Supervisor review accepted the repair and recorded verified implementation commit `12159b9b5eb31829208df5c01c7fc97f157398c2`; the remote checkpoint is published and local external artifacts are excluded by commit `af457cad6c870c62b333bfba82df4fb38d83c6b1`.
 
-C14 implemented deterministic `uagent.mvp15.live-asset-toolset-fingerprint.v1` publication in the real desktop adapter. C14A hardens that boundary: a new connection generation atomically retracts old discovery, facade inventory, MCP binding, and fingerprint before any synchronous status notification; blocked publications expose only allowlisted names, stable flags, and counts, never raw unexpected/duplicate names. Primitive, non-string, throwing/proxy-like, malformed, and non-JSON inputs remain fail closed without an accepted SHA-256. The controlled C14 task-owned read-only attempt reached the exact loaded module/listener environment, preserved Route A `191 = 163 + 28`, and made one initialization request before a pre-discovery transport/environment failure. It produced no descriptor/schema evidence and is not a schema rejection; discovery and every registration/token/dry-run/execute/verify/rollback/replay/mutation count stayed zero. Separately, the authoritative active-byte mapping remains `BLOCKED_BY_MCP_SCHEMA`: all six signed Epic sibling binaries differ from the active unsigned project-local set, and no authoritative package manifest or source/build attestation maps those active bytes. Supervisor review accepted the C14/C14A implementation at verified commit `37c29cbc7961218bfd71d1809178359952a75e18`; its documentation closeout is published in the same task checkpoint. The historical 09Z `PASS_REAL_SMOKE` remains former happy-path evidence only. At the C14 checkpoint, product-adapter capture and the product-UI lifecycle were still absent; the current Rework 9 posture is summarized above.
+C14 implemented deterministic `uagent.mvp15.live-asset-toolset-fingerprint.v1` publication in the real desktop adapter. C14A hardens that boundary: a new connection generation atomically retracts old discovery, facade inventory, MCP binding, and fingerprint before any synchronous status notification; blocked publications expose only allowlisted names, stable flags, and counts, never raw unexpected/duplicate names. Primitive, non-string, throwing/proxy-like, malformed, and non-JSON inputs remain fail closed without an accepted SHA-256. The controlled C14 task-owned read-only attempt reached the exact loaded module/listener environment, preserved Route A `191 = 163 + 28`, and made one initialization request before a pre-discovery transport/environment failure. It produced no descriptor/schema evidence and is not a schema rejection; discovery and every registration/token/dry-run/execute/verify/rollback/replay/mutation count stayed zero. Separately, the authoritative active-byte mapping remains `BLOCKED_BY_MCP_SCHEMA`: all six signed Epic sibling binaries differ from the active unsigned project-local set, and no authoritative package manifest or source/build attestation maps those active bytes. Supervisor review accepted the C14/C14A implementation at verified commit `37c29cbc7961218bfd71d1809178359952a75e18`; its documentation closeout is published in the same task checkpoint. The historical 09Z `PASS_REAL_SMOKE` remains former happy-path evidence only. At the C14 checkpoint, product-adapter capture and the product-UI lifecycle were still absent; current status is summarized above.
 
 1. **Asset Mutation Contracts**: Sandbox asset paths, operation kinds, dry-run plans, ChangeSet approvals, verification, rollback, evidence, audit, and replay summaries.
 2. **Sandbox Policy**: Blocks non-sandbox paths, path traversal, Save All, unsafe delete/move/rename/bulk operations, broad mutating MCP calls, stale manifests, provider auto-apply, raw secrets, and replay re-execution.

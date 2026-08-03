@@ -18,6 +18,15 @@ param(
     [string]$TaskMarker,
 
     [Parameter(Mandatory = $true)]
+    [string]$IdentityPath,
+
+    [Parameter(Mandatory = $true)]
+    [string]$Session,
+
+    [Parameter(Mandatory = $true)]
+    [int]$Generation,
+
+    [Parameter(Mandatory = $true)]
     [int]$TimeoutMilliseconds
 )
 
@@ -29,6 +38,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Management;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -632,6 +642,110 @@ namespace UAgent.Mvp15D
             }
         }
 
+        private static string EscapeJson(string value)
+        {
+            StringBuilder builder = new StringBuilder(value.Length);
+            foreach (char current in value)
+            {
+                switch (current)
+                {
+                    case '\\':
+                        builder.Append("\\\\");
+                        break;
+                    case '"':
+                        builder.Append("\\\"");
+                        break;
+                    case '\n':
+                        builder.Append("\\n");
+                        break;
+                    case '\r':
+                        builder.Append("\\r");
+                        break;
+                    case '\t':
+                        builder.Append("\\t");
+                        break;
+                    default:
+                        builder.Append(current);
+                        break;
+                }
+            }
+            return builder.ToString();
+        }
+
+        private static string Sha256File(string path)
+        {
+            using (System.Security.Cryptography.SHA256 sha =
+                System.Security.Cryptography.SHA256.Create())
+            using (FileStream stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete))
+            {
+                byte[] hash = sha.ComputeHash(stream);
+                StringBuilder builder = new StringBuilder(hash.Length * 2);
+                foreach (byte value in hash)
+                {
+                    builder.Append(value.ToString("x2", CultureInfo.InvariantCulture));
+                }
+                return builder.ToString();
+            }
+        }
+
+        // R6.1 early task-owned process identity. Published by the Job runner
+        // after process creation and before waiting for job closeout, using a
+        // no-overwrite atomic protocol (exclusive temp file + fsync + rename).
+        // Binds task marker, session/generation, root PID, process creation
+        // identity, executable identity, and a schema version.
+        private static void PublishEarlyIdentity(
+            string identityPath,
+            JobRunResult result,
+            ProcessRecord root,
+            string session,
+            int generation,
+            string schemaVersion)
+        {
+            string tempPath = identityPath + ".tmp";
+            if (File.Exists(identityPath) || File.Exists(tempPath))
+            {
+                throw new IOException("EARLY_IDENTITY_PATH_EXISTS");
+            }
+            string executableSha256 = "";
+            string executableBasename = "";
+            if (!String.IsNullOrEmpty(root.ExecutablePath))
+            {
+                try
+                {
+                    executableSha256 = Sha256File(root.ExecutablePath);
+                }
+                catch
+                {
+                    executableSha256 = "";
+                }
+                executableBasename = Path.GetFileName(root.ExecutablePath);
+            }
+            string json =
+                "{\"schemaVersion\":\"" + EscapeJson(schemaVersion) + "\"" +
+                ",\"taskMarker\":\"" + EscapeJson(result.TaskMarker) + "\"" +
+                ",\"session\":\"" + EscapeJson(session) + "\"" +
+                ",\"generation\":" + generation.ToString(CultureInfo.InvariantCulture) +
+                ",\"rootPid\":" + root.Pid.ToString(CultureInfo.InvariantCulture) +
+                ",\"rootCreationFileTimeUtc\":\"" + EscapeJson(root.CreationFileTimeUtc) + "\"" +
+                ",\"executableBasename\":\"" + EscapeJson(executableBasename) + "\"" +
+                ",\"executableSha256\":\"" + EscapeJson(executableSha256) + "\"}";
+            using (FileStream stream = new FileStream(
+                tempPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None))
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes(json + Environment.NewLine);
+                stream.Write(bytes, 0, bytes.Length);
+                stream.Flush(true);
+            }
+            File.Move(tempPath, identityPath);
+        }
+
         private static void CloseProcessHandles(IEnumerable<ProcessRecord> processes, IntPtr rootHandle)
         {
             foreach (ProcessRecord process in processes)
@@ -653,6 +767,9 @@ namespace UAgent.Mvp15D
             string stdoutPath,
             string stderrPath,
             string taskMarker,
+            string identityPath,
+            string session,
+            int generation,
             int timeoutMilliseconds)
         {
             JobRunResult result = new JobRunResult
@@ -754,6 +871,29 @@ namespace UAgent.Mvp15D
                     false);
                 result.Processes.Add(root);
                 active.Add(root.Pid, root);
+
+                // R6.1: publish the early task-owned identity after process
+                // creation and before waiting for job closeout, while the root
+                // process is guaranteed alive (still suspended). A failed
+                // publication marks the run failed but never prevents the Job
+                // closeout from proving zero residual processes.
+                try
+                {
+                    PublishEarlyIdentity(
+                        identityPath,
+                        result,
+                        root,
+                        session,
+                        generation,
+                        "uagent.mvp15d.windows-job-process-identity.v1");
+                }
+                catch (Exception identityError)
+                {
+                    result.FailureCode = String.IsNullOrEmpty(identityError.Message)
+                        ? "WINDOWS_JOB_EARLY_IDENTITY_FAILED"
+                        : identityError.Message.Split(':')[0];
+                    result.UnexpectedJobMessageCount++;
+                }
 
                 if (ResumeThread(processInformation.hThread) == UInt32.MaxValue)
                 {
@@ -1035,6 +1175,9 @@ try {
         $StdoutPath,
         $StderrPath,
         $TaskMarker,
+        $IdentityPath,
+        $Session,
+        $Generation,
         $TimeoutMilliseconds
     )
     [Console]::Out.WriteLine(($result | ConvertTo-Json -Depth 8 -Compress))
