@@ -8,9 +8,10 @@ Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
 Rework 9 implementation and controlled verification have `Review Verdict:
-PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
-remain an independent `External Gate: OPEN`; the supervisor implementation
-checkpoint is pending.
+PASS` and are checkpointed at implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
+current-manifest asset-root mtime changes remain an independent `External Gate:
+OPEN`.
 TEMP cleanup remains a separate `External Gate: BLOCKED` under
 `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
@@ -24,7 +25,7 @@ entries, and a complete 356-entry production/Git watch set. New production
 files and deleted tracked production files cannot leave the identity unchanged;
 normal repositories, linked worktrees, symbolic/detached HEAD, loose refs,
 packed refs, and same-branch commits are covered. G14 is `IMPLEMENTED`; current
-Rework 9 G15 closeout is `IN_PROGRESS`; G16 is `PARTIAL`. UE 5.8.1 compatibility and overall acceptance
+Rework 9 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. UE 5.8.1 compatibility and overall acceptance
 remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C are
 `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
@@ -84,8 +85,8 @@ Controlled responses in source tests exercise the future control flow without
 claiming actual Tool Search, installed/load/manifest, fingerprint, retraction,
 N1-N8, partial, or closeout evidence. The old release and all 15A-15C artifacts
 are invalid. Do not invoke 15A, live UE/MCP, or real mutation until a dedicated
-authorized task runs from the supervisor-reviewed Rework 9 implementation
-checkpoint. The old
+authorized task runs from Rework 9 implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

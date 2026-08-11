@@ -6,15 +6,16 @@ Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
 Rework 9 implementation and controlled verification have `Review Verdict:
-PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
-remain an independent `External Gate: OPEN`; the supervisor implementation
-checkpoint is pending.
+PASS` and are checkpointed at implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
+current-manifest asset-root mtime changes remain an independent `External Gate:
+OPEN`.
 TEMP cleanup remains a separate `External Gate: BLOCKED` under
 `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-Rework 9 G15 closeout is `IN_PROGRESS`; G16 is `PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and
+Rework 9 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and
 D15 / 15C remain `PLANNED`; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility
 and overall acceptance remain `PARTIAL`; Ready is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
@@ -78,7 +79,8 @@ read-only supporting evidence.
 
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility must use a
-new clean-checkout task based on the reviewed Rework 9 implementation commit. Real UE, Tool Search,
+new clean-checkout task based on Rework 9 implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Real UE, Tool Search,
 and mutation are `SKIPPED_BY_TASK_BOUNDARY`; mutation remains prohibited until
 a later separate task.
 

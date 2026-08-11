@@ -8,14 +8,15 @@ Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
 Rework 9 implementation and controlled verification have `Review Verdict:
-PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
-remain an independent `External Gate: OPEN`; the supervisor implementation
-checkpoint is pending.
+PASS` and are checkpointed at implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
+current-manifest asset-root mtime changes remain an independent `External Gate:
+OPEN`.
 TEMP cleanup remains a separate `External Gate: BLOCKED` under
 `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
-`98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current Rework 9 G15 closeout is `IN_PROGRESS`; G16 is
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current Rework 9 G15 checkpoint integrity is `COMPLETE`; G16 is
 `PARTIAL`. UE 5.8.1 compatibility and overall acceptance remain `PARTIAL`;
 D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C are `PLANNED`; D16 is
 `IN_PROGRESS`; Ready remains `NO`.
@@ -66,7 +67,8 @@ constitute actual live Tool Search, installed/load/manifest, fingerprint,
 retraction, N1-N8, partial, or closeout evidence. The former release and all
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
 fail only with `FINAL_LIVE_RUNTIME_NONZERO`. A later authorized clean-checkout
-run from the reviewed Rework 9 implementation checkpoint is required before 15A
+run from Rework 9 implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968` is required before 15A
 restarts.
 
 The implemented trust-chain source path is:
@@ -181,8 +183,8 @@ Tauri MSI/NSIS remain preserved. The real release binary capability probes
 made zero MCP calls, zero network calls, and zero asset operations. No real UE
 session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
-Full read-only compatibility follows in a new clean-checkout task based on the
-reviewed Rework 9 implementation commit.
+Full read-only compatibility follows in a new clean-checkout task based on
+Rework 9 implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted

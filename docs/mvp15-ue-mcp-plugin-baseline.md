@@ -6,15 +6,16 @@ Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
 Rework 9 implementation and controlled verification have `Review Verdict:
-PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
-remain an independent `External Gate: OPEN`; the supervisor implementation
-checkpoint is pending.
+PASS` and are checkpointed at implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
+current-manifest asset-root mtime changes remain an independent `External Gate:
+OPEN`.
 TEMP cleanup remains a separate `External Gate: BLOCKED` under
 `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-Rework 9 G15 closeout is `IN_PROGRESS`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
+Rework 9 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
 acceptance remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C
 are `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
@@ -106,8 +107,9 @@ cleanup hardening, and native module enumeration; its supervisor verdict was
 not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
-A new clean-checkout read-only task based on the reviewed Final Pre-live Rework 9
-implementation checkpoint is required before the full UE 5.8.1 compatibility
+A new clean-checkout read-only task based on Final Pre-live Rework 9
+implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968` is required
+before the full UE 5.8.1 compatibility
 matrix. Real mutation
 remains prohibited and belongs to a later separate task.
 

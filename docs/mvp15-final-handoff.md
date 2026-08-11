@@ -6,23 +6,24 @@ Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
 Rework 9 implementation and controlled verification have `Review Verdict:
-PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
-remain an independent `External Gate: OPEN`; the supervisor implementation
-checkpoint is pending.
+PASS` and are checkpointed at implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
+current-manifest asset-root mtime changes remain an independent `External Gate:
+OPEN`.
 TEMP cleanup remains a separate `External Gate: BLOCKED` under
 `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-Rework 9 G15 closeout is `IN_PROGRESS`; G16 is `PARTIAL`.
+Rework 9 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`.
 Real UE 5.8.1 compatibility and overall acceptance remain `PARTIAL`; D13 /
 15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`; D16 remains
 `IN_PROGRESS`; Ready is `NO`. Current `PASS_REAL_SMOKE` is `NO`.
 The verified release binary truthfully reported a
 dirty pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
-transitive production boundary. A separate clean-checkout rebuild from the
-supervisor-reviewed Rework 9 implementation checkpoint remains required for G16
-and D13 / 15A.
+transitive production boundary. A separate clean-checkout rebuild from Rework 9
+implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968` remains
+required for G16 and D13 / 15A.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
 submissions without checkpoints. The supervisor-reviewed Rework 9 implementation runs actual predecessor
@@ -61,7 +62,8 @@ No actual Tool Search, installed/load/manifest tuple, live fingerprint,
 retraction boundary, N1-N8, partial/unknown, parent closeout, or live Gate ran.
 These cumulative Rework 7-9 source changes invalidate the historical accepted
 Final Source/Tooling Rework 8 release and all old 15A-15C artifacts. Rework 9 has
-`Review Verdict: PASS`; its supervisor checkpoint is pending. No D13-D16,
+`Review Verdict: PASS` and implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. No D13-D16,
 G13/G16, overall acceptance, or Ready state advances.
 
 ## Historical Accepted MVP15D Final Source/Tooling Rework 8 Source Handoff — 2026-08-03 (checkpoint closeout)
@@ -256,7 +258,8 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 ## Current Remaining Evidence
 
 - A sealed final package and live manifest/install/load equality from a clean
-  checkout of the supervisor-reviewed Rework 9 implementation checkpoint.
+  checkout of Rework 9 implementation commit
+  `aa14363f15d8bdc8eaf392c67cf444496cc8a968`.
 - Fresh current-task UE Automation output, exact-six product-adapter capture,
   and rendered product-UI happy/negative/replay/cleanup evidence.
 - A retained final inventory produced and verified from those live source
@@ -268,7 +271,7 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
   build/install/load verification.
 - D14 / 15B and D15 / 15C remain `PLANNED`; the hard gate prevented execution.
 - D16 remains `IN_PROGRESS`; G14 is `IMPLEMENTED`, current Rework 9 G15
-  closeout is `IN_PROGRESS`, and G16 is `PARTIAL`.
+  checkpoint integrity is `COMPLETE`, and G16 is `PARTIAL`.
 
 ## Residual Risks
 
@@ -291,16 +294,17 @@ evidence. Final Pre-live Source Closure Rework 7 is historical
 `Review Verdict: NEEDS_FIX` for the Tauri destroy/build ordering defect. The
 current Final Pre-live Rework 9 implementation has `Review Verdict: PASS` after
 fresh focused/full verification, including a real Wry destroy/replacement
-target. The resumed scan's 94 current-manifest mtime drifts remain an independent
-`External Gate: OPEN`; the supervisor implementation checkpoint is pending. The separate
+target at implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed scan's 94
+current-manifest mtime drifts remain an independent `External Gate: OPEN`. The separate
 2026-08-03 Final Source/Tooling Rework 8
 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
-Rework 9 G15 closeout is `IN_PROGRESS`, and G16 is `PARTIAL`.
+Rework 9 G15 checkpoint integrity is `COMPLETE`, and G16 is `PARTIAL`.
 D13 / 15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`; D16
 remains `IN_PROGRESS`; real UE 5.8.1 compatibility and overall acceptance
-remain `PARTIAL`; Ready remains `NO`. The supervisor-reviewed Final Pre-live
-Rework 9 checkpoint must be created before any clean-checkout read-only
-compatibility run. TEMP cleanup
+remain `PARTIAL`; Ready remains `NO`. Any clean-checkout read-only compatibility
+run must use Rework 9 implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. TEMP cleanup
 remains an independently authorized gate. No next-stage or mutation work is
 authorized.

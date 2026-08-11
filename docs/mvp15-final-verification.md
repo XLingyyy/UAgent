@@ -9,9 +9,10 @@ instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint exists. TEMP
 cleanup remains a separate `External Gate: BLOCKED` under
 `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
 Rework 9 implementation and controlled verification have `Review Verdict:
-PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
-remain an independent `External Gate: OPEN`; the supervisor implementation
-checkpoint is pending. Its controlled happy path renders actual predecessor and
+PASS` and are checkpointed at implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
+current-manifest asset-root mtime changes remain an independent `External Gate:
+OPEN`. Its controlled happy path renders actual predecessor and
 successor `App` registrations and calls production
 `startMvp15dRuntimeBridge(invoke)` once from each context. The restart response
 returns before parent-ready; a lifecycle barrier then observes destroy, build,
@@ -1128,12 +1129,13 @@ historical `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
 `Review Verdict: NEEDS_FIX` because same-task Tauri destroy/build cannot create
 the production successor. The Rework 9 implementation has `Review Verdict:
 PASS`, fresh focused/full verification, and real Wry destroy/replacement
-sequencing evidence. The resumed scan's 94 current-manifest mtime drifts remain
-an independent `External Gate: OPEN`; the supervisor implementation checkpoint
-is pending. The separate 2026-08-03 Final
+sequencing evidence at implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed scan's 94
+current-manifest mtime drifts remain an independent `External Gate: OPEN`. The
+separate 2026-08-03 Final
 Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
-Rework 9 G15 closeout is `IN_PROGRESS`, and G16 is `PARTIAL`. The
+Rework 9 G15 checkpoint integrity is `COMPLETE`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
 replace the historical 2026-08-03 Rework 8 checkpoint. No clean current-generation exact-six fingerprint or

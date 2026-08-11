@@ -9,17 +9,18 @@
   created. TEMP cleanup remains a separate `External Gate: BLOCKED` under
   `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
 - Final Pre-live Source Closure Rework 9: implementation and controlled
-  verification have `Review Verdict: PASS`. The resumed final TEMP scan's 94
+  verification have `Review Verdict: PASS` at implementation commit
+  `aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
   current-manifest asset-root mtime changes remain an independent
-  `External Gate: OPEN`; the supervisor implementation checkpoint is pending and
-  no live Gate advanced.
+  `External Gate: OPEN`; no live Gate advanced.
 - The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
   historical `COMPLETE / PASS` record at implementation commit
   `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 - G14 documentation consistency: `IMPLEMENTED` after the current evidence and
   stale-state reconciliation.
-- G15 checkpoint integrity: `IN_PROGRESS`; Rework 9 content review passed and
-  its implementation/documentation checkpoint is pending.
+- G15 checkpoint integrity: `COMPLETE`; Rework 9 implementation commit
+  `aa14363f15d8bdc8eaf392c67cf444496cc8a968` is recorded by this documentation
+  closeout.
 - G16 authority provenance and plugin baseline: `PARTIAL`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
   module BuildId `55116800`.
@@ -68,7 +69,8 @@
   unconfirmed; no cleanup or metadata rewrite was performed.
   The historical 253 entries remain present, with deltas 4,348/0. Deletion is
   `NO`; cleanup remains `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`, no live Gate
-  advanced, and the Rework 9 implementation checkpoint is pending.
+  advanced, and Rework 9 is checkpointed at
+  `aa14363f15d8bdc8eaf392c67cf444496cc8a968`.
 
 Rework 7 preserved the sole publisher, transitive source boundary, observer,
 reparse rejection, and cleanup controls, but its standalone verifier accepted a
@@ -117,8 +119,9 @@ closed alternative and is not a production fallback. Retained historical Source 
 D0/build/UE validators continue to pass read-only, but those historical bundles
 cannot satisfy final 15A-15C.
 
-The next recovery step is a new clean-checkout read-only 5.8.1 task from the
-reviewed Rework 9 implementation commit, covering both Tool Search modes, exact-six/product
+The next recovery step is a new clean-checkout read-only 5.8.1 task from Rework 9
+implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968`, covering
+both Tool Search modes, exact-six/product
 retractions, response framing, clean inventory, and the real loaded-module
 observer. Only a later separately authorized task may consider real 15C
 mutation.

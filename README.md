@@ -8,15 +8,16 @@ Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
 Rework 9 implementation and controlled verification have `Review Verdict:
-PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
-remain an independent `External Gate: OPEN`; the supervisor implementation
-checkpoint is pending.
+PASS` and are checkpointed at implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
+current-manifest asset-root mtime changes remain an independent `External Gate:
+OPEN`.
 TEMP cleanup remains a separate `External Gate: BLOCKED` under
 `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-Rework 9 G15 closeout is `IN_PROGRESS`; G16 is
+Rework 9 G15 checkpoint integrity is `COMPLETE`; G16 is
 `PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain
 `PLANNED`; D16 remains `IN_PROGRESS`; UE 5.8.1 compatibility and overall MVP15
 acceptance remain `PARTIAL`; Ready for the next stage is `NO`.
@@ -88,9 +89,10 @@ automatically, and deletion of a tracked production file marks the identity
 dirty. `build.rs` consumes the complete 356-entry source/Git watch set,
 including normal or linked-worktree Git metadata, symbolic or detached HEAD,
 loose refs, and packed refs. The historical 2026-08-03 checkpoint closed its
-then-current G15 scope; current Rework 9 G15 awaits the implementation
-checkpoint. A separate clean-checkout rebuild from that Rework 9 commit remains
-required for G16 and D13 / 15A.
+then-current G15 scope; current Rework 9 G15 is closed by implementation commit
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968` and this documentation closeout. A
+separate clean-checkout rebuild from that commit remains required for G16 and
+D13 / 15A.
 
 The loaded-module publisher still has one write-capable production path. It
 publishes only after the owned live process is re-observed and the task marker,
@@ -139,7 +141,8 @@ redaction, independent verification, and secret/path rejection. The unsafe
 predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root was created.
 Full read-only compatibility is deferred to a new clean-checkout task based on
-the reviewed Rework 9 implementation commit. Real UE, Tool Search, and mutation
+Rework 9 implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968`.
+Real UE, Tool Search, and mutation
 are `SKIPPED_BY_TASK_BOUNDARY`; real mutation remains prohibited.
 
 The tracked multi-size ICO and actual Tauri MSI/NSIS packaging remain accepted
