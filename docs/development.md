@@ -4,10 +4,18 @@
 
 `integrations/unreal/UAgentAssetTools` targets UE `5.8.1`: engine changelist
 `56057345`, compatible changelist `55116800`, and module BuildId `55116800`.
-Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`
-with supervisor verdict `NEEDS_FIX`; no checkpoint was created. Final
-Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
-commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
+Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
+checkpoint was created. Rework 8 (actual bridge orchestration and exact window
+instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
+Rework 9 implementation and controlled verification have `Review Verdict:
+PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
+remain an independent `External Gate: OPEN`; the supervisor implementation
+checkpoint is pending.
+TEMP cleanup remains a separate `External Gate: BLOCKED` under
+`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
+historical `COMPLETE / PASS` record at implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 `scripts/mvp15d-source-identity.mjs` and `build.rs` bind
 the compiled source identity to
 `uagent.mvp15d.production-source-boundary.v2`: 335 production files discovered
@@ -15,10 +23,71 @@ from 14 approved roots plus 28 exact files, 9 exclusion classes, 126 excluded
 entries, and a complete 356-entry production/Git watch set. New production
 files and deleted tracked production files cannot leave the identity unchanged;
 normal repositories, linked worktrees, symbolic/detached HEAD, loose refs,
-packed refs, and same-branch commits are covered. G14 is `IMPLEMENTED`; G15 is
-`COMPLETE`; G16 is `PARTIAL`. UE 5.8.1 compatibility and overall acceptance
+packed refs, and same-branch commits are covered. G14 is `IMPLEMENTED`; current
+Rework 9 G15 closeout is `IN_PROGRESS`; G16 is `PARTIAL`. UE 5.8.1 compatibility and overall acceptance
 remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C are
 `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
+Current `PASS_REAL_SMOKE` is `NO`.
+
+Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
+submissions without checkpoints. Rework 9 requires each actual predecessor/
+successor `App` registration to call production
+`startMvp15dRuntimeBridge(invoke)`; tests may provide only the narrow native
+transport fixtures needed by that route. Production code uses the adapter
+registered by `App` and the persistent Rust bridge; JavaScript does not maintain
+successful handoff generation, acknowledgement, claim, or receipt authority.
+
+The parent retains the exact injected predecessor, uses manager lookup only for
+native-instance verification, and registers exact one-shot `Destroyed`
+completion before captured destroy. Never build the same-label successor in that
+task: Tauri 2.11.3 Wry queues destroy and removes the label only during the later
+event. The listener only signals; an off-main bounded wait holds no bridge mutex
+and submits a fresh main-thread continuation. Both main tasks use atomic
+pending/running/committed gates so a timeout can make a queued or pre-commit task
+inert. The continuation revalidates handoff/task/phase/private binding and
+occupancy before one build. Preserve replacement B and fail closed without a
+third window. A random parent-only binding digest enters the stable identity
+hash; never serialize raw handles/bindings. Parent acknowledgement v2, claim v3,
+window identity v1, product summary v2, N4/N5, mutation, strict MCP POST/DELETE,
+and private owned-launch controls remain wire-compatible.
+
+Run the real Windows ordering regression with:
+
+```powershell
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --test tauri_wry_destroy_ordering -- --nocapture --test-threads=1
+```
+
+It uses hidden Webview windows and one `run_return` event loop, then explicitly
+destroys the final replacement. `build.rs` supplies
+Common-Controls v6 activation only to Windows test executables so the Wry target
+can load `TaskDialogIndirect`; production link targets are unchanged.
+
+Rust asset and bridge tests own unique TEMP roots through RAII teardown. Scan all
+direct `%TEMP%` children matching `uagent-asset-*` and
+`uagent-mvp15d-bridge-test-*` before and after every suite and full Cargo run.
+The Rework 7 baseline is 4,601 entries (4,591 asset, 10 bridge), SHA-256
+`3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`.
+Supervisor revalidation retained all paths, recorded 141 earlier asset-root mtime
+changes, and created the current manifest at SHA-256
+`45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`.
+The resumed 2026-08-11 read-only scan retained every path but found 94 asset-root
+`mtimeNs` changes timestamped 2026-08-10 17:42:58; every other recorded lstat
+field remained equal. Their actor is unconfirmed, and no cleanup or metadata
+rewrite was performed. The historical 253-entry set remains a subset; deltas
+are 4,348/0. Any later new or changed entry fails verification. Cleanup is
+`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`; never delete or modify candidates
+without explicit R3 authorization.
+`UAGENT_ENABLE_ASSET_MUTATION` remains default-off and is set to `1` only by a
+future fixed live UI child.
+
+Controlled responses in source tests exercise the future control flow without
+claiming actual Tool Search, installed/load/manifest, fingerprint, retraction,
+N1-N8, partial, or closeout evidence. The old release and all 15A-15C artifacts
+are invalid. Do not invoke 15A, live UE/MCP, or real mutation until a dedicated
+authorized task runs from the supervisor-reviewed Rework 9 implementation
+checkpoint. The old
+installed release may fail only with
+`FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 
 Both canonical binding fixtures are now fixed to LF with repository
 attributes. A clean detached checkout must reproduce 4,865 bytes and SHA-256
@@ -115,7 +184,7 @@ Job handle before assertions, await or force closeout in `finally`, use bounded
 handle-release retries, and fail when its exact fixture directory or matching
 marker process remains.
 
-The release capability probe and rendered capability modes use a fresh
+The historical Rework 8 release capability probe and rendered capability modes used a fresh
 one-time nonce and exclusive event file. They prove the actual binary,
 renderer, normal `createDesktopRuntimeAdapter` binding, and rendered driver
 exist while recording zero MCP calls, zero network calls, and zero asset

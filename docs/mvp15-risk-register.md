@@ -2,13 +2,34 @@
 
 ## Current MVP15D UE 5.8.1 Compatibility Risks
 
-Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
-its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
-Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
-commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; G15 is
-`COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
+Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
+checkpoint was created. Rework 8 (actual bridge orchestration and exact window
+instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
+Rework 9 implementation and controlled verification have `Review Verdict:
+PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
+remain an independent `External Gate: OPEN`; the supervisor implementation
+checkpoint is pending.
+TEMP cleanup remains a separate `External Gate: BLOCKED` under
+`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
+historical `COMPLETE / PASS` record at implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
+Rework 9 G15 closeout is `IN_PROGRESS`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
 acceptance remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C
 are `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
+Current `PASS_REAL_SMOKE` is `NO`.
+
+Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
+submissions without checkpoints. The supervisor-reviewed Rework 9 implementation makes both actual `App`
+registrations enter production `startMvp15dRuntimeBridge(invoke)`, retains the
+exact injected predecessor, and moves same-label build to a bounded continuation
+after authoritative `Destroyed`/manager removal. No bridge mutex spans the wait
+or window APIs; atomic gates suppress timeout-late destroy/build. Replacement B
+remains alive, no third window is built, and acknowledgement/claim/publish/
+complete fail closed. The opaque private binding and public wire schemas remain
+unchanged. N4, N5, second rollback, and observed MCP DELETE semantics remain
+retained. The former release and all 15A-15C evidence are invalid. No live action
+ran; the stale installed binary may fail only with `FINAL_LIVE_RUNTIME_NONZERO`.
 
 | Risk                                                  | Risk disposition | Mitigation / evidence                                                                                                                                                                                                                                                                                                                                             |
 | ----------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -19,29 +40,30 @@ are `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 | Build commit-memory capacity                          | MITIGATED        | Historical Rework 2 UE 5.8.1 RunUAT BuildPlugin completed 16/16 actions with exit 0; Rework 3 did not repeat the live build.                                                                                                                                                                                                                                      |
 | Final package provenance / loaded identity            | OPEN             | Historical Rework 2 observed a physical companion load, but its root is invalid and installed == loaded == clean manifest remains unproved.                                                                                                                                                                                                                       |
 | Desktop bundle icon                                   | MITIGATED        | Tracked nonblank ICO has 16/24/32/48/64/128/256 entries; icon preflight and actual MSI/NSIS bundling pass.                                                                                                                                                                                                                                                        |
-| Caller-authored final evidence                        | MITIGATED        | Persisted artifact consistency is explicit and returns `productionLaunchAuthorityVerified: false`; a coherent hand-authored chain may reach that level. Owned launch authority requires the same-process fixed real launch plus private single-use receipt, which no serialized public fact or caller argument can mint.                                          |
+| Caller-authored final evidence                        | OPEN             | Rework 9 source tests run both actual App instances through the production orchestrator and reject legacy/missing/wrong/cross-window/task/phase/handoff identity, reordered/replayed receipts, fake/same successors, same-label replacement, and raw-summary drift. The native harness now returns restart before parent-ready; real Wry coverage supplies destroy/removal ordering. `Review Verdict: PASS`; the checkpoint and fresh live evidence remain open. |
 | Transitive source dependency drift                    | MITIGATED        | Source identity v2 hashes a deterministic 335-file production boundary discovered from 14 roots plus 28 exact files, with 9 exclusion classes and 356 source/Git watches. Representative native/renderer/CSS/package/config/lock/plugin/tooling changes, new production files, tracked deletion, worktrees, refs, and same-branch commits are regression-covered. |
 | Ancestor junction/reparse escape                      | MITIGATED        | Every path component below the trusted installed root is checked before hashing. Real intermediate `Binaries` and `Win64` junction regressions fail closed.                                                                                                                                                                                                       |
-| Windows fixture cleanup residue                       | MITIGATED        | Cleanup retains the Job handle, forces or awaits closeout, retries bounded handle release, and fails on any directory/process residue. Fifteen inherited fixture directories plus one transient residue were safely removed; final matching counts are zero.                                                                                                      |
+| Windows fixture cleanup residue                       | OPEN             | Rework 7 records all 4,601 read-only direct children (4,591 asset, 10 bridge), baseline SHA-256 `3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`. The current manifest SHA-256 is `45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`; a resumed 2026-08-11 scan kept added/removed at 0 but found 94 asset-root mtime drifts timestamped 2026-08-10 17:42:58. The actor is unconfirmed; no cleanup or metadata rewrite occurred. The historical 253 entries remain a subset; deletion is `NO`. Cleanup remains `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`. |
 | Cross-language accepted-plan binding                  | MITIGATED        | Canonical TypeScript/Rust checks pass 3/2; the retained source bundle is byte-equal at `93b3bb310ef17b18adb85b413360890648a9ab614301cedbf19ba81fb42146f6`.                                                                                                                                                                                                        |
 | Physical directory ownership at creation              | MITIGATED        | Atomic create/identity race coverage is retained; UE completes `48/48` with unchanged Content.                                                                                                                                                                                                                                                                    |
 | UE adversarial/process closeout evidence              | MITIGATED        | Retained historical Source Checkpoint Rework 7 UE root `external/mvp15d-rework7-ue-20260726_190100` records five sessions, six processes each, residual zero, and capture `8794de55d0bc3444015116918b92e957070e684ac014f7f9551c07762af1cbb8`.                                                                                                                     |
 | Evidence retention / review verifiability             | MITIGATED        | Durable D0/build/UE roots validate in place; build inventory self-hash is `096e92b42f28eda7c227efde9747c33dd7c3c2f8d1e08988af77588f09b83303`. `BLOCKED_BY_EVIDENCE_RETENTION` is closed.                                                                                                                                                                          |
 | Workspace-test process stability                      | MITIGATED        | Historical supervisor attempt exited `134`; two consecutive historical Source Checkpoint Rework 7 full-workspace processes exit 0 with identical counts.                                                                                                                                                                                                          |
-| Default Rust test isolation                           | MITIGATED        | Fresh default and serial Cargo processes each pass at 159 library plus 2 bridge tests.                                                                                                                                                                                                                                                                            |
+| Default Rust test isolation                           | MITIGATED        | Two consecutive fresh Cargo processes each pass 176 library tests, 2 native invoke bridge tests, and the real hidden Wry integration target.                                                                                                                                                                                                                       |
 | Final-task runner and inventory coverage              | MITIGATED        | `mvp15d-final-runner.mjs` dispatches fixed UE Automation, normal-product, and rendered-UI adapters, binds native event transcripts, and verifies producer ledgers. The inventory is file/directory allowlisted, redacted, secret/path gated, and independently verified.                                                                                          |
-| Production runtime bridge reachability                | MITIGATED        | The actual fresh release binary completes native/product-renderer/UI-renderer capability handshakes with executable/source/task/nonce/event hashes, Job closeout, early live process identity, and zero MCP/network/asset operations.                                                                                                                             |
-| Live observation after process exit                   | MITIGATED        | The Job runner publishes early identity before closeout; the sole publisher re-observes the live PID, requires PID plus creation FILETIME equality, and binds Job closeout. Real Windows integration passes 6/6 with zero current residues.                                                                                                                       |
+| Production runtime bridge reachability                | OPEN             | The historical Final Source/Tooling Rework 8 release completed capability handshakes. The supervisor-reviewed Rework 9 implementation invokes both JS entries and sequences exact destroy completion before successor build. Hidden Webview/Wry coverage reproduces `WebviewLabelAlreadyExists("main")`, observes manager removal/build count 0, builds a distinct successor, and preserves replacement B. Checkpoint and fresh live reachability remain open. |
+| Live observation after process exit                   | MITIGATED        | The Job runner publishes early identity before closeout; the sole publisher re-observes the live PID, requires PID plus creation FILETIME equality, and binds Job closeout. Historical Rework 8 Real Windows integration passed 6/6 with zero matching residue at that checkpoint.                                                                               |
 | Raw path / secret leakage in the loaded ledger        | MITIGATED        | The ledger binds every R5.2 identity fact, serializes only sorted approved relative module facts, and a raw absolute path anywhere in the ledger is rejected before any write.                                                                                                                                                                                    |
 | Full live runtime semantics                           | OPEN             | Capability-only handshakes intentionally omit MCP connection, UE Automation execution, product discovery, and all mutations; a post-checkpoint clean-commit read-only task must collect those facts.                                                                                                                                                              |
+| Final live phase evidence and session orchestration   | OPEN             | Rework 8 retains `Review Verdict: NEEDS_FIX`; Rework 9 has `Review Verdict: PASS` and awaits its supervisor checkpoint. No fresh live evidence exists; 15A-15C remain invalid until checkpoint, clean rebuild, and rerun. TEMP cleanup remains an independent authorization gate. |
 | Unsafe predecessor compatibility evidence             | MITIGATED        | The predecessor root was invalidated and removed for `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root was created.                                                                                                                                                                                                                                 |
 | UE 5.8.1 exact-six/product compatibility              | OPEN             | Source adapters are implemented, while the full clean-commit live matrix remains unrun. Historical Rework 2 partial observations cannot establish current compatibility.                                                                                                                                                                                          |
 | Real product mutation or later-stage evidence         | DEFERRED         | 15B/15C were skipped by the failed 15A hard gate; mutation count is zero.                                                                                                                                                                                                                                                                                         |
 
-Final Source/Tooling Rework 8 is checkpointed at implementation commit
-`98c8b387e1124a519977849d48ab824e4e6bb9c5`. Live acceptance requires a separate clean-checkout task,
-manifest-backed build, and a new strict evidence root. Real mutation remains
-prohibited.
+The historical Final Source/Tooling Rework 8 is checkpointed at implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`. Live acceptance requires a separate clean-checkout task
+based on the supervisor-reviewed Rework 9 implementation checkpoint, a
+manifest-backed build, and a new strict evidence root. Real mutation remains prohibited.
 
 ## Historical Rework 3 Source Checkpoint Risks — 2026-07-20
 
@@ -88,10 +110,16 @@ MVP15D source-checkpoint risks above or supply current D0-D12 evidence.
 
 ## Current Conclusion
 
-D13 / 15A is `BLOCKED`. Final Source/Tooling Rework 7 is the historical/current
-predecessor `PARTIAL` with supervisor verdict `NEEDS_FIX`, and no checkpoint was
-created. Final Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS`;
-G14 is `IMPLEMENTED`, G15 is `COMPLETE`, and G16 is `PARTIAL`. The historical D0-D12
+D13 / 15A is `BLOCKED`. Final Pre-live Source Closure Rework 7 is historical
+`PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
+`Review Verdict: NEEDS_FIX` for deterministic Tauri destroy/build ordering.
+The Rework 9 implementation has `Review Verdict: PASS`, fresh focused/full
+verification, and real Wry destroy/replacement sequencing evidence. The resumed
+scan's 94 current-manifest mtime drifts remain an independent `External Gate:
+OPEN`; the supervisor implementation checkpoint is pending. The separate
+2026-08-03 Final Source/Tooling Rework 8
+is a historical `COMPLETE / PASS` checkpoint. G14 is `IMPLEMENTED`, current
+Rework 9 G15 closeout is `IN_PROGRESS`, and G16 is `PARTIAL`. The historical D0-D12
 checkpoint and historical Source Checkpoint Rework 7 evidence remain valid prerequisites, while no clean
 current live exact-six fingerprint exists. D14 / 15B and D15 / 15C remain
 `PLANNED`; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility and overall

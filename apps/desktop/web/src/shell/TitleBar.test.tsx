@@ -28,9 +28,9 @@ describe("TitleBar", () => {
       expect(screen.getByText("Custom")).toBeTruthy();
     });
 
-    it("renders the MVP15 Rework badge without claiming completion", () => {
+    it("renders the MVP15 sandbox capability badge without claiming completion", () => {
       renderTitleBar();
-      expect(screen.getByText("MVP15 Rework")).toBeTruthy();
+      expect(screen.getByText("MVP15 Sandbox")).toBeTruthy();
       expect(screen.queryByText("MVP15 Complete")).toBeNull();
     });
 

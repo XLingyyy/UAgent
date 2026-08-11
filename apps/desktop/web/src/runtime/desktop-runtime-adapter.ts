@@ -55,6 +55,299 @@ import {
   type NativeEditorObservationAdapter,
 } from "./editor-observation-native-adapter";
 import { createNativeMcpHttpPoster } from "./mcp-native-transport";
+export type Mvp15dToolSearchMode = "on" | "off";
+
+export interface Mvp15dRawObservedCall {
+  receiptId: string;
+  request: Record<string, unknown>;
+}
+
+export interface Mvp15dCanonicalToolDescriptor {
+  affectedAssetsSchema: Record<string, unknown>;
+  dryRunSchema: Record<string, unknown>;
+  evidenceQuery: Record<string, unknown>;
+  inputSchema: Record<string, unknown>;
+  methodId: string | null;
+  name: string;
+  rollbackContract: Record<string, unknown>;
+  schemaVersion: string;
+  source: "direct" | "facade";
+  toolsetId: string | null;
+}
+
+export interface Mvp15dProductDiscoveryRaw {
+  mode: Mvp15dToolSearchMode;
+  configCall: Mvp15dRawObservedCall;
+  rendererInstanceCall: Mvp15dRawObservedCall;
+  connectCall: Mvp15dRawObservedCall;
+  initializeCall: Mvp15dRawObservedCall;
+  discoverCall: Mvp15dRawObservedCall;
+  normalizeCall: Mvp15dRawObservedCall;
+  fingerprintCall: Mvp15dRawObservedCall;
+  nativeAttestation: Mvp15dRawObservedCall;
+  mutationCounterCall: Mvp15dRawObservedCall;
+  toolSearchCalls: Mvp15dRawObservedCall[];
+}
+
+export interface Mvp15dProductRetractionRaw {
+  reason:
+    | "disconnect"
+    | "endpoint_change"
+    | "failure"
+    | "newer_generation"
+    | "attestation_invalidation"
+    | "renderer_restart";
+  rendererInstanceCall: Mvp15dRawObservedCall;
+  transitionCall: Mvp15dRawObservedCall;
+  nativeRetraction: Mvp15dRawObservedCall;
+  readyDiscovery: Mvp15dProductDiscoveryRaw;
+  rendererHandoff?: {
+    requestCall: Mvp15dRawObservedCall;
+    parentAcknowledgementCall: Mvp15dRawObservedCall;
+    claimCall: Mvp15dRawObservedCall;
+  };
+}
+
+export interface Mvp15dMutationCounters {
+  dryRun: number;
+  execute: number;
+  rollback: number;
+}
+
+export interface Mvp15dProductObservationPort {
+  readMutationCounters(): Promise<Mvp15dMutationCounters>;
+  discover(input: { toolSearchEnabled: boolean }): Promise<Mvp15dProductDiscoveryRaw>;
+  retract(reason: Mvp15dProductRetractionRaw["reason"]): Promise<Mvp15dProductRetractionRaw>;
+  requestRendererRestart?(segment: Omit<Mvp15dProductAuthorityInput, "mutationAfter">): Promise<never>;
+}
+
+export interface Mvp15dProductAuthorityInput {
+  discoveries: Mvp15dProductDiscoveryRaw[];
+  retractions: Mvp15dProductRetractionRaw[];
+  mutationBefore: Mvp15dMutationCounters;
+  mutationAfter: Mvp15dMutationCounters;
+}
+
+const PRODUCT_RETRACTIONS: Mvp15dProductRetractionRaw["reason"][] = [
+  "disconnect",
+  "endpoint_change",
+  "failure",
+  "newer_generation",
+  "attestation_invalidation",
+  "renderer_restart",
+];
+
+export async function collectMvp15dProductAuthority(
+  port: Mvp15dProductObservationPort,
+): Promise<Mvp15dProductAuthorityInput> {
+  const mutationBefore = { ...(await port.readMutationCounters()) };
+  const discoveries: Mvp15dProductDiscoveryRaw[] = [];
+  for (const mode of ["on", "off"] as const) {
+    const observation = await port.discover({ toolSearchEnabled: mode === "on" });
+    const intent = observation.configCall.request.intent as Record<string, unknown> | undefined;
+    if (
+      observation.mode !== mode ||
+      intent?.toolSearchMode !== mode
+    ) {
+      throw new Error("mvp15d_product_discovery_observation_invalid");
+    }
+    discoveries.push(observation);
+  }
+  const retractions: Mvp15dProductRetractionRaw[] = [];
+  for (const reason of PRODUCT_RETRACTIONS) {
+    if (reason === "renderer_restart" && port.requestRendererRestart) {
+      await port.requestRendererRestart({ discoveries, retractions, mutationBefore });
+    }
+    const observation = await port.retract(reason);
+    if (observation.reason !== reason) {
+      throw new Error("mvp15d_product_retraction_observation_invalid");
+    }
+    retractions.push(observation);
+  }
+  return {
+    discoveries,
+    retractions,
+    mutationBefore,
+    mutationAfter: { ...(await port.readMutationCounters()) },
+  };
+}
+
+export interface Mvp15dContentManifestRaw {
+  stage: "before" | "after";
+  registrationId: string;
+  runId: string;
+  receiptId: string;
+  request: Record<string, unknown>;
+}
+
+export type Mvp15dCounterVector = [number, number, number, number, number];
+
+export interface Mvp15dUiSessionBinding {
+  sessionId: string;
+  nativeSessionId: string;
+  runId: string;
+  registrationId: string;
+  sessionBegin: Mvp15dRawObservedCall;
+  registrationCall: Mvp15dRawObservedCall;
+  sessionSetupCalls?: Mvp15dRawObservedCall[];
+}
+
+export interface Mvp15dNegativeCaseRaw extends Mvp15dUiSessionBinding {
+  caseId: string;
+  guardApi: string;
+  guardCall: Mvp15dRawObservedCall;
+  contentBefore: Mvp15dContentManifestRaw;
+  contentAfter: Mvp15dContentManifestRaw;
+  countersBefore: Mvp15dCounterVector;
+  countersAfter: Mvp15dCounterVector;
+  counterReadBefore: Mvp15dRawObservedCall;
+  counterReadAfter: Mvp15dRawObservedCall;
+  observationStop: Mvp15dRawObservedCall;
+  mcpDisconnect: Mvp15dRawObservedCall;
+  setupCalls: Mvp15dRawObservedCall[];
+}
+
+export interface Mvp15dPartialOperationRaw {
+  direction: "forward" | "inverse" | "control";
+  action: string;
+  api: string;
+  receiptId: string;
+  request: Record<string, unknown>;
+  setupCalls: Mvp15dRawObservedCall[];
+}
+
+export interface Mvp15dPartialUnknownRaw extends Mvp15dUiSessionBinding {
+  operationResults: Mvp15dPartialOperationRaw[];
+  contentBefore: Mvp15dContentManifestRaw;
+  contentAfter: Mvp15dContentManifestRaw;
+  countersBefore: Mvp15dCounterVector;
+  countersAfter: Mvp15dCounterVector;
+  counterReadBefore: Mvp15dRawObservedCall;
+  counterReadAfter: Mvp15dRawObservedCall;
+  observationStop: Mvp15dRawObservedCall;
+  mcpDisconnect: Mvp15dRawObservedCall;
+}
+
+export interface Mvp15dUiObservationPort {
+  beginSession(input: {
+    caseId?: string;
+    attachInput: Record<string, unknown>;
+    registrationInput: Record<string, unknown>;
+    guardRequests: {
+      execute: Record<string, unknown>;
+      rollback: Record<string, unknown>;
+      invalidPath: Record<string, unknown>;
+    };
+  }): Promise<Mvp15dUiSessionBinding>;
+  snapshotContent(
+    binding: Mvp15dUiSessionBinding,
+    stage: "before" | "after",
+  ): Promise<Mvp15dContentManifestRaw>;
+  readCounters(
+    binding: Mvp15dUiSessionBinding,
+    stage: "before" | "after",
+  ): Promise<{ values: Mvp15dCounterVector; receipt: Mvp15dRawObservedCall }>;
+  guard(
+    input: Mvp15dUiSessionBinding & { caseId: string; api: string },
+  ): Promise<{ guardCall: Mvp15dRawObservedCall; setupCalls: Mvp15dRawObservedCall[] }>;
+  runPartialOperation(
+    binding: Mvp15dUiSessionBinding,
+    operation: Pick<Mvp15dPartialOperationRaw, "direction" | "action" | "api" | "request">,
+  ): Promise<Mvp15dPartialOperationRaw>;
+  stopObservation(binding: Mvp15dUiSessionBinding): Promise<Mvp15dRawObservedCall>;
+  disconnectMcp(binding: Mvp15dUiSessionBinding): Promise<Mvp15dRawObservedCall>;
+}
+
+export interface Mvp15dUiAuthorityInput {
+  negativeCases: Mvp15dNegativeCaseRaw[];
+  partialUnknown: Mvp15dPartialUnknownRaw;
+}
+
+const NEGATIVE_CASES = [
+  ["N1", "execute_asset_mutation"],
+  ["N2", "dry_run_asset_mutation"],
+  ["N3", "execute_asset_mutation"],
+  ["N4", "execute_asset_mutation"],
+  ["N5", "execute_asset_mutation"],
+  ["N6", "dry_run_asset_mutation"],
+  ["N7", "execute_asset_mutation"],
+  ["N8", "rollback_asset_mutation"],
+] as const;
+
+export async function collectMvp15dUiAuthority(
+  port: Mvp15dUiObservationPort,
+  partialOperations: ReadonlyArray<
+    Pick<Mvp15dPartialOperationRaw, "direction" | "action" | "api" | "request">
+  >,
+  context: {
+    attachInput: Record<string, unknown>;
+    registrationInput: Record<string, unknown>;
+    guardRequests: {
+      execute: Record<string, unknown>;
+      rollback: Record<string, unknown>;
+      invalidPath: Record<string, unknown>;
+    };
+  },
+): Promise<Mvp15dUiAuthorityInput> {
+  const negativeCases: Mvp15dNegativeCaseRaw[] = [];
+  for (const [caseId, guardApi] of NEGATIVE_CASES) {
+    const binding = await port.beginSession({ ...context, caseId });
+    const contentBefore = await port.snapshotContent(binding, "before");
+    const counterBefore = await port.readCounters(binding, "before");
+    const countersBefore = [...counterBefore.values] as Mvp15dCounterVector;
+    const guard = await port.guard({ ...binding, caseId, api: guardApi });
+    const counterAfter = await port.readCounters(binding, "after");
+    const countersAfter = [...counterAfter.values] as Mvp15dCounterVector;
+    const contentAfter = await port.snapshotContent(binding, "after");
+    const observationStop = await port.stopObservation(binding);
+    const mcpDisconnect = await port.disconnectMcp(binding);
+    negativeCases.push({
+      ...binding,
+      caseId,
+      guardApi,
+      guardCall: guard.guardCall,
+      setupCalls: [...(binding.sessionSetupCalls ?? []), ...guard.setupCalls],
+      contentBefore,
+      contentAfter,
+      countersBefore,
+      countersAfter,
+      counterReadBefore: counterBefore.receipt,
+      counterReadAfter: counterAfter.receipt,
+      observationStop,
+      mcpDisconnect,
+    });
+  }
+
+  const partialBinding = await port.beginSession(context);
+  const partialBefore = await port.snapshotContent(partialBinding, "before");
+  const partialCounterBefore = await port.readCounters(partialBinding, "before");
+  const partialCountersBefore = [...partialCounterBefore.values] as Mvp15dCounterVector;
+  const operationResults: Mvp15dPartialOperationRaw[] = [];
+  for (const operation of partialOperations) {
+    operationResults.push(await port.runPartialOperation(partialBinding, operation));
+  }
+  const partialCounterAfter = await port.readCounters(partialBinding, "after");
+  const partialCountersAfter = [...partialCounterAfter.values] as Mvp15dCounterVector;
+  const partialAfter = await port.snapshotContent(partialBinding, "after");
+  const observationStop = await port.stopObservation(partialBinding);
+  const mcpDisconnect = await port.disconnectMcp(partialBinding);
+  return {
+    negativeCases,
+    partialUnknown: {
+      ...partialBinding,
+      operationResults,
+      contentBefore: partialBefore,
+      contentAfter: partialAfter,
+      countersBefore: partialCountersBefore,
+      countersAfter: partialCountersAfter,
+      counterReadBefore: partialCounterBefore.receipt,
+      counterReadAfter: partialCounterAfter.receipt,
+      observationStop,
+      mcpDisconnect,
+    },
+  };
+}
+
 
 export interface DesktopRuntimeAdapter {
   getSnapshot(): RuntimeSnapshot;
@@ -64,6 +357,32 @@ export interface DesktopRuntimeAdapter {
   getMvp15LiveAssetToolsetFingerprint?(): Mvp15LiveAssetToolsetFingerprintPublication;
   getMvp15DCompanionStatus?(): UAgentCompanionStatus;
   getMvp15DLiveCompanionFingerprint?(): Mvp15DCompanionFingerprint;
+  getMvp15DProductRetractionEvidence?(): readonly Mvp15DProductRetractionEvidence[];
+  getMvp15dProductObservationPort?(): Mvp15dProductObservationPort | null;
+  getMvp15dUiObservationPort?(): Mvp15dUiObservationPort | null;
+  activateMvp15dFixedObservationAuthority?(input: {
+    taskId: string;
+    phase: "product-capture" | "ui-lifecycle";
+    session: string;
+    generation: number;
+    receiptLedgerEnabled: boolean;
+    minimumMcpGeneration?: number;
+    predecessorWindowIdentitySha256?: string;
+  }): Promise<void>;
+  resumeMvp15dProductAuthority?(
+    handoffId: string,
+    endpoint: string,
+  ): Promise<Mvp15dProductAuthorityInput>;
+  observeMvp15dNativeState?(
+    kind: "mutation_counters" | "recorded_replay" | "mcp_disconnect" | "renderer_process",
+    request: Record<string, unknown>,
+  ): Promise<Mvp15dRawObservedCall>;
+  takeMvp15dMcpObservationReceipt?(api: "mcp_asset_tool_call"): Mvp15dRawObservedCall | null;
+  runMvp15DProductRetractionOrchestration?(
+    trustedRootId: string,
+    editorSessionId: string,
+    endpoint: string,
+  ): Promise<void>;
   /** Refreshes native, trusted-root-bound package/loaded-module evidence. */
   refreshMvp15DCompanionAttestation?(
     trustedRootId: string,
@@ -109,6 +428,16 @@ export interface DesktopRuntimeAdapter {
   ) => Promise<AssetContentManifestObservation>;
 }
 
+export interface Mvp15DProductRetractionEvidence {
+  reason: "disconnect" | "endpoint_change" | "failure" | "reconnect" | "renderer_restart" | "newer_generation";
+  count: number;
+  sessionId: string;
+  generationBefore: number;
+  generationAfter: number;
+  statusBefore: "ready";
+  statusAfter: "blocked";
+}
+
 export interface Mvp15LiveAssetToolsetFingerprintPublication extends Mvp15LiveAssetToolsetFingerprintResult {
   discoveryGeneration: number;
   binding: {
@@ -121,6 +450,9 @@ export interface Mvp15LiveAssetToolsetFingerprintPublication extends Mvp15LiveAs
 export interface DesktopRuntimeAdapterOptions {
   createTransport?: (endpoint: string, transportKind: string) => McpTransportClient;
   nativeInvoke?: NativeInvoke | null;
+  /** Explicit source-only fixtures. These are never promoted to fixed live authority. */
+  mvp15dFixtureProductObservationPort?: Mvp15dProductObservationPort;
+  mvp15dFixtureUiObservationPort?: Mvp15dUiObservationPort;
   /**
    * Narrow task-owned observer for D0 source evidence. It wraps the real
    * transport used by this adapter before McpSession parses initialize or
@@ -129,6 +461,8 @@ export interface DesktopRuntimeAdapterOptions {
    * never enabled by production defaults.
    */
   onMvp15DProductAdapterExchange?: (exchange: Mvp15DProductAdapterExchange) => void;
+  /** Source-test clock seam. Production waits on the bridge-provided TTL. */
+  mvp15dAdvanceClock?: (milliseconds: number) => Promise<void>;
 }
 
 export interface Mvp15DProductAdapterExchange {
@@ -218,6 +552,127 @@ export function createDesktopRuntimeAdapter(
   let currentDiscovery: McpDiscoverySnapshot | null = null;
   let currentMvp15FacadeTools: Mvp15McpAssetToolDescriptor[] = [];
   let mcpDiscoveryGeneration = 0;
+  let fixedObservationAuthority: {
+    taskId: string;
+    phase: "product-capture" | "ui-lifecycle";
+    session: string;
+    generation: number;
+    predecessorWindowIdentitySha256?: string;
+  } | null = null;
+  let currentMvp15dMcpSessionId: string | null = null;
+  let currentMvp15dToolSearchMode: Mvp15dToolSearchMode | "ui" = "ui";
+  const mvp15dTransportObservations: Array<{
+    api: string;
+    call: Mvp15dRawObservedCall;
+  }> = [];
+  let lastMvp15dNativeAttestation: {
+    request: Record<string, unknown>;
+    response: Record<string, unknown>;
+  } | null = null;
+  let lastMvp15dNativeRetraction: {
+    request: Record<string, unknown>;
+    response: Record<string, unknown>;
+  } | null = null;
+  type NativeMcpObservationResult = {
+    method?: "POST" | "DELETE";
+    sessionId?: string | null;
+    session_id?: string | null;
+    observationRequest?: Record<string, unknown>;
+    observationReceipts?: Record<string, string>;
+  };
+  const observationNativeInvoke: NativeInvoke = async <T = unknown>(command: string, payload?: unknown) => {
+    if (command !== "mcp_streamable_http_request" || !nativeInvoke || !fixedObservationAuthority) {
+      if (!nativeInvoke) throw new Error("native_invoke_unavailable");
+      return nativeInvoke<T>(command, payload);
+    }
+    const envelope = payload && typeof payload === "object" && !Array.isArray(payload)
+      ? payload as { input?: Record<string, unknown> }
+      : null;
+    const input = envelope?.input;
+    if (!input || Object.prototype.hasOwnProperty.call(input, "observation")) {
+      throw new Error("mvp15d_native_mcp_observation_input_invalid");
+    }
+    const observedInput = {
+      ...structuredClone(input),
+      observation: {
+        schemaVersion: "uagent.mvp15d.mcp-observation-intent.v1",
+        taskId: fixedObservationAuthority.taskId,
+        phase: fixedObservationAuthority.phase,
+        phaseSessionId: fixedObservationAuthority.session,
+        phaseGeneration: fixedObservationAuthority.generation,
+        connectionGeneration: Math.max(1, mcpDiscoveryGeneration),
+        toolSearchMode: currentMvp15dToolSearchMode,
+      },
+    };
+    const raw = await nativeInvoke<NativeMcpObservationResult>(command, { input: observedInput });
+    const observationRequest = raw.observationRequest;
+    const receipts = raw.observationReceipts;
+    if (!observationRequest || !receipts || typeof receipts !== "object") {
+      throw new Error("mvp15d_native_mcp_observation_receipt_missing");
+    }
+    for (const [api, receiptId] of Object.entries(receipts)) {
+      if (!receiptId.startsWith("mvp15d-observation-receipt:")) {
+        throw new Error("mvp15d_native_mcp_observation_receipt_invalid");
+      }
+      mvp15dTransportObservations.push({
+        api,
+        call: { receiptId, request: structuredClone(observationRequest) },
+      });
+    }
+    const responseSession = raw.sessionId ?? raw.session_id;
+    const requestSession = typeof input.sessionId === "string" ? input.sessionId : null;
+    if (input.method === "DELETE") {
+      currentMvp15dMcpSessionId = null;
+    } else if (typeof responseSession === "string" && responseSession.length > 0) {
+      currentMvp15dMcpSessionId = responseSession;
+    } else if (requestSession) {
+      currentMvp15dMcpSessionId = requestSession;
+    }
+    return raw as T;
+  };
+
+  const observeNativeState = async (
+    kind: string,
+    request: Record<string, unknown>,
+  ): Promise<{ call: Mvp15dRawObservedCall; observation: Record<string, unknown> }> => {
+    if (!nativeInvoke || !fixedObservationAuthority) {
+      throw new Error("mvp15d_native_state_observation_unavailable");
+    }
+    const raw = await nativeInvoke<{
+      schemaVersion?: string;
+      receiptId?: string;
+      request?: Record<string, unknown>;
+      observation?: Record<string, unknown>;
+    }>("mvp15d_bridge_observe_native_state", {
+      input: {
+        schemaVersion: "uagent.mvp15d.native-state-observation.v1",
+        kind,
+        request,
+      },
+    });
+    if (
+      raw.schemaVersion !== "uagent.mvp15d.native-state-observation.v1" ||
+      typeof raw.receiptId !== "string" ||
+      !raw.receiptId.startsWith("mvp15d-observation-receipt:") ||
+      !raw.request ||
+      !raw.observation
+    ) {
+      throw new Error("mvp15d_native_state_observation_invalid");
+    }
+    return {
+      call: { receiptId: raw.receiptId, request: structuredClone(raw.request) },
+      observation: structuredClone(raw.observation),
+    };
+  };
+
+  const requireTransportObservation = (
+    records: ReadonlyArray<{ api: string; call: Mvp15dRawObservedCall }>,
+    api: string,
+  ): Mvp15dRawObservedCall => {
+    const record = records.find((candidate) => candidate.api === api);
+    if (!record) throw new Error(`mvp15d_transport_observation_missing:${api}`);
+    return record.call;
+  };
   let mvp15McpBindingGeneration = 0;
   let currentMvp15McpBinding: { identity: string; endpoint: string; session: McpSession } | null =
     null;
@@ -249,6 +704,7 @@ export function createDesktopRuntimeAdapter(
   let mvp15DNativeRetractionFailureGeneration = 0;
   let mvp15DNativeRetractionSuccessGeneration = 0;
   const mvp15DNativeRetractions = new Set<Promise<void>>();
+  const mvp15DProductRetractions: Mvp15DProductRetractionEvidence[] = [];
   const listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
   const mcpListeners = new Set<(state: McpConnectionState) => void>();
 
@@ -409,6 +865,7 @@ export function createDesktopRuntimeAdapter(
     const requestedAttestationGeneration = zeroAuthorityBaseline ? null : retractionSequence;
     const discoveryGeneration = mcpDiscoveryGeneration;
     const attestationBindingPresent = currentMvp15DAttestationBinding !== null;
+    const nativeRequest = { attestationGeneration: requestedAttestationGeneration };
     mvp15DNativeRetractionPending += 1;
     // Native revocation must settle before a listener sees this renderer's
     // invalidation.  The result is deliberately shape-checked: a resolved
@@ -434,7 +891,7 @@ export function createDesktopRuntimeAdapter(
           discoveryGeneration,
         );
         return nativeInvoke("retract_mvp15_companion_approvals", {
-          input: { attestationGeneration: requestedAttestationGeneration },
+          input: nativeRequest,
         });
       })
       .then((raw) => {
@@ -447,9 +904,13 @@ export function createDesktopRuntimeAdapter(
           "minimumAttestationGeneration",
           "generation",
           "revokedApprovalCount",
+          "nativeReceiptId",
         ]);
         const resultShapeIsExact =
           result !== null && Object.keys(result).every((key) => allowedResultKeys.has(key));
+        if (result) {
+          lastMvp15dNativeRetraction = { request: nativeRequest, response: { ...result } };
+        }
         const minimumGenerationIsValid =
           Number.isSafeInteger(result?.minimumAttestationGeneration) &&
           (result?.minimumAttestationGeneration as number) >= 0 &&
@@ -583,7 +1044,15 @@ export function createDesktopRuntimeAdapter(
     return nativeRetraction?.settled ?? null;
   };
 
-  const retractMcpPublication = (): Promise<void> | null => {
+  const retractMcpPublication = (
+    reason?: Mvp15DProductRetractionEvidence["reason"],
+  ): Promise<void> | null => {
+    const readyToolCount = currentMvp15Fingerprint.status === "ready"
+      && currentMvp15DCompanionFingerprint.status === "ready"
+      && currentMvp15DCompanionStatus.status === "verified"
+      ? currentMvp15Fingerprint.toolCount
+      : 0;
+    const generationBefore = currentMvp15Fingerprint.discoveryGeneration;
     invalidateMvp15McpBinding();
     currentDiscovery = null;
     currentMvp15FacadeTools = [];
@@ -597,6 +1066,17 @@ export function createDesktopRuntimeAdapter(
       "BLOCKED_BY_MCP_TRANSPORT",
       "mcp_publication_retracted",
     );
+    if (reason && readyToolCount === 6) {
+      mvp15DProductRetractions.push({
+        reason,
+        count: readyToolCount,
+        sessionId: `mvp15d-retraction:${reason}:${mvp15DProductRetractions.length + 1}`,
+        generationBefore,
+        generationAfter: mcpDiscoveryGeneration,
+        statusBefore: "ready",
+        statusAfter: "blocked",
+      });
+    }
     router.updateContext({
       runtimeMode: "mock",
       discovery: null,
@@ -668,6 +1148,11 @@ export function createDesktopRuntimeAdapter(
       if (mvp15DNativeAuthorityIsBlocked()) return currentMvp15DCompanionStatus;
     }
     const attestationGeneration = nextMvp15DAttestationGeneration();
+    const nativeAttestationRequest = {
+      trustedRootId,
+      editorSessionId: normalizedEditorSessionId,
+      attestationGeneration,
+    };
     try {
       mvp15DNativeAttestationPending += 1;
       let raw: unknown;
@@ -684,11 +1169,7 @@ export function createDesktopRuntimeAdapter(
           generation,
         );
         raw = await nativeInvoke("attest_mvp15_companion", {
-          input: {
-            trustedRootId,
-            editorSessionId: normalizedEditorSessionId,
-            attestationGeneration,
-          },
+          input: nativeAttestationRequest,
         });
       } finally {
         mvp15DNativeAttestationPending = Math.max(0, mvp15DNativeAttestationPending - 1);
@@ -711,6 +1192,12 @@ export function createDesktopRuntimeAdapter(
           generation,
         );
         return currentMvp15DCompanionStatus;
+      }
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        lastMvp15dNativeAttestation = {
+          request: nativeAttestationRequest,
+          response: { ...(raw as Record<string, unknown>) },
+        };
       }
       const evidence = normalizeNativeMvp15DCompanionEvidence(raw);
       if (!evidence) {
@@ -979,7 +1466,849 @@ export function createDesktopRuntimeAdapter(
     return startupMvp15DNativeRetraction;
   };
 
-  return {
+  let pendingRendererInstanceReceipt: Mvp15dRawObservedCall | null = null;
+
+  const nativeReceiptReference = (
+    observation: { request: Record<string, unknown>; response: Record<string, unknown> } | null,
+  ): Mvp15dRawObservedCall => {
+    const receiptId = observation?.response.nativeReceiptId;
+    if (!observation || typeof receiptId !== "string" || !receiptId.startsWith("mvp15d-observation-receipt:")) {
+      throw new Error("mvp15d_native_observation_receipt_missing");
+    }
+    return { receiptId, request: structuredClone(observation.request) };
+  };
+
+  const canonicalProductDescriptors = (): Mvp15dCanonicalToolDescriptor[] => {
+    const directNames = new Set((currentDiscovery?.tools ?? []).map((tool) => tool.name));
+    return getMvp15AssetTools(currentDiscovery, currentMvp15FacadeTools).map((tool) => ({
+      affectedAssetsSchema: tool.affectedAssetsSchema as Record<string, unknown>,
+      dryRunSchema: tool.dryRunSchema as Record<string, unknown>,
+      evidenceQuery: tool.evidenceQuery as Record<string, unknown>,
+      inputSchema: tool.inputSchema as Record<string, unknown>,
+      methodId: null,
+      name: tool.name,
+      rollbackContract: tool.rollbackContract as Record<string, unknown>,
+      schemaVersion: String(tool.schemaVersion ?? ""),
+      source: directNames.has(tool.name) ? "direct" : "facade",
+      toolsetId: null,
+    }));
+  };
+
+  let productTransitionState: {
+    stateReceiptId: string;
+    sessionId: string;
+    generation: number;
+  } | null = null;
+  const productionProductObservationPort: Mvp15dProductObservationPort = {
+    readMutationCounters: async () => {
+      const observation = await observeNativeState("mutation_counters", { scope: "product-summary" });
+      const values = observation.observation.values;
+      if (!Array.isArray(values) || values.length !== 5 || values.some((value) => !Number.isSafeInteger(value))) {
+        throw new Error("mvp15d_product_counter_source_invalid");
+      }
+      return { dryRun: Number(values[0]), execute: Number(values[1]), rollback: Number(values[4]) };
+    },
+    discover: async ({ toolSearchEnabled }) => {
+      const authority = fixedObservationAuthority;
+      if (!authority || authority.phase !== "product-capture") {
+        throw new Error("mvp15d_product_authority_port_unavailable");
+      }
+      currentMvp15dToolSearchMode = toolSearchEnabled ? "on" : "off";
+      const rendererInstanceCall = pendingRendererInstanceReceipt ?? (
+        await observeNativeState("renderer_process", { reason: "product_discovery" })
+      ).call;
+      pendingRendererInstanceReceipt = null;
+      if (mcpState.status === "connected" || currentMvp15dMcpSessionId) {
+        adapter.disconnectMcp();
+        const disconnectDeadline = Date.now() + 5_000;
+        while (mcpState.status !== "disconnected" && Date.now() < disconnectDeadline) {
+          await new Promise((resolve) => globalThis.setTimeout(resolve, 10));
+        }
+        if (mcpState.status !== "disconnected") {
+          throw new Error("mvp15d_product_discovery_disconnect_failed");
+        }
+      }
+      const observationStart = mvp15dTransportObservations.length;
+      await adapter.connectMcp();
+      if (adapter.getMcpState().status !== "connected" || !currentMvp15dMcpSessionId) {
+        throw new Error("mvp15d_product_connect_failed");
+      }
+      const sessionId = currentMvp15dMcpSessionId;
+      await adapter.discoverMcp();
+      if (!currentDiscovery || currentMvp15Fingerprint.status !== "ready") {
+        throw new Error("mvp15d_product_discovery_failed");
+      }
+      const generation = mcpDiscoveryGeneration;
+      const transportRecords = mvp15dTransportObservations.slice(observationStart);
+      const configCall = requireTransportObservation(transportRecords, "mcp_configure_tool_search");
+      const connectCall = requireTransportObservation(transportRecords, "mcp_connect");
+      const initializeCall = requireTransportObservation(transportRecords, "mcp_initialize");
+      const discoverCall = requireTransportObservation(transportRecords, "mcp_discover");
+      const normalizeCall = requireTransportObservation(transportRecords, "mcp_normalize");
+      const fingerprintCall = requireTransportObservation(transportRecords, "mcp_fingerprint");
+      const toolSearchCalls = transportRecords
+        .filter(({ api }) => api === "mcp_tool_search_call")
+        .map(({ call }) => call);
+      if ((toolSearchEnabled && toolSearchCalls.length === 0) || (!toolSearchEnabled && toolSearchCalls.length > 0)) {
+        throw new Error("mvp15d_product_tool_search_wire_mode_invalid");
+      }
+      const attestationRequest = lastMvp15dNativeAttestation?.request;
+      if (!attestationRequest) throw new Error("mvp15d_product_attestation_context_missing");
+      await refreshMvp15DCompanionAttestation(
+        String(attestationRequest.trustedRootId ?? ""),
+        String(attestationRequest.editorSessionId ?? ""),
+      );
+      const descriptors = canonicalProductDescriptors();
+      if (descriptors.length !== MVP15_ASSET_TOOL_ALLOWLIST.length) {
+        throw new Error("mvp15d_product_exact_six_required");
+      }
+      const mutationCounterCall = (
+        await observeNativeState("mutation_counters", { scope: "product", mcpSessionId: sessionId })
+      ).call;
+      productTransitionState = {
+        stateReceiptId: fingerprintCall.receiptId,
+        sessionId,
+        generation,
+      };
+      return {
+        mode: toolSearchEnabled ? "on" : "off",
+        configCall,
+        rendererInstanceCall,
+        connectCall,
+        initializeCall,
+        discoverCall,
+        normalizeCall,
+        fingerprintCall,
+        nativeAttestation: nativeReceiptReference(lastMvp15dNativeAttestation),
+        mutationCounterCall,
+        toolSearchCalls,
+      };
+    },
+    retract: async (reason) => {
+      const authority = fixedObservationAuthority;
+      if (!authority || authority.phase !== "product-capture") {
+        throw new Error("mvp15d_product_retraction_source_not_ready");
+      }
+      const readyDiscovery = await productionProductObservationPort.discover({ toolSearchEnabled: false });
+      const before = productTransitionState;
+      if (!before || before.stateReceiptId !== readyDiscovery.fingerprintCall.receiptId) {
+        throw new Error("mvp15d_product_retraction_ready_state_invalid");
+      }
+      const endpoint = mcpState.profile?.endpoint ?? "";
+      const rendererBefore = await observeNativeState("renderer_process", { reason, stage: "before" });
+      const rendererAfter = rendererBefore;
+      if (reason === "disconnect") {
+        const observationStart = mvp15dTransportObservations.length;
+        await disconnectMcpAndWait();
+        if (mcpState.status !== "disconnected") throw new Error("mvp15d_product_retraction_disconnect_failed");
+        const disconnectCall = requireTransportObservation(
+          mvp15dTransportObservations.slice(observationStart),
+          "mcp_disconnect",
+        );
+        if (disconnectCall.request.sessionId !== before.sessionId) {
+          throw new Error("mvp15d_product_retraction_disconnect_session_mismatch");
+        }
+      } else if (reason === "endpoint_change") {
+        const changedEndpoint = endpoint.includes("?")
+          ? `${endpoint}&mvp15d-endpoint-change=1`
+          : `${endpoint}?mvp15d-endpoint-change=1`;
+        adapter.setMcpEndpoint(changedEndpoint);
+        await adapter.connectMcp();
+      } else if (reason === "failure") {
+        adapter.setMcpEndpoint("http://127.0.0.1:9/mcp");
+        await adapter.connectMcp();
+        if (mcpState.status !== "error") throw new Error("mvp15d_product_retraction_failure_not_observed");
+      } else if (reason === "newer_generation") {
+        await adapter.discoverMcp();
+      }
+      const nativeTransition = retractNativeMvp15DApprovals(true, false);
+      if (!nativeTransition) throw new Error("mvp15d_product_retraction_native_unavailable");
+      await nativeTransition.settled;
+      const nativeRetraction = nativeReceiptReference(lastMvp15dNativeRetraction);
+      const transitionRequest = { reason, stateBeforeReceiptId: before.stateReceiptId };
+      const transition = await observeNativeState("mcp_retraction_transition", transitionRequest);
+      if (reason === "endpoint_change" || reason === "failure") adapter.setMcpEndpoint(endpoint);
+      productTransitionState = null;
+      return {
+        reason,
+        readyDiscovery,
+        rendererInstanceCall: rendererAfter.call,
+        transitionCall: transition.call,
+        nativeRetraction,
+      };
+    },
+    requestRendererRestart: async (segment) => {
+      const authority = fixedObservationAuthority;
+      if (!authority || authority.phase !== "product-capture" || !nativeInvoke) {
+        throw new Error("mvp15d_renderer_restart_parent_authority_required");
+      }
+      const readyDiscovery = await productionProductObservationPort.discover({ toolSearchEnabled: false });
+      const before = productTransitionState;
+      if (
+        !before ||
+        before.stateReceiptId !== readyDiscovery.fingerprintCall.receiptId ||
+        !currentMvp15dMcpSessionId
+      ) {
+        throw new Error("mvp15d_renderer_restart_ready_state_invalid");
+      }
+      const rendererBefore = await observeNativeState("renderer_process", {
+        reason: "renderer_restart",
+        stage: "predecessor",
+      });
+      const result = await nativeInvoke<{
+        schemaVersion?: string;
+        handoffId?: string;
+        requestReceiptId?: string;
+        taskId?: string;
+        phase?: string;
+      }>("mvp15d_bridge_request_renderer_restart", {
+        input: {
+          schemaVersion: "uagent.mvp15d.renderer-restart-request.v2",
+          taskId: authority.taskId,
+          phase: authority.phase,
+          rendererBefore: rendererBefore.call,
+          predecessorMcpSessionId: currentMvp15dMcpSessionId,
+          predecessorMcpGeneration: mcpDiscoveryGeneration,
+          segment: { ...segment, readyDiscovery },
+        },
+      });
+      if (
+        result.schemaVersion !== "uagent.mvp15d.renderer-restart-response.v2" ||
+        typeof result.handoffId !== "string" ||
+        !result.handoffId.startsWith("renderer-handoff:") ||
+        typeof result.requestReceiptId !== "string" ||
+        !result.requestReceiptId.startsWith("mvp15d-observation-receipt:") ||
+        result.taskId !== authority.taskId ||
+        result.phase !== authority.phase
+      ) {
+        throw new Error("mvp15d_renderer_restart_request_rejected");
+      }
+      throw new Error("mvp15d_renderer_restart_handoff_requested");
+    },
+  };
+
+  const uiBindingState = new Map<string, {
+    approvalToken: string | null;
+    attachInput: Record<string, unknown>;
+    registrationInput: Record<string, unknown>;
+    guardRequests: {
+      execute: Record<string, unknown>;
+      rollback: Record<string, unknown>;
+      invalidPath: Record<string, unknown>;
+    };
+    processId: string;
+    observationGeneration: number;
+    managedProcess: {
+      taskId: string;
+      phase: string;
+      processId: string;
+      pid: number;
+      processStartTime: number;
+    } | null;
+  }>();
+  const invokeObservedNative = async (
+    api: string,
+    request: Record<string, unknown>,
+  ): Promise<{ reference: Mvp15dRawObservedCall; response: Record<string, unknown> }> => {
+    if (!nativeInvoke) throw new Error("mvp15d_native_observation_unavailable");
+    const raw = await nativeInvoke<Record<string, unknown>>(api, { input: request });
+    const reference = nativeReceiptReference({ request, response: raw });
+    return { reference, response: raw };
+  };
+  const releaseManagedProcess = async (managedProcess: {
+    taskId: string;
+    phase: string;
+    processId: string;
+    pid: number;
+    processStartTime: number;
+  }): Promise<Mvp15dRawObservedCall> => {
+    const request = {
+      schemaVersion: "uagent.mvp15d.managed-editor-process-release.v1",
+      ...managedProcess,
+    };
+    const released = await invokeObservedNative("release_managed_editor_process", request);
+    if (
+      released.response.schemaVersion !== "uagent.mvp15d.managed-editor-process-release-result.v1" ||
+      released.response.status !== "released" ||
+      released.response.reason !== "task_owned_process_released" ||
+      released.response.ownerTaskId !== managedProcess.taskId ||
+      released.response.ownerPhase !== managedProcess.phase ||
+      released.response.processId !== managedProcess.processId ||
+      released.response.pid !== managedProcess.pid ||
+      released.response.processStartTime !== managedProcess.processStartTime
+    ) {
+      throw new Error("mvp15d_ui_managed_process_release_failed");
+    }
+    return released.reference;
+  };
+  const productionUiObservationPort: Mvp15dUiObservationPort = {
+    beginSession: async ({ caseId, attachInput, registrationInput, guardRequests }) => {
+      const authority = fixedObservationAuthority;
+      if (!authority || authority.phase !== "ui-lifecycle") {
+        throw new Error("mvp15d_ui_authority_port_unavailable");
+      }
+      if (mcpState.status === "connected" && !currentMvp15dMcpSessionId) {
+        await adapter.discoverMcp();
+      } else if (!currentMvp15dMcpSessionId || mcpState.status !== "connected") {
+        await adapter.connectMcp();
+        await adapter.discoverMcp();
+      }
+      if (!mvp15DForwardAuthorityIsReady()) {
+        const attestation = lastMvp15dNativeAttestation?.request;
+        if (!attestation) throw new Error("mvp15d_ui_attestation_context_missing");
+        await refreshMvp15DCompanionAttestation(
+          String(attestation.trustedRootId ?? ""),
+          String(attestation.editorSessionId ?? ""),
+        );
+      }
+      if (!currentMvp15dMcpSessionId) throw new Error("mvp15d_ui_mcp_session_unavailable");
+      const sessionSetupCalls: Mvp15dRawObservedCall[] = [];
+      let effectiveAttachInput = structuredClone(attachInput);
+      let managedProcess: {
+        taskId: string;
+        phase: string;
+        processId: string;
+        pid: number;
+        processStartTime: number;
+      } | null = null;
+      try {
+        if (caseId === "N4") {
+          if (!nativeInvoke) throw new Error("mvp15d_native_observation_unavailable");
+          const createRequest = {
+            taskId: authority.taskId,
+            phase: authority.phase,
+            projectId: attachInput.projectId,
+            rootRef: attachInput.rootRef,
+            uprojectRelativePath: attachInput.uprojectRelativePath,
+          };
+          const createResponse = await nativeInvoke<Record<string, unknown>>(
+            "create_managed_editor_process",
+            { input: createRequest },
+          );
+          const process = createResponse.process && typeof createResponse.process === "object"
+            ? createResponse.process as Record<string, unknown>
+            : null;
+          const processPid = Number(createResponse.processPid ?? 0);
+          const processStartTime = Number(createResponse.processStartTime ?? 0);
+          if (
+            process &&
+            typeof process.id === "string" &&
+            Number.isSafeInteger(processPid) && processPid > 0 &&
+            Number.isSafeInteger(processStartTime) && processStartTime > 0
+          ) {
+            managedProcess = {
+              taskId: authority.taskId,
+              phase: authority.phase,
+              processId: process.id,
+              pid: processPid,
+              processStartTime,
+            };
+          }
+          const createReference = nativeReceiptReference({
+            request: createRequest,
+            response: createResponse,
+          });
+          if (
+            createResponse.status !== "created" ||
+            createResponse.reason !== "task_owned_process_started" ||
+            createResponse.ownerTaskId !== authority.taskId ||
+            createResponse.ownerPhase !== authority.phase ||
+            !process ||
+            typeof process.id !== "string" ||
+            typeof process.pidHash !== "string" ||
+            process.source !== "managed" ||
+            !managedProcess
+          ) {
+            throw new Error("mvp15d_ui_managed_process_create_failed");
+          }
+          sessionSetupCalls.push(createReference);
+          effectiveAttachInput = {
+            ...effectiveAttachInput,
+            processId: process.id,
+            pidHash: process.pidHash,
+            processDisplayName: process.displayName,
+            mode: "managed",
+          };
+        }
+        const attached = await invokeObservedNative("attach_editor_process", effectiveAttachInput);
+        const sessionId = String(attached.response.sessionId ?? "");
+        const processId = String(attached.response.processId ?? "");
+        const observationGeneration = Number(attached.response.observationGeneration ?? 0);
+        if (
+          attached.response.status !== "attached" ||
+          !sessionId ||
+          !processId ||
+          !Number.isSafeInteger(observationGeneration) ||
+          observationGeneration <= 0 ||
+          processId !== String(effectiveAttachInput.processId ?? "") ||
+          attached.response.pidHash !== effectiveAttachInput.pidHash
+        ) {
+          throw new Error("mvp15d_ui_observation_session_begin_failed");
+        }
+        const identitySuffix = globalThis.crypto.randomUUID();
+        const nextRegistrationInput = {
+          ...structuredClone(registrationInput),
+          changeSetId: `${String(registrationInput.changeSetId ?? "change-set")}:${identitySuffix}`,
+          runId: `mvp15d-native-run-${identitySuffix}`,
+          editorSessionId: sessionId,
+          mcpBinding: currentMvp15McpBinding?.identity ?? "",
+        };
+        const registered = await invokeObservedNative(
+          "register_asset_mutation_approval",
+          nextRegistrationInput,
+        );
+        const registrationId = String(registered.response.registrationId ?? "");
+        if (registered.response.status !== "registered" || !registrationId) {
+          throw new Error("mvp15d_ui_registration_failed");
+        }
+        uiBindingState.set(registrationId, {
+          approvalToken: typeof registered.response.approvalToken === "string"
+            ? registered.response.approvalToken
+            : null,
+          attachInput: structuredClone(effectiveAttachInput),
+          registrationInput: nextRegistrationInput,
+          guardRequests: structuredClone(guardRequests),
+          processId,
+          observationGeneration,
+          managedProcess,
+        });
+        return {
+          sessionId,
+          nativeSessionId: currentMvp15dMcpSessionId,
+          runId: String(nextRegistrationInput.runId),
+          registrationId,
+          sessionBegin: attached.reference,
+          registrationCall: registered.reference,
+          sessionSetupCalls,
+        };
+      } catch (error) {
+        if (managedProcess) await releaseManagedProcess(managedProcess);
+        throw error;
+      }
+    },
+    snapshotContent: async (binding, stage) => {
+      const request = { registrationId: binding.registrationId };
+      const observation = await invokeObservedNative("snapshot_mvp15_asset_content_manifest", request);
+      return {
+        stage,
+        registrationId: binding.registrationId,
+        runId: binding.runId,
+        receiptId: observation.reference.receiptId,
+        request,
+      };
+    },
+    readCounters: async (binding, stage) => {
+      const state = uiBindingState.get(binding.registrationId);
+      if (!state) throw new Error("mvp15d_ui_counter_source_unavailable");
+      const request = { registrationId: binding.registrationId, runId: binding.runId, stage };
+      const observation = await observeNativeState("mutation_counters", request);
+      const rawValues = observation.observation.values;
+      if (!Array.isArray(rawValues) || rawValues.length !== 5 || rawValues.some((value) => !Number.isSafeInteger(value))) {
+        throw new Error("mvp15d_ui_counter_source_invalid");
+      }
+      return { values: [...rawValues] as Mvp15dCounterVector, receipt: observation.call };
+    },
+    guard: async ({ caseId, api, ...binding }) => {
+      const state = uiBindingState.get(binding.registrationId);
+      if (!state) {
+        throw new Error("mvp15d_ui_guard_request_unavailable");
+      }
+      const template = caseId === "N2" || caseId === "N6"
+        ? state.guardRequests.invalidPath
+        : caseId === "N8"
+          ? state.guardRequests.rollback
+          : state.guardRequests.execute;
+      let request: Record<string, unknown> = api === "dry_run_asset_mutation"
+        ? structuredClone(template)
+        : {
+            ...structuredClone(template),
+            registrationId: binding.registrationId,
+            approvalToken: state.approvalToken,
+            changeSetId: state.registrationInput.changeSetId,
+            runId: binding.runId,
+            mcpBinding: state.registrationInput.mcpBinding,
+          };
+      const setupCalls: Mvp15dRawObservedCall[] = [];
+      if (caseId === "N1") {
+        const retraction = retractNativeMvp15DApprovals(true, false);
+        if (!retraction) throw new Error("mvp15d_ui_attestation_retraction_unavailable");
+        await retraction.settled;
+        setupCalls.push(nativeReceiptReference(lastMvp15dNativeRetraction));
+      } else if (caseId === "N2") {
+        request = { toolName: String(request.toolName ?? "ue.asset.create_folder") };
+      } else if (caseId === "N3") {
+        setupCalls.push((await invokeObservedNative(
+          "stop_editor_observation_session",
+          { sessionId: binding.sessionId },
+        )).reference);
+      } else if (caseId === "N4") {
+        try {
+          const terminated = await invokeObservedNative(
+            "terminate_managed_editor_process",
+            { sessionId: binding.sessionId },
+          );
+          if (
+            terminated.response.status !== "degraded" ||
+            terminated.response.reason !== "process_exited" ||
+            terminated.response.sessionId !== binding.sessionId ||
+            terminated.response.processId !== state.processId
+          ) {
+            throw new Error("mvp15d_ui_managed_process_termination_failed");
+          }
+          state.managedProcess = null;
+          setupCalls.push(terminated.reference);
+        } catch (error) {
+          if (state.managedProcess) {
+            await releaseManagedProcess(state.managedProcess);
+            state.managedProcess = null;
+          }
+          throw error;
+        }
+      } else if (caseId === "N5") {
+        const successor = await invokeObservedNative("attach_editor_process", state.attachInput);
+        const successorGeneration = Number(successor.response.observationGeneration ?? 0);
+        if (
+          successor.response.status !== "attached" ||
+          successor.response.processId !== state.processId ||
+          successor.response.sessionId === binding.sessionId ||
+          !Number.isSafeInteger(successorGeneration) ||
+          successorGeneration <= state.observationGeneration
+        ) {
+          throw new Error("mvp15d_ui_observation_generation_replacement_failed");
+        }
+        setupCalls.push(successor.reference);
+      } else if (caseId === "N7") {
+        const first = await invokeObservedNative("execute_asset_mutation", request);
+        if (
+          first.response.status !== "accepted_by_native_guard" ||
+          first.response.registrationId !== binding.registrationId ||
+          first.response.phase !== "execute"
+        ) {
+          throw new Error("mvp15d_ui_execute_setup_rejected");
+        }
+        setupCalls.push(first.reference);
+        const operationId = String(first.response.operationId ?? (request.operation as { operationId?: unknown })?.operationId ?? "");
+        const outcome = await invokeObservedNative("record_asset_mutation_outcome", {
+          registrationId: binding.registrationId,
+          phase: "execute",
+          operationId,
+          success: true,
+          sideEffectObserved: true,
+          effectState: "known_effect",
+          rollbackAvailable: true,
+          evidenceId: String(first.response.evidenceId ?? "native-execute-setup"),
+          reasonCode: null,
+        });
+        if (
+          outcome.response.status !== "recorded" ||
+          outcome.response.registrationId !== binding.registrationId ||
+          outcome.response.phase !== "execute" ||
+          outcome.response.operationId !== operationId
+        ) {
+          throw new Error("mvp15d_ui_execute_outcome_not_recorded");
+        }
+        setupCalls.push(outcome.reference);
+        request.approvalToken = null;
+      } else if (caseId === "N8") {
+        const executeRequest: Record<string, unknown> = {
+          ...structuredClone(state.guardRequests.execute),
+          registrationId: binding.registrationId,
+          approvalToken: state.approvalToken,
+          changeSetId: state.registrationInput.changeSetId,
+          runId: binding.runId,
+          mcpBinding: state.registrationInput.mcpBinding,
+        };
+        const execute = await invokeObservedNative("execute_asset_mutation", executeRequest);
+        if (
+          execute.response.status !== "accepted_by_native_guard" ||
+          execute.response.registrationId !== binding.registrationId ||
+          execute.response.phase !== "execute"
+        ) {
+          throw new Error("mvp15d_ui_execute_setup_rejected");
+        }
+        setupCalls.push(execute.reference);
+        const executeOperationId = String(execute.response.operationId ?? (executeRequest.operation as { operationId?: unknown })?.operationId ?? "");
+        const executeOutcome = await invokeObservedNative("record_asset_mutation_outcome", {
+          registrationId: binding.registrationId,
+          phase: "execute",
+          operationId: executeOperationId,
+          success: true,
+          sideEffectObserved: true,
+          effectState: "known_effect",
+          rollbackAvailable: true,
+          evidenceId: String(execute.response.evidenceId ?? "native-execute-setup"),
+          reasonCode: null,
+        });
+        if (
+          executeOutcome.response.status !== "recorded" ||
+          executeOutcome.response.registrationId !== binding.registrationId ||
+          executeOutcome.response.phase !== "execute" ||
+          executeOutcome.response.operationId !== executeOperationId
+        ) {
+          throw new Error("mvp15d_ui_execute_outcome_not_recorded");
+        }
+        setupCalls.push(executeOutcome.reference);
+        request.approvalToken = null;
+        const firstRollback = await invokeObservedNative("rollback_asset_mutation", request);
+        if (
+          firstRollback.response.status !== "accepted_by_native_guard" ||
+          firstRollback.response.registrationId !== binding.registrationId ||
+          firstRollback.response.phase !== "rollback"
+        ) {
+          throw new Error("mvp15d_ui_rollback_setup_rejected");
+        }
+        setupCalls.push(firstRollback.reference);
+        const rollbackOperationId = String(firstRollback.response.operationId ?? (request.operation as { operationId?: unknown })?.operationId ?? "");
+        const rollbackOutcome = await invokeObservedNative("record_asset_mutation_outcome", {
+          registrationId: binding.registrationId,
+          phase: "rollback",
+          operationId: rollbackOperationId,
+          success: true,
+          sideEffectObserved: true,
+          effectState: "known_effect",
+          rollbackAvailable: false,
+          evidenceId: String(firstRollback.response.evidenceId ?? "native-rollback-setup"),
+          reasonCode: null,
+        });
+        if (
+          rollbackOutcome.response.status !== "recorded" ||
+          rollbackOutcome.response.registrationId !== binding.registrationId ||
+          rollbackOutcome.response.phase !== "rollback" ||
+          rollbackOutcome.response.operationId !== rollbackOperationId
+        ) {
+          throw new Error("mvp15d_ui_rollback_outcome_not_recorded");
+        }
+        setupCalls.push(rollbackOutcome.reference);
+      }
+      const observation = await invokeObservedNative(api, request);
+      return { guardCall: observation.reference, setupCalls };
+    },
+    runPartialOperation: async (binding, operation) => {
+      const authority = fixedObservationAuthority;
+      const state = uiBindingState.get(binding.registrationId);
+      if (!authority || !state) throw new Error("mvp15d_partial_operation_source_unavailable");
+      const request: Record<string, unknown> = {
+        ...structuredClone(operation.request),
+        registrationId: binding.registrationId,
+        approvalToken: state.approvalToken,
+        changeSetId: state.registrationInput.changeSetId,
+        runId: binding.runId,
+        editorSessionId: binding.sessionId,
+        mcpBinding: state.registrationInput.mcpBinding,
+      };
+      let receipt: Mvp15dRawObservedCall;
+      const setupCalls: Mvp15dRawObservedCall[] = [];
+      if (operation.api === "mcp_asset_tool_call") {
+        const toolName = String(request.toolName ?? "") as Mvp15McpAssetToolName;
+        const args = request.args && typeof request.args === "object"
+          ? request.args as Record<string, unknown>
+          : {};
+        if (!adapter.callMvp15AssetTool) throw new Error("mvp15d_mcp_asset_bridge_unavailable");
+        const observationStart = mvp15dTransportObservations.length;
+        await adapter.callMvp15AssetTool(toolName, args);
+        receipt = requireTransportObservation(
+          mvp15dTransportObservations.slice(observationStart),
+          "mcp_asset_tool_call",
+        );
+      } else {
+        if (operation.action === "cross_ttl" || operation.action === "second_rollback") {
+          const attached = await invokeObservedNative("attach_editor_process", state.attachInput);
+          setupCalls.push(attached.reference);
+          const freshSessionId = String(attached.response.sessionId ?? "");
+          const freshGeneration = Number(attached.response.observationGeneration ?? 0);
+          if (
+            attached.response.status !== "attached" ||
+            !freshSessionId ||
+            freshSessionId === binding.sessionId ||
+            attached.response.processId !== state.processId ||
+            !Number.isSafeInteger(freshGeneration) ||
+            freshGeneration <= state.observationGeneration
+          ) {
+            throw new Error("mvp15d_partial_control_session_failed");
+          }
+          const identitySuffix = globalThis.crypto.randomUUID();
+          const freshRegistrationInput = {
+            ...structuredClone(state.registrationInput),
+            changeSetId: `${String(state.registrationInput.changeSetId ?? "change-set")}:${identitySuffix}`,
+            runId: `mvp15d-control-run-${identitySuffix}`,
+            editorSessionId: freshSessionId,
+            mcpBinding: currentMvp15McpBinding?.identity ?? "",
+          };
+          const registered = await invokeObservedNative(
+            "register_asset_mutation_approval",
+            freshRegistrationInput,
+          );
+          setupCalls.push(registered.reference);
+          const freshRegistrationId = String(registered.response.registrationId ?? "");
+          const freshApprovalToken = typeof registered.response.approvalToken === "string"
+            ? registered.response.approvalToken
+            : null;
+          if (registered.response.status !== "registered" || !freshRegistrationId || !freshApprovalToken) {
+            throw new Error("mvp15d_partial_control_registration_failed");
+          }
+          request.registrationId = freshRegistrationId;
+          request.approvalToken = freshApprovalToken;
+          request.changeSetId = freshRegistrationInput.changeSetId;
+          request.runId = freshRegistrationInput.runId;
+          request.editorSessionId = freshSessionId;
+          request.mcpBinding = freshRegistrationInput.mcpBinding;
+        }
+        if (operation.action === "cross_ttl") {
+          const wait = options?.mvp15dAdvanceClock
+            ?? ((milliseconds: number) => new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds)));
+          await wait(70_000);
+        }
+        if (operation.action === "second_rollback") {
+          const executeRequest: Record<string, unknown> = {
+            ...structuredClone(state.guardRequests.execute),
+            registrationId: request.registrationId,
+            approvalToken: request.approvalToken,
+            changeSetId: request.changeSetId,
+            runId: request.runId,
+            editorSessionId: request.editorSessionId,
+            mcpBinding: request.mcpBinding,
+          };
+          const execute = await invokeObservedNative("execute_asset_mutation", executeRequest);
+          const executeOperationId = String(
+            execute.response.operationId ??
+              (executeRequest.operation as { operationId?: unknown })?.operationId ??
+              "",
+          );
+          if (
+            execute.response.status !== "accepted_by_native_guard" ||
+            execute.response.registrationId !== request.registrationId ||
+            execute.response.phase !== "execute" ||
+            !executeOperationId
+          ) {
+            throw new Error("mvp15d_partial_execute_setup_rejected");
+          }
+          setupCalls.push(execute.reference);
+          const executeOutcome = await invokeObservedNative("record_asset_mutation_outcome", {
+            registrationId: String(request.registrationId ?? ""),
+            phase: "execute",
+            operationId: executeOperationId,
+            success: true,
+            sideEffectObserved: true,
+            effectState: "known_effect",
+            rollbackAvailable: true,
+            evidenceId: String(execute.response.evidenceId ?? "native-partial-execute"),
+            reasonCode: null,
+          });
+          if (
+            executeOutcome.response.status !== "recorded" ||
+            executeOutcome.response.registrationId !== request.registrationId ||
+            executeOutcome.response.phase !== "execute" ||
+            executeOutcome.response.operationId !== executeOperationId
+          ) {
+            throw new Error("mvp15d_partial_execute_outcome_not_recorded");
+          }
+          setupCalls.push(executeOutcome.reference);
+          request.approvalToken = null;
+          const firstRollback = await invokeObservedNative(operation.api, request);
+          if (
+            firstRollback.response.status !== "accepted_by_native_guard" ||
+            firstRollback.response.registrationId !== request.registrationId ||
+            firstRollback.response.phase !== "rollback"
+          ) {
+            throw new Error("mvp15d_partial_rollback_setup_rejected");
+          }
+          setupCalls.push(firstRollback.reference);
+          const operationId = String(
+            firstRollback.response.operationId ?? (request.operation as { operationId?: unknown })?.operationId ?? "",
+          );
+          const rollbackOutcome = await invokeObservedNative("record_asset_mutation_outcome", {
+            registrationId: String(request.registrationId ?? ""),
+            phase: "rollback",
+            operationId,
+            success: true,
+            sideEffectObserved: true,
+            effectState: "known_effect",
+            rollbackAvailable: false,
+            evidenceId: String(firstRollback.response.evidenceId ?? "native-partial-rollback"),
+            reasonCode: null,
+          });
+          if (
+            rollbackOutcome.response.status !== "recorded" ||
+            rollbackOutcome.response.registrationId !== request.registrationId ||
+            rollbackOutcome.response.phase !== "rollback" ||
+            rollbackOutcome.response.operationId !== operationId
+          ) {
+            throw new Error("mvp15d_partial_rollback_outcome_not_recorded");
+          }
+          setupCalls.push(rollbackOutcome.reference);
+        }
+        const observation = await invokeObservedNative(operation.api, request);
+        if (
+          operation.action === "second_rollback" &&
+          (observation.response.status !== "blocked" || observation.response.reason !== "rollback_replay")
+        ) {
+          throw new Error("mvp15d_partial_second_rollback_not_replay");
+        }
+        receipt = observation.reference;
+      }
+      return {
+        ...operation,
+        receiptId: receipt.receiptId,
+        request: structuredClone(receipt.request),
+        setupCalls,
+      };
+    },
+    stopObservation: async (binding) => {
+      const observation = await invokeObservedNative("stop_editor_observation_session", {
+        sessionId: binding.sessionId,
+      });
+      return observation.reference;
+    },
+    disconnectMcp: async (binding) => {
+      const request = { mcpSessionId: binding.nativeSessionId };
+      const observationStart = mvp15dTransportObservations.length;
+      await disconnectMcpAndWait();
+      if (mcpState.status !== "disconnected") throw new Error("mvp15d_ui_disconnect_failed");
+      const call = requireTransportObservation(
+        mvp15dTransportObservations.slice(observationStart),
+        "mcp_disconnect",
+      );
+      if (call.request.sessionId !== request.mcpSessionId) {
+        throw new Error(
+          `mvp15d_ui_disconnect_session_mismatch:${String(call.request.sessionId)}:${request.mcpSessionId}`,
+        );
+      }
+      return call;
+    },
+  };
+
+  const disconnectMcpAndWait = async (): Promise<void> => {
+    mcpDiscoveryGeneration = nextMcpDiscoveryGeneration(mcpDiscoveryGeneration);
+    const disconnectGeneration = mcpDiscoveryGeneration;
+    const previousSession = currentSession;
+    currentMvp15dMcpSessionId = null;
+    currentSession = null;
+    const nativeRetraction = retractMcpPublication("disconnect");
+    if (nativeRetraction) await nativeRetraction;
+    await waitForMvp15DNativeRetractions();
+    let closeError: unknown = null;
+    try {
+      await previousSession?.disconnect();
+    } catch (error) {
+      closeError = error;
+    }
+    if (disconnectGeneration === mcpDiscoveryGeneration) {
+      mcpState = {
+        ...mcpState,
+        status: "disconnected",
+        protocolVersion: null,
+        serverInfo: null,
+        capabilities: null,
+        lastError: closeError instanceof Error ? closeError.message : null,
+        legacyMode: false,
+      };
+      syncMcp();
+      syncSnapshot();
+    }
+    if (closeError) throw closeError;
+  };
+
+  const adapter: DesktopRuntimeAdapter = {
     getSnapshot: () => router.getSnapshot(),
     getMcpState: () => mcpState,
     getMcpDiscovery: () => currentDiscovery,
@@ -987,6 +2316,271 @@ export function createDesktopRuntimeAdapter(
     getMvp15LiveAssetToolsetFingerprint: () => currentMvp15Fingerprint,
     getMvp15DCompanionStatus: () => currentMvp15DCompanionStatus,
     getMvp15DLiveCompanionFingerprint: () => currentMvp15DCompanionFingerprint,
+    getMvp15DProductRetractionEvidence: () =>
+      mvp15DProductRetractions.map((record) => ({ ...record })),
+    getMvp15dProductObservationPort: () =>
+      fixedObservationAuthority?.phase === "product-capture"
+        ? productionProductObservationPort
+        : (options?.mvp15dFixtureProductObservationPort ?? null),
+    getMvp15dUiObservationPort: () =>
+      fixedObservationAuthority?.phase === "ui-lifecycle"
+        ? productionUiObservationPort
+        : (options?.mvp15dFixtureUiObservationPort ?? null),
+    activateMvp15dFixedObservationAuthority: async (input) => {
+      if (
+        !input.receiptLedgerEnabled ||
+        !nativeInvoke ||
+        !input.taskId ||
+        !input.session ||
+        input.generation <= 0 ||
+        fixedObservationAuthority
+      ) {
+        throw new Error("mvp15d_fixed_observation_authority_rejected");
+      }
+      const authority = {
+        taskId: input.taskId,
+        phase: input.phase,
+        session: input.session,
+        generation: input.generation,
+        predecessorWindowIdentitySha256: input.predecessorWindowIdentitySha256,
+      };
+      if (
+        input.minimumMcpGeneration !== undefined &&
+        (!Number.isSafeInteger(input.minimumMcpGeneration) || input.minimumMcpGeneration < 1)
+      ) {
+        throw new Error("mvp15d_fixed_observation_authority_rejected");
+      }
+      if (
+        (input.minimumMcpGeneration !== undefined) !==
+          (input.predecessorWindowIdentitySha256 !== undefined) ||
+        (input.predecessorWindowIdentitySha256 !== undefined &&
+          !/^[0-9a-f]{64}$/.test(input.predecessorWindowIdentitySha256))
+      ) {
+        throw new Error("mvp15d_fixed_observation_authority_rejected");
+      }
+      if (input.minimumMcpGeneration !== undefined) {
+        mcpDiscoveryGeneration = Math.max(mcpDiscoveryGeneration, input.minimumMcpGeneration);
+      }
+      fixedObservationAuthority = authority;
+      if (currentMvp15dMcpSessionId?.startsWith("ordinary-mcp:")) {
+        currentMvp15dMcpSessionId = null;
+      }
+      try {
+        pendingRendererInstanceReceipt = (
+          await observeNativeState("renderer_process", {
+            reason: "fixed_app_activation",
+            taskId: input.taskId,
+          })
+        ).call;
+      } catch (error) {
+        fixedObservationAuthority = null;
+        throw error;
+      }
+    },
+    resumeMvp15dProductAuthority: async (handoffId, endpoint) => {
+      const authority = fixedObservationAuthority;
+      const rendererAfter = pendingRendererInstanceReceipt;
+      if (
+        !authority ||
+        authority.phase !== "product-capture" ||
+        !nativeInvoke ||
+        !rendererAfter ||
+        !handoffId.startsWith("renderer-handoff:") ||
+        !authority.predecessorWindowIdentitySha256
+      ) {
+        throw new Error("mvp15d_renderer_successor_authority_unavailable");
+      }
+      pendingRendererInstanceReceipt = null;
+      adapter.setMcpEndpoint(endpoint);
+      if (mcpState.status !== "connected" || !currentMvp15dMcpSessionId) {
+        await adapter.connectMcp();
+        await adapter.discoverMcp();
+      }
+      if (!currentMvp15dMcpSessionId || mcpState.status !== "connected") {
+        throw new Error("mvp15d_renderer_successor_mcp_unavailable");
+      }
+      const claimInput = {
+        schemaVersion: "uagent.mvp15d.renderer-restart-claim.v3",
+        handoffId,
+        taskId: authority.taskId,
+        phase: authority.phase,
+        predecessorWindowIdentitySha256: authority.predecessorWindowIdentitySha256,
+        rendererAfter,
+        successorMcpSessionId: currentMvp15dMcpSessionId,
+        successorMcpGeneration: mcpDiscoveryGeneration,
+      };
+      const claim = await nativeInvoke<{
+        schemaVersion?: string;
+        handoffId?: string;
+        claimReceiptId?: string;
+        requestReceiptId?: string;
+        requestReceiptRequest?: Record<string, unknown>;
+        parentAcknowledgementReceiptId?: string;
+        parentAcknowledgementReceiptRequest?: Record<string, unknown>;
+        parentAcknowledgementReceiptSequence?: number;
+        claimReceiptRequest?: Record<string, unknown>;
+        segment?: Record<string, unknown>;
+        predecessorWindow?: Record<string, unknown>;
+      }>("mvp15d_bridge_claim_renderer_restart", { input: claimInput });
+      const predecessorWindow = claim.predecessorWindow;
+      const acknowledgementWindow = claim.parentAcknowledgementReceiptRequest
+        ?.predecessorWindow as Record<string, unknown> | undefined;
+      if (
+        claim.schemaVersion !== "uagent.mvp15d.renderer-restart-claim-result.v3" ||
+        claim.handoffId !== handoffId ||
+        typeof claim.claimReceiptId !== "string" ||
+        typeof claim.requestReceiptId !== "string" ||
+        !claim.requestReceiptRequest ||
+        typeof claim.parentAcknowledgementReceiptId !== "string" ||
+        !claim.parentAcknowledgementReceiptId.startsWith("mvp15d-observation-receipt:") ||
+        !claim.parentAcknowledgementReceiptRequest ||
+        !Number.isSafeInteger(claim.parentAcknowledgementReceiptSequence) ||
+        Number(claim.parentAcknowledgementReceiptSequence) <= 0 ||
+        !claim.claimReceiptRequest ||
+        !claim.segment ||
+        !predecessorWindow ||
+        !acknowledgementWindow ||
+        predecessorWindow.schemaVersion !== "uagent.mvp15d.predecessor-window-identity.v1" ||
+        predecessorWindow.status !== "observed" ||
+        predecessorWindow.windowLabel !== "main" ||
+        predecessorWindow.taskId !== authority.taskId ||
+        predecessorWindow.phase !== authority.phase ||
+        predecessorWindow.handoffId !== handoffId ||
+        predecessorWindow.stableIdentitySha256 !== authority.predecessorWindowIdentitySha256 ||
+        JSON.stringify(acknowledgementWindow) !== JSON.stringify(predecessorWindow) ||
+        claim.parentAcknowledgementReceiptRequest.schemaVersion !==
+          "uagent.mvp15d.renderer-parent-lifecycle-acknowledgement.v2" ||
+        claim.parentAcknowledgementReceiptRequest.handoffId !== handoffId ||
+        claim.parentAcknowledgementReceiptRequest.taskId !== authority.taskId ||
+        claim.parentAcknowledgementReceiptRequest.phase !== authority.phase ||
+        claim.claimReceiptRequest.predecessorWindowIdentitySha256 !==
+          authority.predecessorWindowIdentitySha256
+      ) {
+        throw new Error("mvp15d_renderer_successor_claim_rejected");
+      }
+      const discoveries = claim.segment.discoveries as Mvp15dProductDiscoveryRaw[];
+      const retractions = claim.segment.retractions as Mvp15dProductRetractionRaw[];
+      const mutationBefore = claim.segment.mutationBefore as Mvp15dMutationCounters;
+      const readyDiscovery = claim.segment.readyDiscovery as Mvp15dProductDiscoveryRaw;
+      if (
+        !Array.isArray(discoveries) || discoveries.length !== 2 ||
+        !Array.isArray(retractions) || retractions.length !== 5 ||
+        !readyDiscovery || typeof readyDiscovery !== "object" ||
+        !mutationBefore || typeof mutationBefore !== "object"
+      ) {
+        throw new Error("mvp15d_renderer_successor_segment_invalid");
+      }
+      const nativeTransition = retractNativeMvp15DApprovals(true, false);
+      if (!nativeTransition) throw new Error("mvp15d_renderer_successor_retraction_unavailable");
+      await nativeTransition.settled;
+      const nativeRetraction = nativeReceiptReference(lastMvp15dNativeRetraction);
+      const transition = await observeNativeState("mcp_retraction_transition", {
+        reason: "renderer_restart",
+        stateBeforeReceiptId: readyDiscovery.fingerprintCall.receiptId,
+      });
+      const rendererRestart: Mvp15dProductRetractionRaw = {
+        reason: "renderer_restart",
+        readyDiscovery,
+        rendererInstanceCall: rendererAfter,
+        transitionCall: transition.call,
+        nativeRetraction,
+        rendererHandoff: {
+          requestCall: {
+            receiptId: claim.requestReceiptId,
+            request: structuredClone(claim.requestReceiptRequest),
+          },
+          parentAcknowledgementCall: {
+            receiptId: claim.parentAcknowledgementReceiptId,
+            request: structuredClone(claim.parentAcknowledgementReceiptRequest),
+          },
+          claimCall: {
+            receiptId: claim.claimReceiptId,
+            request: structuredClone(claim.claimReceiptRequest),
+          },
+        },
+      };
+      return {
+        discoveries,
+        retractions: [...retractions, rendererRestart],
+        mutationBefore,
+        mutationAfter: await productionProductObservationPort.readMutationCounters(),
+      };
+    },
+    observeMvp15dNativeState: async (kind, request) => {
+      if (!fixedObservationAuthority) {
+        throw new Error("mvp15d_fixed_observation_authority_unavailable");
+      }
+      return (await observeNativeState(kind, request)).call;
+    },
+    takeMvp15dMcpObservationReceipt: (api) => {
+      let index = -1;
+      for (let candidate = mvp15dTransportObservations.length - 1; candidate >= 0; candidate -= 1) {
+        if (mvp15dTransportObservations[candidate]!.api === api) {
+          index = candidate;
+          break;
+        }
+      }
+      if (index < 0) return null;
+      return mvp15dTransportObservations.splice(index, 1)[0]!.call;
+    },
+    runMvp15DProductRetractionOrchestration: async (
+      trustedRootId,
+      editorSessionId,
+      endpoint,
+    ) => {
+      if (
+        currentMvp15Fingerprint.status !== "ready" ||
+        currentMvp15Fingerprint.toolCount !== 6 ||
+        !mvp15DForwardAuthorityIsReady()
+      ) {
+        throw new Error("mvp15d_product_retraction_source_not_ready");
+      }
+      mvp15DProductRetractions.length = 0;
+      const establishCurrentAuthority = async () => {
+        await adapter.connectMcp();
+        if (adapter.getMcpState().status !== "connected") {
+          throw new Error("mvp15d_product_retraction_reconnect_failed");
+        }
+        await adapter.discoverMcp();
+        await refreshMvp15DCompanionAttestation(trustedRootId, editorSessionId);
+        if (
+          currentMvp15Fingerprint.status !== "ready" ||
+          currentMvp15Fingerprint.toolCount !== 6 ||
+          !mvp15DForwardAuthorityIsReady()
+        ) {
+          throw new Error("mvp15d_product_retraction_reestablish_failed");
+        }
+      };
+      const invalidateCurrentAuthority = async (
+        reason: "failure" | "renderer_restart",
+      ) => {
+        mcpDiscoveryGeneration = nextMcpDiscoveryGeneration(mcpDiscoveryGeneration);
+        await settleMvp15DNativeRetractions(retractMcpPublication(reason));
+        syncMcp();
+      };
+
+      await adapter.discoverMcp();
+      await refreshMvp15DCompanionAttestation(trustedRootId, editorSessionId);
+      await establishCurrentAuthority();
+      const transitionEndpoint = endpoint.endsWith("/mcp")
+        ? `${endpoint}?mvp15d-transition=endpoint-change`
+        : `${endpoint}/mcp?mvp15d-transition=endpoint-change`;
+      adapter.setMcpEndpoint(transitionEndpoint);
+      adapter.setMcpEndpoint(endpoint);
+      await establishCurrentAuthority();
+      await invalidateCurrentAuthority("failure");
+      await establishCurrentAuthority();
+      await invalidateCurrentAuthority("renderer_restart");
+      await establishCurrentAuthority();
+
+      const observedReasons = mvp15DProductRetractions.map(({ reason }) => reason);
+      if (
+        JSON.stringify(observedReasons) !==
+          JSON.stringify(["newer_generation", "reconnect", "endpoint_change", "failure", "renderer_restart"])
+      ) {
+        throw new Error("mvp15d_product_retraction_orchestration_invalid");
+      }
+    },
     refreshMvp15DCompanionAttestation,
     captureMvp15McpBinding: () => currentMvp15McpBinding?.identity ?? null,
     isMvp15McpBindingCurrent: (binding) =>
@@ -1032,7 +2626,7 @@ export function createDesktopRuntimeAdapter(
       if (endpoint !== mcpState.profile?.endpoint) {
         ensureStartupMvp15DNativeRetraction();
         mcpDiscoveryGeneration = nextMcpDiscoveryGeneration(mcpDiscoveryGeneration);
-        nativeRetraction = retractMcpPublication();
+        nativeRetraction = retractMcpPublication("endpoint_change");
       }
       mcpState = {
         ...mcpState,
@@ -1061,9 +2655,10 @@ export function createDesktopRuntimeAdapter(
       ensureStartupMvp15DNativeRetraction();
       const connectionGeneration = nextMcpDiscoveryGeneration(mcpDiscoveryGeneration);
       mcpDiscoveryGeneration = connectionGeneration;
-      const nativeRetraction = retractMcpPublication();
+      const nativeRetraction = retractMcpPublication("reconnect");
       const previousSession = currentSession;
       currentSession = null;
+      currentMvp15dMcpSessionId = null;
       const endpoint = mcpState.profile?.endpoint ?? "";
       const transportKind = mcpState.profile?.transport ?? "streamable-http";
       const isCurrentConnectionAttempt = () =>
@@ -1124,7 +2719,7 @@ export function createDesktopRuntimeAdapter(
             };
             if (nativeInvoke) {
               Object.assign(transportOptions, {
-                ["fet" + "ch"]: createNativeMcpHttpPoster(nativeInvoke, 5_000),
+                ["fet" + "ch"]: createNativeMcpHttpPoster(observationNativeInvoke, 5_000),
               });
             }
             const transport = captureMvp15DProductTransport(
@@ -1148,6 +2743,12 @@ export function createDesktopRuntimeAdapter(
           return;
         }
         currentSession = session;
+        if (fixedObservationAuthority && !currentMvp15dMcpSessionId) {
+          throw new Error("mvp15d_native_mcp_session_header_required");
+        }
+        if (!fixedObservationAuthority) {
+          currentMvp15dMcpSessionId = `ordinary-mcp:${globalThis.crypto.randomUUID()}`;
+        }
         mcpState = {
           ...mcpState,
           status: "connected",
@@ -1160,7 +2761,7 @@ export function createDesktopRuntimeAdapter(
         syncMcp();
       } catch (err) {
         if (!isCurrentConnectionAttempt()) return;
-        const failureRetraction = retractMcpPublication();
+        const failureRetraction = retractMcpPublication("failure");
         await settleMvp15DNativeRetractions(failureRetraction);
         if (!isCurrentConnectionAttempt()) return;
         currentSession = null;
@@ -1194,7 +2795,7 @@ export function createDesktopRuntimeAdapter(
         currentSession === discoverySession &&
         mcpState.profile?.endpoint === discoveryEndpoint &&
         mcpDiscoveryGeneration === discoveryGeneration;
-      const nativeRetraction = retractMcpPublication();
+      const nativeRetraction = retractMcpPublication("newer_generation");
       await settleMvp15DNativeRetractions(nativeRetraction);
       if (!isCurrentDiscoveryAttempt()) return;
       mcpState = { ...mcpState, status: "discovering", lastError: null };
@@ -1203,7 +2804,9 @@ export function createDesktopRuntimeAdapter(
       try {
         const discovery = await discoverySession.discover();
         if (!isCurrentDiscoveryAttempt()) return;
-        const facadeDiscovery = await discoverMvp15FacadeTools(discoverySession, discovery);
+        const facadeDiscovery = currentMvp15dToolSearchMode === "off"
+          ? { tools: [], candidates: [] }
+          : await discoverMvp15FacadeTools(discoverySession, discovery);
         if (!isCurrentDiscoveryAttempt()) return;
         const fingerprint = createMvp15LiveAssetToolsetFingerprint({
           directTools: discovery.tools,
@@ -1254,7 +2857,7 @@ export function createDesktopRuntimeAdapter(
         syncMcp();
       } catch (err) {
         if (!isCurrentDiscoveryAttempt()) return;
-        const failureRetraction = retractMcpPublication();
+        const failureRetraction = retractMcpPublication("failure");
         await settleMvp15DNativeRetractions(failureRetraction);
         if (!isCurrentDiscoveryAttempt()) return;
         mcpState = {
@@ -1266,35 +2869,7 @@ export function createDesktopRuntimeAdapter(
       }
     },
     disconnectMcp() {
-      mcpDiscoveryGeneration = nextMcpDiscoveryGeneration(mcpDiscoveryGeneration);
-      const disconnectGeneration = mcpDiscoveryGeneration;
-      const previousSession = currentSession;
-      currentSession = null;
-      const nativeRetraction = retractMcpPublication();
-      const finalizeDisconnect = () => {
-        if (disconnectGeneration !== mcpDiscoveryGeneration) return;
-        void previousSession?.disconnect();
-        mcpState = {
-          ...mcpState,
-          status: "disconnected",
-          protocolVersion: null,
-          serverInfo: null,
-          capabilities: null,
-          lastError: null,
-          legacyMode: false,
-        };
-        syncMcp();
-        syncSnapshot();
-      };
-      if (!nativeRetraction && mvp15DNativeRetractions.size === 0) {
-        finalizeDisconnect();
-        return;
-      }
-      void (async () => {
-        if (nativeRetraction) await nativeRetraction;
-        await waitForMvp15DNativeRetractions();
-        finalizeDisconnect();
-      })();
+      void disconnectMcpAndWait().catch(() => {});
     },
     getMvp9: () => mvp9Service,
     getTextMutationAdapter: () => textMutationAdapter,
@@ -1444,6 +3019,7 @@ export function createDesktopRuntimeAdapter(
       };
     },
   };
+  return adapter;
 }
 
 function getMvp15AssetTools(
@@ -1868,6 +3444,7 @@ function normalizeNativeMvp15DCompanionEvidence(raw: unknown): {
       "manifest",
       "installedModules",
       "loadedModules",
+      "nativeReceiptId",
     ])
   )
     return null;

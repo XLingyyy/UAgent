@@ -301,4 +301,21 @@ describe("MCP session lifecycle and discovery", () => {
 
     await expect(session.discover()).rejects.toThrow("MCP discovery request tools/list failed: discovery failed");
   });
+
+  it("clears local session state even when transport termination fails", async () => {
+    const transport = createTransport({
+      initialize: {
+        protocolVersion: "2025-06-18",
+        serverInfo: { name: "fixture", version: "1.0.0" },
+        capabilities: {},
+      },
+    });
+    vi.mocked(transport.close).mockRejectedValueOnce(new Error("termination failed"));
+    const session = new McpSession({ transport, idFactory: () => 1 });
+    await session.connect();
+
+    await expect(session.disconnect()).rejects.toThrow("termination failed");
+
+    expect(session.getConnectionState().status).toBe("disconnected");
+  });
 });

@@ -1,15 +1,25 @@
 # UAgent MVP Roadmap
 
-## MVP15D - Final Source/Tooling Rework 8 Authoritative Launch Boundary and Report Closure
+## MVP15D - Final 15A-15C/D16 Pre-live Source Closure
 
-- Final Source/Tooling Rework 7: historical/current predecessor `PARTIAL` with
-  supervisor `NEEDS_FIX`; no checkpoint was created.
-- Final Source/Tooling Rework 8: `COMPLETE`; supervisor `PASS`; implementation
-  commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
+- Final Pre-live Source Closure Rework 7: historical `PARTIAL / NEEDS_FIX`; no
+  checkpoint was created.
+- Final Pre-live Source Closure Rework 8 (actual bridge orchestration and exact
+  window instance ownership): `Review Verdict: NEEDS_FIX`; no checkpoint was
+  created. TEMP cleanup remains a separate `External Gate: BLOCKED` under
+  `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+- Final Pre-live Source Closure Rework 9: implementation and controlled
+  verification have `Review Verdict: PASS`. The resumed final TEMP scan's 94
+  current-manifest asset-root mtime changes remain an independent
+  `External Gate: OPEN`; the supervisor implementation checkpoint is pending and
+  no live Gate advanced.
+- The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
+  historical `COMPLETE / PASS` record at implementation commit
+  `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 - G14 documentation consistency: `IMPLEMENTED` after the current evidence and
   stale-state reconciliation.
-- G15 checkpoint integrity: `COMPLETE`; implementation and documentation
-  closeout are published together.
+- G15 checkpoint integrity: `IN_PROGRESS`; Rework 9 content review passed and
+  its implementation/documentation checkpoint is pending.
 - G16 authority provenance and plugin baseline: `PARTIAL`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
   module BuildId `55116800`.
@@ -22,6 +32,43 @@
 - D16: `IN_PROGRESS`.
 - Overall MVP15 final acceptance: `PARTIAL`.
 - Ready for the next MVP stage: `NO`.
+- Current `PASS_REAL_SMOKE`: `NO`.
+
+- Final Pre-live Source Closure Rework 1-4: historical `PARTIAL`, supervisor
+  `NEEDS_FIX`, no checkpoint.
+- Rework 5: historical `PARTIAL / NEEDS_FIX`; no checkpoint.
+- 2026-08-08 Rework 6: historical `PARTIAL / NEEDS_FIX`; no checkpoint.
+- 2026-08-08 Final Pre-live Source Closure Rework 7: historical
+  `PARTIAL / NEEDS_FIX`; no checkpoint.
+- 2026-08-09 Final Pre-live Source Closure Rework 8 remains `NEEDS_FIX`; Rework 9
+  is the reviewed implementation. Two actual `App` registrations each enter production
+  `startMvp15dRuntimeBridge(invoke)`: the predecessor consumes the native driver
+  and requests restart, while the successor reads pending configuration,
+  activates its distinct adapter, claims once, publishes, and completes. The
+  parent now registers exact one-shot completion before destroying only the
+  captured Tauri-injected predecessor. An off-main bounded wait holds no bridge
+  mutex and queues the successor build from a later main-thread continuation
+  after authoritative `Destroyed`/manager removal. The continuation revalidates
+  identity and occupancy; atomic timeout gates suppress late destroy/build.
+  Hidden real Webview/Wry coverage reproduces the old same-task collision as
+  `WebviewLabelAlreadyExists("main")`, proves pre-removal build count 0 and a
+  different-HWND successor, and injects replacement B before continuation; B is
+  preserved and no third window is built. The asynchronous two-App harness
+  returns the request before parent-ready and then observes ordered
+  destroy/build/acknowledgement. A parent-only opaque instance digest remains in
+  the stable identity hash without changing acknowledgement v2, claim v3,
+  window identity v1, or product summary v2 wire schemas. The Rework 7
+  baseline TEMP manifest is 4,601 entries (4,591 asset, 10 bridge), SHA-256
+  `3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`.
+  Supervisor revalidation retained every path and found 141 asset-root mtime
+  changes predating the fresh review tests. The current manifest is SHA-256
+  `45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`;
+  a resumed 2026-08-11 read-only scan retained all paths but found 94 later
+  asset-root `mtimeNs` changes timestamped 2026-08-10 17:42:58. Their actor is
+  unconfirmed; no cleanup or metadata rewrite was performed.
+  The historical 253 entries remain present, with deltas 4,348/0. Deletion is
+  `NO`; cleanup remains `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`, no live Gate
+  advanced, and the Rework 9 implementation checkpoint is pending.
 
 Rework 7 preserved the sole publisher, transitive source boundary, observer,
 reparse rejection, and cleanup controls, but its standalone verifier accepted a
@@ -51,10 +98,10 @@ Fifteen inherited fixture directories plus one transient residue were removed
 after exact target and no-live-owner checks; final matching process and temp
 counts are zero.
 
-Rework 4 supplies the production Tauri event-file bridge, real renderer/native
+Historical Final Source/Tooling Rework 4 supplied the production Tauri event-file bridge, real renderer/native
 handshake, asynchronous Windows Job-owned product/UI orchestration, and an
 official Unreal Automation report parser with exact UAgent task markers. The
-fresh release `uagent.exe` passed capability-only probes for native,
+then-fresh release `uagent.exe` passed capability-only probes for native,
 normal-product renderer, and rendered UI boundaries with zero MCP, network,
 and asset operations and zero process/file residue. Capability evidence is
 kept distinct from live compatibility evidence; no real UE session or
@@ -71,7 +118,7 @@ D0/build/UE validators continue to pass read-only, but those historical bundles
 cannot satisfy final 15A-15C.
 
 The next recovery step is a new clean-checkout read-only 5.8.1 task from the
-Rework 8 implementation commit, covering both Tool Search modes, exact-six/product
+reviewed Rework 9 implementation commit, covering both Tool Search modes, exact-six/product
 retractions, response framing, clean inventory, and the real loaded-module
 observer. Only a later separately authorized task may consider real 15C
 mutation.

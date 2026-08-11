@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
 use std::io::Read;
 use std::net::IpAddr;
 use std::str::FromStr;
@@ -8,23 +10,57 @@ const NATIVE_REQUEST_FAILED: &str = "native_request_failed";
 const NATIVE_RESPONSE_READ_FAILED: &str = "native_response_read_failed";
 const SSE_RESPONSE_MAX_BYTES: usize = 4 * 1024 * 1024;
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum McpHttpMethod {
+    Post,
+    Delete,
+}
+
+impl Default for McpHttpMethod {
+    fn default() -> Self {
+        Self::Post
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct McpObservationIntent {
+    pub schema_version: String,
+    pub task_id: String,
+    pub phase: String,
+    pub phase_session_id: String,
+    pub phase_generation: u64,
+    pub connection_generation: u64,
+    pub tool_search_mode: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct McpHttpRequestInput {
     pub endpoint: String,
+    #[serde(default)]
+    pub method: McpHttpMethod,
     pub body: String,
     pub protocol_version: Option<String>,
     pub session_id: Option<String>,
     pub timeout_ms: Option<u64>,
+    pub observation: Option<McpObservationIntent>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpHttpRequestResult {
+    pub method: McpHttpMethod,
     pub status: u16,
     pub body: String,
     pub content_type: Option<String>,
     pub session_id: Option<String>,
+    pub protocol_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observation_request: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observation_receipts: Option<HashMap<String, String>>,
 }
 
 #[tauri::command]
@@ -47,11 +83,24 @@ pub fn post_streamable_http(input: McpHttpRequestInput) -> Result<McpHttpRequest
         .timeout(Duration::from_millis(timeout_ms))
         .build();
 
-    let mut request = agent
-        .post(&input.endpoint)
-        .set("Content-Type", "application/json")
-        .set("Accept", "application/json, text/event-stream")
-        .set("MCP-Protocol-Version", protocol_version);
+    if input.method == McpHttpMethod::Delete
+        && input.session_id.as_deref().map_or(true, str::is_empty)
+    {
+        return Err("session_id_required".to_string());
+    }
+    if input.method == McpHttpMethod::Delete && !input.body.is_empty() {
+        return Err("delete_body_not_allowed".to_string());
+    }
+
+    let mut request = match input.method {
+        McpHttpMethod::Post => agent.post(&input.endpoint),
+        McpHttpMethod::Delete => agent.delete(&input.endpoint),
+    }
+    .set("Accept", "application/json, text/event-stream")
+    .set("MCP-Protocol-Version", protocol_version);
+    if input.method == McpHttpMethod::Post {
+        request = request.set("Content-Type", "application/json");
+    }
 
     if let Some(session_id) = input
         .session_id
@@ -61,10 +110,27 @@ pub fn post_streamable_http(input: McpHttpRequestInput) -> Result<McpHttpRequest
         request = request.set("Mcp-Session-Id", session_id);
     }
 
-    match request.send_string(&input.body) {
-        Ok(response) => response_to_result(response),
-        Err(ureq::Error::Status(_, response)) => response_to_result(response),
+    let response = match input.method {
+        McpHttpMethod::Post => request.send_string(&input.body),
+        McpHttpMethod::Delete => request.call(),
+    };
+    let outcome = match response {
+        Ok(response) => response_to_result(response, input.method),
+        Err(ureq::Error::Status(_, response)) => response_to_result(response, input.method),
         Err(_) => Err(NATIVE_REQUEST_FAILED.to_string()),
+    };
+    match outcome {
+        Ok(mut result) => {
+            crate::mvp15d_runtime_bridge::attach_native_mcp_transport_observation(
+                &input,
+                &mut result,
+            )?;
+            Ok(result)
+        }
+        Err(error) => {
+            crate::mvp15d_runtime_bridge::record_native_mcp_transport_failure(&input, &error);
+            Err(error)
+        }
     }
 }
 
@@ -91,23 +157,34 @@ pub(crate) fn validate_local_mcp_endpoint(endpoint: &str) -> Result<(), String> 
     }
 }
 
-fn response_to_result(response: ureq::Response) -> Result<McpHttpRequestResult, String> {
+fn response_to_result(
+    response: ureq::Response,
+    method: McpHttpMethod,
+) -> Result<McpHttpRequestResult, String> {
     let status = response.status();
     let content_type = response.header("Content-Type").map(ToString::to_string);
     let session_id = response.header("Mcp-Session-Id").map(ToString::to_string);
-    let body = if is_event_stream_content_type(content_type.as_deref()) {
-        read_sse_body_until_completed_data_event(response)?
-    } else {
-        response
-            .into_string()
-            .map_err(|_| NATIVE_RESPONSE_READ_FAILED.to_string())?
-    };
+    let protocol_version = response
+        .header("MCP-Protocol-Version")
+        .map(ToString::to_string);
+    let body =
+        if method == McpHttpMethod::Post && is_event_stream_content_type(content_type.as_deref()) {
+            read_sse_body_until_completed_data_event(response)?
+        } else {
+            response
+                .into_string()
+                .map_err(|_| NATIVE_RESPONSE_READ_FAILED.to_string())?
+        };
 
     Ok(McpHttpRequestResult {
+        method,
         status,
         body,
         content_type,
         session_id,
+        protocol_version,
+        observation_request: None,
+        observation_receipts: None,
     })
 }
 
@@ -194,14 +271,16 @@ mod tests {
     fn request_input(endpoint: String, timeout_ms: u64) -> McpHttpRequestInput {
         McpHttpRequestInput {
             endpoint,
+            method: McpHttpMethod::Post,
             body: r#"{"jsonrpc":"2.0","id":1,"method":"tools/call"}"#.to_string(),
             protocol_version: Some("2025-06-18".to_string()),
             session_id: Some("sensitive-session".to_string()),
             timeout_ms: Some(timeout_ms),
+            observation: None,
         }
     }
 
-    fn read_loopback_request(stream: &mut TcpStream) {
+    fn read_loopback_request(stream: &mut TcpStream) -> String {
         let mut request = Vec::new();
         let mut read_buffer = [0_u8; 1024];
         let mut expected_request_length = None;
@@ -224,15 +303,14 @@ mod tests {
                             line.strip_prefix("Content-Length: ")
                                 .or_else(|| line.strip_prefix("content-length: "))
                         })
-                        .unwrap()
-                        .parse::<usize>()
-                        .unwrap();
+                        .map(|value| value.parse::<usize>().unwrap())
+                        .unwrap_or(0);
                     expected_request_length = Some(header_end + content_length);
                 }
             }
 
             if expected_request_length.is_some_and(|length| request.len() >= length) {
-                return;
+                return String::from_utf8(request).unwrap();
             }
         }
     }
@@ -278,6 +356,61 @@ mod tests {
     }
 
     #[test]
+    fn mcp_observation_envelope_is_optional_for_ordinary_calls_and_strict_when_present() {
+        let ordinary = serde_json::json!({
+            "endpoint": "http://127.0.0.1:8000/mcp",
+            "body": "{}",
+            "protocolVersion": "2025-06-18",
+            "sessionId": null,
+            "timeoutMs": 5000
+        });
+        assert!(serde_json::from_value::<McpHttpRequestInput>(ordinary)
+            .unwrap()
+            .observation
+            .is_none());
+        assert_eq!(
+            serde_json::from_value::<McpHttpRequestInput>(serde_json::json!({
+                "endpoint": "http://127.0.0.1:8000/mcp",
+                "method": "DELETE",
+                "body": "",
+                "sessionId": "safe-session"
+            }))
+            .unwrap()
+            .method,
+            McpHttpMethod::Delete
+        );
+        assert!(
+            serde_json::from_value::<McpHttpRequestInput>(serde_json::json!({
+                "endpoint": "http://127.0.0.1:8000/mcp",
+                "method": "PATCH",
+                "body": ""
+            }))
+            .is_err()
+        );
+        let unknown_intent_field = serde_json::json!({
+            "endpoint": "http://127.0.0.1:8000/mcp",
+            "body": "{}",
+            "observation": {
+                "schemaVersion": "uagent.mvp15d.mcp-observation-intent.v1",
+                "taskId": "TASK-MVP15D",
+                "phase": "product-capture",
+                "phaseSessionId": "session-0001",
+                "phaseGeneration": 1,
+                "connectionGeneration": 1,
+                "toolSearchMode": "off",
+                "rendererResponse": { "status": 200 }
+            }
+        });
+        assert!(serde_json::from_value::<McpHttpRequestInput>(unknown_intent_field).is_err());
+        let unknown_request_field = serde_json::json!({
+            "endpoint": "http://127.0.0.1:8000/mcp",
+            "body": "{}",
+            "rendererResponse": { "status": 200 }
+        });
+        assert!(serde_json::from_value::<McpHttpRequestInput>(unknown_request_field).is_err());
+    }
+
+    #[test]
     fn post_streamable_http_reads_terminal_sse_after_an_empty_initial_frame() {
         let initial_frame = ": keepalive\n\n";
         let terminal_frame =
@@ -302,6 +435,63 @@ mod tests {
         assert_eq!(result.content_type.as_deref(), Some("text/event-stream"));
         assert_eq!(result.session_id.as_deref(), Some("safe-session"));
         assert_eq!(result.body, body);
+        assert!(result.observation_request.is_none());
+        assert!(result.observation_receipts.is_none());
+    }
+
+    #[test]
+    fn delete_terminates_the_exact_session_with_protocol_headers_and_observes_405() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/mcp", listener.local_addr().unwrap());
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
+            let request = read_loopback_request(&mut stream);
+            assert!(request.starts_with("DELETE /mcp HTTP/1.1\r\n"));
+            assert!(request
+                .to_ascii_lowercase()
+                .contains("mcp-session-id: sensitive-session\r\n"));
+            assert!(request
+                .to_ascii_lowercase()
+                .contains("mcp-protocol-version: 2025-06-18\r\n"));
+            assert!(request
+                .to_ascii_lowercase()
+                .contains("accept: application/json, text/event-stream\r\n"));
+            stream
+                .write_all(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .unwrap();
+        });
+        let mut input = request_input(endpoint, 500);
+        input.method = McpHttpMethod::Delete;
+        input.body.clear();
+
+        let result = post_streamable_http(input).unwrap();
+
+        handle.join().unwrap();
+        assert_eq!(result.method, McpHttpMethod::Delete);
+        assert_eq!(result.status, 405);
+        assert_eq!(result.body, "");
+    }
+
+    #[test]
+    fn delete_requires_a_session_and_rejects_a_body() {
+        let mut missing_session = request_input("http://127.0.0.1:8765/mcp".to_string(), 500);
+        missing_session.method = McpHttpMethod::Delete;
+        missing_session.body.clear();
+        missing_session.session_id = None;
+        assert_eq!(
+            post_streamable_http(missing_session).unwrap_err(),
+            "session_id_required"
+        );
+
+        let mut body = request_input("http://127.0.0.1:8765/mcp".to_string(), 500);
+        body.method = McpHttpMethod::Delete;
+        assert_eq!(
+            post_streamable_http(body).unwrap_err(),
+            "delete_body_not_allowed"
+        );
     }
 
     #[test]

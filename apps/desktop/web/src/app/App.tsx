@@ -1,5 +1,10 @@
 import { AppShell } from "../shell/AppShell";
+import { createDesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
+import { registerFixedAppRuntimeAdapter } from "../runtime/runtime-store";
 import { UIProvider } from "./providers";
+
+const fixedAppRuntimeAdapter = createDesktopRuntimeAdapter();
+registerFixedAppRuntimeAdapter(fixedAppRuntimeAdapter);
 
 /**
  * UAgent desktop application root.
@@ -9,7 +14,7 @@ import { UIProvider } from "./providers";
  */
 export default function App() {
   return (
-    <UIProvider>
+    <UIProvider runtimeClient={fixedAppRuntimeAdapter}>
       <AppShell />
     </UIProvider>
   );

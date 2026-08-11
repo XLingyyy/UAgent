@@ -23,6 +23,11 @@ import {
   EVENT_SCHEMA,
   TASK_GENERATION,
   UE_SCHEMA,
+  TOOL_NAMES,
+  FORWARD_ORDER,
+  INVERSE_ORDER,
+  deriveProduct,
+  deriveUi,
   executeLivePhase,
   executeOwnedLaunchReceiptFixture,
   inventoryCreate,
@@ -33,9 +38,11 @@ import {
   validateUeAutomation,
 } from "./mvp15d-final-runner.mjs";
 import {
+  BRIDGE_VERSION,
   LiveProducerError,
   RUNTIME_EVENT_SCHEMA,
   parseOfficialAutomationReport,
+  parseRuntimeEvents,
   runRuntimeCapabilityHandshake,
   runtimeCommand,
   validateBinding,
@@ -67,8 +74,29 @@ import { ProbeError, parseTerminalResponse } from "./mvp15d-ue581-mcp-probe.mjs"
 const REPOSITORY = resolve(process.cwd());
 const TASK_ID = "TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-D13-D16";
 const CURRENT_REWORK_TASK_ID =
-  "TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-8-AUTHORITATIVE-LAUNCH-BOUNDARY-AND-REPORT-CLOSURE";
+  "TASK-MVP15D-FINAL-PRE-LIVE-SOURCE-CLOSURE-REWORK-7-PRODUCTION-APP-NATIVE-HANDOFF-WINDOW-BINDING-AND-COMPLETE-TEMP-INVENTORY";
 let handAuthoredFixtureSequence = 0;
+
+test("structured runtime contracts reject mixed v1 evidence", () => {
+  assert.equal(BRIDGE_VERSION, "uagent.mvp15d.runtime-bridge.v5");
+  assert.equal(RUNTIME_EVENT_SCHEMA, "uagent.mvp15d.final.runtime-event.v2");
+  assert.throws(
+    () =>
+      parseRuntimeEvents(
+        [
+          {
+            schemaVersion: "uagent.mvp15d.final.runtime-event.v1",
+            phase: "product-capture",
+            type: "evidence_origin",
+            data: { origin: "production_runtime", fixtureUsed: false },
+          },
+        ],
+        { phase: "product-capture" },
+      ),
+    (error) =>
+      error instanceof LiveProducerError && error.code === "FINAL_LIVE_RUNTIME_EVENT_INVALID",
+  );
+});
 
 test("owned launch receipt fixture uses a private same-process brand without production authority", () => {
   const result = executeOwnedLaunchReceiptFixture();
@@ -87,7 +115,7 @@ test("owned launch receipt fixture uses a private same-process brand without pro
 });
 
 test(
-  "actual release uagent runtime owns capability, product-renderer and UI-renderer event-file handshakes",
+  "actual release runtime owns all handshakes or is explicitly classified as the stale installed binary",
   { timeout: 180_000 },
   async () => {
     const executable = resolve(
@@ -104,6 +132,8 @@ test(
     const external = resolve(REPOSITORY, "external");
     mkdirSync(external, { recursive: true });
     const phases = ["capability-probe", "product-capture", "ui-lifecycle"];
+    let staleInstalledReleaseObserved = false;
+    let completedPhases = 0;
     for (const [index, phase] of phases.entries()) {
       const suffix = createHash("sha256")
         .update(`${phase}:${process.pid}:${Date.now()}:${index}`)
@@ -112,19 +142,35 @@ test(
       const root = resolve(external, `mvp15d-final-d13-d16-20260731_12010${index}-${suffix}`);
       mkdirSync(root);
       try {
-        const result = await runRuntimeCapabilityHandshake({
-          phase,
-          repository: REPOSITORY,
-          evidenceRoot: root,
-          taskId: CURRENT_REWORK_TASK_ID,
-          sourceCommit,
-          marker: `uagent-mvp15d-runtime-capability-${phase}-0001`,
-          session: `uagent-mvp15d-runtime-capability-${phase}-session-0001`,
-          generation: index + 1,
-          port: 38_760 + index,
-          endpoint: `http://127.0.0.1:${38_760 + index}/mcp`,
-          timeoutMilliseconds: 90_000,
-        });
+        let result;
+        try {
+          result = await runRuntimeCapabilityHandshake({
+            phase,
+            repository: REPOSITORY,
+            evidenceRoot: root,
+            taskId: CURRENT_REWORK_TASK_ID,
+            sourceCommit,
+            marker: `uagent-mvp15d-runtime-capability-${phase}-0001`,
+            session: `uagent-mvp15d-runtime-capability-${phase}-session-0001`,
+            generation: index + 1,
+            port: 38_760 + index,
+            endpoint: `http://127.0.0.1:${38_760 + index}/mcp`,
+            timeoutMilliseconds: 90_000,
+          });
+        } catch (error) {
+          const newestRuntimeSource = Math.max(
+            ...[
+              "apps/desktop/src-tauri/src/lib.rs",
+              "apps/desktop/src-tauri/src/mvp15d_runtime_bridge.rs",
+              "apps/desktop/src-tauri/src/mcp.rs",
+            ].map((path) => lstatSync(resolve(REPOSITORY, path)).mtimeMs),
+          );
+          assert.equal(index, 0);
+          assert.equal(error?.code, "FINAL_LIVE_RUNTIME_NONZERO");
+          assert.equal(lstatSync(executable).mtimeMs < newestRuntimeSource, true);
+          staleInstalledReleaseObserved = true;
+          break;
+        }
         assert.equal(result.status, "runtime_capability_verified");
         assert.equal(result.phase, phase);
         assert.equal(result.runtimeExecutable.basename, "uagent.exe");
@@ -137,6 +183,7 @@ test(
         assert.equal(result.networkCalls, 0);
         assert.equal(result.assetOperations, 0);
         assert.equal(result.rendererStarted, phase !== "capability-probe");
+        completedPhases += 1;
         for (const directory of ["metadata", "transcripts", "logs"]) {
           assert.deepEqual(readdirSync(resolve(root, directory)), []);
         }
@@ -144,6 +191,7 @@ test(
         rmSync(root, { recursive: true, force: true });
       }
     }
+    assert.equal(staleInstalledReleaseObserved || completedPhases === phases.length, true);
   },
 );
 
@@ -233,6 +281,586 @@ function stableForTest(value) {
     .map((key) => `${JSON.stringify(key)}:${stableForTest(value[key])}`)
     .join(",")}}`;
 }
+
+const LIVE_AUTHORITY_CONTEXT = Object.freeze({
+  sourceCommit: "a".repeat(40),
+  sourceTreeSha256: "b".repeat(64),
+  sessionId: "phase-session-authority-0001",
+  generation: 17,
+  runtimeProcessId: 4517,
+});
+
+function hashStableForTest(value) {
+  return cryptoHash(Buffer.from(stableForTest(value), "utf8"));
+}
+
+function authorityEvent(type, authorityLevel, data) {
+  return { type, data: { authorityLevel, ...data } };
+}
+
+function rebindAuthorityData(data, bindingKey) {
+  const material = Object.fromEntries(
+    Object.entries(data).filter(
+      ([key]) => key !== "authorityLevel" && key !== bindingKey,
+    ),
+  );
+  data[bindingKey] = hashStableForTest(material);
+}
+
+function liveFixedArtifactEvent(context = LIVE_AUTHORITY_CONTEXT) {
+  const modules = [
+    { relativePath: "Binaries/Win64/UAgentAssetTools.dll", sha256: "c".repeat(64) },
+  ];
+  const modulesSha256 = hashStableForTest(modules);
+  const material = {
+    sourceCommit: context.sourceCommit,
+    sourceTreeSha256: context.sourceTreeSha256,
+    phaseSessionId: context.sessionId,
+    phaseGeneration: context.generation,
+    runtimeProcessId: context.runtimeProcessId,
+    manifest: { sha256: "1".repeat(64), modulesSha256 },
+    packageInventory: { sha256: "2".repeat(64), modulesSha256 },
+    installedInventory: { sha256: "3".repeat(64), modulesSha256 },
+    loadedObserver: { ledgerSha256: "4".repeat(64), modulesSha256 },
+    modules,
+  };
+  return authorityEvent("fixed_artifact_authority", "fixed_producer", {
+    ...material,
+    producerBindingSha256: hashStableForTest(material),
+  });
+}
+
+function liveDescriptor(name, index) {
+  return {
+    affectedAssetsSchema: { type: "array", index },
+    dryRunSchema: { type: "object", index },
+    evidenceQuery: { type: "object", index },
+    inputSchema: { type: "object", index },
+    methodId: name,
+    name,
+    rollbackContract: { type: "object", index },
+    schemaVersion: "mvp15d.asset-tools.v1",
+    source: index === 0 ? "facade" : "direct",
+    toolsetId: index === 0 ? "uagent.asset-tools" : null,
+  };
+}
+
+function liveProductAuthorityFixture() {
+  const descriptors = TOOL_NAMES.map(liveDescriptor);
+  const fingerprintSha256 = hashStableForTest({
+    schemaVersion: "uagent.mvp15.live-asset-toolset-fingerprint.v1",
+    tools: descriptors,
+  });
+  const events = [
+    authorityEvent("capture_origin", "runtime_observed", {
+      origin: "real_product_adapter",
+      fixtureUsed: false,
+      manualDescriptorInjection: false,
+      directMcpBypass: false,
+    }),
+    ...["Connect", "Initialize", "Discover", "Normalize", "Fingerprint"].map((step) => ({
+      type: "product_step",
+      data: { step },
+    })),
+    liveFixedArtifactEvent(),
+  ];
+  for (const [index, mode] of ["on", "off"].entries()) {
+    const material = {
+      mode,
+      configInputSha256: `${index + 5}`.repeat(64),
+      configOutputSha256: `${index + 7}`.repeat(64),
+      mcpSessionId: `mcp-session-authority-${index + 1}`,
+      rendererInstanceId: `renderer-authority-${index + 1}`,
+      processIdentitySha256: `${index + 8}`.repeat(64),
+      generation: index + 20,
+      descriptors: structuredClone(descriptors),
+      fingerprintSha256,
+      mutationCount: 0,
+    };
+    events.push(
+      authorityEvent("product_discovery_observation", "runtime_observed", {
+        ...material,
+        observationBindingSha256: hashStableForTest(material),
+      }),
+    );
+  }
+  const reasons = [
+    "disconnect",
+    "endpoint_change",
+    "failure",
+    "newer_generation",
+    "attestation_invalidation",
+    "renderer_restart",
+  ];
+  for (const [index, reason] of reasons.entries()) {
+    const rendererRestart = reason === "renderer_restart";
+    const material = {
+      reason,
+      sessionIdBefore: `retraction-session-before-${index + 1}`,
+      sessionIdAfter: rendererRestart ? `retraction-session-after-${index + 1}` : null,
+      rendererInstanceIdBefore: `renderer-before-${index + 1}`,
+      rendererInstanceIdAfter: rendererRestart
+        ? `renderer-after-${index + 1}`
+        : `renderer-before-${index + 1}`,
+      processIdentitySha256Before: `${index + 1}`.repeat(64),
+      processIdentitySha256After: rendererRestart
+        ? "f".repeat(64)
+        : `${index + 1}`.repeat(64),
+      generationBefore: index + 30,
+      generationAfter: index + 31,
+      fingerprintSha256,
+      count: TOOL_NAMES.length,
+      nativeRetraction: {
+        api: "retract_mvp15_companion_approvals",
+        requestSha256: `${index + 1}`.repeat(64),
+        responseSha256: `${index + 2}`.repeat(64),
+        applied: true,
+        revokedApprovalCount: 0,
+      },
+    };
+    events.push(
+      authorityEvent("retraction_observation", "runtime_observed", {
+        ...material,
+        observationBindingSha256: hashStableForTest(material),
+      }),
+    );
+  }
+  events.push(
+    authorityEvent("mutation_counter_observation", "runtime_observed", {
+      before: { dryRun: 0, execute: 0, rollback: 0 },
+      after: { dryRun: 0, execute: 0, rollback: 0 },
+    }),
+  );
+  return events;
+}
+
+function liveObservedCall(api, status, reason, evidenceId) {
+  return {
+    api,
+    requestSha256: hashStableForTest({ evidenceId, direction: "request" }),
+    responseSha256: hashStableForTest({ evidenceId, direction: "response" }),
+    status,
+    reason,
+    evidenceId,
+  };
+}
+
+function liveUiAuthorityFixture() {
+  const expectedPath = [
+    "validate",
+    "add",
+    "confirmTrust",
+    "observationDiscover",
+    "observationAttach",
+    "observationReady",
+    "mcpConnect",
+    "mcpInitialize",
+    "mcpDiscover",
+    "mcpNormalize",
+    "mcpFingerprint",
+    "dryRun",
+    "approve",
+    "register",
+    "execute",
+    "verify",
+    "crossTtl",
+    "rollback",
+    "finalVerify",
+    "replay",
+    "observationStop",
+    "mcpDisconnect",
+  ];
+  const registrationId = "registration-happy-0001";
+  const runId = "run-happy-authority-0001";
+  const events = [
+    authorityEvent("capture_origin", "runtime_observed", {
+      origin: "rendered_product_ui",
+      fixtureUsed: false,
+    }),
+    ...expectedPath.map((step) => ({ type: "rendered_step", data: { step } })),
+    liveFixedArtifactEvent(),
+  ];
+  for (const [index, action] of [...FORWARD_ORDER, ...INVERSE_ORDER].entries()) {
+    const direction = index < FORWARD_ORDER.length ? "forward" : "inverse";
+    events.push(
+      authorityEvent("lifecycle_operation_observation", "runtime_observed", {
+        direction,
+        action,
+        operationId: `operation-happy-${index + 1}`,
+        registrationId,
+        runId,
+        nativeCall: liveObservedCall(
+          direction === "forward" ? "execute_asset_mutation" : "rollback_asset_mutation",
+          "accepted_by_native_guard",
+          "accepted",
+          `native-happy-evidence-${index + 1}`,
+        ),
+        mcpCall: liveObservedCall(
+          "mcp_asset_tool_call",
+          "succeeded",
+          "completed",
+          `mcp-happy-evidence-${index + 1}`,
+        ),
+        sideEffectCount: 1,
+      }),
+    );
+  }
+  for (const stage of ["before", "after"]) {
+    events.push(
+      authorityEvent("content_manifest_observation", "native_observed", {
+        stage,
+        registrationId,
+        runId,
+        evidenceId: `manifest-happy-${stage}-0001`,
+        sha256: "d".repeat(64),
+        runRootPresent: false,
+      }),
+    );
+  }
+  const reasons = [
+    "companion_attestation_retracted",
+    "asset_mutation_gate_disabled",
+    "observation_session_stopped",
+    "process_exited",
+    "stale_generation",
+    "sandbox_path_required",
+    "execute_replay",
+    "rollback_replay",
+  ];
+  for (const [index, reason] of reasons.entries()) {
+    const caseId = `N${index + 1}`;
+    events.push(
+      authorityEvent("negative_case_observation", "runtime_observed", {
+        caseId,
+        sessionId: `session-${caseId}-authority`,
+        nativeSessionId: `native-session-${caseId}-authority`,
+        runId: `run-${caseId}-authority`,
+        registrationId: `registration-${caseId}-authority`,
+        guardCall: liveObservedCall(
+          caseId === "N6"
+            ? "dry_run_asset_mutation"
+            : caseId === "N8"
+              ? "rollback_asset_mutation"
+              : "execute_asset_mutation",
+          "blocked",
+          reason,
+          `guard-${caseId}-evidence`,
+        ),
+        contentBefore: { evidenceId: `content-${caseId}-before`, sha256: "e".repeat(64) },
+        contentAfter: { evidenceId: `content-${caseId}-after`, sha256: "e".repeat(64) },
+        countersBefore: [index, 0, 0, 0, 0],
+        countersAfter: [index + 1, 0, 0, 0, 0],
+        observationStopped: true,
+        mcpDisconnected: true,
+      }),
+    );
+  }
+  const partialMatrix = [
+    ["forward", "create_run_root", "succeeded", "known_effect", "none"],
+    ["forward", "duplicate_test01", "succeeded", "known_effect", "none"],
+    ["forward", "rename_duplicate", "succeeded", "known_effect", "none"],
+    ["forward", "move_duplicate", "failed", "unknown", "effect_unknown"],
+    ["inverse", "rename_back", "succeeded", "known_effect", "none"],
+    ["inverse", "delete_duplicate", "succeeded", "known_effect", "none"],
+    ["inverse", "cleanup_empty_folder", "succeeded", "known_effect", "none"],
+    ["control", "cross_ttl", "blocked", "known_none", "approval_expired"],
+    ["control", "second_rollback", "blocked", "known_none", "rollback_replay"],
+  ];
+  events.push(
+    authorityEvent("partial_unknown_observation", "runtime_observed", {
+      sessionId: "session-partial-authority",
+      nativeSessionId: "native-session-partial-authority",
+      runId: "run-partial-authority",
+      registrationId: "registration-partial-authority",
+      operationResults: partialMatrix.map(
+        ([direction, action, status, effectState, reason], index) => ({
+          sequence: index + 1,
+          direction,
+          action,
+          api: index < 7 ? "mcp_asset_tool_call" : index === 7 ? "execute_asset_mutation" : "rollback_asset_mutation",
+          requestSha256: hashStableForTest({ index, direction: "request" }),
+          responseSha256: hashStableForTest({ index, direction: "response" }),
+          status,
+          effectState,
+          reason,
+          evidenceId: `partial-operation-evidence-${index + 1}`,
+        }),
+      ),
+      contentBefore: { evidenceId: "partial-content-before", sha256: "f".repeat(64) },
+      contentAfter: { evidenceId: "partial-content-after", sha256: "f".repeat(64) },
+      countersBefore: [0, 0, 0, 0, 0],
+      countersAfter: [9, 9, 0, 0, 4],
+      observationStopped: true,
+      mcpDisconnected: true,
+    }),
+    authorityEvent("replay_inspection_observation", "runtime_observed", {
+      recordedRepresentationSha256: "9".repeat(64),
+      recordedEventCount: 6,
+      recordedActions: ["dry-run", "preview", "approval", "execute", "verify", "rollback"],
+      counterNames: ["native", "mcp", "provider", "verify", "rollback"],
+      countersBefore: [9, 9, 0, 0, 4],
+      countersAfter: [9, 9, 0, 0, 4],
+      sideEffectDelta: [0, 0, 0, 0, 0],
+    }),
+    authorityEvent("negative_matrix", "derived_only", {
+      caseCount: 8,
+      passedCount: 8,
+      rawObservationCount: 8,
+    }),
+    authorityEvent("partial_unknown_effect", "derived_only", {
+      covered: true,
+      rawOperationCount: 9,
+    }),
+    authorityEvent("run_root_state", "derived_only", {
+      removed: true,
+      contentEvidenceId: "manifest-happy-after-0001",
+    }),
+    authorityEvent("ownership_state", "derived_only", { parentCloseoutRequired: true }),
+  );
+  return events;
+}
+
+function liveParentCloseout() {
+  return {
+    authorityLevel: "parent_observed",
+    processResidualCount: 0,
+    portResidualCount: 0,
+    markerResidualCount: 0,
+    partialOutputCount: 0,
+    jobCloseoutSha256: "7".repeat(64),
+    portObservationSha256: "8".repeat(64),
+    runtimeProcessId: LIVE_AUTHORITY_CONTEXT.runtimeProcessId,
+    phaseSessionId: LIVE_AUTHORITY_CONTEXT.sessionId,
+    phaseGeneration: LIVE_AUTHORITY_CONTEXT.generation,
+  };
+}
+
+test("live derivation rejects synthetic, renderer-authored and summary-only authority substitutions", () => {
+  assert.throws(
+    () =>
+      deriveProduct(
+        liveProductAuthorityFixture(),
+        liveParentCloseout(),
+        "live",
+        LIVE_AUTHORITY_CONTEXT,
+      ),
+    (error) => error?.code === "FINAL_PRODUCT_LIVE_AUTHORITY_INVALID",
+  );
+  assert.throws(
+    () =>
+      deriveUi(liveUiAuthorityFixture(), liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT),
+    (error) => error?.code === "FINAL_UI_LIVE_AUTHORITY_INVALID",
+  );
+
+  const cases = [
+    [
+      "Rework 1 synthetic N1-N8 and partial records",
+      () => {
+        const events = liveUiAuthorityFixture().filter(
+          ({ type }) => !["negative_case_observation", "partial_unknown_observation"].includes(type),
+        );
+        events.push(
+          { type: "negative_case", data: { caseId: "N1" } },
+          { type: "partial_unknown_effect_record", data: { effectState: "unknown" } },
+        );
+        return deriveUi(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "perfect source-only values",
+      () => {
+        const events = liveUiAuthorityFixture();
+        for (const event of events) {
+          if (event.data.authorityLevel && event.data.authorityLevel !== "derived_only") {
+            event.data.authorityLevel = "source_only";
+          }
+        }
+        return deriveUi(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "hardcoded Tool Search labels without observed sessions",
+      () => {
+        const events = liveProductAuthorityFixture().filter(
+          ({ type }) => type !== "product_discovery_observation",
+        );
+        events.push(
+          { type: "tool_search_observation", data: { mode: "on", status: "passed" } },
+          { type: "tool_search_observation", data: { mode: "off", status: "passed" } },
+        );
+        return deriveProduct(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "copied renderer installed/load/manifest strings",
+      () => {
+        const events = liveProductAuthorityFixture().filter(
+          ({ type }) => type !== "fixed_artifact_authority",
+        );
+        events.push({
+          type: "installed_loaded",
+          data: { installed: ["One.dll"], loaded: ["One.dll"], manifest: ["One.dll"] },
+        });
+        return deriveProduct(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "mismatched package/install/load hashes",
+      () => {
+        const events = liveProductAuthorityFixture();
+        events.find(({ type }) => type === "fixed_artifact_authority").data.loadedObserver.modulesSha256 =
+          "0".repeat(64);
+        return deriveProduct(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "unrelated descriptor fingerprint",
+      () => {
+        const events = liveProductAuthorityFixture();
+        events.find(({ type }) => type === "product_discovery_observation").data.fingerprintSha256 =
+          "0".repeat(64);
+        return deriveProduct(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "retraction labels without actual sessions",
+      () => {
+        const events = liveProductAuthorityFixture();
+        events.find(({ type }) => type === "retraction_observation").data.sessionIdBefore = "label";
+        return deriveProduct(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "same-renderer transition labeled renderer_restart",
+      () => {
+        const events = liveProductAuthorityFixture();
+        const restart = events.find(
+          ({ type, data }) => type === "retraction_observation" && data.reason === "renderer_restart",
+        ).data;
+        restart.rendererInstanceIdAfter = restart.rendererInstanceIdBefore;
+        restart.processIdentitySha256After = restart.processIdentitySha256Before;
+        rebindAuthorityData(restart, "observationBindingSha256");
+        return deriveProduct(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "hardcoded stopped/disconnected and zero-residue summaries",
+      () => {
+        const events = liveUiAuthorityFixture().filter(
+          ({ type }) => type !== "negative_case_observation",
+        );
+        events.push({
+          type: "negative_case",
+          data: {
+            observationStopped: true,
+            mcpDisconnected: true,
+            processResidualCount: 0,
+            portResidualCount: 0,
+          },
+        });
+        return deriveUi(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "N1-N8 summaries without guard calls or Content snapshots",
+      () => {
+        const events = liveUiAuthorityFixture().filter(
+          ({ type }) =>
+            type !== "negative_case_observation" && type !== "content_manifest_observation",
+        );
+        return deriveUi(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "partial success lists without observed operation results",
+      () => {
+        const events = liveUiAuthorityFixture().filter(
+          ({ type }) => type !== "partial_unknown_observation",
+        );
+        events.push({
+          type: "partial_unknown_effect_record",
+          data: { successfulForward: ["create_run_root"], effectState: "unknown" },
+        });
+        return deriveUi(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "replay-zero without reading recorded representation",
+      () => {
+        const events = liveUiAuthorityFixture().filter(
+          ({ type }) => type !== "replay_inspection_observation",
+        );
+        events.push({ type: "replay_observation", data: { sideEffectDelta: 0 } });
+        return deriveUi(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "renderer-authored transport response with a self-consistent binding hash",
+      () => {
+        const events = liveProductAuthorityFixture();
+        const discovery = events.find(({ type }) => type === "product_discovery_observation").data;
+        discovery.rendererAuthoredResponse = { status: 200, sessionId: discovery.mcpSessionId };
+        rebindAuthorityData(discovery, "observationBindingSha256");
+        return deriveProduct(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "six retraction labels sharing one non-fresh ready state",
+      () => {
+        const events = liveProductAuthorityFixture();
+        for (const event of events.filter(({ type }) => type === "retraction_observation")) {
+          event.data.stateBeforeReceiptId = "mvp15d-observation-receipt:shared-ready";
+          rebindAuthorityData(event.data, "observationBindingSha256");
+        }
+        return deriveProduct(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "random renderer restart identity without native process receipt",
+      () => {
+        const events = liveProductAuthorityFixture();
+        const restart = events.find(
+          ({ type, data }) => type === "retraction_observation" && data.reason === "renderer_restart",
+        ).data;
+        restart.rendererInstanceIdAfter = "renderer-random-uuid-0001";
+        restart.processIdentitySha256After = "f".repeat(64);
+        rebindAuthorityData(restart, "observationBindingSha256");
+        return deriveProduct(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "N1-N8 reason table with self-consistent event hashes",
+      () => {
+        const events = liveUiAuthorityFixture();
+        const record = events.find(({ type }) => type === "negative_case_observation").data;
+        record.reasonTable = Object.fromEntries(
+          events
+            .filter(({ type }) => type === "negative_case_observation")
+            .map(({ data }) => [data.caseId, data.guardCall.reason]),
+        );
+        rebindAuthorityData(record, "observationBindingSha256");
+        return deriveUi(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+    [
+      "partial result table with self-consistent event hash",
+      () => {
+        const events = liveUiAuthorityFixture();
+        const partial = events.find(({ type }) => type === "partial_unknown_observation").data;
+        partial.resultTable = partial.operationResults.map(({ status, effectState, reason }) => ({
+          status,
+          effectState,
+          reason,
+        }));
+        rebindAuthorityData(partial, "observationBindingSha256");
+        return deriveUi(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
+      },
+    ],
+  ];
+  for (const [name, action] of cases) {
+    assert.throws(action, (error) => Boolean(error?.code), `${name} must fail closed`);
+  }
+});
 
 function loadedAuthorityBindingMaterialForTest(loaded) {
   return {
@@ -331,6 +959,55 @@ function livePhaseFixtureOutput({
   };
   const evidenceRoot = adapterVector[adapterVector.indexOf("--evidence-root") + 1];
   const runtimeEventPath = resolve(evidenceRoot, "transcripts", `${phase}.runtime-events.jsonl`);
+  const jobCloseoutPath = resolve(evidenceRoot, "metadata", `${phase}.job-closeout.json`);
+  const portCloseoutPath = resolve(evidenceRoot, "metadata", `${phase}.port-closeout.json`);
+  if (!existsSync(jobCloseoutPath)) {
+    writeFileSync(
+      jobCloseoutPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: "uagent.mvp15d.final.job-closeout.v1",
+          taskId,
+          marker,
+          sessionId,
+          generation,
+          jobSchemaVersion: "uagent.mvp15d.windows-job-process-run.v1",
+          rootPid: runtime.data.pid,
+          rootExitCode: 0,
+          timedOut: false,
+          activeProcessZeroObserved: true,
+          finalResidualCount: 0,
+          failureCode: "",
+        },
+        null,
+        2,
+      )}\n`,
+      { encoding: "utf8", flag: "wx" },
+    );
+  }
+  writeFileSync(
+    portCloseoutPath,
+    `${JSON.stringify(
+      {
+        schemaVersion: "uagent.mvp15d.final.port-closeout.v1",
+        phase,
+        taskId,
+        marker,
+        sessionId,
+        generation,
+        port,
+        host: "127.0.0.1",
+        observations: Array.from({ length: 5 }, (_, index) => ({
+          attempt: index + 1,
+          accepting: false,
+        })),
+        residualCount: 0,
+      },
+      null,
+      2,
+    )}\n`,
+    { encoding: "utf8", flag: "wx" },
+  );
   const runtimeEvents = [
     {
       schemaVersion: RUNTIME_EVENT_SCHEMA,
@@ -365,7 +1042,7 @@ function livePhaseFixtureOutput({
       bridgeVersion:
         phase === "ue-automation"
           ? "uagent.mvp15d.ue-automation-report.v1"
-          : "uagent.mvp15d.runtime-bridge.v1",
+          : "uagent.mvp15d.runtime-bridge.v5",
       eventFile: {
         relativePath: `transcripts/${phase}.runtime-events.jsonl`,
         size: runtimeBytes.length,
@@ -449,6 +1126,42 @@ function livePhaseFixtureOutput({
   } else if (phase === "product-capture") {
     captureOrigin.data.origin = "real_product_adapter";
     captureOrigin.data.fixtureUsed = false;
+    const terminalIndex = events.findIndex((event) => event.type === "process_exited");
+    const reasons = [
+      "disconnect",
+      "endpoint_change",
+      "failure",
+      "newer_generation",
+      "attestation_invalidation",
+      "renderer_restart",
+    ];
+    events.splice(
+      terminalIndex,
+      0,
+      ...reasons.map((reason, index) => ({
+        ...runtime,
+        type: "retraction_observation",
+        data: {
+          reason,
+          sessionId: `retraction-session-${index + 1}`,
+          generationBefore: index + 1,
+          generationAfter: index + 2,
+          statusBefore: "ready",
+          statusAfter: "blocked",
+          count: 6,
+        },
+      })),
+      {
+        ...runtime,
+        type: "tool_search_observation",
+        data: { mode: "on", status: "passed" },
+      },
+      {
+        ...runtime,
+        type: "tool_search_observation",
+        data: { mode: "off", status: "passed" },
+      },
+    );
   } else if (phase === "ui-lifecycle") {
     captureOrigin.data.origin = "rendered_product_ui";
     captureOrigin.data.fixtureUsed = false;
@@ -456,6 +1169,57 @@ function livePhaseFixtureOutput({
     events.splice(
       terminalIndex,
       0,
+      ...[
+        ["N1", "companion_attestation_retracted"],
+        ["N2", "asset_mutation_gate_disabled"],
+        ["N3", "observation_session_stopped"],
+        ["N4", "process_exited"],
+        ["N5", "stale_generation"],
+        ["N6", "sandbox_path_required"],
+        ["N7", "execute_replay"],
+        ["N8", "rollback_replay"],
+      ].map(([caseId, blockedReason], index) => ({
+        ...runtime,
+        type: "negative_case",
+        data: {
+          caseId,
+          sessionId: `negative-session-${index + 1}`,
+          runId: `negative-run-${index + 1}`,
+          registrationId: `negative-registration-${index + 1}`,
+          blockedReason,
+          beforeContentSha256: "a".repeat(64),
+          afterContentSha256: "a".repeat(64),
+          counterDelta: [1, 0, 0, 0, 0],
+          closeout: {
+            observationStopped: true,
+            mcpDisconnected: true,
+            processResidualCount: 0,
+            portResidualCount: 0,
+          },
+        },
+      })),
+      {
+        ...runtime,
+        type: "partial_unknown_effect_record",
+        data: {
+          sessionId: "partial-session-1",
+          runId: "partial-run-1",
+          registrationId: "partial-registration-1",
+          effectState: "unknown",
+          successfulForward: ["create_run_root", "duplicate_test01", "rename_duplicate"],
+          inverseRollbackOrder: ["rename_back", "delete_duplicate", "cleanup_empty_folder"],
+          crossTtlRejected: true,
+          secondRollbackBlocked: true,
+          beforeContentSha256: "a".repeat(64),
+          afterContentSha256: "a".repeat(64),
+          closeout: {
+            observationStopped: true,
+            mcpDisconnected: true,
+            processResidualCount: 0,
+            portResidualCount: 0,
+          },
+        },
+      },
       ...[
         "create_run_root",
         "duplicate_test01",
@@ -469,6 +1233,18 @@ function livePhaseFixtureOutput({
       })),
     );
   }
+  events.at(-1).data = {
+    authorityLevel: "parent_observed",
+    processResidualCount: 0,
+    portResidualCount: 0,
+    markerResidualCount: 0,
+    partialOutputCount: 0,
+    jobCloseoutSha256: cryptoHash(readFileSync(jobCloseoutPath)),
+    portObservationSha256: cryptoHash(readFileSync(portCloseoutPath)),
+    runtimeProcessId: runtime.data.pid,
+    phaseSessionId: sessionId,
+    phaseGeneration: generation,
+  };
   const timestamp = Date.parse("2026-07-31T00:00:00.000Z");
   events.forEach((event, index) => {
     event.sequence = index + 1;
@@ -747,6 +1523,7 @@ function createHandAuthoredProvenanceFixture() {
   const earlyIdentityRelativePath = `metadata/ue-automation.${sessionId}.early-identity.json`;
   const loadedPath = resolve(capturesRoot, "loaded-modules.json");
   const jobPath = resolve(metadataRoot, "ue-automation.job-closeout.json");
+  const portPath = resolve(metadataRoot, "ue-automation.port-closeout.json");
   const packageInventory = collectPackageArtifacts(packageRoot, true).artifacts;
   const installedInventory = collectPackageArtifacts(installedRoot, true).artifacts;
   const sources = {
@@ -1131,6 +1908,13 @@ function createHandAuthoredProvenanceFixture() {
         "mvp15d-final-ue-automation-producer",
         "raw",
         "uagent.mvp15d.final.job-closeout.v1",
+      ),
+      sourceArtifact(
+        portPath,
+        "metadata/ue-automation.port-closeout.json",
+        "mvp15d-final-ue-automation-producer",
+        "raw",
+        "uagent.mvp15d.final.port-closeout.v1",
       ),
     ];
     const summary = {
@@ -1800,17 +2584,37 @@ test(
         "project_create_planned",
       );
       for (const command of ["ue-automation", "product-capture", "ui-lifecycle"]) {
-        assert.match(
-          runFinal(command, {
+        const planned = runFinal(command, {
             mode: "plan",
             repository: fixture.clone,
             "evidence-root": root,
             "task-id": TASK_ID,
             marker: preflightArgs.marker,
             port: preflightArgs.port,
-          }).status,
-          /_planned$/,
-        );
+          });
+        assert.match(planned.status, /_planned$/);
+        if (command === "ui-lifecycle") {
+          assert.deepEqual(
+            {
+              dryRunActions: planned.plan.ledger.dryRunActions,
+              dryRunCalls: planned.plan.ledger.dryRunCalls,
+              nativeRegistrations: planned.plan.ledger.nativeRegistrations,
+              executeCalls: planned.plan.ledger.executeCalls,
+              inverseRollbackCalls: planned.plan.ledger.rollbackCalls,
+              verifyMutations: planned.plan.ledger.verifyMutations,
+              replaySideEffectDelta: planned.plan.ledger.replaySideEffectDelta,
+            },
+            {
+              dryRunActions: 1,
+              dryRunCalls: 5,
+              nativeRegistrations: 1,
+              executeCalls: 5,
+              inverseRollbackCalls: 4,
+              verifyMutations: 0,
+              replaySideEffectDelta: [0, 0, 0, 0, 0],
+            },
+          );
+        }
       }
       {
         const results = new Map();
@@ -2067,8 +2871,10 @@ test(
       assert.equal(uiCommand.executable, desktopExecutable);
       assert.deepEqual(uiCommand.args.slice(-2), [
         "--rendered-product-path",
-        "validate,add,confirmTrust",
+        "validate,add,confirmTrust,observationDiscover,observationAttach,observationReady,mcpConnect,mcpInitialize,mcpDiscover,mcpNormalize,mcpFingerprint,dryRun,approve,register,execute,verify,crossTtl,rollback,finalVerify,replay,observationStop,mcpDisconnect",
       ]);
+      assert.equal(uiCommand.env.UAGENT_ENABLE_ASSET_MUTATION, "1");
+      assert.equal(productCommand.env.UAGENT_ENABLE_ASSET_MUTATION, "0");
       const ueExecutable = resolve(
         fixture.goodUeRoot,
         "Engine",

@@ -27,7 +27,7 @@ export function ConfigSettings() {
       ))}
       <CompanionPluginStatusDisplay />
       <div className="ua-settings-page__note">
-        This is a UI-only mock. No configuration is saved or applied.
+        Connection and project-root changes apply to this local session only.
       </div>
     </SettingsPageLayout>
   );
@@ -35,6 +35,9 @@ export function ConfigSettings() {
 
 function CompanionPluginStatusDisplay() {
   const companion = useRuntimeStore((state) => state.mvp15.companion);
+  const mcpStatus = useRuntimeStore((state) => state.mcp.status);
+  const editorSession = useRuntimeStore((state) => state.mvp14.session);
+  const { refreshMvp15DCompanionAttestation } = useRuntimeActions();
   const labels = {
     not_installed: "Not installed",
     installed_unverified: "Installed unverified",
@@ -46,7 +49,7 @@ function CompanionPluginStatusDisplay() {
     <section className="ua-settings-page__static-stack" aria-label="UAgent UE Companion Plugin">
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">UAgent UE Companion Plugin</span>
-        <span className="ua-settings-page__static-value">
+        <span className="ua-settings-page__static-value" data-mvp15d-observation="companion-status">
           {labels[companion.status]}
         </span>
       </div>
@@ -64,13 +67,13 @@ function CompanionPluginStatusDisplay() {
       </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Live fingerprint</span>
-        <span className="ua-settings-page__static-value">
+        <span className="ua-settings-page__static-value" data-mvp15d-observation="companion-fingerprint">
           {companion.liveFingerprintSha256Prefix ? `${companion.liveFingerprintSha256Prefix}…` : "unverified"}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Generation / tools</span>
-        <span className="ua-settings-page__static-value">
+        <span className="ua-settings-page__static-value" data-mvp15d-observation="companion-tools">
           {companion.currentGeneration} / {companion.toolCount} ({companion.perToolSummaryCount} summaries)
         </span>
       </div>
@@ -79,6 +82,16 @@ function CompanionPluginStatusDisplay() {
           {companion.blocker}: {companion.reason}
         </p>
       )}
+      <div className="ua-settings-page__provider-actions">
+        <button
+          className="ua-settings-page__action-btn"
+          type="button"
+          disabled={mcpStatus !== "connected" || editorSession?.mode !== "attached"}
+          onClick={() => void refreshMvp15DCompanionAttestation()}
+        >
+          Verify companion identity
+        </button>
+      </div>
     </section>
   );
 }
@@ -160,7 +173,11 @@ function ProjectRootsDisplay() {
         </span>
         <span className="ua-settings-page__provider-summary-item">
           <span className="ua-settings-page__provider-summary-label">Trust</span>
-          <span className="ua-settings-page__provider-summary-value">
+          <span
+            className="ua-settings-page__provider-summary-value"
+            data-mvp15d-observation="project-trust"
+            data-mvp15d-value={activeProject?.trustState ?? "untrusted"}
+          >
             {activeProject?.trustState ?? "untrusted"}
           </span>
         </span>
@@ -245,7 +262,7 @@ function McpConnectionDisplay() {
   const isConnected = mcp.status === "connected";
 
   return (
-    <div className="ua-settings-page__mcp">
+    <div className="ua-settings-page__mcp" aria-label="MCP connection">
       <label className="ua-settings-page__field">
         <span className="ua-settings-page__field-label">Endpoint</span>
         <input
@@ -259,11 +276,15 @@ function McpConnectionDisplay() {
       <div className="ua-settings-page__provider-summary">
         <span className="ua-settings-page__provider-summary-item">
           <span className="ua-settings-page__provider-summary-label">Status</span>
-          <span className="ua-settings-page__provider-summary-value">{mcp.status}</span>
+          <span className="ua-settings-page__provider-summary-value" data-mvp15d-observation="mcp-status">{mcp.status}</span>
         </span>
         <span className="ua-settings-page__provider-summary-item">
           <span className="ua-settings-page__provider-summary-label">Protocol</span>
-          <span className="ua-settings-page__provider-summary-value">
+          <span
+            className="ua-settings-page__provider-summary-value"
+            data-mvp15d-observation="mcp-protocol"
+            data-mvp15d-value={mcp.protocolVersion ?? "Not initialized"}
+          >
             {mcp.protocolVersion ?? "Not initialized"}
           </span>
         </span>

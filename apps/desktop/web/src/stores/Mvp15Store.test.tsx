@@ -13,11 +13,19 @@ import {
 import { AssetMutationPanel, formatMvp15UiBlocker } from "../inspector/AssetMutationPanel";
 import { McpMutationPanel } from "../inspector/McpMutationPanel";
 import { createDesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
+import { startMvp15dRuntimeBridge } from "../runtime/mvp15d-runtime-bridge";
 import { createEmptyMvp14State, createEmptyMvp15State, type Mvp14RuntimeState } from "../runtime/runtime-store";
 import { createNativeProjectAdapter, type NativeInvoke } from "../runtime/project-native-adapter";
 import { ChangesPanel } from "../inspector/ChangesPanel";
 import { ConfigSettings } from "../settings/pages/ConfigSettings";
-import { UIProvider, useOptionalRuntimeActions, useRuntimeStore } from "./ui-store";
+import { AppShell } from "../shell/AppShell";
+import {
+  UIProvider,
+  readMvp15dUiStoreEvidence,
+  runMvp15dUiBridgeAction,
+  useOptionalRuntimeActions,
+  useRuntimeStore,
+} from "./ui-store";
 import {
   UAGENT_COMPANION_CONTRACT_VERSION,
   UAGENT_COMPANION_COMPATIBLE_CHANGELIST,
@@ -59,6 +67,80 @@ const MVP15_TEST_TOOL_CONTRACTS = {
   affectedAssetsSchema: { type: "array" },
   evidenceQuery: { type: "read_only" },
 };
+
+function createMvp15dUiObservationPort(trace: string[] = []) {
+  let sequence = 0;
+  const counters = new Map<string, number>();
+  return {
+    beginSession: async () => {
+      sequence += 1;
+      trace.push(`begin:${sequence}`);
+      const suffix = String(sequence);
+      const binding = {
+        sessionId: `renderer-session-${suffix}`,
+        nativeSessionId: `native-session-${suffix}`,
+        runId: `authority-run-${suffix}`,
+        registrationId: `authority-registration-${suffix}`,
+        sessionBegin: { receiptId: `fixture-session-${suffix}`, request: {} },
+        registrationCall: { receiptId: `fixture-registration-${suffix}`, request: {} },
+      };
+      counters.set(binding.sessionId, 0);
+      return binding;
+    },
+    snapshotContent: async (binding: { sessionId: string; registrationId: string; runId: string }, stage: "before" | "after") => {
+      trace.push(`snapshot:${binding.sessionId}:${stage}`);
+      return {
+        stage,
+        registrationId: binding.registrationId,
+        runId: binding.runId,
+        receiptId: `fixture-content-${binding.sessionId}-${stage}`,
+        request: { registrationId: binding.registrationId },
+      };
+    },
+    readCounters: async (binding: { sessionId: string }, stage: "before" | "after") => ({
+      values: [counters.get(binding.sessionId) ?? 0, 0, 0, 0, 0] as [number, number, number, number, number],
+      receipt: { receiptId: `fixture-counter-${binding.sessionId}-${stage}`, request: { stage } },
+    }),
+    guard: async (input: { sessionId: string; caseId: string; api: string }) => {
+      trace.push(`guard:${input.caseId}:${input.api}`);
+      counters.set(input.sessionId, (counters.get(input.sessionId) ?? 0) + 1);
+      return {
+        guardCall: {
+          receiptId: `fixture-guard-${input.caseId}`,
+          request: { api: input.api },
+        },
+        setupCalls: [],
+      };
+    },
+    runPartialOperation: async (
+      binding: { sessionId: string },
+      operation: {
+        direction: "forward" | "inverse" | "control";
+        action: string;
+        api: string;
+        request: Record<string, unknown>;
+      },
+    ) => {
+      const index = counters.get(binding.sessionId) ?? 0;
+      counters.set(binding.sessionId, index + 1);
+      trace.push(`partial:${operation.action}`);
+      return {
+        ...operation,
+        receiptId: `fixture-partial-${index + 1}`,
+        request: operation.request ?? { action: operation.action },
+        setupCalls: [],
+      };
+    },
+    stopObservation: async (binding: { sessionId: string }) => {
+      trace.push(`stop:${binding.sessionId}`);
+      return { receiptId: `fixture-stop-${binding.sessionId}`, request: { sessionId: binding.sessionId } };
+    },
+    disconnectMcp: async (binding: { sessionId: string }) => {
+      trace.push(`disconnect:${binding.sessionId}`);
+      return { receiptId: `fixture-disconnect-${binding.sessionId}`, request: { sessionId: binding.sessionId } };
+    },
+  };
+}
 
 function createMvp15DCompanionEvidence() {
   const manifestBase = {
@@ -529,6 +611,8 @@ describe("MVP15 desktop asset mutation UI", () => {
       "Execute",
       "Verify",
       "Rollback",
+      "Final verify",
+      "Inspect replay",
     ]);
     expect(screen.getByRole("button", { name: "Rollback sandbox asset mutation" })).toBe(rowButtons[4]);
 
@@ -810,6 +894,109 @@ describe("MVP15 desktop asset mutation UI", () => {
     expect(screen.getByLabelText("Asset mutation panel").textContent).not.toContain("Live fingerprint: unverified");
   });
 
+  it("clears stale companion authority after attestation rejection and allows a clean retry", async () => {
+    let attestationAttempts = 0;
+    const runtimeClient = createDesktopRuntimeAdapter({
+      createTransport: () => createMvp15ReadyTransport([]),
+      nativeInvoke: createNativeInvokeMockAdapter(async (command, payload) => {
+        if (command === "attest_mvp15_companion") {
+          attestationAttempts += 1;
+          if (attestationAttempts === 2) throw new Error("C:\\private\\native-attestation-secret");
+          return createNativeMvp15DCompanionAttestation();
+        }
+        if (command === "retract_mvp15_companion_approvals") {
+          return createNativeMvp15DCompanionRetraction(payload);
+        }
+        return null;
+      }),
+    });
+    await runtimeClient.connectMcp();
+    await runtimeClient.discoverMcp();
+    render(
+      <UIProvider
+        runtimeClient={runtimeClient}
+        initialState={{ runtime: { mvp14: createRealReadyMvp14State() } }}
+      >
+        <ConfigSettings />
+        <Mvp15StateProbe />
+      </UIProvider>,
+    );
+    const verifyButton = screen.getByRole("button", { name: "Verify companion identity" });
+
+    fireEvent.click(verifyButton);
+    await waitFor(() => {
+      expect(screen.getByLabelText("UAgent UE Companion Plugin").textContent).toContain("Verified");
+    });
+    expect(runtimeClient.getMvp15DLiveCompanionFingerprint?.()?.status).toBe("ready");
+
+    fireEvent.click(verifyButton);
+    await waitFor(() => {
+      const state = JSON.parse(screen.getByTestId("mvp15-state-probe").textContent ?? "null") as {
+        companion: { status: string; reason: string; liveFingerprintSha256Prefix: string | null };
+        lastError: string | null;
+      };
+      expect(state.companion).toMatchObject({
+        status: "installed_unverified",
+        reason: "native_companion_attestation_failed",
+        liveFingerprintSha256Prefix: null,
+      });
+      expect(state.lastError).toBe("native_companion_attestation_failed");
+    });
+    expect(runtimeClient.getMvp15DLiveCompanionFingerprint?.()?.status).toBe("blocked");
+    expect(screen.getByTestId("mvp15-state-probe").textContent).not.toContain("native-attestation-secret");
+
+    fireEvent.click(verifyButton);
+    await waitFor(() => {
+      expect(screen.getByLabelText("UAgent UE Companion Plugin").textContent).toContain("Verified");
+      expect(runtimeClient.getMvp15DLiveCompanionFingerprint?.()?.status).toBe("ready");
+    });
+    expect(attestationAttempts).toBe(3);
+  });
+
+  it("observes all six exact-tool retractions through independent production adapter transitions", async () => {
+    const runtimeClient = createDesktopRuntimeAdapter({
+      createTransport: () => createMvp15ReadyTransport([]),
+      nativeInvoke: createNativeInvokeMockAdapter(async (command, payload) => {
+        if (command === "attest_mvp15_companion") return createNativeMvp15DCompanionAttestation();
+        if (command === "retract_mvp15_companion_approvals") {
+          return createNativeMvp15DCompanionRetraction(payload);
+        }
+        return null;
+      }),
+    });
+    const endpoint = "http://127.0.0.1:18765/mcp";
+    runtimeClient.setMcpEndpoint(endpoint);
+    await runtimeClient.connectMcp();
+    await runtimeClient.discoverMcp();
+    await runtimeClient.refreshMvp15DCompanionAttestation?.(
+      "root:retraction-source",
+      "editor-session:retraction-source",
+    );
+
+    await runtimeClient.runMvp15DProductRetractionOrchestration?.(
+      "root:retraction-source",
+      "editor-session:retraction-source",
+      endpoint,
+    );
+    runtimeClient.disconnectMcp();
+    await waitFor(() => expect(runtimeClient.getMcpState().status).toBe("disconnected"));
+
+    const records = runtimeClient.getMvp15DProductRetractionEvidence?.() ?? [];
+    expect(records.map(({ reason }) => reason)).toEqual([
+      "newer_generation",
+      "reconnect",
+      "endpoint_change",
+      "failure",
+      "renderer_restart",
+      "disconnect",
+    ]);
+    expect(new Set(records.map(({ sessionId }) => sessionId)).size).toBe(6);
+    for (const record of records) {
+      expect(record).toMatchObject({ count: 6, statusBefore: "ready", statusAfter: "blocked" });
+      expect(record.generationAfter).toBeGreaterThan(record.generationBefore);
+    }
+  });
+
   it("fails closed for null, blocked, incomplete, duplicate, unexpected, and reordered asset inventories", () => {
     const inventoryCases: Array<{
       name: string;
@@ -1003,7 +1190,7 @@ describe("MVP15 desktop asset mutation UI", () => {
           status: "observed",
           reason: "content_manifest_captured",
           entries,
-          aggregateSha256: String(manifestReads).repeat(64),
+          aggregateSha256: (manifestReads === 2 ? "c" : "b").repeat(64),
           evidenceId: `asset-content-manifest:${manifestReads}`,
         };
       }
@@ -1012,9 +1199,11 @@ describe("MVP15 desktop asset mutation UI", () => {
     const projectAdapter = createNativeProjectAdapter({ invoke: createNativeInvokeMockAdapter(nativeInvokeMock), now: () => 1 });
     const project = await projectAdapter.addProject("G:/Projects/Mvp15");
     await projectAdapter.confirmTrust(project.id);
+    const authorityTrace: string[] = [];
     const runtimeClient = createDesktopRuntimeAdapter({
       createTransport: () => createMvp15ReadyTransport(events, lifecycleTrace, nativeBoundCalls),
       nativeInvoke: createNativeInvokeMockAdapter(nativeInvokeMock),
+      mvp15dFixtureUiObservationPort: createMvp15dUiObservationPort(authorityTrace),
     });
     await runtimeClient.connectMcp();
     await runtimeClient.discoverMcp();
@@ -1109,6 +1298,14 @@ describe("MVP15 desktop asset mutation UI", () => {
       expect(screen.getAllByText(/Asset operation audit: phase rollback \/ tool ue\.asset\.move .* result completed \/ evidence mcp-evidence:rollback:move/).length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText(/Asset replay audit: recorded-only .* 0 runtime side effects/)).toBeTruthy();
     });
+    fireEvent.click(screen.getByRole("button", { name: "Final verify restored Content" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Final Content verification: passed/)).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Inspect recorded asset replay" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Replay inspection: recorded \/ \[0, 0, 0, 0, 0\]/)).toBeTruthy();
+    });
 
     expect(runRoot).toMatch(/^\/Game\/UAgentSandbox\/ui-/);
     expect(finalTarget).toBe(`${runRoot}/Work/Sub/Test01Renamed`);
@@ -1153,7 +1350,7 @@ describe("MVP15 desktop asset mutation UI", () => {
       "rollback",
     ]);
     expect(nativeCalls.filter(({ command }) => command === "read_asset_content_evidence")).toHaveLength(6);
-    expect(nativeCalls.filter(({ command }) => command === "snapshot_asset_content_manifest")).toHaveLength(3);
+    expect(nativeCalls.filter(({ command }) => command === "snapshot_asset_content_manifest")).toHaveLength(4);
     expect(events).toEqual([
       "mcp:ue.asset.create_folder",
       "mcp:ue.asset.duplicate",
@@ -1177,6 +1374,42 @@ describe("MVP15 desktop asset mutation UI", () => {
     expect(serializedState).toContain('"recordedOnlyActions"');
     expect(serializedState).not.toContain("asset-approval-token:");
     expect(serializedState).not.toContain("G:/Projects/Mvp15");
+    await runMvp15dUiBridgeAction("uiAuthority");
+    const authorityEvidence = readMvp15dUiStoreEvidence();
+    if (!authorityEvidence) throw new Error("mvp15d_ui_authority_evidence_missing");
+    expect(authorityEvidence).toMatchObject({
+      status: "blocked",
+      reason: "complete_real_ui_lifecycle_required",
+      ledger: {
+        dryRunActions: 1,
+        dryRunCalls: 5,
+        nativeRegistrations: 1,
+        nativeExecuteGuards: 5,
+        executeCalls: 5,
+        verifyMutations: 0,
+        nativeRollbackGuards: 4,
+        rollbackCalls: 4,
+      },
+      replayInspection: {
+        counterNames: ["native", "mcp", "provider", "verify", "rollback"],
+        countersBefore: [9, 9, 0, 0, 4],
+        countersAfter: [9, 9, 0, 0, 4],
+      },
+    });
+    expect(authorityEvidence.operations).toHaveLength(0);
+    expect(authorityEvidence.contentManifests).toHaveLength(0);
+    expect(authorityEvidence.negativeCases).toHaveLength(8);
+    expect(authorityEvidence.partialUnknown.operationResults).toHaveLength(9);
+    expect(authorityEvidence.replayInspection.recordedRepresentation).toMatchObject({
+      eventCount: 14,
+      recordedOnlyActions: ["dry-run", "preview", "approval", "execute", "verify", "rollback"],
+    });
+    expect(authorityTrace.filter((entry) => entry.startsWith("guard:"))).toHaveLength(8);
+    expect(authorityTrace.filter((entry) => entry.startsWith("partial:"))).toHaveLength(9);
+    expect(authorityTrace.filter((entry) => entry.startsWith("begin:"))).toHaveLength(9);
+    expect(authorityTrace.filter((entry) => entry.startsWith("snapshot:"))).toHaveLength(18);
+    expect(authorityTrace.filter((entry) => entry.startsWith("stop:"))).toHaveLength(9);
+    expect(authorityTrace.filter((entry) => entry.startsWith("disconnect:"))).toHaveLength(9);
     const userVisibleAudit = [
       screen.getByLabelText("Asset mutation panel").textContent,
       screen.getByLabelText("Changes panel").textContent,
@@ -1186,6 +1419,264 @@ describe("MVP15 desktop asset mutation UI", () => {
     expect(userVisibleAudit).not.toContain("G:/Projects/Mvp15");
     expect({ mcp: events.length, native: nativeInvokeMock.mock.calls.length }).toEqual(callCountsBeforeReplayInspection);
   });
+
+  it("rejects a fixture observation port when a live bridge tries to publish it", async () => {
+    const mcpCalls: string[] = [];
+    const bridgeSteps: string[] = [];
+    const published: Array<{ command: string; input: unknown }> = [];
+    let manifestReads = 0;
+    let finalTarget = "";
+    const nativeFacts = {
+      acceptedPlanBinding: "b".repeat(64),
+      nativeRegistrationId: "asset-registration:appshell-real",
+      nativeCreatedAt: 190,
+      connectionGeneration: 17,
+      sessionGeneration: 29,
+      nativeSourceIdentity: "1".repeat(64),
+      nativeManifestIdentity: "4".repeat(64),
+      nativePluginIdentity: "2".repeat(64),
+      nativePackageIdentity: "5".repeat(64),
+    };
+    const nativeInvoke = createNativeInvokeMockAdapter(async (command, payload): Promise<unknown> => {
+      const input = ((payload as { input?: Record<string, unknown> } | undefined)?.input ?? {});
+      if (command === "validate_native_project_root") {
+        return {
+          ok: true,
+          reason: "valid",
+          displayRoot: "[project-root]/FinalHost",
+          projectName: "FinalHost",
+          engine: { label: "UE 5.8.1", association: null, source: "native" },
+        };
+      }
+      if (command === "trust_native_project_root") {
+        return { rootId: "root:trusted", displayRoot: "[project-root]/FinalHost", trustState: "trusted" };
+      }
+      if (command === "editor_observation_capability_status") {
+        return {
+          enabled: true,
+          mode: "native",
+          reason: "ue_editor_bridge_feature_enabled",
+          trustedRootRequired: true,
+          mutationExecution: "blocked",
+        };
+      }
+      if (command === "discover_editor_processes") {
+        return {
+          status: "ready",
+          reason: "native_metadata",
+          processes: [{
+            id: "process:appshell-real",
+            pidHash: "pid:appshell-real",
+            displayName: "UnrealEditor.exe",
+            displayExecutableHash: "exe:appshell-real",
+            displayProjectHint: "[project-root]/FinalHost.uproject",
+            processState: "running",
+            discoveredAt: 1,
+            expiresAt: 9_999_999_999_999,
+            source: "native",
+          }],
+        };
+      }
+      if (command === "attach_editor_process") {
+        return {
+          sessionId: "editor-session:real",
+          projectId: "project:real",
+          rootId: "root:trusted",
+          uprojectDisplayPath: "[project-root]/FinalHost.uproject",
+          pidHash: "pid:appshell-real",
+          mode: "attached",
+          status: "attached",
+          reason: "attached",
+          createdAt: 1,
+          expiresAt: 9_999_999_999_999,
+          lastHeartbeatAt: 2,
+          replayOnly: false,
+        };
+      }
+      if (command === "read_editor_observation_snapshot") {
+        return {
+          sessionId: "editor-session:real",
+          editorState: "attached",
+          sessionState: "active",
+          projectMatched: true,
+          processAlive: true,
+          lastHeartbeatAt: 2,
+          displayProject: "[project-root]/FinalHost.uproject",
+          displayProcess: "UnrealEditor.exe",
+          readOnlyDiagnostics: ["process metadata only"],
+          createdAt: 3,
+        };
+      }
+      if (command === "read_editor_process_status") {
+        return {
+          sessionId: "editor-session:real",
+          projectId: "project:real",
+          rootId: "root:trusted",
+          uprojectDisplayPath: "[project-root]/FinalHost.uproject",
+          pidHash: "pid:appshell-real",
+          mode: "attached",
+          status: "attached",
+          reason: "heartbeat_ok",
+          createdAt: 1,
+          expiresAt: 9_999_999_999_999,
+          lastHeartbeatAt: 2,
+          replayOnly: false,
+        };
+      }
+      if (command === "stop_editor_observation_session") {
+        return {
+          sessionId: "editor-session:real",
+          projectId: "project:real",
+          rootId: "root:trusted",
+          uprojectDisplayPath: "[project-root]/FinalHost.uproject",
+          pidHash: "pid:appshell-real",
+          mode: "attached",
+          status: "stopped",
+          reason: "local_observation_stopped",
+          createdAt: 1,
+          expiresAt: 9_999_999_999_999,
+          lastHeartbeatAt: 2,
+          replayOnly: true,
+        };
+      }
+      if (command === "attest_mvp15_companion") return createNativeMvp15DCompanionAttestation();
+      if (command === "retract_mvp15_companion_approvals") return createNativeMvp15DCompanionRetraction(payload);
+      if (command === "register_asset_mutation_approval") {
+        const operations = Array.isArray(input.operations) ? input.operations as Array<Record<string, unknown>> : [];
+        finalTarget = String(operations.find((operation) => operation.kind === "save")?.assetPath ?? "");
+        const issuedAt = Date.now();
+        return {
+          status: "registered",
+          reason: "approval_binding_registered",
+          registrationId: nativeFacts.nativeRegistrationId,
+          trustedRootId: "root:trusted",
+          operationCount: operations.length,
+          approvalToken: "d".repeat(64),
+          issuedAt,
+          expiresAt: issuedAt + 60_000,
+        };
+      }
+      if (command === "execute_asset_mutation" || command === "rollback_asset_mutation") {
+        const operation = input.operation as Record<string, unknown> | undefined;
+        return {
+          status: "accepted_by_native_guard",
+          reason: "registered_binding_matched",
+          registrationId: input.registrationId,
+          phase: input.phase,
+          operationId: operation?.operationId,
+          operationIndex: input.operationIndex,
+          operationCount: input.operationCount,
+          evidenceId: `native-guard:${String(input.phase)}:${String(input.operationIndex)}`,
+          ...nativeFacts,
+          nativePhase: input.phase,
+          nativeOperationIndex: input.operationIndex,
+          nativeOperationCount: input.operationCount,
+        };
+      }
+      if (command === "record_asset_mutation_outcome") {
+        return {
+          status: "recorded",
+          reason: "operation_outcome_recorded",
+          registrationId: input.registrationId,
+          phase: input.phase,
+          operationId: input.operationId,
+          rollbackAvailable: input.phase === "execute",
+          terminal: false,
+        };
+      }
+      if (command === "read_asset_content_evidence") {
+        const assetPath = String(input.assetPath ?? "");
+        const present = assetPath === "/Game/Test01" || assetPath === finalTarget;
+        return {
+          status: "observed",
+          reason: present ? "asset_present" : "asset_absent",
+          assetPath,
+          exists: present,
+          size: present ? 12 : null,
+          sha256: present ? (assetPath === "/Game/Test01" ? "a" : "c").repeat(64) : null,
+          evidenceId: `asset-content:${present ? "present" : "absent"}`,
+        };
+      }
+      if (command === "snapshot_asset_content_manifest") {
+        manifestReads += 1;
+        const baseline = [
+          { assetPath: "/Game/Outside/Stable", size: 8, sha256: "b".repeat(64) },
+          { assetPath: "/Game/Test01", size: 12, sha256: "a".repeat(64) },
+        ];
+        return {
+          status: "observed",
+          reason: "content_manifest_captured",
+          entries: manifestReads === 2
+            ? [...baseline, { assetPath: finalTarget, size: 12, sha256: "c".repeat(64) }]
+            : baseline,
+          aggregateSha256: (manifestReads === 2 ? "c" : "b").repeat(64),
+          evidenceId: `asset-content-manifest:${manifestReads}`,
+        };
+      }
+      return null;
+    });
+    vi.stubGlobal("__TAURI_INTERNALS__", { invoke: nativeInvoke });
+    const authorityTrace: string[] = [];
+    const runtimeClient = createDesktopRuntimeAdapter({
+      createTransport: () => createMvp15ReadyTransport(mcpCalls),
+      nativeInvoke,
+      mvp15dFixtureUiObservationPort: createMvp15dUiObservationPort(authorityTrace),
+    });
+    render(
+      <UIProvider
+        runtimeClient={runtimeClient}
+        initialState={{
+          settings: { open: true, activePageId: "config" },
+          runtime: {
+            mvp14: createRealReadyMvp14State("pid:appshell-real"),
+          },
+        }}
+      >
+        <AppShell />
+      </UIProvider>,
+    );
+    const bridgeInvoke: NativeInvoke = async <T,>(command: string, payload?: unknown) => {
+      const inputPayload = payload as Record<string, unknown> | undefined;
+      if (command === "mvp15d_bridge_configuration") {
+        return {
+          enabled: true,
+          bridgeVersion: "uagent.mvp15d.runtime-bridge.v5",
+          phase: "ui-lifecycle",
+          mode: "live",
+          taskId: "TASK-MVP15D-UAGENT-DESKTOP-TEST",
+          session: "appshell-bridge-session",
+          generation: 1,
+          endpoint: "http://127.0.0.1:18765/mcp",
+          projectRoot: "G:/Fixture/FinalHost",
+          renderedProductPath: "ui-lifecycle",
+          driverPollMilliseconds: 1,
+          observationTimeoutMilliseconds: 5_000,
+          approvalTtlWaitMilliseconds: 1,
+          receiptLedgerEnabled: true,
+          rendererHandoffPending: false,
+          rendererHandoffId: null,
+          rendererParentLifecycleStatus: null,
+          rendererParentLifecycleFailure: null,
+        } as T;
+      }
+      if (command === "mvp15d_bridge_take_driver_command") return "run-ui-lifecycle" as T;
+      if (command === "mvp15d_bridge_record_renderer_step") {
+        bridgeSteps.push(String((inputPayload?.input as { step?: unknown } | undefined)?.step ?? ""));
+        return { accepted: true } as T;
+      }
+      if (command === "mvp15d_bridge_publish_ui_evidence") {
+        published.push({ command, input: inputPayload?.input });
+        return undefined as T;
+      }
+      if (command === "mvp15d_bridge_complete") return undefined as T;
+      throw new Error(`unexpected bridge command: ${command}`);
+    };
+    await expect(startMvp15dRuntimeBridge(bridgeInvoke, {
+      activateMvp15dFixedObservationAuthority: async () => undefined,
+    })).rejects.toThrow("mvp15d_ui_store_evidence_missing");
+    expect(published).toHaveLength(0);
+    expect(manifestReads).toBe(4);
+  }, 15_000);
 
   it("keeps raw path and session-like exception text out of desktop state", async () => {
     const runtimeClient = createDesktopRuntimeAdapter({

@@ -50,17 +50,25 @@ const UE_AUTOMATION_TESTS = [
   "UAgentAssetTools.ReadOnly",
   "UAgentAssetTools.Closeout",
 ];
-const PRODUCT_SCHEMA = "uagent.mvp15d.final.product-capture.v1";
+const PRODUCT_SCHEMA = "uagent.mvp15d.final.product-capture.v2";
 const UI_SCHEMA = "uagent.mvp15d.final.ui-lifecycle.v1";
 const UE_SCHEMA = "uagent.mvp15d.final.ue-automation.v1";
 const INVENTORY_SCHEMA = "uagent.mvp15d.final.inventory.v1";
 const CLOSEOUT_SCHEMA = "uagent.mvp15d.final.closeout.v1";
 const EVENT_SCHEMA = "uagent.mvp15d.final.phase-event.v1";
-const RUNTIME_EVENT_SCHEMA = "uagent.mvp15d.final.runtime-event.v1";
+const RUNTIME_EVENT_SCHEMA = "uagent.mvp15d.final.runtime-event.v2";
+const FINGERPRINT_SCHEMA = "uagent.mvp15.live-asset-toolset-fingerprint.v1";
+const LIVE_AUTHORITY_LEVELS = new Set([
+  "fixed_producer",
+  "native_observed",
+  "parent_observed",
+  "runtime_observed",
+]);
 const PRODUCER_LEDGER_SCHEMA = "uagent.mvp15d.final.producer-ledger.v1";
 const FIXTURE_PRODUCER_ID = "mvp15d-final-phase-fixture-producer";
 const FIRST_FAILURE_SCHEMA = "uagent.mvp15d.final.first-failure.v1";
 const JOB_CLOSEOUT_SCHEMA = "uagent.mvp15d.final.job-closeout.v1";
+const PORT_CLOSEOUT_SCHEMA = "uagent.mvp15d.final.port-closeout.v1";
 const LIVE_PRODUCER_HELPER = Object.freeze({
   relativePath: "scripts/mvp15d-final-live-producer-helper.mjs",
 });
@@ -88,6 +96,7 @@ const ALLOWED_TOP_LEVEL = new Set([
   "transcripts",
 ]);
 const OWNED_LAUNCH_RECEIPTS = new WeakSet();
+const LIVE_DERIVATION_AUTHORITIES = new WeakMap();
 
 class FinalRunnerError extends Error {
   constructor(code) {
@@ -110,6 +119,11 @@ function sha256File(path) {
 
 function isHex(value, length = 64) {
   return typeof value === "string" && new RegExp(`^[0-9a-f]{${length}}$`).test(value);
+}
+
+function isObservationReceiptId(value) {
+  return typeof value === "string" &&
+    /^mvp15d-observation-receipt:[0-9a-f]{64}$/u.test(value);
 }
 
 function toLogical(value) {
@@ -587,7 +601,7 @@ function phasePlan(kind, args) {
   const ownership = validateMarkerPort(args);
   const shared = {
     taskGeneration: TASK_GENERATION,
-    mutationAuthority: kind === "ui-lifecycle" ? "ui_trust_only" : "none",
+    mutationAuthority: kind === "ui-lifecycle" ? "rendered_ui_native_guard" : "none",
     installedLoadedIdentityRequired: true,
     rawTranscriptRequired: true,
     taskOwnedProcessesOnly: true,
@@ -616,11 +630,11 @@ function phasePlan(kind, args) {
         rejectFixtureOrBypass: true,
         retractions: [
           "disconnect",
-          "failure",
           "endpoint_change",
-          "reconnect",
-          "renderer_restart",
+          "failure",
           "newer_generation",
+          "attestation_invalidation",
+          "renderer_restart",
         ],
         zeroMutation: true,
       },
@@ -630,14 +644,37 @@ function phasePlan(kind, args) {
     status: "ui_lifecycle_planned",
     plan: {
       ...shared,
-      renderedUiPath: ["validate", "add", "confirmTrust"],
+      renderedUiPath: [
+        "validate",
+        "add",
+        "confirmTrust",
+        "observationDiscover",
+        "observationAttach",
+        "observationReady",
+        "mcpConnect",
+        "mcpInitialize",
+        "mcpDiscover",
+        "mcpNormalize",
+        "mcpFingerprint",
+        "dryRun",
+        "approve",
+        "register",
+        "execute",
+        "verify",
+        "crossTtl",
+        "rollback",
+        "finalVerify",
+        "replay",
+        "observationStop",
+        "mcpDisconnect",
+      ],
       readOnlySource: "/Game/Test01",
       sandboxPrefix: "/Game/UAgentSandbox/<run-id>/",
       forwardOrder: FORWARD_ORDER,
       inverseOrder: INVERSE_ORDER,
       ledger: {
-        dryRunActions: 5,
-        dryRunCalls: 1,
+        dryRunActions: 1,
+        dryRunCalls: 5,
         nativeRegistrations: 1,
         nativeExecuteGuards: 5,
         executeCalls: 5,
@@ -748,14 +785,38 @@ function parsePhaseEvents(text, kind, binding) {
   const processExited = exactData(events.at(-2), ["exitCode"], "FINAL_PHASE_PROCESS_EXIT_INVALID");
   const closeout = exactData(
     events.at(-1),
-    ["processResidualCount", "portResidualCount", "markerResidualCount", "partialOutputCount"],
+    binding.mode === "live"
+      ? [
+          "authorityLevel",
+          "processResidualCount",
+          "portResidualCount",
+          "markerResidualCount",
+          "partialOutputCount",
+          "jobCloseoutSha256",
+          "portObservationSha256",
+          "runtimeProcessId",
+          "phaseSessionId",
+          "phaseGeneration",
+        ]
+      : ["processResidualCount", "portResidualCount", "markerResidualCount", "partialOutputCount"],
     "FINAL_PHASE_CLOSEOUT_INVALID",
   );
   if (
     processStarted.port !== binding.port ||
     !isHex(processStarted.argumentVectorSha256) ||
     processExited.exitCode !== 0 ||
-    Object.values(closeout).some((count) => count !== 0)
+    [
+      closeout.processResidualCount,
+      closeout.portResidualCount,
+      closeout.markerResidualCount,
+      closeout.partialOutputCount,
+    ].some((count) => count !== 0) ||
+    (binding.mode === "live" &&
+      (closeout.authorityLevel !== "parent_observed" ||
+        !isHex(closeout.jobCloseoutSha256) ||
+        !isHex(closeout.portObservationSha256) ||
+        closeout.phaseSessionId !== binding.sessionId ||
+        closeout.phaseGeneration !== binding.generation))
   ) {
     fail("FINAL_PHASE_PROCESS_OR_RESIDUE_INVALID");
   }
@@ -799,6 +860,9 @@ function parsePhaseEvents(text, kind, binding) {
     ) {
       fail("FINAL_PHASE_RUNTIME_PROCESS_INVALID");
     }
+    if (closeout.runtimeProcessId !== runtimeProcess.pid) {
+      fail("FINAL_PHASE_CLOSEOUT_INVALID");
+    }
     const transports = events.filter((event) => event.type === "runtime_event_transport");
     if (transports.length !== 1) fail("FINAL_PHASE_RUNTIME_TRANSPORT_INVALID");
     runtimeTransport = exactData(
@@ -815,7 +879,7 @@ function parsePhaseEvents(text, kind, binding) {
       runtimeTransport.bridgeVersion !==
         (kind === "ue-automation"
           ? "uagent.mvp15d.ue-automation-report.v1"
-          : "uagent.mvp15d.runtime-bridge.v1") ||
+          : "uagent.mvp15d.runtime-bridge.v5") ||
       runtimeTransport.eventFile.relativePath !== `transcripts/${kind}.runtime-events.jsonl` ||
       !Number.isSafeInteger(runtimeTransport.eventFile.size) ||
       runtimeTransport.eventFile.size <= 0 ||
@@ -886,6 +950,1627 @@ function snapshotPair(events, code) {
     fail(code);
   }
   return values[0].sha256;
+}
+
+function authorityData(event, keys, level, code) {
+  const data = exactData(event, ["authorityLevel", ...keys], code);
+  if (data.authorityLevel !== level) fail(code);
+  return data;
+}
+
+function rejectSourceOnlyLiveEvents(events, code) {
+  if (
+    events.some(
+      (event) =>
+        event?.data?.authorityLevel === "source_only" ||
+        (typeof event?.data?.authorityLevel === "string" &&
+          !LIVE_AUTHORITY_LEVELS.has(event.data.authorityLevel) &&
+          event.data.authorityLevel !== "derived_only"),
+    )
+  ) {
+    fail(code);
+  }
+}
+
+function canonicalToolDescriptor(descriptor, index, code) {
+  assertExactKeys(
+    descriptor,
+    [
+      "affectedAssetsSchema",
+      "dryRunSchema",
+      "evidenceQuery",
+      "inputSchema",
+      "methodId",
+      "name",
+      "rollbackContract",
+      "schemaVersion",
+      "source",
+      "toolsetId",
+    ],
+    code,
+  );
+  if (
+    descriptor.name !== TOOL_NAMES[index] ||
+    typeof descriptor.schemaVersion !== "string" ||
+    descriptor.schemaVersion.length === 0 ||
+    !["direct", "facade"].includes(descriptor.source) ||
+    !["affectedAssetsSchema", "dryRunSchema", "evidenceQuery", "inputSchema", "rollbackContract"].every(
+      (key) =>
+        descriptor[key] !== null &&
+        typeof descriptor[key] === "object" &&
+        !Array.isArray(descriptor[key]),
+    ) ||
+    !(descriptor.methodId === null || typeof descriptor.methodId === "string") ||
+    !(descriptor.toolsetId === null || typeof descriptor.toolsetId === "string")
+  ) {
+    fail(code);
+  }
+  return descriptor;
+}
+
+function fixedArtifactAuthority(events, context, code) {
+  const data = authorityData(
+    oneEvent(events, "fixed_artifact_authority", code),
+    [
+      "sourceCommit",
+      "sourceTreeSha256",
+      "phaseSessionId",
+      "phaseGeneration",
+      "runtimeProcessId",
+      "manifest",
+      "packageInventory",
+      "installedInventory",
+      "loadedObserver",
+      "modules",
+      "producerBindingSha256",
+    ],
+    "fixed_producer",
+    code,
+  );
+  for (const key of ["manifest", "packageInventory", "installedInventory", "loadedObserver"]) {
+    assertExactKeys(
+      data[key],
+      key === "loadedObserver" ? ["ledgerSha256", "modulesSha256"] : ["sha256", "modulesSha256"],
+      code,
+    );
+  }
+  if (!Array.isArray(data.modules) || data.modules.length === 0) fail(code);
+  for (const module of data.modules) {
+    assertExactKeys(module, ["relativePath", "sha256"], code);
+    if (
+      typeof module.relativePath !== "string" ||
+      module.relativePath.length === 0 ||
+      module.relativePath.includes("\\") ||
+      module.relativePath.startsWith("/") ||
+      module.relativePath.split("/").includes("..") ||
+      !isHex(module.sha256)
+    ) {
+      fail(code);
+    }
+  }
+  const modulesSha256 = sha256Bytes(Buffer.from(stable(data.modules), "utf8"));
+  const independentArtifactHashes = [
+    data.manifest.sha256,
+    data.packageInventory.sha256,
+    data.installedInventory.sha256,
+    data.loadedObserver.ledgerSha256,
+  ];
+  const bindingMaterial = Object.fromEntries(
+    Object.entries(data).filter(([key]) => key !== "authorityLevel" && key !== "producerBindingSha256"),
+  );
+  if (
+    !isHex(data.sourceCommit, 40) ||
+    !isHex(data.sourceTreeSha256) ||
+    data.sourceCommit !== context.sourceCommit ||
+    data.sourceTreeSha256 !== context.sourceTreeSha256 ||
+    data.phaseSessionId !== context.sessionId ||
+    data.phaseGeneration !== context.generation ||
+    data.runtimeProcessId !== context.runtimeProcessId ||
+    independentArtifactHashes.some((value) => !isHex(value)) ||
+    [
+      data.manifest.modulesSha256,
+      data.packageInventory.modulesSha256,
+      data.installedInventory.modulesSha256,
+      data.loadedObserver.modulesSha256,
+    ].some((value) => value !== modulesSha256) ||
+    data.producerBindingSha256 !== sha256Bytes(Buffer.from(stable(bindingMaterial), "utf8"))
+  ) {
+    fail(code);
+  }
+  return { data, modulesSha256 };
+}
+
+function issueLiveDerivationAuthority(scope, kind, parsed, context) {
+  const processEvent = exactData(
+    oneEvent(parsed.events, "runtime_process_started", "FINAL_PHASE_RUNTIME_PROCESS_INVALID"),
+    ["pid", "endpoint", "marker", "executable", "argumentVectorSha256"],
+    "FINAL_PHASE_RUNTIME_PROCESS_INVALID",
+  );
+  const fixedArtifact =
+    kind === "product-capture" || kind === "ui-lifecycle"
+      ? oneEvent(parsed.events, "fixed_artifact_authority", "FINAL_PHASE_FIXED_ARTIFACT_INVALID").data
+      : null;
+  const first = parsed.events[0];
+  const receipt = Object.freeze({
+    scope,
+    kind,
+    taskId: first.taskId,
+    sessionId: first.sessionId,
+    generation: first.generation,
+    phaseProducerPid: first.producer.pid,
+    sourceCommit: context.sourceCommit,
+    sourceTreeSha256: context.sourceTreeSha256,
+    runtimePid: parsed.runtimeProcess?.pid ?? processEvent.pid,
+    runtimeProcessSha256: sha256Bytes(Buffer.from(stable(processEvent), "utf8")),
+    processIdentitySha256: sha256Bytes(
+      Buffer.from(
+        stable({
+          pid: parsed.runtimeProcess?.pid,
+          executableBasename: parsed.runtimeProcess?.executable?.basename,
+          executableSha256: parsed.runtimeProcess?.executable?.sha256,
+        }),
+        "utf8",
+      ),
+    ),
+    fixedArtifactBindingSha256: fixedArtifact?.producerBindingSha256 ?? null,
+    phaseEventsSha256: sha256Bytes(Buffer.from(stable(parsed.events), "utf8")),
+    rawEventLedgerSha256: parsed.runtimeTransport?.eventFile?.sha256 ?? null,
+    rawEventNonceSha256: parsed.runtimeTransport?.nonceSha256 ?? null,
+    parentCloseoutSha256: sha256Bytes(Buffer.from(stable(parsed.closeout), "utf8")),
+    jobCloseoutSha256: parsed.closeout?.jobCloseoutSha256 ?? null,
+    portCloseoutSha256: parsed.closeout?.portObservationSha256 ?? null,
+  });
+  LIVE_DERIVATION_AUTHORITIES.set(receipt, { used: false });
+  return receipt;
+}
+
+function verifyLiveDerivationAuthority(kind, events, closeout, context) {
+  const code = kind === "product-capture" ? "FINAL_PRODUCT_LIVE_AUTHORITY_INVALID" : "FINAL_UI_LIVE_AUTHORITY_INVALID";
+  const receipt = context?.ownedDerivationAuthority;
+  const state = LIVE_DERIVATION_AUTHORITIES.get(receipt);
+  const first = events[0];
+  const processEvent = events.find(({ type }) => type === "runtime_process_started")?.data;
+  const fixedArtifact = events.find(({ type }) => type === "fixed_artifact_authority")?.data;
+  if (
+    !state ||
+    state.used ||
+    !["owned-launch", "persisted-consistency"].includes(receipt.scope) ||
+    receipt.kind !== kind ||
+    receipt.taskId !== first?.taskId ||
+    receipt.sessionId !== first?.sessionId ||
+    receipt.generation !== first?.generation ||
+    receipt.phaseProducerPid !== first?.producer?.pid ||
+    receipt.sourceCommit !== context.sourceCommit ||
+    receipt.sourceTreeSha256 !== context.sourceTreeSha256 ||
+    receipt.runtimePid !== context.runtimeProcessId ||
+    receipt.processIdentitySha256 !==
+      sha256Bytes(
+        Buffer.from(
+          stable({
+            pid: context.runtimeProcess?.pid,
+            executableBasename: context.runtimeProcess?.executable?.basename,
+            executableSha256: context.runtimeProcess?.executable?.sha256,
+          }),
+          "utf8",
+        ),
+      ) ||
+    receipt.runtimeProcessSha256 !== sha256Bytes(Buffer.from(stable(processEvent), "utf8")) ||
+    receipt.fixedArtifactBindingSha256 !== fixedArtifact?.producerBindingSha256 ||
+    receipt.phaseEventsSha256 !== sha256Bytes(Buffer.from(stable(events), "utf8")) ||
+    !isHex(receipt.rawEventLedgerSha256) ||
+    !isHex(receipt.rawEventNonceSha256) ||
+    receipt.parentCloseoutSha256 !== sha256Bytes(Buffer.from(stable(closeout), "utf8")) ||
+    receipt.jobCloseoutSha256 !== closeout?.jobCloseoutSha256 ||
+    receipt.portCloseoutSha256 !== closeout?.portObservationSha256
+  ) {
+    fail(code);
+  }
+  state.used = true;
+  return receipt;
+}
+
+function persistedOwnedLaunchBinding(receipt) {
+  if (!receipt || !LIVE_DERIVATION_AUTHORITIES.has(receipt)) {
+    fail("FINAL_PHASE_OWNED_LAUNCH_RECEIPT_INVALID");
+  }
+  return {
+    sourceCommit: receipt.sourceCommit,
+    sourceTreeSha256: receipt.sourceTreeSha256,
+    phaseProducerPid: receipt.phaseProducerPid,
+    runtimePid: receipt.runtimePid,
+    runtimeProcessSha256: receipt.runtimeProcessSha256,
+    processIdentitySha256: receipt.processIdentitySha256,
+    fixedArtifactBindingSha256: receipt.fixedArtifactBindingSha256,
+    phaseEventsSha256: receipt.phaseEventsSha256,
+    rawEventLedgerSha256: receipt.rawEventLedgerSha256,
+    rawEventNonceSha256: receipt.rawEventNonceSha256,
+    parentCloseoutSha256: receipt.parentCloseoutSha256,
+    jobCloseoutSha256: receipt.jobCloseoutSha256,
+    portCloseoutSha256: receipt.portCloseoutSha256,
+  };
+}
+
+function deriveLiveProduct(events, closeout, context) {
+  const code = "FINAL_PRODUCT_LIVE_AUTHORITY_INVALID";
+  verifyLiveDerivationAuthority("product-capture", events, closeout, context);
+  rejectSourceOnlyLiveEvents(events, code);
+  for (const legacyType of [
+    "installed_loaded",
+    "tool_published",
+    "tool_retracted",
+    "tool_search_observation",
+  ]) {
+    if (events.some((event) => event.type === legacyType)) fail(code);
+  }
+  const origin = authorityData(
+    oneEvent(events, "capture_origin", "FINAL_PRODUCT_ORIGIN_EVENT_INVALID"),
+    ["origin", "fixtureUsed", "manualDescriptorInjection", "directMcpBypass"],
+    "runtime_observed",
+    "FINAL_PRODUCT_ORIGIN_EVENT_INVALID",
+  );
+  if (
+    origin.origin !== "real_product_adapter" ||
+    origin.fixtureUsed !== false ||
+    origin.manualDescriptorInjection !== false ||
+    origin.directMcpBypass !== false
+  ) {
+    fail("FINAL_PRODUCT_ORIGIN_EVENT_INVALID");
+  }
+  const productPath = events
+    .filter((event) => event.type === "product_step")
+    .map((event) => exactData(event, ["step"], "FINAL_PRODUCT_PATH_EVENT_INVALID").step);
+  if (stable(productPath) !== stable(["Connect", "Initialize", "Discover", "Normalize", "Fingerprint"])) {
+    fail("FINAL_PRODUCT_PATH_EVENT_INVALID");
+  }
+  const artifact = fixedArtifactAuthority(events, context, "FINAL_PRODUCT_ARTIFACT_AUTHORITY_INVALID");
+  const observedReceipts = new Set();
+  const observations = events
+    .filter((event) => event.type === "product_discovery_observation")
+    .map((event) =>
+      authorityData(
+        event,
+        [
+          "mode",
+          "configInputSha256",
+          "configOutputSha256",
+          "mcpSessionId",
+          "rendererInstanceId",
+          "processIdentitySha256",
+          "runtimePid",
+          "generation",
+          "descriptors",
+          "fingerprintSha256",
+          "mutationCount",
+          "wireCalls",
+          "receiptProvenance",
+          "observationBindingSha256",
+        ],
+        "runtime_observed",
+        "FINAL_PRODUCT_DISCOVERY_OBSERVATION_INVALID",
+      ),
+    );
+  if (observations.length !== 2 || stable(observations.map(({ mode }) => mode)) !== stable(["on", "off"])) {
+    fail("FINAL_PRODUCT_DISCOVERY_OBSERVATION_INVALID");
+  }
+  const normalized = observations.map((observation) => {
+    if (!Array.isArray(observation.descriptors) || observation.descriptors.length !== TOOL_NAMES.length) {
+      fail("FINAL_PRODUCT_DESCRIPTOR_FINGERPRINT_INVALID");
+    }
+    const descriptors = observation.descriptors.map((descriptor, index) =>
+      canonicalToolDescriptor(descriptor, index, "FINAL_PRODUCT_DESCRIPTOR_FINGERPRINT_INVALID"),
+    );
+    const fingerprintSha256 = sha256Bytes(
+      Buffer.from(stable({ schemaVersion: FINGERPRINT_SCHEMA, tools: descriptors }), "utf8"),
+    );
+    const bindingMaterial = Object.fromEntries(
+      Object.entries(observation).filter(
+        ([key]) => key !== "authorityLevel" && key !== "observationBindingSha256",
+      ),
+    );
+    assertExactKeys(
+      observation.receiptProvenance,
+      [
+        "config",
+        "rendererInstance",
+        "connect",
+        "initialize",
+        "discover",
+        "normalize",
+        "fingerprint",
+        "attestation",
+        "mutationCounter",
+      ],
+      "FINAL_PRODUCT_DISCOVERY_OBSERVATION_INVALID",
+    );
+    for (const receipt of Object.values(observation.receiptProvenance)) {
+      receiptReference(receipt, "FINAL_PRODUCT_DISCOVERY_OBSERVATION_INVALID", observedReceipts);
+    }
+    if (!Array.isArray(observation.wireCalls)) {
+      fail("FINAL_PRODUCT_TOOL_SEARCH_CROSS_BINDING_INVALID");
+    }
+    const wireNames = observation.wireCalls.map((wireCall) => {
+      assertExactKeys(
+        wireCall,
+        ["id", "sequence", "name"],
+        "FINAL_PRODUCT_TOOL_SEARCH_CROSS_BINDING_INVALID",
+      );
+      receiptReference(
+        { id: wireCall.id, sequence: wireCall.sequence },
+        "FINAL_PRODUCT_TOOL_SEARCH_CROSS_BINDING_INVALID",
+        observedReceipts,
+      );
+      return wireCall.name;
+    });
+    if (
+      stable(wireNames) !==
+      stable(observation.mode === "on" ? ["list_toolsets", "describe_toolset"] : [])
+    ) {
+      fail("FINAL_PRODUCT_TOOL_SEARCH_CROSS_BINDING_INVALID");
+    }
+    if (
+      !isHex(observation.configInputSha256) ||
+      !isHex(observation.configOutputSha256) ||
+      typeof observation.mcpSessionId !== "string" ||
+      observation.mcpSessionId.length < 16 ||
+      typeof observation.rendererInstanceId !== "string" ||
+      observation.rendererInstanceId.length < 16 ||
+      !isHex(observation.processIdentitySha256) ||
+      observation.runtimePid !== context.runtimeProcessId ||
+      !Number.isSafeInteger(observation.generation) ||
+      observation.generation < 1 ||
+      observation.fingerprintSha256 !== fingerprintSha256 ||
+      observation.mutationCount !== 0 ||
+      observation.observationBindingSha256 !==
+        sha256Bytes(Buffer.from(stable(bindingMaterial), "utf8"))
+    ) {
+      fail("FINAL_PRODUCT_DESCRIPTOR_FINGERPRINT_INVALID");
+    }
+    return { observation, descriptors, fingerprintSha256 };
+  });
+  const semanticDescriptors = (descriptors) =>
+    descriptors.map((descriptor) =>
+      Object.fromEntries(
+        Object.entries(descriptor).filter(
+          ([key]) => !["source", "methodId", "toolsetId"].includes(key),
+        ),
+      ),
+    );
+  if (
+    normalized[0].observation.mcpSessionId === normalized[1].observation.mcpSessionId ||
+    normalized[0].observation.generation === normalized[1].observation.generation ||
+    normalized[0].observation.configInputSha256 === normalized[1].observation.configInputSha256 ||
+    stable(semanticDescriptors(normalized[0].descriptors)) !==
+      stable(semanticDescriptors(normalized[1].descriptors)) ||
+    normalized[0].observation.mode !== "on" ||
+    normalized[1].observation.mode !== "off"
+  ) {
+    fail("FINAL_PRODUCT_TOOL_SEARCH_CROSS_BINDING_INVALID");
+  }
+  const expectedRetractions = [
+    "disconnect",
+    "endpoint_change",
+    "failure",
+    "newer_generation",
+    "attestation_invalidation",
+    "renderer_restart",
+  ];
+  const retractions = events
+    .filter((event) => event.type === "retraction_observation")
+    .map((event) =>
+      authorityData(
+        event,
+        [
+          "reason",
+          "sessionIdBefore",
+          "sessionIdAfter",
+          "rendererInstanceIdBefore",
+          "rendererInstanceIdAfter",
+          "processIdentitySha256Before",
+          "processIdentitySha256After",
+          "generationBefore",
+          "generationAfter",
+          "fingerprintSha256",
+          "count",
+          "stateBeforeReceiptId",
+          "stateAfterReceiptId",
+          "readyStateReceipt",
+          "readyAttestationReceipt",
+          "actionReceipts",
+          "transitionReceipt",
+          "rendererInstanceReceipt",
+          "nativeRetraction",
+          "rendererHandoff",
+          "observationBindingSha256",
+        ],
+        "runtime_observed",
+        "FINAL_PRODUCT_RETRACTION_SOURCE_INVALID",
+      ),
+    );
+  if (
+    retractions.length !== expectedRetractions.length ||
+    stable(retractions.map(({ reason }) => reason)) !== stable(expectedRetractions) ||
+    new Set(retractions.map(({ sessionIdBefore }) => sessionIdBefore)).size !== retractions.length
+  ) {
+    fail("FINAL_PRODUCT_RETRACTION_SOURCE_INVALID");
+  }
+  const actionReceiptIds = new Set();
+  for (const record of retractions) {
+    assertExactKeys(
+      record.nativeRetraction,
+      [
+        "api",
+        "receiptId",
+        "receiptSequence",
+        "requestSha256",
+        "responseSha256",
+        "applied",
+        "revokedApprovalCount",
+        "generation",
+      ],
+      "FINAL_PRODUCT_RETRACTION_SOURCE_INVALID",
+    );
+    receiptReference(
+      record.readyStateReceipt,
+      "FINAL_PRODUCT_RETRACTION_SOURCE_INVALID",
+      observedReceipts,
+    );
+    receiptReference(
+      record.readyAttestationReceipt,
+      "FINAL_PRODUCT_RETRACTION_SOURCE_INVALID",
+      observedReceipts,
+    );
+    if (!Array.isArray(record.actionReceipts) || record.actionReceipts.length === 0) {
+      fail("FINAL_PRODUCT_RETRACTION_SOURCE_INVALID");
+    }
+    const actions = record.actionReceipts.map((receipt) => {
+      assertExactKeys(
+        receipt,
+        ["api", "id", "sequence"],
+        "FINAL_PRODUCT_RETRACTION_SOURCE_INVALID",
+      );
+      if (
+        typeof receipt.api !== "string" ||
+        receipt.api.length === 0 ||
+        !isObservationReceiptId(receipt.id) ||
+        !Number.isSafeInteger(receipt.sequence) ||
+        receipt.sequence <= record.readyAttestationReceipt.sequence ||
+        actionReceiptIds.has(receipt.id)
+      ) {
+        fail("FINAL_PRODUCT_RETRACTION_SOURCE_INVALID");
+      }
+      actionReceiptIds.add(receipt.id);
+      return receipt;
+    });
+    const actionApis = actions.map(({ api }) => api);
+    const requiredActionApis = {
+      disconnect: ["renderer_instance_begin", "mcp_disconnect", "retract_mvp15_companion_approvals"],
+      endpoint_change: ["renderer_instance_begin", "mcp_connect", "retract_mvp15_companion_approvals"],
+      failure: ["renderer_instance_begin", "mcp_transport_failure", "retract_mvp15_companion_approvals"],
+      newer_generation: ["renderer_instance_begin", "mcp_fingerprint", "retract_mvp15_companion_approvals"],
+      attestation_invalidation: ["renderer_instance_begin", "retract_mvp15_companion_approvals"],
+      renderer_restart: [
+        "renderer_restart_request",
+        "renderer_parent_lifecycle_acknowledgement",
+        "renderer_restart_successor",
+        "renderer_instance_begin",
+        "mcp_connect",
+        "mcp_fingerprint",
+        "retract_mvp15_companion_approvals",
+      ],
+    }[record.reason];
+    if (
+      !requiredActionApis ||
+      requiredActionApis.some((api) => !actionApis.includes(api)) ||
+      (record.reason === "renderer_restart" &&
+        actionApis.filter((api) => api === "renderer_instance_begin").length < 2)
+    ) {
+      fail("FINAL_PRODUCT_RETRACTION_SOURCE_INVALID");
+    }
+    receiptReference(
+      record.transitionReceipt,
+      "FINAL_PRODUCT_RETRACTION_SOURCE_INVALID",
+      observedReceipts,
+    );
+    receiptReference(
+      record.rendererInstanceReceipt,
+      "FINAL_PRODUCT_RETRACTION_SOURCE_INVALID",
+      observedReceipts,
+    );
+    inlineReceipt(record.nativeRetraction, "FINAL_PRODUCT_RETRACTION_SOURCE_INVALID", observedReceipts);
+    if (record.reason === "renderer_restart") {
+      assertExactKeys(
+        record.rendererHandoff,
+        [
+          "handoffId",
+          "requestReceipt",
+          "parentAcknowledgementReceipt",
+          "claimReceipt",
+          "parentRuntime",
+          "destroyOutcome",
+          "successorCreationOutcome",
+          "predecessorWindow",
+          "predecessorRenderer",
+          "successorRenderer",
+          "predecessorMcpSessionId",
+          "successorMcpSessionId",
+          "predecessorMcpGeneration",
+          "successorMcpGeneration",
+        ],
+        "FINAL_PRODUCT_RENDERER_RESTART_INVALID",
+      );
+      receiptReference(
+        record.rendererHandoff.requestReceipt,
+        "FINAL_PRODUCT_RENDERER_RESTART_INVALID",
+        observedReceipts,
+      );
+      receiptReference(
+        record.rendererHandoff.parentAcknowledgementReceipt,
+        "FINAL_PRODUCT_RENDERER_RESTART_INVALID",
+        observedReceipts,
+      );
+      receiptReference(
+        record.rendererHandoff.claimReceipt,
+        "FINAL_PRODUCT_RENDERER_RESTART_INVALID",
+        observedReceipts,
+      );
+      for (const renderer of [
+        record.rendererHandoff.predecessorRenderer,
+        record.rendererHandoff.successorRenderer,
+      ]) {
+        assertExactKeys(
+          renderer,
+          ["status", "rendererInstanceId", "processIdentitySha256", "process"],
+          "FINAL_PRODUCT_RENDERER_RESTART_INVALID",
+        );
+        assertExactKeys(
+          renderer.process,
+          ["pid", "startTime", "executableBasename", "runtimePid"],
+          "FINAL_PRODUCT_RENDERER_RESTART_INVALID",
+        );
+      }
+      assertExactKeys(
+        record.rendererHandoff.parentRuntime,
+        [
+          "pid",
+          "executableBasename",
+          "executableSha256",
+          "sourceCommit",
+          "processIdentitySha256",
+        ],
+        "FINAL_PRODUCT_RENDERER_RESTART_INVALID",
+      );
+      for (const outcome of [
+        record.rendererHandoff.destroyOutcome,
+        record.rendererHandoff.successorCreationOutcome,
+      ]) {
+        assertExactKeys(outcome, ["status", "reason"], "FINAL_PRODUCT_RENDERER_RESTART_INVALID");
+      }
+      assertExactKeys(
+        record.rendererHandoff.predecessorWindow,
+        [
+          "schemaVersion",
+          "status",
+          "windowLabel",
+          "taskId",
+          "phase",
+          "handoffId",
+          "stableIdentitySha256",
+        ],
+        "FINAL_PRODUCT_RENDERER_RESTART_INVALID",
+      );
+      const predecessor = record.rendererHandoff.predecessorRenderer;
+      const successor = record.rendererHandoff.successorRenderer;
+      const predecessorWindow = record.rendererHandoff.predecessorWindow;
+      if (
+        typeof record.rendererHandoff.handoffId !== "string" ||
+        !record.rendererHandoff.handoffId.startsWith("renderer-handoff:") ||
+        record.rendererHandoff.requestReceipt.sequence >=
+          record.rendererHandoff.parentAcknowledgementReceipt.sequence ||
+        record.rendererHandoff.parentAcknowledgementReceipt.sequence >=
+          record.rendererHandoff.claimReceipt.sequence ||
+        !actions.some(({ api, id }) =>
+          api === "renderer_restart_request" && id === record.rendererHandoff.requestReceipt.id) ||
+        !actions.some(({ api, id }) =>
+          api === "renderer_parent_lifecycle_acknowledgement" &&
+          id === record.rendererHandoff.parentAcknowledgementReceipt.id) ||
+        !actions.some(({ api, id }) =>
+          api === "renderer_restart_successor" && id === record.rendererHandoff.claimReceipt.id) ||
+        record.rendererHandoff.destroyOutcome.status !== "succeeded" ||
+        record.rendererHandoff.destroyOutcome.reason !== null ||
+        record.rendererHandoff.successorCreationOutcome.status !== "succeeded" ||
+        record.rendererHandoff.successorCreationOutcome.reason !== null ||
+        predecessorWindow.schemaVersion !== "uagent.mvp15d.predecessor-window-identity.v1" ||
+        predecessorWindow.status !== "observed" ||
+        predecessorWindow.windowLabel !== "main" ||
+        /[\\/]/u.test(predecessorWindow.windowLabel) ||
+        predecessorWindow.taskId !== events[0]?.taskId ||
+        predecessorWindow.phase !== "product-capture" ||
+        predecessorWindow.handoffId !== record.rendererHandoff.handoffId ||
+        !isHex(predecessorWindow.stableIdentitySha256) ||
+        !Number.isSafeInteger(record.rendererHandoff.parentRuntime.pid) ||
+        record.rendererHandoff.parentRuntime.pid < 1 ||
+        typeof record.rendererHandoff.parentRuntime.executableBasename !== "string" ||
+        !isHex(record.rendererHandoff.parentRuntime.executableSha256) ||
+        !isHex(record.rendererHandoff.parentRuntime.processIdentitySha256) ||
+        typeof record.rendererHandoff.parentRuntime.sourceCommit !== "string" ||
+        predecessor.status !== "begun" ||
+        successor.status !== "begun" ||
+        predecessor.rendererInstanceId !== record.rendererInstanceIdBefore ||
+        successor.rendererInstanceId !== record.rendererInstanceIdAfter ||
+        predecessor.processIdentitySha256 !== record.processIdentitySha256Before ||
+        successor.processIdentitySha256 !== record.processIdentitySha256After ||
+        predecessor.process.pid === successor.process.pid ||
+        predecessor.process.startTime === successor.process.startTime ||
+        record.rendererHandoff.predecessorMcpSessionId !== record.sessionIdBefore ||
+        record.rendererHandoff.successorMcpSessionId !== record.sessionIdAfter ||
+        record.rendererHandoff.predecessorMcpGeneration !== record.generationBefore ||
+        record.rendererHandoff.successorMcpGeneration !== record.generationAfter ||
+        record.rendererHandoff.successorMcpGeneration <=
+          record.rendererHandoff.predecessorMcpGeneration
+      ) {
+        fail("FINAL_PRODUCT_RENDERER_RESTART_INVALID");
+      }
+    } else if (record.rendererHandoff !== null) {
+      fail("FINAL_PRODUCT_RENDERER_RESTART_INVALID");
+    }
+    const bindingMaterial = Object.fromEntries(
+      Object.entries(record).filter(
+        ([key]) => key !== "authorityLevel" && key !== "observationBindingSha256",
+      ),
+    );
+    if (
+      typeof record.sessionIdBefore !== "string" ||
+      record.sessionIdBefore.length < 16 ||
+      !(record.sessionIdAfter === null || (typeof record.sessionIdAfter === "string" && record.sessionIdAfter.length >= 16)) ||
+      typeof record.rendererInstanceIdBefore !== "string" ||
+      typeof record.rendererInstanceIdAfter !== "string" ||
+      !isHex(record.processIdentitySha256Before) ||
+      !isHex(record.processIdentitySha256After) ||
+      !Number.isSafeInteger(record.generationBefore) ||
+      !Number.isSafeInteger(record.generationAfter) ||
+      record.generationBefore < 1 ||
+      record.generationAfter < record.generationBefore ||
+      record.fingerprintSha256 !== normalized[1].fingerprintSha256 ||
+      record.count !== TOOL_NAMES.length ||
+      record.nativeRetraction.api !== "retract_mvp15_companion_approvals" ||
+      !isHex(record.nativeRetraction.requestSha256) ||
+      !isHex(record.nativeRetraction.responseSha256) ||
+      record.nativeRetraction.applied !== true ||
+      !Number.isSafeInteger(record.nativeRetraction.generation) ||
+      record.nativeRetraction.generation < 1 ||
+      !Number.isSafeInteger(record.nativeRetraction.revokedApprovalCount) ||
+      record.nativeRetraction.revokedApprovalCount < 0 ||
+      record.observationBindingSha256 !== sha256Bytes(Buffer.from(stable(bindingMaterial), "utf8"))
+    ) {
+      fail("FINAL_PRODUCT_RETRACTION_SOURCE_INVALID");
+    }
+    if (
+      record.stateBeforeReceiptId !== record.readyStateReceipt.id ||
+      record.readyAttestationReceipt.sequence <= record.readyStateReceipt.sequence ||
+      record.stateAfterReceiptId !== record.nativeRetraction.receiptId ||
+      record.transitionReceipt.id === record.stateAfterReceiptId ||
+      !actions.some(({ id }) => id === record.rendererInstanceReceipt.id) ||
+      !actions.some(({ id }) => id === record.nativeRetraction.receiptId)
+    ) {
+      fail("FINAL_PRODUCT_RETRACTION_SOURCE_INVALID");
+    }
+    const rendererBoundaryChanged =
+      record.rendererInstanceIdBefore !== record.rendererInstanceIdAfter &&
+      record.processIdentitySha256Before !== record.processIdentitySha256After &&
+      record.sessionIdAfter !== null &&
+      record.sessionIdBefore !== record.sessionIdAfter;
+    if (
+      record.reason === "renderer_restart"
+        ? !rendererBoundaryChanged
+        : record.rendererInstanceIdBefore !== record.rendererInstanceIdAfter ||
+          record.processIdentitySha256Before !== record.processIdentitySha256After
+    ) {
+      fail("FINAL_PRODUCT_RENDERER_RESTART_INVALID");
+    }
+    const expectedSessionTransition =
+      record.reason === "endpoint_change" || record.reason === "renderer_restart"
+        ? typeof record.sessionIdAfter === "string" && record.sessionIdAfter !== record.sessionIdBefore
+        : record.reason === "newer_generation"
+          ? record.sessionIdAfter === record.sessionIdBefore && record.generationAfter > record.generationBefore
+          : record.sessionIdAfter === null;
+    if (!expectedSessionTransition) {
+      fail("FINAL_PRODUCT_RETRACTION_SOURCE_INVALID");
+    }
+  }
+  const mutation = authorityData(
+    oneEvent(events, "mutation_counter_observation", "FINAL_PRODUCT_MUTATION_EVENT_INVALID"),
+    ["before", "after"],
+    "runtime_observed",
+    "FINAL_PRODUCT_MUTATION_EVENT_INVALID",
+  );
+  assertExactKeys(mutation.before, ["dryRun", "execute", "rollback"], "FINAL_PRODUCT_MUTATION_EVENT_INVALID");
+  assertExactKeys(mutation.after, ["dryRun", "execute", "rollback"], "FINAL_PRODUCT_MUTATION_EVENT_INVALID");
+  if (Object.values(mutation.before).some((count) => count !== 0) || stable(mutation.before) !== stable(mutation.after)) {
+    fail("FINAL_PRODUCT_MUTATION_EVENT_INVALID");
+  }
+  const toolSummaries = normalized[0].descriptors.map((descriptor) => ({
+    name: descriptor.name,
+    schemaVersion: descriptor.schemaVersion,
+    canonicalSha256: sha256Bytes(Buffer.from(stable(descriptor), "utf8")),
+  }));
+  const rendererRestart = retractions.find(({ reason }) => reason === "renderer_restart");
+  return {
+    captureOrigin: origin.origin,
+    fixtureUsed: false,
+    manualDescriptorInjection: false,
+    directMcpBypass: false,
+    productPath,
+    installedLoadedVerified: true,
+    artifactAuthorityBindingSha256: artifact.data.producerBindingSha256,
+    toolSearchSessions: normalized.map(({ observation }) => ({
+      mode: observation.mode,
+      sessionId: observation.mcpSessionId,
+      generation: observation.generation,
+    })),
+    toolNames: TOOL_NAMES,
+    toolNamesSha256: sha256Bytes(Buffer.from(stable(TOOL_NAMES), "utf8")),
+    toolSummaries,
+    toolsetSha256: normalized[0].fingerprintSha256,
+    retractions: expectedRetractions,
+    rendererRestartHandoff: {
+      handoffId: rendererRestart.rendererHandoff.handoffId,
+      predecessorRendererInstanceId: rendererRestart.rendererInstanceIdBefore,
+      successorRendererInstanceId: rendererRestart.rendererInstanceIdAfter,
+      predecessorProcessIdentitySha256: rendererRestart.processIdentitySha256Before,
+      successorProcessIdentitySha256: rendererRestart.processIdentitySha256After,
+      predecessorMcpSessionId: rendererRestart.sessionIdBefore,
+      successorMcpSessionId: rendererRestart.sessionIdAfter,
+      predecessorMcpGeneration: rendererRestart.generationBefore,
+      successorMcpGeneration: rendererRestart.generationAfter,
+      requestReceiptId: rendererRestart.rendererHandoff.requestReceipt.id,
+      requestReceiptSequence: rendererRestart.rendererHandoff.requestReceipt.sequence,
+      parentAcknowledgementReceiptId:
+        rendererRestart.rendererHandoff.parentAcknowledgementReceipt.id,
+      parentAcknowledgementReceiptSequence:
+        rendererRestart.rendererHandoff.parentAcknowledgementReceipt.sequence,
+      claimReceiptId: rendererRestart.rendererHandoff.claimReceipt.id,
+      claimReceiptSequence: rendererRestart.rendererHandoff.claimReceipt.sequence,
+      predecessorWindowIdentity: rendererRestart.rendererHandoff.predecessorWindow,
+    },
+    nativeObservationReceiptCount: new Set([
+      ...observedReceipts,
+      ...actionReceiptIds,
+    ]).size,
+    mutationCount: 0,
+    processResidualCount: closeout.processResidualCount,
+    portResidualCount: closeout.portResidualCount,
+  };
+}
+
+function counterVector(value, code) {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 5 ||
+    value.some((count) => !Number.isSafeInteger(count) || count < 0)
+  ) {
+    fail(code);
+  }
+  return value;
+}
+
+function receiptReference(value, code, observedReceipts) {
+  assertExactKeys(value, ["id", "sequence"], code);
+  if (
+    !isObservationReceiptId(value.id) ||
+    !Number.isSafeInteger(value.sequence) ||
+    value.sequence < 1 ||
+    observedReceipts.has(value.id)
+  ) {
+    fail(code);
+  }
+  observedReceipts.add(value.id);
+  return value;
+}
+
+function inlineReceipt(value, code, observedReceipts) {
+  if (
+    !isObservationReceiptId(value.receiptId) ||
+    !Number.isSafeInteger(value.receiptSequence) ||
+    value.receiptSequence < 1 ||
+    observedReceipts.has(value.receiptId)
+  ) {
+    fail(code);
+  }
+  observedReceipts.add(value.receiptId);
+}
+
+function counterReceipt(value, expectedValues, code, observedReceipts) {
+  assertExactKeys(value, ["receiptId", "receiptSequence", "counterNames", "values"], code);
+  inlineReceipt(value, code, observedReceipts);
+  if (
+    stable(value.counterNames) !== stable(["native", "mcp", "provider", "verify", "rollback"]) ||
+    stable(counterVector(value.values, code)) !== stable(expectedValues)
+  ) {
+    fail(code);
+  }
+}
+
+function identityReceipts(value, code, observedReceipts) {
+  assertExactKeys(value, ["sessionBegin", "registration"], code);
+  receiptReference(value.sessionBegin, code, observedReceipts);
+  receiptReference(value.registration, code, observedReceipts);
+}
+
+function closeoutReceipts(value, code, observedReceipts) {
+  assertExactKeys(
+    value,
+    [
+      "observationStopReceiptId",
+      "observationStopReceiptSequence",
+      "mcpDisconnectReceiptId",
+      "mcpDisconnectReceiptSequence",
+      "mcpTerminationStatus",
+      "mcpTerminationHttpStatus",
+      "serverDisconnected",
+    ],
+    code,
+  );
+  inlineReceipt(
+    {
+      receiptId: value.observationStopReceiptId,
+      receiptSequence: value.observationStopReceiptSequence,
+    },
+    code,
+    observedReceipts,
+  );
+  inlineReceipt(
+    {
+      receiptId: value.mcpDisconnectReceiptId,
+      receiptSequence: value.mcpDisconnectReceiptSequence,
+    },
+    code,
+    observedReceipts,
+  );
+  if (
+    !["accepted", "unsupported"].includes(value.mcpTerminationStatus) ||
+    !Number.isSafeInteger(value.mcpTerminationHttpStatus) ||
+    (value.mcpTerminationStatus === "accepted" &&
+      (value.mcpTerminationHttpStatus < 200 || value.mcpTerminationHttpStatus >= 300)) ||
+    (value.mcpTerminationStatus === "unsupported" && value.mcpTerminationHttpStatus !== 405) ||
+    value.serverDisconnected !== (value.mcpTerminationStatus === "accepted")
+  ) {
+    fail(code);
+  }
+}
+
+function observedCall(value, expectedApi, expectedStatus, code, observedReceipts) {
+  assertExactKeys(
+    value,
+    [
+      "api",
+      "receiptId",
+      "receiptSequence",
+      "requestSha256",
+      "responseSha256",
+      "status",
+      "reason",
+      "evidenceId",
+    ],
+    code,
+  );
+  inlineReceipt(value, code, observedReceipts);
+  if (
+    value.api !== expectedApi ||
+    value.status !== expectedStatus ||
+    typeof value.reason !== "string" ||
+    value.reason.length === 0 ||
+    !isHex(value.requestSha256) ||
+    !isHex(value.responseSha256) ||
+    typeof value.evidenceId !== "string" ||
+    value.evidenceId.length < 8
+  ) {
+    fail(code);
+  }
+  return value;
+}
+
+function deriveLiveUi(events, closeout, context) {
+  const code = "FINAL_UI_LIVE_AUTHORITY_INVALID";
+  verifyLiveDerivationAuthority("ui-lifecycle", events, closeout, context);
+  rejectSourceOnlyLiveEvents(events, code);
+  for (const legacyType of [
+    "installed_loaded",
+    "content_snapshot",
+    "lifecycle_action",
+    "negative_case",
+    "partial_unknown_effect_record",
+    "replay_observation",
+  ]) {
+    if (events.some((event) => event.type === legacyType)) fail(code);
+  }
+  const origin = authorityData(
+    oneEvent(events, "capture_origin", "FINAL_UI_ORIGIN_EVENT_INVALID"),
+    ["origin", "fixtureUsed"],
+    "runtime_observed",
+    "FINAL_UI_ORIGIN_EVENT_INVALID",
+  );
+  if (origin.origin !== "rendered_product_ui" || origin.fixtureUsed !== false) {
+    fail("FINAL_UI_ORIGIN_EVENT_INVALID");
+  }
+  const renderedUiPath = events
+    .filter((event) => event.type === "rendered_step")
+    .map((event) => exactData(event, ["step"], "FINAL_UI_PATH_EVENT_INVALID").step);
+  const expectedRenderedUiPath = [
+    "validate",
+    "add",
+    "confirmTrust",
+    "observationDiscover",
+    "observationAttach",
+    "observationReady",
+    "mcpConnect",
+    "mcpInitialize",
+    "mcpDiscover",
+    "mcpNormalize",
+    "mcpFingerprint",
+    "dryRun",
+    "approve",
+    "register",
+    "execute",
+    "verify",
+    "crossTtl",
+    "rollback",
+    "finalVerify",
+    "replay",
+    "observationStop",
+    "mcpDisconnect",
+  ];
+  if (stable(renderedUiPath) !== stable(expectedRenderedUiPath)) {
+    fail("FINAL_UI_PATH_EVENT_INVALID");
+  }
+  const artifact = fixedArtifactAuthority(events, context, "FINAL_UI_ARTIFACT_AUTHORITY_INVALID");
+  const operationRecords = events
+    .filter((event) => event.type === "lifecycle_operation_observation")
+    .map((event) =>
+      authorityData(
+        event,
+        [
+          "direction",
+          "action",
+          "operationId",
+          "registrationId",
+          "runId",
+          "nativeCall",
+          "mcpCall",
+          "sideEffectCount",
+        ],
+        "runtime_observed",
+        "FINAL_UI_ACTION_SOURCE_INVALID",
+      ),
+    );
+  const forward = operationRecords.filter(({ direction }) => direction === "forward");
+  const inverse = operationRecords.filter(({ direction }) => direction === "inverse");
+  const registrationIds = new Set(operationRecords.map(({ registrationId }) => registrationId));
+  const runIds = new Set(operationRecords.map(({ runId }) => runId));
+  const operationIds = new Set(operationRecords.map(({ operationId }) => operationId));
+  if (
+    stable(forward.map(({ action }) => action)) !== stable(FORWARD_ORDER) ||
+    stable(inverse.map(({ action }) => action)) !== stable(INVERSE_ORDER) ||
+    operationRecords.length !== FORWARD_ORDER.length + INVERSE_ORDER.length ||
+    registrationIds.size !== 1 ||
+    runIds.size !== 1 ||
+    operationIds.size !== operationRecords.length ||
+    operationRecords.some(
+      ({ registrationId, runId, operationId, sideEffectCount }) =>
+        typeof registrationId !== "string" ||
+        registrationId.length < 8 ||
+        typeof runId !== "string" ||
+        runId.length < 8 ||
+        typeof operationId !== "string" ||
+        operationId.length < 8 ||
+        sideEffectCount !== 1,
+    )
+  ) {
+    fail("FINAL_UI_ACTION_SOURCE_INVALID");
+  }
+  const rawCallEvidence = new Set();
+  const observedReceipts = new Set();
+  for (const record of operationRecords) {
+    const nativeApi = record.direction === "forward" ? "execute_asset_mutation" : "rollback_asset_mutation";
+    const nativeCall = observedCall(
+      record.nativeCall,
+      nativeApi,
+      "accepted_by_native_guard",
+      "FINAL_UI_ACTION_SOURCE_INVALID",
+      observedReceipts,
+    );
+    const mcpCall = observedCall(
+      record.mcpCall,
+      "mcp_asset_tool_call",
+      "succeeded",
+      "FINAL_UI_ACTION_SOURCE_INVALID",
+      observedReceipts,
+    );
+    for (const value of [nativeCall.evidenceId, mcpCall.evidenceId]) {
+      if (rawCallEvidence.has(value)) fail("FINAL_UI_ACTION_SOURCE_INVALID");
+      rawCallEvidence.add(value);
+    }
+  }
+  const manifests = events
+    .filter((event) => event.type === "content_manifest_observation")
+    .map((event) =>
+      authorityData(
+        event,
+        [
+          "receiptId",
+          "receiptSequence",
+          "stage",
+          "registrationId",
+          "runId",
+          "evidenceId",
+          "sha256",
+          "runRootPresent",
+        ],
+        "native_observed",
+        "FINAL_UI_CONTENT_EVENT_INVALID",
+      ),
+    );
+  if (
+    manifests.length !== 2 ||
+    manifests[0].stage !== "before" ||
+    manifests[1].stage !== "after" ||
+    manifests.some(
+      (record) =>
+        record.registrationId !== operationRecords[0].registrationId ||
+        record.runId !== operationRecords[0].runId ||
+        typeof record.evidenceId !== "string" ||
+        record.evidenceId.length < 8 ||
+        !isHex(record.sha256) ||
+        record.runRootPresent !== false,
+    ) ||
+    manifests[0].evidenceId === manifests[1].evidenceId ||
+    manifests[0].sha256 !== manifests[1].sha256
+  ) {
+    fail("FINAL_UI_CONTENT_EVENT_INVALID");
+  }
+  for (const manifest of manifests) {
+    inlineReceipt(manifest, "FINAL_UI_CONTENT_EVENT_INVALID", observedReceipts);
+  }
+  const expectedNegativeReasons = [
+    ["N1", "companion_attestation_retracted"],
+    ["N2", "asset_mutation_gate_disabled"],
+    ["N3", "observation_session_stopped"],
+    ["N4", "process_exited"],
+    ["N5", "stale_generation"],
+    ["N6", "sandbox_path_required"],
+    ["N7", "execute_replay"],
+    ["N8", "rollback_replay"],
+  ];
+  const negativeCases = events
+    .filter((event) => event.type === "negative_case_observation")
+    .map((event) =>
+      authorityData(
+        event,
+        [
+          "caseId",
+          "sessionId",
+          "nativeSessionId",
+          "runId",
+          "registrationId",
+          "identityReceipts",
+          "setupReceipts",
+          "guardCall",
+          "contentBefore",
+          "contentAfter",
+          "countersBefore",
+          "countersAfter",
+          "counterReadBefore",
+          "counterReadAfter",
+          "observationStopped",
+          "localMcpClosed",
+          "serverMcpTerminated",
+          "mcpDisconnected",
+          "closeoutReceipts",
+        ],
+        "runtime_observed",
+        "FINAL_UI_NEGATIVE_SOURCE_INVALID",
+      ),
+    );
+  const negativeIdentities = negativeCases.flatMap(({ sessionId, nativeSessionId, runId, registrationId }) => [
+    sessionId,
+    nativeSessionId,
+    runId,
+    registrationId,
+  ]);
+  if (
+    negativeCases.length !== expectedNegativeReasons.length ||
+    stable(negativeCases.map(({ caseId, guardCall }) => [caseId, guardCall.reason])) !==
+      stable(expectedNegativeReasons) ||
+    new Set(negativeIdentities).size !== negativeIdentities.length
+  ) {
+    fail("FINAL_UI_NEGATIVE_SOURCE_INVALID");
+  }
+  for (const record of negativeCases) {
+    const expectedSetupApis = {
+      N1: ["retract_mvp15_companion_approvals"],
+      N2: [],
+      N3: ["stop_editor_observation_session"],
+      N4: ["create_managed_editor_process", "terminate_managed_editor_process"],
+      N5: ["attach_editor_process"],
+      N6: [],
+      N7: ["execute_asset_mutation", "record_asset_mutation_outcome"],
+      N8: [
+        "execute_asset_mutation",
+        "record_asset_mutation_outcome",
+        "rollback_asset_mutation",
+        "record_asset_mutation_outcome",
+      ],
+    }[record.caseId];
+    if (
+      !Array.isArray(record.setupReceipts) ||
+      stable(record.setupReceipts.map(({ api }) => api)) !== stable(expectedSetupApis)
+    ) {
+      fail("FINAL_UI_NEGATIVE_SOURCE_INVALID");
+    }
+    for (const setupReceipt of record.setupReceipts) {
+      assertExactKeys(
+        setupReceipt,
+        [
+          "api",
+          "id",
+          "sequence",
+          "responseSha256",
+          "status",
+          "reason",
+          "sessionId",
+          "registrationId",
+          "phase",
+          "operationId",
+          "processId",
+          "ownerTaskId",
+          "ownerPhase",
+          "observationGeneration",
+        ],
+        "FINAL_UI_NEGATIVE_SOURCE_INVALID",
+      );
+      receiptReference(
+        { id: setupReceipt.id, sequence: setupReceipt.sequence },
+        "FINAL_UI_NEGATIVE_SOURCE_INVALID",
+        observedReceipts,
+      );
+      if (typeof setupReceipt.api !== "string" || !isHex(setupReceipt.responseSha256)) {
+        fail("FINAL_UI_NEGATIVE_SOURCE_INVALID");
+      }
+    }
+    const setupSequenceValid = record.setupReceipts.every(
+      (receipt, index) => index === 0 || record.setupReceipts[index - 1].sequence < receipt.sequence,
+    );
+    const setupResponseValid = (() => {
+      const setup = record.setupReceipts;
+      if (record.caseId === "N1") return setup[0]?.status === "retracted";
+      if (record.caseId === "N2" || record.caseId === "N6") return setup.length === 0;
+      if (record.caseId === "N3") {
+        return setup[0]?.status === "stopped" && setup[0]?.sessionId === record.sessionId;
+      }
+      if (record.caseId === "N4") {
+        return setup[0]?.status === "created" &&
+          setup[0]?.reason === "task_owned_process_started" &&
+          typeof setup[0]?.processId === "string" && setup[0].processId.length >= 8 &&
+          typeof setup[0]?.ownerTaskId === "string" && setup[0].ownerTaskId.length >= 8 &&
+          setup[0]?.ownerPhase === "ui-lifecycle" &&
+          setup[1]?.status === "degraded" && setup[1]?.reason === "process_exited" &&
+          setup[1]?.sessionId === record.sessionId;
+      }
+      if (record.caseId === "N5") {
+        return setup[0]?.status === "attached" &&
+          typeof setup[0]?.sessionId === "string" && setup[0].sessionId !== record.sessionId &&
+          Number.isSafeInteger(setup[0]?.observationGeneration) &&
+          setup[0].observationGeneration > 0;
+      }
+      const registrationMatches = setup.every(
+        (receipt) => receipt.registrationId === record.registrationId,
+      );
+      if (record.caseId === "N7") {
+        return registrationMatches && setup[0]?.status === "accepted_by_native_guard" &&
+          setup[0]?.phase === "execute" && setup[1]?.status === "recorded" &&
+          setup[1]?.phase === "execute" && setup[0]?.operationId === setup[1]?.operationId;
+      }
+      if (record.caseId === "N8") {
+        return registrationMatches && setup[0]?.status === "accepted_by_native_guard" &&
+          setup[0]?.phase === "execute" && setup[1]?.status === "recorded" &&
+          setup[1]?.phase === "execute" && setup[0]?.operationId === setup[1]?.operationId &&
+          setup[2]?.status === "accepted_by_native_guard" && setup[2]?.phase === "rollback" &&
+          setup[3]?.status === "recorded" && setup[3]?.phase === "rollback" &&
+          setup[2]?.operationId === setup[3]?.operationId;
+      }
+      return false;
+    })();
+    const call = observedCall(
+      record.guardCall,
+      record.caseId === "N2" || record.caseId === "N6"
+        ? "dry_run_asset_mutation"
+        : record.caseId === "N8"
+          ? "rollback_asset_mutation"
+          : "execute_asset_mutation",
+      "blocked",
+      "FINAL_UI_NEGATIVE_SOURCE_INVALID",
+      observedReceipts,
+    );
+    assertExactKeys(
+      record.contentBefore,
+      ["evidenceId", "sha256", "receiptId", "receiptSequence"],
+      "FINAL_UI_NEGATIVE_SOURCE_INVALID",
+    );
+    assertExactKeys(
+      record.contentAfter,
+      ["evidenceId", "sha256", "receiptId", "receiptSequence"],
+      "FINAL_UI_NEGATIVE_SOURCE_INVALID",
+    );
+    identityReceipts(record.identityReceipts, "FINAL_UI_NEGATIVE_SOURCE_INVALID", observedReceipts);
+    inlineReceipt(record.contentBefore, "FINAL_UI_NEGATIVE_SOURCE_INVALID", observedReceipts);
+    inlineReceipt(record.contentAfter, "FINAL_UI_NEGATIVE_SOURCE_INVALID", observedReceipts);
+    const before = counterVector(record.countersBefore, "FINAL_UI_NEGATIVE_SOURCE_INVALID");
+    const after = counterVector(record.countersAfter, "FINAL_UI_NEGATIVE_SOURCE_INVALID");
+    counterReceipt(
+      record.counterReadBefore,
+      before,
+      "FINAL_UI_NEGATIVE_SOURCE_INVALID",
+      observedReceipts,
+    );
+    counterReceipt(
+      record.counterReadAfter,
+      after,
+      "FINAL_UI_NEGATIVE_SOURCE_INVALID",
+      observedReceipts,
+    );
+    closeoutReceipts(record.closeoutReceipts, "FINAL_UI_NEGATIVE_SOURCE_INVALID", observedReceipts);
+    const deltas = after.map((count, index) => count - before[index]);
+    if (
+      [record.sessionId, record.nativeSessionId, record.runId, record.registrationId].some(
+        (value) => typeof value !== "string" || value.length < 8,
+      ) ||
+      call.reason !== expectedNegativeReasons.find(([caseId]) => caseId === record.caseId)?.[1] ||
+      typeof record.contentBefore.evidenceId !== "string" ||
+      typeof record.contentAfter.evidenceId !== "string" ||
+      record.contentBefore.evidenceId === record.contentAfter.evidenceId ||
+      !isHex(record.contentBefore.sha256) ||
+      record.contentAfter.sha256 !== record.contentBefore.sha256 ||
+      deltas.some((count) => count !== 0) ||
+      !setupSequenceValid ||
+      !setupResponseValid ||
+      record.observationStopped !== true ||
+      record.localMcpClosed !== true ||
+      record.serverMcpTerminated !== record.closeoutReceipts.serverDisconnected ||
+      record.mcpDisconnected !== record.serverMcpTerminated
+    ) {
+      fail("FINAL_UI_NEGATIVE_SOURCE_INVALID");
+    }
+  }
+  const partial = authorityData(
+    oneEvent(events, "partial_unknown_observation", "FINAL_UI_PARTIAL_SOURCE_INVALID"),
+    [
+      "sessionId",
+      "nativeSessionId",
+      "runId",
+      "registrationId",
+      "identityReceipts",
+      "operationResults",
+      "contentBefore",
+      "contentAfter",
+      "countersBefore",
+      "countersAfter",
+      "counterReadBefore",
+      "counterReadAfter",
+      "observationStopped",
+      "localMcpClosed",
+      "serverMcpTerminated",
+      "mcpDisconnected",
+      "closeoutReceipts",
+    ],
+    "runtime_observed",
+    "FINAL_UI_PARTIAL_SOURCE_INVALID",
+  );
+  const expectedPartial = [
+    ["forward", "create_run_root", "succeeded", "known_effect", "none"],
+    ["forward", "duplicate_test01", "succeeded", "known_effect", "none"],
+    ["forward", "rename_duplicate", "succeeded", "known_effect", "none"],
+    ["forward", "move_duplicate", "failed", "unknown", "effect_unknown"],
+    ["inverse", "rename_back", "succeeded", "known_effect", "none"],
+    ["inverse", "delete_duplicate", "succeeded", "known_effect", "none"],
+    ["inverse", "cleanup_empty_folder", "succeeded", "known_effect", "none"],
+    ["control", "cross_ttl", "blocked", "known_none", "approval_expired"],
+    ["control", "second_rollback", "blocked", "known_none", "rollback_replay"],
+  ];
+  if (!Array.isArray(partial.operationResults) || partial.operationResults.length !== expectedPartial.length) {
+    fail("FINAL_UI_PARTIAL_SOURCE_INVALID");
+  }
+  const observedPartial = partial.operationResults.map((record, index) => {
+    assertExactKeys(
+      record,
+      [
+        "sequence",
+        "direction",
+        "action",
+        "api",
+        "receiptId",
+        "receiptSequence",
+        "requestSha256",
+        "responseSha256",
+        "status",
+        "effectState",
+        "reason",
+        "evidenceId",
+        "setupReceipts",
+      ],
+      "FINAL_UI_PARTIAL_SOURCE_INVALID",
+    );
+    inlineReceipt(record, "FINAL_UI_PARTIAL_SOURCE_INVALID", observedReceipts);
+    const expectedSetupApis =
+      index < 7
+        ? []
+        : index === 7
+          ? ["attach_editor_process", "register_asset_mutation_approval"]
+          : [
+              "attach_editor_process",
+              "register_asset_mutation_approval",
+              "execute_asset_mutation",
+              "record_asset_mutation_outcome",
+              "rollback_asset_mutation",
+              "record_asset_mutation_outcome",
+            ];
+    if (
+      !Array.isArray(record.setupReceipts) ||
+      stable(record.setupReceipts.map(({ api }) => api)) !== stable(expectedSetupApis)
+    ) {
+      fail("FINAL_UI_PARTIAL_SOURCE_INVALID");
+    }
+    for (const setupReceipt of record.setupReceipts) {
+      assertExactKeys(
+        setupReceipt,
+        [
+          "api",
+          "id",
+          "sequence",
+          "status",
+          "reason",
+          "sessionId",
+          "registrationId",
+          "phase",
+          "operationId",
+          "requestSessionId",
+          "requestRegistrationId",
+        ],
+        "FINAL_UI_PARTIAL_SOURCE_INVALID",
+      );
+      if (typeof setupReceipt.api !== "string") {
+        fail("FINAL_UI_PARTIAL_SOURCE_INVALID");
+      }
+      receiptReference(
+        { id: setupReceipt.id, sequence: setupReceipt.sequence },
+        "FINAL_UI_PARTIAL_SOURCE_INVALID",
+        observedReceipts,
+      );
+    }
+    const setupSequenceValid = record.setupReceipts.every(
+      (receipt, setupIndex) =>
+        setupIndex === 0 || record.setupReceipts[setupIndex - 1].sequence < receipt.sequence,
+    );
+    let setupResponsesValid = record.setupReceipts.length === 0;
+    if (index === 7) {
+      const [attach, registration] = record.setupReceipts;
+      setupResponsesValid = attach?.status === "attached" &&
+        registration?.status === "registered" &&
+        attach?.sessionId === registration?.requestSessionId;
+    } else if (index === 8) {
+      const [attach, registration, execute, executeOutcome, rollback, rollbackOutcome] =
+        record.setupReceipts;
+      const freshRegistration = registration?.registrationId;
+      setupResponsesValid = attach?.status === "attached" &&
+        registration?.status === "registered" &&
+        attach?.sessionId === registration?.requestSessionId &&
+        typeof freshRegistration === "string" && freshRegistration.length >= 8 &&
+        [execute, executeOutcome, rollback, rollbackOutcome].every(
+          (entry) => entry?.registrationId === freshRegistration &&
+            entry?.requestRegistrationId === freshRegistration,
+        ) &&
+        execute?.status === "accepted_by_native_guard" && execute?.phase === "execute" &&
+        executeOutcome?.status === "recorded" && executeOutcome?.phase === "execute" &&
+        execute?.operationId === executeOutcome?.operationId &&
+        rollback?.status === "accepted_by_native_guard" && rollback?.phase === "rollback" &&
+        rollbackOutcome?.status === "recorded" && rollbackOutcome?.phase === "rollback" &&
+        rollback?.operationId === rollbackOutcome?.operationId;
+    }
+    if (
+      record.sequence !== index + 1 ||
+      !setupSequenceValid ||
+      !setupResponsesValid ||
+      !isHex(record.requestSha256) ||
+      !isHex(record.responseSha256) ||
+      typeof record.api !== "string" ||
+      record.api.length === 0 ||
+      typeof record.evidenceId !== "string" ||
+      record.evidenceId.length < 8
+    ) {
+      fail("FINAL_UI_PARTIAL_SOURCE_INVALID");
+    }
+    return [record.direction, record.action, record.status, record.effectState, record.reason];
+  });
+  assertExactKeys(
+    partial.contentBefore,
+    ["evidenceId", "sha256", "receiptId", "receiptSequence"],
+    "FINAL_UI_PARTIAL_SOURCE_INVALID",
+  );
+  assertExactKeys(
+    partial.contentAfter,
+    ["evidenceId", "sha256", "receiptId", "receiptSequence"],
+    "FINAL_UI_PARTIAL_SOURCE_INVALID",
+  );
+  identityReceipts(partial.identityReceipts, "FINAL_UI_PARTIAL_SOURCE_INVALID", observedReceipts);
+  inlineReceipt(partial.contentBefore, "FINAL_UI_PARTIAL_SOURCE_INVALID", observedReceipts);
+  inlineReceipt(partial.contentAfter, "FINAL_UI_PARTIAL_SOURCE_INVALID", observedReceipts);
+  const partialBefore = counterVector(partial.countersBefore, "FINAL_UI_PARTIAL_SOURCE_INVALID");
+  const partialAfter = counterVector(partial.countersAfter, "FINAL_UI_PARTIAL_SOURCE_INVALID");
+  counterReceipt(
+    partial.counterReadBefore,
+    partialBefore,
+    "FINAL_UI_PARTIAL_SOURCE_INVALID",
+    observedReceipts,
+  );
+  counterReceipt(
+    partial.counterReadAfter,
+    partialAfter,
+    "FINAL_UI_PARTIAL_SOURCE_INVALID",
+    observedReceipts,
+  );
+  closeoutReceipts(partial.closeoutReceipts, "FINAL_UI_PARTIAL_SOURCE_INVALID", observedReceipts);
+  if (
+    stable(observedPartial) !== stable(expectedPartial) ||
+    [partial.sessionId, partial.nativeSessionId, partial.runId, partial.registrationId].some(
+      (value) => typeof value !== "string" || value.length < 8,
+    ) ||
+    !isHex(partial.contentBefore.sha256) ||
+    partial.contentAfter.sha256 !== partial.contentBefore.sha256 ||
+    partial.contentBefore.evidenceId === partial.contentAfter.evidenceId ||
+    partialAfter.some((count, index) => count < partialBefore[index]) ||
+    !partialAfter.some((count, index) => count > partialBefore[index]) ||
+    partial.observationStopped !== true ||
+    partial.localMcpClosed !== true ||
+    partial.serverMcpTerminated !== partial.closeoutReceipts.serverDisconnected ||
+    partial.mcpDisconnected !== partial.serverMcpTerminated
+  ) {
+    fail("FINAL_UI_PARTIAL_SOURCE_INVALID");
+  }
+  const replay = authorityData(
+    oneEvent(events, "replay_inspection_observation", "FINAL_UI_REPLAY_EVENT_INVALID"),
+    [
+      "recordedRepresentationSha256",
+      "recordedRepresentationReceiptId",
+      "recordedRepresentationReceiptSequence",
+      "recordedEventCount",
+      "recordedActions",
+      "counterNames",
+      "countersBefore",
+      "countersAfter",
+      "counterReadBefore",
+      "counterReadAfter",
+      "sideEffectDelta",
+    ],
+    "runtime_observed",
+    "FINAL_UI_REPLAY_EVENT_INVALID",
+  );
+  const expectedCounterNames = ["native", "mcp", "provider", "verify", "rollback"];
+  const replayBefore = counterVector(replay.countersBefore, "FINAL_UI_REPLAY_EVENT_INVALID");
+  const replayAfter = counterVector(replay.countersAfter, "FINAL_UI_REPLAY_EVENT_INVALID");
+  const replayDelta = counterVector(replay.sideEffectDelta, "FINAL_UI_REPLAY_EVENT_INVALID");
+  inlineReceipt(
+    {
+      receiptId: replay.recordedRepresentationReceiptId,
+      receiptSequence: replay.recordedRepresentationReceiptSequence,
+    },
+    "FINAL_UI_REPLAY_EVENT_INVALID",
+    observedReceipts,
+  );
+  counterReceipt(replay.counterReadBefore, replayBefore, "FINAL_UI_REPLAY_EVENT_INVALID", observedReceipts);
+  counterReceipt(replay.counterReadAfter, replayAfter, "FINAL_UI_REPLAY_EVENT_INVALID", observedReceipts);
+  if (
+    !isHex(replay.recordedRepresentationSha256) ||
+    !Number.isSafeInteger(replay.recordedEventCount) ||
+    replay.recordedEventCount < 1 ||
+    stable(replay.recordedActions) !== stable(["dry-run", "preview", "approval", "execute", "verify", "rollback"]) ||
+    stable(replay.counterNames) !== stable(expectedCounterNames) ||
+    stable(replayBefore) !== stable(replayAfter) ||
+    replayDelta.some((count) => count !== 0)
+  ) {
+    fail("FINAL_UI_REPLAY_EVENT_INVALID");
+  }
+  const negativeSummary = authorityData(
+    oneEvent(events, "negative_matrix", "FINAL_UI_NEGATIVE_EVENT_INVALID"),
+    ["caseCount", "passedCount", "rawObservationCount"],
+    "derived_only",
+    "FINAL_UI_NEGATIVE_EVENT_INVALID",
+  );
+  const partialSummary = authorityData(
+    oneEvent(events, "partial_unknown_effect", "FINAL_UI_PARTIAL_EVENT_INVALID"),
+    ["covered", "rawOperationCount"],
+    "derived_only",
+    "FINAL_UI_PARTIAL_EVENT_INVALID",
+  );
+  const rootState = authorityData(
+    oneEvent(events, "run_root_state", "FINAL_UI_ROOT_EVENT_INVALID"),
+    ["removed", "contentEvidenceId"],
+    "derived_only",
+    "FINAL_UI_ROOT_EVENT_INVALID",
+  );
+  const ownership = authorityData(
+    oneEvent(events, "ownership_state", "FINAL_UI_OWNERSHIP_EVENT_INVALID"),
+    ["parentCloseoutRequired"],
+    "derived_only",
+    "FINAL_UI_OWNERSHIP_EVENT_INVALID",
+  );
+  if (
+    negativeSummary.caseCount !== negativeCases.length ||
+    negativeSummary.passedCount !== negativeCases.length ||
+    negativeSummary.rawObservationCount !== negativeCases.length ||
+    partialSummary.covered !== true ||
+    partialSummary.rawOperationCount !== partial.operationResults.length ||
+    rootState.removed !== true ||
+    rootState.contentEvidenceId !== manifests[1].evidenceId ||
+    ownership.parentCloseoutRequired !== true ||
+    [
+      closeout.processResidualCount,
+      closeout.portResidualCount,
+      closeout.markerResidualCount,
+      closeout.partialOutputCount,
+    ].some((count) => count !== 0)
+  ) {
+    fail("FINAL_UI_LIFECYCLE_EVENT_INVALID");
+  }
+  const n4Setup = negativeCases.find(({ caseId }) => caseId === "N4").setupReceipts;
+  const n5Setup = negativeCases.find(({ caseId }) => caseId === "N5").setupReceipts;
+  const secondRollbackSetup = partial.operationResults.find(
+    ({ action }) => action === "second_rollback",
+  ).setupReceipts;
+  const closeouts = [...negativeCases, partial].map((record) => record.closeoutReceipts);
+  return {
+    captureOrigin: origin.origin,
+    fixtureUsed: false,
+    renderedUiPath,
+    readOnlySource: "/Game/Test01",
+    artifactAuthorityBindingSha256: artifact.data.producerBindingSha256,
+    forwardOrder: FORWARD_ORDER,
+    inverseOrder: INVERSE_ORDER,
+    ledger: {
+      forwardEventCount: FORWARD_ORDER.length,
+      inverseEventCount: INVERSE_ORDER.length,
+      sideEffectCount: FORWARD_ORDER.length + INVERSE_ORDER.length,
+      forbiddenTotal: 0,
+      replaySideEffectDelta: replayDelta,
+    },
+    negativeMatrixComplete: true,
+    negativeCaseCount: negativeCases.length,
+    partialUnknownEffectCovered: true,
+    nativeLifecycleEvidence: {
+      n4ManagedProcessId: n4Setup[0].processId,
+      n4OwnerTaskId: n4Setup[0].ownerTaskId,
+      n4OwnerPhase: n4Setup[0].ownerPhase,
+      n5SuccessorSessionId: n5Setup[0].sessionId,
+      n5ObservationGeneration: n5Setup[0].observationGeneration,
+      secondRollbackSetupApis: secondRollbackSetup.map(({ api }) => api),
+      secondRollbackSetupReceiptIds: secondRollbackSetup.map(({ id }) => id),
+    },
+    mcpTermination: {
+      localCloseCount: closeouts.filter((_, index) =>
+        (index < negativeCases.length ? negativeCases[index] : partial).localMcpClosed,
+      ).length,
+      acceptedCount: closeouts.filter(({ mcpTerminationStatus }) => mcpTerminationStatus === "accepted")
+        .length,
+      unsupportedCount: closeouts.filter(
+        ({ mcpTerminationStatus }) => mcpTerminationStatus === "unsupported",
+      ).length,
+      receiptIds: closeouts.map(({ mcpDisconnectReceiptId }) => mcpDisconnectReceiptId),
+    },
+    nativeObservationReceiptCount: observedReceipts.size,
+    contentSha256: manifests[0].sha256,
+    contentRestored: true,
+    runRootRemoved: true,
+    ownershipClosed: true,
+    processResidualCount: closeout.processResidualCount,
+    portResidualCount: closeout.portResidualCount,
+  };
 }
 
 function productionProvenanceEvent(events) {
@@ -1392,7 +3077,8 @@ function verifyUeProductionArtifactConsistency(
   };
 }
 
-function deriveProduct(events, closeout, mode) {
+function deriveProduct(events, closeout, mode, context = {}) {
+  if (mode === "live") return deriveLiveProduct(events, closeout, context);
   const origin = exactData(
     oneEvent(events, "capture_origin", "FINAL_PRODUCT_ORIGIN_EVENT_INVALID"),
     ["origin", "fixtureUsed", "manualDescriptorInjection", "directMcpBypass"],
@@ -1448,6 +3134,45 @@ function deriveProduct(events, closeout, mode) {
     "renderer_restart",
     "newer_generation",
   ];
+  if (mode === "live") {
+    const observations = events
+      .filter((event) => event.type === "retraction_observation")
+      .map((event) => exactData(
+        event,
+        ["reason", "sessionId", "generationBefore", "generationAfter", "statusBefore", "statusAfter", "count"],
+        "FINAL_PRODUCT_RETRACTION_SOURCE_INVALID",
+      ));
+    const sessions = new Set(observations.map(({ sessionId }) => sessionId));
+    if (
+      stable(observations.map(({ reason }) => reason)) !== stable(expectedRetractions) ||
+      observations.length !== expectedRetractions.length ||
+      sessions.size !== expectedRetractions.length ||
+      observations.some((observation) =>
+        typeof observation.sessionId !== "string" ||
+        observation.sessionId.length === 0 ||
+        !Number.isSafeInteger(observation.generationBefore) ||
+        !Number.isSafeInteger(observation.generationAfter) ||
+        observation.generationBefore < 1 ||
+        observation.generationAfter <= observation.generationBefore ||
+        observation.statusBefore !== "ready" ||
+        observation.statusAfter !== "blocked" ||
+        observation.count !== TOOL_NAMES.length
+      )
+    ) {
+      fail("FINAL_PRODUCT_RETRACTION_SOURCE_INVALID");
+    }
+    const toolSearch = events
+      .filter((event) => event.type === "tool_search_observation")
+      .map((event) => exactData(event, ["mode", "status"], "FINAL_PRODUCT_TOOL_SEARCH_INVALID"));
+    if (
+      stable(toolSearch) !== stable([
+        { mode: "on", status: "passed" },
+        { mode: "off", status: "passed" },
+      ])
+    ) {
+      fail("FINAL_PRODUCT_TOOL_SEARCH_INVALID");
+    }
+  }
   if (
     stable(retractions.map(({ reason }) => reason)) !== stable(expectedRetractions) ||
     retractions.some(({ count }) => count !== TOOL_NAMES.length)
@@ -1478,7 +3203,8 @@ function deriveProduct(events, closeout, mode) {
   };
 }
 
-function deriveUi(events, closeout, mode) {
+function deriveUi(events, closeout, mode, context = {}) {
+  if (mode === "live") return deriveLiveUi(events, closeout, context);
   const origin = exactData(
     oneEvent(events, "capture_origin", "FINAL_UI_ORIGIN_EVENT_INVALID"),
     ["origin", "fixtureUsed"],
@@ -1493,9 +3219,39 @@ function deriveUi(events, closeout, mode) {
   const renderedUiPath = events
     .filter((event) => event.type === "rendered_step")
     .map((event) => exactData(event, ["step"], "FINAL_UI_PATH_EVENT_INVALID").step);
-  if (stable(renderedUiPath) !== stable(["validate", "add", "confirmTrust"])) {
+  const expectedRenderedUiPath =
+    mode === "live"
+      ? [
+          "validate",
+          "add",
+          "confirmTrust",
+          "observationDiscover",
+          "observationAttach",
+          "observationReady",
+          "mcpConnect",
+          "mcpInitialize",
+          "mcpDiscover",
+          "mcpNormalize",
+          "mcpFingerprint",
+          "dryRun",
+          "approve",
+          "register",
+          "execute",
+          "verify",
+          "crossTtl",
+          "rollback",
+          "finalVerify",
+          "replay",
+          "observationStop",
+          "mcpDisconnect",
+        ]
+      : ["validate", "add", "confirmTrust"];
+  if (
+    stable(renderedUiPath) !== stable(expectedRenderedUiPath)
+  ) {
     fail("FINAL_UI_PATH_EVENT_INVALID");
   }
+  installedLoaded(events);
   const actions = events
     .filter((event) => event.type === "lifecycle_action")
     .map((event) =>
@@ -1510,7 +3266,9 @@ function deriveUi(events, closeout, mode) {
   if (
     stable(forwardOrder) !== stable(FORWARD_ORDER) ||
     stable(inverseOrder) !== stable(INVERSE_ORDER) ||
-    actions.some(({ sideEffectCount }) => sideEffectCount !== 0)
+    actions.some(({ direction, sideEffectCount }) =>
+      sideEffectCount !== (mode === "live" && (direction === "forward" || direction === "inverse") ? 1 : 0),
+    )
   ) {
     fail("FINAL_UI_ACTION_EVENT_INVALID");
   }
@@ -1524,6 +3282,85 @@ function deriveUi(events, closeout, mode) {
     ["covered"],
     "FINAL_UI_PARTIAL_EVENT_INVALID",
   );
+  if (mode === "live") {
+    const expectedNegativeReasons = [
+      ["N1", "untrusted_root"],
+      ["N2", "feature_disabled"],
+      ["N3", "observation_session_stopped"],
+      ["N4", "process_exited"],
+      ["N5", "stale_generation"],
+      ["N6", "sandbox_path_required"],
+      ["N7", "execute_replay"],
+      ["N8", "rollback_replay"],
+    ];
+    const negativeCases = events
+      .filter((event) => event.type === "negative_case")
+      .map((event) => exactData(
+        event,
+        ["caseId", "sessionId", "runId", "registrationId", "blockedReason", "beforeContentSha256", "afterContentSha256", "counterDelta", "closeout"],
+        "FINAL_UI_NEGATIVE_SOURCE_INVALID",
+      ));
+    const identityValues = negativeCases.flatMap(({ sessionId, runId, registrationId }) => [
+      sessionId,
+      runId,
+      registrationId,
+    ]);
+    if (
+      stable(negativeCases.map(({ caseId, blockedReason }) => [caseId, blockedReason])) !==
+        stable(expectedNegativeReasons) ||
+      negativeCases.length !== 8 ||
+      new Set(identityValues).size !== identityValues.length ||
+      negativeCases.some((record) => {
+        assertExactKeys(
+          record.closeout,
+          ["observationStopped", "mcpDisconnected", "processResidualCount", "portResidualCount"],
+          "FINAL_UI_NEGATIVE_SOURCE_INVALID",
+        );
+        return !isHex(record.beforeContentSha256) ||
+          record.afterContentSha256 !== record.beforeContentSha256 ||
+          stable(record.counterDelta) !== stable([1, 0, 0, 0, 0]) ||
+          record.closeout.observationStopped !== true ||
+          record.closeout.mcpDisconnected !== true ||
+          record.closeout.processResidualCount !== 0 ||
+          record.closeout.portResidualCount !== 0;
+      })
+    ) {
+      fail("FINAL_UI_NEGATIVE_SOURCE_INVALID");
+    }
+    const partialRecord = exactData(
+      oneEvent(events, "partial_unknown_effect_record", "FINAL_UI_PARTIAL_SOURCE_INVALID"),
+      ["sessionId", "runId", "registrationId", "effectState", "successfulForward", "inverseRollbackOrder", "crossTtlRejected", "secondRollbackBlocked", "beforeContentSha256", "afterContentSha256", "closeout"],
+      "FINAL_UI_PARTIAL_SOURCE_INVALID",
+    );
+    assertExactKeys(
+      partialRecord.closeout,
+      ["observationStopped", "mcpDisconnected", "processResidualCount", "portResidualCount"],
+      "FINAL_UI_PARTIAL_SOURCE_INVALID",
+    );
+    if (
+      partialRecord.effectState !== "unknown" ||
+      stable(partialRecord.successfulForward) !== stable([
+        "create_run_root",
+        "duplicate_test01",
+        "rename_duplicate",
+      ]) ||
+      stable(partialRecord.inverseRollbackOrder) !== stable([
+        "rename_back",
+        "delete_duplicate",
+        "cleanup_empty_folder",
+      ]) ||
+      partialRecord.crossTtlRejected !== true ||
+      partialRecord.secondRollbackBlocked !== true ||
+      !isHex(partialRecord.beforeContentSha256) ||
+      partialRecord.afterContentSha256 !== partialRecord.beforeContentSha256 ||
+      partialRecord.closeout.observationStopped !== true ||
+      partialRecord.closeout.mcpDisconnected !== true ||
+      partialRecord.closeout.processResidualCount !== 0 ||
+      partialRecord.closeout.portResidualCount !== 0
+    ) {
+      fail("FINAL_UI_PARTIAL_SOURCE_INVALID");
+    }
+  }
   const rootState = exactData(
     oneEvent(events, "run_root_state", "FINAL_UI_ROOT_EVENT_INVALID"),
     ["removed"],
@@ -1568,7 +3405,7 @@ function deriveUi(events, closeout, mode) {
     ledger: {
       forwardEventCount: forwardOrder.length,
       inverseEventCount: inverseOrder.length,
-      sideEffectCount: 0,
+      sideEffectCount: mode === "live" ? FORWARD_ORDER.length + INVERSE_ORDER.length : 0,
       forbiddenTotal: 0,
       ...(mode === "live"
         ? {
@@ -1590,10 +3427,10 @@ function deriveUi(events, closeout, mode) {
   };
 }
 
-function derivedFor(kind, events, closeout, mode) {
+function derivedFor(kind, events, closeout, mode, context = {}) {
   if (kind === "ue-automation") return deriveUe(events, closeout, mode);
-  if (kind === "product-capture") return deriveProduct(events, closeout, mode);
-  return deriveUi(events, closeout, mode);
+  if (kind === "product-capture") return deriveProduct(events, closeout, mode, context);
+  return deriveUi(events, closeout, mode, context);
 }
 
 function executeFixturePhase(kind, args) {
@@ -1886,7 +3723,24 @@ function writeFirstFailure(kind, paths, binding, result, reason, capturedAt) {
   return outputBinding(binding.root, paths.firstFailure);
 }
 
-function issueOwnedLaunchReceipt({ kind, identity, taskId, launch, producerPath, paths, result }) {
+function issueOwnedLaunchReceipt({
+  kind,
+  identity,
+  taskId,
+  launch,
+  producerPath,
+  paths,
+  result,
+  derivationAuthority,
+}) {
+  const requiresDerivationAuthority = kind === "product-capture" || kind === "ui-lifecycle";
+  const derivationState = LIVE_DERIVATION_AUTHORITIES.get(derivationAuthority);
+  if (
+    requiresDerivationAuthority &&
+    (derivationAuthority?.scope !== "owned-launch" || derivationState?.used !== true)
+  ) {
+    fail("FINAL_PHASE_OWNED_LAUNCH_RECEIPT_INVALID");
+  }
   const receipt = Object.freeze({
     kind,
     repository: identity.repository,
@@ -1901,6 +3755,7 @@ function issueOwnedLaunchReceipt({ kind, identity, taskId, launch, producerPath,
     launcher: spawnSync,
     producerLedgerSha256: sha256File(paths.ledger),
     summarySha256: sha256File(paths.summary),
+    derivationAuthority,
   });
   OWNED_LAUNCH_RECEIPTS.add(receipt);
   return receipt;
@@ -1931,6 +3786,12 @@ function verifyOwnedLaunchAuthority(kind, args, receipt) {
       receipt.launcher !== spawnSync ||
       receipt.producerLedgerSha256 !== sha256File(paths.ledger) ||
       receipt.summarySha256 !== sha256File(paths.summary) ||
+      ((kind === "product-capture" || kind === "ui-lifecycle") &&
+        stable(readJson(paths.summary, code).ownedLaunchBinding) !==
+          stable(persistedOwnedLaunchBinding(receipt.derivationAuthority))) ||
+      ((kind === "product-capture" || kind === "ui-lifecycle") &&
+        (receipt.derivationAuthority?.scope !== "owned-launch" ||
+          LIVE_DERIVATION_AUTHORITIES.get(receipt.derivationAuthority)?.used !== true)) ||
       persisted.persistedArtifactConsistencyVerified !== true ||
       persisted.productionLaunchAuthorityVerified !== false
     ) {
@@ -1942,6 +3803,7 @@ function verifyOwnedLaunchAuthority(kind, args, receipt) {
       productionLaunchAuthorityVerified: true,
     };
   } finally {
+    LIVE_DERIVATION_AUTHORITIES.delete(receipt?.derivationAuthority);
     OWNED_LAUNCH_RECEIPTS.delete(receipt);
   }
 }
@@ -2045,6 +3907,7 @@ function executeLivePhase(kind, args) {
   const ownership = validateMarkerPort(args);
   const session = validatePhaseSession(args, kind, "live");
   const launch = liveProducerVector(kind, args, identity, taskId, ownership, session);
+  const sourceIdentity = computeSourceIdentity(identity.repository);
   const paths = phasePaths(identity.root, kind);
   if (Object.values(paths).some((path) => existsSync(path))) fail("FINAL_PHASE_OUTPUT_EXISTS");
   const producer = LIVE_PRODUCERS[kind];
@@ -2174,6 +4037,22 @@ function executeLivePhase(kind, args) {
       "raw",
       RUNTIME_EVENT_SCHEMA,
     ),
+    artifactBinding(
+      identity.root,
+      resolve(identity.root, "metadata", `${kind}.job-closeout.json`),
+      capturedAt,
+      producer.id,
+      "raw",
+      JOB_CLOSEOUT_SCHEMA,
+    ),
+    artifactBinding(
+      identity.root,
+      resolve(identity.root, "metadata", `${kind}.port-closeout.json`),
+      capturedAt,
+      producer.id,
+      "raw",
+      PORT_CLOSEOUT_SCHEMA,
+    ),
   ];
   if (kind === "ue-automation") {
     const earlyIdentityRelativePath = parsed.productionProvenance.earlyIdentity.relativePath;
@@ -2194,15 +4073,29 @@ function executeLivePhase(kind, args) {
         "raw",
         LOADED_LEDGER_SCHEMA,
       ),
-      artifactBinding(
-        identity.root,
-        resolve(identity.root, "metadata", "ue-automation.job-closeout.json"),
-        capturedAt,
-        producer.id,
-        "raw",
-        JOB_CLOSEOUT_SCHEMA,
-      ),
     );
+  }
+  const liveDerivationContext = {
+    sourceCommit: launch.sourceCommit,
+    sourceTreeSha256: sourceIdentity.sourceTreeSha256,
+    sessionId: session.sessionId,
+    generation: session.generation,
+    runtimeProcessId: parsed.runtimeProcess.pid,
+    runtimeProcess: parsed.runtimeProcess,
+  };
+  const ownedDerivationAuthority =
+    kind === "product-capture" || kind === "ui-lifecycle"
+      ? issueLiveDerivationAuthority("owned-launch", kind, parsed, liveDerivationContext)
+      : null;
+  let derived;
+  try {
+    derived = derivedFor(kind, parsed.events, parsed.closeout, "live", {
+      ...liveDerivationContext,
+      ownedDerivationAuthority,
+    });
+  } catch (error) {
+    LIVE_DERIVATION_AUTHORITIES.delete(ownedDerivationAuthority);
+    throw error;
   }
   const summary = {
     schemaVersion:
@@ -2217,11 +4110,14 @@ function executeLivePhase(kind, args) {
     evidenceMode: "live",
     persistedOriginClaimConsistent: parsed.persistedOriginClaimConsistent,
     productionLaunchAuthorityVerified: false,
+    ...(ownedDerivationAuthority
+      ? { ownedLaunchBinding: persistedOwnedLaunchBinding(ownedDerivationAuthority) }
+      : {}),
     sessionId: session.sessionId,
     endpoint: launch.endpoint,
     generation: session.generation,
     producerLedgerSha256: sha256File(paths.ledger),
-    ...derivedFor(kind, parsed.events, parsed.closeout, "live"),
+    ...derived,
     sourceArtifacts,
   };
   writeFileSync(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, {
@@ -2237,9 +4133,11 @@ function executeLivePhase(kind, args) {
       producerPath,
       paths,
       result,
+      derivationAuthority: ownedDerivationAuthority,
     });
     return verifyOwnedLaunchAuthority(kind, { ...args, input: paths.summary }, receipt);
   } catch (error) {
+    LIVE_DERIVATION_AUTHORITIES.delete(ownedDerivationAuthority);
     rmSync(paths.summary, { force: true });
     throw error;
   }
@@ -2272,7 +4170,11 @@ function verifyPhaseSummary(kind, args) {
   );
   const jobCloseoutArtifact = summary.sourceArtifacts.find(
     ({ relativePath, schema }) =>
-      relativePath === "metadata/ue-automation.job-closeout.json" && schema === JOB_CLOSEOUT_SCHEMA,
+      relativePath === `metadata/${kind}.job-closeout.json` && schema === JOB_CLOSEOUT_SCHEMA,
+  );
+  const portCloseoutArtifact = summary.sourceArtifacts.find(
+    ({ relativePath, schema }) =>
+      relativePath === `metadata/${kind}.port-closeout.json` && schema === PORT_CLOSEOUT_SCHEMA,
   );
   const earlyIdentityArtifact = summary.sourceArtifacts.find(
     ({ relativePath, schema }) =>
@@ -2283,9 +4185,10 @@ function verifyPhaseSummary(kind, args) {
     !eventsArtifact ||
     !ledgerArtifact ||
     (summary.evidenceMode === "live" && !runtimeEventsArtifact) ||
+    (summary.evidenceMode === "live" && (!jobCloseoutArtifact || !portCloseoutArtifact)) ||
     (summary.evidenceMode === "live" &&
       kind === "ue-automation" &&
-      (!loadedLedgerArtifact || !earlyIdentityArtifact || !jobCloseoutArtifact))
+      (!loadedLedgerArtifact || !earlyIdentityArtifact))
   ) {
     fail("FINAL_PHASE_SOURCE_COVERAGE_INVALID");
   }
@@ -2453,7 +4356,18 @@ function verifyPhaseSummary(kind, args) {
     );
     assertExactKeys(
       ledger.closeout,
-      ["processResidualCount", "portResidualCount", "markerResidualCount", "partialOutputCount"],
+      [
+        "authorityLevel",
+        "processResidualCount",
+        "portResidualCount",
+        "markerResidualCount",
+        "partialOutputCount",
+        "jobCloseoutSha256",
+        "portObservationSha256",
+        "runtimeProcessId",
+        "phaseSessionId",
+        "phaseGeneration",
+      ],
       "FINAL_PHASE_LEDGER_INVALID",
     );
   }
@@ -2500,7 +4414,18 @@ function verifyPhaseSummary(kind, args) {
         (kind !== "ue-automation" && ledger.runtimeTransport.asynchronous !== true) ||
         typeof ledger.runtimeTransport.jobOwned !== "boolean" ||
         ledger.firstFailure !== null ||
-        Object.values(ledger.closeout).some((count) => count !== 0)
+        ledger.closeout.authorityLevel !== "parent_observed" ||
+        !isHex(ledger.closeout.jobCloseoutSha256) ||
+        !isHex(ledger.closeout.portObservationSha256) ||
+        ledger.closeout.runtimeProcessId !== ledger.runtimeProcess.pid ||
+        ledger.closeout.phaseSessionId !== ledger.sessionId ||
+        ledger.closeout.phaseGeneration !== ledger.generation ||
+        [
+          ledger.closeout.processResidualCount,
+          ledger.closeout.portResidualCount,
+          ledger.closeout.markerResidualCount,
+          ledger.closeout.partialOutputCount,
+        ].some((count) => count !== 0)
       : ledger.exitCode !== 0 || !Number.isSafeInteger(ledger.childPid)) ||
     ledger.producer?.id !== producer.id ||
     (isLive && ledger.producer.mode !== "live") ||
@@ -2546,6 +4471,86 @@ function verifyPhaseSummary(kind, args) {
     pid: childPid,
     producerId: producer.id,
   });
+  if (isLive) {
+    const jobCloseout = readJson(
+      resolve(root, "metadata", `${kind}.job-closeout.json`),
+      "FINAL_PHASE_PARENT_CLOSEOUT_INVALID",
+    );
+    const portCloseout = readJson(
+      resolve(root, "metadata", `${kind}.port-closeout.json`),
+      "FINAL_PHASE_PARENT_CLOSEOUT_INVALID",
+    );
+    assertExactKeys(
+      jobCloseout,
+      [
+        "schemaVersion",
+        "taskId",
+        "marker",
+        "sessionId",
+        "generation",
+        "jobSchemaVersion",
+        "rootPid",
+        "rootExitCode",
+        "timedOut",
+        "activeProcessZeroObserved",
+        "finalResidualCount",
+        "failureCode",
+      ],
+      "FINAL_PHASE_PARENT_CLOSEOUT_INVALID",
+    );
+    assertExactKeys(
+      portCloseout,
+      [
+        "schemaVersion",
+        "phase",
+        "taskId",
+        "marker",
+        "sessionId",
+        "generation",
+        "port",
+        "host",
+        "observations",
+        "residualCount",
+      ],
+      "FINAL_PHASE_PARENT_CLOSEOUT_INVALID",
+    );
+    if (
+      jobCloseout.schemaVersion !== JOB_CLOSEOUT_SCHEMA ||
+      jobCloseout.taskId !== taskId ||
+      jobCloseout.marker !== ledger.marker ||
+      jobCloseout.sessionId !== ledger.sessionId ||
+      jobCloseout.generation !== ledger.generation ||
+      jobCloseout.jobSchemaVersion !== "uagent.mvp15d.windows-job-process-run.v1" ||
+      jobCloseout.rootPid !== parsed.runtimeProcess.pid ||
+      jobCloseout.rootExitCode !== 0 ||
+      jobCloseout.timedOut !== false ||
+      jobCloseout.activeProcessZeroObserved !== true ||
+      jobCloseout.finalResidualCount !== 0 ||
+      jobCloseout.failureCode !== "" ||
+      portCloseout.schemaVersion !== PORT_CLOSEOUT_SCHEMA ||
+      portCloseout.phase !== kind ||
+      portCloseout.taskId !== taskId ||
+      portCloseout.marker !== ledger.marker ||
+      portCloseout.sessionId !== ledger.sessionId ||
+      portCloseout.generation !== ledger.generation ||
+      portCloseout.port !== ledger.port ||
+      portCloseout.host !== "127.0.0.1" ||
+      portCloseout.residualCount !== 0 ||
+      !Array.isArray(portCloseout.observations) ||
+      portCloseout.observations.length !== 5 ||
+      portCloseout.observations.some(
+        (observation, index) =>
+          stable(observation) !== stable({ attempt: index + 1, accepting: false }),
+      ) ||
+      parsed.closeout.jobCloseoutSha256 !== jobCloseoutArtifact.sha256 ||
+      parsed.closeout.portObservationSha256 !== portCloseoutArtifact.sha256 ||
+      parsed.closeout.runtimeProcessId !== parsed.runtimeProcess.pid ||
+      parsed.closeout.phaseSessionId !== ledger.sessionId ||
+      parsed.closeout.phaseGeneration !== ledger.generation
+    ) {
+      fail("FINAL_PHASE_PARENT_CLOSEOUT_INVALID");
+    }
+  }
   if (
     (isLive &&
       (stable(parsed.runtimeProcess) !== stable(ledger.runtimeProcess) ||
@@ -2565,6 +4570,27 @@ function verifyPhaseSummary(kind, args) {
       runtimeExecutablePath,
     );
   }
+  const verificationContext = {
+    sourceCommit: ledger.sourceCommit,
+    sourceTreeSha256: isLive ? computeSourceIdentity(repository).sourceTreeSha256 : undefined,
+    sessionId: ledger.sessionId,
+    generation: ledger.generation,
+    runtimeProcessId: parsed.runtimeProcess?.pid,
+    runtimeProcess: parsed.runtimeProcess,
+  };
+  const persistedAuthority =
+    isLive && (kind === "product-capture" || kind === "ui-lifecycle")
+      ? issueLiveDerivationAuthority("persisted-consistency", kind, parsed, verificationContext)
+      : null;
+  let verifiedDerived;
+  try {
+    verifiedDerived = derivedFor(kind, parsed.events, parsed.closeout, isLive ? "live" : "fixture", {
+      ...verificationContext,
+      ownedDerivationAuthority: persistedAuthority,
+    });
+  } finally {
+    LIVE_DERIVATION_AUTHORITIES.delete(persistedAuthority);
+  }
   const expected = {
     schemaVersion:
       kind === "ue-automation"
@@ -2580,13 +4606,16 @@ function verifyPhaseSummary(kind, args) {
       ? {
           persistedOriginClaimConsistent: parsed.persistedOriginClaimConsistent,
           productionLaunchAuthorityVerified: false,
+          ...(persistedAuthority
+            ? { ownedLaunchBinding: persistedOwnedLaunchBinding(persistedAuthority) }
+            : {}),
         }
       : {}),
     sessionId: ledger.sessionId,
     ...(isLive ? { endpoint: ledger.endpoint } : {}),
     generation: ledger.generation,
     producerLedgerSha256: sha256File(paths.ledger),
-    ...derivedFor(kind, parsed.events, parsed.closeout, isLive ? "live" : "fixture"),
+    ...verifiedDerived,
     sourceArtifacts: summary.sourceArtifacts,
   };
   if (stable(summary) !== stable(expected)) fail("FINAL_PHASE_SUMMARY_SOURCE_DISAGREEMENT");
@@ -2666,6 +4695,101 @@ function validateRetainedSources(root, walked) {
       "FINAL_INVENTORY_SUMMARY_INVALID",
     );
     validateSummarySources(root, value, "FINAL_INVENTORY_SOURCE_LINK_INVALID");
+    if (value.evidenceMode === "live" && summary.path === "summaries/product-capture.json") {
+      const handoff = value.rendererRestartHandoff;
+      if (
+        value.schemaVersion !== PRODUCT_SCHEMA ||
+        !handoff ||
+        stable(Object.keys(handoff).sort()) !== stable([
+          "claimReceiptId",
+          "claimReceiptSequence",
+          "handoffId",
+          "parentAcknowledgementReceiptId",
+          "parentAcknowledgementReceiptSequence",
+          "predecessorMcpGeneration",
+          "predecessorMcpSessionId",
+          "predecessorProcessIdentitySha256",
+          "predecessorRendererInstanceId",
+          "predecessorWindowIdentity",
+          "requestReceiptId",
+          "requestReceiptSequence",
+          "successorMcpGeneration",
+          "successorMcpSessionId",
+          "successorProcessIdentitySha256",
+          "successorRendererInstanceId",
+        ].sort()) ||
+        typeof handoff.handoffId !== "string" ||
+        !handoff.handoffId.startsWith("renderer-handoff:") ||
+        handoff.predecessorRendererInstanceId === handoff.successorRendererInstanceId ||
+        !isHex(handoff.predecessorProcessIdentitySha256) ||
+        !isHex(handoff.successorProcessIdentitySha256) ||
+        handoff.predecessorProcessIdentitySha256 === handoff.successorProcessIdentitySha256 ||
+        handoff.predecessorMcpSessionId === handoff.successorMcpSessionId ||
+        !Number.isSafeInteger(handoff.predecessorMcpGeneration) ||
+        !Number.isSafeInteger(handoff.successorMcpGeneration) ||
+        handoff.successorMcpGeneration <= handoff.predecessorMcpGeneration ||
+        !isObservationReceiptId(handoff.requestReceiptId) ||
+        !isObservationReceiptId(handoff.parentAcknowledgementReceiptId) ||
+        !isObservationReceiptId(handoff.claimReceiptId) ||
+        !Number.isSafeInteger(handoff.requestReceiptSequence) ||
+        !Number.isSafeInteger(handoff.parentAcknowledgementReceiptSequence) ||
+        !Number.isSafeInteger(handoff.claimReceiptSequence) ||
+        handoff.requestReceiptSequence >= handoff.parentAcknowledgementReceiptSequence ||
+        handoff.parentAcknowledgementReceiptSequence >= handoff.claimReceiptSequence ||
+        stable(Object.keys(handoff.predecessorWindowIdentity ?? {}).sort()) !== stable([
+          "handoffId",
+          "phase",
+          "schemaVersion",
+          "stableIdentitySha256",
+          "status",
+          "taskId",
+          "windowLabel",
+        ].sort()) ||
+        handoff.predecessorWindowIdentity.schemaVersion !==
+          "uagent.mvp15d.predecessor-window-identity.v1" ||
+        handoff.predecessorWindowIdentity.status !== "observed" ||
+        handoff.predecessorWindowIdentity.windowLabel !== "main" ||
+        /[\\/]/u.test(handoff.predecessorWindowIdentity.windowLabel) ||
+        handoff.predecessorWindowIdentity.taskId !== value.taskId ||
+        handoff.predecessorWindowIdentity.phase !== "product-capture" ||
+        handoff.predecessorWindowIdentity.handoffId !== handoff.handoffId ||
+        !isHex(handoff.predecessorWindowIdentity.stableIdentitySha256)
+      ) {
+        fail("FINAL_INVENTORY_PRODUCT_HANDOFF_INVALID");
+      }
+    }
+    if (value.evidenceMode === "live" && value.schemaVersion === UI_SCHEMA) {
+      const lifecycle = value.nativeLifecycleEvidence;
+      const termination = value.mcpTermination;
+      if (
+        !lifecycle ||
+        typeof lifecycle.n4ManagedProcessId !== "string" ||
+        typeof lifecycle.n4OwnerTaskId !== "string" ||
+        lifecycle.n4OwnerPhase !== "ui-lifecycle" ||
+        typeof lifecycle.n5SuccessorSessionId !== "string" ||
+        !Number.isSafeInteger(lifecycle.n5ObservationGeneration) ||
+        lifecycle.n5ObservationGeneration < 1 ||
+        stable(lifecycle.secondRollbackSetupApis) !== stable([
+          "attach_editor_process",
+          "register_asset_mutation_approval",
+          "execute_asset_mutation",
+          "record_asset_mutation_outcome",
+          "rollback_asset_mutation",
+          "record_asset_mutation_outcome",
+        ]) ||
+        !Array.isArray(lifecycle.secondRollbackSetupReceiptIds) ||
+        lifecycle.secondRollbackSetupReceiptIds.length !== 6 ||
+        lifecycle.secondRollbackSetupReceiptIds.some((id) => !isObservationReceiptId(id)) ||
+        !termination ||
+        termination.localCloseCount !== 9 ||
+        termination.acceptedCount + termination.unsupportedCount !== 9 ||
+        !Array.isArray(termination.receiptIds) ||
+        termination.receiptIds.length !== 9 ||
+        termination.receiptIds.some((id) => !isObservationReceiptId(id))
+      ) {
+        fail("FINAL_INVENTORY_UI_LIFECYCLE_INVALID");
+      }
+    }
   }
 }
 
@@ -2893,5 +5017,7 @@ export {
   executeOwnedLaunchReceiptFixture,
   executeLivePhase,
   verifyPhaseSummary,
+  deriveProduct,
+  deriveUi,
   ROOT_PATTERN as FINAL_ROOT,
 };

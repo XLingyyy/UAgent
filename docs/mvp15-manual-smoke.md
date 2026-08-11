@@ -2,15 +2,58 @@
 
 ## Current MVP15D UE 5.8.1 Rework Manual-smoke Boundary
 
-Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
-its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
-Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
-commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; G15 is
-`COMPLETE`; G16 is `PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and
+Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
+checkpoint was created. Rework 8 (actual bridge orchestration and exact window
+instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
+Rework 9 implementation and controlled verification have `Review Verdict:
+PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
+remain an independent `External Gate: OPEN`; the supervisor implementation
+checkpoint is pending.
+TEMP cleanup remains a separate `External Gate: BLOCKED` under
+`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
+historical `COMPLETE / PASS` record at implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
+Rework 9 G15 closeout is `IN_PROGRESS`; G16 is `PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and
 D15 / 15C remain `PLANNED`; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility
 and overall acceptance remain `PARTIAL`; Ready is `NO`.
+Current `PASS_REAL_SMOKE` is `NO`.
 
-Rework 4 connects the fixed adapters to the actual release Tauri binary and
+Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
+submissions without checkpoints. Rework 9 controlled tests run actual
+predecessor and successor `App` registrations through production
+`startMvp15dRuntimeBridge(invoke)` and prove asynchronous parent-ready semantics.
+The parent registers exact one-shot completion before captured destroy; a
+bounded off-main wait holds no bridge mutex and only then queues the revalidated
+same-label successor continuation. Replacement B remains alive, no third window
+is built, and acknowledgement/claim/publish/complete stay closed. Hidden real
+Webview/Wry coverage reproduces the old `WebviewLabelAlreadyExists("main")`, then
+proves manager removal/build count 0, a different-HWND successor, and B
+preservation. A future authorized live procedure must repeat those facts and
+retain newer MCP identity, N4/N5, second rollback, actual DELETE receipt, private
+owned-launch, and Job/port closeout. Record local close separately. The mutation
+gate remains default-off.
+
+The pre-live TEMP residue risk is `OPEN`. The Rework 7 baseline manifest is
+4,601 directories (4,591 asset, 10 bridge), SHA-256
+`3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`.
+Supervisor revalidation retained all paths and found 141 earlier asset-root
+mtime changes. The current manifest has SHA-256
+`45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`.
+The resumed 2026-08-11 read-only scan retained all paths but found 94 asset-root
+`mtimeNs` changes timestamped 2026-08-10 17:42:58. Their actor is unconfirmed;
+no cleanup or metadata rewrite was performed.
+The historical 253-entry set remains present; deltas are 4,348/0. Deletion is
+`NO`. Cleanup remains `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+
+Controlled source tests do not constitute actual observations. No Tool Search,
+installed/load/manifest tuple, live fingerprint, live renderer restart boundary,
+N1-N8, partial/unknown, parent closeout, or manual/live smoke exists for Rework
+9. The release and all old 15A-15C evidence are stale; no manual/live smoke is
+authorized before a supervisor checkpoint and a dedicated task.
+
+Historical Final Source/Tooling Rework 4 connected the fixed adapters to the
+actual release Tauri binary and
 rendered product/UI code through native-generated runtime events. Final
 Source/Tooling Rework 8 preserves the Rework 7 transitive source coverage and
 publisher controls while correcting launch authority:
@@ -35,7 +78,7 @@ read-only supporting evidence.
 
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility must use a
-new clean-checkout task based on the Rework 8 implementation commit. Real UE, Tool Search,
+new clean-checkout task based on the reviewed Rework 9 implementation commit. Real UE, Tool Search,
 and mutation are `SKIPPED_BY_TASK_BOUNDARY`; mutation remains prohibited until
 a later separate task.
 
@@ -117,9 +160,11 @@ C14A is getter/adapter hardening, not another live attempt and not the R10 mutat
   version, renderer readiness, source/task identity, nonce and event hashes,
   Windows Job closeout, and zero side effects. It is not a substitute for this
   later live product-UI smoke.
-- The committed TitleBar baseline for this source-checkpoint remains
-  `MVP15 Rework`. Separate TitleBar/window-control diffs are outside MVP15D and
-  must not be used as Companion-state evidence.
+- The current working-tree TitleBar pre-live source closure uses the capability
+  label `MVP15 Sandbox`. It removes transient Rework/Checkpoint/Partial copy and
+  does not claim final acceptance. The five coupled TitleBar files were already
+  dirty before this task; this task preserves their window-control intent and
+  updates only the stage-label assertions needed by D16.
 - Each of the five historical Source Checkpoint Rework 7 UE Automation sessions has a unique task marker
   and a complete marker-bound descendant creation/parent/first-observation/exit
   ledger with final residual count zero. A basename-only or final point-in-time
@@ -187,8 +232,7 @@ Each negative case uses an independent registration/run and must prove before/af
 - Historical result: `PASS_REAL_SMOKE`.
 - Historical run: `ui-mrpovp9e-1`.
 - Scope: former happy path only; not accepted as C11 authority or fresh smoke evidence.
-- Current committed TitleBar badge expectation remains `MVP15 Rework`. Neither
-  historical Source Checkpoint Rework 7 nor documentation-only Source Checkpoint
-  Rework 8/Rework 9 edited any of the five
-  TitleBar-coupled files; separate inherited
-  TitleBar/window-controls work is outside this checkpoint.
+- Historical Source Checkpoint Rework 7 and documentation-only Rework 8/Rework 9
+  did not edit the five TitleBar-coupled files. The current task inherited those
+  dirty files and evolves only their stage label/assertions to `MVP15 Sandbox`;
+  the underlying window-control changes remain inherited workspace state.

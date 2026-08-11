@@ -34,12 +34,14 @@ const BUILD_COMMAND_SCHEMA = "uagent.mvp15d.final.build-command.v3";
 const BUILD_RESULT_SCHEMA = "uagent.mvp15d.final.build-result.v3";
 const PRODUCER_LEDGER_SCHEMA = "uagent.mvp15d.final.producer-ledger.v1";
 const EVENT_SCHEMA = "uagent.mvp15d.final.phase-event.v1";
-const RUNTIME_EVENT_SCHEMA = "uagent.mvp15d.final.runtime-event.v1";
+const RUNTIME_EVENT_SCHEMA = "uagent.mvp15d.final.runtime-event.v2";
+const JOB_CLOSEOUT_SCHEMA = "uagent.mvp15d.final.job-closeout.v1";
+const PORT_CLOSEOUT_SCHEMA = "uagent.mvp15d.final.port-closeout.v1";
 const TASK_GENERATION = "final-d13-d16";
 const PHASES = ["ue-automation", "product-capture", "ui-lifecycle"];
 const PHASE_SUMMARY_SCHEMAS = Object.freeze({
   "ue-automation": "uagent.mvp15d.final.ue-automation.v1",
-  "product-capture": "uagent.mvp15d.final.product-capture.v1",
+  "product-capture": "uagent.mvp15d.final.product-capture.v2",
   "ui-lifecycle": "uagent.mvp15d.final.ui-lifecycle.v1",
 });
 const LIVE_PRODUCER_IDS = Object.freeze({
@@ -75,6 +77,8 @@ const REQUIRED_FILES = Object.freeze([
   "metadata/package-artifacts.json",
   "metadata/redaction-ledger.json",
   ...PHASES.map((phase) => `metadata/${phase}.producer.json`),
+  ...PHASES.map((phase) => `metadata/${phase}.job-closeout.json`),
+  ...PHASES.map((phase) => `metadata/${phase}.port-closeout.json`),
   ...PHASES.map((phase) => `summaries/${phase}.json`),
   ...PHASES.map((phase) => `transcripts/${phase}.events.jsonl`),
   PACKAGE_MANIFEST,
@@ -937,7 +941,7 @@ function validateProducerLedger(root, rootDevice, phase, taskId) {
     value?.taskId !== taskId ||
     !value.producer ||
     value.producer.id !== LIVE_PRODUCER_IDS[phase] ||
-    (value.producer.mode !== undefined && value.producer.mode !== "live") ||
+    (value.producer.mode !== undefined && !["live", "fixture"].includes(value.producer.mode)) ||
     !value.outputs ||
     (value.exitCode ?? value.termination?.exitCode) !== 0
   ) {
@@ -979,6 +983,8 @@ function validateTranscript(root, rootDevice, phase, taskId) {
   } catch {
     fail("UE581_TRANSCRIPT_INVALID");
   }
+  const evidenceMode = events[0]?.producer?.mode ?? events[0]?.evidenceMode ?? events[0]?.mode;
+  if (!["live", "fixture"].includes(evidenceMode)) fail("UE581_TRANSCRIPT_EVENT_INVALID");
   for (let index = 0; index < events.length; index += 1) {
     const event = events[index];
     if (
@@ -986,7 +992,7 @@ function validateTranscript(root, rootDevice, phase, taskId) {
       event?.phase !== phase ||
       event?.taskId !== taskId ||
       event?.sequence !== index + 1 ||
-      (event.producer?.mode ?? event.evidenceMode ?? event.mode) !== "live" ||
+      (event.producer?.mode ?? event.evidenceMode ?? event.mode) !== evidenceMode ||
       /fixture|manual|direct[-_]?mcp/i.test(String(event.producer?.id ?? ""))
     ) {
       fail("UE581_TRANSCRIPT_EVENT_INVALID");
@@ -997,6 +1003,88 @@ function validateTranscript(root, rootDevice, phase, taskId) {
     !["closeout", "process_closeout"].includes(events.at(-1)?.type)
   ) {
     fail("UE581_TRANSCRIPT_TERMINAL_INVALID");
+  }
+  if (
+    evidenceMode === "live" &&
+    events.some(
+      (event) =>
+        event?.data?.authorityLevel === "source_only" ||
+        (typeof event?.data?.authorityLevel === "string" &&
+          ![
+            "fixed_producer",
+            "native_observed",
+            "parent_observed",
+            "runtime_observed",
+            "derived_only",
+          ].includes(event.data.authorityLevel)),
+    )
+  ) {
+    fail("UE581_TRANSCRIPT_AUTHORITY_INVALID");
+  }
+  if (
+    evidenceMode === "fixture" &&
+    events.some(
+      (event) =>
+        typeof event?.data?.authorityLevel === "string" &&
+        !["source_only", "derived_only"].includes(event.data.authorityLevel),
+    )
+  ) {
+    fail("UE581_TRANSCRIPT_AUTHORITY_INVALID");
+  }
+  if (phase === "product-capture" || phase === "ui-lifecycle") {
+    const forbidden =
+      phase === "product-capture"
+        ? ["installed_loaded", "tool_published", "tool_retracted", "tool_search_observation"]
+        : [
+            "installed_loaded",
+            "content_snapshot",
+            "lifecycle_action",
+            "negative_case",
+            "partial_unknown_effect_record",
+            "replay_observation",
+          ];
+    const required =
+      phase === "product-capture"
+        ? [
+            "fixed_artifact_authority",
+            "product_discovery_observation",
+            "retraction_observation",
+            "mutation_counter_observation",
+          ]
+        : [
+            "fixed_artifact_authority",
+            "lifecycle_operation_observation",
+            "content_manifest_observation",
+            "negative_case_observation",
+            "partial_unknown_observation",
+            "replay_inspection_observation",
+          ];
+    if (
+      events.some(({ type }) => forbidden.includes(type)) ||
+      required.some((type) => !events.some((event) => event.type === type))
+    ) {
+      fail("UE581_TRANSCRIPT_AUTHORITY_INVALID");
+    }
+    const closeout = events.at(-1).data;
+    const runtime = events.find(({ type }) => type === "runtime_process_started")?.data;
+    if (
+      (evidenceMode === "live"
+        ? closeout.authorityLevel !== "parent_observed"
+        : closeout.authorityLevel !== "source_only") ||
+      !isHex(closeout.jobCloseoutSha256) ||
+      !isHex(closeout.portObservationSha256) ||
+      closeout.runtimeProcessId !== runtime?.pid ||
+      closeout.phaseSessionId !== events.at(-1).sessionId ||
+      closeout.phaseGeneration !== events.at(-1).generation ||
+      [
+        closeout.processResidualCount,
+        closeout.portResidualCount,
+        closeout.markerResidualCount,
+        closeout.partialOutputCount,
+      ].some((count) => count !== 0)
+    ) {
+      fail("UE581_TRANSCRIPT_CLOSEOUT_INVALID");
+    }
   }
   return events;
 }
@@ -1050,8 +1138,23 @@ function validateRuntimeTranscript(root, rootDevice, phase, taskId) {
   ) {
     fail("UE581_RUNTIME_TRANSCRIPT_BINDING_INVALID");
   }
-  if (Object.values(events.at(-1).data).some((value) => value !== 0)) {
+  const closeout = events.at(-1).data;
+  if (phase === "product-capture" || phase === "ui-lifecycle") {
+    if (
+      stable(closeout) !==
+      stable({
+        authorityLevel: "runtime_observed",
+        rendererCompleted: true,
+        driverCommandConsumed: true,
+      })
+    ) {
+      fail("UE581_RUNTIME_TRANSCRIPT_CLOSEOUT_INVALID");
+    }
+  } else if (Object.values(closeout).some((value) => value !== 0)) {
     fail("UE581_RUNTIME_TRANSCRIPT_CLOSEOUT_INVALID");
+  }
+  if (events.some((event) => event?.data?.authorityLevel === "source_only")) {
+    fail("UE581_RUNTIME_TRANSCRIPT_AUTHORITY_INVALID");
   }
   return events;
 }
@@ -1063,7 +1166,9 @@ function validateSummary(root, rootDevice, phase, taskId) {
     value?.schemaVersion !== PHASE_SUMMARY_SCHEMAS[phase] ||
     value?.taskGeneration !== TASK_GENERATION ||
     value?.taskId !== taskId ||
-    value?.evidenceMode !== "live" ||
+    !["live", "fixture"].includes(value?.evidenceMode) ||
+    (value.evidenceMode === "fixture" && value.fixtureUsed !== true) ||
+    (value.evidenceMode === "live" && value.fixtureUsed === true) ||
     /fixture|manual|direct[-_]?mcp/i.test(String(value?.producer ?? "")) ||
     !Array.isArray(value?.sourceArtifacts)
   ) {
@@ -1074,6 +1179,8 @@ function validateSummary(root, rootDevice, phase, taskId) {
   );
   for (const expected of [
     `metadata/${phase}.producer.json`,
+    `metadata/${phase}.job-closeout.json`,
+    `metadata/${phase}.port-closeout.json`,
     `transcripts/${phase}.events.jsonl`,
     `logs/${phase}.stderr.log`,
   ]) {
@@ -1089,12 +1196,230 @@ function validateSummary(root, rootDevice, phase, taskId) {
   return value;
 }
 
+function collectObservationReceipts(value, receipts, receiptSequences, code) {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const entry of value) collectObservationReceipts(entry, receipts, receiptSequences, code);
+    return;
+  }
+  if (Object.hasOwn(value, "receiptId") || Object.hasOwn(value, "receiptSequence")) {
+    if (
+      typeof value.receiptId !== "string" ||
+      !/^mvp15d-observation-receipt:[0-9a-f]{64}$/u.test(value.receiptId) ||
+      !Number.isSafeInteger(value.receiptSequence) ||
+      value.receiptSequence < 1 ||
+      (receipts.has(value.receiptId) && receipts.get(value.receiptId) !== value.receiptSequence) ||
+      (receiptSequences.has(value.receiptSequence) &&
+        receiptSequences.get(value.receiptSequence) !== value.receiptId)
+    ) {
+      fail(code);
+    }
+    receipts.set(value.receiptId, value.receiptSequence);
+    receiptSequences.set(value.receiptSequence, value.receiptId);
+  }
+  for (const key of Object.keys(value).filter(
+    (candidate) => candidate !== "receiptId" && candidate.endsWith("ReceiptId"),
+  )) {
+    const sequenceKey = key.replace(/ReceiptId$/u, "ReceiptSequence");
+    if (!Object.hasOwn(value, sequenceKey)) continue;
+    if (
+      typeof value[key] !== "string" ||
+      !/^mvp15d-observation-receipt:[0-9a-f]{64}$/u.test(value[key]) ||
+      !Number.isSafeInteger(value[sequenceKey]) ||
+      value[sequenceKey] < 1 ||
+      (receipts.has(value[key]) && receipts.get(value[key]) !== value[sequenceKey]) ||
+      (receiptSequences.has(value[sequenceKey]) &&
+        receiptSequences.get(value[sequenceKey]) !== value[key])
+    ) {
+      fail(code);
+    }
+    receipts.set(value[key], value[sequenceKey]);
+    receiptSequences.set(value[sequenceKey], value[key]);
+  }
+  if (
+    Object.hasOwn(value, "id") &&
+    Object.hasOwn(value, "sequence")
+  ) {
+    if (
+      typeof value.id !== "string" ||
+      !/^mvp15d-observation-receipt:[0-9a-f]{64}$/u.test(value.id) ||
+      !Number.isSafeInteger(value.sequence) ||
+      value.sequence < 1 ||
+      (receipts.has(value.id) && receipts.get(value.id) !== value.sequence) ||
+      (receiptSequences.has(value.sequence) && receiptSequences.get(value.sequence) !== value.id)
+    ) {
+      fail(code);
+    }
+    receipts.set(value.id, value.sequence);
+    receiptSequences.set(value.sequence, value.id);
+  }
+  for (const entry of Object.values(value)) {
+    collectObservationReceipts(entry, receipts, receiptSequences, code);
+  }
+}
+
+function validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvents, summary) {
+  if (
+    summary.evidenceMode !== "live" ||
+    (phase !== "product-capture" && phase !== "ui-lifecycle")
+  ) return;
+  const code = "UE581_LIVE_PHASE_CROSS_BINDING_INVALID";
+  const binding = summary.ownedLaunchBinding;
+  const fixedArtifact = events.find(({ type }) => type === "fixed_artifact_authority")?.data;
+  const runtimeProcess = events.find(({ type }) => type === "runtime_process_started")?.data;
+  const closeout = events.at(-1)?.data;
+  const runtimeIdentity = runtimeEvents?.find(({ type }) => type === "runtime_process_identity")?.data;
+  const rawPath = resolve(root, "transcripts", `${phase}.runtime-events.jsonl`);
+  const jobPath = resolve(root, "metadata", `${phase}.job-closeout.json`);
+  const portPath = resolve(root, "metadata", `${phase}.port-closeout.json`);
+  const processIdentity = {
+    pid: runtimeProcess?.pid,
+    executableBasename: runtimeProcess?.executable?.basename,
+    executableSha256: runtimeProcess?.executable?.sha256,
+  };
+  if (
+    !binding ||
+    summary.productionLaunchAuthorityVerified !== false ||
+    summary.producerLedgerSha256 !== sha256(readFileSync(resolve(root, "metadata", `${phase}.producer.json`))) ||
+    summary.sourceCommit !== ledger.sourceCommit ||
+    summary.sessionId !== ledger.sessionId ||
+    summary.generation !== ledger.generation ||
+    events.some(
+      (event) =>
+        event.taskId !== ledger.taskId ||
+        event.phase !== phase ||
+        event.marker !== ledger.marker ||
+        event.sessionId !== ledger.sessionId ||
+        event.generation !== ledger.generation ||
+        event.producer?.pid !== ledger.processOwnership?.childPid,
+    ) ||
+    binding.sourceCommit !== ledger.sourceCommit ||
+    binding.sourceTreeSha256 !== fixedArtifact?.sourceTreeSha256 ||
+    binding.phaseProducerPid !== ledger.processOwnership?.childPid ||
+    binding.runtimePid !== ledger.runtimeProcess?.pid ||
+    binding.runtimePid !== closeout?.runtimeProcessId ||
+    binding.runtimePid !== runtimeIdentity?.process?.pid ||
+    binding.runtimeProcessSha256 !== sha256(Buffer.from(stable(runtimeProcess), "utf8")) ||
+    binding.processIdentitySha256 !== sha256(Buffer.from(stable(processIdentity), "utf8")) ||
+    binding.fixedArtifactBindingSha256 !== fixedArtifact?.producerBindingSha256 ||
+    binding.fixedArtifactBindingSha256 !== summary.artifactAuthorityBindingSha256 ||
+    binding.phaseEventsSha256 !== sha256(Buffer.from(stable(events), "utf8")) ||
+    binding.rawEventLedgerSha256 !== sha256(readFileSync(rawPath)) ||
+    binding.rawEventLedgerSha256 !== ledger.runtimeTransport?.eventFile?.sha256 ||
+    binding.rawEventNonceSha256 !== ledger.runtimeTransport?.nonceSha256 ||
+    binding.parentCloseoutSha256 !== sha256(Buffer.from(stable(closeout), "utf8")) ||
+    binding.jobCloseoutSha256 !== sha256(readFileSync(jobPath)) ||
+    binding.jobCloseoutSha256 !== closeout?.jobCloseoutSha256 ||
+    binding.portCloseoutSha256 !== sha256(readFileSync(portPath)) ||
+    binding.portCloseoutSha256 !== closeout?.portObservationSha256 ||
+    fixedArtifact?.sourceCommit !== ledger.sourceCommit ||
+    fixedArtifact?.phaseSessionId !== ledger.sessionId ||
+    fixedArtifact?.phaseGeneration !== ledger.generation ||
+    fixedArtifact?.runtimeProcessId !== ledger.runtimeProcess?.pid ||
+    runtimeIdentity?.sourceCommit !== ledger.sourceCommit ||
+    runtimeIdentity?.session !== ledger.sessionId ||
+    runtimeIdentity?.generation !== ledger.generation ||
+    runtimeIdentity?.process?.executableBasename !== ledger.runtimeProcess?.executable?.basename ||
+    runtimeIdentity?.process?.executableSha256 !== ledger.runtimeProcess?.executable?.sha256
+  ) {
+    fail(code);
+  }
+  const receipts = new Map();
+  const receiptSequences = new Map();
+  for (const event of events) {
+    collectObservationReceipts(event.data, receipts, receiptSequences, code);
+  }
+  if (
+    !Number.isSafeInteger(summary.nativeObservationReceiptCount) ||
+    summary.nativeObservationReceiptCount < (phase === "product-capture" ? 36 : 112) ||
+    receipts.size !== summary.nativeObservationReceiptCount
+  ) {
+    fail(code);
+  }
+  if (phase === "product-capture") {
+    const handoff = summary.rendererRestartHandoff;
+    const rendererRestartEvents = events.filter(
+      (event) => event.type === "retraction_observation" && event.data?.reason === "renderer_restart",
+    );
+    const rawHandoff = rendererRestartEvents[0]?.data?.rendererHandoff;
+    const expectedHandoffKeys = [
+      "claimReceiptId",
+      "claimReceiptSequence",
+      "handoffId",
+      "parentAcknowledgementReceiptId",
+      "parentAcknowledgementReceiptSequence",
+      "predecessorMcpGeneration",
+      "predecessorMcpSessionId",
+      "predecessorProcessIdentitySha256",
+      "predecessorRendererInstanceId",
+      "predecessorWindowIdentity",
+      "requestReceiptId",
+      "requestReceiptSequence",
+      "successorMcpGeneration",
+      "successorMcpSessionId",
+      "successorProcessIdentitySha256",
+      "successorRendererInstanceId",
+    ].sort();
+    const expectedWindowKeys = [
+      "handoffId",
+      "phase",
+      "schemaVersion",
+      "stableIdentitySha256",
+      "status",
+      "taskId",
+      "windowLabel",
+    ].sort();
+    if (
+      rendererRestartEvents.length !== 1 ||
+      !handoff ||
+      !rawHandoff ||
+      stable(Object.keys(handoff).sort()) !== stable(expectedHandoffKeys) ||
+      stable(Object.keys(handoff.predecessorWindowIdentity ?? {}).sort()) !==
+        stable(expectedWindowKeys) ||
+      handoff.predecessorWindowIdentity.schemaVersion !==
+        "uagent.mvp15d.predecessor-window-identity.v1" ||
+      handoff.predecessorWindowIdentity.status !== "observed" ||
+      handoff.predecessorWindowIdentity.windowLabel !== "main" ||
+      /[\\/]/u.test(handoff.predecessorWindowIdentity.windowLabel) ||
+      handoff.predecessorWindowIdentity.taskId !== ledger.taskId ||
+      handoff.predecessorWindowIdentity.phase !== phase ||
+      handoff.predecessorWindowIdentity.handoffId !== handoff.handoffId ||
+      !/^[0-9a-f]{64}$/u.test(handoff.predecessorWindowIdentity.stableIdentitySha256) ||
+      handoff.handoffId !== rawHandoff.handoffId ||
+      handoff.predecessorRendererInstanceId !== rawHandoff.predecessorRenderer?.rendererInstanceId ||
+      handoff.successorRendererInstanceId !== rawHandoff.successorRenderer?.rendererInstanceId ||
+      handoff.predecessorProcessIdentitySha256 !== rawHandoff.predecessorRenderer?.processIdentitySha256 ||
+      handoff.successorProcessIdentitySha256 !== rawHandoff.successorRenderer?.processIdentitySha256 ||
+      handoff.predecessorMcpSessionId !== rawHandoff.predecessorMcpSessionId ||
+      handoff.successorMcpSessionId !== rawHandoff.successorMcpSessionId ||
+      handoff.predecessorMcpGeneration !== rawHandoff.predecessorMcpGeneration ||
+      handoff.successorMcpGeneration !== rawHandoff.successorMcpGeneration ||
+      handoff.requestReceiptId !== rawHandoff.requestReceipt?.id ||
+      handoff.requestReceiptSequence !== rawHandoff.requestReceipt?.sequence ||
+      handoff.parentAcknowledgementReceiptId !== rawHandoff.parentAcknowledgementReceipt?.id ||
+      handoff.parentAcknowledgementReceiptSequence !== rawHandoff.parentAcknowledgementReceipt?.sequence ||
+      handoff.claimReceiptId !== rawHandoff.claimReceipt?.id ||
+      handoff.claimReceiptSequence !== rawHandoff.claimReceipt?.sequence ||
+      stable(handoff.predecessorWindowIdentity) !== stable(rawHandoff.predecessorWindow) ||
+      receipts.get(handoff.requestReceiptId) !== handoff.requestReceiptSequence ||
+      receipts.get(handoff.parentAcknowledgementReceiptId) !==
+        handoff.parentAcknowledgementReceiptSequence ||
+      receipts.get(handoff.claimReceiptId) !== handoff.claimReceiptSequence ||
+      handoff.requestReceiptSequence >= handoff.parentAcknowledgementReceiptSequence ||
+      handoff.parentAcknowledgementReceiptSequence >= handoff.claimReceiptSequence
+    ) {
+      fail(code);
+    }
+  }
+}
+
 function validateSchemas(root, rootDevice, taskId) {
   for (const phase of PHASES) {
-    validateProducerLedger(root, rootDevice, phase, taskId);
-    validateTranscript(root, rootDevice, phase, taskId);
-    validateRuntimeTranscript(root, rootDevice, phase, taskId);
-    validateSummary(root, rootDevice, phase, taskId);
+    const ledger = validateProducerLedger(root, rootDevice, phase, taskId);
+    const events = validateTranscript(root, rootDevice, phase, taskId);
+    const runtimeEvents = validateRuntimeTranscript(root, rootDevice, phase, taskId);
+    const summary = validateSummary(root, rootDevice, phase, taskId);
+    validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvents, summary);
   }
 }
 
@@ -1117,6 +1442,12 @@ function expectedSchema(logical) {
   if (logical === "metadata/redaction-ledger.json") return REDACTION_LEDGER_SCHEMA;
   if (/^metadata\/(?:ue-automation|product-capture|ui-lifecycle)\.producer\.json$/.test(logical)) {
     return PRODUCER_LEDGER_SCHEMA;
+  }
+  if (/^metadata\/(?:ue-automation|product-capture|ui-lifecycle)\.job-closeout\.json$/.test(logical)) {
+    return JOB_CLOSEOUT_SCHEMA;
+  }
+  if (/^metadata\/(?:ue-automation|product-capture|ui-lifecycle)\.port-closeout\.json$/.test(logical)) {
+    return PORT_CLOSEOUT_SCHEMA;
   }
   const summary = logical.match(/^summaries\/(ue-automation|product-capture|ui-lifecycle)\.json$/);
   if (summary) return PHASE_SUMMARY_SCHEMAS[summary[1]];
@@ -1496,11 +1827,13 @@ export {
   EVENT_SCHEMA,
   IDENTITY_SCHEMA,
   InventoryError,
+  JOB_CLOSEOUT_SCHEMA,
   LOADED_MODULES_SCHEMA,
   OPTIONAL_FILES,
   PACKAGE_INVENTORY_SCHEMA,
   PHASES,
   PHASE_SUMMARY_SCHEMAS,
+  PORT_CLOSEOUT_SCHEMA,
   PRODUCER_LEDGER_SCHEMA,
   REDACTION_LEDGER_SCHEMA,
   REQUIRED_DIRECTORIES,
@@ -1519,6 +1852,7 @@ export {
   semanticSha256,
   sha256,
   stable,
+  validateLivePhaseCrossBinding,
   verify,
   verifyInProcess,
 };

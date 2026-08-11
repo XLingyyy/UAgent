@@ -134,6 +134,11 @@ function main() {
   } else {
     emit("capture_origin", { origin: "task_owned_fixture", fixtureUsed: true });
     for (const step of ["validate", "add", "confirmTrust"]) emit("rendered_step", { step });
+    emit("installed_loaded", {
+      installed: ["UnrealEditor-UAgentAssetTools.dll"],
+      loaded: ["UnrealEditor-UAgentAssetTools.dll"],
+      manifest: ["UnrealEditor-UAgentAssetTools.dll"],
+    });
     emit("content_snapshot", { stage: "before", sha256: "b".repeat(64) });
     for (const action of [
       "create_run_root",

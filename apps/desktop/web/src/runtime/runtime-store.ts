@@ -54,6 +54,20 @@ import type {
   UAgentCompanionStatus,
 } from "@uagent/shared";
 import { createDefaultTextMutationPolicy } from "@uagent/shared";
+import type { DesktopRuntimeAdapter } from "./desktop-runtime-adapter";
+
+let fixedAppRuntimeAdapter: DesktopRuntimeAdapter | null = null;
+
+export function registerFixedAppRuntimeAdapter(adapter: DesktopRuntimeAdapter): void {
+  if (fixedAppRuntimeAdapter && fixedAppRuntimeAdapter !== adapter) {
+    throw new Error("mvp15d_fixed_app_runtime_adapter_already_registered");
+  }
+  fixedAppRuntimeAdapter = adapter;
+}
+
+export function getFixedAppRuntimeAdapter(): DesktopRuntimeAdapter | null {
+  return fixedAppRuntimeAdapter;
+}
 
 export type Mvp11ActionStatus = "idle" | "running" | "completed" | "failed";
 
@@ -186,7 +200,17 @@ export interface Mvp15RuntimeState {
   latestDryRun: AssetDryRunResult | null;
   latestExecution: AssetExecutionResult | null;
   latestVerification: AssetVerificationResult | null;
+  finalVerification: {
+    status: "idle" | "passed" | "blocked";
+    restored: boolean;
+    baselineSha256: string | null;
+    observedSha256: string | null;
+  };
   replaySummary: AssetMutationReplaySummary | null;
+  replayInspection: {
+    status: "idle" | "recorded" | "blocked";
+    sideEffectDelta: [number, number, number, number, number];
+  };
   fileMarkers: Record<string, Mvp15AssetMarker[]>;
   lastError: string | null;
 }
@@ -210,6 +234,7 @@ export interface RuntimeStoreActions {
   connectMcp: () => Promise<void>;
   discoverMcp: () => Promise<void>;
   disconnectMcp: () => void;
+  refreshMvp15DCompanionAttestation: () => Promise<void>;
   proposeTerminalCommand: (command: string, cwd: string, taskId: string | null) => void;
   approveTerminalProposal: (proposalId: string, actor: string, reason: string) => Promise<void>;
   rejectTerminalProposal: (proposalId: string, actor: string, reason: string) => void;
@@ -271,6 +296,8 @@ export interface RuntimeStoreActions {
   executeMvp15AssetChangeSet: () => Promise<void>;
   verifyMvp15AssetChangeSet: () => Promise<void>;
   rollbackMvp15AssetChangeSet: () => Promise<void>;
+  finalVerifyMvp15AssetChangeSet: () => Promise<void>;
+  inspectMvp15AssetReplay: () => void;
 }
 
 export const DESKTOP_MOCK_RUNTIME_FLUSH_DELAY_MS = 500;
@@ -403,7 +430,17 @@ export function createEmptyMvp15State(): Mvp15RuntimeState {
     latestDryRun: null,
     latestExecution: null,
     latestVerification: null,
+    finalVerification: {
+      status: "idle",
+      restored: false,
+      baselineSha256: null,
+      observedSha256: null,
+    },
     replaySummary: null,
+    replayInspection: {
+      status: "idle",
+      sideEffectDelta: [0, 0, 0, 0, 0],
+    },
     fileMarkers: {},
     lastError: null,
   };
@@ -641,6 +678,27 @@ function createEmptyMvp9State(): Mvp9RuntimeState {
     watcher: emptyWatcher,
     mvp10: { terminal: emptyMvp10Terminal },
   };
+}
+
+const MVP15D_RECORDED_REPLAY_ACTIONS = [
+  "dry-run",
+  "preview",
+  "approval",
+  "execute",
+  "verify",
+  "rollback",
+];
+
+export function isMvp15dRecordedReplayRepresentation(
+  value: Record<string, unknown> | null,
+): boolean {
+  if (!value) return false;
+  const { replayOnly, recordedOnlyActions: actions } = value;
+  return replayOnly === true
+    && typeof value.eventCount === "number"
+    && value.eventCount > 0
+    && Array.isArray(actions)
+    && JSON.stringify(actions) === JSON.stringify(MVP15D_RECORDED_REPLAY_ACTIONS);
 }
 
 export function createRuntimeStoreState(snapshot: RuntimeSnapshot): RuntimeStoreState {

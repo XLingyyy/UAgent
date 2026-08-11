@@ -21,7 +21,7 @@ const APPROVAL_TOKEN_BYTES: usize = 32;
 const MAX_COMPANION_MANIFEST_BYTES: u64 = 256 * 1024;
 const MAX_COMPANION_ARTIFACT_BYTES: u64 = 256 * 1024 * 1024;
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub struct Mvp15CompanionAttestationInput {
@@ -30,7 +30,7 @@ pub struct Mvp15CompanionAttestationInput {
     pub attestation_generation: Option<u64>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub struct Mvp15CompanionApprovalRetractionInput {
@@ -53,6 +53,8 @@ pub struct Mvp15CompanionAttestationResult {
     pub manifest: Option<serde_json::Value>,
     pub installed_modules: Vec<Mvp15CompanionArtifact>,
     pub loaded_modules: Vec<Mvp15CompanionArtifact>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -65,6 +67,8 @@ pub struct Mvp15CompanionApprovalRetractionResult {
     pub minimum_attestation_generation: u64,
     pub generation: u64,
     pub revoked_approval_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +95,8 @@ pub struct AssetMutationCommandResult {
     pub would_change: bool,
     pub affected_assets: Vec<String>,
     pub evidence_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,6 +144,8 @@ pub struct RegisterAssetMutationApprovalResult {
     pub approval_token: Option<String>,
     pub issued_at: u64,
     pub expires_at: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -196,6 +204,8 @@ pub struct AssetMutationGuardResult {
     pub native_manifest_identity: Option<String>,
     pub native_plugin_identity: Option<String>,
     pub native_package_identity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,6 +234,8 @@ pub struct RecordAssetMutationOutcomeResult {
     pub rollback_available: bool,
     pub effect_state: String,
     pub terminal: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -244,6 +256,8 @@ pub struct AssetContentEvidenceResult {
     pub size: Option<u64>,
     pub sha256: Option<String>,
     pub evidence_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -269,6 +283,8 @@ pub struct AssetContentManifestResult {
     pub entries: Vec<AssetContentManifestEntry>,
     pub aggregate_sha256: Option<String>,
     pub evidence_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -337,6 +353,7 @@ struct TerminalEvidenceLease {
     canonical_root: PathBuf,
     content_root: PathBuf,
     allowed_asset_paths: Vec<String>,
+    rollback_replay_guard_sha256: String,
     expires_at: u64,
 }
 
@@ -360,6 +377,18 @@ struct ApprovalRegistry {
 fn approval_registry() -> &'static Mutex<ApprovalRegistry> {
     static REGISTRY: OnceLock<Mutex<ApprovalRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(ApprovalRegistry::default()))
+}
+
+fn record_mvp15d_native_observation<T: Serialize, U: Serialize>(
+    api: &str,
+    input: &T,
+    result: &U,
+) -> Option<String> {
+    let (Ok(request), Ok(response)) = (serde_json::to_value(input), serde_json::to_value(result))
+    else {
+        return None;
+    };
+    crate::mvp15d_runtime_bridge::issue_native_observation_receipt(api, request, response)
 }
 
 #[cfg(test)]
@@ -388,18 +417,24 @@ fn apply_authority_race_injection() {
 
 #[tauri::command]
 pub fn dry_run_asset_mutation(input: AssetMutationCommandInput) -> AssetMutationCommandResult {
-    classify_asset_mutation(input, false)
+    let mut result = classify_asset_mutation(input.clone(), false);
+    result.native_receipt_id =
+        record_mvp15d_native_observation("dry_run_asset_mutation", &input, &result);
+    result
 }
 
 #[tauri::command]
 pub fn register_asset_mutation_approval(
     input: RegisterAssetMutationApprovalInput,
 ) -> RegisterAssetMutationApprovalResult {
-    register_asset_mutation_approval_with_gate_at(
-        input,
+    let mut result = register_asset_mutation_approval_with_gate_at(
+        input.clone(),
         current_time_millis(),
         native_asset_mutation_enabled(),
-    )
+    );
+    result.native_receipt_id =
+        record_mvp15d_native_observation("register_asset_mutation_approval", &input, &result);
+    result
 }
 
 #[tauri::command]
@@ -455,7 +490,7 @@ fn cancel_asset_mutation_approval_at(
 pub fn retract_mvp15_companion_approvals(
     input: Mvp15CompanionApprovalRetractionInput,
 ) -> Mvp15CompanionApprovalRetractionResult {
-    match retract_companion_approvals(input.attestation_generation) {
+    let mut result = match retract_companion_approvals(input.attestation_generation) {
         Ok(retraction) => Mvp15CompanionApprovalRetractionResult {
             status: if retraction.applied {
                 "retracted".to_string()
@@ -472,6 +507,7 @@ pub fn retract_mvp15_companion_approvals(
             minimum_attestation_generation: retraction.minimum_attestation_generation,
             generation: retraction.generation,
             revoked_approval_count: retraction.revoked_approval_count,
+            native_receipt_id: None,
         },
         Err(()) => Mvp15CompanionApprovalRetractionResult {
             status: "blocked".to_string(),
@@ -481,8 +517,12 @@ pub fn retract_mvp15_companion_approvals(
             minimum_attestation_generation: 0,
             generation: 0,
             revoked_approval_count: 0,
+            native_receipt_id: None,
         },
-    }
+    };
+    result.native_receipt_id =
+        record_mvp15d_native_observation("retract_mvp15_companion_approvals", &input, &result);
+    result
 }
 
 struct CompanionApprovalRetraction {
@@ -539,26 +579,34 @@ fn retract_companion_approvals(
 
 #[tauri::command]
 pub fn execute_asset_mutation(input: AssetMutationGuardInput) -> AssetMutationGuardResult {
-    if input.phase != "execute" {
-        return blocked_guard(&input, "phase_mismatch");
-    }
-    authorize_asset_mutation_with_gate_at(
-        input,
-        current_time_millis(),
-        native_asset_mutation_enabled(),
-    )
+    let mut result = if input.phase != "execute" {
+        blocked_guard(&input, "phase_mismatch")
+    } else {
+        authorize_asset_mutation_with_gate_at(
+            input.clone(),
+            current_time_millis(),
+            native_asset_mutation_enabled(),
+        )
+    };
+    result.native_receipt_id =
+        record_mvp15d_native_observation("execute_asset_mutation", &input, &result);
+    result
 }
 
 #[tauri::command]
 pub fn rollback_asset_mutation(input: AssetMutationGuardInput) -> AssetMutationGuardResult {
-    if input.phase != "rollback" {
-        return blocked_guard(&input, "phase_mismatch");
-    }
-    authorize_asset_mutation_with_gate_at(
-        input,
-        current_time_millis(),
-        native_asset_mutation_enabled(),
-    )
+    let mut result = if input.phase != "rollback" {
+        blocked_guard(&input, "phase_mismatch")
+    } else {
+        authorize_asset_mutation_with_gate_at(
+            input.clone(),
+            current_time_millis(),
+            native_asset_mutation_enabled(),
+        )
+    };
+    result.native_receipt_id =
+        record_mvp15d_native_observation("rollback_asset_mutation", &input, &result);
+    result
 }
 
 fn native_asset_mutation_enabled() -> bool {
@@ -575,6 +623,15 @@ fn native_asset_mutation_enabled() -> bool {
  */
 #[tauri::command]
 pub fn attest_mvp15_companion(
+    input: Mvp15CompanionAttestationInput,
+) -> Mvp15CompanionAttestationResult {
+    let mut result = attest_mvp15_companion_inner(input.clone());
+    result.native_receipt_id =
+        record_mvp15d_native_observation("attest_mvp15_companion", &input, &result);
+    result
+}
+
+fn attest_mvp15_companion_inner(
     input: Mvp15CompanionAttestationInput,
 ) -> Mvp15CompanionAttestationResult {
     let Some(attestation_generation) = input.attestation_generation.filter(|value| *value > 0)
@@ -718,6 +775,7 @@ fn blocked_companion_attestation(reason: &str) -> Mvp15CompanionAttestationResul
         manifest: None,
         installed_modules: Vec::new(),
         loaded_modules: Vec::new(),
+        native_receipt_id: None,
     }
 }
 
@@ -1192,13 +1250,14 @@ fn attest_companion_plugin_root_with_loaded_modules(
         manifest: Some(manifest),
         installed_modules,
         loaded_modules,
+        native_receipt_id: None,
     }
 }
 
 fn redact_companion_observation_reason(reason: &str) -> &'static str {
     match reason {
         "observation_session_stopped" => "companion_observation_stopped",
-        "observation_session_expired" | "native_process_observation_stale" => {
+        "observation_session_expired" | "native_process_observation_stale" | "stale_generation" => {
             "companion_observation_stale"
         }
         "process_exited" => "companion_process_not_running",
@@ -1588,7 +1647,10 @@ fn authorize_asset_mutation_at(
 pub fn record_asset_mutation_outcome(
     input: RecordAssetMutationOutcomeInput,
 ) -> RecordAssetMutationOutcomeResult {
-    record_asset_mutation_outcome_at(input, current_time_millis())
+    let mut result = record_asset_mutation_outcome_at(input.clone(), current_time_millis());
+    result.native_receipt_id =
+        record_mvp15d_native_observation("record_asset_mutation_outcome", &input, &result);
+    result
 }
 
 fn record_asset_mutation_outcome_at(
@@ -1697,7 +1759,8 @@ fn record_asset_mutation_outcome_at(
     }
     let rollback_available = remaining_rollback_indices(record).next().is_some();
     let terminal = input.phase == "rollback" && input.success && !rollback_available;
-    let terminal_lease = terminal.then(|| terminal_evidence_lease(record, now));
+    let terminal_lease =
+        terminal.then(|| terminal_evidence_lease(record, &input.registration_id, now));
     let result = RecordAssetMutationOutcomeResult {
         status: "recorded".to_string(),
         reason: if input.success {
@@ -1714,6 +1777,7 @@ fn record_asset_mutation_outcome_at(
         rollback_available,
         effect_state: input.effect_state,
         terminal,
+        native_receipt_id: None,
     };
     if let Some(lease) = terminal_lease {
         registry.records.remove(&input.registration_id);
@@ -1728,7 +1792,10 @@ fn record_asset_mutation_outcome_at(
 pub fn read_asset_content_evidence(
     input: ReadAssetContentEvidenceInput,
 ) -> AssetContentEvidenceResult {
-    read_asset_content_evidence_at(input, current_time_millis())
+    let mut result = read_asset_content_evidence_at(input.clone(), current_time_millis());
+    result.native_receipt_id =
+        record_mvp15d_native_observation("read_asset_content_evidence", &input, &result);
+    result
 }
 
 fn read_asset_content_evidence_at(
@@ -1752,6 +1819,7 @@ fn read_asset_content_evidence_at(
             size: None,
             sha256: None,
             evidence_id: Some(redacted_evidence_id("absent", &asset_path)),
+            native_receipt_id: None,
         };
     }
     let canonical = match std::fs::canonicalize(&disk_path) {
@@ -1775,6 +1843,7 @@ fn read_asset_content_evidence_at(
         size: Some(metadata.len()),
         sha256: Some(hash.clone()),
         evidence_id: Some(redacted_evidence_id(&hash, &asset_path)),
+        native_receipt_id: None,
     }
 }
 
@@ -1782,7 +1851,10 @@ fn read_asset_content_evidence_at(
 pub fn snapshot_asset_content_manifest(
     input: SnapshotAssetContentManifestInput,
 ) -> AssetContentManifestResult {
-    snapshot_asset_content_manifest_at(input, current_time_millis())
+    let mut result = snapshot_asset_content_manifest_at(input.clone(), current_time_millis());
+    result.native_receipt_id =
+        record_mvp15d_native_observation("snapshot_asset_content_manifest", &input, &result);
+    result
 }
 
 fn snapshot_asset_content_manifest_at(
@@ -1811,6 +1883,7 @@ fn snapshot_asset_content_manifest_at(
         entries,
         aggregate_sha256: Some(aggregate.clone()),
         evidence_id: Some(format!("asset-content-manifest:{}", &aggregate[..16])),
+        native_receipt_id: None,
     }
 }
 
@@ -1871,6 +1944,7 @@ pub fn classify_asset_mutation(
         would_change: true,
         affected_assets: affected,
         evidence_id: Some("asset-native-evidence:redacted".to_string()),
+        native_receipt_id: None,
     }
 }
 
@@ -2035,6 +2109,7 @@ fn register_asset_mutation_approval_with_gate_at(
         approval_token: Some(approval_token),
         issued_at,
         expires_at,
+        native_receipt_id: None,
     }
 }
 
@@ -2047,8 +2122,19 @@ fn authorize_asset_mutation_with_gate_at(
         return blocked_guard(&input, "feature_disabled");
     }
     let snapshot = match approval_registry().lock() {
-        Ok(registry) => {
+        Ok(mut registry) => {
+            purge_expired_terminal_evidence(&mut registry, now);
             let Some(record) = registry.records.get(&input.registration_id) else {
+                if input.phase == "rollback"
+                    && registry
+                        .terminal_evidence
+                        .get(&input.registration_id)
+                        .is_some_and(|lease| {
+                            lease.rollback_replay_guard_sha256 == guard_input_sha256(&input)
+                        })
+                {
+                    return blocked_guard(&input, "rollback_replay");
+                }
                 return blocked_guard(&input, "approval_registration_unknown");
             };
             if !companion_record_authorizes_phase(
@@ -2311,6 +2397,7 @@ fn authorize_asset_mutation_with_gate_at(
             .companion_binding
             .as_ref()
             .map(|binding| binding.package_identity.clone()),
+        native_receipt_id: None,
     }
 }
 
@@ -2581,7 +2668,48 @@ fn remaining_rollback_indices(record: &ApprovalRecord) -> impl Iterator<Item = u
         .filter(|index| !record.rolled_back.contains(index))
 }
 
-fn terminal_evidence_lease(record: &ApprovalRecord, now: u64) -> TerminalEvidenceLease {
+fn guard_input_sha256(input: &AssetMutationGuardInput) -> String {
+    sha256_bytes(&serde_json::to_vec(input).expect("native guard input must serialize"))
+}
+
+fn terminal_evidence_lease(
+    record: &ApprovalRecord,
+    registration_id: &str,
+    now: u64,
+) -> TerminalEvidenceLease {
+    let allowed_asset_paths = record_allowed_asset_paths(record);
+    let operation_index = *record
+        .rolled_back
+        .last()
+        .expect("terminal rollback must record its final operation");
+    let rollback_replay_guard_sha256 = guard_input_sha256(&AssetMutationGuardInput {
+        registration_id: registration_id.to_string(),
+        approval_token: None,
+        phase: "rollback".to_string(),
+        operation_index,
+        operation_count: record.operations.len(),
+        change_set_id: record.change_set_id.clone(),
+        run_id: record.run_id.clone(),
+        project_binding_id: record.project_binding_id.clone(),
+        mcp_binding: record.mcp_binding.clone(),
+        aggregate_dry_run_hash: record.aggregate_dry_run_hash.clone(),
+        aggregate_args_hash: record.aggregate_args_hash.clone(),
+        operation: inverse_operation(&record.operations[operation_index])
+            .expect("terminal rollback operation must have an inverse"),
+    });
+    TerminalEvidenceLease {
+        run_id: record.run_id.clone(),
+        trusted_root_id: record.trusted_root_id.clone(),
+        normalized_root: record.normalized_root.clone(),
+        canonical_root: record.canonical_root.clone(),
+        content_root: record.content_root.clone(),
+        allowed_asset_paths,
+        rollback_replay_guard_sha256,
+        expires_at: now.saturating_add(TERMINAL_EVIDENCE_LEASE_MS),
+    }
+}
+
+fn record_allowed_asset_paths(record: &ApprovalRecord) -> Vec<String> {
     let mut allowed_asset_paths = record
         .operations
         .iter()
@@ -2596,21 +2724,20 @@ fn terminal_evidence_lease(record: &ApprovalRecord, now: u64) -> TerminalEvidenc
         .collect::<Vec<_>>();
     allowed_asset_paths.sort();
     allowed_asset_paths.dedup();
-    TerminalEvidenceLease {
-        run_id: record.run_id.clone(),
-        trusted_root_id: record.trusted_root_id.clone(),
-        normalized_root: record.normalized_root.clone(),
-        canonical_root: record.canonical_root.clone(),
-        content_root: record.content_root.clone(),
-        allowed_asset_paths,
-        expires_at: now.saturating_add(TERMINAL_EVIDENCE_LEASE_MS),
-    }
+    allowed_asset_paths
 }
 
 fn purge_expired_terminal_evidence(registry: &mut ApprovalRegistry, now: u64) {
-    registry
+    let expired = registry
         .terminal_evidence
-        .retain(|_, lease| now < lease.expires_at);
+        .iter()
+        .filter_map(|(registration_id, lease)| {
+            (now >= lease.expires_at).then_some(registration_id.clone())
+        })
+        .collect::<Vec<_>>();
+    for registration_id in expired {
+        registry.terminal_evidence.remove(&registration_id);
+    }
 }
 
 fn evidence_access_at(registration_id: &str, now: u64) -> Result<EvidenceAccess, String> {
@@ -2626,7 +2753,7 @@ fn evidence_access_at(registration_id: &str, now: u64) -> Result<EvidenceAccess,
                 normalized_root: record.normalized_root.clone(),
                 canonical_root: record.canonical_root.clone(),
                 content_root: record.content_root.clone(),
-                allowed_asset_paths: terminal_evidence_lease(record, now).allowed_asset_paths,
+                allowed_asset_paths: record_allowed_asset_paths(record),
             }
         } else {
             let lease = registry
@@ -2789,6 +2916,7 @@ fn blocked(reason: &str, affected_assets: Vec<String>) -> AssetMutationCommandRe
         would_change: false,
         affected_assets,
         evidence_id: None,
+        native_receipt_id: None,
     }
 }
 
@@ -2802,6 +2930,7 @@ fn blocked_registration(reason: &str) -> RegisterAssetMutationApprovalResult {
         approval_token: None,
         issued_at: 0,
         expires_at: 0,
+        native_receipt_id: None,
     }
 }
 
@@ -2837,6 +2966,7 @@ fn blocked_guard(input: &AssetMutationGuardInput, reason: &str) -> AssetMutation
         native_manifest_identity: None,
         native_plugin_identity: None,
         native_package_identity: None,
+        native_receipt_id: None,
     }
 }
 
@@ -2853,6 +2983,7 @@ fn blocked_outcome(
         rollback_available: false,
         effect_state: input.effect_state.clone(),
         terminal: false,
+        native_receipt_id: None,
     }
 }
 
@@ -2869,6 +3000,7 @@ fn blocked_evidence(asset_path: &str, reason: &str) -> AssetContentEvidenceResul
         size: None,
         sha256: None,
         evidence_id: None,
+        native_receipt_id: None,
     }
 }
 
@@ -2879,6 +3011,7 @@ fn blocked_manifest(reason: &str) -> AssetContentManifestResult {
         entries: Vec::new(),
         aggregate_sha256: None,
         evidence_id: None,
+        native_receipt_id: None,
     }
 }
 
@@ -3078,13 +3211,62 @@ mod tests {
         format!("{replacement}{}", &value[1..])
     }
 
-    fn test_root(label: &str) -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("uagent-asset-{label}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+    struct TestRoot {
+        path: PathBuf,
+    }
+
+    impl TestRoot {
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn test_roots() -> &'static Mutex<Vec<TestRoot>> {
+        static ROOTS: std::sync::OnceLock<Mutex<Vec<TestRoot>>> = std::sync::OnceLock::new();
+        ROOTS.get_or_init(|| Mutex::new(Vec::new()))
+    }
+
+    fn test_root(label: &str) -> TestRoot {
+        static NEXT_ROOT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let suffix = NEXT_ROOT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "uagent-asset-{label}-{}-{created_at}-{suffix}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(root.join("Content")).unwrap();
         std::fs::write(root.join("Game.uproject"), "{}").unwrap();
-        root
+        TestRoot { path: root }
+    }
+
+    fn managed_observation_child_command() -> std::process::Command {
+        #[cfg(windows)]
+        {
+            let mut command = std::process::Command::new("powershell.exe");
+            command.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "[Console]::In.ReadToEnd() | Out-Null",
+            ]);
+            command
+        }
+        #[cfg(not(windows))]
+        {
+            let mut command = std::process::Command::new("sh");
+            command.args(["-c", "cat >/dev/null"]);
+            command
+        }
     }
 
     fn companion_artifact(path: &str, bytes: &[u8]) -> serde_json::Value {
@@ -3322,6 +3504,7 @@ mod tests {
             pid: Some(77),
             process_start_time: Some(170),
             process_source: "native".to_string(),
+            observation_generation: 1,
         };
         let result = Mvp15CompanionAttestationResult {
             status: "observed".to_string(),
@@ -3329,6 +3512,7 @@ mod tests {
             manifest: Some(manifest.clone()),
             installed_modules: Vec::new(),
             loaded_modules: Vec::new(),
+            native_receipt_id: None,
         };
         let binding = companion_binding_from_attestation("root:binding", &observation, &result, 4)
             .expect("verified native observation and manifest should bind");
@@ -3803,7 +3987,7 @@ mod tests {
     fn registration(label: &str, now: u64) -> RegisterAssetMutationApprovalInput {
         let run_id = format!("run-{label}");
         let root = test_root(label);
-        let root_ref = root.to_string_lossy().to_string();
+        let root_ref = root.path().to_string_lossy().to_string();
         trust_native_project_root(TrustRootInput {
             root_ref: root_ref.clone(),
         })
@@ -3816,7 +4000,7 @@ mod tests {
             label,
             now,
         );
-        RegisterAssetMutationApprovalInput {
+        let registration = RegisterAssetMutationApprovalInput {
             change_set_id: format!("change-{label}"),
             run_id: run_id.clone(),
             project_binding_id,
@@ -3827,7 +4011,9 @@ mod tests {
             aggregate_args_hash: hex('e', 64),
             requested_ttl_ms: 1_000,
             operations: operations(&run_id),
-        }
+        };
+        test_roots().lock().unwrap().push(root);
+        registration
     }
 
     fn step(
@@ -3881,8 +4067,28 @@ mod tests {
         }
     }
 
-    fn clear_registry() -> std::sync::MutexGuard<'static, ()> {
-        crate::reset_shared_registries_for_test()
+    struct TestScope {
+        _registry_guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for TestScope {
+        fn drop(&mut self) {
+            test_roots()
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clear();
+        }
+    }
+
+    fn clear_registry() -> TestScope {
+        let registry_guard = crate::reset_shared_registries_for_test();
+        test_roots()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
+        TestScope {
+            _registry_guard: registry_guard,
+        }
     }
 
     fn remap_registration_for_binding_contract(from: &str, to: &str) {
@@ -4059,6 +4265,60 @@ mod tests {
         assert_eq!(raced_result.reason, "trust_revoked");
         assert!(raced_result.approval_token.is_none());
         assert!(raced_result.registration_id.is_empty());
+    }
+
+    #[test]
+    fn production_attach_replacement_makes_the_registered_predecessor_guard_stale() {
+        let _test_guard = clear_registry();
+        let now = current_time_millis();
+        let mut registration = registration("native-generation-replacement", now);
+        let create_input = crate::ue_editor_process::ManagedEditorProcessCreateInput {
+            task_id: "TASK-MVP15D-NATIVE-GENERATION-TEST".to_string(),
+            phase: "ui-lifecycle".to_string(),
+            project_id: registration.project_binding_id.clone(),
+            root_ref: registration.trusted_project_root.clone(),
+            uproject_relative_path: "Game.uproject".to_string(),
+        };
+        let process = crate::ue_editor_process::create_managed_editor_process_fixture(
+            create_input.clone(),
+            managed_observation_child_command(),
+        )
+        .unwrap()
+        .process
+        .unwrap();
+        let attach_input = crate::ue_editor_process::EditorAttachInput {
+            project_id: create_input.project_id,
+            root_ref: create_input.root_ref,
+            uproject_relative_path: create_input.uproject_relative_path,
+            process_id: process.id,
+            pid_hash: process.pid_hash,
+            process_display_name: process.display_name,
+            mode: "managed".to_string(),
+        };
+        let predecessor =
+            crate::ue_editor_process::attach_editor_process(attach_input.clone()).unwrap();
+        registration.editor_session_id = predecessor.session_id.clone().unwrap();
+        let registered = register_asset_mutation_approval_at(registration.clone(), now);
+        assert_eq!(registered.status, "registered");
+        let successor = crate::ue_editor_process::attach_editor_process(attach_input).unwrap();
+        assert!(
+            successor.observation_generation.unwrap() > predecessor.observation_generation.unwrap()
+        );
+        let guarded = authorize_asset_mutation_at(
+            step(
+                &registration,
+                &registered.registration_id,
+                "execute",
+                0,
+                registered.approval_token.as_deref(),
+            ),
+            now,
+        );
+        assert_eq!(
+            (guarded.status.as_str(), guarded.reason.as_str()),
+            ("blocked", "stale_generation")
+        );
+        crate::ue_editor_process::reset_registries_for_test();
     }
 
     #[test]
@@ -4661,14 +4921,17 @@ mod tests {
             assert_eq!(recorded.terminal, index == 0);
         }
 
-        for phase in ["rollback", "execute"] {
+        for (phase, expected_reason) in [
+            ("rollback", "rollback_replay"),
+            ("execute", "approval_registration_unknown"),
+        ] {
             assert_eq!(
                 authorize_asset_mutation_at(
                     step(&input, &registered.registration_id, phase, 0, None),
                     registered.expires_at + 2,
                 )
                 .reason,
-                "approval_registration_unknown"
+                expected_reason
             );
         }
     }
@@ -5317,7 +5580,7 @@ mod tests {
                 now + 3
             )
             .reason,
-            "approval_registration_unknown"
+            "rollback_replay"
         );
         assert_eq!(
             authorize_asset_mutation_at(
@@ -5326,6 +5589,83 @@ mod tests {
             )
             .reason,
             "approval_registration_unknown"
+        );
+    }
+
+    #[test]
+    fn second_rollback_requires_execute_and_recorded_outcomes_and_blocked_guard_cannot_succeed() {
+        let _test_guard = clear_registry();
+        let now = 250;
+        let input = registration("second-rollback-chain", now);
+        let registered = register_asset_mutation_approval_at(input.clone(), now);
+        let token = registered.approval_token.clone().unwrap();
+        let execute = authorize_asset_mutation_at(
+            step(
+                &input,
+                &registered.registration_id,
+                "execute",
+                0,
+                Some(&token),
+            ),
+            now + 1,
+        );
+        assert_eq!(execute.status, "accepted_by_native_guard");
+        assert_eq!(
+            record_asset_mutation_outcome(outcome(
+                &registered.registration_id,
+                "execute",
+                "op-0",
+                true,
+            ))
+            .status,
+            "recorded"
+        );
+        let rollback = authorize_asset_mutation_at(
+            step(&input, &registered.registration_id, "rollback", 0, None),
+            now + 2,
+        );
+        assert_eq!(rollback.status, "accepted_by_native_guard");
+        assert_eq!(
+            record_asset_mutation_outcome(outcome(
+                &registered.registration_id,
+                "rollback",
+                "op-0",
+                true,
+            ))
+            .status,
+            "recorded"
+        );
+        let replay = authorize_asset_mutation_at(
+            step(&input, &registered.registration_id, "rollback", 0, None),
+            now + 3,
+        );
+        assert_eq!(
+            (replay.status.as_str(), replay.reason.as_str()),
+            ("blocked", "rollback_replay")
+        );
+
+        let blocked_input = registration("blocked-outcome", now);
+        let blocked_registration = register_asset_mutation_approval_at(blocked_input.clone(), now);
+        let blocked = authorize_asset_mutation_at(
+            step(
+                &blocked_input,
+                &blocked_registration.registration_id,
+                "rollback",
+                0,
+                None,
+            ),
+            now + 1,
+        );
+        assert_eq!(blocked.reason, "execute_not_started");
+        let forged = record_asset_mutation_outcome(outcome(
+            &blocked_registration.registration_id,
+            "rollback",
+            "op-0",
+            true,
+        ));
+        assert_eq!(
+            (forged.status.as_str(), forged.reason.as_str()),
+            ("blocked", "operation_not_in_flight")
         );
     }
 
@@ -5650,14 +5990,17 @@ mod tests {
         }
         drop(registry);
 
-        for phase in ["rollback", "execute"] {
+        for (phase, expected_reason) in [
+            ("rollback", "rollback_replay"),
+            ("execute", "approval_registration_unknown"),
+        ] {
             assert_eq!(
                 authorize_asset_mutation_at(
                     step(&input, &registered.registration_id, phase, 0, None),
                     registered.expires_at + 2,
                 )
                 .reason,
-                "approval_registration_unknown"
+                expected_reason
             );
         }
         assert_eq!(

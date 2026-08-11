@@ -2,13 +2,51 @@
 
 ## Independent UAgent Companion Baseline — MVP15D
 
-Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
-its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
-Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
-commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; G15 is
-`COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
+Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
+checkpoint was created. Rework 8 (actual bridge orchestration and exact window
+instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
+Rework 9 implementation and controlled verification have `Review Verdict:
+PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
+remain an independent `External Gate: OPEN`; the supervisor implementation
+checkpoint is pending.
+TEMP cleanup remains a separate `External Gate: BLOCKED` under
+`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
+historical `COMPLETE / PASS` record at implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
+Rework 9 G15 closeout is `IN_PROGRESS`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
 acceptance remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C
 are `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
+Current `PASS_REAL_SMOKE` is `NO`.
+
+Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
+submissions without checkpoints. Rework 9 runs two actual `App` registrations
+through production `startMvp15dRuntimeBridge(invoke)` and keeps the exact
+Tauri-injected predecessor as the parent-owned destroy receiver. Exact one-shot
+completion precedes destroy; a bounded off-main wait queues the revalidated build
+only after `Destroyed`/manager removal. Timeout-late tasks are gated. Same-label
+replacement B remains alive without a third build; failed parent state keeps
+claim/final publish/complete closed. The opaque binding digest and
+acknowledgement v2, claim v3, window identity v1, and product summary v2 remain
+unchanged. N4, N5, second rollback, and observed MCP DELETE termination remain
+retained.
+
+The current test-residue risk is `OPEN`: the complete read-only manifest has
+4,601 entries (4,591 asset, 10 bridge). The Rework 7 baseline SHA-256 is
+`3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`.
+Supervisor revalidation retained every path and found 141 earlier asset-root
+mtime changes. The current manifest SHA-256 is
+`45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`;
+the resumed 2026-08-11 read-only scan retained all paths but found 94 asset-root
+`mtimeNs` changes timestamped 2026-08-10 17:42:58. Their actor is unconfirmed;
+no cleanup or metadata rewrite was performed.
+The historical 253-entry set remains present; deltas are 4,348/0. Deletion is
+`NO`, and cleanup remains `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+
+No actual Tool Search, installed/load/manifest tuple, live fingerprint,
+retraction boundary, N1-N8, partial/unknown, parent closeout, compatibility, or
+mutation evidence exists. Direct remains the selected production companion
+route.
 
 Identity v2 / manifest v3 independently bind engine `5.8.1`, engine changelist
 `56057345`, compatible changelist `55116800`, and module BuildId `55116800`.
@@ -34,8 +72,12 @@ persisted consistency with `productionLaunchAuthorityVerified: false`; a
 coherent hand-authored/copied chain may satisfy that level. Owned launch
 authority requires the same parent invocation, fixed non-injected producer
 launch, actual child result, full cross-binding, and an unexported single-use
-receipt. Ancestor junction/reparse paths still fail. Real Windows integration
-passes with zero current residues.
+receipt. Ancestor junction/reparse paths still fail. Historical Real Windows
+integration passed with zero matching residue at its checkpoint. Rework 8
+remains `NEEDS_FIX`; the reviewed Rework 9 implementation adds real hidden Webview/Wry ordering
+coverage, observes build count 0 at manager removal, builds a distinct successor,
+and preserves an injected replacement. The current manifest and independent
+cleanup authorization gate remain as recorded above.
 
 The compiled identity covers a deterministic 335-file transitive production
 boundary and a 356-entry production/Git watch set. The boundary includes native,
@@ -46,7 +88,7 @@ cannot leave the identity unchanged.
 The UE 5.8.1 inventory uses a closed file/directory allowlist, deterministic
 redaction, secret/path rejection, and independent verification. The unsafe
 predecessor evidence root was invalidated and removed for
-`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Actual release native/product-renderer/UI-
+`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Historical Rework 8 release native/product-renderer/UI-
 renderer capability handshakes completed with zero MCP/network/asset
 operations. No real UE session, Tool Search, product discovery, compatibility
 matrix, or mutation ran (`SKIPPED_BY_TASK_BOUNDARY`).
@@ -64,9 +106,9 @@ cleanup hardening, and native module enumeration; its supervisor verdict was
 not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
-A new clean-checkout read-only task based on Rework 8 implementation commit
-`98c8b387e1124a519977849d48ab824e4e6bb9c5` is required before the full UE 5.8.1
-compatibility matrix. Real mutation
+A new clean-checkout read-only task based on the reviewed Final Pre-live Rework 9
+implementation checkpoint is required before the full UE 5.8.1 compatibility
+matrix. Real mutation
 remains prohibited and belongs to a later separate task.
 
 This document separates repository-defined expectations from facts that must be collected from the real UE/MCP environment. It contains no local absolute path, process id, endpoint credential, token, or secret.

@@ -10,7 +10,13 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { createDesktopRuntimeAdapter } from "./desktop-runtime-adapter";
+import {
+  collectMvp15dProductAuthority,
+  collectMvp15dUiAuthority,
+  createDesktopRuntimeAdapter,
+  type Mvp15dProductObservationPort,
+  type Mvp15dProductRetractionRaw,
+} from "./desktop-runtime-adapter";
 import { LegacySseTransport, McpTransportError, StreamableHttpTransport } from "@uagent/mcp-client";
 import type { McpTransportClient } from "@uagent/mcp-client";
 import {
@@ -37,6 +43,668 @@ vi.mock("@uagent/mcp-client", async (importOriginal) => {
     StreamableHttpTransport: vi.fn(),
     LegacySseTransport: vi.fn(),
   };
+});
+
+describe("MVP15D authoritative product observations", () => {
+  const receipt = (label: string, request: Record<string, unknown> = {}) => ({
+    receiptId: `fixture-receipt:${label}`,
+    request,
+  });
+  it("installs production observation ports only after the fixed bridge activates its native ledger", async () => {
+    let sequence = 0;
+    const nativeInvokeMock = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command !== "mvp15d_bridge_observe_native_state") {
+        return { status: "unavailable", reason: "fixed_wiring_test" };
+      }
+      expect(args).toMatchObject({
+        input: {
+          schemaVersion: "uagent.mvp15d.native-state-observation.v1",
+          kind: "renderer_process",
+        },
+      });
+      sequence += 1;
+      return {
+        schemaVersion: "uagent.mvp15d.native-state-observation.v1",
+        receiptId: `mvp15d-observation-receipt:${String(sequence).padStart(64, "a")}`,
+        request: { reason: "fixed_app_activation", taskId: "TASK-MVP15D-FIXED-WIRING" },
+        observation: {
+          status: "begun",
+          rendererInstanceId: "renderer-process:4243:1",
+          processIdentitySha256: "a".repeat(64),
+        },
+      };
+    });
+    const nativeInvoke = nativeInvokeMock as NativeInvoke;
+    const runtime = createDesktopRuntimeAdapter({ nativeInvoke });
+
+    expect(runtime.getMvp15dProductObservationPort?.()).toBeNull();
+    expect(runtime.getMvp15dUiObservationPort?.()).toBeNull();
+    nativeInvokeMock.mockClear();
+    await runtime.activateMvp15dFixedObservationAuthority?.({
+      taskId: "TASK-MVP15D-FIXED-WIRING",
+      phase: "product-capture",
+      session: "fixed-product-session-0001",
+      generation: 7,
+      receiptLedgerEnabled: true,
+    });
+
+    expect(runtime.getMvp15dProductObservationPort?.()).not.toBeNull();
+    expect(runtime.getMvp15dUiObservationPort?.()).toBeNull();
+    expect(nativeInvokeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("drives the production product port through raw MCP and native calls", async () => {
+    const { StreamableHttpTransport: RealStreamableHttpTransport } =
+      await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");
+    vi.mocked(StreamableHttpTransport).mockImplementation(
+      (options) => new RealStreamableHttpTransport(options),
+    );
+    const harness = createMvp15dNativeBoundaryHarness();
+    const adapter = createDesktopRuntimeAdapter({
+      nativeInvoke: harness.nativeInvoke,
+    });
+    await makeMvp15DForwardReady(adapter);
+    await adapter.activateMvp15dFixedObservationAuthority?.({
+      taskId: "TASK-MVP15D-FIXED-RAW-PRODUCT",
+      phase: "product-capture",
+      session: "fixed-product-session-raw-0001",
+      generation: 9,
+      receiptLedgerEnabled: true,
+    });
+
+    await expect(collectMvp15dProductAuthority(
+      adapter.getMvp15dProductObservationPort!()!,
+    )).rejects.toThrow("native_handoff_requires_production_rust");
+    const fixedWireCalls = harness.wireCalls.filter(({ mode }) => mode === "on" || mode === "off");
+    expect(fixedWireCalls.filter(({ method }) => method === "initialize").length).toBeGreaterThanOrEqual(8);
+    expect(fixedWireCalls.filter(({ method }) => method === "tools/list").length).toBeGreaterThanOrEqual(8);
+    expect(fixedWireCalls.filter(({ mode, toolName }) => mode === "on" && toolName !== null)
+      .map(({ toolName }) => toolName)).toEqual(["list_toolsets", "describe_toolset"]);
+    expect(fixedWireCalls.filter(({ mode, toolName }) => mode === "off" && toolName !== null)).toEqual([]);
+    const initializedSessions = fixedWireCalls
+      .filter(({ method }) => method === "initialize")
+      .map(({ responseSessionId }) => responseSessionId);
+    expect(new Set(initializedSessions).size).toBe(initializedSessions.length);
+    expect(fixedWireCalls.filter(({ requestSessionId }) => requestSessionId !== null).every(
+      ({ requestSessionId, responseSessionId }) => requestSessionId === responseSessionId,
+    )).toBe(true);
+    expect(harness.nativeCommands.filter((command) => command === "attest_mvp15_companion").length)
+      .toBeGreaterThanOrEqual(8);
+    expect(harness.nativeCommands.filter((command) => command === "retract_mvp15_companion_approvals").length)
+      .toBeGreaterThanOrEqual(6);
+    expect(harness.nativeCommands).toContain("mcp_streamable_http_request");
+    expect(harness.nativeCommands).toContain("mvp15d_bridge_observe_native_state");
+    expect(harness.nativeCommands).toContain("mvp15d_bridge_request_renderer_restart");
+    expect(harness.nativeCommands).not.toContain("mvp15d_bridge_claim_renderer_restart");
+    expect(harness.nativeCommands).not.toContain("mvp15d_bridge_issue_observation_receipt");
+  });
+
+  it("drives all UI authority records through raw native and MCP calls", async () => {
+    const { StreamableHttpTransport: RealStreamableHttpTransport } =
+      await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");
+    vi.mocked(StreamableHttpTransport).mockImplementation(
+      (options) => new RealStreamableHttpTransport(options),
+    );
+    let attestationValid = true;
+    let nativeNow = 1_000;
+    let sessionSequence = 0;
+    let registrationSequence = 0;
+    let evidenceSequence = 0;
+    const sessions = new Map<string, { generation: number; stopped: boolean; processAlive: boolean }>();
+    const registrations = new Map<string, {
+      sessionId: string;
+      approvalToken: string;
+      expiresAt: number;
+      executed: Set<string>;
+      rolledBack: Set<string>;
+    }>();
+    const harness = createMvp15dNativeBoundaryHarness({
+      onAttestation: () => {
+        attestationValid = true;
+      },
+      onRetraction: () => {
+        attestationValid = false;
+      },
+      handleNativeCommand: async (command, input, nextReceipt) => {
+      if (command === "create_managed_editor_process") {
+        return {
+          status: "created",
+          reason: "task_owned_process_started",
+          ownerTaskId: input.taskId,
+          ownerPhase: input.phase,
+          processPid: 4_000 + sessionSequence,
+          processStartTime: 1_700_000_000 + sessionSequence,
+          process: {
+            id: `managed-process-${sessionSequence + 1}`,
+            pidHash: `managed-pid-${sessionSequence + 1}`,
+            displayName: "UAgentManagedEditorFixture.exe",
+            source: "managed",
+          },
+          nativeReceiptId: nextReceipt(),
+        };
+      }
+      if (command === "attach_editor_process") {
+        sessionSequence += 1;
+        const sessionId = `native-editor-session-${sessionSequence.toString().padStart(4, "0")}`;
+        sessions.set(sessionId, { generation: sessionSequence, stopped: false, processAlive: true });
+        return {
+          status: "attached",
+          sessionId,
+          processId: input.processId,
+          pidHash: input.pidHash,
+          observationGeneration: sessionSequence,
+          nativeReceiptId: nextReceipt(),
+        };
+      }
+      if (command === "register_asset_mutation_approval") {
+        registrationSequence += 1;
+        const registrationId = `native-registration-${registrationSequence.toString().padStart(4, "0")}`;
+        const approvalToken = `approval-token-${registrationSequence.toString().padStart(4, "0")}`;
+        registrations.set(registrationId, {
+          sessionId: String(input.editorSessionId ?? ""),
+          approvalToken,
+          expiresAt: nativeNow + 60_000,
+          executed: new Set(),
+          rolledBack: new Set(),
+        });
+        return {
+          status: "registered",
+          registrationId,
+          approvalToken,
+          nativeReceiptId: nextReceipt(),
+        };
+      }
+      if (command === "snapshot_mvp15_asset_content_manifest") {
+        evidenceSequence += 1;
+        return {
+          status: "observed",
+          reason: "content_manifest_observed",
+          evidenceId: `content-evidence-${evidenceSequence.toString().padStart(4, "0")}`,
+          aggregateSha256: "c".repeat(64),
+          entries: [],
+          nativeReceiptId: nextReceipt(),
+        };
+      }
+      if (command === "stop_editor_observation_session") {
+        const session = sessions.get(String(input.sessionId ?? ""));
+        if (session) session.stopped = true;
+        return { status: "stopped", sessionId: input.sessionId, nativeReceiptId: nextReceipt() };
+      }
+      if (command === "terminate_managed_editor_process") {
+        const session = sessions.get(String(input.sessionId ?? ""));
+        if (session) session.processAlive = false;
+        return {
+          status: "degraded",
+          reason: "process_exited",
+          sessionId: input.sessionId,
+          processId: `managed-process-${session?.generation ?? 0}`,
+          nativeReceiptId: nextReceipt(),
+        };
+      }
+      if (command === "record_asset_mutation_outcome") {
+        return {
+          status: "recorded",
+          reason: "operation_outcome_recorded",
+          registrationId: input.registrationId,
+          phase: input.phase,
+          operationId: input.operationId,
+          nativeReceiptId: nextReceipt(),
+        };
+      }
+      if (["execute_asset_mutation", "rollback_asset_mutation", "dry_run_asset_mutation"].includes(command)) {
+        evidenceSequence += 1;
+        const registration = registrations.get(String(input.registrationId ?? ""));
+        const session = registration ? sessions.get(registration.sessionId) : undefined;
+        const operation = (input.operation as { operationId?: unknown; assetPath?: unknown } | undefined) ?? {};
+        const operationId = String(operation.operationId ?? "operation:default");
+        const serialized = JSON.stringify(input);
+        let status = "accepted_by_native_guard";
+        let reason = "registered_binding_matched";
+        if (command === "dry_run_asset_mutation" && input.assetMutationGateEnabled !== true) {
+          status = "blocked";
+          reason = "asset_mutation_gate_disabled";
+        } else if (serialized.includes("/Game/Outside")) {
+          status = "blocked";
+          reason = "sandbox_path_required";
+        } else if (!attestationValid) {
+          status = "blocked";
+          reason = "companion_attestation_retracted";
+        } else if (!registration || !session?.processAlive) {
+          status = "blocked";
+          reason = "process_exited";
+        } else if (session.stopped) {
+          status = "blocked";
+          reason = "observation_session_stopped";
+        } else if (session.generation !== sessionSequence) {
+          status = "blocked";
+          reason = "stale_generation";
+        } else if (nativeNow >= registration.expiresAt) {
+          status = "blocked";
+          reason = "approval_expired";
+        } else if (command === "execute_asset_mutation") {
+          if (registration.executed.has(operationId) || input.approvalToken !== registration.approvalToken) {
+            status = "blocked";
+            reason = "execute_replay";
+          } else {
+            registration.executed.add(operationId);
+          }
+        } else if (command === "rollback_asset_mutation") {
+          if (registration.rolledBack.has(operationId)) {
+            status = "blocked";
+            reason = "rollback_replay";
+          } else {
+            registration.rolledBack.add(operationId);
+          }
+        }
+        return {
+          status,
+          reason,
+          registrationId: input.registrationId,
+          phase: input.phase,
+          operationId,
+          evidenceId: `guard-evidence-${evidenceSequence.toString().padStart(4, "0")}`,
+          nativeReceiptId: nextReceipt(),
+        };
+      }
+      return undefined;
+    },
+    });
+    const adapter = createDesktopRuntimeAdapter({
+      nativeInvoke: harness.nativeInvoke,
+      mvp15dAdvanceClock: async (milliseconds) => {
+        nativeNow += milliseconds;
+      },
+    });
+    await makeMvp15DForwardReady(adapter);
+    await adapter.activateMvp15dFixedObservationAuthority?.({
+      taskId: "TASK-MVP15D-FIXED-RAW-UI",
+      phase: "ui-lifecycle",
+      session: "fixed-ui-session-raw-0001",
+      generation: 11,
+      receiptLedgerEnabled: true,
+    });
+    const executeRequest = {
+      phase: "execute",
+      operationIndex: 0,
+      operationCount: 1,
+      projectBindingId: "project-binding:raw-ui",
+      aggregateDryRunHash: "a".repeat(64),
+      aggregateArgsHash: "b".repeat(64),
+      operation: { operationId: "operation:execute", assetPath: "/Game/UAgentSandbox/Run/Asset" },
+    };
+    const rollbackRequest = {
+      ...executeRequest,
+      phase: "rollback",
+      operation: { operationId: "operation:rollback", assetPath: "/Game/UAgentSandbox/Run/Asset" },
+    };
+    const guardRequests = {
+      execute: executeRequest,
+      rollback: rollbackRequest,
+      invalidPath: {
+        assetMutationGateEnabled: true,
+        operation: { operationId: "operation:invalid", assetPath: "/Game/Outside/Asset" },
+      },
+    };
+    const partialOperations: Array<{
+      direction: "forward" | "inverse" | "control";
+      action: string;
+      api: string;
+      request: Record<string, unknown>;
+    }> = [
+      ["forward", "create_run_root", "ue.asset.create_folder", false],
+      ["forward", "duplicate_test01", "ue.asset.duplicate", false],
+      ["forward", "rename_duplicate", "ue.asset.rename", false],
+      ["forward", "move_duplicate", "ue.asset.move", true],
+      ["inverse", "rename_back", "ue.asset.rename", false],
+      ["inverse", "delete_duplicate", "ue.asset.delete", false],
+      ["inverse", "cleanup_empty_folder", "ue.asset.delete", false],
+    ].map(([direction, action, toolName, simulateUnknown], index) => ({
+      direction: direction as "forward" | "inverse",
+      action: String(action),
+      api: "mcp_asset_tool_call",
+      request: { toolName, args: { dryRun: true, index, simulateUnknown } },
+    }));
+    partialOperations.push(
+      { direction: "control", action: "cross_ttl", api: "execute_asset_mutation", request: executeRequest },
+      { direction: "control", action: "second_rollback", api: "rollback_asset_mutation", request: rollbackRequest },
+    );
+
+    const authority = await collectMvp15dUiAuthority(
+      adapter.getMvp15dUiObservationPort!()!,
+      partialOperations,
+      {
+        attachInput: { processId: "editor-process:raw-ui", pidHash: "pid:raw-ui" },
+        registrationInput: { changeSetId: "change-set:raw-ui", operations: [] },
+        guardRequests,
+      },
+    );
+
+    expect(authority.negativeCases).toHaveLength(8);
+    expect(authority.partialUnknown.operationResults).toHaveLength(9);
+    expect(harness.nativeCommands.filter((command) => command === "attach_editor_process")).toHaveLength(12);
+    expect(harness.nativeCommands.filter((command) => command === "register_asset_mutation_approval"))
+      .toHaveLength(11);
+    expect(harness.nativeCommands.filter((command) => command === "snapshot_mvp15_asset_content_manifest"))
+      .toHaveLength(18);
+    expect(
+      harness.nativeCommands.filter((command) =>
+        ["execute_asset_mutation", "rollback_asset_mutation", "dry_run_asset_mutation"].includes(command),
+      ),
+    ).toHaveLength(15);
+    expect(harness.wireCalls.filter(({ method, toolName }) => method === "tools/call" && toolName?.startsWith("ue.asset.")))
+      .toHaveLength(7);
+    expect(JSON.stringify(harness.nativeInputs)).not.toContain("testCaseId");
+    expect(authority.negativeCases.every(({ setupCalls }) => Array.isArray(setupCalls))).toBe(true);
+    expect(authority.partialUnknown.operationResults.at(-2)?.setupCalls.map(({ request }) => request))
+      .toHaveLength(2);
+    expect(authority.partialUnknown.operationResults.at(-1)?.setupCalls).toHaveLength(6);
+  });
+
+  it.each([
+    ["attach_failure", 1],
+    ["registration_failure", 1],
+    ["invalid_create_receipt", 1],
+    ["guard_failure", 1],
+    ["normal_n4_success", 0],
+  ] as const)("releases the N4 managed child for %s", async (failure, expectedReleaseCount) => {
+    const { StreamableHttpTransport: RealStreamableHttpTransport } =
+      await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");
+    vi.mocked(StreamableHttpTransport).mockImplementation(
+      (options) => new RealStreamableHttpTransport(options),
+    );
+    const activeManaged = new Map<string, { pid: number; processStartTime: number }>();
+    let releaseCount = 0;
+    const harness = createMvp15dNativeBoundaryHarness({
+      handleNativeCommand: async (command, input, nextReceipt) => {
+        if (command === "create_managed_editor_process") {
+          const processId = "managed-process-cleanup-1";
+          const identity = { pid: 9_001, processStartTime: 1_700_000_001 };
+          activeManaged.set(processId, identity);
+          return {
+            status: "created",
+            reason: "task_owned_process_started",
+            ownerTaskId: input.taskId,
+            ownerPhase: input.phase,
+            processPid: identity.pid,
+            processStartTime: identity.processStartTime,
+            process: {
+              id: processId,
+              pidHash: "managed-pid-cleanup-1",
+              displayName: "UAgentManagedEditorFixture.exe",
+              source: "managed",
+            },
+            ...(failure === "invalid_create_receipt" ? {} : { nativeReceiptId: nextReceipt() }),
+          };
+        }
+        if (command === "release_managed_editor_process") {
+          const identity = activeManaged.get(String(input.processId));
+          if (
+            !identity ||
+            input.pid !== identity.pid ||
+            input.processStartTime !== identity.processStartTime
+          ) {
+            return {
+              schemaVersion: "uagent.mvp15d.managed-editor-process-release-result.v1",
+              status: "blocked",
+              reason: "managed_process_identity_mismatch",
+              nativeReceiptId: nextReceipt(),
+            };
+          }
+          activeManaged.delete(String(input.processId));
+          releaseCount += 1;
+          return {
+            schemaVersion: "uagent.mvp15d.managed-editor-process-release-result.v1",
+            status: "released",
+            reason: "task_owned_process_released",
+            ownerTaskId: input.taskId,
+            ownerPhase: input.phase,
+            processId: input.processId,
+            pid: input.pid,
+            processStartTime: input.processStartTime,
+            nativeReceiptId: nextReceipt(),
+          };
+        }
+        if (command === "attach_editor_process") {
+          if (failure === "attach_failure") {
+            return { status: "blocked", reason: "fixture_attach_failure", nativeReceiptId: nextReceipt() };
+          }
+          return {
+            status: "attached",
+            sessionId: "native-editor-session-cleanup-1",
+            processId: input.processId,
+            pidHash: input.pidHash,
+            observationGeneration: 1,
+            nativeReceiptId: nextReceipt(),
+          };
+        }
+        if (command === "register_asset_mutation_approval") {
+          if (failure === "registration_failure") {
+            return { status: "blocked", reason: "fixture_registration_failure", nativeReceiptId: nextReceipt() };
+          }
+          return {
+            status: "registered",
+            registrationId: "native-registration-cleanup-1",
+            approvalToken: "approval-token-cleanup-1",
+            nativeReceiptId: nextReceipt(),
+          };
+        }
+        if (command === "terminate_managed_editor_process") {
+          if (failure === "guard_failure") throw new Error("fixture_guard_failure");
+          activeManaged.delete("managed-process-cleanup-1");
+          return {
+            status: "degraded",
+            reason: "process_exited",
+            sessionId: input.sessionId,
+            processId: "managed-process-cleanup-1",
+            nativeReceiptId: nextReceipt(),
+          };
+        }
+        if (command === "execute_asset_mutation") {
+          return {
+            status: "blocked",
+            reason: "process_exited",
+            registrationId: input.registrationId,
+            phase: "execute",
+            nativeReceiptId: nextReceipt(),
+          };
+        }
+        return undefined;
+      },
+    });
+    const adapter = createDesktopRuntimeAdapter({ nativeInvoke: harness.nativeInvoke });
+    await makeMvp15DForwardReady(adapter);
+    await adapter.activateMvp15dFixedObservationAuthority?.({
+      taskId: "TASK-MVP15D-MANAGED-CLEANUP",
+      phase: "ui-lifecycle",
+      session: "fixed-ui-session-cleanup-0001",
+      generation: 17,
+      receiptLedgerEnabled: true,
+    });
+    const port = adapter.getMvp15dUiObservationPort!()!;
+    const begin = () => port.beginSession({
+      caseId: "N4",
+      attachInput: {
+        projectId: "project:managed-cleanup",
+        rootRef: "G:/Fixture/FinalHost",
+        uprojectRelativePath: "FinalHost.uproject",
+      },
+      registrationInput: { changeSetId: "change-set:managed-cleanup", operations: [] },
+      guardRequests: { execute: {}, rollback: {}, invalidPath: {} },
+    });
+
+    if (["attach_failure", "registration_failure", "invalid_create_receipt"].includes(failure)) {
+      await expect(begin()).rejects.toThrow();
+    } else {
+      const binding = await begin();
+      if (failure === "guard_failure") {
+        await expect(port.guard({ ...binding, caseId: "N4", api: "execute_asset_mutation" }))
+          .rejects.toThrow("fixture_guard_failure");
+      } else {
+        await expect(port.guard({ ...binding, caseId: "N4", api: "execute_asset_mutation" }))
+          .resolves.toBeTruthy();
+      }
+    }
+    expect(activeManaged.size).toBe(0);
+    expect(releaseCount).toBe(expectedReleaseCount);
+    expect(harness.nativeCommands.filter((command) => command === "release_managed_editor_process"))
+      .toHaveLength(expectedReleaseCount);
+  });
+
+  it("calls two actual configuration discoveries and all six native retraction transitions", async () => {
+    const calls: string[] = [];
+    let generation = 10;
+    const observationPort = {
+      readMutationCounters: async () => ({ dryRun: 0, execute: 0, rollback: 0 }),
+      discover: async ({ toolSearchEnabled }) => {
+        calls.push(`discover:${toolSearchEnabled ? "on" : "off"}`);
+        generation += 1;
+        return {
+          mode: toolSearchEnabled ? "on" : "off",
+          configCall: receipt(`config-${generation}`, { intent: { toolSearchMode: toolSearchEnabled ? "on" : "off" } }),
+          rendererInstanceCall: receipt(`renderer-${generation}`),
+          connectCall: receipt(`connect-${generation}`),
+          initializeCall: receipt(`initialize-${generation}`),
+          discoverCall: receipt(`discover-${generation}`),
+          normalizeCall: receipt(`normalize-${generation}`),
+          fingerprintCall: receipt(`fingerprint-${generation}`),
+          nativeAttestation: receipt(`attestation-${generation}`),
+          mutationCounterCall: receipt(`counter-${generation}`),
+          toolSearchCalls: toolSearchEnabled ? [receipt(`tool-search-${generation}`)] : [],
+        };
+      },
+      retract: async (reason) => {
+        calls.push(`retract:${reason}`);
+        generation += 1;
+        const rendererRestart = reason === "renderer_restart";
+        const readyDiscovery = {
+          mode: "off" as const,
+          configCall: receipt(`ready-config-${generation}`, { intent: { toolSearchMode: "off" } }),
+          rendererInstanceCall: receipt(`ready-renderer-${generation}`),
+          connectCall: receipt(`ready-connect-${generation}`),
+          initializeCall: receipt(`ready-initialize-${generation}`),
+          discoverCall: receipt(`ready-discover-${generation}`),
+          normalizeCall: receipt(`ready-normalize-${generation}`),
+          fingerprintCall: receipt(`ready-fingerprint-${generation}`),
+          nativeAttestation: receipt(`ready-attestation-${generation}`),
+          mutationCounterCall: receipt(`ready-counter-${generation}`),
+          toolSearchCalls: [],
+        };
+        return {
+          reason,
+          readyDiscovery,
+          rendererInstanceCall: receipt(`retraction-renderer-${generation}-${rendererRestart}`),
+          transitionCall: receipt(`transition-${generation}`, { reason }),
+          nativeRetraction: receipt(`native-retraction-${generation}`, { reason }),
+        } satisfies Mvp15dProductRetractionRaw;
+      },
+    } satisfies Mvp15dProductObservationPort;
+    const runtime = createDesktopRuntimeAdapter({
+      nativeInvoke: null,
+      mvp15dFixtureProductObservationPort: observationPort,
+    });
+    expect(runtime.getMvp15dProductObservationPort?.()).toBe(observationPort);
+    const result = await collectMvp15dProductAuthority(
+      runtime.getMvp15dProductObservationPort!()!,
+    );
+
+    expect(calls).toEqual([
+      "discover:on",
+      "discover:off",
+      "retract:disconnect",
+      "retract:endpoint_change",
+      "retract:failure",
+      "retract:newer_generation",
+      "retract:attestation_invalidation",
+      "retract:renderer_restart",
+    ]);
+    expect(result.discoveries.map(({ mode }) => mode)).toEqual(["on", "off"]);
+    expect(result.retractions).toHaveLength(6);
+    expect(result.mutationAfter).toEqual(result.mutationBefore);
+  });
+
+  it("rejects a hardcoded Tool Search label that disagrees with the observed configuration", async () => {
+    await expect(
+      collectMvp15dProductAuthority({
+        readMutationCounters: async () => ({ dryRun: 0, execute: 0, rollback: 0 }),
+        discover: async ({ toolSearchEnabled }) => ({
+          mode: toolSearchEnabled ? "off" : "on",
+          configCall: receipt("invalid-config", { intent: { toolSearchMode: toolSearchEnabled ? "off" : "on" } }),
+          rendererInstanceCall: receipt("invalid-renderer"),
+          connectCall: receipt("invalid-connect"),
+          initializeCall: receipt("invalid-initialize"),
+          discoverCall: receipt("invalid-discover"),
+          normalizeCall: receipt("invalid-normalize"),
+          fingerprintCall: receipt("invalid-fingerprint"),
+          nativeAttestation: receipt("invalid-attestation"),
+          mutationCounterCall: receipt("invalid-counter"),
+          toolSearchCalls: [],
+        }),
+        retract: async () => {
+          throw new Error("retraction_must_not_run");
+        },
+      }),
+    ).rejects.toThrow("mvp15d_product_discovery_observation_invalid");
+  });
+
+  it("rejects N1-N8 orchestration when an underlying native guard call is missing", async () => {
+    const calls: string[] = [];
+    let sessionSequence = 0;
+    await expect(
+      collectMvp15dUiAuthority({
+        beginSession: async () => {
+          sessionSequence += 1;
+          const caseId = `N${sessionSequence}`;
+          calls.push(`begin:${caseId}`);
+          return {
+            sessionId: `session-${caseId}-authority`,
+            nativeSessionId: `native-${caseId}-authority`,
+            runId: `run-${caseId}-authority`,
+            registrationId: `registration-${caseId}-authority`,
+            sessionBegin: receipt(`session-${caseId}`),
+            registrationCall: receipt(`registration-${caseId}`),
+          };
+        },
+        snapshotContent: async (binding, stage) => ({
+          stage,
+          registrationId: binding.registrationId,
+          runId: binding.runId,
+          receiptId: `fixture-content-${binding.runId}-${stage}`,
+          request: { stage },
+        }),
+        readCounters: async (_binding, stage) => ({
+          values: [0, 0, 0, 0, 0],
+          receipt: receipt(`counter-${stage}`),
+        }),
+        guard: async ({ caseId, api }) => {
+          calls.push(`guard:${caseId}:${api}`);
+          if (caseId === "N4") throw new Error("native_guard_call_missing");
+          return {
+            guardCall: {
+              receiptId: `fixture-guard-${caseId}`,
+              request: { api },
+            },
+            setupCalls: [],
+          };
+        },
+        runPartialOperation: async () => {
+          throw new Error("partial_must_not_run");
+        },
+        stopObservation: async ({ sessionId }) => receipt(`stop-${sessionId}`, { sessionId }),
+        disconnectMcp: async ({ sessionId }) => receipt(`disconnect-${sessionId}`, { sessionId }),
+      }, [], {
+        attachInput: {},
+        registrationInput: {},
+        guardRequests: { execute: {}, rollback: {}, invalidPath: {} },
+      }),
+    ).rejects.toThrow("native_guard_call_missing");
+    expect(calls.filter((call) => call.startsWith("guard:"))).toEqual([
+      "guard:N1:execute_asset_mutation",
+      "guard:N2:dry_run_asset_mutation",
+      "guard:N3:execute_asset_mutation",
+      "guard:N4:execute_asset_mutation",
+    ]);
+    expect(calls).not.toContain("begin:N5");
+  });
 });
 
 describe("MVP15C live evidence persistence", () => {
@@ -653,6 +1321,243 @@ function verifiedMvp15DNativeEvidence() {
   };
 }
 
+function createMvp15dNativeBoundaryHarness(options?: {
+  onAttestation?: () => void;
+  onRetraction?: () => void;
+  handleNativeCommand?: (
+    command: string,
+    input: Record<string, unknown>,
+    nextReceipt: () => string,
+  ) => Promise<unknown | undefined>;
+}) {
+  const evidence = verifiedMvp15DNativeEvidence();
+  const nativeCommands: string[] = [];
+  const nativeInputs: Record<string, unknown>[] = [];
+  const wireCalls: Array<{
+    endpoint: string;
+    method: string;
+    toolName: string | null;
+    mode: string | null;
+    requestSessionId: string | null;
+    responseSessionId: string | null;
+  }> = [];
+  let receiptSequence = 0;
+  let mcpSessionSequence = 0;
+  let nativeGeneration = 8_000_000_000_000_000;
+  const rendererProcessGeneration = 1;
+  const nextReceipt = () => {
+    receiptSequence += 1;
+    return `mvp15d-observation-receipt:${receiptSequence.toString(16).padStart(64, "0")}`;
+  };
+  const observedState = (request: Record<string, unknown>, observation: Record<string, unknown>) => ({
+    schemaVersion: "uagent.mvp15d.native-state-observation.v1",
+    receiptId: nextReceipt(),
+    request,
+    observation,
+  });
+  const nativeInvoke = createNativeInvokeMockAdapter(async (command, payload) => {
+    nativeCommands.push(command);
+    const input = (payload as { input?: Record<string, unknown> } | undefined)?.input ?? {};
+    nativeInputs.push(structuredClone(input));
+    if (command === "mcp_streamable_http_request") {
+      if (input.method === "DELETE") {
+        const observationRequest = {
+          schemaVersion: "uagent.mvp15d.native-mcp-request.v2",
+          httpMethod: "DELETE",
+          endpoint: input.endpoint,
+          body: null,
+          protocolVersion: input.protocolVersion,
+          sessionId: input.sessionId,
+          intent: input.observation,
+        };
+        return {
+          method: "DELETE",
+          status: 204,
+          body: "",
+          contentType: null,
+          sessionId: null,
+          protocolVersion: input.protocolVersion,
+          observationRequest,
+          observationReceipts: { mcp_disconnect: nextReceipt() },
+        };
+      }
+      const request = JSON.parse(String(input.body ?? "{}")) as {
+        id?: string | number;
+        method?: string;
+        params?: { name?: string; arguments?: Record<string, unknown> };
+      };
+      const intent = input.observation as { toolSearchMode?: string } | undefined;
+      const requestSessionId = typeof input.sessionId === "string" ? input.sessionId : null;
+      let responseSessionId = requestSessionId;
+      if (request.method === "initialize") {
+        mcpSessionSequence += 1;
+        responseSessionId = `native-mcp-session-${mcpSessionSequence.toString().padStart(4, "0")}`;
+      }
+      const toolName = request.method === "tools/call" ? request.params?.name ?? null : null;
+      wireCalls.push({
+        endpoint: String(input.endpoint ?? ""),
+        method: String(request.method ?? ""),
+        toolName,
+        mode: intent?.toolSearchMode ?? null,
+        requestSessionId,
+        responseSessionId,
+      });
+      if (String(input.endpoint).includes("127.0.0.1:9")) {
+        throw new Error("native_request_failed");
+      }
+      let result: unknown;
+      if (request.method === "initialize") {
+        result = fullDiscoveryFixtures.initialize;
+      } else if (request.method === "tools/list") {
+        result = intent?.toolSearchMode === "on"
+          ? {
+              tools: ["list_toolsets", "describe_toolset", "call_tool"].map((name) => ({
+                name,
+                inputSchema: { type: "object" },
+              })),
+            }
+          : { tools: evidence.descriptors };
+      } else if (request.method === "resources/list") {
+        result = { resources: [] };
+      } else if (request.method === "prompts/list") {
+        result = { prompts: [] };
+      } else if (request.method === "tools/call" && toolName === "list_toolsets") {
+        result = {
+          content: [{ type: "text", text: JSON.stringify({ toolsets: [{ id: "UAgentAssetTools" }] }) }],
+        };
+      } else if (request.method === "tools/call" && toolName === "describe_toolset") {
+        result = {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              toolset: {
+                toolsetId: "UAgentAssetTools",
+                methods: evidence.descriptors.map((descriptor, index) => ({
+                  exactToolName: descriptor.name,
+                  methodId: `asset-method-${index + 1}`,
+                  schemaVersion: descriptor.schemaVersion,
+                  inputSchema: descriptor.inputSchema,
+                  dryRunSchema: descriptor.dryRunSchema,
+                  rollbackContract: descriptor.rollbackContract,
+                  affectedAssetsSchema: descriptor.affectedAssetsSchema,
+                  evidenceQuery: descriptor.evidenceQuery,
+                })),
+              },
+            }),
+          }],
+        };
+      } else if (request.method === "tools/call") {
+        const simulateUnknown = request.params?.arguments?.simulateUnknown === true;
+        result = {
+          status: simulateUnknown ? "failed" : "succeeded",
+          reason: simulateUnknown ? "effect_unknown" : "none",
+          effectState: simulateUnknown ? "unknown" : "known_effect",
+          evidenceId: `mcp-evidence-${wireCalls.length}`,
+        };
+      } else {
+        result = null;
+      }
+      const observationRequest = {
+        endpoint: input.endpoint,
+        protocolVersion: input.protocolVersion,
+        sessionId: input.sessionId ?? null,
+        body: request,
+        intent: input.observation,
+      };
+      let receiptApis: string[] = [];
+      if (intent && request.method === "initialize") {
+        receiptApis = ["mcp_configure_tool_search", "mcp_connect", "mcp_initialize"];
+      } else if (intent && request.method === "tools/list") {
+        receiptApis = ["mcp_discover", "mcp_normalize", "mcp_fingerprint"];
+      } else if (intent && request.method === "tools/call") {
+        receiptApis = [
+          toolName === "list_toolsets" || toolName === "describe_toolset" || toolName === "call_tool"
+            ? "mcp_tool_search_call"
+            : "mcp_asset_tool_call",
+        ];
+      } else if (intent) {
+        receiptApis = ["mcp_auxiliary_transport"];
+      }
+      return {
+        status: 200,
+        body: JSON.stringify({ jsonrpc: "2.0", id: request.id, result }),
+        contentType: "application/json",
+        sessionId: responseSessionId,
+        ...(intent
+          ? {
+              observationRequest,
+              observationReceipts: Object.fromEntries(receiptApis.map((api) => [api, nextReceipt()])),
+            }
+          : {}),
+      };
+    }
+    if (command === "mvp15d_bridge_observe_native_state") {
+      const kind = String(input.kind ?? "");
+      const request = (input.request as Record<string, unknown> | undefined) ?? {};
+      if (kind === "renderer_process") {
+        return observedState(request, {
+          status: "begun",
+          rendererInstanceId: `renderer-process:5252:${rendererProcessGeneration}`,
+          processIdentitySha256: rendererProcessGeneration.toString(16).padStart(64, "a"),
+        });
+      }
+      if (kind === "mutation_counters") {
+        return observedState(request, {
+          counterNames: ["native", "mcp", "provider", "verify", "rollback"],
+          values: [0, 0, 0, 0, 0],
+        });
+      }
+      if (kind === "mcp_disconnect") {
+        return observedState(request, { status: "disconnected", mcpSessionId: request.mcpSessionId });
+      }
+      if (kind === "recorded_replay") {
+        return observedState(request, { status: "observed", eventCount: 0, representationSha256: "f".repeat(64) });
+      }
+      if (kind === "mcp_retraction_transition") {
+        return observedState(request, {
+          status: "retracted",
+          reason: request.reason,
+          stateBeforeReceiptId: request.stateBeforeReceiptId,
+          stateAfterReceiptId: nextReceipt(),
+          sessionIdAfter: wireCalls.at(-1)?.responseSessionId ?? "",
+          generationAfter: wireCalls.length,
+        });
+      }
+    }
+    if (command === "mvp15d_bridge_request_renderer_restart") {
+      throw new Error("native_handoff_requires_production_rust");
+    }
+    if (command === "attest_mvp15_companion") {
+      options?.onAttestation?.();
+      return {
+        status: "observed",
+        reason: "native_loaded_modules_observed",
+        manifest: evidence.manifest,
+        installedModules: evidence.installedModules,
+        loadedModules: evidence.loadedModules,
+        nativeReceiptId: nextReceipt(),
+      };
+    }
+    if (command === "retract_mvp15_companion_approvals") {
+      options?.onRetraction?.();
+      nativeGeneration += 1;
+      return {
+        ...successfulNativeRetraction(payload, nativeGeneration),
+        nativeReceiptId: nextReceipt(),
+      };
+    }
+    const custom = await options?.handleNativeCommand?.(command, input, nextReceipt);
+    if (custom !== undefined) return custom;
+    throw new Error(`unsupported_native_command:${command}`);
+  });
+  return {
+    nativeInvoke,
+    nativeCommands,
+    nativeInputs,
+    wireCalls,
+  };
+}
+
 type Mvp15AssetBridge = {
   getMvp15AssetTools?: () => Array<{
     name: string;
@@ -793,9 +1698,15 @@ async function makeMvp15DForwardReady(
 ) {
   await adapter.connectMcp();
   await adapter.discoverMcp();
-  await expect(
-    adapter.refreshMvp15DCompanionAttestation?.(trustedRootId, editorSessionId),
-  ).resolves.toMatchObject({ status: "verified" });
+  const status = await adapter.refreshMvp15DCompanionAttestation?.(trustedRootId, editorSessionId);
+  if (status?.status !== "verified") {
+    throw new Error(`mvp15d_test_attestation_not_verified:${JSON.stringify({
+      status,
+      mcp: adapter.getMcpState(),
+      discovery: adapter.getMcpDiscovery(),
+      tools: adapter.getMvp15AssetTools(),
+    })}`);
+  }
 }
 
 async function createVerifiedCompanionRevocationHarness() {
@@ -4454,6 +5365,7 @@ describe("DesktopRuntimeAdapter", () => {
 
     expect(adapter.getMcpState().status).toBe("connected");
     adapter.disconnectMcp();
+    await vi.waitFor(() => expect(adapter.getMcpState().status).toBe("disconnected"));
 
     expect(adapter.getMcpState()).toMatchObject({
       status: "disconnected",

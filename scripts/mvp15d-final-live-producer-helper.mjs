@@ -17,6 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, isAbsolute, relative, resolve } from "node:path";
+import { createConnection } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   EARLY_IDENTITY_SCHEMA,
@@ -31,12 +32,13 @@ import {
 import { computeSourceIdentity } from "./mvp15d-source-identity.mjs";
 
 const TASK_GENERATION = "final-d13-d16";
-const RUNTIME_EVENT_SCHEMA = "uagent.mvp15d.final.runtime-event.v1";
+const RUNTIME_EVENT_SCHEMA = "uagent.mvp15d.final.runtime-event.v2";
 const DRIVER_SCHEMA = "uagent.mvp15d.final.driver-command.v1";
 const PHASE_EVENT_SCHEMA = "uagent.mvp15d.final.phase-event.v1";
-const BRIDGE_VERSION = "uagent.mvp15d.runtime-bridge.v1";
+const BRIDGE_VERSION = "uagent.mvp15d.runtime-bridge.v5";
 const UE_AUTOMATION_REPORT_SCHEMA = "uagent.mvp15d.ue-automation-report.v1";
 const JOB_CLOSEOUT_SCHEMA = "uagent.mvp15d.final.job-closeout.v1";
+const PORT_CLOSEOUT_SCHEMA = "uagent.mvp15d.final.port-closeout.v1";
 const ROOT_PATTERN = /^mvp15d-final-d13-d16-\d{8}_\d{6}(?:-[A-Za-z0-9]+)?$/;
 const PHASES = new Set(["ue-automation", "product-capture", "ui-lifecycle"]);
 const COMMON_KEYS = [
@@ -53,8 +55,8 @@ const COMMON_KEYS = [
 ];
 const RENDERED_PATHS = Object.freeze({
   "capability-probe": "capability",
-  "product-capture": "Connect,Initialize,Discover,Normalize,Fingerprint",
-  "ui-lifecycle": "validate,add,confirmTrust",
+  "product-capture": "validate,add,confirmTrust,observationDiscover,observationAttach,observationReady,Connect,Initialize,Discover,Normalize,Fingerprint,disconnect",
+  "ui-lifecycle": "validate,add,confirmTrust,observationDiscover,observationAttach,observationReady,mcpConnect,mcpInitialize,mcpDiscover,mcpNormalize,mcpFingerprint,dryRun,approve,register,execute,verify,crossTtl,rollback,finalVerify,replay,observationStop,mcpDisconnect",
 });
 const UE_AUTOMATION_TESTS = Object.freeze([
   "UAgentAssetTools.Contracts",
@@ -273,6 +275,7 @@ function bridgeTransport(binding, mode) {
   const driverFile = resolve(directories.metadata, `${prefix}.driver.json`);
   const identityFile = resolve(directories.metadata, `${prefix}.early-identity.json`);
   const jobCloseoutFile = resolve(directories.metadata, `${binding.phase}.job-closeout.json`);
+  const portCloseoutFile = resolve(directories.metadata, `${binding.phase}.port-closeout.json`);
   const eventFile = resolve(directories.transcripts, `${binding.phase}.runtime-events.jsonl`);
   const stdoutFile = resolve(directories.logs, `${prefix}.runtime.stdout.tmp`);
   const stderrFile = resolve(directories.logs, `${prefix}.runtime.stderr.tmp`);
@@ -285,6 +288,7 @@ function bridgeTransport(binding, mode) {
     identityFile,
     `${identityFile}.tmp`,
     jobCloseoutFile,
+    portCloseoutFile,
   ]) {
     if (existsSync(path)) fail("FINAL_LIVE_TRANSPORT_RESIDUE");
   }
@@ -296,6 +300,7 @@ function bridgeTransport(binding, mode) {
     driverFile,
     identityFile,
     jobCloseoutFile,
+    portCloseoutFile,
     eventFile,
     stdoutFile,
     stderrFile,
@@ -347,6 +352,8 @@ function desktopRuntimeCommand(binding, transport) {
     env: {
       ...process.env,
       UAGENT_ENABLE_MVP15D_TASK_BRIDGE: "1",
+      UAGENT_ENABLE_ASSET_MUTATION:
+        binding.phase === "ui-lifecycle" && transport.mode === "live" ? "1" : "0",
     },
   };
 }
@@ -1054,6 +1061,150 @@ function publishJobCloseout(path, binding, ledger) {
   return value;
 }
 
+function loopbackPortAccepting(port, timeoutMilliseconds = 250) {
+  return new Promise((resolvePromise) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    let settled = false;
+    const settle = (accepting) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolvePromise(accepting);
+    };
+    socket.once("connect", () => settle(true));
+    socket.once("error", () => settle(false));
+    socket.setTimeout(timeoutMilliseconds, () => settle(false));
+  });
+}
+
+async function publishPortCloseout(path, binding) {
+  const observations = [];
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const accepting = await loopbackPortAccepting(binding.port);
+    observations.push({ attempt, accepting });
+    if (accepting) await delay(100);
+  }
+  if (observations.some(({ accepting }) => accepting)) {
+    fail("FINAL_LIVE_PORT_RESIDUAL");
+  }
+  const value = {
+    schemaVersion: PORT_CLOSEOUT_SCHEMA,
+    phase: binding.phase,
+    taskId: binding.taskId,
+    marker: binding.marker,
+    sessionId: binding.sessionId,
+    generation: binding.generation,
+    port: binding.port,
+    host: "127.0.0.1",
+    observations,
+    residualCount: 0,
+  };
+  const descriptorHandle = openSync(path, "wx");
+  try {
+    writeFileSync(descriptorHandle, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    fsyncSync(descriptorHandle);
+  } finally {
+    closeSync(descriptorHandle);
+  }
+  return value;
+}
+
+function fixedArtifactAuthority(binding, runtimeProcessId) {
+  const { packageRoot, installedRoot, manifestPath, manifest } = resolveUeArtifacts(binding);
+  const packageModules = manifest.modules
+    .map((record) => moduleRecord(packageRoot, record, "FINAL_LIVE_FIXED_ARTIFACT_INVALID"))
+    .sort((left, right) => left.path.localeCompare(right.path, "en"));
+  const installedModules = manifest.modules
+    .map((record) => moduleRecord(installedRoot, record, "FINAL_LIVE_FIXED_ARTIFACT_INVALID"))
+    .sort((left, right) => left.path.localeCompare(right.path, "en"));
+  if (stable(packageModules) !== stable(installedModules)) {
+    fail("FINAL_LIVE_FIXED_ARTIFACT_INVALID");
+  }
+  const packageArtifacts = manifest.artifacts
+    .map((record) => moduleRecord(packageRoot, record, "FINAL_LIVE_FIXED_ARTIFACT_INVALID"))
+    .sort((left, right) => left.path.localeCompare(right.path, "en"));
+  const installedArtifacts = manifest.artifacts
+    .map((record) => moduleRecord(installedRoot, record, "FINAL_LIVE_FIXED_ARTIFACT_INVALID"))
+    .sort((left, right) => left.path.localeCompare(right.path, "en"));
+  if (stable(packageArtifacts) !== stable(installedArtifacts)) {
+    fail("FINAL_LIVE_FIXED_ARTIFACT_INVALID");
+  }
+  const loadedLedgerPath = resolve(binding.evidenceRoot, "captures", "loaded-modules.json");
+  const loaded = readJson(loadedLedgerPath, "FINAL_LIVE_FIXED_ARTIFACT_INVALID");
+  const source = computeSourceIdentity(binding.repository);
+  if (
+    loaded.schemaVersion !== LOADED_LEDGER_SCHEMA ||
+    loaded.productionOrigin !== PRODUCTION_ORIGIN ||
+    loaded.fixtureUsed !== false ||
+    loaded.taskId !== binding.taskId ||
+    loaded.sourceCommit !== binding.sourceCommit ||
+    loaded.sourceTreeSha256 !== source.sourceTreeSha256 ||
+    loaded.manifest?.sha256 !== sha256File(manifestPath) ||
+    loaded.package?.sha256 !== sha256(Buffer.from(stable(packageArtifacts), "utf8")) ||
+    loaded.installedRoot?.sha256 !== sha256(Buffer.from(stable(installedArtifacts), "utf8")) ||
+    !Array.isArray(loaded.modules) ||
+    loaded.modules.length !== packageModules.length ||
+    !/^[0-9a-f]{64}$/.test(loaded.authority?.bindingSha256)
+  ) {
+    fail("FINAL_LIVE_FIXED_ARTIFACT_INVALID");
+  }
+  const loadedModules = loaded.modules
+    .map((record) => {
+      if (
+        !record ||
+        typeof record !== "object" ||
+        Array.isArray(record) ||
+        typeof record.path !== "string" ||
+        isAbsolute(record.path) ||
+        record.path.includes("\\") ||
+        record.path.split("/").some((part) => part === "" || part === "." || part === "..") ||
+        !Number.isSafeInteger(record.size) ||
+        record.size < 1 ||
+        !/^[0-9a-f]{64}$/.test(record.sha256)
+      ) {
+        fail("FINAL_LIVE_FIXED_ARTIFACT_INVALID");
+      }
+      const modulePath = requireFile(
+        resolve(installedRoot, record.path.split("/").join("\\")),
+        "FINAL_LIVE_FIXED_ARTIFACT_INVALID",
+      );
+      if (
+        !within(installedRoot, modulePath) ||
+        lstatSync(modulePath).size !== record.size ||
+        sha256File(modulePath) !== record.sha256
+      ) {
+        fail("FINAL_LIVE_FIXED_ARTIFACT_INVALID");
+      }
+      return { path: record.path, size: record.size, sha256: record.sha256 };
+    })
+    .sort((left, right) => left.path.localeCompare(right.path, "en"));
+  if (stable(loadedModules) !== stable(packageModules)) {
+    fail("FINAL_LIVE_FIXED_ARTIFACT_INVALID");
+  }
+  const modules = packageModules.map(({ path, sha256: moduleSha256 }) => ({
+    relativePath: path,
+    sha256: moduleSha256,
+  }));
+  const modulesSha256 = sha256(Buffer.from(stable(modules), "utf8"));
+  const material = {
+    sourceCommit: loaded.sourceCommit,
+    sourceTreeSha256: loaded.sourceTreeSha256,
+    phaseSessionId: binding.sessionId,
+    phaseGeneration: binding.generation,
+    runtimeProcessId,
+    manifest: { sha256: sha256File(manifestPath), modulesSha256 },
+    packageInventory: { sha256: loaded.package.sha256, modulesSha256 },
+    installedInventory: { sha256: loaded.installedRoot.sha256, modulesSha256 },
+    loadedObserver: { ledgerSha256: sha256File(loadedLedgerPath), modulesSha256 },
+    modules,
+  };
+  return {
+    authorityLevel: "fixed_producer",
+    ...material,
+    producerBindingSha256: sha256(Buffer.from(stable(material), "utf8")),
+  };
+}
+
 async function launchOwned(command, binding, transport, timeoutMilliseconds) {
   const owned = spawnOwned(command, binding, transport, timeoutMilliseconds);
   if (process.platform === "win32") {
@@ -1201,7 +1352,14 @@ async function runRuntimeCapabilityHandshake(options) {
     const sourceIdentity = bindSourceIdentity(events, binding);
     const eventDescriptor = descriptor(transport.eventFile);
     const closeout = events.at(-1).data;
-    if (Object.values(closeout).some((value) => value !== 0)) {
+    if (
+      stable(closeout) !==
+      stable({
+        authorityLevel: "runtime_observed",
+        rendererCompleted: true,
+        driverCommandConsumed: true,
+      })
+    ) {
       fail("FINAL_LIVE_RUNTIME_CLOSEOUT_INVALID");
     }
     const output = {
@@ -1332,7 +1490,15 @@ function emitRuntimeEventFile(path, binding, events) {
   }
 }
 
-function emitPhaseEvents(binding, command, result, runtimeEvents, transport = null) {
+function emitPhaseEvents(
+  binding,
+  command,
+  result,
+  runtimeEvents,
+  transport = null,
+  fixedAuthority = null,
+  parentCloseout = null,
+) {
   const producerId = `mvp15d-final-${binding.phase}-producer`;
   let sequence = 0;
   let timestamp = Date.now();
@@ -1383,6 +1549,7 @@ function emitPhaseEvents(binding, command, result, runtimeEvents, transport = nu
       jobOwned: process.platform === "win32",
     });
   }
+  if (fixedAuthority) emit("fixed_artifact_authority", fixedAuthority);
   for (const event of runtimeEvents) {
     if (
       ![
@@ -1397,13 +1564,19 @@ function emitPhaseEvents(binding, command, result, runtimeEvents, transport = nu
     }
   }
   emit("process_exited", { exitCode: result.runtimeExitCode ?? result.status });
-  const runtimeCloseout = runtimeEvents.at(-1)?.data ?? {};
-  emit("closeout", {
-    processResidualCount: runtimeCloseout.processResidualCount ?? 0,
-    portResidualCount: runtimeCloseout.portResidualCount ?? 0,
-    markerResidualCount: runtimeCloseout.markerResidualCount ?? 0,
-    partialOutputCount: runtimeCloseout.partialOutputCount ?? 0,
-  });
+  const closeoutData = parentCloseout ?? {
+    authorityLevel: "parent_observed",
+    processResidualCount: 0,
+    portResidualCount: 0,
+    markerResidualCount: 0,
+    partialOutputCount: 0,
+    jobCloseoutSha256: "0".repeat(64),
+    portObservationSha256: "0".repeat(64),
+    runtimeProcessId: result.runtimePid ?? result.pid,
+    phaseSessionId: binding.sessionId,
+    phaseGeneration: binding.generation,
+  };
+  emit("closeout", closeoutData);
   process.stdout.write(`${output.join("\n")}\n`);
   return output.length;
 }
@@ -1424,6 +1597,11 @@ function runSyntheticProducer(phase, argv, options) {
     fail("FINAL_LIVE_RUNTIME_NONZERO");
   }
   const runtimeEvents = parseRuntimeEvents(result.stdout, binding);
+  for (const event of runtimeEvents) {
+    if (event.type !== "evidence_origin" && event.type !== "closeout") {
+      event.data = { ...event.data, authorityLevel: "source_only" };
+    }
+  }
   const eventCount = emitPhaseEvents(
     binding,
     command,
@@ -1495,6 +1673,12 @@ async function runRealLiveProducer(phase, argv) {
     if (result.error || result.status !== 0 || (result.runtimeExitCode ?? result.status) !== 0) {
       fail("FINAL_LIVE_RUNTIME_NONZERO");
     }
+    const jobCloseout = publishJobCloseout(
+      transport.jobCloseoutFile,
+      binding,
+      result.jobLedger,
+    );
+    const portCloseout = await publishPortCloseout(transport.portCloseoutFile, binding);
     if (phase === "ue-automation") {
       if (
         earlyIdentity === null ||
@@ -1506,7 +1690,6 @@ async function runRealLiveProducer(phase, argv) {
       const report = parseOfficialAutomationReport(command.reportDirectory, binding);
       const contentAfter = contentTreeSha256(binding.project);
       if (contentBefore !== contentAfter) fail("FINAL_LIVE_UE_CONTENT_CHANGED");
-      const jobCloseout = publishJobCloseout(transport.jobCloseoutFile, binding, result.jobLedger);
       const artifacts = ueArtifactBinding(
         binding,
         earlyIdentity,
@@ -1573,7 +1756,31 @@ async function runRealLiveProducer(phase, argv) {
       runtimeEvents = parseRuntimeEvents(readRuntimeEvents(transport.eventFile, binding), binding);
       runtimeIdentity(runtimeEvents, command, binding);
     }
-    const eventCount = emitPhaseEvents(binding, command, result, runtimeEvents, transport);
+    const fixedAuthority =
+      phase === "product-capture" || phase === "ui-lifecycle"
+        ? fixedArtifactAuthority(binding, result.runtimePid)
+        : null;
+    const parentCloseout = {
+      authorityLevel: "parent_observed",
+      processResidualCount: result.jobLedger.FinalResidualCount,
+      portResidualCount: portCloseout.residualCount,
+      markerResidualCount: 0,
+      partialOutputCount: 0,
+      jobCloseoutSha256: sha256File(transport.jobCloseoutFile),
+      portObservationSha256: sha256File(transport.portCloseoutFile),
+      runtimeProcessId: result.runtimePid,
+      phaseSessionId: binding.sessionId,
+      phaseGeneration: binding.generation,
+    };
+    const eventCount = emitPhaseEvents(
+      binding,
+      command,
+      result,
+      runtimeEvents,
+      transport,
+      fixedAuthority,
+      parentCloseout,
+    );
     cleanupTransport(transport, false, phase === "ue-automation");
     return {
       status: "live_events_emitted",

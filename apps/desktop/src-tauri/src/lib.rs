@@ -1539,6 +1539,11 @@ fn redact_preview_content(content: &str) -> RedactedContent {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use mvp15d_runtime_bridge::{ManagedBridgeState, Startup};
+    use tauri::Manager;
+
+    if ue_editor_process::run_managed_editor_process_fixture_from_environment() {
+        return;
+    }
 
     let bridge_state = match mvp15d_runtime_bridge::prepare_from_environment() {
         Ok(Startup::Ordinary) => None,
@@ -1555,8 +1560,13 @@ pub fn run() {
         .setup(|_app| Ok(()))
         .invoke_handler(tauri::generate_handler![
             mvp15d_bridge_configuration,
+            mvp15d_bridge_request_renderer_restart,
+            mvp15d_bridge_claim_renderer_restart,
             mvp15d_bridge_take_driver_command,
             mvp15d_bridge_record_renderer_step,
+            mvp15d_bridge_observe_native_state,
+            mvp15d_bridge_publish_product_evidence,
+            mvp15d_bridge_publish_ui_evidence,
             mvp15d_bridge_complete,
             validate_project_root,
             scan_project_index,
@@ -1600,12 +1610,15 @@ pub fn run() {
             ue_editor::cancel_editor_operation,
             ue_editor_process::editor_observation_capability_status,
             ue_editor_process::discover_editor_processes,
+            ue_editor_process::create_managed_editor_process,
             ue_editor_process::validate_editor_attach_config,
             ue_editor_process::attach_editor_process,
             ue_editor_process::read_editor_process_status,
             ue_editor_process::read_editor_observation_snapshot,
             ue_editor_process::launch_editor_process,
             ue_editor_process::stop_editor_observation_session,
+            ue_editor_process::terminate_managed_editor_process,
+            ue_editor_process::release_managed_editor_process,
             asset_mutation::dry_run_asset_mutation,
             asset_mutation::register_asset_mutation_approval,
             asset_mutation::cancel_asset_mutation_approval,
@@ -1618,8 +1631,28 @@ pub fn run() {
             asset_mutation::retract_mvp15_companion_approvals,
             mcp::mcp_streamable_http_request,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested {
+                code: None, api, ..
+            } = event
+            {
+                let pending = app
+                    .state::<mvp15d_runtime_bridge::ManagedBridgeState>()
+                    .lock()
+                    .ok()
+                    .and_then(|guard| {
+                        guard.as_ref().map(
+                            mvp15d_runtime_bridge::BridgeState::renderer_parent_lifecycle_pending,
+                        )
+                    })
+                    .unwrap_or(false);
+                if pending {
+                    api.prevent_exit();
+                }
+            }
+        });
 }
 
 #[tauri::command]
@@ -1633,6 +1666,664 @@ fn mvp15d_bridge_configuration(
         .as_ref()
         .map(mvp15d_runtime_bridge::BridgeState::renderer_configuration)
         .unwrap_or_else(mvp15d_runtime_bridge::disabled_configuration))
+}
+
+#[derive(Clone)]
+struct RendererParentLifecycleRequest {
+    handoff_id: String,
+    task_id: String,
+    phase: String,
+    predecessor_window_label: String,
+    predecessor_window_instance_binding_sha256: String,
+}
+
+fn new_predecessor_window_instance_binding() -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+
+    let mut random = [0_u8; 32];
+    getrandom::getrandom(&mut random)
+        .map_err(|_| "MVP15D_RENDERER_WINDOW_BINDING_UNAVAILABLE".to_string())?;
+    Ok(format!("{:x}", Sha256::digest(random)))
+}
+
+#[cfg(windows)]
+fn same_webview_window_instance(
+    captured: &tauri::WebviewWindow,
+    current: &tauri::WebviewWindow,
+) -> bool {
+    matches!((captured.hwnd(), current.hwnd()), (Ok(left), Ok(right)) if left == right)
+}
+
+#[cfg(target_os = "macos")]
+fn same_webview_window_instance(
+    captured: &tauri::WebviewWindow,
+    current: &tauri::WebviewWindow,
+) -> bool {
+    matches!((captured.ns_window(), current.ns_window()), (Ok(left), Ok(right)) if left == right)
+}
+
+#[cfg(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+fn same_webview_window_instance(
+    captured: &tauri::WebviewWindow,
+    current: &tauri::WebviewWindow,
+) -> bool {
+    matches!((captured.gtk_window(), current.gtk_window()), (Ok(left), Ok(right)) if left == right)
+}
+
+#[cfg(not(any(
+    windows,
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+)))]
+fn same_webview_window_instance(
+    _captured: &tauri::WebviewWindow,
+    _current: &tauri::WebviewWindow,
+) -> bool {
+    false
+}
+
+const RENDERER_DESTROY_COMPLETION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const RENDERER_DESTROY_COMPLETION_PENDING: u8 = 0;
+const RENDERER_DESTROY_COMPLETION_SIGNALED: u8 = 1;
+const RENDERER_MAIN_TASK_PENDING: u8 = 0;
+const RENDERER_MAIN_TASK_RUNNING: u8 = 1;
+const RENDERER_MAIN_TASK_CANCELLED: u8 = 2;
+const RENDERER_MAIN_TASK_COMMITTED: u8 = 3;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RendererDestroyCompletion {
+    Destroyed,
+    DestroyFailed,
+    TimedOut,
+}
+
+fn start_renderer_main_task(gate: &std::sync::atomic::AtomicU8) -> bool {
+    gate.compare_exchange(
+        RENDERER_MAIN_TASK_PENDING,
+        RENDERER_MAIN_TASK_RUNNING,
+        std::sync::atomic::Ordering::AcqRel,
+        std::sync::atomic::Ordering::Acquire,
+    )
+    .is_ok()
+}
+
+fn commit_renderer_main_task(gate: &std::sync::atomic::AtomicU8) -> bool {
+    gate.compare_exchange(
+        RENDERER_MAIN_TASK_RUNNING,
+        RENDERER_MAIN_TASK_COMMITTED,
+        std::sync::atomic::Ordering::AcqRel,
+        std::sync::atomic::Ordering::Acquire,
+    )
+    .is_ok()
+}
+
+fn cancel_renderer_main_task(gate: &std::sync::atomic::AtomicU8) -> bool {
+    gate.fetch_update(
+        std::sync::atomic::Ordering::AcqRel,
+        std::sync::atomic::Ordering::Acquire,
+        |state| match state {
+            RENDERER_MAIN_TASK_PENDING | RENDERER_MAIN_TASK_RUNNING => {
+                Some(RENDERER_MAIN_TASK_CANCELLED)
+            }
+            _ => None,
+        },
+    )
+    .is_ok()
+}
+
+fn signal_renderer_destroy_completion(
+    signal_state: &std::sync::atomic::AtomicU8,
+    sender: &std::sync::mpsc::Sender<RendererDestroyCompletion>,
+    completion: RendererDestroyCompletion,
+) -> bool {
+    if signal_state
+        .compare_exchange(
+            RENDERER_DESTROY_COMPLETION_PENDING,
+            RENDERER_DESTROY_COMPLETION_SIGNALED,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        )
+        .is_err()
+    {
+        return false;
+    }
+    sender.send(completion).is_ok()
+}
+
+fn wait_for_renderer_destroy_completion(
+    receiver: &std::sync::mpsc::Receiver<RendererDestroyCompletion>,
+    signal_state: &std::sync::atomic::AtomicU8,
+    timeout: std::time::Duration,
+) -> RendererDestroyCompletion {
+    match receiver.recv_timeout(timeout) {
+        Ok(completion) => completion,
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            RendererDestroyCompletion::DestroyFailed
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            if signal_state
+                .compare_exchange(
+                    RENDERER_DESTROY_COMPLETION_PENDING,
+                    RENDERER_DESTROY_COMPLETION_SIGNALED,
+                    std::sync::atomic::Ordering::AcqRel,
+                    std::sync::atomic::Ordering::Acquire,
+                )
+                .is_ok()
+            {
+                RendererDestroyCompletion::TimedOut
+            } else {
+                receiver
+                    .recv()
+                    .unwrap_or(RendererDestroyCompletion::DestroyFailed)
+            }
+        }
+    }
+}
+
+fn prepare_mvp15d_renderer_parent_lifecycle(
+    bridge: &mut mvp15d_runtime_bridge::BridgeState,
+    request: &RendererParentLifecycleRequest,
+) -> Result<(), String> {
+    bridge
+        .validate_parent_lifecycle_request(&request.handoff_id, &request.task_id, &request.phase)
+        .map_err(|error| error.code().to_string())?;
+    bridge
+        .bind_predecessor_window_instance(
+            &request.handoff_id,
+            &request.predecessor_window_instance_binding_sha256,
+        )
+        .map_err(|error| error.code().to_string())
+}
+
+fn acknowledge_mvp15d_renderer_parent_lifecycle(
+    bridge: &mut mvp15d_runtime_bridge::BridgeState,
+    request: &RendererParentLifecycleRequest,
+    window_status: &str,
+    window_label: &str,
+    destroy_outcome: mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome,
+    successor_creation_outcome: mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome,
+) -> Result<mvp15d_runtime_bridge::RendererParentLifecycleAcknowledgementResult, String> {
+    prepare_mvp15d_renderer_parent_lifecycle(bridge, request)?;
+    let predecessor_window = bridge
+        .predecessor_window_identity(&request.handoff_id, window_status, window_label)
+        .map_err(|error| error.code().to_string())?;
+    bridge
+        .acknowledge_renderer_parent_lifecycle(
+            mvp15d_runtime_bridge::RendererParentLifecycleAcknowledgementInput {
+                schema_version: "uagent.mvp15d.renderer-parent-lifecycle-acknowledgement.v2"
+                    .to_string(),
+                handoff_id: request.handoff_id.clone(),
+                task_id: request.task_id.clone(),
+                phase: request.phase.clone(),
+                predecessor_window,
+                destroy_outcome,
+                successor_creation_outcome,
+            },
+        )
+        .map_err(|error| error.code().to_string())
+}
+
+#[cfg(test)]
+fn coordinate_mvp15d_renderer_parent_lifecycle<Lookup, Destroy, Build>(
+    bridge: &mut mvp15d_runtime_bridge::BridgeState,
+    request: RendererParentLifecycleRequest,
+    lookup: Lookup,
+    destroy: Destroy,
+    build: Build,
+) -> Result<mvp15d_runtime_bridge::RendererParentLifecycleAcknowledgementResult, String>
+where
+    Lookup: FnOnce() -> Result<(String, bool), &'static str>,
+    Destroy: FnOnce() -> Result<(), &'static str>,
+    Build: FnOnce() -> Result<(), &'static str>,
+{
+    let (window_status, window_label, destroy_outcome) = match lookup() {
+        Ok((label, true))
+            if label == request.predecessor_window_label
+                && label == mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL =>
+        {
+            let outcome = match destroy() {
+                Ok(()) => mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::succeeded(),
+                Err(reason) => {
+                    mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::failed(reason)
+                }
+            };
+            ("observed", label, outcome)
+        }
+        Ok((label, _)) => (
+            "mismatch",
+            label,
+            mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::failed(
+                "predecessor_window_identity_mismatch",
+            ),
+        ),
+        Err("predecessor_window_missing") => (
+            "missing",
+            mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL.to_string(),
+            mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::failed(
+                "predecessor_window_missing",
+            ),
+        ),
+        Err("parent_main_thread_dispatch_failed") => (
+            "dispatch_unavailable",
+            mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL.to_string(),
+            mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::not_attempted(
+                "parent_main_thread_dispatch_failed",
+            ),
+        ),
+        Err(_) => return Err("MVP15D_RENDERER_PARENT_LIFECYCLE_INVALID".to_string()),
+    };
+    let successor_creation_outcome = if destroy_outcome.status == "succeeded" {
+        match build() {
+            Ok(()) => mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::succeeded(),
+            Err(reason) => {
+                mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::failed(reason)
+            }
+        }
+    } else {
+        mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::not_attempted(
+            "successor_creation_not_attempted",
+        )
+    };
+    acknowledge_mvp15d_renderer_parent_lifecycle(
+        bridge,
+        &request,
+        window_status,
+        &window_label,
+        destroy_outcome,
+        successor_creation_outcome,
+    )
+}
+
+fn acknowledge_mvp15d_renderer_parent_lifecycle_on_app(
+    app: &tauri::AppHandle,
+    request: &RendererParentLifecycleRequest,
+    window_status: &str,
+    window_label: &str,
+    destroy_outcome: mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome,
+    successor_creation_outcome: mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome,
+) -> Result<mvp15d_runtime_bridge::RendererParentLifecycleAcknowledgementResult, String> {
+    use tauri::Manager;
+
+    let state = app.state::<mvp15d_runtime_bridge::ManagedBridgeState>();
+    let mut guard = state
+        .lock()
+        .map_err(|_| "MVP15D_BRIDGE_STATE_UNAVAILABLE".to_string())?;
+    let bridge = guard
+        .as_mut()
+        .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?;
+    acknowledge_mvp15d_renderer_parent_lifecycle(
+        bridge,
+        request,
+        window_status,
+        window_label,
+        destroy_outcome,
+        successor_creation_outcome,
+    )
+}
+
+fn build_mvp15d_renderer_successor(
+    app: &tauri::AppHandle,
+) -> Result<tauri::WebviewWindow, &'static str> {
+    tauri::WebviewWindowBuilder::new(
+        app,
+        mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL,
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title("UAgent")
+    .inner_size(1280.0, 800.0)
+    .min_inner_size(960.0, 640.0)
+    .decorations(false)
+    .build()
+    .map_err(|_| "successor_build_failed")
+}
+
+fn exit_failed_renderer_handoff_if_unoccupied(app: &tauri::AppHandle) {
+    use tauri::Manager;
+
+    if app
+        .get_webview_window(mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL)
+        .is_none()
+    {
+        app.exit(2);
+    }
+}
+
+fn complete_mvp15d_renderer_parent_lifecycle_after_destroyed(
+    app: tauri::AppHandle,
+    request: RendererParentLifecycleRequest,
+    continuation_gate: std::sync::Arc<std::sync::atomic::AtomicU8>,
+) {
+    use tauri::Manager;
+
+    let state = app.state::<mvp15d_runtime_bridge::ManagedBridgeState>();
+    let prepared = match state.lock() {
+        Ok(mut guard) => guard.as_mut().is_some_and(|bridge| {
+            prepare_mvp15d_renderer_parent_lifecycle(bridge, &request).is_ok()
+        }),
+        Err(_) => false,
+    };
+    if !prepared {
+        exit_failed_renderer_handoff_if_unoccupied(&app);
+        return;
+    }
+    if !commit_renderer_main_task(&continuation_gate) {
+        return;
+    }
+
+    let (successor_creation_outcome, built_successor) = if app
+        .get_webview_window(mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL)
+        .is_some()
+    {
+        (
+            mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::failed(
+                "successor_build_failed",
+            ),
+            None,
+        )
+    } else {
+        match build_mvp15d_renderer_successor(&app) {
+            Ok(window) => (
+                mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::succeeded(),
+                Some(window),
+            ),
+            Err(reason) => (
+                mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::failed(reason),
+                None,
+            ),
+        }
+    };
+
+    let acknowledgement = acknowledge_mvp15d_renderer_parent_lifecycle_on_app(
+        &app,
+        &request,
+        "observed",
+        mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL,
+        mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::succeeded(),
+        successor_creation_outcome,
+    );
+    match acknowledgement {
+        Ok(result) if result.status == "acknowledged" => {}
+        Ok(_) => exit_failed_renderer_handoff_if_unoccupied(&app),
+        Err(_) => {
+            if let Some(window) = built_successor {
+                let _ = window.destroy();
+            }
+            app.exit(2);
+        }
+    }
+}
+
+fn spawn_mvp15d_renderer_destroy_completion_worker(
+    app: tauri::AppHandle,
+    request: RendererParentLifecycleRequest,
+    receiver: std::sync::mpsc::Receiver<RendererDestroyCompletion>,
+    signal_state: std::sync::Arc<std::sync::atomic::AtomicU8>,
+) {
+    std::thread::spawn(move || {
+        match wait_for_renderer_destroy_completion(
+            &receiver,
+            &signal_state,
+            RENDERER_DESTROY_COMPLETION_TIMEOUT,
+        ) {
+            RendererDestroyCompletion::Destroyed => {
+                let continuation_app = app.clone();
+                let fallback_request = request.clone();
+                let (completion_sender, completion_receiver) = std::sync::mpsc::sync_channel(1);
+                let continuation_gate = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(
+                    RENDERER_MAIN_TASK_PENDING,
+                ));
+                let main_task_gate = continuation_gate.clone();
+                let dispatched = app
+                    .run_on_main_thread(move || {
+                        if start_renderer_main_task(&main_task_gate) {
+                            complete_mvp15d_renderer_parent_lifecycle_after_destroyed(
+                                continuation_app,
+                                request,
+                                main_task_gate,
+                            );
+                        }
+                        let _ = completion_sender.send(());
+                    })
+                    .is_ok();
+                let completed = dispatched
+                    && completion_receiver
+                        .recv_timeout(RENDERER_DESTROY_COMPLETION_TIMEOUT)
+                        .is_ok();
+                if !completed && cancel_renderer_main_task(&continuation_gate) {
+                    let _ = acknowledge_mvp15d_renderer_parent_lifecycle_on_app(
+                        &app,
+                        &fallback_request,
+                        "observed",
+                        mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL,
+                        mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::succeeded(),
+                        mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::failed(
+                            "successor_build_failed",
+                        ),
+                    );
+                    exit_failed_renderer_handoff_if_unoccupied(&app);
+                }
+            }
+            RendererDestroyCompletion::DestroyFailed | RendererDestroyCompletion::TimedOut => {
+                let _ = acknowledge_mvp15d_renderer_parent_lifecycle_on_app(
+                    &app,
+                    &request,
+                    "observed",
+                    mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL,
+                    mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::failed(
+                        "predecessor_destroy_failed",
+                    ),
+                    mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::not_attempted(
+                        "successor_creation_not_attempted",
+                    ),
+                );
+                exit_failed_renderer_handoff_if_unoccupied(&app);
+            }
+        }
+    });
+}
+
+fn begin_mvp15d_renderer_parent_lifecycle_on_main_thread(
+    app: tauri::AppHandle,
+    predecessor_window: tauri::WebviewWindow,
+    request: RendererParentLifecycleRequest,
+    dispatch_gate: std::sync::Arc<std::sync::atomic::AtomicU8>,
+) {
+    use tauri::Manager;
+
+    let Some(current) =
+        app.get_webview_window(mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL)
+    else {
+        let _ = acknowledge_mvp15d_renderer_parent_lifecycle_on_app(
+            &app,
+            &request,
+            "missing",
+            mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL,
+            mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::failed(
+                "predecessor_window_missing",
+            ),
+            mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::not_attempted(
+                "successor_creation_not_attempted",
+            ),
+        );
+        exit_failed_renderer_handoff_if_unoccupied(&app);
+        return;
+    };
+    if current.label() != request.predecessor_window_label
+        || !same_webview_window_instance(&predecessor_window, &current)
+    {
+        let _ = acknowledge_mvp15d_renderer_parent_lifecycle_on_app(
+            &app,
+            &request,
+            "mismatch",
+            current.label(),
+            mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::failed(
+                "predecessor_window_identity_mismatch",
+            ),
+            mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::not_attempted(
+                "successor_creation_not_attempted",
+            ),
+        );
+        return;
+    }
+
+    let prepared = match app
+        .state::<mvp15d_runtime_bridge::ManagedBridgeState>()
+        .lock()
+    {
+        Ok(mut guard) => guard.as_mut().is_some_and(|bridge| {
+            prepare_mvp15d_renderer_parent_lifecycle(bridge, &request).is_ok()
+        }),
+        Err(_) => false,
+    };
+    if !prepared {
+        exit_failed_renderer_handoff_if_unoccupied(&app);
+        return;
+    }
+
+    let signal_state = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(
+        RENDERER_DESTROY_COMPLETION_PENDING,
+    ));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let event_signal_state = signal_state.clone();
+    let event_sender = sender.clone();
+    predecessor_window.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            let _ = signal_renderer_destroy_completion(
+                &event_signal_state,
+                &event_sender,
+                RendererDestroyCompletion::Destroyed,
+            );
+        }
+    });
+    if !commit_renderer_main_task(&dispatch_gate) {
+        return;
+    }
+    spawn_mvp15d_renderer_destroy_completion_worker(app, request, receiver, signal_state.clone());
+    if predecessor_window.destroy().is_err() {
+        let _ = signal_renderer_destroy_completion(
+            &signal_state,
+            &sender,
+            RendererDestroyCompletion::DestroyFailed,
+        );
+    }
+}
+
+fn parent_lifecycle_input_with_binding(
+    result: &mvp15d_runtime_bridge::RendererRestartRequestResult,
+    predecessor_window_label: &str,
+    predecessor_window_instance_binding_sha256: String,
+) -> RendererParentLifecycleRequest {
+    RendererParentLifecycleRequest {
+        handoff_id: result.handoff_id.clone(),
+        task_id: result.task_id.clone(),
+        phase: result.phase.clone(),
+        predecessor_window_label: predecessor_window_label.to_string(),
+        predecessor_window_instance_binding_sha256,
+    }
+}
+
+#[cfg(test)]
+fn parent_lifecycle_input(
+    result: &mvp15d_runtime_bridge::RendererRestartRequestResult,
+    predecessor_window_label: &str,
+) -> RendererParentLifecycleRequest {
+    parent_lifecycle_input_with_binding(result, predecessor_window_label, "c".repeat(64))
+}
+
+#[tauri::command]
+fn mvp15d_bridge_request_renderer_restart(
+    input: mvp15d_runtime_bridge::RendererRestartRequestInput,
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, mvp15d_runtime_bridge::ManagedBridgeState>,
+) -> Result<mvp15d_runtime_bridge::RendererRestartRequestResult, String> {
+    let predecessor_window_label = window.label().to_string();
+    if predecessor_window_label != mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL {
+        return Err("MVP15D_RENDERER_HANDOFF_REQUEST_INVALID".to_string());
+    }
+    let predecessor_window_instance_binding_sha256 = new_predecessor_window_instance_binding()?;
+    let result = state
+        .lock()
+        .map_err(|_| "MVP15D_BRIDGE_STATE_UNAVAILABLE".to_string())?
+        .as_mut()
+        .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?
+        .request_renderer_restart(input)
+        .map_err(|error| error.code().to_string())?;
+    let lifecycle_input = parent_lifecycle_input_with_binding(
+        &result,
+        &predecessor_window_label,
+        predecessor_window_instance_binding_sha256,
+    );
+    let dispatch_app = app.clone();
+    std::thread::spawn(move || {
+        let main_thread_app = dispatch_app.clone();
+        let fallback_input = lifecycle_input.clone();
+        let (dispatch_sender, dispatch_receiver) = std::sync::mpsc::sync_channel(1);
+        let dispatch_gate =
+            std::sync::Arc::new(std::sync::atomic::AtomicU8::new(RENDERER_MAIN_TASK_PENDING));
+        let main_task_gate = dispatch_gate.clone();
+        let dispatched = dispatch_app
+            .run_on_main_thread(move || {
+                if start_renderer_main_task(&main_task_gate) {
+                    begin_mvp15d_renderer_parent_lifecycle_on_main_thread(
+                        main_thread_app,
+                        window,
+                        lifecycle_input,
+                        main_task_gate,
+                    );
+                }
+                let _ = dispatch_sender.send(());
+            })
+            .is_ok();
+        let completed = dispatched
+            && dispatch_receiver
+                .recv_timeout(RENDERER_DESTROY_COMPLETION_TIMEOUT)
+                .is_ok();
+        if !completed && cancel_renderer_main_task(&dispatch_gate) {
+            let _ = acknowledge_mvp15d_renderer_parent_lifecycle_on_app(
+                &dispatch_app,
+                &fallback_input,
+                "dispatch_unavailable",
+                mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL,
+                mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::not_attempted(
+                    "parent_main_thread_dispatch_failed",
+                ),
+                mvp15d_runtime_bridge::RendererParentLifecycleActionOutcome::not_attempted(
+                    "successor_creation_not_attempted",
+                ),
+            );
+            exit_failed_renderer_handoff_if_unoccupied(&dispatch_app);
+        }
+    });
+    Ok(result)
+}
+
+#[tauri::command]
+fn mvp15d_bridge_claim_renderer_restart(
+    input: mvp15d_runtime_bridge::RendererRestartClaimInput,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, mvp15d_runtime_bridge::ManagedBridgeState>,
+) -> Result<mvp15d_runtime_bridge::RendererRestartClaimResult, String> {
+    if window.label() != mvp15d_runtime_bridge::RENDERER_PREDECESSOR_WINDOW_LABEL {
+        return Err("MVP15D_RENDERER_HANDOFF_CLAIM_INVALID".to_string());
+    }
+    state
+        .lock()
+        .map_err(|_| "MVP15D_BRIDGE_STATE_UNAVAILABLE".to_string())?
+        .as_mut()
+        .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?
+        .claim_renderer_restart(input)
+        .map_err(|error| error.code().to_string())
 }
 
 #[tauri::command]
@@ -1663,6 +2354,54 @@ fn mvp15d_bridge_record_renderer_step(
         .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?;
     bridge
         .record_renderer_step(input)
+        .map_err(|error| error.code().to_string())
+}
+
+#[tauri::command]
+fn mvp15d_bridge_observe_native_state(
+    input: mvp15d_runtime_bridge::ObserveNativeStateInput,
+    state: tauri::State<'_, mvp15d_runtime_bridge::ManagedBridgeState>,
+) -> Result<mvp15d_runtime_bridge::ObserveNativeStateResult, String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "MVP15D_BRIDGE_STATE_UNAVAILABLE".to_string())?;
+    let bridge = guard
+        .as_mut()
+        .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?;
+    bridge
+        .observe_native_state(input)
+        .map_err(|error| error.code().to_string())
+}
+
+#[tauri::command]
+fn mvp15d_bridge_publish_product_evidence(
+    input: mvp15d_runtime_bridge::ProductStoreEvidenceInput,
+    state: tauri::State<'_, mvp15d_runtime_bridge::ManagedBridgeState>,
+) -> Result<(), String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "MVP15D_BRIDGE_STATE_UNAVAILABLE".to_string())?;
+    let bridge = guard
+        .as_mut()
+        .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?;
+    bridge
+        .publish_product_evidence(input)
+        .map_err(|error| error.code().to_string())
+}
+
+#[tauri::command]
+fn mvp15d_bridge_publish_ui_evidence(
+    input: mvp15d_runtime_bridge::UiStoreEvidenceInput,
+    state: tauri::State<'_, mvp15d_runtime_bridge::ManagedBridgeState>,
+) -> Result<(), String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "MVP15D_BRIDGE_STATE_UNAVAILABLE".to_string())?;
+    let bridge = guard
+        .as_mut()
+        .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?;
+    bridge
+        .publish_ui_evidence(input)
         .map_err(|error| error.code().to_string())
 }
 
@@ -1716,6 +2455,61 @@ mod tests {
         )
         .unwrap();
         RealProjectValidationTestRoot { path }
+    }
+
+    #[test]
+    fn mvp15d_renderer_destroy_completion_is_one_shot_and_bounded() {
+        let queued_gate = std::sync::atomic::AtomicU8::new(RENDERER_MAIN_TASK_PENDING);
+        assert!(cancel_renderer_main_task(&queued_gate));
+        assert!(!start_renderer_main_task(&queued_gate));
+
+        let cancelled_gate = std::sync::atomic::AtomicU8::new(RENDERER_MAIN_TASK_PENDING);
+        assert!(start_renderer_main_task(&cancelled_gate));
+        assert!(cancel_renderer_main_task(&cancelled_gate));
+        assert!(!commit_renderer_main_task(&cancelled_gate));
+
+        let committed_gate = std::sync::atomic::AtomicU8::new(RENDERER_MAIN_TASK_PENDING);
+        assert!(start_renderer_main_task(&committed_gate));
+        assert!(commit_renderer_main_task(&committed_gate));
+        assert!(!cancel_renderer_main_task(&committed_gate));
+
+        let signal_state = std::sync::atomic::AtomicU8::new(RENDERER_DESTROY_COMPLETION_PENDING);
+        let (sender, receiver) = std::sync::mpsc::channel();
+
+        assert!(signal_renderer_destroy_completion(
+            &signal_state,
+            &sender,
+            RendererDestroyCompletion::Destroyed,
+        ));
+        assert!(!signal_renderer_destroy_completion(
+            &signal_state,
+            &sender,
+            RendererDestroyCompletion::DestroyFailed,
+        ));
+        assert_eq!(
+            wait_for_renderer_destroy_completion(
+                &receiver,
+                &signal_state,
+                std::time::Duration::from_millis(1),
+            ),
+            RendererDestroyCompletion::Destroyed
+        );
+
+        let timeout_state = std::sync::atomic::AtomicU8::new(RENDERER_DESTROY_COMPLETION_PENDING);
+        let (late_sender, late_receiver) = std::sync::mpsc::channel();
+        assert_eq!(
+            wait_for_renderer_destroy_completion(
+                &late_receiver,
+                &timeout_state,
+                std::time::Duration::from_millis(1),
+            ),
+            RendererDestroyCompletion::TimedOut
+        );
+        assert!(!signal_renderer_destroy_completion(
+            &timeout_state,
+            &late_sender,
+            RendererDestroyCompletion::Destroyed,
+        ));
     }
 
     #[test]

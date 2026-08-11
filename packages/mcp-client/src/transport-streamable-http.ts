@@ -42,7 +42,43 @@ export class StreamableHttpTransport implements McpTransport {
   }
 
   async close(): Promise<void> {
+    const sessionId = this.sessionId;
     this.sessionId = null;
+    if (!sessionId) return;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const response = await this.fetchImpl(this.endpoint, {
+        method: "DELETE",
+        headers: {
+          Accept: "application/json, text/event-stream",
+          "Mcp-Session-Id": sessionId,
+          "MCP-Protocol-Version": this.protocolVersion,
+        },
+        signal: controller.signal,
+      });
+      if (!response.ok && response.status !== 405) {
+        throw new McpTransportError(
+          `MCP session termination failed with status ${response.status}.`,
+          response.status,
+        );
+      }
+    } catch (error) {
+      if (error instanceof McpTransportError) throw error;
+      const nativeFailure = getNativeMcpFailure(error);
+      if (nativeFailure) {
+        throw new McpTransportError(nativeFailure, undefined, error);
+      }
+      const aborted = error instanceof DOMException && error.name === "AbortError";
+      throw new McpTransportError(
+        aborted ? "MCP session termination timed out." : "MCP session termination failed.",
+        undefined,
+        error,
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private async postMessage(message: JsonRpcRequest | JsonRpcNotification): Promise<Response> {

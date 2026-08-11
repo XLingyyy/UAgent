@@ -127,4 +127,99 @@ describe("Streamable HTTP transport", () => {
       message: "protocol_response_malformed",
     });
   });
+
+  it("terminates an established 2025-06-18 session with DELETE and required headers", async () => {
+    const fetchMock = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Mcp-Session-Id": "session-delete-1",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const transport = new StreamableHttpTransport({
+      endpoint: "http://127.0.0.1:8765/mcp",
+      fetch: fetchMock,
+    });
+
+    await transport.sendRequest(createJsonRpcRequest("initialize", {}, () => 1));
+    await transport.close();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const close = fetchMock.mock.calls[1]!;
+    expect(close[1]?.method).toBe("DELETE");
+    expect(close[1]?.body).toBeUndefined();
+    expect(close[1]?.headers).toMatchObject({
+      Accept: "application/json, text/event-stream",
+      "Mcp-Session-Id": "session-delete-1",
+      "MCP-Protocol-Version": "2025-06-18",
+    });
+  });
+
+  it("treats 405 as an explicit unsupported termination response and keeps close idempotent", async () => {
+    const fetchMock = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Mcp-Session-Id": "session-delete-405",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 405 }));
+    const transport = new StreamableHttpTransport({
+      endpoint: "http://127.0.0.1:8765/mcp",
+      fetch: fetchMock,
+    });
+
+    await transport.sendRequest(createJsonRpcRequest("initialize", {}, () => 1));
+    await expect(transport.close()).resolves.toBeUndefined();
+    await expect(transport.close()).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("closes locally without a DELETE when no session was assigned", async () => {
+    const fetchMock = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>();
+    const transport = new StreamableHttpTransport({
+      endpoint: "http://127.0.0.1:8765/mcp",
+      fetch: fetchMock,
+    });
+
+    await transport.close();
+    await transport.close();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("reports non-405 termination failures without restoring the local session", async () => {
+    const fetchMock = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Mcp-Session-Id": "session-delete-failure",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 500 }));
+    const transport = new StreamableHttpTransport({
+      endpoint: "http://127.0.0.1:8765/mcp",
+      fetch: fetchMock,
+    });
+
+    await transport.sendRequest(createJsonRpcRequest("initialize", {}, () => 1));
+    await expect(transport.close()).rejects.toMatchObject({ status: 500 });
+    await expect(transport.close()).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

@@ -47,6 +47,11 @@ export function AssetMutationPanel() {
   const canRollback = ["executed", "verified", "rollback_available"].includes(changeSet?.state ?? "")
     && hasReversibleRollbackAction
     && (!realMode || bindingBound);
+  const canFinalVerify = realMode
+    && changeSet?.state === "rolled_back"
+    && mvp15?.finalVerification.status !== "passed";
+  const canInspectReplay = realMode
+    && mvp15?.finalVerification.status === "passed";
   const realReady =
     mvp15?.gate.mode === "sandbox-enabled" &&
     activeObservation;
@@ -146,10 +151,32 @@ export function AssetMutationPanel() {
             >
               Rollback
             </button>
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Final verify restored Content"
+              disabled={!canFinalVerify}
+              onClick={() => {
+                void actions?.finalVerifyMvp15AssetChangeSet();
+              }}
+            >
+              Final verify
+            </button>
+            <button
+              className="ua-utility-placeholder__button"
+              type="button"
+              aria-label="Inspect recorded asset replay"
+              disabled={!canInspectReplay}
+              onClick={() => {
+                actions?.inspectMvp15AssetReplay();
+              }}
+            >
+              Inspect replay
+            </button>
           </span>
         </li>
-        {runtimeMode && <li className="ua-utility-placeholder__item">Execution mode: {runtimeMode}</li>}
-        <li className="ua-utility-placeholder__item">Binding: {bindingLabel}</li>
+        {runtimeMode && <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-execution-mode" data-mvp15d-value={runtimeMode}>Execution mode: {runtimeMode}</li>}
+        <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-binding" data-mvp15d-value={bindingLabel}>Binding: {bindingLabel}</li>
         {companion && (
           <>
             <li className="ua-utility-placeholder__item">Companion plugin: {companion.status}</li>
@@ -168,7 +195,7 @@ export function AssetMutationPanel() {
         )}
         {aggregatePrefix && <li className="ua-utility-placeholder__item">Aggregate dry-run: {aggregatePrefix}…</li>}
         {realMode && (
-          <li className="ua-utility-placeholder__item">
+          <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-registration" data-mvp15d-value={nativeRegistrationStatus}>
             Native registration: {nativeRegistrationStatus}
           </li>
         )}
@@ -207,16 +234,26 @@ export function AssetMutationPanel() {
         {dryRun && <li className="ua-utility-placeholder__item">Dry-run: {dryRun.status}</li>}
         {changeSet && <li className="ua-utility-placeholder__item">Risk: {changeSet.risk}</li>}
         {approval && <li className="ua-utility-placeholder__item">Approval: {approval.status}</li>}
-        {execution && <li className="ua-utility-placeholder__item">Execution: {execution.status}</li>}
-        {verification && <li className="ua-utility-placeholder__item">Verification: {verification.status}</li>}
-        {changeSet?.state === "rolled_back" && <li className="ua-utility-placeholder__item">Rollback: rolled_back</li>}
+        {execution && <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-execution" data-mvp15d-value={execution.status}>Execution: {execution.status}</li>}
+        {verification && <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-verification" data-mvp15d-value={verification.status}>Verification: {verification.status}</li>}
+        {changeSet?.state === "rolled_back" && <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-rollback" data-mvp15d-value="rolled_back">Rollback: rolled_back</li>}
+        {mvp15 && (
+          <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-final-verification" data-mvp15d-value={mvp15.finalVerification.status}>
+            Final Content verification: {mvp15.finalVerification.status}
+          </li>
+        )}
+        {mvp15 && (
+          <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-replay-inspection" data-mvp15d-value={mvp15.replayInspection.status}>
+            Replay inspection: {mvp15.replayInspection.status} / [{mvp15.replayInspection.sideEffectDelta.join(", ")}]
+          </li>
+        )}
         {changeSet?.operations.map((operation) => (
           <li key={operation.id} className="ua-utility-placeholder__item">
             {operation.kind}: {operation.assetPathBefore ?? "new"} -&gt; {operation.assetPathAfter ?? "removed"}
           </li>
         ))}
         {replay?.replayOnly && (
-          <li className="ua-utility-placeholder__item">
+          <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-replay">
             Replay: recorded summaries only / {replay.recordedOnlyActions?.join(", ")} / 0 runtime side effects
           </li>
         )}

@@ -5,13 +5,25 @@ use crate::{
     resolve_trusted_root_binding_by_id,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 const DEFAULT_OBSERVATION_TTL_MILLIS: u64 = 2 * 60 * 1000;
+
+fn next_observation_generation() -> u64 {
+    static GENERATION: AtomicU64 = AtomicU64::new(0);
+    let now = now_millis();
+    let previous = GENERATION.fetch_max(now, Ordering::SeqCst);
+    if previous >= now {
+        GENERATION.fetch_add(1, Ordering::SeqCst) + 1
+    } else {
+        now
+    }
+}
 
 fn observation_registry() -> &'static Mutex<HashMap<String, ObservationSessionRecord>> {
     static REGISTRY: std::sync::OnceLock<Mutex<HashMap<String, ObservationSessionRecord>>> =
@@ -25,13 +37,44 @@ fn process_registry() -> &'static Mutex<HashMap<String, DiscoveredProcessRecord>
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+struct ManagedChildRecord {
+    child: Child,
+    owner_task_id: String,
+    owner_phase: String,
+    pid: u32,
+    process_start_time: u64,
+}
+
+fn managed_child_registry() -> &'static Mutex<HashMap<String, ManagedChildRecord>> {
+    static REGISTRY: std::sync::OnceLock<Mutex<HashMap<String, ManagedChildRecord>>> =
+        std::sync::OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn released_managed_process_registry() -> &'static Mutex<HashSet<String>> {
+    static REGISTRY: std::sync::OnceLock<Mutex<HashSet<String>>> = std::sync::OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
 #[cfg(test)]
 pub(crate) fn reset_registries_for_test() {
+    for (_, mut managed) in managed_child_registry()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .drain()
+    {
+        drop(managed.child.stdin.take());
+        let _ = managed.child.wait();
+    }
     observation_registry()
         .lock()
         .unwrap_or_else(|error| error.into_inner())
         .clear();
     process_registry()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clear();
+    released_managed_process_registry()
         .lock()
         .unwrap_or_else(|error| error.into_inner())
         .clear();
@@ -49,6 +92,8 @@ struct ObservationSessionRecord {
     source: String,
     mode: String,
     status: String,
+    generation: u64,
+    superseded_by_session_id: Option<String>,
     created_at: u64,
     expires_at: u64,
     last_heartbeat_at: Option<u64>,
@@ -70,6 +115,8 @@ struct DiscoveredProcessRecord {
     display_name: String,
     process_state: String,
     source: String,
+    owner_task_id: Option<String>,
+    owner_phase: Option<String>,
     discovered_at: u64,
     expires_at: u64,
 }
@@ -120,6 +167,7 @@ pub(crate) struct AssetMutationObservationBinding {
     pub pid: Option<u32>,
     pub process_start_time: Option<u64>,
     pub process_source: String,
+    pub observation_generation: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -183,6 +231,7 @@ where
     match session.status.as_str() {
         "stopped" => return Err("observation_session_stopped"),
         "expired" => return Err("observation_session_expired"),
+        "superseded" => return Err("stale_generation"),
         "attached" => {}
         _ => return Err("native_authority_unavailable"),
     }
@@ -224,7 +273,7 @@ where
             return Err("trusted_root_binding_mismatch");
         }
     }
-    if process.source == "native" {
+    if process.source == "native" || process.source == "managed" {
         let check = lifecycle_check(&process);
         if !check.alive {
             return Err(match check.reason.as_str() {
@@ -249,6 +298,7 @@ where
         pid: process.pid,
         process_start_time: process.process_start_time,
         process_source: process.source,
+        observation_generation: session.generation,
     })
 }
 
@@ -377,6 +427,8 @@ pub(crate) fn register_asset_mutation_observation_fixture(
             display_name: "UnrealEditor.exe".to_string(),
             process_state: "running".to_string(),
             source: "fixture".to_string(),
+            owner_task_id: None,
+            owner_phase: None,
             discovered_at: now,
             expires_at: now.saturating_add(DEFAULT_OBSERVATION_TTL_MILLIS),
         },
@@ -394,6 +446,8 @@ pub(crate) fn register_asset_mutation_observation_fixture(
             source: "fixture".to_string(),
             mode: "attached".to_string(),
             status: "attached".to_string(),
+            generation: next_observation_generation(),
+            superseded_by_session_id: None,
             created_at: now,
             expires_at: now.saturating_add(DEFAULT_OBSERVATION_TTL_MILLIS),
             last_heartbeat_at: None,
@@ -515,6 +569,373 @@ pub struct EditorProcessDiscoveryResult {
     pub processes: Vec<EditorProcessDescriptor>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManagedEditorProcessCreateInput {
+    pub task_id: String,
+    pub phase: String,
+    pub project_id: String,
+    pub root_ref: String,
+    pub uproject_relative_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedEditorProcessCreateResult {
+    pub status: String,
+    pub reason: String,
+    pub owner_task_id: String,
+    pub owner_phase: String,
+    pub process: Option<EditorProcessDescriptor>,
+    pub process_pid: Option<u32>,
+    pub process_start_time: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManagedEditorProcessReleaseInput {
+    pub schema_version: String,
+    pub task_id: String,
+    pub phase: String,
+    pub process_id: String,
+    pub pid: u32,
+    pub process_start_time: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedEditorProcessReleaseResult {
+    pub schema_version: String,
+    pub status: String,
+    pub reason: String,
+    pub owner_task_id: String,
+    pub owner_phase: String,
+    pub process_id: String,
+    pub pid: u32,
+    pub process_start_time: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
+}
+
+fn managed_process_release_result(
+    input: &ManagedEditorProcessReleaseInput,
+    status: &str,
+    reason: &str,
+) -> ManagedEditorProcessReleaseResult {
+    ManagedEditorProcessReleaseResult {
+        schema_version: "uagent.mvp15d.managed-editor-process-release-result.v1".to_string(),
+        status: status.to_string(),
+        reason: reason.to_string(),
+        owner_task_id: input.task_id.clone(),
+        owner_phase: input.phase.clone(),
+        process_id: input.process_id.clone(),
+        pid: input.pid,
+        process_start_time: input.process_start_time,
+        native_receipt_id: None,
+    }
+}
+
+fn observed_managed_process_release_result(
+    input: &ManagedEditorProcessReleaseInput,
+    status: &str,
+    reason: &str,
+) -> Result<ManagedEditorProcessReleaseResult, String> {
+    let mut result = managed_process_release_result(input, status, reason);
+    result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+        "release_managed_editor_process",
+        serde_json::to_value(input).map_err(|error| error.to_string())?,
+        serde_json::to_value(&result).map_err(|error| error.to_string())?,
+    );
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn create_managed_editor_process(
+    input: ManagedEditorProcessCreateInput,
+) -> Result<ManagedEditorProcessCreateResult, String> {
+    crate::mvp15d_runtime_bridge::validate_managed_process_owner(&input.task_id, &input.phase)
+        .map_err(str::to_string)?;
+    let executable = std::env::current_exe().map_err(|_| "managed_process_spawn_failed")?;
+    let mut command = Command::new(executable);
+    command
+        .env("UAGENT_MVP15D_MANAGED_EDITOR_FIXTURE", "1")
+        .env(
+            "UAGENT_MVP15D_MANAGED_PARENT_PID",
+            std::process::id().to_string(),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    create_managed_editor_process_with_command(input, command)
+}
+
+fn create_managed_editor_process_with_command(
+    input: ManagedEditorProcessCreateInput,
+    mut command: Command,
+) -> Result<ManagedEditorProcessCreateResult, String> {
+    let validation = validate_config_details(EditorProcessConfigInput {
+        project_id: input.project_id.clone(),
+        root_ref: input.root_ref.clone(),
+        uproject_relative_path: input.uproject_relative_path.clone(),
+        editor_executable: None,
+        args: None,
+    })
+    .map_err(|result| result.reason)?;
+    let request = serde_json::to_value(&input).map_err(|error| error.to_string())?;
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let mut child = command
+        .spawn()
+        .map_err(|_| "managed_process_spawn_failed".to_string())?;
+    let pid = child.id();
+    let process_start_time = match observe_process_start_time(pid) {
+        Some(value) => value,
+        None => {
+            drop(child.stdin.take());
+            let _ = child.wait();
+            return Err("managed_process_identity_unavailable".to_string());
+        }
+    };
+    let now = now_millis();
+    let process_id = format!(
+        "process:managed:{}",
+        stable_hash(&format!(
+            "{}:{}:{}:{}:{}",
+            input.task_id, input.phase, input.project_id, pid, process_start_time
+        ))
+    );
+    let pid_hash = format!(
+        "pid:{}",
+        stable_hash(&format!("{}:{}", pid, process_start_time))
+    );
+    let record = DiscoveredProcessRecord {
+        process_id: process_id.clone(),
+        pid_hash,
+        pid: Some(pid),
+        process_start_time: Some(process_start_time),
+        project_id: input.project_id,
+        root_id: validation.root_id,
+        uproject_display_path: validation.uproject_display_path.clone(),
+        canonical_root: validation.canonical_root,
+        canonical_uproject: validation.canonical_uproject,
+        display_project_hint: validation.uproject_display_path,
+        display_executable_hash: format!("exe:{}", stable_hash("uagent-managed-editor-fixture")),
+        display_name: "UAgentManagedEditorFixture.exe".to_string(),
+        process_state: "running".to_string(),
+        source: "managed".to_string(),
+        owner_task_id: Some(input.task_id.clone()),
+        owner_phase: Some(input.phase.clone()),
+        discovered_at: now,
+        expires_at: now + DEFAULT_OBSERVATION_TTL_MILLIS,
+    };
+    managed_child_registry().lock().unwrap().insert(
+        process_id.clone(),
+        ManagedChildRecord {
+            child,
+            owner_task_id: input.task_id.clone(),
+            owner_phase: input.phase.clone(),
+            pid,
+            process_start_time,
+        },
+    );
+    process_registry()
+        .lock()
+        .unwrap()
+        .insert(process_id, record.clone());
+    let mut result = ManagedEditorProcessCreateResult {
+        status: "created".to_string(),
+        reason: "task_owned_process_started".to_string(),
+        owner_task_id: input.task_id,
+        owner_phase: input.phase,
+        process: Some(descriptor_from_record(&record)),
+        process_pid: Some(pid),
+        process_start_time: Some(process_start_time),
+        native_receipt_id: None,
+    };
+    result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+        "create_managed_editor_process",
+        request,
+        serde_json::to_value(&result).map_err(|error| error.to_string())?,
+    );
+    Ok(result)
+}
+
+#[cfg(test)]
+pub(crate) fn create_managed_editor_process_fixture(
+    input: ManagedEditorProcessCreateInput,
+    command: Command,
+) -> Result<ManagedEditorProcessCreateResult, String> {
+    create_managed_editor_process_with_command(input, command)
+}
+
+#[tauri::command]
+pub fn release_managed_editor_process(
+    input: ManagedEditorProcessReleaseInput,
+) -> Result<ManagedEditorProcessReleaseResult, String> {
+    if input.schema_version != "uagent.mvp15d.managed-editor-process-release.v1" {
+        return observed_managed_process_release_result(
+            &input,
+            "blocked",
+            "managed_process_release_schema_invalid",
+        );
+    }
+    if let Err(reason) =
+        crate::mvp15d_runtime_bridge::validate_managed_process_owner(&input.task_id, &input.phase)
+    {
+        return observed_managed_process_release_result(&input, "blocked", reason);
+    }
+    if released_managed_process_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .contains(&input.process_id)
+    {
+        return observed_managed_process_release_result(
+            &input,
+            "blocked",
+            "managed_process_release_replay",
+        );
+    }
+
+    let process = process_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .get(&input.process_id)
+        .cloned();
+    let Some(process) = process else {
+        return observed_managed_process_release_result(
+            &input,
+            "blocked",
+            "managed_process_unknown",
+        );
+    };
+    if process.source != "managed" {
+        return observed_managed_process_release_result(&input, "blocked", "process_not_managed");
+    }
+    if process.owner_task_id.as_deref() != Some(input.task_id.as_str())
+        || process.owner_phase.as_deref() != Some(input.phase.as_str())
+    {
+        return observed_managed_process_release_result(
+            &input,
+            "blocked",
+            "managed_process_owner_mismatch",
+        );
+    }
+    if process.pid != Some(input.pid)
+        || process.process_start_time != Some(input.process_start_time)
+    {
+        return observed_managed_process_release_result(
+            &input,
+            "blocked",
+            "managed_process_identity_mismatch",
+        );
+    }
+
+    let managed = managed_child_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .remove(&input.process_id);
+    let Some(mut managed) = managed else {
+        return observed_managed_process_release_result(&input, "blocked", "process_not_managed");
+    };
+    if managed.owner_task_id != input.task_id
+        || managed.owner_phase != input.phase
+        || managed.pid != input.pid
+        || managed.process_start_time != input.process_start_time
+    {
+        managed_child_registry()
+            .lock()
+            .map_err(|_| "native_authority_unavailable".to_string())?
+            .insert(input.process_id.clone(), managed);
+        return observed_managed_process_release_result(
+            &input,
+            "blocked",
+            "managed_process_identity_mismatch",
+        );
+    }
+    drop(managed.child.stdin.take());
+    if managed.child.wait().is_err() {
+        managed_child_registry()
+            .lock()
+            .map_err(|_| "native_authority_unavailable".to_string())?
+            .insert(input.process_id.clone(), managed);
+        return observed_managed_process_release_result(
+            &input,
+            "failed",
+            "managed_process_release_failed",
+        );
+    }
+    process_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .remove(&input.process_id);
+    observation_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .retain(|_, session| session.process_id != input.process_id);
+    released_managed_process_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .insert(input.process_id.clone());
+    observed_managed_process_release_result(&input, "released", "task_owned_process_released")
+}
+
+#[cfg(test)]
+pub(crate) fn managed_process_count_for_test() -> usize {
+    managed_child_registry().lock().unwrap().len()
+}
+
+#[cfg(test)]
+pub(crate) fn managed_process_registry_counts_for_test() -> (usize, usize, usize) {
+    let active_process_ids = process_registry()
+        .lock()
+        .unwrap()
+        .values()
+        .filter(|process| process.source == "managed" && process.process_state == "running")
+        .map(|process| process.process_id.clone())
+        .collect::<HashSet<_>>();
+    (
+        managed_child_registry().lock().unwrap().len(),
+        active_process_ids.len(),
+        observation_registry()
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|session| {
+                session.source == "managed"
+                    && session.status == "attached"
+                    && active_process_ids.contains(&session.process_id)
+            })
+            .count(),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn mark_managed_process_external_for_test(process_id: &str) {
+    let mut registry = process_registry().lock().unwrap();
+    let record = registry.get_mut(process_id).unwrap();
+    record.source = "native".to_string();
+    record.owner_task_id = None;
+    record.owner_phase = None;
+}
+
+pub fn run_managed_editor_process_fixture_from_environment() -> bool {
+    if std::env::var("UAGENT_MVP15D_MANAGED_EDITOR_FIXTURE").as_deref() != Ok("1") {
+        return false;
+    }
+    let mut sink = Vec::new();
+    let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut sink);
+    true
+}
+
 #[tauri::command]
 pub fn discover_editor_processes(
     input: EditorProcessConfigInput,
@@ -572,6 +993,8 @@ pub fn discover_editor_processes(
         display_name: "UnrealEditor.exe".to_string(),
         process_state: "running".to_string(),
         source,
+        owner_task_id: None,
+        owner_phase: None,
         discovered_at: now,
         expires_at,
     };
@@ -619,6 +1042,7 @@ pub struct EditorAttachInput {
 #[serde(rename_all = "camelCase")]
 pub struct EditorObservationSessionResult {
     pub session_id: Option<String>,
+    pub process_id: Option<String>,
     pub project_id: String,
     pub root_id: Option<String>,
     pub uproject_display_path: Option<String>,
@@ -631,10 +1055,26 @@ pub struct EditorObservationSessionResult {
     pub expires_at: u64,
     pub last_heartbeat_at: Option<u64>,
     pub replay_only: bool,
+    pub observation_generation: Option<u64>,
+    pub superseded_by_session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
 }
 
 #[tauri::command]
 pub fn attach_editor_process(
+    input: EditorAttachInput,
+) -> Result<EditorObservationSessionResult, String> {
+    let mut result = attach_editor_process_inner(input.clone())?;
+    result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+        "attach_editor_process",
+        serde_json::to_value(&input).map_err(|error| error.to_string())?,
+        serde_json::to_value(&result).map_err(|error| error.to_string())?,
+    );
+    Ok(result)
+}
+
+fn attach_editor_process_inner(
     input: EditorAttachInput,
 ) -> Result<EditorObservationSessionResult, String> {
     let validation = match validate_config_details(EditorProcessConfigInput {
@@ -698,7 +1138,7 @@ pub fn attach_editor_process(
             "process_unavailable",
         ));
     }
-    if process.source == "native" {
+    if process.source == "native" || process.source == "managed" {
         let check = check_native_record_current(&process);
         if !check.alive {
             return Ok(blocked_session(
@@ -708,14 +1148,16 @@ pub fn attach_editor_process(
             ));
         }
     }
+    let generation = next_observation_generation();
+    let session_id = format!(
+        "editor-observation:{}",
+        stable_hash(&format!(
+            "{}:{}:{}:{}",
+            process.project_id, process.root_id, process.pid_hash, generation
+        ))
+    );
     let record = ObservationSessionRecord {
-        session_id: format!(
-            "editor-observation:{}",
-            stable_hash(&format!(
-                "{}:{}:{}",
-                process.project_id, process.root_id, process.pid_hash
-            ))
-        ),
+        session_id: session_id.clone(),
         process_id: process.process_id,
         project_id: input.project_id,
         root_id,
@@ -725,14 +1167,25 @@ pub fn attach_editor_process(
         source: process.source,
         mode: input.mode,
         status: "attached".to_string(),
+        generation,
+        superseded_by_session_id: None,
         created_at: now,
         expires_at: now + DEFAULT_OBSERVATION_TTL_MILLIS,
         last_heartbeat_at: None,
     };
-    observation_registry()
-        .lock()
-        .unwrap()
-        .insert(record.session_id.clone(), record.clone());
+    let mut sessions = observation_registry().lock().unwrap();
+    for current in sessions.values_mut() {
+        if current.status == "attached"
+            && current.process_id == record.process_id
+            && current.project_id == record.project_id
+            && current.root_id == record.root_id
+            && current.generation < record.generation
+        {
+            current.status = "superseded".to_string();
+            current.superseded_by_session_id = Some(session_id.clone());
+        }
+    }
+    sessions.insert(record.session_id.clone(), record.clone());
     Ok(session_result(&record, "attached", false))
 }
 
@@ -813,6 +1266,9 @@ where
         if record.status == "stopped" {
             return Ok(session_result(record, "local_observation_stopped", false));
         }
+        if record.status == "superseded" {
+            return Ok(session_result(record, "stale_generation", false));
+        }
         if now >= record.expires_at {
             record.status = "expired".to_string();
             return Ok(session_result(record, "session_expired", false));
@@ -825,7 +1281,9 @@ where
         .get(&session.process_id)
         .cloned();
     let check = match process.as_ref() {
-        Some(process) if process.source == "native" => lifecycle_check(process),
+        Some(process) if process.source == "native" || process.source == "managed" => {
+            lifecycle_check(process)
+        }
         Some(process) if process.source == "fixture" => NativeLifecycleCheck {
             alive: true,
             reason: "heartbeat_ok".to_string(),
@@ -986,10 +1444,151 @@ pub fn stop_editor_observation_session(
 ) -> Result<EditorObservationSessionResult, String> {
     let mut registry = observation_registry().lock().unwrap();
     let Some(record) = registry.get_mut(&input.session_id) else {
-        return Ok(blocked_session("", "stopped", "session_not_found"));
+        let mut result = blocked_session("", "stopped", "session_not_found");
+        drop(registry);
+        result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+            "stop_editor_observation_session",
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            serde_json::to_value(&result).map_err(|error| error.to_string())?,
+        );
+        return Ok(result);
     };
     record.status = "stopped".to_string();
-    Ok(session_result(record, "local_observation_stopped", false))
+    let mut result = session_result(record, "local_observation_stopped", false);
+    drop(registry);
+    result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+        "stop_editor_observation_session",
+        serde_json::to_value(&input).map_err(|error| error.to_string())?,
+        serde_json::to_value(&result).map_err(|error| error.to_string())?,
+    );
+    Ok(result)
+}
+
+/// Test/owned-launch lifecycle transition used by the fixed MVP15D driver.
+/// Attached external UE processes are never terminated by this command.
+#[tauri::command]
+pub fn terminate_managed_editor_process(
+    input: EditorObservationSessionIdInput,
+) -> Result<EditorObservationSessionResult, String> {
+    let session_snapshot = observation_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .get(&input.session_id)
+        .cloned();
+    let Some(session_snapshot) = session_snapshot else {
+        let mut result = blocked_session("", "attached", "session_not_found");
+        result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+            "terminate_managed_editor_process",
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            serde_json::to_value(&result).map_err(|error| error.to_string())?,
+        );
+        return Ok(result);
+    };
+    let process_snapshot = process_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .get(&session_snapshot.process_id)
+        .cloned();
+    let Some(process_snapshot) = process_snapshot else {
+        let mut result = session_result(&session_snapshot, "process_exited", false);
+        result.status = "degraded".to_string();
+        result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+            "terminate_managed_editor_process",
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            serde_json::to_value(&result).map_err(|error| error.to_string())?,
+        );
+        return Ok(result);
+    };
+    if process_snapshot.source != "fixture" && process_snapshot.source != "managed" {
+        let mut result = session_result(&session_snapshot, "process_not_managed", false);
+        result.status = "blocked".to_string();
+        result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+            "terminate_managed_editor_process",
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            serde_json::to_value(&result).map_err(|error| error.to_string())?,
+        );
+        return Ok(result);
+    }
+    if process_snapshot.source == "managed" {
+        let owner_task_id = process_snapshot
+            .owner_task_id
+            .as_deref()
+            .unwrap_or_default();
+        let owner_phase = process_snapshot.owner_phase.as_deref().unwrap_or_default();
+        if crate::mvp15d_runtime_bridge::validate_managed_process_owner(owner_task_id, owner_phase)
+            .is_err()
+        {
+            let mut result =
+                session_result(&session_snapshot, "managed_process_owner_mismatch", false);
+            result.status = "blocked".to_string();
+            result.native_receipt_id =
+                crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+                    "terminate_managed_editor_process",
+                    serde_json::to_value(&input).map_err(|error| error.to_string())?,
+                    serde_json::to_value(&result).map_err(|error| error.to_string())?,
+                );
+            return Ok(result);
+        }
+        let managed = managed_child_registry()
+            .lock()
+            .map_err(|_| "native_authority_unavailable".to_string())?
+            .remove(&session_snapshot.process_id);
+        let Some(mut managed) = managed else {
+            let mut result = session_result(&session_snapshot, "process_not_managed", false);
+            result.status = "blocked".to_string();
+            result.native_receipt_id =
+                crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+                    "terminate_managed_editor_process",
+                    serde_json::to_value(&input).map_err(|error| error.to_string())?,
+                    serde_json::to_value(&result).map_err(|error| error.to_string())?,
+                );
+            return Ok(result);
+        };
+        if managed.owner_task_id != owner_task_id
+            || managed.owner_phase != owner_phase
+            || Some(managed.pid) != process_snapshot.pid
+            || Some(managed.process_start_time) != process_snapshot.process_start_time
+        {
+            managed_child_registry()
+                .lock()
+                .unwrap()
+                .insert(session_snapshot.process_id.clone(), managed);
+            let mut result = session_result(
+                &session_snapshot,
+                "managed_process_identity_mismatch",
+                false,
+            );
+            result.status = "blocked".to_string();
+            result.native_receipt_id =
+                crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+                    "terminate_managed_editor_process",
+                    serde_json::to_value(&input).map_err(|error| error.to_string())?,
+                    serde_json::to_value(&result).map_err(|error| error.to_string())?,
+                );
+            return Ok(result);
+        }
+        drop(managed.child.stdin.take());
+        managed
+            .child
+            .wait()
+            .map_err(|_| "managed_process_termination_failed".to_string())?;
+    }
+    if let Some(process) = process_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .get_mut(&session_snapshot.process_id)
+    {
+        process.process_state = "exited".to_string();
+        process.expires_at = now_millis();
+    }
+    let mut result = session_result(&session_snapshot, "process_exited", false);
+    result.status = "degraded".to_string();
+    result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+        "terminate_managed_editor_process",
+        serde_json::to_value(&input).map_err(|error| error.to_string())?,
+        serde_json::to_value(&result).map_err(|error| error.to_string())?,
+    );
+    Ok(result)
 }
 
 fn validate_config(input: EditorProcessConfigInput) -> EditorAttachValidationResult {
@@ -1150,6 +1749,8 @@ fn build_native_discovery_from_candidates(
             display_name,
             process_state: "running".to_string(),
             source: "native".to_string(),
+            owner_task_id: None,
+            owner_phase: None,
             discovered_at: now,
             expires_at: now + DEFAULT_OBSERVATION_TTL_MILLIS,
         });
@@ -1176,11 +1777,46 @@ fn build_native_discovery_from_candidates(
 }
 
 fn check_native_record_current(record: &DiscoveredProcessRecord) -> NativeLifecycleCheck {
+    if record.source == "managed" {
+        return check_managed_record_current(record);
+    }
     match enumerate_native_processes() {
         Ok(candidates) => check_native_record_against_candidates(record, &candidates),
         Err(reason) => NativeLifecycleCheck {
             alive: false,
             reason,
+        },
+    }
+}
+
+fn observe_process_start_time(pid: u32) -> Option<u64> {
+    use sysinfo::{Pid, System};
+    for _ in 0..50 {
+        let mut system = System::new_all();
+        system.refresh_all();
+        if let Some(process) = system.process(Pid::from_u32(pid)) {
+            return Some(process.start_time());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    None
+}
+
+fn check_managed_record_current(record: &DiscoveredProcessRecord) -> NativeLifecycleCheck {
+    let (Some(pid), Some(expected_start)) = (record.pid, record.process_start_time) else {
+        return NativeLifecycleCheck {
+            alive: false,
+            reason: "process_unavailable".to_string(),
+        };
+    };
+    match observe_process_start_time(pid) {
+        Some(actual_start) if actual_start == expected_start => NativeLifecycleCheck {
+            alive: true,
+            reason: "heartbeat_ok".to_string(),
+        },
+        _ => NativeLifecycleCheck {
+            alive: false,
+            reason: "process_exited".to_string(),
         },
     }
 }
@@ -1506,6 +2142,7 @@ fn blocked_validation(reason: &str, root_ref: &str) -> EditorAttachValidationRes
 fn blocked_session(project_id: &str, mode: &str, reason: &str) -> EditorObservationSessionResult {
     EditorObservationSessionResult {
         session_id: None,
+        process_id: None,
         project_id: project_id.to_string(),
         root_id: None,
         uproject_display_path: None,
@@ -1518,6 +2155,9 @@ fn blocked_session(project_id: &str, mode: &str, reason: &str) -> EditorObservat
         expires_at: 0,
         last_heartbeat_at: None,
         replay_only: false,
+        observation_generation: None,
+        superseded_by_session_id: None,
+        native_receipt_id: None,
     }
 }
 
@@ -1528,6 +2168,7 @@ fn session_result(
 ) -> EditorObservationSessionResult {
     EditorObservationSessionResult {
         session_id: Some(record.session_id.clone()),
+        process_id: Some(record.process_id.clone()),
         project_id: record.project_id.clone(),
         root_id: Some(record.root_id.clone()),
         uproject_display_path: Some(record.uproject_display_path.clone()),
@@ -1540,6 +2181,9 @@ fn session_result(
         expires_at: record.expires_at,
         last_heartbeat_at: record.last_heartbeat_at,
         replay_only,
+        observation_generation: Some(record.generation),
+        superseded_by_session_id: record.superseded_by_session_id.clone(),
+        native_receipt_id: None,
     }
 }
 
@@ -1742,6 +2386,71 @@ mod tests {
             .read_only_diagnostics
             .contains(&"Save All blocked".to_string()));
         assert_eq!(stopped.reason, "local_observation_stopped");
+    }
+
+    #[test]
+    fn managed_fixture_termination_transitions_the_existing_observation_to_process_exited() {
+        let _guard = reset();
+        let (session_id, root_id, root) =
+            registered_asset_fixture("managed-termination", now_millis());
+
+        let terminated = terminate_managed_editor_process(EditorObservationSessionIdInput {
+            session_id: session_id.clone(),
+        })
+        .unwrap();
+
+        assert_eq!(terminated.status, "degraded");
+        assert_eq!(terminated.reason, "process_exited");
+        assert_eq!(
+            validate_asset_mutation_observation(&session_id, "project:test", &root_id).unwrap_err(),
+            "process_exited"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn newer_attach_atomically_supersedes_the_previous_native_observation_generation() {
+        let _guard = reset();
+        let discovery = discover_editor_processes(config()).unwrap();
+        let process = discovery.processes.first().unwrap().clone();
+        let input = EditorAttachInput {
+            project_id: "project:test".to_string(),
+            root_ref: "fixture://lyra-starter".to_string(),
+            uproject_relative_path: "Game.uproject".to_string(),
+            process_id: process.id,
+            pid_hash: process.pid_hash,
+            process_display_name: process.display_name,
+            mode: "fixture".to_string(),
+        };
+        let predecessor = attach_editor_process(input.clone()).unwrap();
+        let successor = attach_editor_process(input).unwrap();
+        let predecessor_id = predecessor.session_id.unwrap();
+        let successor_id = successor.session_id.unwrap();
+        let root_id = successor.root_id.unwrap();
+
+        assert_ne!(predecessor_id, successor_id);
+        assert!(
+            successor.observation_generation.unwrap() > predecessor.observation_generation.unwrap()
+        );
+        assert_eq!(
+            validate_asset_mutation_observation(&predecessor_id, "project:test", &root_id)
+                .unwrap_err(),
+            "stale_generation"
+        );
+        assert_eq!(
+            read_editor_process_status(EditorObservationSessionIdInput {
+                session_id: predecessor_id,
+            })
+            .unwrap()
+            .reason,
+            "stale_generation"
+        );
+        let successor_status = read_editor_process_status(EditorObservationSessionIdInput {
+            session_id: successor_id,
+        })
+        .unwrap();
+        assert_eq!(successor_status.status, "attached");
+        assert_eq!(successor_status.reason, "heartbeat_ok");
     }
 
     #[test]
@@ -2235,6 +2944,8 @@ mod tests {
                 source: "native".to_string(),
                 mode: "attached".to_string(),
                 status: "attached".to_string(),
+                generation: next_observation_generation(),
+                superseded_by_session_id: None,
                 created_at: now_millis(),
                 expires_at: now_millis() + DEFAULT_OBSERVATION_TTL_MILLIS,
                 last_heartbeat_at: None,

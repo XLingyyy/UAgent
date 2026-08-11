@@ -1,6 +1,83 @@
 # MVP15 Final Verification
 
-## Current MVP15D Final Source/Tooling Rework 8 Authoritative Launch Boundary and Report Closure — 2026-08-03 (checkpoint closeout)
+## Current MVP15D Final 15A-15C/D16 Pre-live Source Closure — 2026-08-11
+
+Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
+submissions without checkpoints. Rework 7 is historical
+`PARTIAL / NEEDS_FIX`; Rework 8 (actual bridge orchestration and exact window
+instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint exists. TEMP
+cleanup remains a separate `External Gate: BLOCKED` under
+`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+Rework 9 implementation and controlled verification have `Review Verdict:
+PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
+remain an independent `External Gate: OPEN`; the supervisor implementation
+checkpoint is pending. Its controlled happy path renders actual predecessor and
+successor `App` registrations and calls production
+`startMvp15dRuntimeBridge(invoke)` once from each context. The restart response
+returns before parent-ready; a lifecycle barrier then observes destroy, build,
+and acknowledgement before the fresh successor claims once, publishes, and
+completes.
+
+Production now registers exact one-shot `Destroyed` completion before captured
+predecessor destroy. The destroy task cannot build or acknowledge success. An
+off-main bounded wait holds no bridge mutex and queues a new main-thread
+continuation after AppManager removal; that continuation revalidates
+handoff/task/phase/private binding and occupancy. Atomic dispatch gates suppress
+late destroy/build after timeout. Empty occupancy builds one successor;
+replacement B remains alive and leaves acknowledgement/claim/publish/complete
+closed. A hidden real Webview/Wry target reproduces the old same-task collision
+as `WebviewLabelAlreadyExists("main")`, observes build count 0 at exact listener
+time, builds a different-HWND successor afterward, and injects/preserves B before
+the replacement continuation. Public acknowledgement v2, claim v3, window
+identity v1, and product summary v2 remain wire-compatible.
+
+The current TEMP residue risk is `OPEN`. The Rework 7 baseline JSONL contains
+4,601 direct-child directories (4,591 asset, 10 bridge), SHA-256
+`3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`.
+Supervisor revalidation retained the exact path set and found 141 asset-root
+mtime changes at 17:33, before the fresh 21:37 review tests. The current
+4,601-entry manifest has SHA-256
+`45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`.
+A resumed read-only scan on 2026-08-11 retained all paths but found 94 asset-root
+`mtimeNs` changes, all timestamped 2026-08-10 17:42:58; every other recorded
+lstat field remained equal. The actor is unconfirmed and no cleanup or metadata
+rewrite was performed. The historical Rework 6 253 entries remain
+present; current-minus-historical is 4,348 and historical-minus-current is zero.
+Deletion is `NO`; cleanup remains `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+
+The source delta invalidates the prior release binary and every old 15A-15C
+artifact. No actual Tool Search, installed/load/manifest tuple, live fingerprint,
+retraction boundary, N1-N8, partial/unknown, parent closeout, clean build, UE
+Automation run, live MCP capture, or mutation was executed. The stale installed
+release may fail only with `FINAL_LIVE_RUNTIME_NONZERO`. D13/15A remains
+`BLOCKED`, D14/15B and D15/15C remain `PLANNED`, D16 remains `IN_PROGRESS`, G16
+and overall acceptance remain `PARTIAL`, and Ready remains `NO`. Current
+`PASS_REAL_SMOKE` is `NO`.
+
+### Rework 9 reviewed verification
+
+- Hidden Windows Tauri/Wry ordering target: `1 passed`, including same-task
+  collision, post-`Destroyed` manager release, distinct successor HWND,
+  replacement B preservation, bounded waits, explicit window cleanup, and
+  `run_return` exit 0.
+- Rust focused: one-shot/timeout/dispatch gate `1 passed`; bridge `14 passed`;
+  asset mutation `40 passed`; UE process `16 passed`.
+- Desktop focused: `147 passed`, with 3 retained environment-gated live suites
+  skipped by their existing opt-in variables.
+- Tooling/inventory Node suite: `65 passed`.
+- Workspace: typecheck and lint exit 0; `pnpm test` reports 1,666 passed and the
+  same 3 live skips; web build transforms 259 modules and exits 0. Existing React
+  `act(...)` and 500 kB chunk-size warnings remain non-failing.
+- Two consecutive full Cargo processes each pass 176 library tests, 2 native
+  invoke bridge tests, and the real Wry integration test, with no failures.
+- All task-suite pre/post scans completed on 2026-08-09 retained the current
+  4,601 paths with added 0, removed 0, metadata drift 0, and deletion `NO`.
+- The resumed 2026-08-11 final scan retained the same paths with added 0 and
+  removed 0, but reported metadata drift 94. This prevents the absolute
+  zero-drift claim and remains an independent `External Gate: OPEN`; it does not
+  reverse the Rework 9 content `PASS`. Deletion remains `NO`.
+
+## Historical Accepted MVP15D Final Source/Tooling Rework 8 Authoritative Launch Boundary and Report Closure — 2026-08-03 (checkpoint closeout)
 
 ### Verification identity
 
@@ -8,7 +85,7 @@
 - REPORT: `REPORT-TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-8-AUTHORITATIVE-LAUNCH-BOUNDARY-AND-REPORT-CLOSURE-20260803-121253.md`
 - Branch / base HEAD: `main` / `d308d80a994079dc22af2b982e70ae416d832e4f`
 - Implementation commit: `98c8b387e1124a519977849d48ab824e4e6bb9c5`
-- Final Source/Tooling Rework 7: historical/current predecessor `PARTIAL`;
+- Final Source/Tooling Rework 7: historical predecessor `PARTIAL`;
   supervisor verdict `NEEDS_FIX`; no checkpoint was created.
 - Current task: `COMPLETE`; supervisor verdict: `PASS`.
 - G14: `IMPLEMENTED`; G15: `COMPLETE`; G16: `PARTIAL`; D13 / 15A:
@@ -1046,15 +1123,20 @@ Separate negative ledgers must record:
 
 ## Current Progression
 
-This is not final MVP15 acceptance. Final Source/Tooling Rework 7 is the
-historical/current predecessor `PARTIAL` with supervisor verdict `NEEDS_FIX`,
-and no checkpoint was created. Final Source/Tooling Rework 8 is `COMPLETE` with
-supervisor `PASS` at implementation commit
-`98c8b387e1124a519977849d48ab824e4e6bb9c5`; G14 is `IMPLEMENTED`, G15 is
-`COMPLETE`, and G16 is `PARTIAL`. The
+This is not final MVP15 acceptance. Final Pre-live Source Closure Rework 7 is
+historical `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
+`Review Verdict: NEEDS_FIX` because same-task Tauri destroy/build cannot create
+the production successor. The Rework 9 implementation has `Review Verdict:
+PASS`, fresh focused/full verification, and real Wry destroy/replacement
+sequencing evidence. The resumed scan's 94 current-manifest mtime drifts remain
+an independent `External Gate: OPEN`; the supervisor implementation checkpoint
+is pending. The separate 2026-08-03 Final
+Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
+Rework 9 G15 closeout is `IN_PROGRESS`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
-replace the current Rework 8 checkpoint. No clean current-generation exact-six fingerprint or
+replace the historical 2026-08-03 Rework 8 checkpoint. No clean current-generation exact-six fingerprint or
 full live rendered product-UI lifecycle exists. D13 / 15A remains `BLOCKED`;
 D14 / 15B and D15 / 15C remain `PLANNED`; D16 remains `IN_PROGRESS`; real UE
 5.8.1 compatibility and overall acceptance remain `PARTIAL`; Ready remains

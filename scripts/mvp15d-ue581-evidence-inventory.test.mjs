@@ -1,19 +1,21 @@
-/* global process */
+/* global process, structuredClone */
 
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import test from "node:test";
 import {
   BUILD_COMMAND_SCHEMA,
   BUILD_RESULT_SCHEMA,
   EVENT_SCHEMA,
+  JOB_CLOSEOUT_SCHEMA,
   LOADED_MODULES_SCHEMA,
   PHASES,
   PHASE_SUMMARY_SCHEMAS,
+  PORT_CLOSEOUT_SCHEMA,
   PRODUCER_LEDGER_SCHEMA,
   REQUIRED_DIRECTORIES,
   REQUIRED_LOGS,
@@ -25,6 +27,8 @@ import {
   ledgerSelfHash,
   redactLog,
   sha256,
+  stable,
+  validateLivePhaseCrossBinding,
   verify,
 } from "./mvp15d-ue581-evidence-inventory.mjs";
 import { collectPackageArtifacts, manifestSelfHash } from "./mvp15d-manifest.mjs";
@@ -161,8 +165,43 @@ function createManifest(root) {
 function writePhaseEvidence(root, phase) {
   const producer = {
     id: `mvp15d-final-${phase}-producer`,
-    mode: "live",
+    mode: "fixture",
   };
+  const sessionId = `ue581-${phase}-session-0001`;
+  const generation = 1;
+  const marker = `uagent-${phase}-marker-0001`;
+  const runtimeProcessId = 4100 + PHASES.indexOf(phase);
+  const jobLogical = `metadata/${phase}.job-closeout.json`;
+  const portLogical = `metadata/${phase}.port-closeout.json`;
+  writeJson(resolve(root, ...jobLogical.split("/")), {
+    schemaVersion: JOB_CLOSEOUT_SCHEMA,
+    taskId: TASK_ID,
+    marker,
+    sessionId,
+    generation,
+    jobSchemaVersion: "uagent.mvp15d.windows-job-process-run.v1",
+    rootPid: runtimeProcessId,
+    rootExitCode: 0,
+    timedOut: false,
+    activeProcessZeroObserved: true,
+    finalResidualCount: 0,
+    failureCode: "",
+  });
+  writeJson(resolve(root, ...portLogical.split("/")), {
+    schemaVersion: PORT_CLOSEOUT_SCHEMA,
+    phase,
+    taskId: TASK_ID,
+    marker,
+    sessionId,
+    generation,
+    port: 18900 + PHASES.indexOf(phase),
+    host: "127.0.0.1",
+    observations: Array.from({ length: 5 }, (_, index) => ({
+      attempt: index + 1,
+      accepting: false,
+    })),
+    residualCount: 0,
+  });
   const events = [
     {
       schemaVersion: EVENT_SCHEMA,
@@ -173,25 +212,86 @@ function writePhaseEvidence(root, phase) {
       type: "process_started",
       data: { markerSha256: "5".repeat(64) },
     },
-    {
+  ];
+  if (phase === "product-capture" || phase === "ui-lifecycle") {
+    events.push({
       schemaVersion: EVENT_SCHEMA,
       phase,
       taskId: TASK_ID,
       producer,
-      sequence: 2,
+      sequence: events.length + 1,
+      type: "runtime_process_started",
+      data: { authorityLevel: "source_only", pid: runtimeProcessId },
+    });
+    const requiredTypes =
+      phase === "product-capture"
+        ? [
+            ["fixed_artifact_authority", "fixed_producer"],
+            ["product_discovery_observation", "native_observed"],
+            ["retraction_observation", "native_observed"],
+            ["mutation_counter_observation", "native_observed"],
+          ]
+        : [
+            ["fixed_artifact_authority", "fixed_producer"],
+            ["lifecycle_operation_observation", "native_observed"],
+            ["content_manifest_observation", "native_observed"],
+            ["negative_case_observation", "native_observed"],
+            ["partial_unknown_observation", "native_observed"],
+            ["replay_inspection_observation", "native_observed"],
+          ];
+    for (const [type] of requiredTypes) {
+      events.push({
+        schemaVersion: EVENT_SCHEMA,
+        phase,
+        taskId: TASK_ID,
+        producer,
+        sequence: events.length + 1,
+        type,
+        data: { authorityLevel: "source_only" },
+      });
+    }
+    events.push({
+      schemaVersion: EVENT_SCHEMA,
+      phase,
+      taskId: TASK_ID,
+      producer,
+      sequence: events.length + 1,
+      sessionId,
+      generation,
+      type: "closeout",
+      data: {
+        authorityLevel: "source_only",
+        processResidualCount: 0,
+        portResidualCount: 0,
+        markerResidualCount: 0,
+        partialOutputCount: 0,
+        jobCloseoutSha256: record(jobLogical, root).sha256,
+        portObservationSha256: record(portLogical, root).sha256,
+        runtimeProcessId,
+        phaseSessionId: sessionId,
+        phaseGeneration: generation,
+      },
+    });
+  } else {
+    events.push({
+      schemaVersion: EVENT_SCHEMA,
+      phase,
+      taskId: TASK_ID,
+      producer,
+      sequence: events.length + 1,
       type: "observation",
       data: { status: "verified" },
-    },
-    {
+    });
+    events.push({
       schemaVersion: EVENT_SCHEMA,
       phase,
       taskId: TASK_ID,
       producer,
-      sequence: 3,
+      sequence: events.length + 1,
       type: "closeout",
       data: { residualCount: 0 },
-    },
-  ];
+    });
+  }
   const transcriptLogical = `transcripts/${phase}.events.jsonl`;
   writeFileSync(
     resolve(root, ...transcriptLogical.split("/")),
@@ -224,13 +324,16 @@ function writePhaseEvidence(root, phase) {
     schemaVersion: PHASE_SUMMARY_SCHEMAS[phase],
     taskGeneration: TASK_GENERATION,
     taskId: TASK_ID,
-    evidenceMode: "live",
-    sessionId: `ue581-${phase}-session-0001`,
-    generation: 1,
+    evidenceMode: "fixture",
+    fixtureUsed: true,
+    sessionId,
+    generation,
     sourceArtifacts: [
       sourceRecord(transcriptLogical, root),
       sourceRecord(logLogical, root),
       sourceRecord(ledgerLogical, root),
+      sourceRecord(jobLogical, root),
+      sourceRecord(portLogical, root),
     ],
     status: "verified",
   };
@@ -240,11 +343,11 @@ function writePhaseEvidence(root, phase) {
 function makeFixture() {
   const root = nextRoot();
   const rawRoot = mkdtempSync(resolve(tmpdir(), "uagent-ue581-redaction-source-"));
-  mkdirSync(root);
-  for (const directory of REQUIRED_DIRECTORIES) {
-    mkdirSync(resolve(root, ...directory.split("/")), { recursive: true });
-  }
   try {
+    mkdirSync(root);
+    for (const directory of REQUIRED_DIRECTORIES) {
+      mkdirSync(resolve(root, ...directory.split("/")), { recursive: true });
+    }
     for (const [index, logical] of REQUIRED_LOGS.entries()) {
       const source = resolve(rawRoot, `${index}.log`);
       writeFileSync(
@@ -359,6 +462,31 @@ function rewriteInventory(root, change) {
   inventory.bundleSha256 = bundleHash(inventory.directories, inventory.files);
   inventory.inventorySelfSha256 = inventorySelfHash(inventory);
   writeJson(path, inventory);
+}
+
+function rewritePhaseEvents(root, phase, change) {
+  const logical = `transcripts/${phase}.events.jsonl`;
+  const path = resolve(root, ...logical.split("/"));
+  const events = readFileSync(path, "utf8")
+    .split(/\r?\n/u)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  const changed = change(events);
+  for (const [index, event] of changed.entries()) event.sequence = index + 1;
+  writeFileSync(path, `${changed.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
+  const updatedRecord = sourceRecord(logical, root);
+  const producerPath = resolve(root, "metadata", `${phase}.producer.json`);
+  const producer = JSON.parse(readFileSync(producerPath, "utf8"));
+  producer.outputs.events = updatedRecord;
+  producer.outputs.stdout = updatedRecord;
+  writeJson(producerPath, producer);
+  const summaryPath = resolve(root, "summaries", `${phase}.json`);
+  const summary = JSON.parse(readFileSync(summaryPath, "utf8"));
+  const summaryRecord = summary.sourceArtifacts.find(
+    ({ relativePath }) => relativePath === logical,
+  );
+  Object.assign(summaryRecord, updatedRecord);
+  writeJson(summaryPath, summary);
 }
 
 test("UE 5.8.1 inventory creates a directory-closed bundle and verifies it in a new process", () => {
@@ -690,5 +818,328 @@ test("package artifact inventory and identity remain bound to manifest v3", () =
     expectCode(() => create(fixture.root), "UE581_PACKAGE_INVENTORY_BINDING_INVALID");
   } finally {
     cleanup(fixture);
+  }
+});
+
+test("product inventory rejects mixed/source-only authority, missing raw observations, and copied legacy identity", async (t) => {
+  const substitutions = [
+    ["mixed authority", (events) => {
+      events.find(({ type }) => type === "product_discovery_observation").data.authorityLevel =
+        "runtime_observed";
+      return events;
+    }],
+    ["source only presented as live", (events) => {
+      for (const event of events) {
+        event.producer.mode = "live";
+      }
+      return events;
+    }],
+    ["missing raw discovery", (events) =>
+      events.filter(({ type }) => type !== "product_discovery_observation")],
+    ["copied legacy installed/load/manifest", (events) =>
+      events.map((event) =>
+        event.type === "fixed_artifact_authority"
+          ? {
+              ...event,
+              type: "installed_loaded",
+              data: {
+                authorityLevel: "runtime_observed",
+                installed: ["One.dll"],
+                loaded: ["One.dll"],
+                manifest: ["One.dll"],
+              },
+            }
+          : event,
+      )],
+  ];
+  for (const [name, change] of substitutions) {
+    await t.test(name, () => {
+      const fixture = makeFixture();
+      try {
+        rewritePhaseEvents(fixture.root, "product-capture", change);
+        expectCode(() => create(fixture.root), "UE581_TRANSCRIPT_AUTHORITY_INVALID");
+      } finally {
+        cleanup(fixture);
+      }
+    });
+  }
+});
+
+test("live phase cross-binding rejects raw ledger, process, artifact, and parent closeout drift", () => {
+  const root = mkdtempSync(join(tmpdir(), "uagent-mvp15d-live-cross-binding-"));
+  try {
+    const phase = "product-capture";
+    const taskId = "TASK-MVP15D-LIVE-CROSS-BINDING-TEST";
+    const marker = "uagent-mvp15d-live-cross-binding-marker";
+    const sessionId = "uagent-mvp15d-live-cross-binding-session";
+    const generation = 7;
+    const childPid = 41001;
+    const runtimePid = 41002;
+    const sourceCommit = "1".repeat(40);
+    const sourceTreeSha256 = "2".repeat(64);
+    const executableSha256 = "3".repeat(64);
+    const fixedArtifactBindingSha256 = "4".repeat(64);
+    const nonceSha256 = "5".repeat(64);
+    const metadata = resolve(root, "metadata");
+    const transcripts = resolve(root, "transcripts");
+    mkdirSync(metadata, { recursive: true });
+    mkdirSync(transcripts, { recursive: true });
+
+    const rawPath = resolve(transcripts, `${phase}.runtime-events.jsonl`);
+    const producerPath = resolve(metadata, `${phase}.producer.json`);
+    const jobPath = resolve(metadata, `${phase}.job-closeout.json`);
+    const portPath = resolve(metadata, `${phase}.port-closeout.json`);
+    writeFileSync(rawPath, "runtime-ledger\n", "utf8");
+    writeFileSync(producerPath, "producer-ledger\n", "utf8");
+    writeFileSync(jobPath, "job-closeout\n", "utf8");
+    writeFileSync(portPath, "port-closeout\n", "utf8");
+
+    const runtimeProcess = {
+      pid: runtimePid,
+      executable: { basename: "uagent.exe", sha256: executableSha256 },
+    };
+    const fixedArtifact = {
+      sourceCommit,
+      sourceTreeSha256,
+      phaseSessionId: sessionId,
+      phaseGeneration: generation,
+      runtimeProcessId: runtimePid,
+      producerBindingSha256: fixedArtifactBindingSha256,
+    };
+    const closeout = {
+      runtimeProcessId: runtimePid,
+      jobCloseoutSha256: sha256(readFileSync(jobPath)),
+      portObservationSha256: sha256(readFileSync(portPath)),
+    };
+    const envelope = (type, data) => ({
+      taskId,
+      phase,
+      marker,
+      sessionId,
+      generation,
+      producer: { pid: childPid },
+      type,
+      data,
+    });
+    const receiptId = (sequence) =>
+      `mvp15d-observation-receipt:${sequence.toString(16).padStart(64, "0")}`;
+    const predecessorWindowIdentity = {
+      schemaVersion: "uagent.mvp15d.predecessor-window-identity.v1",
+      status: "observed",
+      windowLabel: "main",
+      taskId,
+      phase,
+      handoffId: `renderer-handoff:${"a".repeat(64)}`,
+      stableIdentitySha256: "b".repeat(64),
+    };
+    const rendererHandoff = {
+      handoffId: predecessorWindowIdentity.handoffId,
+      requestReceipt: { id: receiptId(1), sequence: 1 },
+      parentAcknowledgementReceipt: { id: receiptId(2), sequence: 2 },
+      claimReceipt: { id: receiptId(3), sequence: 3 },
+      predecessorWindow: predecessorWindowIdentity,
+      predecessorRenderer: {
+        rendererInstanceId: "renderer-before",
+        processIdentitySha256: "6".repeat(64),
+      },
+      successorRenderer: {
+        rendererInstanceId: "renderer-after",
+        processIdentitySha256: "7".repeat(64),
+      },
+      predecessorMcpSessionId: "mcp-session-before",
+      successorMcpSessionId: "mcp-session-after",
+      predecessorMcpGeneration: 10,
+      successorMcpGeneration: 11,
+    };
+    const events = [
+      envelope("runtime_process_started", runtimeProcess),
+      envelope("fixed_artifact_authority", fixedArtifact),
+      envelope("retraction_observation", {
+        reason: "renderer_restart",
+        rendererHandoff,
+        receipts: Array.from({ length: 48 }, (_, index) => ({
+          receiptId: receiptId(index + 1),
+          receiptSequence: index + 1,
+        })),
+      }),
+      envelope("closeout", closeout),
+    ];
+    const runtimeEvents = [
+      {
+        type: "runtime_process_identity",
+        data: {
+          sourceCommit,
+          session: sessionId,
+          generation,
+          process: {
+            pid: runtimePid,
+            executableBasename: runtimeProcess.executable.basename,
+            executableSha256,
+          },
+        },
+      },
+    ];
+    const ledger = {
+      taskId,
+      sourceCommit,
+      marker,
+      sessionId,
+      generation,
+      processOwnership: { childPid },
+      runtimeProcess,
+      runtimeTransport: {
+        eventFile: { sha256: sha256(readFileSync(rawPath)) },
+        nonceSha256,
+      },
+    };
+    const processIdentity = {
+      pid: runtimePid,
+      executableBasename: runtimeProcess.executable.basename,
+      executableSha256,
+    };
+    const summary = {
+      schemaVersion: "uagent.mvp15d.final.product-capture.v2",
+      evidenceMode: "live",
+      productionLaunchAuthorityVerified: false,
+      producerLedgerSha256: sha256(readFileSync(producerPath)),
+      sourceCommit,
+      sessionId,
+      generation,
+      nativeObservationReceiptCount: 48,
+      artifactAuthorityBindingSha256: fixedArtifactBindingSha256,
+      rendererRestartHandoff: {
+        handoffId: rendererHandoff.handoffId,
+        predecessorRendererInstanceId: rendererHandoff.predecessorRenderer.rendererInstanceId,
+        successorRendererInstanceId: rendererHandoff.successorRenderer.rendererInstanceId,
+        predecessorProcessIdentitySha256:
+          rendererHandoff.predecessorRenderer.processIdentitySha256,
+        successorProcessIdentitySha256: rendererHandoff.successorRenderer.processIdentitySha256,
+        predecessorMcpSessionId: rendererHandoff.predecessorMcpSessionId,
+        successorMcpSessionId: rendererHandoff.successorMcpSessionId,
+        predecessorMcpGeneration: rendererHandoff.predecessorMcpGeneration,
+        successorMcpGeneration: rendererHandoff.successorMcpGeneration,
+        requestReceiptId: receiptId(1),
+        requestReceiptSequence: 1,
+        parentAcknowledgementReceiptId: receiptId(2),
+        parentAcknowledgementReceiptSequence: 2,
+        claimReceiptId: receiptId(3),
+        claimReceiptSequence: 3,
+        predecessorWindowIdentity,
+      },
+      ownedLaunchBinding: {
+        sourceCommit,
+        sourceTreeSha256,
+        phaseProducerPid: childPid,
+        runtimePid,
+        runtimeProcessSha256: sha256(Buffer.from(stable(runtimeProcess), "utf8")),
+        processIdentitySha256: sha256(Buffer.from(stable(processIdentity), "utf8")),
+        fixedArtifactBindingSha256,
+        phaseEventsSha256: sha256(Buffer.from(stable(events), "utf8")),
+        rawEventLedgerSha256: sha256(readFileSync(rawPath)),
+        rawEventNonceSha256: nonceSha256,
+        parentCloseoutSha256: sha256(Buffer.from(stable(closeout), "utf8")),
+        jobCloseoutSha256: sha256(readFileSync(jobPath)),
+        portCloseoutSha256: sha256(readFileSync(portPath)),
+      },
+    };
+
+    assert.doesNotThrow(() =>
+      validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvents, summary),
+    );
+    const missingParentAcknowledgement = structuredClone(summary);
+    delete missingParentAcknowledgement.rendererRestartHandoff.parentAcknowledgementReceiptId;
+    expectCode(
+      () =>
+        validateLivePhaseCrossBinding(
+          root,
+          phase,
+          ledger,
+          events,
+          runtimeEvents,
+          missingParentAcknowledgement,
+        ),
+      "UE581_LIVE_PHASE_CROSS_BINDING_INVALID",
+    );
+    for (const mutate of [
+      (changedSummary) => {
+        changedSummary.rendererRestartHandoff.predecessorWindowIdentity.windowLabel = "secondary";
+      },
+      (changedSummary) => {
+        changedSummary.rendererRestartHandoff.requestReceiptSequence = 3;
+      },
+      (changedSummary) => {
+        changedSummary.rendererRestartHandoff.predecessorWindowIdentity.taskId = "TASK-MVP15D-CROSS-TASK";
+      },
+    ]) {
+      const changed = structuredClone(summary);
+      mutate(changed);
+      expectCode(
+        () => validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvents, changed),
+        "UE581_LIVE_PHASE_CROSS_BINDING_INVALID",
+      );
+    }
+    for (const mutate of [
+      (changedEvents) => {
+        changedEvents[2].data.rendererHandoff.handoffId = `renderer-handoff:${"c".repeat(64)}`;
+      },
+      (changedEvents) => {
+        delete changedEvents[2].data.rendererHandoff.parentAcknowledgementReceipt;
+      },
+      (changedEvents) => {
+        changedEvents[2].type = "receipt_observations";
+      },
+    ]) {
+      const changedEvents = structuredClone(events);
+      mutate(changedEvents);
+      const changedSummary = structuredClone(summary);
+      changedSummary.ownedLaunchBinding.phaseEventsSha256 = sha256(
+        Buffer.from(stable(changedEvents), "utf8"),
+      );
+      expectCode(
+        () =>
+          validateLivePhaseCrossBinding(
+            root,
+            phase,
+            ledger,
+            changedEvents,
+            runtimeEvents,
+            changedSummary,
+          ),
+        "UE581_LIVE_PHASE_CROSS_BINDING_INVALID",
+      );
+    }
+    const duplicateReceiptEvents = structuredClone(events);
+    duplicateReceiptEvents[2].data.receipts[1].receiptSequence = 1;
+    const duplicateReceiptSummary = structuredClone(summary);
+    duplicateReceiptSummary.ownedLaunchBinding.phaseEventsSha256 = sha256(
+      Buffer.from(stable(duplicateReceiptEvents), "utf8"),
+    );
+    expectCode(
+      () =>
+        validateLivePhaseCrossBinding(
+          root,
+          phase,
+          ledger,
+          duplicateReceiptEvents,
+          runtimeEvents,
+          duplicateReceiptSummary,
+        ),
+      "UE581_LIVE_PHASE_CROSS_BINDING_INVALID",
+    );
+    for (const field of [
+      "rawEventLedgerSha256",
+      "runtimeProcessSha256",
+      "fixedArtifactBindingSha256",
+      "parentCloseoutSha256",
+    ]) {
+      const changed = structuredClone(summary);
+      changed.ownedLaunchBinding[field] = "0".repeat(64);
+      expectCode(
+        () => validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvents, changed),
+        "UE581_LIVE_PHASE_CROSS_BINDING_INVALID",
+      );
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

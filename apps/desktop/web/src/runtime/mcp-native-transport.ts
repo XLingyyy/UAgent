@@ -1,12 +1,15 @@
 import type { NativeInvoke } from "./project-native-adapter";
 
 interface NativeMcpHttpRequestResult {
+  method?: "POST" | "DELETE";
   status?: number;
   body?: string;
   contentType?: string | null;
   content_type?: string | null;
   sessionId?: string | null;
   session_id?: string | null;
+  protocolVersion?: string | null;
+  protocol_version?: string | null;
 }
 
 type NativeHttpPost = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -19,8 +22,8 @@ export function createNativeMcpHttpPoster(invoke: NativeInvoke, timeoutMs = 5_00
 
     const endpoint = endpointFromRequestInput(input);
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-    if (method !== "POST") {
-      throw new TypeError("Native MCP bridge only supports POST requests.");
+    if (method !== "POST" && method !== "DELETE") {
+      throw new TypeError("Native MCP bridge only supports POST and DELETE requests.");
     }
 
     const headers = headersFromRequestInput(input, init);
@@ -29,7 +32,10 @@ export function createNativeMcpHttpPoster(invoke: NativeInvoke, timeoutMs = 5_00
       result = await invoke<NativeMcpHttpRequestResult>("mcp_streamable_http_request", {
         input: {
           endpoint,
-          body: await bodyToText(init?.body ?? (input instanceof Request ? input.clone().body : null)),
+          method,
+          body: method === "DELETE"
+            ? ""
+            : await bodyToText(init?.body ?? (input instanceof Request ? input.clone().body : null)),
           protocolVersion: headers.get("MCP-Protocol-Version") ?? "2025-06-18",
           sessionId: headers.get("Mcp-Session-Id"),
           timeoutMs,
@@ -42,11 +48,14 @@ export function createNativeMcpHttpPoster(invoke: NativeInvoke, timeoutMs = 5_00
     const responseHeaders = new Headers();
     const contentType = result.contentType ?? result.content_type;
     const sessionId = result.sessionId ?? result.session_id;
+    const protocolVersion = result.protocolVersion ?? result.protocol_version;
     if (contentType) responseHeaders.set("Content-Type", contentType);
     if (sessionId) responseHeaders.set("Mcp-Session-Id", sessionId);
+    if (protocolVersion) responseHeaders.set("MCP-Protocol-Version", protocolVersion);
 
-    return new Response(result.body ?? "", {
-      status: normalizeStatus(result.status),
+    const status = normalizeStatus(result.status);
+    return new Response(status === 204 || status === 205 || status === 304 ? null : (result.body ?? ""), {
+      status,
       headers: responseHeaders,
     });
   };

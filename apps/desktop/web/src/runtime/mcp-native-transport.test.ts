@@ -5,6 +5,7 @@ import type { NativeInvoke } from "./project-native-adapter";
 
 type NativeMcpCall = {
   endpoint: string;
+  method: "POST" | "DELETE";
   body: string;
   protocolVersion?: string;
   sessionId?: string | null;
@@ -42,6 +43,7 @@ describe("native MCP HTTP poster", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
       endpoint: "http://127.0.0.1:8000/mcp",
+      method: "POST",
       protocolVersion: "2025-06-18",
       sessionId: null,
       timeoutMs: 5_000,
@@ -111,5 +113,66 @@ describe("native MCP HTTP poster", () => {
 
     expect(calls.map((call) => JSON.parse(call.body).method)).toEqual(["initialize", "tools/list", "tools/call"]);
     expect(calls.slice(1).every((call) => call.sessionId === "safe-session")).toBe(true);
+  });
+
+  it.each([
+    [204, "accepted"],
+    [405, "unsupported"],
+  ] as const)("forwards session termination DELETE status %s at the native boundary", async (status, termination) => {
+    expect(status === 405 ? "unsupported" : "accepted").toBe(termination);
+    const calls: NativeMcpCall[] = [];
+    const invoke = asNativeInvoke(async (command, payload) => {
+      expect(command).toBe("mcp_streamable_http_request");
+      const input = (payload as { input: NativeMcpCall }).input;
+      calls.push(input);
+      if (input.method === "DELETE") {
+        return { method: "DELETE", status, body: "", sessionId: null };
+      }
+      return {
+        method: "POST",
+        status: 200,
+        contentType: "application/json",
+        sessionId: "safe-delete-session",
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }),
+      };
+    });
+    const transport = new StreamableHttpTransport({
+      endpoint: "http://127.0.0.1:8000/mcp",
+      fetch: createNativeMcpHttpPoster(invoke, 5_000),
+    });
+
+    await transport.sendRequest(createJsonRpcRequest("initialize", {}, () => 1));
+    await expect(transport.close()).resolves.toBeUndefined();
+
+    expect(calls.map((call) => call.method)).toEqual(["POST", "DELETE"]);
+    expect(calls[1]).toMatchObject({
+      body: "",
+      protocolVersion: "2025-06-18",
+      sessionId: "safe-delete-session",
+    });
+  });
+
+  it("does not invoke native DELETE when the server assigned no session", async () => {
+    const calls: NativeMcpCall[] = [];
+    const invoke = asNativeInvoke(async (_command, payload) => {
+      const input = (payload as { input: NativeMcpCall }).input;
+      calls.push(input);
+      return {
+        method: "POST",
+        status: 200,
+        contentType: "application/json",
+        sessionId: null,
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }),
+      };
+    });
+    const transport = new StreamableHttpTransport({
+      endpoint: "http://127.0.0.1:8000/mcp",
+      fetch: createNativeMcpHttpPoster(invoke, 5_000),
+    });
+
+    await transport.sendRequest(createJsonRpcRequest("initialize", {}, () => 1));
+    await transport.close();
+
+    expect(calls.map((call) => call.method)).toEqual(["POST"]);
   });
 });

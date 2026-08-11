@@ -2,15 +2,72 @@
 
 ## MVP15D Companion Trust Chain
 
-### Current Final Source/Tooling Rework 8 Authoritative Launch Boundary / Report Closure
+### Current Final 15A-15C/D16 Pre-live Source Closure
 
-Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`
-with supervisor verdict `NEEDS_FIX`; no checkpoint was created. Final
-Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
-commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; G15 is `COMPLETE`; G16 is
+Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
+checkpoint was created. Rework 8 (actual bridge orchestration and exact window
+instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
+Rework 9 implementation and controlled verification have `Review Verdict:
+PASS`. The resumed final TEMP scan's 94 current-manifest asset-root mtime changes
+remain an independent `External Gate: OPEN`; the supervisor implementation
+checkpoint is pending.
+TEMP cleanup remains a separate `External Gate: BLOCKED` under
+`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
+historical `COMPLETE / PASS` record at implementation commit
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current Rework 9 G15 closeout is `IN_PROGRESS`; G16 is
 `PARTIAL`. UE 5.8.1 compatibility and overall acceptance remain `PARTIAL`;
 D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C are `PLANNED`; D16 is
 `IN_PROGRESS`; Ready remains `NO`.
+Current `PASS_REAL_SMOKE` is `NO`.
+
+Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
+submissions without checkpoints. Rework 9 renders two actual `App`
+registrations, each calling production `startMvp15dRuntimeBridge(invoke)`. One
+persistent Rust `BridgeState` owns driver consumption, restart authority,
+acknowledgement, single-use claim, final publication, and completion. The parent
+retains the exact injected predecessor and registers its exact-instance one-shot
+`Destroyed` listener before captured destroy. The first main task cannot build or
+acknowledge success. An off-main worker performs the bounded wait without the
+bridge mutex and queues a second main task only after AppManager removal.
+
+The second task revalidates handoff/task/phase/private binding, atomically commits
+against timeout cancellation, and checks current `main` occupancy. Empty
+occupancy creates one successor; replacement B is preserved and produces a
+failed parent acknowledgement, leaving claim/publish/complete closed. The app
+prevents last-window exit only while parent lifecycle is pending and exits
+explicitly on terminal no-window failure. A hidden real Webview/Wry target
+reproduces same-task `WebviewLabelAlreadyExists("main")`, observes manager
+removal/build count 0, creates a different-HWND successor from the later
+continuation, and injects B between removal and continuation. Raw handles and
+bindings do not cross the wire; acknowledgement v2, claim v3, window identity v1,
+product summary v2, N4/N5, mutation, strict POST/DELETE, and private owned-launch
+controls remain unchanged.
+
+Asset and bridge test roots use RAII teardown. The Rework 7 baseline TEMP
+manifest contains 4,601 entries (4,591 asset, 10 bridge), SHA-256
+`3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`.
+Supervisor revalidation retained the exact path set and found 141 asset-root
+mtime changes predating the fresh review tests. The current 4,601-entry manifest
+has SHA-256
+`45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`.
+The resumed 2026-08-11 read-only scan retained every path but found 94 asset-root
+`mtimeNs` changes timestamped 2026-08-10 17:42:58; all other recorded lstat
+fields remained equal. Their actor is unconfirmed, and no cleanup or metadata
+rewrite was performed. The historical 253 entries remain a fully present
+subset; deletion is `NO`, and cleanup remains
+`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+
+The exact source-level UI contract remains `1 / 5 / 1 / 5 / 4 / 0`, restored
+Content, and replay delta `[0,0,0,0,0]`; controlled tests exercise eight fresh
+state-driven negative identities and nine ordered partial/unknown operations.
+These facts do not
+constitute actual live Tool Search, installed/load/manifest, fingerprint,
+retraction, N1-N8, partial, or closeout evidence. The former release and all
+prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
+fail only with `FINAL_LIVE_RUNTIME_NONZERO`. A later authorized clean-checkout
+run from the reviewed Rework 9 implementation checkpoint is required before 15A
+restarts.
 
 The implemented trust-chain source path is:
 
@@ -125,7 +182,7 @@ made zero MCP calls, zero network calls, and zero asset operations. No real UE
 session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
 Full read-only compatibility follows in a new clean-checkout task based on the
-Rework 8 implementation commit.
+reviewed Rework 9 implementation commit.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted

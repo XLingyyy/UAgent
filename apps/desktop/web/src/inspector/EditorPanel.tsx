@@ -20,7 +20,7 @@ export function EditorPanel() {
           <span className="ua-utility-placeholder__eyebrow">MVP14 safe observation</span>
           <h3 className="ua-utility-placeholder__title">UE Editor</h3>
         </div>
-        <span className="ua-utility-placeholder__state">
+          <span className="ua-utility-placeholder__state" data-mvp15d-observation="editor-session-state">
           {mvp14?.session?.status ?? mvp14?.capability.reason ?? mvp13?.editorSession?.status ?? "disabled"}
         </span>
       </div>
@@ -28,16 +28,32 @@ export function EditorPanel() {
         <li className="ua-utility-placeholder__item">
           Observation: {mvp14?.capability.enabled ? mvp14.capability.mode : "disabled"} / trusted root required
         </li>
-        <li className="ua-utility-placeholder__item">
+        <li
+          className="ua-utility-placeholder__item"
+          data-mvp15d-observation="editor-process"
+          data-mvp15d-value={latestProcess ? `${latestProcess.displayName} / ${latestProcess.processState}` : "none discovered"}
+        >
           Process: {latestProcess ? `${latestProcess.displayName} / ${latestProcess.processState}` : "none discovered"}
         </li>
-        <li className="ua-utility-placeholder__item">
+        <li
+          className="ua-utility-placeholder__item"
+          data-mvp15d-observation="editor-heartbeat"
+          data-mvp15d-value={mvp14?.status?.heartbeat
+            ? `${mvp14.status.heartbeat.statusReason} / alive ${String(mvp14.status.heartbeat.processAlive)}`
+            : "not recorded"}
+        >
           Heartbeat:{" "}
           {mvp14?.status?.heartbeat
             ? `${mvp14.status.heartbeat.statusReason} / alive ${String(mvp14.status.heartbeat.processAlive)}`
             : "not recorded"}
         </li>
-        <li className="ua-utility-placeholder__item">
+        <li
+          className="ua-utility-placeholder__item"
+          data-mvp15d-observation="editor-snapshot"
+          data-mvp15d-value={mvp14?.snapshot?.snapshot
+            ? `${mvp14.snapshot.snapshot.editorState} / ${mvp14.snapshot.snapshot.displayProject}`
+            : "not recorded"}
+        >
           Snapshot:{" "}
           {mvp14?.snapshot?.snapshot
             ? `${mvp14.snapshot.snapshot.editorState} / ${mvp14.snapshot.snapshot.displayProject}`
