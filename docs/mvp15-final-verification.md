@@ -6,13 +6,12 @@ Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
 submissions without checkpoints. Rework 7 is historical
 `PARTIAL / NEEDS_FIX`; Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint exists. TEMP
-cleanup remains a separate `External Gate: BLOCKED` under
-`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+cleanup later passed as an independently authorized external gate.
 Rework 9 implementation and controlled verification have `Review Verdict:
 PASS` and are checkpointed at implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
-current-manifest asset-root mtime changes remain an independent `External Gate:
-OPEN`. Its controlled happy path renders actual predecessor and
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Authorized cleanup removed all
+4,601 manifest roots with failures 0 and residual 0; asset `40/40` and bridge
+`14/14` post-cleanup regressions left zero matching roots. Its controlled happy path renders actual predecessor and
 successor `App` registrations and calls production
 `startMvp15dRuntimeBridge(invoke)` once from each context. The restart response
 returns before parent-ready; a lifecycle barrier then observes destroy, build,
@@ -32,19 +31,15 @@ time, builds a different-HWND successor afterward, and injects/preserves B befor
 the replacement continuation. Public acknowledgement v2, claim v3, window
 identity v1, and product summary v2 remain wire-compatible.
 
-The current TEMP residue risk is `OPEN`. The Rework 7 baseline JSONL contains
-4,601 direct-child directories (4,591 asset, 10 bridge), SHA-256
-`3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`.
-Supervisor revalidation retained the exact path set and found 141 asset-root
-mtime changes at 17:33, before the fresh 21:37 review tests. The current
-4,601-entry manifest has SHA-256
+The TEMP residue gate is `PASS`. The exact cleanup manifest contains 4,601
+direct-child directories (4,591 asset, 10 bridge), SHA-256
 `45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`.
-A resumed read-only scan on 2026-08-11 retained all paths but found 94 asset-root
-`mtimeNs` changes, all timestamped 2026-08-10 17:42:58; every other recorded
-lstat field remained equal. The actor is unconfirmed and no cleanup or metadata
-rewrite was performed. The historical Rework 6 253 entries remain
-present; current-minus-historical is 4,348 and historical-minus-current is zero.
-Deletion is `NO`; cleanup remains `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+On 2026-08-12, explicit authorization and complete containment, names,
+descendants, reparse/link, exact-set and live-owner checks passed. The script
+deleted 837 files, 4,717 internal directories and all 4,601 roots; failures and
+remaining manifest/matching paths were zero. Asset `40/40` and bridge `14/14`
+regressions passed and the post-test rescan stayed at zero. The earlier mtime-only
+actor remains unconfirmed.
 
 The source delta invalidates the prior release binary and every old 15A-15C
 artifact. No actual Tool Search, installed/load/manifest tuple, live fingerprint,
@@ -75,8 +70,14 @@ and overall acceptance remain `PARTIAL`, and Ready remains `NO`. Current
   4,601 paths with added 0, removed 0, metadata drift 0, and deletion `NO`.
 - The resumed 2026-08-11 final scan retained the same paths with added 0 and
   removed 0, but reported metadata drift 94. This prevents the absolute
-  zero-drift claim and remains an independent `External Gate: OPEN`; it does not
-  reverse the Rework 9 content `PASS`. Deletion remains `NO`.
+  zero-drift claim and was recorded at that time as an independent `External
+  Gate: OPEN`; it did not reverse the Rework 9 content `PASS`. Deletion was
+  `NO` in that scan.
+- On 2026-08-12 the user explicitly authorized exact cleanup after a fresh
+  safety preflight. All 4,601 manifest roots were deleted with failures 0 and
+  residual 0. Fresh asset `40/40` and bridge `14/14` regressions passed and left
+  zero matching roots. The TEMP cleanup gate is `PASS`; historical drift
+  attribution remains unclaimed.
 
 ## Historical Accepted MVP15D Final Source/Tooling Rework 8 Authoritative Launch Boundary and Report Closure — 2026-08-03 (checkpoint closeout)
 
@@ -1130,8 +1131,9 @@ historical `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
 the production successor. The Rework 9 implementation has `Review Verdict:
 PASS`, fresh focused/full verification, and real Wry destroy/replacement
 sequencing evidence at implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed scan's 94
-current-manifest mtime drifts remain an independent `External Gate: OPEN`. The
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Authorized exact-manifest cleanup
+removed all 4,601 historical TEMP roots with zero residual; its external gate is
+`PASS`. The
 separate 2026-08-03 Final
 Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current

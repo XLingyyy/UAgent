@@ -6,13 +6,13 @@
   checkpoint was created.
 - Final Pre-live Source Closure Rework 8 (actual bridge orchestration and exact
   window instance ownership): `Review Verdict: NEEDS_FIX`; no checkpoint was
-  created. TEMP cleanup remains a separate `External Gate: BLOCKED` under
-  `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+  created.
 - Final Pre-live Source Closure Rework 9: implementation and controlled
   verification have `Review Verdict: PASS` at implementation commit
-  `aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
-  current-manifest asset-root mtime changes remain an independent
-  `External Gate: OPEN`; no live Gate advanced.
+  `aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Authorized exact-manifest TEMP
+  cleanup removed all 4,601 roots with zero failures/residuals; fresh asset
+  `40/40` and bridge `14/14` regressions left zero matching roots. `External
+  Gate / TEMP cleanup: PASS`; no live Gate advanced.
 - The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
   historical `COMPLETE / PASS` record at implementation commit
   `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -59,17 +59,14 @@
   destroy/build/acknowledgement. A parent-only opaque instance digest remains in
   the stable identity hash without changing acknowledgement v2, claim v3,
   window identity v1, or product summary v2 wire schemas. The Rework 7
-  baseline TEMP manifest is 4,601 entries (4,591 asset, 10 bridge), SHA-256
-  `3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`.
-  Supervisor revalidation retained every path and found 141 asset-root mtime
-  changes predating the fresh review tests. The current manifest is SHA-256
-  `45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`;
-  a resumed 2026-08-11 read-only scan retained all paths but found 94 later
-  asset-root `mtimeNs` changes timestamped 2026-08-10 17:42:58. Their actor is
-  unconfirmed; no cleanup or metadata rewrite was performed.
-  The historical 253 entries remain present, with deltas 4,348/0. Deletion is
-  `NO`; cleanup remains `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`, no live Gate
-  advanced, and Rework 9 is checkpointed at
+  cleanup manifest is 4,601 entries (4,591 asset, 10 bridge), SHA-256
+  `45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`.
+  On 2026-08-12, explicit R3 authorization and complete containment,
+  reparse/link, exact-set and live-owner preflight preceded exact deletion.
+  Cleanup removed 837 files, 4,717 internal directories and all 4,601 roots;
+  failures/residuals were zero. Asset `40/40` and bridge `14/14` regressions
+  passed and left zero matching roots. Earlier mtime-only drift remains
+  unattributed historical evidence; no live Gate advanced, and Rework 9 is checkpointed at
   `aa14363f15d8bdc8eaf392c67cf444496cc8a968`.
 
 Rework 7 preserved the sole publisher, transitive source boundary, observer,

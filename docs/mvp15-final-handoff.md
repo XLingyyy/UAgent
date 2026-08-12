@@ -7,11 +7,10 @@ checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
 Rework 9 implementation and controlled verification have `Review Verdict:
 PASS` and are checkpointed at implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
-current-manifest asset-root mtime changes remain an independent `External Gate:
-OPEN`.
-TEMP cleanup remains a separate `External Gate: BLOCKED` under
-`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Authorized exact-manifest TEMP
+cleanup removed all 4,601 roots with failures 0 and residual 0; fresh asset
+`40/40` and bridge `14/14` regressions left zero matching roots. `External Gate /
+TEMP cleanup: PASS`.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -44,19 +43,15 @@ predecessor listener. Public acknowledgement v2, claim v3, window identity v1,
 product summary v2, N4, N5, second rollback, DELETE semantics, and the visible
 `MVP15 Sandbox` label remain unchanged.
 
-TEMP residue remains an `OPEN` handoff risk. The Rework 7 baseline manifest is
-4,601 entries (4,591 asset, 10 bridge), SHA-256
-`3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`.
-Supervisor revalidation retained every path and found 141 asset-root mtime
-changes predating the fresh review tests. The current manifest is SHA-256
+TEMP residue cleanup is complete. The exact manifest is 4,601 entries (4,591
+asset, 10 bridge), SHA-256
 `45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`.
-The resumed 2026-08-11 read-only scan retained all paths but found 94 asset-root
-`mtimeNs` changes timestamped 2026-08-10 17:42:58; every other recorded lstat
-field remained equal. Their actor is unconfirmed, and no cleanup or metadata
-rewrite was performed.
-The historical 253-entry Rework 6 set remains present; deltas are 4,348/0.
-Deletion is `NO`. Cleanup is `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`; do not
-modify TEMP candidates without explicit R3 authorization.
+After explicit R3 authorization, the preflight verified exact TEMP containment,
+names, descendants, reparse/link absence, exact-set equality and no live owner.
+Deletion removed 837 files, 4,717 internal directories and all 4,601 roots;
+failures/residuals were zero. Fresh asset `40/40` and bridge `14/14` tests passed
+and left zero matching roots. Earlier mtime-only drift remains historically
+unattributed.
 
 No actual Tool Search, installed/load/manifest tuple, live fingerprint,
 retraction boundary, N1-N8, partial/unknown, parent closeout, or live Gate ran.
@@ -295,8 +290,8 @@ evidence. Final Pre-live Source Closure Rework 7 is historical
 current Final Pre-live Rework 9 implementation has `Review Verdict: PASS` after
 fresh focused/full verification, including a real Wry destroy/replacement
 target at implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed scan's 94
-current-manifest mtime drifts remain an independent `External Gate: OPEN`. The separate
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Authorized exact-manifest cleanup
+removed all 4,601 TEMP roots with zero residual; its external gate is `PASS`. The separate
 2026-08-03 Final Source/Tooling Rework 8
 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
@@ -305,6 +300,5 @@ D13 / 15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`; D16
 remains `IN_PROGRESS`; real UE 5.8.1 compatibility and overall acceptance
 remain `PARTIAL`; Ready remains `NO`. Any clean-checkout read-only compatibility
 run must use Rework 9 implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. TEMP cleanup
-remains an independently authorized gate. No next-stage or mutation work is
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. No next-stage or mutation work is
 authorized.

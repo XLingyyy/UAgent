@@ -9,11 +9,10 @@ checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
 Rework 9 implementation and controlled verification have `Review Verdict:
 PASS` and are checkpointed at implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
-current-manifest asset-root mtime changes remain an independent `External Gate:
-OPEN`.
-TEMP cleanup remains a separate `External Gate: BLOCKED` under
-`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Authorized exact-manifest TEMP
+cleanup removed all 4,601 roots with failures 0 and residual 0; fresh asset
+`40/40` and bridge `14/14` regressions left zero matching roots. `External Gate /
+TEMP cleanup: PASS`.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -71,13 +70,12 @@ The Rework 7 baseline is 4,601 entries (4,591 asset, 10 bridge), SHA-256
 Supervisor revalidation retained all paths, recorded 141 earlier asset-root mtime
 changes, and created the current manifest at SHA-256
 `45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`.
-The resumed 2026-08-11 read-only scan retained every path but found 94 asset-root
-`mtimeNs` changes timestamped 2026-08-10 17:42:58; every other recorded lstat
-field remained equal. Their actor is unconfirmed, and no cleanup or metadata
-rewrite was performed. The historical 253-entry set remains a subset; deltas
-are 4,348/0. Any later new or changed entry fails verification. Cleanup is
-`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`; never delete or modify candidates
-without explicit R3 authorization.
+On 2026-08-12, explicit R3 authorization and complete containment, descendant,
+reparse/link, exact-set and live-owner preflight preceded exact cleanup. It
+deleted 837 files, 4,717 internal directories and all 4,601 roots with failures
+0 and residual 0. Fresh asset `40/40` and bridge `14/14` regressions passed and
+left zero matching roots. Earlier mtime-only drift remains historically
+unattributed. Any future matching root is new residue and fails verification.
 `UAGENT_ENABLE_ASSET_MUTATION` remains default-off and is set to `1` only by a
 future fixed live UI child.
 

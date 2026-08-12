@@ -7,11 +7,10 @@ checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
 Rework 9 implementation and controlled verification have `Review Verdict:
 PASS` and are checkpointed at implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
-current-manifest asset-root mtime changes remain an independent `External Gate:
-OPEN`.
-TEMP cleanup remains a separate `External Gate: BLOCKED` under
-`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Authorized exact-manifest TEMP
+cleanup removed all 4,601 roots with failures 0 and residual 0; fresh asset
+`40/40` and bridge `14/14` regressions left zero matching roots. `External Gate /
+TEMP cleanup: PASS`.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -32,17 +31,13 @@ acknowledgement v2, claim v3, window identity v1, and product summary v2 remain
 unchanged. N4, N5, second rollback, and observed MCP DELETE termination remain
 retained.
 
-The current test-residue risk is `OPEN`: the complete read-only manifest has
-4,601 entries (4,591 asset, 10 bridge). The Rework 7 baseline SHA-256 is
-`3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`.
-Supervisor revalidation retained every path and found 141 earlier asset-root
-mtime changes. The current manifest SHA-256 is
-`45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`;
-the resumed 2026-08-11 read-only scan retained all paths but found 94 asset-root
-`mtimeNs` changes timestamped 2026-08-10 17:42:58. Their actor is unconfirmed;
-no cleanup or metadata rewrite was performed.
-The historical 253-entry set remains present; deltas are 4,348/0. Deletion is
-`NO`, and cleanup remains `BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+The current test-residue gate is `PASS`. The exact cleanup manifest has 4,601
+entries (4,591 asset, 10 bridge), SHA-256
+`45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`.
+Explicit authorization and complete safety preflight preceded deletion of 837
+files, 4,717 internal directories and all 4,601 roots. Failures/residuals were
+zero. Fresh asset `40/40` and bridge `14/14` tests passed and left zero matching
+roots. Earlier mtime-only drift remains historically unattributed.
 
 No actual Tool Search, installed/load/manifest tuple, live fingerprint,
 retraction boundary, N1-N8, partial/unknown, parent closeout, compatibility, or
@@ -77,8 +72,8 @@ receipt. Ancestor junction/reparse paths still fail. Historical Real Windows
 integration passed with zero matching residue at its checkpoint. Rework 8
 remains `NEEDS_FIX`; the reviewed Rework 9 implementation adds real hidden Webview/Wry ordering
 coverage, observes build count 0 at manager removal, builds a distinct successor,
-and preserves an injected replacement. The current manifest and independent
-cleanup authorization gate remain as recorded above.
+and preserves an injected replacement. The exact-manifest cleanup gate is
+`PASS`, as recorded above.
 
 The compiled identity covers a deterministic 335-file transitive production
 boundary and a 356-entry production/Git watch set. The boundary includes native,

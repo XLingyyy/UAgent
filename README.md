@@ -9,11 +9,11 @@ checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
 Rework 9 implementation and controlled verification have `Review Verdict:
 PASS` and are checkpointed at implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
-current-manifest asset-root mtime changes remain an independent `External Gate:
-OPEN`.
-TEMP cleanup remains a separate `External Gate: BLOCKED` under
-`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. On 2026-08-12, explicitly
+authorized exact-manifest cleanup removed all 4,601 historical TEMP fixture
+roots with failures 0 and residual 0. Fresh asset `40/40` and bridge `14/14`
+regressions passed and left zero matching roots. `External Gate / TEMP cleanup:
+PASS`; the historical mtime actor remains unconfirmed.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -51,20 +51,16 @@ and uses its lifecycle query as the parent-ready barrier. Acknowledgement v2,
 claim v3, window identity v1, product summary v2, N4, N5, second rollback, and
 actual MCP DELETE controls remain unchanged.
 
-The current TEMP residue risk is `OPEN`. The Rework 7 baseline manifest contains
+The TEMP residue gate is closed. The authoritative cleanup manifest contains
 4,601 directories (4,591 `uagent-asset-*`, 10
 `uagent-mvp15d-bridge-test-*`) at SHA-256
-`3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`.
-Supervisor revalidation on 2026-08-09 found zero added or removed paths and 141
-asset-root mtime changes timestamped 17:33, before the 21:37 fresh review tests.
-The current 4,601-entry manifest has SHA-256
 `45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`.
-A resumed read-only scan on 2026-08-11 retained every path (added 0, removed 0)
-but found 94 asset-root `mtimeNs` changes, all timestamped 2026-08-10 17:42:58;
-other recorded lstat fields were unchanged. The actor is unconfirmed, and no
-cleanup or metadata rewrite was performed. The historical Rework 6 set remains
-a fully present 253-entry subset; deletion is `NO`, and cleanup remains
-`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+Before deletion, exact TEMP containment, names, directory type, complete
+descendants, reparse/link absence, exact-set equality, and live-owner safety all
+passed. The cleanup deleted 837 fixture files, 4,717 internal directories, and
+all 4,601 roots; failures and residuals were zero. Post-cleanup asset and bridge
+regressions passed and the second rescan remained at zero matching roots. Earlier
+94/235 root-only `mtimeNs` observations remain historical and unattributed.
 
 These remain source implementation and controlled-test facts. No actual Tool Search
 ON/OFF sessions, installed/load/manifest tuple, live fingerprint, retraction

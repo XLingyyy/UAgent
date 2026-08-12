@@ -9,11 +9,10 @@ checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
 Rework 9 implementation and controlled verification have `Review Verdict:
 PASS` and are checkpointed at implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed final TEMP scan's 94
-current-manifest asset-root mtime changes remain an independent `External Gate:
-OPEN`.
-TEMP cleanup remains a separate `External Gate: BLOCKED` under
-`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Authorized exact-manifest TEMP
+cleanup removed all 4,601 roots with failures 0 and residual 0; fresh asset
+`40/40` and bridge `14/14` regressions left zero matching roots. `External Gate /
+TEMP cleanup: PASS`.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current Rework 9 G15 checkpoint integrity is `COMPLETE`; G16 is
@@ -45,19 +44,14 @@ bindings do not cross the wire; acknowledgement v2, claim v3, window identity v1
 product summary v2, N4/N5, mutation, strict POST/DELETE, and private owned-launch
 controls remain unchanged.
 
-Asset and bridge test roots use RAII teardown. The Rework 7 baseline TEMP
-manifest contains 4,601 entries (4,591 asset, 10 bridge), SHA-256
-`3064cb894ce916c44fd359ccb149c7d3044731683007686cfa7885792181fc57`.
-Supervisor revalidation retained the exact path set and found 141 asset-root
-mtime changes predating the fresh review tests. The current 4,601-entry manifest
-has SHA-256
+Asset and bridge test roots use RAII teardown. The exact cleanup manifest
+contains 4,601 entries (4,591 asset, 10 bridge), SHA-256
 `45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`.
-The resumed 2026-08-11 read-only scan retained every path but found 94 asset-root
-`mtimeNs` changes timestamped 2026-08-10 17:42:58; all other recorded lstat
-fields remained equal. Their actor is unconfirmed, and no cleanup or metadata
-rewrite was performed. The historical 253 entries remain a fully present
-subset; deletion is `NO`, and cleanup remains
-`BLOCKED_BY_USER_CLEANUP_AUTHORIZATION`.
+Explicit authorization and complete containment, descendant, reparse/link,
+exact-set and live-owner preflight preceded deletion of 837 files, 4,717
+internal directories and all 4,601 roots. Failures/residuals were zero. Fresh
+asset `40/40` and bridge `14/14` tests passed and left zero matching roots.
+Earlier mtime-only drift remains historically unattributed.
 
 The exact source-level UI contract remains `1 / 5 / 1 / 5 / 4 / 0`, restored
 Content, and replay delta `[0,0,0,0,0]`; controlled tests exercise eight fresh
