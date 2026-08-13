@@ -168,6 +168,8 @@ describe("project-native-adapter", () => {
     expect(project.rootRef).not.toContain("C:/Users/Dev");
     expect(project.id).toMatch(/^native:root:/);
     expect(project.rootRef).toMatch(/^root:/);
+    expect(adapter.resolveRawRoot(project.id, project.rootRef)).toBe(RAW_PATH);
+    expect(JSON.stringify(project)).not.toContain(adapter.resolveRawRoot(project.id, project.rootRef));
 
     const trusted = await adapter.confirmTrust(project.id);
     expect(trusted.id).not.toContain("C:/Users/Dev");

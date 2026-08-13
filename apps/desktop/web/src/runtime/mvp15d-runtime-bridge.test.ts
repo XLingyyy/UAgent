@@ -23,14 +23,11 @@ vi.mock("./desktop-runtime-adapter", () => adapterMock);
 const evidenceMock = vi.hoisted(() => ({
   readMvp15dProductStoreEvidence: vi.fn(() => ({ status: "ready" })),
   readMvp15dUiStoreEvidence: vi.fn(() => ({ status: "ready" })),
-  runMvp15dUiBridgeAction: vi.fn(async (action: string) => {
-    globalThis.window.dispatchEvent(new CustomEvent("uagent:mvp15d-asset-action", { detail: { action } }));
-  }),
+  runMvp15dUiBridgeAction: vi.fn(async () => {}),
 }));
 vi.mock("../stores/ui-store", () => evidenceMock);
 
 type NativeInvoke = <T>(command: string, payload?: Record<string, unknown>) => Promise<T>;
-let bridgeAssetListener: ((event: Event) => void) | null = null;
 
 function configuration(overrides: Record<string, unknown> = {}) {
   return {
@@ -82,6 +79,7 @@ function mountUiControls() {
       <label for="projectRootRef">Project root reference</label>
       <input id="projectRootRef" type="text" value="" />
       <button type="button">Validate project root</button>
+      <button type="button">Add project root</button>
       <button type="button">Trust project root</button>
     </form>
   `;
@@ -127,7 +125,10 @@ function mountProductControls(clicks: string[]) {
     <label for="projectRootRef">Project root reference</label>
     <input id="projectRootRef" type="text" value="" />
     <span data-mvp15d-observation="project-trust">untrusted</span>
+    <span data-mvp15d-observation="project-validation">not_validated</span>
+    <span data-mvp15d-observation="project-add">not_added</span>
     <button type="button">Validate project root</button>
+    <button type="button" disabled>Add project root</button>
     <button type="button" disabled>Trust project root</button>
     <div aria-label="MCP connection">
       <label>Endpoint <input aria-label="MCP endpoint URL" type="text" value="" /></label>
@@ -143,6 +144,26 @@ function mountProductControls(clicks: string[]) {
       <span data-mvp15d-observation="companion-tools">0 / 0 (0 summaries)</span>
       <button type="button" disabled>Verify companion identity</button>
     </section>
+    <section aria-label="MVP15D product controls">
+      <span data-mvp15d-observation="tool-search-mode">OFF</span>
+      <span data-mvp15d-observation="product-control-status">idle</span>
+      <button type="button">Tool Search ON</button>
+      <button type="button">Tool Search OFF</button>
+      <button type="button">MCP reconnect</button>
+      <button type="button">Change MCP endpoint</button>
+      <button type="button">RefreshTools</button>
+      <button type="button">Retract after UE restart</button>
+      <button type="button">Reject stale completion</button>
+      <button type="button">Restart renderer</button>
+      <button type="button">Resume renderer restart</button>
+    </section>
+    <section aria-label="MVP15D negative acceptance controls">
+      <span data-mvp15d-observation="negative-control-status">idle</span>
+      ${Array.from({ length: 8 }, (_, index) =>
+        `<button type="button">Run N${index + 1} rendered negative case</button>`).join("")}
+      <button type="button">Run rendered partial and unknown matrix</button>
+      <button type="button">Attempt N2 gate-off approval registration</button>
+    </section>
   `;
   const allButtons = Array.from(document.querySelectorAll("button"));
   const named = (name: string) =>
@@ -157,6 +178,12 @@ function mountProductControls(clicks: string[]) {
   }
   named("Validate project root").addEventListener("click", () => {
     clicks.push("validate");
+    document.querySelector('[data-mvp15d-observation="project-validation"]')!.textContent = "valid";
+    named("Add project root").disabled = false;
+  });
+  named("Add project root").addEventListener("click", () => {
+    clicks.push("add");
+    document.querySelector('[data-mvp15d-observation="project-add"]')!.textContent = "added";
     named("Trust project root").disabled = false;
   });
   named("Trust project root").addEventListener("click", () => {
@@ -214,24 +241,42 @@ function mountProductControls(clicks: string[]) {
     clicks.push("disconnect");
     region.querySelector('[data-mvp15d-observation="mcp-status"]')!.textContent = "disconnected";
   });
+  const productStatus = document.querySelector('[data-mvp15d-observation="product-control-status"]')!;
+  const productControls: Record<string, [string, string]> = {
+    "Tool Search ON": ["tool-search-on", "tool_search_on"],
+    "Tool Search OFF": ["tool-search-off", "tool_search_off"],
+    "MCP reconnect": ["mcp-reconnect", "mcp_reconnected"],
+    "Change MCP endpoint": ["endpoint-change", "endpoint_changed"],
+    RefreshTools: ["refresh-tools", "tools_refreshed"],
+    "Retract after UE restart": ["ue-restart", "ue_restart_retracted"],
+    "Reject stale completion": ["stale-completion", "stale_completion_retracted"],
+    "Restart renderer": ["renderer-restart", "renderer_restart_completed"],
+    "Resume renderer restart": ["renderer-resume", "renderer_restart_resumed"],
+  };
+  for (const [name, [click, status]] of Object.entries(productControls)) {
+    named(name).addEventListener("click", () => {
+      clicks.push(click);
+      productStatus.textContent = status;
+    });
+  }
+  const negativeStatus = document.querySelector('[data-mvp15d-observation="negative-control-status"]')!;
+  for (let caseNumber = 1; caseNumber <= 8; caseNumber += 1) {
+    named(`Run N${caseNumber} rendered negative case`).addEventListener("click", () => {
+      clicks.push(`negative-n${caseNumber}`);
+      negativeStatus.textContent = `completed:N${caseNumber}`;
+    });
+  }
+  named("Run rendered partial and unknown matrix").addEventListener("click", () => {
+    clicks.push("partial-unknown");
+    negativeStatus.textContent = "completed:partial-unknown";
+  });
+  named("Attempt N2 gate-off approval registration").addEventListener("click", () => {
+    clicks.push("gate-off-registration");
+    negativeStatus.textContent = "feature_disabled";
+  });
   const asset = document.querySelector('[aria-label="Asset mutation panel"]')!;
   const assetButton = (name: string) =>
     asset.querySelector(`[aria-label="${name}"]`) as HTMLButtonElement;
-  if (bridgeAssetListener) globalThis.window.removeEventListener("uagent:mvp15d-asset-action", bridgeAssetListener);
-  bridgeAssetListener = (event) => {
-    const action = (event as CustomEvent<{ action?: string }>).detail?.action;
-    const names: Record<string, string> = {
-      dryRun: "Dry-run sandbox asset mutation",
-      approve: "Approve sandbox asset mutation",
-      execute: "Execute sandbox asset mutation",
-      verify: "Verify sandbox asset mutation",
-      rollback: "Rollback sandbox asset mutation",
-      finalVerify: "Final verify restored Content",
-      replay: "Inspect recorded asset replay",
-    };
-    if (action && names[action]) assetButton(names[action]).click();
-  };
-  globalThis.window.addEventListener("uagent:mvp15d-asset-action", bridgeAssetListener);
   assetButton("Dry-run sandbox asset mutation").addEventListener("click", () => {
     clicks.push("dry-run");
     asset.querySelector('[data-mvp15d-observation="asset-execution-mode"]')!.textContent = "real";
@@ -275,8 +320,6 @@ function clearDom() {
 }
 
 afterEach(() => {
-  if (bridgeAssetListener) globalThis.window.removeEventListener("uagent:mvp15d-asset-action", bridgeAssetListener);
-  bridgeAssetListener = null;
   clearDom();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -428,7 +471,7 @@ describe("R5.3 live product ordered calls through a deterministic local fake tra
       "fingerprint",
       "disconnect",
     ]);
-    expect(evidenceMock.runMvp15dUiBridgeAction).toHaveBeenCalledWith("productAuthority");
+    expect(evidenceMock.runMvp15dUiBridgeAction).not.toHaveBeenCalledWith("productAuthority");
   });
 
   it("drives the mounted product UI without constructing a second runtime adapter", async () => {
@@ -452,6 +495,7 @@ describe("R5.3 live product ordered calls through a deterministic local fake tra
     expect(adapterMock.createDesktopRuntimeAdapter).not.toHaveBeenCalled();
     expect(clicks).toEqual([
       "validate",
+      "add",
       "trust",
       "editor-discover",
       "editor-attach",
@@ -459,6 +503,14 @@ describe("R5.3 live product ordered calls through a deterministic local fake tra
       "connect",
       "discover",
       "verify-companion",
+      "tool-search-on",
+      "tool-search-off",
+      "refresh-tools",
+      "mcp-reconnect",
+      "endpoint-change",
+      "renderer-restart",
+      "ue-restart",
+      "stale-completion",
       "disconnect",
     ]);
   });
@@ -488,7 +540,8 @@ describe("R5.3 live UI validate/add/confirmTrust ordering on a task-owned fixtur
   }
 
   it("drives validate, add, then confirmTrust in order on a mounted fixture root", async () => {
-    mountProductControls([]);
+    const clicks: string[] = [];
+    mountProductControls(clicks);
     const projectRoot = "C:\\repo\\external\\mvp15d-final-d13-d16-20260731_120000";
     const { configuredInvoke, steps } = liveUiInvoke(projectRoot);
     await startMvp15dRuntimeBridge(configuredInvoke, fixedAuthorityAdapter);
@@ -521,7 +574,46 @@ describe("R5.3 live UI validate/add/confirmTrust ordering on a task-owned fixtur
       "observationStop",
       "mcpDisconnect",
     ]);
-    expect(evidenceMock.runMvp15dUiBridgeAction).toHaveBeenCalledWith("uiAuthority");
+    expect(clicks).toEqual([
+      "validate",
+      "add",
+      "negative-n1",
+      "negative-n2",
+      "trust",
+      "editor-discover",
+      "editor-attach",
+      "editor-snapshot",
+      "connect",
+      "discover",
+      "verify-companion",
+      "dry-run",
+      "approve",
+      "execute",
+      "verify",
+      "rollback",
+      "final-verify",
+      "inspect-replay",
+      "negative-n3",
+      "negative-n4",
+      "negative-n5",
+      "negative-n6",
+      "negative-n7",
+      "negative-n8",
+      "partial-unknown",
+      "editor-stop",
+      "disconnect",
+    ]);
+    expect(evidenceMock.runMvp15dUiBridgeAction).not.toHaveBeenCalledWith("uiAuthority");
+    expect(evidenceMock.runMvp15dUiBridgeAction).not.toHaveBeenCalledWith("partialUnknownDiagnostic");
+    expect(clicks).toEqual(expect.arrayContaining([
+      "dry-run",
+      "approve",
+      "execute",
+      "verify",
+      "rollback",
+      "final-verify",
+      "inspect-replay",
+    ]));
   });
 });
 

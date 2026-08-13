@@ -27,8 +27,8 @@ import {
 } from "./mvp15d-loaded-module-observer.mjs";
 
 const MANIFEST_SCHEMA = "uagent.ue-companion-plugin.build-manifest.v3";
-const BUILD_RESULT_SCHEMA = "uagent.mvp15d.final.build-result.v3";
-const LOADED_LEDGER_SCHEMA = "uagent.mvp15d.final.loaded-modules.v1";
+const BUILD_RESULT_SCHEMA = "uagent.mvp15d.final.build-result.v4";
+const LOADED_LEDGER_SCHEMA = "uagent.mvp15d.final.loaded-modules.v2";
 const TASK_GENERATION = "final-d13-d16";
 const TOOL_NAMES = [
   "ue.asset.create_folder",
@@ -506,11 +506,11 @@ function validateBuildEvidence(args, provenance, packageRoot, plugin) {
     [
       "schemaVersion",
       "taskGeneration",
-      "taskMarker",
+      "taskMarkerSha256",
       "status",
       "reason",
       "commandFingerprint",
-      "childPid",
+      "childPidBindingSha256",
       "childExitCode",
       "wrapperExitCode",
       "sourceArtifacts",
@@ -522,7 +522,7 @@ function validateBuildEvidence(args, provenance, packageRoot, plugin) {
   );
   assertExactKeys(
     result.closeout,
-    ["wrapperPid", "childExited", "taskOwnedResidualCount"],
+    ["wrapperPidBindingSha256", "childExited", "taskOwnedResidualCount"],
     "MANIFEST_BUILD_RESULT_INVALID",
   );
   if (
@@ -531,6 +531,9 @@ function validateBuildEvidence(args, provenance, packageRoot, plugin) {
     result.status !== "build_completed" ||
     result.reason !== null ||
     result.commandFingerprint !== ledger.commandFingerprint ||
+    !isHex(result.taskMarkerSha256) ||
+    (result.childPidBindingSha256 !== null && !isHex(result.childPidBindingSha256)) ||
+    !isHex(result.closeout?.wrapperPidBindingSha256) ||
     result.childExitCode !== 0 ||
     result.wrapperExitCode !== 0 ||
     result.packagePresent !== true ||
@@ -910,8 +913,8 @@ function loadedAuthorityBindingMaterial(loaded) {
     fixtureUsed: loaded.fixtureUsed,
     taskGeneration: loaded.taskGeneration,
     taskId: loaded.taskId,
-    taskMarker: loaded.taskMarker,
-    sessionId: loaded.sessionId,
+    taskMarkerSha256: loaded.taskMarkerSha256,
+    sessionBindingSha256: loaded.sessionBindingSha256,
     generation: loaded.generation,
     sourceCommit: loaded.sourceCommit,
     sourceTreeSha256: loaded.sourceTreeSha256,
@@ -922,7 +925,7 @@ function loadedAuthorityBindingMaterial(loaded) {
     installedRoot: loaded.installedRoot,
     process: loaded.process,
     modules: loaded.modules,
-    earlyIdentity: loaded.authority.earlyIdentity,
+    processIdentitySha256: loaded.authority.processIdentitySha256,
     sources: loaded.authority.sources,
   };
 }
@@ -931,10 +934,9 @@ function validateLoadedAuthorityShape(loaded, manifest, installed) {
   const code = "LOADED_LEDGER_INVALID";
   assertExactKeys(
     loaded.authority,
-    ["schemaVersion", "earlyIdentity", "sources", "bindingSha256"],
+    ["schemaVersion", "processIdentitySha256", "sources", "bindingSha256"],
     code,
   );
-  assertExactKeys(loaded.authority.earlyIdentity, ["relativePath", "size", "sha256"], code);
   assertExactKeys(
     loaded.authority.sources,
     ["phaseProducer", "helper", "observer", "jobRunner"],
@@ -965,11 +967,7 @@ function validateLoadedAuthorityShape(loaded, manifest, installed) {
   if (
     loaded.taskGeneration !== TASK_GENERATION ||
     loaded.authority.schemaVersion !== PRODUCTION_AUTHORITY_SCHEMA ||
-    loaded.authority.earlyIdentity.relativePath !==
-      `metadata/ue-automation.${loaded.sessionId}.early-identity.json` ||
-    !Number.isSafeInteger(loaded.authority.earlyIdentity.size) ||
-    loaded.authority.earlyIdentity.size <= 0 ||
-    !isHex(loaded.authority.earlyIdentity.sha256) ||
+    !isHex(loaded.authority.processIdentitySha256) ||
     loaded.package.artifactCount !== manifest.artifacts.length ||
     loaded.package.sha256 !== packageSha256 ||
     loaded.installedRoot.artifactCount !== installed.artifacts.length ||
@@ -1037,8 +1035,8 @@ function verifyInstalled(args) {
           "fixtureUsed",
           "taskGeneration",
           "taskId",
-          "taskMarker",
-          "sessionId",
+          "taskMarkerSha256",
+          "sessionBindingSha256",
           "generation",
           "sourceCommit",
           "sourceTreeSha256",
@@ -1056,8 +1054,8 @@ function verifyInstalled(args) {
           "productionOrigin",
           "fixtureUsed",
           "taskId",
-          "taskMarker",
-          "sessionId",
+          "taskMarkerSha256",
+          "sessionBindingSha256",
           "generation",
           "sourceCommit",
           "sourceTreeSha256",
@@ -1076,9 +1074,8 @@ function verifyInstalled(args) {
     loaded.productionOrigin !== PRODUCTION_ORIGIN ||
     loaded.fixtureUsed !== false ||
     loaded.taskId !== manifest.taskId ||
-    !/^[A-Za-z0-9._:-]{24,160}$/.test(loaded.taskMarker) ||
-    typeof loaded.sessionId !== "string" ||
-    !/^[A-Za-z0-9._:-]{16,160}$/.test(loaded.sessionId) ||
+    !isHex(loaded.taskMarkerSha256) ||
+    !isHex(loaded.sessionBindingSha256) ||
     !Number.isSafeInteger(loaded.generation) ||
     loaded.generation < 1 ||
     !isHex(loaded.sourceCommit, 40) ||
@@ -1103,7 +1100,12 @@ function verifyInstalled(args) {
   );
   assertExactKeys(
     loaded.process,
-    ["pid", "creationFileTimeUtc", "executableBasename", "executableSha256"],
+    [
+      "pidBindingSha256",
+      "creationFileTimeUtcBindingSha256",
+      "executableBasename",
+      "executableSha256",
+    ],
     "LOADED_LEDGER_INVALID",
   );
   if (
@@ -1114,9 +1116,8 @@ function verifyInstalled(args) {
     !isHex(loaded.package.sha256) ||
     !/^[A-Za-z0-9._-]{1,64}$/.test(loaded.installedRoot.id) ||
     !isHex(loaded.installedRoot.sha256) ||
-    !Number.isSafeInteger(loaded.process.pid) ||
-    loaded.process.pid <= 0 ||
-    !/^[0-9]{1,30}$/.test(loaded.process.creationFileTimeUtc) ||
+    !isHex(loaded.process.pidBindingSha256) ||
+    !isHex(loaded.process.creationFileTimeUtcBindingSha256) ||
     typeof loaded.process.executableBasename !== "string" ||
     loaded.process.executableBasename.length === 0 ||
     loaded.process.executableBasename.includes("/") ||
@@ -1175,8 +1176,8 @@ function verifyInstalled(args) {
     installedCopyCount: 1,
     shadowCopyCount: 0,
     loadedModuleCount: loadedArtifacts.length,
-    processId: loaded.process.pid,
-    sessionId: loaded.sessionId,
+    processIdBindingSha256: loaded.process.pidBindingSha256,
+    sessionBindingSha256: loaded.sessionBindingSha256,
     generation: loaded.generation,
   };
 }

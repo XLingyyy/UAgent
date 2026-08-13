@@ -1,7 +1,6 @@
 import {
   readMvp15dProductStoreEvidence,
   readMvp15dUiStoreEvidence,
-  runMvp15dUiBridgeAction,
 } from "../stores/ui-store";
 import { getFixedAppRuntimeAdapter } from "./runtime-store";
 import type { DesktopRuntimeAdapter } from "./desktop-runtime-adapter";
@@ -11,7 +10,7 @@ type NativeInvoke = <T>(command: string, payload?: Record<string, unknown>) => P
 interface BridgeConfiguration {
   enabled: boolean;
   bridgeVersion: string;
-  phase: "disabled" | "product-capture" | "ui-lifecycle";
+  phase: "disabled" | "product-capture" | "ui-lifecycle" | "gate-off-negative";
   mode: "disabled" | "capability-only" | "live";
   taskId: string;
   session: string;
@@ -83,6 +82,20 @@ async function runCapabilityHandshake(
     findButton("Discover", mcpRegion);
     findButton("Disconnect", mcpRegion);
     findRegion("UAgent UE Companion Plugin");
+    const productControls = findRegion("MVP15D product controls");
+    for (const control of [
+      "Tool Search ON",
+      "Tool Search OFF",
+      "MCP reconnect",
+      "Change MCP endpoint",
+      "RefreshTools",
+      "Retract after UE restart",
+      "Reject stale completion",
+      "Restart renderer",
+      "Resume renderer restart",
+    ]) {
+      findButton(control, productControls);
+    }
     await recordStep(invoke, "normal_product_path_bound");
   } else {
     // Capability-only: the actual renderer is expected to present the rendered
@@ -92,12 +105,15 @@ async function runCapabilityHandshake(
     // then wait for the actual controls to be present and rendered.
     const projectRootInput = findInput("Project root reference");
     const validateButton = findButton("Validate project root");
+    const addButton = findButton("Add project root");
     const trustButton = findButton("Trust project root");
     if (
       !projectRootInput ||
       !validateButton ||
+      !addButton ||
       !trustButton ||
       !validateButton.textContent ||
+      !addButton.textContent ||
       !trustButton.textContent
     ) {
       throw new Error("mvp15d_rendered_driver_contract_unavailable");
@@ -161,11 +177,21 @@ async function runProductCapture(
     throw new Error("mvp15d_product_fingerprint_missing");
   }
   await recordStep(invoke, "fingerprint");
-  await runMvp15dUiBridgeAction("productAuthority");
-  await waitUntil(
-    () => observationText("companion-status", companionRegion) === "Verified",
-    "mvp15d_product_retraction_orchestration_failed",
+  await activateProductControl("Tool Search ON", "tool_search_on");
+  await activateProductControl("Tool Search OFF", "tool_search_off");
+  await activateProductControl("RefreshTools", "tools_refreshed");
+  await activateProductControl("MCP reconnect", "mcp_reconnected");
+  await activateProductControl("Change MCP endpoint", "endpoint_changed");
+  const restartStatus = await activateProductControl(
+    "Restart renderer",
+    "renderer_restart_completed",
+    "renderer_restart_requested",
   );
+  if (restartStatus === "renderer_restart_requested") {
+    throw new Error("mvp15d_renderer_restart_handoff_requested");
+  }
+  await activateProductControl("Retract after UE restart", "ue_restart_retracted");
+  await activateProductControl("Reject stale completion", "stale_completion_retracted");
   findButton("Disconnect", mcpRegion).click();
   await waitUntil(
     () => observationText("mcp-status", mcpRegion) === "disconnected",
@@ -207,13 +233,31 @@ async function runProductSuccessor(
     () => observationText("companion-status", companionRegion) === "Verified",
     "mvp15d_product_successor_attestation_failed",
   );
-  await runMvp15dUiBridgeAction(
-    "productAuthoritySuccessor",
-    `${configuration.rendererHandoffId}\n${configuration.endpoint}`,
-  );
-  findButton("Disconnect", mcpRegion).click();
+  const resumeButton = findButton("Resume renderer restart", findRegion("MVP15D product controls"));
+  resumeButton.dataset.mvp15dContext = `${configuration.rendererHandoffId}\n${configuration.endpoint}`;
+  resumeButton.click();
   await waitUntil(
-    () => observationText("mcp-status", mcpRegion) === "disconnected",
+    () => observationText("product-control-status") === "renderer_restart_resumed",
+    "mvp15d_product_successor_authority_unavailable",
+  );
+  await restartEditorObservationThroughControls();
+  await openSettingsPage();
+  const refreshedCompanionRegion = findRegion("UAgent UE Companion Plugin");
+  await waitUntil(
+    () => !findButton("Verify companion identity", refreshedCompanionRegion).disabled,
+    "mvp15d_product_successor_attestation_unavailable",
+  );
+  findButton("Verify companion identity", refreshedCompanionRegion).click();
+  await waitUntil(
+    () => observationText("companion-status", refreshedCompanionRegion) === "Verified",
+    "mvp15d_product_successor_attestation_failed",
+  );
+  await activateProductControl("Retract after UE restart", "ue_restart_retracted");
+  await activateProductControl("Reject stale completion", "stale_completion_retracted");
+  const refreshedMcpRegion = findRegion("MCP connection");
+  findButton("Disconnect", refreshedMcpRegion).click();
+  await waitUntil(
+    () => observationText("mcp-status", refreshedMcpRegion) === "disconnected",
     "mvp15d_product_successor_disconnect_failed",
   );
   await recordStep(invoke, "disconnect");
@@ -364,13 +408,86 @@ function findButtonByAccessibleName(name: string, root: ParentNode = document): 
 
 async function dispatchAssetAction(
   accessibleName: string,
-  action: "dryRun" | "approve" | "execute" | "verify" | "rollback" | "finalVerify" | "replay",
-  sourceAssetPath?: string,
 ): Promise<void> {
   const button = findButtonByAccessibleName(accessibleName, findRegion("Asset mutation panel"));
   if (button.disabled) throw new Error("mvp15d_rendered_button_disabled");
-  button.focus();
-  await runMvp15dUiBridgeAction(action, sourceAssetPath);
+  button.click();
+}
+
+async function activateProductControl(
+  accessibleName: string,
+  completedStatus: string,
+  alternateStatus?: string,
+): Promise<string> {
+  const button = findButton(accessibleName, findRegion("MVP15D product controls"));
+  if (button.disabled) throw new Error("mvp15d_rendered_button_disabled");
+  button.click();
+  await waitUntil(() => {
+    const status = observationText("product-control-status");
+    return status === completedStatus || status === alternateStatus;
+  }, "mvp15d_product_control_timeout");
+  return observationText("product-control-status");
+}
+
+async function activateNegativeControl(caseNumber: number): Promise<void> {
+  const region = findRegion("MVP15D negative acceptance controls");
+  const button = findButton(`Run N${caseNumber} rendered negative case`, region);
+  if (button.disabled) throw new Error("mvp15d_rendered_button_disabled");
+  button.click();
+  await waitUntil(
+    () => observationText("negative-control-status", region) === `completed:N${caseNumber}`,
+    `mvp15d_negative_n${caseNumber}_control_timeout`,
+  );
+}
+
+async function activatePartialUnknownControl(): Promise<void> {
+  const region = findRegion("MVP15D negative acceptance controls");
+  const button = findButton("Run rendered partial and unknown matrix", region);
+  if (button.disabled) throw new Error("mvp15d_rendered_button_disabled");
+  button.click();
+  await waitUntil(
+    () => observationText("negative-control-status", region) === "completed:partial-unknown",
+    "mvp15d_partial_unknown_control_timeout",
+  );
+}
+
+async function restartEditorObservationThroughControls(): Promise<void> {
+  findButtonByAccessibleName("Back to app").click();
+  await waitUntil(
+    () => document.querySelector('[aria-label="Utility drawer"]') !== null,
+    "mvp15d_utility_drawer_unavailable",
+  );
+  const drawer = findRegion("Utility drawer");
+  if (drawer.getAttribute("aria-hidden") === "true") {
+    findButtonByAccessibleName("Open utility drawer").click();
+    await waitUntil(
+      () => findRegion("Utility drawer").getAttribute("aria-hidden") === "false",
+      "mvp15d_utility_drawer_unavailable",
+    );
+  }
+  await activateTab("UE");
+  let editor = findRegion("Editor panel");
+  findButtonByAccessibleName("Stop editor observation session", editor).click();
+  await waitUntil(
+    () => observationText("editor-session-state", findRegion("Editor panel")) === "stopped",
+    "mvp15d_ui_observation_stop_timeout",
+  );
+  editor = findRegion("Editor panel");
+  findButtonByAccessibleName("Discover editor processes", editor).click();
+  await waitUntil(
+    () => !findButtonByAccessibleName("Attach editor observation session", findRegion("Editor panel")).disabled,
+    "mvp15d_editor_discovery_timeout",
+  );
+  findButtonByAccessibleName("Attach editor observation session", findRegion("Editor panel")).click();
+  await waitUntil(
+    () => !findButtonByAccessibleName("Read editor observation snapshot", findRegion("Editor panel")).disabled,
+    "mvp15d_editor_attach_timeout",
+  );
+  findButtonByAccessibleName("Read editor observation snapshot", findRegion("Editor panel")).click();
+  await waitUntil(
+    () => observationText("editor-heartbeat", findRegion("Editor panel")).includes("alive true"),
+    "mvp15d_editor_snapshot_timeout",
+  );
 }
 
 function findTab(name: string): HTMLButtonElement {
@@ -405,6 +522,7 @@ async function prepareTrustedObservation(
   invoke: NativeInvoke,
   projectRoot: string,
   recordRendererSteps = true,
+  beforeTrust?: () => Promise<void>,
 ): Promise<void> {
   await openSettingsPage();
   const input = findInput("Project root reference");
@@ -412,13 +530,19 @@ async function prepareTrustedObservation(
   await settleRenderedInput();
   findButton("Validate project root").click();
   await waitUntil(
-    () => !findButton("Trust project root").disabled,
+    () =>
+      observationText("project-validation") === "valid" &&
+      !findButton("Add project root").disabled,
     "mvp15d_ui_validation_timeout",
   );
-  if (recordRendererSteps) {
-    await recordStep(invoke, "validate");
-    await recordStep(invoke, "add");
-  }
+  if (recordRendererSteps) await recordStep(invoke, "validate");
+  findButton("Add project root").click();
+  await waitUntil(
+    () => observationText("project-add") === "added" && !findButton("Trust project root").disabled,
+    "mvp15d_ui_add_timeout",
+  );
+  if (recordRendererSteps) await recordStep(invoke, "add");
+  if (beforeTrust) await beforeTrust();
   findButton("Trust project root").click();
   await waitUntil(
     () => observationText("project-trust") === "trusted",
@@ -476,7 +600,10 @@ async function runUiLifecycle(
   if (!configuration.endpoint) throw new Error("mvp15d_ui_endpoint_missing");
   await recordStep(invoke, "renderer_ready");
   await recordStep(invoke, "native_bridge_bound");
-  await prepareTrustedObservation(invoke, configuration.projectRoot);
+  await prepareTrustedObservation(invoke, configuration.projectRoot, true, async () => {
+    await activateNegativeControl(1);
+    await activateNegativeControl(2);
+  });
   await openSettingsPage();
   const mcpRegion = findRegion("MCP connection");
   setInputValue(findInputByAccessibleName("MCP endpoint URL"), configuration.endpoint);
@@ -522,7 +649,7 @@ async function runUiLifecycle(
   );
   setInputValue(findInputByAccessibleName("Source asset path"), "/Game/Test01");
   await settleRenderedInput();
-  await dispatchAssetAction("Dry-run sandbox asset mutation", "dryRun", "/Game/Test01");
+  await dispatchAssetAction("Dry-run sandbox asset mutation");
   await waitUntil(
     () =>
       observationText("asset-execution-mode", findRegion("Asset mutation panel")) === "real" &&
@@ -531,20 +658,20 @@ async function runUiLifecycle(
     "mvp15d_ui_dry_run_timeout",
   );
   await recordStep(invoke, "dryRun");
-  await dispatchAssetAction("Approve sandbox asset mutation", "approve");
+  await dispatchAssetAction("Approve sandbox asset mutation");
   await waitUntil(
     () => observationText("asset-registration", findRegion("Asset mutation panel")) === "registered",
     "mvp15d_ui_registration_timeout",
   );
   await recordStep(invoke, "approve");
   await recordStep(invoke, "register");
-  await dispatchAssetAction("Execute sandbox asset mutation", "execute");
+  await dispatchAssetAction("Execute sandbox asset mutation");
   await waitUntil(
     () => observationText("asset-execution", findRegion("Asset mutation panel")) === "executed",
     "mvp15d_ui_execute_timeout",
   );
   await recordStep(invoke, "execute");
-  await dispatchAssetAction("Verify sandbox asset mutation", "verify");
+  await dispatchAssetAction("Verify sandbox asset mutation");
   await waitUntil(
     () => observationText("asset-verification", findRegion("Asset mutation panel")) === "passed",
     "mvp15d_ui_verify_timeout",
@@ -554,26 +681,32 @@ async function runUiLifecycle(
     globalThis.setTimeout(resolve, configuration.approvalTtlWaitMilliseconds),
   );
   await recordStep(invoke, "crossTtl");
-  await dispatchAssetAction("Rollback sandbox asset mutation", "rollback");
+  await dispatchAssetAction("Rollback sandbox asset mutation");
   await waitUntil(
     () => observationText("asset-rollback", findRegion("Asset mutation panel")) === "rolled_back",
     "mvp15d_ui_rollback_timeout",
   );
   await recordStep(invoke, "rollback");
-  await dispatchAssetAction("Final verify restored Content", "finalVerify");
+  await dispatchAssetAction("Final verify restored Content");
   await waitUntil(
     () => observationText("asset-final-verification", findRegion("Asset mutation panel")) === "passed",
     "mvp15d_ui_final_verification_timeout",
   );
   await recordStep(invoke, "finalVerify");
-  await dispatchAssetAction("Inspect recorded asset replay", "replay");
+  await dispatchAssetAction("Inspect recorded asset replay");
   await waitUntil(
     () => observationText("asset-replay-inspection", findRegion("Asset mutation panel")) === "recorded",
     "mvp15d_ui_replay_timeout",
   );
   await recordStep(invoke, "replay");
-  await runMvp15dUiBridgeAction("uiAuthority");
+  await openSettingsPage();
+  for (let caseNumber = 3; caseNumber <= 8; caseNumber += 1) {
+    await activateNegativeControl(caseNumber);
+  }
+  await activatePartialUnknownControl();
 
+  findButtonByAccessibleName("Back to app").click();
+  await waitUntil(() => document.querySelector('[role="tab"]') !== null, "mvp15d_app_return_timeout");
   await activateTab("UE");
   await waitUntil(() => document.querySelector('[aria-label="Editor panel"]') !== null, "mvp15d_editor_panel_unavailable");
   findButtonByAccessibleName("Stop editor observation session", findRegion("Editor panel")).click();
@@ -596,6 +729,19 @@ async function runUiLifecycle(
   await invoke("mvp15d_bridge_publish_ui_evidence", { input: uiEvidence });
 }
 
+async function runGateOffNegativeChild(invoke: NativeInvoke): Promise<void> {
+  await openSettingsPage();
+  const region = findRegion("MVP15D negative acceptance controls");
+  const button = findButton("Attempt N2 gate-off approval registration", region);
+  if (button.disabled) throw new Error("mvp15d_gate_off_child_control_disabled");
+  button.click();
+  await waitUntil(
+    () => observationText("negative-control-status", region) === "feature_disabled",
+    "mvp15d_gate_off_child_registration_timeout",
+  );
+  await invoke("mvp15d_gate_off_child_complete");
+}
+
 export async function startMvp15dRuntimeBridge(
   invoke: NativeInvoke | null = getNativeInvoke(),
   runtimeAdapterOverride: Pick<DesktopRuntimeAdapter, "activateMvp15dFixedObservationAuthority"> | null = null,
@@ -603,6 +749,11 @@ export async function startMvp15dRuntimeBridge(
   if (!invoke) return;
   const configuration = await invoke<BridgeConfiguration>("mvp15d_bridge_configuration");
   if (!configuration.enabled) return;
+  if (configuration.phase === "gate-off-negative") {
+    observationTimeoutMilliseconds = configuration.observationTimeoutMilliseconds;
+    await runGateOffNegativeChild(invoke);
+    return;
+  }
   if (configuration.rendererHandoffId && !configuration.rendererHandoffPending) {
     if (configuration.rendererParentLifecycleStatus === "failed") {
       throw new Error(

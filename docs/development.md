@@ -13,6 +13,12 @@ PASS` and are checkpointed at implementation commit
 cleanup removed all 4,601 roots with failures 0 and residual 0; fresh asset
 `40/40` and bridge `14/14` regressions left zero matching roots. `External Gate /
 TEMP cleanup: PASS`.
+Final Live Acceptance Resume Rework 1 has `Review Verdict: PASS` for source
+content and controlled verification; its implementation checkpoint is pending.
+The rendered settings controls now drive N1-N8 through the production adapter.
+N1 performs the real registration attempt before trust, N2 runs the real
+registration attempt in an exact task-owned child with the native mutation gate
+disabled, and N7/N8 use actual MCP execute/rollback requests and outcomes.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -24,7 +30,8 @@ entries, and a complete 356-entry production/Git watch set. New production
 files and deleted tracked production files cannot leave the identity unchanged;
 normal repositories, linked worktrees, symbolic/detached HEAD, loose refs,
 packed refs, and same-branch commits are covered. G14 is `IMPLEMENTED`; current
-Rework 9 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. UE 5.8.1 compatibility and overall acceptance
+Rework 1 G15 checkpoint integrity is `IN_PROGRESS` pending the supervisor
+checkpoint; G16 is `PARTIAL`. UE 5.8.1 compatibility and overall acceptance
 remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C are
 `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
@@ -79,12 +86,12 @@ unattributed. Any future matching root is new residue and fails verification.
 `UAGENT_ENABLE_ASSET_MUTATION` remains default-off and is set to `1` only by a
 future fixed live UI child.
 
-Controlled responses in source tests exercise the future control flow without
-claiming actual Tool Search, installed/load/manifest, fingerprint, retraction,
-N1-N8, partial, or closeout evidence. The old release and all 15A-15C artifacts
-are invalid. Do not invoke 15A, live UE/MCP, or real mutation until a dedicated
-authorized task runs from Rework 9 implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The old
+Controlled source and built-child checks exercise the future control flow
+without claiming current clean-checkout Tool Search, installed/load/manifest,
+fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
+release and all 15A-15C artifacts are invalid. Do not invoke 15A, live UE/MCP,
+or real mutation until a dedicated authorized task runs from the
+supervisor-reviewed Rework 1 implementation checkpoint. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 
@@ -159,12 +166,14 @@ default-off and accepts only the fixed ordered
 `UAGENT_ENABLE_MVP15D_TASK_BRIDGE=1`.
 
 For UE Automation, the sole production loaded-module publisher consumes the
-Job runner's early identity and re-observes the live process. It explicitly
-requires PID and creation FILETIME equality and independently derives source,
-project, manifest, package, install, executable, producer, helper, observer,
-and Job facts before it can create the in-process publisher brand. Pure builders
-and injected observation always remain fixture-marked. The brand is not
-serialized. The published ledger uses exclusive atomic write/fsync/rename.
+Job runner's private early identity and re-observes the live process. It
+explicitly requires PID and creation FILETIME equality and independently
+derives source, project, manifest, package, install, executable, producer,
+helper, observer, and Job facts before it can create the in-process publisher
+brand. Raw marker/session/process identity is deleted after validation; the
+published ledger retains domain-separated SHA-256 bindings and uses exclusive
+atomic write/fsync/rename. Pure builders and injected observation always remain
+fixture-marked. The brand is not serialized.
 Exported `verifyUeProductionArtifactConsistency()` / `verifyPhaseSummary()`,
 public `validate*` callers, and CLI `verify` rehash and cross-bind every
 artifact, exact module record, terminal event, and zero-residue Job closeout,
@@ -206,18 +215,19 @@ requires exactly one project copy and independently hashes loaded modules.
 Structural loaded-module verification is insufficient for final acceptance.
 Each formal live phase is dispatched to its repository-owned producer adapter,
 which uses a fixed executable and validated arguments with shell expansion
-disabled. Final summaries require retained raw or deterministically redacted
-source artifacts produced through a process/session/generation-bound producer
-ledger. Arbitrary live `--input`, fixture origin, caller-authored success,
+disabled. Final summaries require deterministically redacted source artifacts
+and domain-separated process/session/generation bindings produced through the
+fixed producer ledger. Arbitrary live `--input`, fixture origin, caller-authored success,
 mixed ownership/generation, hash drift, missing terminal events, and closeout
 residue are rejected.
 
 Inventory creation accepts only the documented file/directory allowlist,
 including required empty directories. It rejects unknown entries, unexpected
 generated trees, links/reparse points, case collisions, escapes, raw secrets,
-raw local paths, and credential-bearing endpoints. Required redaction stores
-only the derivative, deterministic ledger, and raw-source size/hash facts; the
-raw source is not retained. Verification independently recomputes the semantic
+raw local paths, PID/creation FILETIME/session identifiers, and
+credential-bearing endpoints. Required redaction stores only the derivative,
+deterministic ledger, binding hashes, and raw-source size/hash facts; the raw
+source is not retained. Verification independently recomputes the semantic
 summary in a new Node process and rejects semantic, manifest/package/module, or
 inventory/hash drift.
 

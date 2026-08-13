@@ -18,7 +18,10 @@ import {
   useThreadStore,
 } from "./ui-store";
 import type { ProviderConfig } from "../types/provider";
-import { createDesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
+import {
+  createDesktopRuntimeAdapter,
+  type Mvp15dProductObservationPort,
+} from "../runtime/desktop-runtime-adapter";
 
 const tauriGlobal = globalThis as typeof globalThis & {
   __TAURI_INTERNALS__?: { invoke?: (command: string, payload?: unknown) => Promise<unknown> };
@@ -332,7 +335,17 @@ describe("ui-store", () => {
     fireEvent.click(screen.getByRole("button", { name: "Validate project root" }));
 
     expect(await screen.findByText("Validation ready: LyraStarter")).toBeTruthy();
-    expect(screen.getByText("[user-home]/LyraStarter")).toBeTruthy();
+    const addProjectRoot = screen.getByRole("button", { name: "Add project root" });
+    const trustProjectRoot = screen.getByRole("button", { name: "Trust project root" });
+    await waitFor(() => expect((addProjectRoot as HTMLButtonElement).disabled).toBe(false));
+    expect((trustProjectRoot as HTMLButtonElement).disabled).toBe(true);
+    expect(document.querySelector('[data-mvp15d-observation="project-validation"]')?.getAttribute("data-mvp15d-value"))
+      .toBe("valid");
+    fireEvent.click(addProjectRoot);
+    expect(await screen.findByText("[user-home]/LyraStarter")).toBeTruthy();
+    await waitFor(() => expect((trustProjectRoot as HTMLButtonElement).disabled).toBe(false));
+    expect(document.querySelector('[data-mvp15d-observation="project-add"]')?.getAttribute("data-mvp15d-value"))
+      .toBe("added");
     expect(invoke).toHaveBeenCalledWith("validate_native_project_root", {
       input: { rootRef: rawRoot },
     });
@@ -342,6 +355,99 @@ describe("ui-store", () => {
     });
     expect(screen.queryByDisplayValue(rawRoot)).toBeNull();
     expect(document.body.textContent).not.toContain("C:/Users/Ada");
+  });
+
+  it("routes rendered MVP15D product controls through the ordered store handlers", async () => {
+    const calls: string[] = [];
+    let generation = 0;
+    const receipt = (label: string, request: Record<string, unknown> = {}) => ({
+      receiptId: `fixture-receipt:${label}`,
+      request,
+    });
+    const productPort: Mvp15dProductObservationPort = {
+      readMutationCounters: async () => ({ dryRun: 0, execute: 0, rollback: 0 }),
+      discover: async ({ toolSearchEnabled }) => {
+        generation += 1;
+        const mode = toolSearchEnabled ? "on" as const : "off" as const;
+        calls.push(`discover:${mode}`);
+        return {
+          mode,
+          configCall: receipt(`config-${generation}`, { intent: { toolSearchMode: mode } }),
+          rendererInstanceCall: receipt(`renderer-${generation}`),
+          connectCall: receipt(`connect-${generation}`),
+          initializeCall: receipt(`initialize-${generation}`),
+          discoverCall: receipt(`discover-${generation}`),
+          normalizeCall: receipt(`normalize-${generation}`),
+          fingerprintCall: receipt(`fingerprint-${generation}`),
+          nativeAttestation: receipt(`attestation-${generation}`),
+          mutationCounterCall: receipt(`counter-${generation}`),
+          toolSearchCalls: toolSearchEnabled ? [receipt(`tool-search-${generation}`)] : [],
+        };
+      },
+      retract: async (reason) => {
+        generation += 1;
+        calls.push(`retract:${reason}`);
+        return {
+          reason,
+          readyDiscovery: {
+            mode: "off",
+            configCall: receipt(`ready-config-${generation}`, { intent: { toolSearchMode: "off" } }),
+            rendererInstanceCall: receipt(`ready-renderer-${generation}`),
+            connectCall: receipt(`ready-connect-${generation}`),
+            initializeCall: receipt(`ready-initialize-${generation}`),
+            discoverCall: receipt(`ready-discover-${generation}`),
+            normalizeCall: receipt(`ready-normalize-${generation}`),
+            fingerprintCall: receipt(`ready-fingerprint-${generation}`),
+            nativeAttestation: receipt(`ready-attestation-${generation}`),
+            mutationCounterCall: receipt(`ready-counter-${generation}`),
+            toolSearchCalls: [],
+          },
+          rendererInstanceCall: receipt(`retraction-renderer-${generation}`),
+          transitionCall: receipt(`transition-${generation}`, { reason }),
+          nativeRetraction: receipt(`native-retraction-${generation}`, { reason }),
+        };
+      },
+    };
+    const runtimeClient = createDesktopRuntimeAdapter({
+      nativeInvoke: null,
+      mvp15dFixtureProductObservationPort: productPort,
+    });
+    render(
+      <UIProvider runtimeClient={runtimeClient}>
+        <ConfigSettings />
+      </UIProvider>,
+    );
+
+    const controls: Array<[string, string]> = [
+      ["Tool Search ON", "tool_search_on"],
+      ["Tool Search OFF", "tool_search_off"],
+      ["RefreshTools", "tools_refreshed"],
+      ["MCP reconnect", "mcp_reconnected"],
+      ["Change MCP endpoint", "endpoint_changed"],
+      ["Restart renderer", "renderer_restart_completed"],
+      ["Retract after UE restart", "ue_restart_retracted"],
+      ["Reject stale completion", "stale_completion_retracted"],
+    ];
+    for (const [name, status] of controls) {
+      fireEvent.click(screen.getByRole("button", { name }));
+      await waitFor(() => {
+        expect(document.querySelector('[data-mvp15d-observation="product-control-status"]')?.getAttribute("data-mvp15d-value"))
+          .toBe(status);
+      });
+    }
+
+    expect(calls).toEqual([
+      "discover:on",
+      "discover:off",
+      "retract:refresh_tools",
+      "retract:reconnect",
+      "retract:endpoint_change",
+      "retract:renderer_restart",
+      "retract:ue_restart",
+      "retract:stale_completion",
+    ]);
+    expect(screen.getByRole("button", { name: "Tool Search OFF" }).getAttribute("aria-pressed"))
+      .toBe("true");
   });
 
   it("forwards trusted browser preview root to the runtime service", () => {

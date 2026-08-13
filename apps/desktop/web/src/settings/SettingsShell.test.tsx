@@ -153,7 +153,7 @@ describe("SettingsShell", () => {
     expect(screen.getByLabelText("Approval safety controls")).toBeTruthy();
     expect(screen.getByText("Pause for approval")).toBeTruthy();
     expect(screen.getByLabelText("Sandbox mode controls")).toBeTruthy();
-    expect(screen.getByText("Fixture only")).toBeTruthy();
+    expect(screen.getByText(/Task sandbox enabled|Read-only \/ fixture/)).toBeTruthy();
     expect(screen.getByLabelText("Audit and session controls")).toBeTruthy();
     expect(screen.getByText("Redacted events only")).toBeTruthy();
   });

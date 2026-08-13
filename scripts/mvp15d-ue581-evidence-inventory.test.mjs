@@ -29,6 +29,7 @@ import {
   sha256,
   stable,
   validateLivePhaseCrossBinding,
+  validateRetainedValueCanary,
   verify,
 } from "./mvp15d-ue581-evidence-inventory.mjs";
 import { collectPackageArtifacts, manifestSelfHash } from "./mvp15d-manifest.mjs";
@@ -39,6 +40,39 @@ const TASK_ID =
   "TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-3-CHECKPOINT-READINESS";
 const COMMAND_FINGERPRINT = "c".repeat(64);
 let rootCounter = 0;
+
+function retainedBinding(kind, value) {
+  return sha256(Buffer.from(`uagent.mvp15d.retained.${kind}.v1\0${value}`, "utf8"));
+}
+
+function repositorySource(relativePath) {
+  const bytes = readFileSync(resolve(repository, ...relativePath.split("/")));
+  return { relativePath, size: bytes.length, sha256: sha256(bytes) };
+}
+
+function loadedAuthorityBindingMaterial(value) {
+  return {
+    schemaVersion: value.schemaVersion,
+    productionOrigin: value.productionOrigin,
+    fixtureUsed: value.fixtureUsed,
+    taskGeneration: value.taskGeneration,
+    taskId: value.taskId,
+    taskMarkerSha256: value.taskMarkerSha256,
+    sessionBindingSha256: value.sessionBindingSha256,
+    generation: value.generation,
+    sourceCommit: value.sourceCommit,
+    sourceTreeSha256: value.sourceTreeSha256,
+    sourceDirty: value.sourceDirty,
+    project: value.project,
+    manifest: value.manifest,
+    package: value.package,
+    installedRoot: value.installedRoot,
+    process: value.process,
+    modules: value.modules,
+    processIdentitySha256: value.authority.processIdentitySha256,
+    sources: value.authority.sources,
+  };
+}
 
 function nextRoot() {
   rootCounter += 1;
@@ -401,11 +435,11 @@ function makeFixture() {
     writeJson(resolve(root, "metadata", "build-result.json"), {
       schemaVersion: BUILD_RESULT_SCHEMA,
       taskGeneration: TASK_GENERATION,
-      taskMarker: "uagent-mvp15d-ue581-build-marker-0001",
+      taskMarkerSha256: retainedBinding("marker", "uagent-mvp15d-ue581-build-marker-0001"),
       status: "build_completed",
       reason: null,
       commandFingerprint: COMMAND_FINGERPRINT,
-      childPid: 100,
+      childPidBindingSha256: retainedBinding("pid", 100),
       childExitCode: 0,
       wrapperExitCode: 0,
       sourceArtifacts: [
@@ -415,25 +449,71 @@ function makeFixture() {
       packagePresent: true,
       successManifestPresent: false,
       closeout: {
-        wrapperPid: 99,
+        wrapperPidBindingSha256: retainedBinding("pid", 99),
         childExited: true,
         taskOwnedResidualCount: 0,
       },
     });
-    const { collected } = createManifest(root);
-    writeJson(resolve(root, "captures", "loaded-modules.json"), {
+    const { manifest, collected } = createManifest(root);
+    const taskMarker = "uagent-mvp15d-ue581-loaded-marker-0001";
+    const sessionId = "ue581-loaded-session-0001";
+    const pidBindingSha256 = retainedBinding("pid", 100);
+    const creationFileTimeUtcBindingSha256 = retainedBinding(
+      "creation-filetime",
+      "133987008000000000",
+    );
+    const executableSha256 = "e".repeat(64);
+    const processIdentitySha256 = sha256(Buffer.from(stable({
+      pidBindingSha256,
+      creationFileTimeUtcBindingSha256,
+      executableBasename: "UnrealEditor-Cmd.exe",
+      executableSha256,
+    }), "utf8"));
+    const packageSha256 = sha256(Buffer.from(stable(collected.artifacts), "utf8"));
+    const loaded = {
       schemaVersion: LOADED_MODULES_SCHEMA,
+      productionOrigin: "uagent.windows-job-module-observation.v1",
+      fixtureUsed: false,
+      taskGeneration: TASK_GENERATION,
       taskId: TASK_ID,
-      sessionId: "ue581-loaded-session-0001",
+      taskMarkerSha256: retainedBinding("marker", taskMarker),
+      sessionBindingSha256: retainedBinding("session", sessionId),
       generation: 1,
-      processIdentitySha256: "d".repeat(64),
-      modules: collected.modules.map(({ path, size, sha256: digest }) => ({
-        name: basename(path),
-        path: `package/UAgentAssetTools/${path}`,
-        size,
-        sha256: digest,
+      sourceCommit: manifest.sourceCommit,
+      sourceTreeSha256: manifest.sourceTreeSha256,
+      sourceDirty: false,
+      project: { id: "Mvp15Final", sha256: "f".repeat(64) },
+      manifest: {
+        sha256: sha256(readFileSync(resolve(root, "package", "UAgentAssetTools", "UAgentAssetTools.build.json"))),
+      },
+      package: { id: "UAgentAssetTools", artifactCount: collected.artifacts.length, sha256: packageSha256 },
+      installedRoot: { id: "UAgentAssetTools", artifactCount: collected.artifacts.length, sha256: packageSha256 },
+      process: {
+        pidBindingSha256,
+        creationFileTimeUtcBindingSha256,
+        executableBasename: "UnrealEditor-Cmd.exe",
+        executableSha256,
+      },
+      modules: collected.modules.map((module) => ({
+        ...module,
+        name: basename(module.path),
       })),
-    });
+      authority: {
+        schemaVersion: "uagent.mvp15d.loaded-module-production-authority.v1",
+        processIdentitySha256,
+        sources: {
+          phaseProducer: repositorySource("scripts/mvp15d-final-ue-automation-producer.mjs"),
+          helper: repositorySource("scripts/mvp15d-final-live-producer-helper.mjs"),
+          observer: repositorySource("scripts/mvp15d-loaded-module-observer.mjs"),
+          jobRunner: repositorySource("scripts/mvp15d-windows-job-process-runner.ps1"),
+        },
+        bindingSha256: "",
+      },
+    };
+    loaded.authority.bindingSha256 = sha256(
+      Buffer.from(stable(loadedAuthorityBindingMaterial(loaded)), "utf8"),
+    );
+    writeJson(resolve(root, "captures", "loaded-modules.json"), loaded);
     bindPackageArtifacts(root);
     for (const phase of PHASES) writePhaseEvidence(root, phase);
     return { root, rawRoot };
@@ -815,6 +895,14 @@ test("package artifact inventory and identity remain bound to manifest v3", () =
     manifest.sourceCommit = "e".repeat(40);
     manifest.manifestSelfSha256 = manifestSelfHash(manifest);
     writeJson(path, manifest);
+    const loadedPath = resolve(fixture.root, "captures", "loaded-modules.json");
+    const loaded = JSON.parse(readFileSync(loadedPath, "utf8"));
+    loaded.sourceCommit = manifest.sourceCommit;
+    loaded.manifest.sha256 = sha256(readFileSync(path));
+    loaded.authority.bindingSha256 = sha256(
+      Buffer.from(stable(loadedAuthorityBindingMaterial(loaded)), "utf8"),
+    );
+    writeJson(loadedPath, loaded);
     expectCode(() => create(fixture.root), "UE581_PACKAGE_INVENTORY_BINDING_INVALID");
   } finally {
     cleanup(fixture);
@@ -857,12 +945,68 @@ test("product inventory rejects mixed/source-only authority, missing raw observa
       const fixture = makeFixture();
       try {
         rewritePhaseEvents(fixture.root, "product-capture", change);
-        expectCode(() => create(fixture.root), "UE581_TRANSCRIPT_AUTHORITY_INVALID");
+        expectCode(
+          () => create(fixture.root),
+          name === "source only presented as live"
+            ? "UE581_RETAINED_SENSITIVE_VALUE"
+            : "UE581_TRANSCRIPT_AUTHORITY_INVALID",
+        );
       } finally {
         cleanup(fixture);
       }
     });
   }
+});
+
+test("recursive retained JSON and JSONL canaries reject raw live bindings and absolute paths", async (t) => {
+  const canaries = [
+    ["marker", { marker: "uagent-raw-marker" }],
+    ["session", { nested: { sessionId: "raw-session-0001" } }],
+    ["pid", { nested: [{ pid: 4412 }] }],
+    ["creation FILETIME", { process: { creationFileTimeUtc: "133987008000000000" } }],
+    ["endpoint", { transport: { endpoint: "http://127.0.0.1:18765/mcp" } }],
+    ["port", { transport: { port: 18765 } }],
+    ["absolute path", { diagnostic: { value: "C:\\Users\\fixture\\secret.txt" } }],
+  ];
+  for (const [name, canary] of canaries) {
+    await t.test(name, () => {
+      expectCode(
+        () => validateRetainedValueCanary({ envelope: { entries: [canary] } }),
+        "UE581_RETAINED_SENSITIVE_VALUE",
+      );
+      expectCode(
+        () => validateRetainedValueCanary([{ data: { nested: canary } }]),
+        "UE581_RETAINED_SENSITIVE_VALUE",
+      );
+    });
+  }
+
+  await t.test("retained JSON integration", () => {
+    const fixture = makeFixture();
+    try {
+      const loadedPath = resolve(fixture.root, "captures", "loaded-modules.json");
+      const loaded = JSON.parse(readFileSync(loadedPath, "utf8"));
+      loaded.authority.sources.observer.canary = { sessionId: "raw-session-0001" };
+      writeJson(loadedPath, loaded);
+      expectCode(() => create(fixture.root), "UE581_RETAINED_SENSITIVE_VALUE");
+    } finally {
+      cleanup(fixture);
+    }
+  });
+
+  await t.test("retained JSONL integration", () => {
+    const fixture = makeFixture();
+    try {
+      rewritePhaseEvents(fixture.root, "product-capture", (events) => {
+        events[0].producer.mode = "live";
+        events[0].data.nested = { endpoint: "http://127.0.0.1:18765/mcp" };
+        return events;
+      });
+      expectCode(() => create(fixture.root), "UE581_RETAINED_SENSITIVE_VALUE");
+    } finally {
+      cleanup(fixture);
+    }
+  });
 });
 
 test("live phase cross-binding rejects raw ledger, process, artifact, and parent closeout drift", () => {
@@ -880,6 +1024,12 @@ test("live phase cross-binding rejects raw ledger, process, artifact, and parent
     const executableSha256 = "3".repeat(64);
     const fixedArtifactBindingSha256 = "4".repeat(64);
     const nonceSha256 = "5".repeat(64);
+    const markerSha256 = retainedBinding("marker", marker);
+    const sessionBindingSha256 = retainedBinding("session", sessionId);
+    const endpointSha256 = retainedBinding("endpoint", "http://127.0.0.1:18765/mcp");
+    const childProcessIdBindingSha256 = retainedBinding("process-id", childPid);
+    const runtimeProcessIdBindingSha256 = retainedBinding("process-id", runtimePid);
+    const runtimePidBindingSha256 = retainedBinding("pid", runtimePid);
     const metadata = resolve(root, "metadata");
     const transcripts = resolve(root, "transcripts");
     mkdirSync(metadata, { recursive: true });
@@ -895,29 +1045,34 @@ test("live phase cross-binding rejects raw ledger, process, artifact, and parent
     writeFileSync(portPath, "port-closeout\n", "utf8");
 
     const runtimeProcess = {
-      pid: runtimePid,
-      executable: { basename: "uagent.exe", sha256: executableSha256 },
+      processIdBindingSha256: runtimeProcessIdBindingSha256,
+      endpointSha256,
+      markerSha256,
+      executable: { basename: "uagent.exe", size: 1, sha256: executableSha256 },
+      argumentVectorSha256: "8".repeat(64),
     };
     const fixedArtifact = {
       sourceCommit,
       sourceTreeSha256,
-      phaseSessionId: sessionId,
+      phaseSessionBindingSha256: sessionBindingSha256,
       phaseGeneration: generation,
-      runtimeProcessId: runtimePid,
+      runtimeProcessIdBindingSha256,
       producerBindingSha256: fixedArtifactBindingSha256,
     };
     const closeout = {
-      runtimeProcessId: runtimePid,
+      runtimeProcessIdBindingSha256,
+      phaseSessionBindingSha256: sessionBindingSha256,
+      phaseGeneration: generation,
       jobCloseoutSha256: sha256(readFileSync(jobPath)),
       portObservationSha256: sha256(readFileSync(portPath)),
     };
     const envelope = (type, data) => ({
       taskId,
       phase,
-      marker,
-      sessionId,
+      markerSha256,
+      sessionBindingSha256,
       generation,
-      producer: { pid: childPid },
+      producer: { processIdBindingSha256: childProcessIdBindingSha256 },
       type,
       data,
     });
@@ -946,8 +1101,8 @@ test("live phase cross-binding rejects raw ledger, process, artifact, and parent
         rendererInstanceId: "renderer-after",
         processIdentitySha256: "7".repeat(64),
       },
-      predecessorMcpSessionId: "mcp-session-before",
-      successorMcpSessionId: "mcp-session-after",
+      predecessorMcpSessionBindingSha256: retainedBinding("session", "mcp-session-before"),
+      successorMcpSessionBindingSha256: retainedBinding("session", "mcp-session-after"),
       predecessorMcpGeneration: 10,
       successorMcpGeneration: 11,
     };
@@ -969,10 +1124,14 @@ test("live phase cross-binding rejects raw ledger, process, artifact, and parent
         type: "runtime_process_identity",
         data: {
           sourceCommit,
-          session: sessionId,
+          markerSha256,
+          sessionBindingSha256,
           generation,
+          portBindingSha256: retainedBinding("port", 18765),
+          endpointSha256,
+          nonceSha256,
           process: {
-            pid: runtimePid,
+            pidBindingSha256: runtimePidBindingSha256,
             executableBasename: runtimeProcess.executable.basename,
             executableSha256,
           },
@@ -982,10 +1141,10 @@ test("live phase cross-binding rejects raw ledger, process, artifact, and parent
     const ledger = {
       taskId,
       sourceCommit,
-      marker,
-      sessionId,
+      markerSha256,
+      sessionBindingSha256,
       generation,
-      processOwnership: { childPid },
+      processOwnership: { childProcessIdBindingSha256 },
       runtimeProcess,
       runtimeTransport: {
         eventFile: { sha256: sha256(readFileSync(rawPath)) },
@@ -993,7 +1152,7 @@ test("live phase cross-binding rejects raw ledger, process, artifact, and parent
       },
     };
     const processIdentity = {
-      pid: runtimePid,
+      processIdBindingSha256: runtimeProcessIdBindingSha256,
       executableBasename: runtimeProcess.executable.basename,
       executableSha256,
     };
@@ -1003,7 +1162,8 @@ test("live phase cross-binding rejects raw ledger, process, artifact, and parent
       productionLaunchAuthorityVerified: false,
       producerLedgerSha256: sha256(readFileSync(producerPath)),
       sourceCommit,
-      sessionId,
+      sessionBindingSha256,
+      endpointSha256,
       generation,
       nativeObservationReceiptCount: 48,
       artifactAuthorityBindingSha256: fixedArtifactBindingSha256,
@@ -1014,8 +1174,10 @@ test("live phase cross-binding rejects raw ledger, process, artifact, and parent
         predecessorProcessIdentitySha256:
           rendererHandoff.predecessorRenderer.processIdentitySha256,
         successorProcessIdentitySha256: rendererHandoff.successorRenderer.processIdentitySha256,
-        predecessorMcpSessionId: rendererHandoff.predecessorMcpSessionId,
-        successorMcpSessionId: rendererHandoff.successorMcpSessionId,
+        predecessorMcpSessionBindingSha256:
+          rendererHandoff.predecessorMcpSessionBindingSha256,
+        successorMcpSessionBindingSha256:
+          rendererHandoff.successorMcpSessionBindingSha256,
         predecessorMcpGeneration: rendererHandoff.predecessorMcpGeneration,
         successorMcpGeneration: rendererHandoff.successorMcpGeneration,
         requestReceiptId: receiptId(1),
@@ -1029,8 +1191,8 @@ test("live phase cross-binding rejects raw ledger, process, artifact, and parent
       ownedLaunchBinding: {
         sourceCommit,
         sourceTreeSha256,
-        phaseProducerPid: childPid,
-        runtimePid,
+        phaseProducerProcessIdBindingSha256: childProcessIdBindingSha256,
+        runtimeProcessIdBindingSha256,
         runtimeProcessSha256: sha256(Buffer.from(stable(runtimeProcess), "utf8")),
         processIdentitySha256: sha256(Buffer.from(stable(processIdentity), "utf8")),
         fixedArtifactBindingSha256,

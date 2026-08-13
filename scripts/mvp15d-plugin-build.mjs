@@ -17,7 +17,7 @@ import { basename, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const BUILD_COMMAND_SCHEMA = "uagent.mvp15d.final.build-command.v3";
-const BUILD_RESULT_SCHEMA = "uagent.mvp15d.final.build-result.v3";
+const BUILD_RESULT_SCHEMA = "uagent.mvp15d.final.build-result.v4";
 const TASK_GENERATION = "final-d13-d16";
 const DEFAULT_TASK_ID = "TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-D13-D16";
 const CANONICAL_FIXTURES = [
@@ -320,13 +320,7 @@ function readEngineIdentity(value, runUat) {
   ) {
     fail("UE_BUILD_VERSION_IDENTITY_MISMATCH");
   }
-  const moduleManifestPath = resolve(
-    ueRoot,
-    "Engine",
-    "Binaries",
-    "Win64",
-    "UnrealEditor.modules",
-  );
+  const moduleManifestPath = resolve(ueRoot, "Engine", "Binaries", "Win64", "UnrealEditor.modules");
   const moduleManifest = readJsonFile(moduleManifestPath, "UE_MODULE_MANIFEST_INVALID");
   if (
     !moduleManifest ||
@@ -396,10 +390,7 @@ function ensurePackagedModuleIndex(packageRoot, engineIdentity) {
     .sort((left, right) => left.localeCompare(right));
   if (moduleFiles.length === 0) fail("BUILD_PACKAGE_MODULES_MISSING");
   const modules = Object.fromEntries(
-    moduleFiles.map((name) => [
-      name.slice("UnrealEditor-".length, -".dll".length),
-      name,
-    ]),
+    moduleFiles.map((name) => [name.slice("UnrealEditor-".length, -".dll".length), name]),
   );
   const expected = {
     BuildId: engineIdentity.moduleBuildId,
@@ -693,20 +684,26 @@ function executeBuild({
   const summary = {
     schemaVersion: BUILD_RESULT_SCHEMA,
     taskGeneration: TASK_GENERATION,
-    taskMarker,
+    taskMarkerSha256: sha256Bytes(
+      Buffer.from(`uagent.mvp15d.retained.marker.v1\0${taskMarker}`, "utf8"),
+    ),
     status: succeeded ? "build_completed" : "build_failed",
     reason: succeeded
       ? null
       : (toolchainReason ?? (result.error ? "RUNUAT_SPAWN_FAILED" : "RUNUAT_EXIT_NONZERO")),
     commandFingerprint: finalCommandLedger.commandFingerprint,
-    childPid: Number.isSafeInteger(result.pid) ? result.pid : null,
+    childPidBindingSha256: Number.isSafeInteger(result.pid)
+      ? sha256Bytes(Buffer.from(`uagent.mvp15d.retained.pid.v1\0${result.pid}`, "utf8"))
+      : null,
     childExitCode,
     wrapperExitCode: succeeded ? 0 : 1,
     sourceArtifacts,
     packagePresent: existsSync(packageRoot),
     successManifestPresent: existsSync(resolve(packageRoot, "UAgentAssetTools.build.json")),
     closeout: {
-      wrapperPid: process.pid,
+      wrapperPidBindingSha256: sha256Bytes(
+        Buffer.from(`uagent.mvp15d.retained.pid.v1\0${process.pid}`, "utf8"),
+      ),
       childExited: childExitCode !== null,
       taskOwnedResidualCount: 0,
     },

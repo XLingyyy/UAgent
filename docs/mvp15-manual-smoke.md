@@ -11,10 +11,17 @@ PASS` and are checkpointed at implementation commit
 cleanup removed all 4,601 roots with failures 0 and residual 0; fresh asset
 `40/40` and bridge `14/14` regressions left zero matching roots. `External Gate /
 TEMP cleanup: PASS`.
+Final Live Acceptance Resume Rework 1 has `Review Verdict: PASS` for source
+content and controlled verification; its implementation checkpoint is pending.
+Visible settings controls now drive N1-N8 through the production adapter. N1
+and the task-owned N2 gate-off child use real registration attempts, while N7
+and N8 use actual MCP execute/rollback requests and outcomes. These facts do not
+advance the clean-checkout 15A-15C live gates.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-Rework 9 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and
+Rework 1 G15 checkpoint integrity is `IN_PROGRESS` pending the supervisor
+checkpoint; G16 is `PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and
 D15 / 15C remain `PLANNED`; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility
 and overall acceptance remain `PARTIAL`; Ready is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
@@ -42,11 +49,12 @@ files, 4,717 internal directories and all 4,601 roots. Failures/residuals were
 zero. Fresh asset `40/40` and bridge `14/14` tests passed and left zero matching
 roots. Earlier mtime-only drift remains historically unattributed.
 
-Controlled source tests do not constitute actual observations. No Tool Search,
-installed/load/manifest tuple, live fingerprint, live renderer restart boundary,
-N1-N8, partial/unknown, parent closeout, or manual/live smoke exists for Rework
-9. The release and all old 15A-15C evidence are stale; no manual/live smoke is
-authorized before a supervisor checkpoint and a dedicated task.
+Controlled source and built-child checks do not constitute the current
+clean-checkout live acceptance root. No current Tool Search,
+installed/load/manifest tuple, live fingerprint, full 15A N1-N8 sequence,
+partial/unknown sequence, parent closeout, or manual/live smoke is accepted for
+Rework 1. The release and all old 15A-15C evidence are stale; no manual/live
+smoke is authorized before the supervisor checkpoint and a dedicated task.
 
 Historical Final Source/Tooling Rework 4 connected the fixed adapters to the
 actual release Tauri binary and
@@ -74,8 +82,8 @@ read-only supporting evidence.
 
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility must use a
-new clean-checkout task based on Rework 9 implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Real UE, Tool Search,
+new clean-checkout task based on the supervisor-reviewed Rework 1
+implementation checkpoint. Real UE, Tool Search,
 and mutation are `SKIPPED_BY_TASK_BOUNDARY`; mutation remains prohibited until
 a later separate task.
 
@@ -128,7 +136,7 @@ C14A is getter/adapter hardening, not another live attempt and not the R10 mutat
 
 - Each formal live phase uses a dedicated repository-owned adapter, fixed
   executable, validated ordered arguments, a native-generated runtime event
-  transcript, raw UE/product events, and a
+  transcript, redacted UE/product events, and a domain-separated
   process/session/generation-bound producer ledger. Arbitrary input, fixture
   origin, caller-authored success, drift, missing terminal events, and closeout
   residue cannot claim owned launch authority. Exported and CLI verification of
@@ -191,16 +199,25 @@ C14A is getter/adapter hardening, not another live attempt and not the R10 mutat
 4. Click Approve once. Continue only after one native registration returns one opaque token.
 5. Click Execute once. Require five native guard/call/result triplets in order: create run root, duplicate, rename, move, save one asset. Each guard must complete a live authority recheck before its MCP call.
 6. Verify source size/SHA-256 unchanged, final target present, old paths absent, and outside-run aggregate unchanged.
-7. Wait beyond the original 60-second token TTL while staying below the absolute 15-minute transaction cap and maintaining a genuinely live heartbeat. Do not obtain another token or registration.
+7. Wait 65-90 seconds after the original registration while maintaining a genuinely live heartbeat. Do not refresh, obtain another token, or create another registration.
 8. Click Rollback once. Require four guard/call/result triplets in strict inverse order: move back, rename back, delete duplicate, remove the exact run root.
 9. Final verify: source unchanged; exact run root absent; fixed container absent or ordinary/non-reparse/strictly empty; outside-run aggregate unchanged.
 10. Open recorded replay inspection and prove native/MCP/provider/verification/rollback deltas are `0/0/0/0/0`.
 11. Stop observation through the UI and prove UE remains running.
 12. Close only task-owned UAgent/listener processes and prove pre-existing UE/MCP ownership is unchanged.
 
+Before the mutation lifecycle, exercise the six independent product authority
+retractions in order: RefreshTools, MCP reconnect, invalid/change endpoint,
+renderer restart, task-owned UE restart, and stale concurrent completion. Each
+event must retract the old discovery/fingerprint before publishing a newer
+generation and must retain an action receipt without raw process, endpoint, or
+session identity.
+
 ## Required Negative Ledgers
 
-Each negative case uses an independent registration/run and must prove before/after Content digest equality, token count zero, MCP mutation count zero, and manifest ownership zero.
+Each negative case uses an independent rendered control and observation/run/registration identity and must prove before/after Content digest equality. N1/N2 are pre-registration failures and therefore require registration, token, MCP mutation, and manifest ownership counts of zero. N3-N8 first complete five real plugin dry-runs for their independent run before native registration. N3-N6 own one bounded registration/token/manifest and perform no MCP mutation. N7/N8 must prove the real MCP execute/rollback side effects used to establish replay semantics, followed by bounded cleanup and a restored Content digest; their counters must match the observed calls.
+
+The rendered partial/unknown matrix is diagnostic-only. It cannot supply or replace any formal N1-N8 receipt.
 
 1. Before `confirmTrust`, attempt registration for the disposable root: require `untrusted_root`.
 2. Start a task-owned UAgent with native gate OFF while the UI gate is ON: require `feature_disabled`. Close that task-owned app before starting the gate-ON happy path.

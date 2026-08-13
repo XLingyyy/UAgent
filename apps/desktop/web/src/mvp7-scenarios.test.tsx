@@ -109,7 +109,12 @@ describe("MVP7 desktop scenario matrix", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Validate project root" }));
     expect(await screen.findByText("Validation ready: LyraStarter")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Trust project root" }));
+    const addProjectRoot = screen.getByRole("button", { name: "Add project root" });
+    await waitFor(() => expect((addProjectRoot as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(addProjectRoot);
+    const trustProjectRoot = screen.getByRole("button", { name: "Trust project root" });
+    await waitFor(() => expect((trustProjectRoot as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(trustProjectRoot);
     expect(await screen.findByText("trusted")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Scan project index" }));
     expect(await screen.findByText("Index ready")).toBeTruthy();

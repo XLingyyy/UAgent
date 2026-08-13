@@ -273,6 +273,11 @@ function cryptoHash(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function retainedBindingForTest(kind, raw) {
+  const canonical = typeof raw === "string" ? raw : stableForTest(raw);
+  return cryptoHash(Buffer.from(`uagent.mvp15d.retained.${kind}.v1\0${canonical}`, "utf8"));
+}
+
 function stableForTest(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableForTest).join(",")}]`;
@@ -385,19 +390,22 @@ function liveProductAuthorityFixture() {
     );
   }
   const reasons = [
-    "disconnect",
+    "refresh_tools",
+    "reconnect",
     "endpoint_change",
-    "failure",
-    "newer_generation",
-    "attestation_invalidation",
     "renderer_restart",
+    "ue_restart",
+    "stale_completion",
   ];
   for (const [index, reason] of reasons.entries()) {
     const rendererRestart = reason === "renderer_restart";
+    const replacesSession = reason !== "refresh_tools";
     const material = {
       reason,
       sessionIdBefore: `retraction-session-before-${index + 1}`,
-      sessionIdAfter: rendererRestart ? `retraction-session-after-${index + 1}` : null,
+      sessionIdAfter: replacesSession
+        ? `retraction-session-after-${index + 1}`
+        : `retraction-session-before-${index + 1}`,
       rendererInstanceIdBefore: `renderer-before-${index + 1}`,
       rendererInstanceIdAfter: rendererRestart
         ? `renderer-after-${index + 1}`
@@ -518,8 +526,8 @@ function liveUiAuthorityFixture() {
     );
   }
   const reasons = [
-    "companion_attestation_retracted",
-    "asset_mutation_gate_disabled",
+    "untrusted_root",
+    "feature_disabled",
     "observation_session_stopped",
     "process_exited",
     "stale_generation",
@@ -869,8 +877,8 @@ function loadedAuthorityBindingMaterialForTest(loaded) {
     fixtureUsed: loaded.fixtureUsed,
     taskGeneration: loaded.taskGeneration,
     taskId: loaded.taskId,
-    taskMarker: loaded.taskMarker,
-    sessionId: loaded.sessionId,
+    taskMarkerSha256: loaded.taskMarkerSha256,
+    sessionBindingSha256: loaded.sessionBindingSha256,
     generation: loaded.generation,
     sourceCommit: loaded.sourceCommit,
     sourceTreeSha256: loaded.sourceTreeSha256,
@@ -881,7 +889,7 @@ function loadedAuthorityBindingMaterialForTest(loaded) {
     installedRoot: loaded.installedRoot,
     process: loaded.process,
     modules: loaded.modules,
-    earlyIdentity: loaded.authority.earlyIdentity,
+    processIdentitySha256: loaded.authority.processIdentitySha256,
     sources: loaded.authority.sources,
   };
 }
@@ -924,10 +932,18 @@ function livePhaseFixtureOutput({
     .map((line) => JSON.parse(line));
   const producer = {
     id: `mvp15d-final-${phase}-producer`,
-    pid: producerPid,
+    processIdBindingSha256: retainedBindingForTest("process-id", producerPid),
     mode: "live",
   };
-  for (const event of events) event.producer = producer;
+  for (const event of events) {
+    event.producer = producer;
+    delete event.marker;
+    delete event.sessionId;
+    event.markerSha256 = retainedBindingForTest("marker", marker);
+    event.sessionBindingSha256 = retainedBindingForTest("session", sessionId);
+  }
+  delete events[0].data.port;
+  events[0].data.portBindingSha256 = retainedBindingForTest("port", port);
   events[0].data.argumentVectorSha256 = cryptoHash(
     Buffer.from(stableForTest(adapterVector), "utf8"),
   );
@@ -935,15 +951,18 @@ function livePhaseFixtureOutput({
     schemaVersion: events[0].schemaVersion,
     phase,
     taskId,
-    marker,
-    sessionId,
+    markerSha256: retainedBindingForTest("marker", marker),
+    sessionBindingSha256: retainedBindingForTest("session", sessionId),
     generation,
     producer,
     type: "runtime_process_started",
     data: {
-      pid: producerPid + 1,
-      endpoint: `http://127.0.0.1:${port}/mcp`,
-      marker,
+      processIdBindingSha256: retainedBindingForTest("process-id", producerPid + 1),
+      endpointSha256: retainedBindingForTest(
+        "endpoint",
+        `http://127.0.0.1:${port}/mcp`,
+      ),
+      markerSha256: retainedBindingForTest("marker", marker),
       executable: {
         basename: basename(runtimeExecutable),
         size: lstatSync(runtimeExecutable).size,
@@ -968,11 +987,11 @@ function livePhaseFixtureOutput({
         {
           schemaVersion: "uagent.mvp15d.final.job-closeout.v1",
           taskId,
-          marker,
-          sessionId,
+          markerSha256: retainedBindingForTest("marker", marker),
+          sessionBindingSha256: retainedBindingForTest("session", sessionId),
           generation,
           jobSchemaVersion: "uagent.mvp15d.windows-job-process-run.v1",
-          rootPid: runtime.data.pid,
+          rootPidBindingSha256: retainedBindingForTest("pid", producerPid + 1),
           rootExitCode: 0,
           timedOut: false,
           activeProcessZeroObserved: true,
@@ -992,11 +1011,10 @@ function livePhaseFixtureOutput({
         schemaVersion: "uagent.mvp15d.final.port-closeout.v1",
         phase,
         taskId,
-        marker,
-        sessionId,
+        markerSha256: retainedBindingForTest("marker", marker),
+        sessionBindingSha256: retainedBindingForTest("session", sessionId),
         generation,
-        port,
-        host: "127.0.0.1",
+        portBindingSha256: retainedBindingForTest("port", port),
         observations: Array.from({ length: 5 }, (_, index) => ({
           attempt: index + 1,
           accepting: false,
@@ -1069,7 +1087,7 @@ function livePhaseFixtureOutput({
         installedModulesSha256: "5".repeat(64),
         loadedModulesSha256: "5".repeat(64),
         executableSha256: runtime.data.executable.sha256,
-        processId: runtime.data.pid,
+        processIdBindingSha256: runtime.data.processIdBindingSha256,
       },
     });
     const sourceDescriptor = (relativePath) => ({
@@ -1086,11 +1104,7 @@ function livePhaseFixtureOutput({
           size: 1,
           sha256: "6".repeat(64),
         },
-        earlyIdentity: {
-          relativePath: `metadata/ue-automation.${sessionId}.early-identity.json`,
-          size: 1,
-          sha256: "6".repeat(64),
-        },
+        processIdentitySha256: "6".repeat(64),
         jobCloseout: {
           relativePath: "metadata/ue-automation.job-closeout.json",
           size: 1,
@@ -1098,15 +1112,18 @@ function livePhaseFixtureOutput({
         },
         authorityBindingSha256: "8".repeat(64),
         taskId,
-        taskMarker: marker,
-        sessionId,
+        taskMarkerSha256: retainedBindingForTest("marker", marker),
+        sessionBindingSha256: retainedBindingForTest("session", sessionId),
         generation,
         sourceCommit: "9".repeat(40),
         sourceTreeSha256: "a".repeat(64),
         sourceDirty: true,
         process: {
-          pid: runtime.data.pid,
-          creationFileTimeUtc: "133500000000000000",
+          pidBindingSha256: retainedBindingForTest("pid", producerPid + 1),
+          creationFileTimeUtcBindingSha256: retainedBindingForTest(
+            "creation-filetime",
+            "133500000000000000",
+          ),
           executableBasename: runtime.data.executable.basename,
           executableSha256: runtime.data.executable.sha256,
         },
@@ -1128,12 +1145,12 @@ function livePhaseFixtureOutput({
     captureOrigin.data.fixtureUsed = false;
     const terminalIndex = events.findIndex((event) => event.type === "process_exited");
     const reasons = [
-      "disconnect",
+      "refresh_tools",
+      "reconnect",
       "endpoint_change",
-      "failure",
-      "newer_generation",
-      "attestation_invalidation",
       "renderer_restart",
+      "ue_restart",
+      "stale_completion",
     ];
     events.splice(
       terminalIndex,
@@ -1170,8 +1187,8 @@ function livePhaseFixtureOutput({
       terminalIndex,
       0,
       ...[
-        ["N1", "companion_attestation_retracted"],
-        ["N2", "asset_mutation_gate_disabled"],
+        ["N1", "untrusted_root"],
+        ["N2", "feature_disabled"],
         ["N3", "observation_session_stopped"],
         ["N4", "process_exited"],
         ["N5", "stale_generation"],
@@ -1241,8 +1258,8 @@ function livePhaseFixtureOutput({
     partialOutputCount: 0,
     jobCloseoutSha256: cryptoHash(readFileSync(jobCloseoutPath)),
     portObservationSha256: cryptoHash(readFileSync(portCloseoutPath)),
-    runtimeProcessId: runtime.data.pid,
-    phaseSessionId: sessionId,
+    runtimeProcessIdBindingSha256: runtime.data.processIdBindingSha256,
+    phaseSessionBindingSha256: retainedBindingForTest("session", sessionId),
     phaseGeneration: generation,
   };
   const timestamp = Date.parse("2026-07-31T00:00:00.000Z");
@@ -1520,7 +1537,6 @@ function createHandAuthoredProvenanceFixture() {
     executableSha256: cryptoHash(readFileSync(executablePath)),
   };
   const earlyIdentityPath = resolve(metadataRoot, `ue-automation.${sessionId}.early-identity.json`);
-  const earlyIdentityRelativePath = `metadata/ue-automation.${sessionId}.early-identity.json`;
   const loadedPath = resolve(capturesRoot, "loaded-modules.json");
   const jobPath = resolve(metadataRoot, "ue-automation.job-closeout.json");
   const portPath = resolve(metadataRoot, "ue-automation.port-closeout.json");
@@ -1563,11 +1579,11 @@ function createHandAuthoredProvenanceFixture() {
     job: {
       schemaVersion: "uagent.mvp15d.final.job-closeout.v1",
       taskId: TASK_ID,
-      marker,
-      sessionId,
+      markerSha256: retainedBindingForTest("marker", marker),
+      sessionBindingSha256: retainedBindingForTest("session", sessionId),
       generation,
       jobSchemaVersion: "uagent.mvp15d.windows-job-process-run.v1",
-      rootPid: processIdentity.pid,
+      rootPidBindingSha256: retainedBindingForTest("pid", processIdentity.pid),
       rootExitCode: 0,
       timedOut: false,
       activeProcessZeroObserved: true,
@@ -1584,8 +1600,8 @@ function createHandAuthoredProvenanceFixture() {
     fixtureUsed: false,
     taskGeneration: "final-d13-d16",
     taskId: TASK_ID,
-    taskMarker: marker,
-    sessionId,
+    taskMarkerSha256: retainedBindingForTest("marker", marker),
+    sessionBindingSha256: retainedBindingForTest("session", sessionId),
     generation,
     sourceCommit: identity.compiledCommit,
     sourceTreeSha256: identity.sourceTreeSha256,
@@ -1602,15 +1618,26 @@ function createHandAuthoredProvenanceFixture() {
       artifactCount: installedInventory.length,
       sha256: cryptoHash(Buffer.from(stableForTest(installedInventory), "utf8")),
     },
-    process: structuredClone(processIdentity),
+    process: {
+      pidBindingSha256: retainedBindingForTest("pid", processIdentity.pid),
+      creationFileTimeUtcBindingSha256: retainedBindingForTest(
+        "creation-filetime",
+        processIdentity.creationFileTimeUtc,
+      ),
+      executableBasename: processIdentity.executableBasename,
+      executableSha256: processIdentity.executableSha256,
+    },
     modules: [{ name: basename(module.path), ...module }],
     authority: {
       schemaVersion: PRODUCTION_AUTHORITY_SCHEMA,
-      earlyIdentity: fileDescriptorForTest(root, earlyIdentityPath, earlyIdentityRelativePath),
+      processIdentitySha256: "0".repeat(64),
       sources: structuredClone(sources),
       bindingSha256: "0".repeat(64),
     },
   };
+  state.loaded.authority.processIdentitySha256 = cryptoHash(
+    Buffer.from(stableForTest(state.loaded.process), "utf8"),
+  );
   state.loaded.authority.bindingSha256 = cryptoHash(
     Buffer.from(stableForTest(loadedAuthorityBindingMaterialForTest(state.loaded)), "utf8"),
   );
@@ -1619,17 +1646,25 @@ function createHandAuthoredProvenanceFixture() {
   const loadedModulesSha256 = cryptoHash(Buffer.from(stableForTest([module]), "utf8"));
   state.provenance = {
     loadedLedger: fileDescriptorForTest(root, loadedPath, "captures/loaded-modules.json"),
-    earlyIdentity: structuredClone(state.loaded.authority.earlyIdentity),
+    processIdentitySha256: state.loaded.authority.processIdentitySha256,
     jobCloseout: fileDescriptorForTest(root, jobPath, "metadata/ue-automation.job-closeout.json"),
     authorityBindingSha256: state.loaded.authority.bindingSha256,
     taskId: TASK_ID,
-    taskMarker: marker,
-    sessionId,
+    taskMarkerSha256: retainedBindingForTest("marker", marker),
+    sessionBindingSha256: retainedBindingForTest("session", sessionId),
     generation,
     sourceCommit: state.loaded.sourceCommit,
     sourceTreeSha256: state.loaded.sourceTreeSha256,
     sourceDirty: state.loaded.sourceDirty,
-    process: structuredClone(processIdentity),
+    process: {
+      pidBindingSha256: retainedBindingForTest("pid", processIdentity.pid),
+      creationFileTimeUtcBindingSha256: retainedBindingForTest(
+        "creation-filetime",
+        processIdentity.creationFileTimeUtc,
+      ),
+      executableBasename: processIdentity.executableBasename,
+      executableSha256: processIdentity.executableSha256,
+    },
     projectSha256: state.loaded.project.sha256,
     manifestSha256: state.loaded.manifest.sha256,
     packageInventorySha256: state.loaded.package.sha256,
@@ -1639,12 +1674,12 @@ function createHandAuthoredProvenanceFixture() {
   };
   state.phaseLedger = {
     taskId: TASK_ID,
-    marker,
-    sessionId,
+    markerSha256: retainedBindingForTest("marker", marker),
+    sessionBindingSha256: retainedBindingForTest("session", sessionId),
     generation,
     sourceCommit: state.loaded.sourceCommit,
     runtimeProcess: {
-      pid: processIdentity.pid,
+      processIdBindingSha256: retainedBindingForTest("process-id", processIdentity.pid),
       executable: {
         basename: processIdentity.executableBasename,
         size: lstatSync(executablePath).size,
@@ -1663,6 +1698,10 @@ function createHandAuthoredProvenanceFixture() {
   const baseline = structuredClone(state);
 
   function writeLoaded() {
+    state.loaded.authority.processIdentitySha256 = cryptoHash(
+      Buffer.from(stableForTest(state.loaded.process), "utf8"),
+    );
+    state.provenance.processIdentitySha256 = state.loaded.authority.processIdentitySha256;
     state.loaded.authority.bindingSha256 = cryptoHash(
       Buffer.from(stableForTest(loadedAuthorityBindingMaterialForTest(state.loaded)), "utf8"),
     );
@@ -1677,9 +1716,6 @@ function createHandAuthoredProvenanceFixture() {
 
   function writeEarlyIdentity() {
     writeFileSync(earlyIdentityPath, `${JSON.stringify(state.earlyIdentity, null, 2)}\n`, "utf8");
-    const descriptor = fileDescriptorForTest(root, earlyIdentityPath, earlyIdentityRelativePath);
-    state.loaded.authority.earlyIdentity = descriptor;
-    state.provenance.earlyIdentity = structuredClone(descriptor);
   }
 
   function writeJob() {
@@ -1769,7 +1805,7 @@ function createHandAuthoredProvenanceFixture() {
       installedModulesSha256: state.provenance.loadedModulesSha256,
       loadedModulesSha256: state.provenance.loadedModulesSha256,
       executableSha256: processIdentity.executableSha256,
-      processId: processIdentity.pid,
+      processIdBindingSha256: retainedBindingForTest("process-id", processIdentity.pid),
     };
     writeFileSync(
       eventsPath,
@@ -1795,7 +1831,15 @@ function createHandAuthoredProvenanceFixture() {
       [ueRoot.toLowerCase(), "<ue-root>"],
     ]);
     const redactedVector = adapterVector.map(
-      (value) => redactions.get(value.toLowerCase()) ?? value,
+      (value) =>
+        redactions.get(value.toLowerCase()) ??
+        new Map([
+          [marker, retainedBindingForTest("marker", marker)],
+          [sessionId, retainedBindingForTest("session", sessionId)],
+          [endpoint, retainedBindingForTest("endpoint", endpoint)],
+          [String(port), retainedBindingForTest("port", port)],
+        ]).get(value) ??
+        value,
     );
     const phaseProducer = state.loaded.authority.sources.phaseProducer;
     const helper = state.loaded.authority.sources.helper;
@@ -1809,11 +1853,11 @@ function createHandAuthoredProvenanceFixture() {
       evidenceRoot: basename(root),
       evidenceRootSha256: cryptoHash(Buffer.from(root.replaceAll("\\", "/").toLowerCase(), "utf8")),
       sourceCommit: identity.compiledCommit,
-      marker,
-      sessionId,
-      endpoint,
+      markerSha256: retainedBindingForTest("marker", marker),
+      sessionBindingSha256: retainedBindingForTest("session", sessionId),
+      endpointSha256: retainedBindingForTest("endpoint", endpoint),
       generation,
-      port,
+      portBindingSha256: retainedBindingForTest("port", port),
       producer: {
         id: "mvp15d-final-ue-automation-producer",
         mode: "live",
@@ -1838,9 +1882,10 @@ function createHandAuthoredProvenanceFixture() {
       },
       processOwnership: {
         kind: "task_owned",
-        marker,
-        parentPid: process.pid,
-        childPid: producerPid,
+        markerSha256: retainedBindingForTest("marker", marker),
+        parentPidBindingSha256: retainedBindingForTest("pid", process.pid),
+        childPidBindingSha256: retainedBindingForTest("pid", producerPid),
+        childProcessIdBindingSha256: retainedBindingForTest("process-id", producerPid),
         closed: true,
       },
       termination: { exitCode: 0, signal: null, errorCode: null },
@@ -1889,13 +1934,6 @@ function createHandAuthoredProvenanceFixture() {
         RUNTIME_EVENT_SCHEMA,
       ),
       sourceArtifact(
-        earlyIdentityPath,
-        earlyIdentityRelativePath,
-        "mvp15d-final-ue-automation-producer",
-        "raw",
-        EARLY_IDENTITY_SCHEMA,
-      ),
-      sourceArtifact(
         loadedPath,
         "captures/loaded-modules.json",
         "mvp15d-final-ue-automation-producer",
@@ -1925,8 +1963,8 @@ function createHandAuthoredProvenanceFixture() {
       evidenceMode: "live",
       persistedOriginClaimConsistent: true,
       productionLaunchAuthorityVerified: false,
-      sessionId,
-      endpoint,
+      sessionBindingSha256: retainedBindingForTest("session", sessionId),
+      endpointSha256: retainedBindingForTest("endpoint", endpoint),
       generation,
       producerLedgerSha256: cryptoHash(readFileSync(ledgerPath)),
       installedLoadedVerified: true,
@@ -1955,6 +1993,10 @@ function createHandAuthoredProvenanceFixture() {
         repository: REPOSITORY,
         "evidence-root": root,
         "task-id": TASK_ID,
+        marker,
+        session: sessionId,
+        generation: String(generation),
+        port: String(port),
         "ue-root": ueRoot,
       },
       summaryPath,
@@ -2253,8 +2295,11 @@ test(
         productionOrigin: PRODUCTION_ORIGIN,
         fixtureUsed: false,
         taskId: TASK_ID,
-        taskMarker: "uagent-mvp15d-final-manifest-fixture-0003",
-        sessionId: "final-session-00000001",
+        taskMarkerSha256: retainedBindingForTest(
+          "marker",
+          "uagent-mvp15d-final-manifest-fixture-0003",
+        ),
+        sessionBindingSha256: retainedBindingForTest("session", "final-session-00000001"),
         generation: 1,
         sourceCommit: fixture.commit,
         sourceTreeSha256: "a".repeat(64),
@@ -2264,8 +2309,11 @@ test(
         package: { id: "UAgentAssetTools", sha256: "e".repeat(64) },
         installedRoot: { id: "UAgentAssetTools", sha256: "f".repeat(64) },
         process: {
-          pid: 4567,
-          creationFileTimeUtc: "133500000000000000",
+          pidBindingSha256: retainedBindingForTest("pid", 4567),
+          creationFileTimeUtcBindingSha256: retainedBindingForTest(
+            "creation-filetime",
+            "133500000000000000",
+          ),
           executableBasename: "UnrealEditor-Cmd.exe",
           executableSha256: "b".repeat(64),
         },
@@ -2317,10 +2365,7 @@ test(
         },
         authority: {
           schemaVersion: PRODUCTION_AUTHORITY_SCHEMA,
-          earlyIdentity: descriptor(
-            `metadata/ue-automation.${legacyLoaded.sessionId}.early-identity.json`,
-            "1",
-          ),
+          processIdentitySha256: "1".repeat(64),
           sources: {
             phaseProducer: descriptor("scripts/mvp15d-final-ue-automation-producer.mjs", "2"),
             helper: descriptor("scripts/mvp15d-final-live-producer-helper.mjs", "3"),
@@ -2403,15 +2448,6 @@ test(
 
       fixture.reset();
       writeFileSync(fixture.loadedPath, `${readFileSync(fixture.loadedPath, "utf8")} `, "utf8");
-      expectCode(() => fixture.verify(), code);
-
-      fixture.reset();
-      const replacementIdentity = { ...fixture.state.earlyIdentity, generation: 8 };
-      writeFileSync(
-        fixture.earlyIdentityPath,
-        `${JSON.stringify(replacementIdentity, null, 2)}\n`,
-        "utf8",
-      );
       expectCode(() => fixture.verify(), code);
 
       for (const [name, mutate] of [
@@ -2536,6 +2572,14 @@ test(
           fixture.root,
           "--task-id",
           TASK_ID,
+          "--marker",
+          chain.args.marker,
+          "--session",
+          chain.args.session,
+          "--generation",
+          chain.args.generation,
+          "--port",
+          chain.args.port,
           "--ue-root",
           fixture.ueRoot,
         ],
@@ -2591,27 +2635,35 @@ test(
             "task-id": TASK_ID,
             marker: preflightArgs.marker,
             port: preflightArgs.port,
-          });
+        });
         assert.match(planned.status, /_planned$/);
+        if (command === "product-capture") {
+          assert.deepEqual(planned.plan.retractions, [
+            "refresh_tools",
+            "reconnect",
+            "endpoint_change",
+            "renderer_restart",
+            "ue_restart",
+            "stale_completion",
+          ]);
+        }
         if (command === "ui-lifecycle") {
           assert.deepEqual(
+            planned.plan.ledger,
             {
-              dryRunActions: planned.plan.ledger.dryRunActions,
-              dryRunCalls: planned.plan.ledger.dryRunCalls,
-              nativeRegistrations: planned.plan.ledger.nativeRegistrations,
-              executeCalls: planned.plan.ledger.executeCalls,
-              inverseRollbackCalls: planned.plan.ledger.rollbackCalls,
-              verifyMutations: planned.plan.ledger.verifyMutations,
-              replaySideEffectDelta: planned.plan.ledger.replaySideEffectDelta,
-            },
-            {
-              dryRunActions: 1,
+              uiDryRunActions: 1,
               dryRunCalls: 5,
               nativeRegistrations: 1,
+              opaqueTokensIssued: 1,
+              nativeExecuteGuards: 5,
               executeCalls: 5,
-              inverseRollbackCalls: 4,
               verifyMutations: 0,
+              nativeRollbackGuards: 4,
+              rollbackCalls: 4,
+              secondExecuteCalls: 0,
+              secondRollbackCalls: 0,
               replaySideEffectDelta: [0, 0, 0, 0, 0],
+              waitElapsedMilliseconds: { minimum: 65_000, maximum: 90_000 },
             },
           );
         }

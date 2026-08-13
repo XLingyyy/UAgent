@@ -48,7 +48,7 @@ import { basename, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { computeSourceIdentity } from "./mvp15d-source-identity.mjs";
 
-export const LOADED_LEDGER_SCHEMA = "uagent.mvp15d.final.loaded-modules.v1";
+export const LOADED_LEDGER_SCHEMA = "uagent.mvp15d.final.loaded-modules.v2";
 export const EARLY_IDENTITY_SCHEMA = "uagent.mvp15d.windows-job-process-identity.v1";
 export const PRODUCTION_ORIGIN = "uagent.windows-job-module-observation.v1";
 export const PRODUCTION_AUTHORITY_SCHEMA = "uagent.mvp15d.loaded-module-production-authority.v1";
@@ -87,6 +87,10 @@ function sha256File(path) {
 
 function sha256Bytes(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function retainedBinding(kind, value) {
+  return sha256Bytes(Buffer.from(`uagent.mvp15d.retained.${kind}.v1\0${String(value)}`, "utf8"));
 }
 
 function stable(value) {
@@ -165,16 +169,6 @@ function fileDescriptor(repository, logicalPath, code = "LOADED_WRITER_AUTHORITY
   );
   const stats = lstatSync(path);
   return { relativePath: logicalPath, size: stats.size, sha256: sha256File(path) };
-}
-
-function evidenceDescriptor(evidenceRoot, path, code) {
-  const file = requireContainedRegularFile(evidenceRoot, path, code);
-  const stats = lstatSync(file);
-  return {
-    relativePath: relative(evidenceRoot, file).split("\\").join("/"),
-    size: stats.size,
-    sha256: sha256File(file),
-  };
 }
 
 // Parse a manifest JSON and its `modules` (approved companion modules).
@@ -535,8 +529,8 @@ function authorityBindingMaterial(ledger) {
     fixtureUsed: ledger.fixtureUsed,
     taskGeneration: ledger.taskGeneration,
     taskId: ledger.taskId,
-    taskMarker: ledger.taskMarker,
-    sessionId: ledger.sessionId,
+    taskMarkerSha256: ledger.taskMarkerSha256,
+    sessionBindingSha256: ledger.sessionBindingSha256,
     generation: ledger.generation,
     sourceCommit: ledger.sourceCommit,
     sourceTreeSha256: ledger.sourceTreeSha256,
@@ -547,7 +541,7 @@ function authorityBindingMaterial(ledger) {
     installedRoot: ledger.installedRoot,
     process: ledger.process,
     modules: ledger.modules,
-    earlyIdentity: ledger.authority.earlyIdentity,
+    processIdentitySha256: ledger.authority.processIdentitySha256,
     sources: ledger.authority.sources,
   };
 }
@@ -657,10 +651,19 @@ export function publishProductionLoadedLedger(finalPath, inputs) {
   });
   const authority = {
     schemaVersion: PRODUCTION_AUTHORITY_SCHEMA,
-    earlyIdentity: evidenceDescriptor(
-      evidenceRoot,
-      resolve(inputs.earlyIdentityPath),
-      "LOADED_WRITER_AUTHORITY_INVALID",
+    processIdentitySha256: sha256Bytes(
+      Buffer.from(
+        stable({
+          pidBindingSha256: retainedBinding("pid", earlyIdentity.rootPid),
+          creationFileTimeUtcBindingSha256: retainedBinding(
+            "creation-filetime",
+            earlyIdentity.rootCreationFileTimeUtc,
+          ),
+          executableBasename: earlyIdentity.executableBasename,
+          executableSha256: earlyIdentity.executableSha256,
+        }),
+        "utf8",
+      ),
     ),
     sources: {
       phaseProducer: fileDescriptor(repository, PRODUCTION_SOURCE_PATHS.producer),
@@ -676,8 +679,8 @@ export function publishProductionLoadedLedger(finalPath, inputs) {
     fixtureUsed: false,
     taskGeneration: TASK_GENERATION,
     taskId: inputs.taskId,
-    taskMarker: inputs.taskMarker,
-    sessionId: inputs.sessionId,
+    taskMarkerSha256: retainedBinding("marker", inputs.taskMarker),
+    sessionBindingSha256: retainedBinding("session", inputs.sessionId),
     generation: inputs.generation,
     sourceCommit: source.compiledCommit,
     sourceTreeSha256: source.sourceTreeSha256,
@@ -695,8 +698,11 @@ export function publishProductionLoadedLedger(finalPath, inputs) {
       sha256: sha256Bytes(Buffer.from(stable(installedArtifacts), "utf8")),
     },
     process: {
-      pid: earlyIdentity.rootPid,
-      creationFileTimeUtc: earlyIdentity.rootCreationFileTimeUtc,
+      pidBindingSha256: retainedBinding("pid", earlyIdentity.rootPid),
+      creationFileTimeUtcBindingSha256: retainedBinding(
+        "creation-filetime",
+        earlyIdentity.rootCreationFileTimeUtc,
+      ),
       executableBasename: earlyIdentity.executableBasename,
       executableSha256: sha256File(executablePath),
     },

@@ -562,6 +562,7 @@ describe("MVP15D production App registry wiring", () => {
     const harness = await startNativeAppHarness();
     const commands: string[] = [];
     let mcpSessionSequence = 0;
+    let editorSessionSequence = 0;
     let nativeGeneration = 8_000_000_000_000_000;
     const evidence = appWiringNativeEvidence();
     const invoke: NativeInvoke = async <T,>(
@@ -627,8 +628,14 @@ describe("MVP15D production App registry wiring", () => {
         } as T;
       }
       if (command === "attach_editor_process" || command === "read_editor_process_status") {
-        return {
-          sessionId: "editor-session:app-wiring",
+        if (command === "attach_editor_process") editorSessionSequence += 1;
+        const sessionId = command === "attach_editor_process"
+          ? editorSessionSequence === 1
+            ? "editor-session:app-wiring"
+            : `editor-session:app-wiring-${editorSessionSequence}`
+          : String(input.sessionId ?? `editor-session:app-wiring-${editorSessionSequence}`);
+        const response = {
+          sessionId,
           projectId: "project:app-wiring",
           rootId: "root:app-wiring",
           uprojectDisplayPath: "[project-root]/FinalHost.uproject",
@@ -640,7 +647,15 @@ describe("MVP15D production App registry wiring", () => {
           expiresAt: 9_999_999_999_999,
           lastHeartbeatAt: 2,
           replayOnly: false,
-        } as T;
+          nativeReceiptId: null,
+        };
+        if (command === "read_editor_process_status") return response as T;
+        const nativeReceiptId = await harness.invoke<string>("record_native_fixture_observation", {
+          api: command,
+          request: input,
+          response,
+        });
+        return { ...response, nativeReceiptId } as T;
       }
       if (command === "read_editor_observation_snapshot") {
         return {
@@ -655,6 +670,18 @@ describe("MVP15D production App registry wiring", () => {
           readOnlyDiagnostics: ["process metadata only"],
           createdAt: 3,
         } as T;
+      }
+      if (command === "stop_editor_observation_session") {
+        return { status: "stopped", reason: "stopped_by_user" } as T;
+      }
+      if (command === "terminate_managed_editor_process") {
+        const response = { status: "terminated", reason: "terminated_by_owner", nativeReceiptId: null };
+        const nativeReceiptId = await harness.invoke<string>("record_native_fixture_observation", {
+          api: command,
+          request: input,
+          response,
+        });
+        return { ...response, nativeReceiptId } as T;
       }
       if (command === "mcp_streamable_http_request") {
         if (String(input.endpoint).includes("127.0.0.1:9")) {

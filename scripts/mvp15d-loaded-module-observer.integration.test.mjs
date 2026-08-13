@@ -72,6 +72,12 @@ const FIXTURE_DIRECTORY_PREFIX = "uagent-observer-integration-";
 const CLOSEOUT_GRACE_MILLISECONDS = 20_000;
 const PROCESS_RELEASE_TIMEOUT_MILLISECONDS = 10_000;
 const CLEANUP_RETRY_COUNT = 20;
+
+function retainedBinding(kind, value) {
+  return createHash("sha256")
+    .update(`uagent.mvp15d.retained.${kind}.v1\0${String(value)}`, "utf8")
+    .digest("hex");
+}
 const CLEANUP_RETRY_DELAY_MILLISECONDS = 250;
 
 function sha256File(path) {
@@ -730,8 +736,14 @@ test(
       assert.equal(written.schemaVersion, LOADED_LEDGER_SCHEMA);
       assert.equal(written.productionOrigin, PRODUCTION_ORIGIN);
       assert.equal(written.fixtureUsed, false);
-      assert.equal(written.process.pid, fixture.early.rootPid);
-      assert.equal(written.process.creationFileTimeUtc, fixture.early.rootCreationFileTimeUtc);
+      assert.equal(
+        written.process.pidBindingSha256,
+        retainedBinding("pid", fixture.early.rootPid),
+      );
+      assert.equal(
+        written.process.creationFileTimeUtcBindingSha256,
+        retainedBinding("creation-filetime", fixture.early.rootCreationFileTimeUtc),
+      );
       assert.equal(written.process.executableSha256, fixture.early.executableSha256);
 
       // Copying every public production field does not copy the in-process

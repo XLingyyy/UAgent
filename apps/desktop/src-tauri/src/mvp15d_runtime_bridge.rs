@@ -14,6 +14,9 @@ pub const DRIVER_SCHEMA: &str = "uagent.mvp15d.final.driver-command.v1";
 const TASK_GENERATION: &str = "final-d13-d16";
 const SUBCOMMAND: &str = "mvp15d-final-runtime-bridge";
 const ENABLE_ENV: &str = "UAGENT_ENABLE_MVP15D_TASK_BRIDGE";
+pub const GATE_OFF_CHILD_ENV: &str = "UAGENT_MVP15D_GATE_OFF_CHILD";
+pub const GATE_OFF_CHILD_INPUT_ENV: &str = "UAGENT_MVP15D_GATE_OFF_CHILD_INPUT";
+pub const GATE_OFF_CHILD_RESULT_ENV: &str = "UAGENT_MVP15D_GATE_OFF_CHILD_RESULT";
 const PRODUCT_PATH: &str = "validate,add,confirmTrust,observationDiscover,observationAttach,observationReady,Connect,Initialize,Discover,Normalize,Fingerprint,disconnect";
 const UI_PATH: &str = "validate,add,confirmTrust,observationDiscover,observationAttach,observationReady,mcpConnect,mcpInitialize,mcpDiscover,mcpNormalize,mcpFingerprint,dryRun,approve,register,execute,verify,crossTtl,rollback,finalVerify,replay,observationStop,mcpDisconnect";
 const CAPABILITY_PATH: &str = "capability";
@@ -221,12 +224,12 @@ const MVP15D_TOOL_NAMES: [&str; 6] = [
     "ue.asset.save",
 ];
 const MVP15D_RETRACTION_REASONS: [&str; 6] = [
-    "disconnect",
+    "refresh_tools",
+    "reconnect",
     "endpoint_change",
-    "failure",
-    "newer_generation",
-    "attestation_invalidation",
     "renderer_restart",
+    "ue_restart",
+    "stale_completion",
 ];
 pub(crate) const RENDERER_PREDECESSOR_WINDOW_LABEL: &str = "main";
 
@@ -709,6 +712,35 @@ pub struct RendererBridgeConfiguration {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GateOffChildRunInput {
+    pub case_id: String,
+    pub registration_input: crate::asset_mutation::RegisterAssetMutationApprovalInput,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GateOffChildResult {
+    pub schema_version: String,
+    pub ui_gate_enabled: bool,
+    pub status: String,
+    pub reason: String,
+    pub registration_id: String,
+    pub approval_token: Option<String>,
+    pub registration_count: usize,
+    pub token_count: usize,
+    pub mcp_mutation_count: usize,
+    pub manifest_ownership_count: usize,
+    pub child_closed: bool,
+    pub child_cleanup_complete: bool,
+    pub process_residual_count: usize,
+    pub port_residual_count: usize,
+    pub root_residual_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RendererRestartRequestInput {
     pub schema_version: String,
     pub task_id: String,
@@ -960,11 +992,14 @@ pub struct OperationLedgerInput {
     dry_run_actions: u64,
     dry_run_calls: u64,
     native_registrations: u64,
+    opaque_tokens_issued: u64,
     native_execute_guards: u64,
     execute_calls: u64,
     verify_mutations: u64,
     native_rollback_guards: u64,
     rollback_calls: u64,
+    second_execute_calls: u64,
+    second_rollback_calls: u64,
     registration_id: Option<String>,
     change_set_id: Option<String>,
     run_id: Option<String>,
@@ -1021,6 +1056,7 @@ pub struct ContentManifestInput {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NegativeCaseInput {
     case_id: String,
+    evidence_source: String,
     session_id: String,
     native_session_id: String,
     run_id: String,
@@ -1028,6 +1064,7 @@ pub struct NegativeCaseInput {
     guard_api: String,
     session_begin: RawObservedCallInput,
     registration_call: RawObservedCallInput,
+    rendered_control_call: RawObservedCallInput,
     guard_call: RawObservedCallInput,
     content_before: ContentManifestInput,
     content_after: ContentManifestInput,
@@ -1038,6 +1075,11 @@ pub struct NegativeCaseInput {
     observation_stop: RawObservedCallInput,
     mcp_disconnect: RawObservedCallInput,
     setup_calls: Vec<RawObservedCallInput>,
+    cleanup_calls: Vec<RawObservedCallInput>,
+    registration_count: u64,
+    token_count: u64,
+    mcp_mutation_count: u64,
+    manifest_ownership_count: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1082,6 +1124,9 @@ pub struct UiStoreEvidenceInput {
     forward_actions: Vec<String>,
     inverse_actions: Vec<String>,
     final_verification: FinalVerificationInput,
+    registration_call: RawObservedCallInput,
+    dry_run_calls: Vec<RawObservedCallInput>,
+    cross_ttl_elapsed_milliseconds: u64,
     operations: Vec<LifecycleOperationInput>,
     content_manifests: Vec<ContentManifestInput>,
     negative_cases: Vec<NegativeCaseInput>,
@@ -1421,18 +1466,109 @@ fn create_event_file(path: &Path) -> Result<File, BridgeError> {
         .map_err(|_| BridgeError::new("MVP15D_BRIDGE_EVENT_FILE_CREATE_FAILED"))
 }
 
+fn retained_binding(kind: &str, value: &Value) -> String {
+    let raw = match value {
+        Value::String(value) => value.clone(),
+        _ => canonical_json(value),
+    };
+    sha256_bytes(format!("uagent.mvp15d.retained.{kind}.v1\0{raw}").as_bytes())
+}
+
+fn retained_key_binding(key: &str) -> Option<(String, &'static str)> {
+    let lower = key.to_ascii_lowercase();
+    if lower.contains("bindingsha256") {
+        return None;
+    }
+    if lower == "marker" {
+        return Some(("markerSha256".to_string(), "marker"));
+    }
+    if lower == "approvaltoken" {
+        return Some(("opaqueTokenBindingSha256".to_string(), "opaque-token"));
+    }
+    if lower == "session" {
+        return Some(("sessionBindingSha256".to_string(), "session"));
+    }
+    if let Some(position) = lower.rfind("sessionid") {
+        let prefix = &key[..position];
+        let suffix = &key[position + "sessionId".len()..];
+        let binding_key = if prefix.is_empty() {
+            format!("sessionBindingSha256{suffix}")
+        } else {
+            format!("{prefix}SessionBindingSha256{suffix}")
+        };
+        return Some((binding_key, "session"));
+    }
+    let (base, suffix) = if lower.ends_with("before") {
+        (
+            &key[..key.len() - "before".len()],
+            &key[key.len() - "before".len()..],
+        )
+    } else if lower.ends_with("after") {
+        (
+            &key[..key.len() - "after".len()],
+            &key[key.len() - "after".len()..],
+        )
+    } else {
+        (key, "")
+    };
+    let base_lower = base.to_ascii_lowercase();
+    if base_lower.contains("processid") {
+        return Some((format!("{base}BindingSha256{suffix}"), "process-id"));
+    }
+    if base_lower.ends_with("pid") {
+        return Some((format!("{base}BindingSha256{suffix}"), "pid"));
+    }
+    if matches!(base_lower.as_str(), "starttime" | "processstarttime")
+        || (base_lower.contains("creation") && base_lower.contains("filetime"))
+    {
+        return Some((format!("{base}BindingSha256{suffix}"), "creation-filetime"));
+    }
+    if lower == "port" {
+        return Some(("portBindingSha256".to_string(), "port"));
+    }
+    if lower == "endpoint" {
+        return Some(("endpointSha256".to_string(), "endpoint"));
+    }
+    None
+}
+
+fn redact_retained_event_value(value: Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(
+            values
+                .into_iter()
+                .map(redact_retained_event_value)
+                .collect(),
+        ),
+        Value::Object(values) => {
+            let mut retained = serde_json::Map::new();
+            for (key, value) in values {
+                if let Some((binding_key, kind)) = retained_key_binding(&key) {
+                    if !value.is_null() {
+                        retained.insert(binding_key, Value::String(retained_binding(kind, &value)));
+                    }
+                } else {
+                    retained.insert(key, redact_retained_event_value(value));
+                }
+            }
+            Value::Object(retained)
+        }
+        value => value,
+    }
+}
+
 fn append_event(
     file: &mut File,
     identity: &BridgeIdentity,
     event_type: &str,
     data: Value,
 ) -> Result<(), BridgeError> {
-    let event = json!({
+    let event = redact_retained_event_value(json!({
         "schemaVersion": EVENT_SCHEMA,
         "phase": identity.phase.as_str(),
         "type": event_type,
         "data": data,
-    });
+    }));
     serde_json::to_writer(&mut *file, &event)
         .map_err(|_| BridgeError::new("MVP15D_BRIDGE_EVENT_WRITE_FAILED"))?;
     file.write_all(b"\n")
@@ -1449,14 +1585,14 @@ fn identity_data(identity: &BridgeIdentity) -> Value {
         "sourceTreeSha256": identity.source_tree_sha256,
         "sourceDirty": identity.source_dirty,
         "sourceHeadRef": identity.source_head_ref,
-        "marker": identity.marker,
-        "session": identity.session,
+        "markerSha256": retained_binding("marker", &Value::String(identity.marker.clone())),
+        "sessionBindingSha256": retained_binding("session", &Value::String(identity.session.clone())),
         "generation": identity.generation,
-        "endpointSha256": sha256_bytes(identity.endpoint.as_bytes()),
-        "port": identity.port,
+        "endpointSha256": retained_binding("endpoint", &Value::String(identity.endpoint.clone())),
+        "portBindingSha256": retained_binding("port", &Value::from(identity.port)),
         "nonceSha256": identity.nonce_sha256,
         "process": {
-            "pid": identity.pid,
+            "pidBindingSha256": retained_binding("pid", &Value::from(identity.pid)),
             "executableBasename": identity.executable_basename,
             "executableSha256": identity.executable_sha256,
         },
@@ -1642,13 +1778,18 @@ fn manifest_observation_data(
     if !input.request.is_object() || input.receipt_id.is_empty() {
         return Err(BridgeError::new(code));
     }
-    let record = consume_observation_receipt(
-        identity,
-        &input.receipt_id,
-        "snapshot_asset_content_manifest",
-        &input.request,
-        code,
-    )?;
+    let api = if input
+        .request
+        .get("caseId")
+        .and_then(Value::as_str)
+        .is_some_and(|case_id| matches!(case_id, "N1" | "N2"))
+    {
+        "project_content_manifest"
+    } else {
+        "snapshot_asset_content_manifest"
+    };
+    let record =
+        consume_observation_receipt(identity, &input.receipt_id, api, &input.request, code)?;
     if string_field(&record.response, "status", code)? != "observed" {
         return Err(BridgeError::new(code));
     }
@@ -1658,13 +1799,40 @@ fn manifest_observation_data(
         .as_array()
         .ok_or_else(|| BridgeError::new(code))?;
     let run_root = format!("/Game/UAgentSandbox/{}", input.run_id);
-    let run_root_present = entries.iter().any(|entry| {
-        entry
-            .get("assetPath")
-            .and_then(Value::as_str)
-            .is_some_and(|path| path == run_root || path.starts_with(&format!("{run_root}/")))
-    });
+    let mut canonical_entries = Vec::with_capacity(entries.len());
+    let mut outside_entries = Vec::new();
+    let mut test01 = None;
+    let mut run_root_present = false;
+    for entry in entries {
+        let asset_path = string_field(entry, "assetPath", code)?;
+        let size = u64_field(entry, "size", code)?;
+        let entry_sha256 = string_field(entry, "sha256", code)?;
+        if !asset_path.starts_with("/Game/") || !is_sha256(entry_sha256) {
+            return Err(BridgeError::new(code));
+        }
+        let canonical = format!("{asset_path}|{size}|{entry_sha256}\n");
+        canonical_entries.push(canonical.clone());
+        if asset_path == run_root || asset_path.starts_with(&format!("{run_root}/")) {
+            run_root_present = true;
+        } else {
+            outside_entries.push(canonical);
+        }
+        if asset_path == "/Game/Test01" {
+            if test01.is_some() {
+                return Err(BridgeError::new(code));
+            }
+            test01 = Some(json!({ "size": size, "sha256": entry_sha256 }));
+        }
+    }
+    canonical_entries.sort_unstable();
+    outside_entries.sort_unstable();
+    let observed_aggregate = sha256_bytes(canonical_entries.concat().as_bytes());
+    let outside_run_aggregate = sha256_bytes(outside_entries.concat().as_bytes());
+    let test01 = test01.ok_or_else(|| BridgeError::new(code))?;
     if evidence_id.len() < 8 || !is_lower_hex(sha256, 64) {
+        return Err(BridgeError::new(code));
+    }
+    if observed_aggregate != sha256 {
         return Err(BridgeError::new(code));
     }
     Ok(json!({
@@ -1676,8 +1844,84 @@ fn manifest_observation_data(
         "runId": input.run_id,
         "evidenceId": evidence_id,
         "sha256": sha256,
+        "test01": test01,
+        "outsideRunAggregateSha256": outside_run_aggregate,
         "runRootPresent": run_root_present,
     }))
+}
+
+#[cfg(windows)]
+fn metadata_is_reparse_point(metadata: &fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    metadata.file_attributes() & 0x400 != 0
+}
+
+#[cfg(not(windows))]
+fn metadata_is_reparse_point(metadata: &fs::Metadata) -> bool {
+    metadata.file_type().is_symlink()
+}
+
+fn count_ordinary_descendants(directory: &Path, code: &'static str) -> Result<u64, BridgeError> {
+    let mut count = 0_u64;
+    for entry in fs::read_dir(directory).map_err(|_| BridgeError::new(code))? {
+        let entry = entry.map_err(|_| BridgeError::new(code))?;
+        let metadata = fs::symlink_metadata(entry.path()).map_err(|_| BridgeError::new(code))?;
+        if metadata_is_reparse_point(&metadata) {
+            return Err(BridgeError::new(code));
+        }
+        count = count.checked_add(1).ok_or_else(|| BridgeError::new(code))?;
+        if metadata.is_dir() {
+            count = count
+                .checked_add(count_ordinary_descendants(&entry.path(), code)?)
+                .ok_or_else(|| BridgeError::new(code))?;
+        }
+    }
+    Ok(count)
+}
+
+fn final_sandbox_directory_state(
+    identity: &BridgeIdentity,
+    run_id: &str,
+    code: &'static str,
+) -> Result<(bool, Value), BridgeError> {
+    if run_id.is_empty()
+        || run_id.contains(['/', '\\'])
+        || !run_id
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || matches!(value, b'-' | b'_' | b':'))
+    {
+        return Err(BridgeError::new(code));
+    }
+    let sandbox = identity
+        .evidence_root
+        .join("project")
+        .join("FinalHost")
+        .join("Content")
+        .join("UAgentSandbox");
+    let run_root_present = fs::symlink_metadata(sandbox.join(run_id)).is_ok();
+    let container = match fs::symlink_metadata(&sandbox) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => json!({
+            "state": "absent",
+            "reparsePoint": false,
+            "recursiveEntryCount": 0,
+        }),
+        Err(_) => return Err(BridgeError::new(code)),
+        Ok(metadata) => {
+            if !metadata.is_dir() || metadata_is_reparse_point(&metadata) {
+                return Err(BridgeError::new(code));
+            }
+            let recursive_entry_count = count_ordinary_descendants(&sandbox, code)?;
+            if recursive_entry_count != 0 {
+                return Err(BridgeError::new(code));
+            }
+            json!({
+                "state": "ordinary_directory",
+                "reparsePoint": false,
+                "recursiveEntryCount": recursive_entry_count,
+            })
+        }
+    };
+    Ok((run_root_present, container))
 }
 
 fn stopped_and_disconnected(
@@ -1803,6 +2047,246 @@ fn consume_session_registration_receipts(
     }))
 }
 
+fn consume_rendered_negative_control(
+    identity: &BridgeIdentity,
+    input: &RawObservedCallInput,
+    expected_case_id: &str,
+    code: &'static str,
+) -> Result<Value, BridgeError> {
+    let receipt = consume_observation_receipt(
+        identity,
+        &input.receipt_id,
+        "rendered_negative_control",
+        &input.request,
+        code,
+    )?;
+    if string_field(&receipt.response, "status", code)? != "observed"
+        || string_field(&receipt.response, "reason", code)? != "rendered_product_control_dispatched"
+        || string_field(&receipt.response, "caseId", code)? != expected_case_id
+    {
+        return Err(BridgeError::new(code));
+    }
+    Ok(json!({
+        "id": input.receipt_id,
+        "sequence": receipt.sequence,
+        "caseId": expected_case_id,
+        "source": "rendered_product_control",
+    }))
+}
+
+fn consume_blocked_registration_attempt(
+    identity: &BridgeIdentity,
+    input: &RawObservedCallInput,
+    api: &str,
+    expected_reason: &str,
+    code: &'static str,
+) -> Result<Value, BridgeError> {
+    let receipt =
+        consume_observation_receipt(identity, &input.receipt_id, api, &input.request, code)?;
+    let payload = receipt_response_payload(&receipt);
+    if string_field(payload, "status", code)? != "blocked"
+        || string_field(payload, "reason", code)? != expected_reason
+        || payload.get("registrationId").and_then(Value::as_str) != Some("")
+        || payload
+            .get("approvalToken")
+            .is_some_and(|value| !value.is_null())
+    {
+        return Err(BridgeError::new(code));
+    }
+    if api == "gate_off_uagent_child"
+        && (payload.get("uiGateEnabled").and_then(Value::as_bool) != Some(true)
+            || payload.get("childClosed").and_then(Value::as_bool) != Some(true)
+            || payload.get("childCleanupComplete").and_then(Value::as_bool) != Some(true)
+            || payload.get("registrationCount").and_then(Value::as_u64) != Some(0)
+            || payload.get("tokenCount").and_then(Value::as_u64) != Some(0)
+            || payload.get("mcpMutationCount").and_then(Value::as_u64) != Some(0)
+            || payload
+                .get("manifestOwnershipCount")
+                .and_then(Value::as_u64)
+                != Some(0)
+            || payload.get("processResidualCount").and_then(Value::as_u64) != Some(0)
+            || payload.get("portResidualCount").and_then(Value::as_u64) != Some(0)
+            || payload.get("rootResidualCount").and_then(Value::as_u64) != Some(0))
+    {
+        return Err(BridgeError::new(code));
+    }
+    let mut retained = json!({
+        "api": api,
+        "id": input.receipt_id,
+        "sequence": receipt.sequence,
+        "status": "blocked",
+        "reason": expected_reason,
+        "responseSha256": sha256_bytes(canonical_json(&receipt.response).as_bytes()),
+    });
+    if api == "gate_off_uagent_child" {
+        retained["uiGateEnabled"] = json!(true);
+        retained["childClosed"] = json!(true);
+        retained["childCleanupComplete"] = json!(true);
+        retained["processResidualCount"] = json!(0);
+        retained["portResidualCount"] = json!(0);
+        retained["rootResidualCount"] = json!(0);
+    }
+    Ok(retained)
+}
+
+fn consume_negative_pre_registration_closeout(
+    identity: &BridgeIdentity,
+    observation_stop: &RawObservedCallInput,
+    mcp_disconnect: &RawObservedCallInput,
+    expected_case_id: &str,
+    code: &'static str,
+) -> Result<Value, BridgeError> {
+    let stop = consume_observation_receipt(
+        identity,
+        &observation_stop.receipt_id,
+        "negative_case_closeout",
+        &observation_stop.request,
+        code,
+    )?;
+    let disconnect = consume_observation_receipt(
+        identity,
+        &mcp_disconnect.receipt_id,
+        "negative_case_closeout",
+        &mcp_disconnect.request,
+        code,
+    )?;
+    if string_field(&stop.response, "status", code)? != "closed"
+        || string_field(&stop.response, "reason", code)? != "observation_stop"
+        || string_field(&stop.response, "caseId", code)? != expected_case_id
+        || string_field(&disconnect.response, "status", code)? != "closed"
+        || string_field(&disconnect.response, "reason", code)? != "mcp_closed"
+        || string_field(&disconnect.response, "caseId", code)? != expected_case_id
+    {
+        return Err(BridgeError::new(code));
+    }
+    Ok(json!({
+        "observationStopReceiptId": observation_stop.receipt_id,
+        "observationStopReceiptSequence": stop.sequence,
+        "mcpDisconnectReceiptId": mcp_disconnect.receipt_id,
+        "mcpDisconnectReceiptSequence": disconnect.sequence,
+        "serverDisconnected": true,
+    }))
+}
+
+fn consume_happy_path_registration(
+    identity: &BridgeIdentity,
+    input: &RawObservedCallInput,
+    registration_id: &str,
+    run_id: &str,
+    code: &'static str,
+) -> Result<(Value, String), BridgeError> {
+    let record = consume_observation_receipt(
+        identity,
+        &input.receipt_id,
+        "register_asset_mutation_approval",
+        &input.request,
+        code,
+    )?;
+    let token = string_field(&record.response, "approvalToken", code)?;
+    if string_field(&record.response, "status", code)? != "registered"
+        || string_field(&record.response, "registrationId", code)? != registration_id
+        || string_field(&input.request, "runId", code)? != run_id
+        || input.request.get("approvalToken").is_some()
+        || token.len() < 32
+    {
+        return Err(BridgeError::new(code));
+    }
+    Ok((
+        json!({
+            "receiptId": input.receipt_id,
+            "receiptSequence": record.sequence,
+            "requestSha256": sha256_bytes(canonical_json(&input.request).as_bytes()),
+            "responseSha256": sha256_bytes(canonical_json(&record.response).as_bytes()),
+            "registrationId": registration_id,
+            "runId": run_id,
+            "opaqueTokenBindingSha256": retained_binding("opaque-token", &Value::String(token.to_string())),
+        }),
+        token.to_string(),
+    ))
+}
+
+fn consume_happy_path_dry_runs(
+    identity: &BridgeIdentity,
+    calls: &[RawObservedCallInput],
+    code: &'static str,
+) -> Result<Vec<Value>, BridgeError> {
+    const EXPECTED: [&str; 5] = [
+        "ue.asset.create_folder",
+        "ue.asset.duplicate",
+        "ue.asset.rename",
+        "ue.asset.move",
+        "ue.asset.save",
+    ];
+    if calls.len() != EXPECTED.len() {
+        return Err(BridgeError::new(code));
+    }
+    calls
+        .iter()
+        .zip(EXPECTED)
+        .map(|(call, expected_name)| {
+            let record = consume_observation_receipt(
+                identity,
+                &call.receipt_id,
+                "dry_run_asset_mutation",
+                &call.request,
+                code,
+            )?;
+            if string_field(&record.request, "toolName", code)? != expected_name
+                || record
+                    .request
+                    .get("approvalToken")
+                    .is_some_and(|value| !value.is_null())
+                || !record
+                    .request
+                    .get("dryRunHash")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.is_empty())
+            {
+                return Err(BridgeError::new(code));
+            }
+            let payload = receipt_response_payload(&record);
+            if string_field(payload, "status", code)? != "dry_run_ready" {
+                return Err(BridgeError::new(code));
+            }
+            Ok(json!({
+                "toolName": expected_name,
+                "receiptId": call.receipt_id,
+                "receiptSequence": record.sequence,
+                "requestSha256": sha256_bytes(canonical_json(&call.request).as_bytes()),
+                "responseSha256": sha256_bytes(canonical_json(&record.response).as_bytes()),
+            }))
+        })
+        .collect()
+}
+
+fn happy_path_native_token_valid(
+    index: usize,
+    request: &Value,
+    registration_id: &str,
+    opaque_token: &str,
+) -> bool {
+    request.get("registrationId").and_then(Value::as_str) == Some(registration_id)
+        && if index == 0 {
+            request.get("approvalToken").and_then(Value::as_str) == Some(opaque_token)
+        } else {
+            request.get("approvalToken").is_none_or(Value::is_null)
+        }
+}
+
+fn expected_negative_case_reason(case_id: &str) -> Option<&'static str> {
+    match case_id {
+        "N1" => Some("untrusted_root"),
+        "N2" => Some("feature_disabled"),
+        "N3" => Some("observation_session_stopped"),
+        "N4" => Some("process_exited"),
+        "N5" => Some("stale_generation"),
+        "N6" => Some("sandbox_path_required"),
+        "N7" => Some("execute_replay"),
+        "N8" => Some("rollback_replay"),
+        _ => None,
+    }
+}
+
 fn publish_ui_authority_events(
     file: &mut File,
     identity: &BridgeIdentity,
@@ -1824,17 +2308,23 @@ fn publish_ui_authority_events(
     ];
     let ledger = &input.ledger;
     let baseline = ledger.baseline_content_sha256.as_deref();
+    let registration_id = ledger.registration_id.as_deref().unwrap_or("");
+    let run_id = ledger.run_id.as_deref().unwrap_or("");
     if input.change_set_state.as_deref() != Some("rolled_back")
         || input.forward_actions != FORWARD
         || input.inverse_actions != INVERSE
         || ledger.dry_run_actions != 1
         || ledger.dry_run_calls != 5
         || ledger.native_registrations != 1
+        || ledger.opaque_tokens_issued != 1
         || ledger.native_execute_guards != 5
         || ledger.execute_calls != 5
         || ledger.verify_mutations != 0
         || ledger.native_rollback_guards != 4
         || ledger.rollback_calls != 4
+        || ledger.second_execute_calls != 0
+        || ledger.second_rollback_calls != 0
+        || !(65_000..=90_000).contains(&input.cross_ttl_elapsed_milliseconds)
         || ledger.content_observation_count != 4
         || ledger.registration_id.as_deref().is_none_or(str::is_empty)
         || ledger.change_set_id.as_deref().is_none_or(str::is_empty)
@@ -1853,6 +2343,15 @@ fn publish_ui_authority_events(
         return Err(BridgeError::new(CODE));
     }
 
+    let (registration_observation, opaque_token) = consume_happy_path_registration(
+        identity,
+        &input.registration_call,
+        registration_id,
+        run_id,
+        CODE,
+    )?;
+    let dry_run_observations = consume_happy_path_dry_runs(identity, &input.dry_run_calls, CODE)?;
+
     let mut operation_ids = Vec::new();
     let mut call_evidence_ids = Vec::new();
     for (index, operation) in input.operations.iter().enumerate() {
@@ -1868,6 +2367,12 @@ fn publish_ui_authority_events(
             || operation.registration_id.as_str() != ledger.registration_id.as_deref().unwrap_or("")
             || operation.run_id.as_str() != ledger.run_id.as_deref().unwrap_or("")
             || operation.side_effect_count != 1
+            || !happy_path_native_token_valid(
+                index,
+                &operation.native_call.request,
+                registration_id,
+                &opaque_token,
+            )
         {
             return Err(BridgeError::new(CODE));
         }
@@ -1915,22 +2420,77 @@ fn publish_ui_authority_events(
         )?;
     }
 
+    append_event(
+        file,
+        identity,
+        "lifecycle_ledger_observation",
+        json!({
+            "authorityLevel": "runtime_observed",
+            "uiDryRunActions": ledger.dry_run_actions,
+            "dryRunCalls": ledger.dry_run_calls,
+            "nativeRegistrations": ledger.native_registrations,
+            "opaqueTokensIssued": ledger.opaque_tokens_issued,
+            "nativeExecuteGuards": ledger.native_execute_guards,
+            "executeCalls": ledger.execute_calls,
+            "verifyMutations": ledger.verify_mutations,
+            "waitElapsedMilliseconds": input.cross_ttl_elapsed_milliseconds,
+            "nativeRollbackGuards": ledger.native_rollback_guards,
+            "rollbackCalls": ledger.rollback_calls,
+            "secondExecuteCalls": ledger.second_execute_calls,
+            "secondRollbackCalls": ledger.second_rollback_calls,
+            "replaySideEffectDelta": [0, 0, 0, 0, 0],
+        }),
+    )?;
+    append_event(
+        file,
+        identity,
+        "registration_observation",
+        registration_observation,
+    )?;
+    for dry_run in dry_run_observations {
+        append_event(file, identity, "dry_run_call_observation", dry_run)?;
+    }
+
     let manifests = input
         .content_manifests
         .iter()
         .map(|record| manifest_observation_data(identity, record, CODE))
         .collect::<Result<Vec<_>, _>>()?;
+    let (final_run_root_present, fixed_container) =
+        final_sandbox_directory_state(identity, run_id, CODE)?;
     if manifests[0]["stage"].as_str() != Some("before")
         || manifests[1]["stage"].as_str() != Some("after")
         || manifests[0]["sha256"] != manifests[1]["sha256"]
         || manifests[0]["sha256"].as_str() != baseline
         || manifests[0]["evidenceId"] == manifests[1]["evidenceId"]
+        || manifests[0]["test01"] != manifests[1]["test01"]
+        || manifests[0]["outsideRunAggregateSha256"] != manifests[1]["outsideRunAggregateSha256"]
         || manifests
             .iter()
             .any(|record| record["runRootPresent"].as_bool() != Some(false))
+        || final_run_root_present
     {
         return Err(BridgeError::new(CODE));
     }
+    append_event(
+        file,
+        identity,
+        "content_invariants_observation",
+        json!({
+            "authorityLevel": "native_observed",
+            "before": {
+                "test01": manifests[0]["test01"],
+                "outsideRunAggregateSha256": manifests[0]["outsideRunAggregateSha256"],
+                "runRootPresent": manifests[0]["runRootPresent"],
+            },
+            "after": {
+                "test01": manifests[1]["test01"],
+                "outsideRunAggregateSha256": manifests[1]["outsideRunAggregateSha256"],
+                "runRootPresent": manifests[1]["runRootPresent"],
+            },
+            "fixedContainer": fixed_container,
+        }),
+    )?;
     for record in &manifests {
         append_event(
             file,
@@ -1943,7 +2503,9 @@ fn publish_ui_authority_events(
     let mut negative_identities = Vec::new();
     for (index, record) in input.negative_cases.iter().enumerate() {
         let case_id = format!("N{}", index + 1);
-        let expected_api = if matches!(case_id.as_str(), "N2" | "N6") {
+        let expected_api = if matches!(case_id.as_str(), "N1" | "N2") {
+            "register_asset_mutation_approval"
+        } else if case_id == "N6" {
             "dry_run_asset_mutation"
         } else if case_id == "N8" {
             "rollback_asset_mutation"
@@ -1956,8 +2518,11 @@ fn publish_ui_authority_events(
             record.run_id.as_str(),
             record.registration_id.as_str(),
         ];
+        let pre_registration = matches!(case_id.as_str(), "N1" | "N2");
         if record.case_id != case_id
+            || record.evidence_source != "rendered_product_control"
             || record.guard_api != expected_api
+            || record.run_id.len() < 8
             || identities.iter().any(|value| value.len() < 8)
             || identities
                 .iter()
@@ -1970,19 +2535,54 @@ fn publish_ui_authority_events(
             || record.content_after.registration_id != record.registration_id
             || record.content_before.run_id != record.run_id
             || record.content_after.run_id != record.run_id
+            || (pre_registration
+                && (record.session_begin.receipt_id != record.rendered_control_call.receipt_id
+                    || record.registration_call.receipt_id != record.guard_call.receipt_id
+                    || record.registration_count != 0
+                    || record.token_count != 0
+                    || record.mcp_mutation_count != 0
+                    || record.manifest_ownership_count != 0))
         {
             return Err(BridgeError::new(CODE));
         }
         negative_identities.extend(identities.iter().map(|value| value.to_string()));
-        let identity_receipts = consume_session_registration_receipts(
+        let rendered_control = consume_rendered_negative_control(
             identity,
-            &record.session_begin,
-            &record.registration_call,
-            &record.session_id,
-            &record.run_id,
-            &record.registration_id,
+            &record.rendered_control_call,
+            &case_id,
             CODE,
         )?;
+        let identity_receipts = if pre_registration {
+            let api = if case_id == "N1" {
+                "register_asset_mutation_approval"
+            } else {
+                "gate_off_uagent_child"
+            };
+            let registration = consume_blocked_registration_attempt(
+                identity,
+                &record.registration_call,
+                api,
+                expected_negative_case_reason(&case_id).unwrap_or_default(),
+                CODE,
+            )?;
+            json!({
+                "renderedControl": rendered_control,
+                "registrationAttempt": registration,
+            })
+        } else {
+            json!({
+                "renderedControl": rendered_control,
+                "sessionRegistration": consume_session_registration_receipts(
+                    identity,
+                    &record.session_begin,
+                    &record.registration_call,
+                    &record.session_id,
+                    &record.run_id,
+                    &record.registration_id,
+                    CODE,
+                )?,
+            })
+        };
         let counter_before = consume_counter_receipt(
             identity,
             &record.counter_read_before,
@@ -1995,14 +2595,24 @@ fn publish_ui_authority_events(
             &record.counters_after,
             CODE,
         )?;
-        let closeout_receipts = stopped_and_disconnected(
-            identity,
-            &record.observation_stop,
-            &record.mcp_disconnect,
-            &record.session_id,
-            &record.native_session_id,
-            CODE,
-        )?;
+        let closeout_receipts = if pre_registration {
+            consume_negative_pre_registration_closeout(
+                identity,
+                &record.observation_stop,
+                &record.mcp_disconnect,
+                &case_id,
+                CODE,
+            )?
+        } else {
+            stopped_and_disconnected(
+                identity,
+                &record.observation_stop,
+                &record.mcp_disconnect,
+                &record.session_id,
+                &record.native_session_id,
+                CODE,
+            )?
+        };
         let mut setup_receipts = Vec::with_capacity(record.setup_calls.len());
         let mut setup_responses_valid = true;
         for setup in &record.setup_calls {
@@ -2018,6 +2628,7 @@ fn publish_ui_authority_events(
                     "attach_editor_process",
                     "execute_asset_mutation",
                     "rollback_asset_mutation",
+                    "mcp_asset_tool_call",
                     "record_asset_mutation_outcome",
                 ],
                 CODE,
@@ -2077,6 +2688,51 @@ fn publish_ui_authority_events(
                             payload.get("phase").and_then(Value::as_str),
                             Some("execute" | "rollback")
                         )
+                        && receipt
+                            .request
+                            .get("sideEffectObserved")
+                            .and_then(Value::as_bool)
+                            == Some(true)
+                        && receipt.request.get("effectState").and_then(Value::as_str)
+                            == Some("known_effect")
+                }
+                "mcp_asset_tool_call" => {
+                    let phase = payload.get("phase").and_then(Value::as_str);
+                    let common = payload.get("blocked").and_then(Value::as_bool) == Some(false)
+                        && payload.get("implementationStatus").and_then(Value::as_str)
+                            == Some("execution_capable")
+                        && payload.get("changeSetId").and_then(Value::as_str)
+                            == Some(
+                                record.registration_call.request["changeSetId"]
+                                    .as_str()
+                                    .unwrap_or_default(),
+                            )
+                        && payload.get("runId").and_then(Value::as_str)
+                            == Some(record.run_id.as_str());
+                    if phase == Some("dry_run") {
+                        common
+                            && payload.get("status").and_then(Value::as_str)
+                                == Some("dry_run_completed")
+                            && payload.get("sideEffectObserved").and_then(Value::as_bool)
+                                == Some(false)
+                            && payload.get("effectState").and_then(Value::as_str)
+                                == Some("known_none")
+                            && payload
+                                .get("dryRunHash")
+                                .and_then(Value::as_str)
+                                .is_some_and(|value| value.len() == 40)
+                    } else {
+                        common
+                            && matches!(
+                                payload.get("status").and_then(Value::as_str),
+                                Some("executed" | "rolled_back")
+                            )
+                            && matches!(phase, Some("execute" | "rollback"))
+                            && payload.get("sideEffectObserved").and_then(Value::as_bool)
+                                == Some(true)
+                            && payload.get("effectState").and_then(Value::as_str)
+                                == Some("known_effect")
+                    }
                 }
                 "stop_editor_observation_session" => {
                     status == "stopped"
@@ -2096,39 +2752,181 @@ fn publish_ui_authority_events(
                 "sessionId": payload.get("sessionId"),
                 "registrationId": payload.get("registrationId"),
                 "phase": payload.get("phase"),
+                "toolName": payload.get("toolName"),
                 "operationId": payload.get("operationId"),
+                "sideEffectObserved": payload.get("sideEffectObserved"),
+                "effectState": payload.get("effectState"),
+                "evidenceId": payload.get("evidenceId"),
                 "processId": payload.get("processId").or_else(|| payload.pointer("/process/id")),
                 "ownerTaskId": payload.get("ownerTaskId"),
                 "ownerPhase": payload.get("ownerPhase"),
                 "observationGeneration": payload.get("observationGeneration"),
             }));
         }
-        let guard_call = call_receipt(identity, &record.guard_call, expected_api, "blocked", CODE)?;
+        let guard_call = if pre_registration {
+            identity_receipts["registrationAttempt"].clone()
+        } else {
+            call_receipt(identity, &record.guard_call, expected_api, "blocked", CODE)?
+        };
+        let mut cleanup_receipts = Vec::with_capacity(record.cleanup_calls.len());
+        let mut cleanup_responses_valid = true;
+        for cleanup in &record.cleanup_calls {
+            let receipt = consume_allowed_observation_receipt(
+                identity,
+                &cleanup.receipt_id,
+                &cleanup.request,
+                &[
+                    "rollback_asset_mutation",
+                    "mcp_asset_tool_call",
+                    "record_asset_mutation_outcome",
+                    "approval_ownership_state",
+                ],
+                CODE,
+            )?;
+            let payload = receipt_response_payload(&receipt);
+            cleanup_responses_valid &= match receipt.api.as_str() {
+                "rollback_asset_mutation" => {
+                    payload.get("status").and_then(Value::as_str)
+                        == Some("accepted_by_native_guard")
+                        && payload.get("registrationId").and_then(Value::as_str)
+                            == Some(record.registration_id.as_str())
+                        && payload.get("phase").and_then(Value::as_str) == Some("rollback")
+                }
+                "mcp_asset_tool_call" => {
+                    payload.get("blocked").and_then(Value::as_bool) == Some(false)
+                        && payload.get("status").and_then(Value::as_str) == Some("rolled_back")
+                        && payload.get("phase").and_then(Value::as_str) == Some("rollback")
+                        && payload.get("sideEffectObserved").and_then(Value::as_bool) == Some(true)
+                        && payload.get("effectState").and_then(Value::as_str)
+                            == Some("known_effect")
+                        && payload.get("implementationStatus").and_then(Value::as_str)
+                            == Some("execution_capable")
+                        && payload.get("changeSetId").and_then(Value::as_str)
+                            == Some(
+                                record.registration_call.request["changeSetId"]
+                                    .as_str()
+                                    .unwrap_or_default(),
+                            )
+                        && payload.get("runId").and_then(Value::as_str)
+                            == Some(record.run_id.as_str())
+                }
+                "record_asset_mutation_outcome" => {
+                    payload.get("status").and_then(Value::as_str) == Some("recorded")
+                        && payload.get("registrationId").and_then(Value::as_str)
+                            == Some(record.registration_id.as_str())
+                        && payload.get("phase").and_then(Value::as_str) == Some("rollback")
+                        && receipt
+                            .request
+                            .get("sideEffectObserved")
+                            .and_then(Value::as_bool)
+                            == Some(true)
+                        && receipt.request.get("effectState").and_then(Value::as_str)
+                            == Some("known_effect")
+                }
+                "approval_ownership_state" => {
+                    payload.get("status").and_then(Value::as_str) == Some("observed")
+                        && payload.get("reason").and_then(Value::as_str)
+                            == Some("approval_ownership_observed")
+                        && payload.get("caseId").and_then(Value::as_str) == Some("N1")
+                        && payload.get("registrationCount").and_then(Value::as_u64) == Some(0)
+                        && payload.get("tokenCount").and_then(Value::as_u64) == Some(0)
+                        && payload.get("mcpMutationCount").and_then(Value::as_u64) == Some(0)
+                        && payload
+                            .get("manifestOwnershipCount")
+                            .and_then(Value::as_u64)
+                            == Some(0)
+                }
+                _ => false,
+            };
+            cleanup_receipts.push(json!({
+                "api": receipt.api,
+                "id": cleanup.receipt_id,
+                "sequence": receipt.sequence,
+                "responseSha256": sha256_bytes(canonical_json(&receipt.response).as_bytes()),
+                "status": payload.get("status"),
+                "reason": payload.get("reason"),
+                "registrationId": payload.get("registrationId"),
+                "phase": payload.get("phase"),
+                "operationId": payload.get("operationId"),
+                "sideEffectObserved": payload.get("sideEffectObserved"),
+                "effectState": payload.get("effectState"),
+                "evidenceId": payload.get("evidenceId"),
+                "registrationCount": payload.get("registrationCount"),
+                "tokenCount": payload.get("tokenCount"),
+                "mcpMutationCount": payload.get("mcpMutationCount"),
+                "manifestOwnershipCount": payload.get("manifestOwnershipCount"),
+            }));
+        }
         let reason = guard_call["reason"].as_str().unwrap_or_default();
         let setup_apis = setup_receipts
             .iter()
             .filter_map(|receipt| receipt["api"].as_str())
             .collect::<Vec<_>>();
+        const DRY_RUN: &str = "mcp_asset_tool_call";
         let setup_valid = match case_id.as_str() {
-            "N1" => setup_apis == ["retract_mvp15_companion_approvals"],
+            "N1" => setup_apis.is_empty(),
             "N2" => setup_apis.is_empty(),
-            "N3" => setup_apis == ["stop_editor_observation_session"],
+            "N3" => {
+                setup_apis
+                    == [
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        "stop_editor_observation_session",
+                    ]
+            }
             "N4" => {
                 setup_apis
                     == [
                         "create_managed_editor_process",
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
                         "terminate_managed_editor_process",
                     ]
             }
-            "N5" => setup_apis == ["attach_editor_process"],
-            "N6" => setup_apis.is_empty(),
-            "N7" => setup_apis == ["execute_asset_mutation", "record_asset_mutation_outcome"],
+            "N5" => {
+                setup_apis
+                    == [
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        "attach_editor_process",
+                    ]
+            }
+            "N6" => setup_apis == [DRY_RUN, DRY_RUN, DRY_RUN, DRY_RUN, DRY_RUN],
+            "N7" => {
+                setup_apis
+                    == [
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        "execute_asset_mutation",
+                        "mcp_asset_tool_call",
+                        "record_asset_mutation_outcome",
+                    ]
+            }
             "N8" => {
                 setup_apis
                     == [
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
+                        DRY_RUN,
                         "execute_asset_mutation",
+                        "mcp_asset_tool_call",
                         "record_asset_mutation_outcome",
                         "rollback_asset_mutation",
+                        "mcp_asset_tool_call",
                         "record_asset_mutation_outcome",
                     ]
             }
@@ -2138,33 +2936,115 @@ fn publish_ui_authority_events(
             pair[0]["sequence"].as_u64().unwrap_or(u64::MAX)
                 < pair[1]["sequence"].as_u64().unwrap_or(0)
         });
-        let reason_valid = match case_id.as_str() {
-            "N1" => reason == "companion_attestation_retracted",
-            "N2" => reason == "asset_mutation_gate_disabled",
-            "N3" => reason == "observation_session_stopped",
-            "N4" => reason == "process_exited",
-            "N5" => reason == "stale_generation",
-            "N6" => reason == "sandbox_path_required",
-            "N7" => reason == "execute_replay",
-            "N8" => reason == "rollback_replay",
-            _ => false,
+        let expected_dry_run_tools = [
+            "ue.asset.create_folder",
+            "ue.asset.duplicate",
+            "ue.asset.rename",
+            "ue.asset.move",
+            "ue.asset.save",
+        ];
+        let dry_run_start = usize::from(case_id == "N4");
+        let dry_run_receipts = if pre_registration {
+            &setup_receipts[0..0]
+        } else {
+            setup_receipts
+                .get(dry_run_start..dry_run_start + expected_dry_run_tools.len())
+                .unwrap_or(&[])
         };
+        let dry_run_contract_valid = pre_registration
+            || (dry_run_receipts.len() == expected_dry_run_tools.len()
+                && dry_run_receipts.iter().zip(expected_dry_run_tools).all(
+                    |(receipt, tool_name)| {
+                        receipt["api"] == "mcp_asset_tool_call"
+                            && receipt["phase"] == "dry_run"
+                            && receipt["toolName"] == tool_name
+                            && receipt["sideEffectObserved"] == false
+                            && receipt["effectState"] == "known_none"
+                    },
+                ));
+        let rendered_sequence = rendered_control["sequence"].as_u64().unwrap_or(u64::MAX);
+        let identity_sequence_valid = if pre_registration {
+            rendered_sequence
+                < identity_receipts["registrationAttempt"]["sequence"]
+                    .as_u64()
+                    .unwrap_or(0)
+        } else {
+            let session_sequence = identity_receipts["sessionRegistration"]["sessionBegin"]
+                ["sequence"]
+                .as_u64()
+                .unwrap_or(0);
+            let registration_sequence = identity_receipts["sessionRegistration"]["registration"]
+                ["sequence"]
+                .as_u64()
+                .unwrap_or(0);
+            rendered_sequence < session_sequence
+                && dry_run_receipts.first().is_some_and(|receipt| {
+                    session_sequence < receipt["sequence"].as_u64().unwrap_or(0)
+                })
+                && dry_run_receipts.last().is_some_and(|receipt| {
+                    receipt["sequence"].as_u64().unwrap_or(u64::MAX) < registration_sequence
+                })
+        };
+        let cleanup_apis = cleanup_receipts
+            .iter()
+            .filter_map(|receipt| receipt["api"].as_str())
+            .collect::<Vec<_>>();
+        let cleanup_valid = match case_id.as_str() {
+            "N1" => cleanup_apis == ["approval_ownership_state"],
+            "N7" => {
+                cleanup_apis
+                    == [
+                        "rollback_asset_mutation",
+                        "mcp_asset_tool_call",
+                        "record_asset_mutation_outcome",
+                    ]
+            }
+            _ => cleanup_apis.is_empty(),
+        };
+        let cleanup_sequence_valid = cleanup_receipts.windows(2).all(|pair| {
+            pair[0]["sequence"].as_u64().unwrap_or(u64::MAX)
+                < pair[1]["sequence"].as_u64().unwrap_or(0)
+        });
+        let setup_before_guard = setup_receipts.last().is_none_or(|receipt| {
+            receipt["sequence"].as_u64().unwrap_or(u64::MAX)
+                < guard_call["receiptSequence"].as_u64().unwrap_or(0)
+        });
+        let guard_before_cleanup = cleanup_receipts.first().is_none_or(|receipt| {
+            guard_call["receiptSequence"].as_u64().unwrap_or(u64::MAX)
+                < receipt["sequence"].as_u64().unwrap_or(0)
+        });
+        let reason_valid = expected_negative_case_reason(&case_id) == Some(reason);
         let counter_delta_valid = match case_id.as_str() {
             "N7" => {
-                record.counters_after[0] == record.counters_before[0] + 1
-                    && record.counters_after[1..] == record.counters_before[1..]
+                record.counters_after[0] == record.counters_before[0] + 2
+                    && record.counters_after[1] == record.counters_before[1] + 2
+                    && record.counters_after[2..] == record.counters_before[2..]
             }
             "N8" => {
                 record.counters_after[0] == record.counters_before[0] + 2
-                    && record.counters_after[1..] == record.counters_before[1..]
+                    && record.counters_after[1] == record.counters_before[1] + 2
+                    && record.counters_after[2..] == record.counters_before[2..]
             }
             _ => record.counters_after == record.counters_before,
         };
         if !setup_valid
             || !setup_responses_valid
             || !setup_sequence_valid
+            || !dry_run_contract_valid
+            || !identity_sequence_valid
+            || !cleanup_valid
+            || !cleanup_responses_valid
+            || !cleanup_sequence_valid
+            || !setup_before_guard
+            || !guard_before_cleanup
             || !reason_valid
             || !counter_delta_valid
+            || (matches!(case_id.as_str(), "N7" | "N8") && record.mcp_mutation_count != 2)
+            || (!matches!(case_id.as_str(), "N7" | "N8") && record.mcp_mutation_count != 0)
+            || (!pre_registration
+                && (record.registration_count != 1
+                    || record.token_count != 1
+                    || record.manifest_ownership_count != 1))
         {
             return Err(BridgeError::new(CODE));
         }
@@ -2180,12 +3060,14 @@ fn publish_ui_authority_events(
             json!({
                 "authorityLevel": "runtime_observed",
                 "caseId": record.case_id,
+                "evidenceSource": record.evidence_source,
                 "sessionId": record.session_id,
                 "nativeSessionId": record.native_session_id,
                 "runId": record.run_id,
                 "registrationId": record.registration_id,
                 "identityReceipts": identity_receipts,
                 "setupReceipts": setup_receipts,
+                "cleanupReceipts": cleanup_receipts,
                 "guardCall": guard_call,
                 "contentBefore": {
                     "evidenceId": before["evidenceId"],
@@ -2203,6 +3085,10 @@ fn publish_ui_authority_events(
                 "countersAfter": record.counters_after,
                 "counterReadBefore": counter_before,
                 "counterReadAfter": counter_after,
+                "registrationCount": record.registration_count,
+                "tokenCount": record.token_count,
+                "mcpMutationCount": record.mcp_mutation_count,
+                "manifestOwnershipCount": record.manifest_ownership_count,
                 "observationStopped": true,
                 "localMcpClosed": true,
                 "serverMcpTerminated": closeout_receipts["serverDisconnected"],
@@ -2755,6 +3641,20 @@ fn observe_renderer_process() -> Result<Value, BridgeError> {
     }))
 }
 
+#[cfg(windows)]
+fn task_owned_process_exists(pid: u32) -> bool {
+    use sysinfo::{Pid, System};
+
+    let mut system = System::new_all();
+    system.refresh_processes();
+    system.process(Pid::from_u32(pid)).is_some()
+}
+
+#[cfg(not(windows))]
+fn task_owned_process_exists(_pid: u32) -> bool {
+    false
+}
+
 #[cfg(not(windows))]
 fn observe_renderer_process() -> Result<Value, BridgeError> {
     Err(BridgeError::new(
@@ -2763,13 +3663,25 @@ fn observe_renderer_process() -> Result<Value, BridgeError> {
 }
 
 fn receipt_response_payload(record: &ObservationReceiptRecord) -> &Value {
-    record
+    let result = record
         .response
         .as_object()
-        .and_then(|response| response.get("body"))
+        .and_then(|response| response.get("parsedBody"))
         .and_then(Value::as_object)
         .and_then(|body| body.get("result"))
-        .unwrap_or(&record.response)
+        .or_else(|| {
+            record
+                .response
+                .as_object()
+                .and_then(|response| response.get("body"))
+                .and_then(Value::as_object)
+                .and_then(|body| body.get("result"))
+        })
+        .unwrap_or(&record.response);
+    result
+        .as_object()
+        .and_then(|result| result.get("structuredContent"))
+        .unwrap_or(result)
 }
 
 fn native_mutation_counters(records: &[ObservationReceiptRecord]) -> [u64; 5] {
@@ -3372,7 +4284,7 @@ impl BridgeState {
                 .get("retractions")
                 .and_then(Value::as_array)
                 .map(Vec::len)
-                != Some(5)
+                != Some(3)
             || !input
                 .segment
                 .get("mutationBefore")
@@ -3837,6 +4749,122 @@ impl BridgeState {
             .collect::<Vec<_>>();
         let (api, observation) = match input.kind.as_str() {
             "renderer_process" => ("renderer_instance_begin", observe_renderer_process()?),
+            "rendered_control" => {
+                let case_id = string_field(
+                    &input.request,
+                    "caseId",
+                    "MVP15D_BRIDGE_NATIVE_STATE_INVALID",
+                )?;
+                let control_id = string_field(
+                    &input.request,
+                    "controlId",
+                    "MVP15D_BRIDGE_NATIVE_STATE_INVALID",
+                )?;
+                if !matches!(
+                    case_id,
+                    "N1" | "N2" | "N3" | "N4" | "N5" | "N6" | "N7" | "N8"
+                ) || control_id != format!("mvp15d-negative-{}", case_id.to_ascii_lowercase())
+                {
+                    return Err(BridgeError::new("MVP15D_BRIDGE_NATIVE_STATE_INVALID"));
+                }
+                (
+                    "rendered_negative_control",
+                    json!({
+                        "status": "observed",
+                        "reason": "rendered_product_control_dispatched",
+                        "caseId": case_id,
+                        "controlId": control_id,
+                    }),
+                )
+            }
+            "project_content_manifest" => {
+                let case_id = string_field(
+                    &input.request,
+                    "caseId",
+                    "MVP15D_BRIDGE_NATIVE_STATE_INVALID",
+                )?;
+                let stage = string_field(
+                    &input.request,
+                    "stage",
+                    "MVP15D_BRIDGE_NATIVE_STATE_INVALID",
+                )?;
+                if !matches!(case_id, "N1" | "N2") || !matches!(stage, "before" | "after") {
+                    return Err(BridgeError::new("MVP15D_BRIDGE_NATIVE_STATE_INVALID"));
+                }
+                let project_root = self
+                    .identity
+                    .evidence_root
+                    .join("project")
+                    .join("FinalHost");
+                let manifest =
+                    crate::asset_mutation::snapshot_task_project_content_manifest(&project_root)
+                        .map_err(|_| BridgeError::new("MVP15D_BRIDGE_NATIVE_STATE_INVALID"))?;
+                (
+                    "project_content_manifest",
+                    serde_json::to_value(manifest)
+                        .map_err(|_| BridgeError::new("MVP15D_BRIDGE_NATIVE_STATE_INVALID"))?,
+                )
+            }
+            "negative_closeout" => {
+                let case_id = string_field(
+                    &input.request,
+                    "caseId",
+                    "MVP15D_BRIDGE_NATIVE_STATE_INVALID",
+                )?;
+                let stage = string_field(
+                    &input.request,
+                    "stage",
+                    "MVP15D_BRIDGE_NATIVE_STATE_INVALID",
+                )?;
+                if !matches!(case_id, "N1" | "N2")
+                    || !matches!(stage, "observation_stop" | "mcp_closed")
+                {
+                    return Err(BridgeError::new("MVP15D_BRIDGE_NATIVE_STATE_INVALID"));
+                }
+                (
+                    "negative_case_closeout",
+                    json!({
+                        "status": "closed",
+                        "reason": stage,
+                        "caseId": case_id,
+                    }),
+                )
+            }
+            "approval_ownership" => {
+                let case_id = string_field(
+                    &input.request,
+                    "caseId",
+                    "MVP15D_BRIDGE_NATIVE_STATE_INVALID",
+                )?;
+                let stage = string_field(
+                    &input.request,
+                    "stage",
+                    "MVP15D_BRIDGE_NATIVE_STATE_INVALID",
+                )?;
+                if case_id != "N1" || stage != "post_attempt" {
+                    return Err(BridgeError::new("MVP15D_BRIDGE_NATIVE_STATE_INVALID"));
+                }
+                let (registration_count, token_count) =
+                    crate::asset_mutation::approval_ownership_counts();
+                let counters = native_mutation_counters(
+                    &records
+                        .iter()
+                        .map(|(_, record)| record.clone())
+                        .collect::<Vec<_>>(),
+                );
+                (
+                    "approval_ownership_state",
+                    json!({
+                        "status": "observed",
+                        "reason": "approval_ownership_observed",
+                        "caseId": case_id,
+                        "registrationCount": registration_count,
+                        "tokenCount": token_count,
+                        "mcpMutationCount": counters[1],
+                        "manifestOwnershipCount": registration_count,
+                    }),
+                )
+            }
             "mutation_counters" => {
                 let records = records
                     .iter()
@@ -3901,12 +4929,12 @@ impl BridgeState {
                     string_field(&input.request, "reason", "MVP15D_RETRACTION_STATE_INVALID")?;
                 if !matches!(
                     reason,
-                    "disconnect"
+                    "refresh_tools"
+                        | "reconnect"
                         | "endpoint_change"
-                        | "failure"
-                        | "newer_generation"
-                        | "attestation_invalidation"
                         | "renderer_restart"
+                        | "ue_restart"
+                        | "stale_completion"
                 ) {
                     return Err(BridgeError::new("MVP15D_RETRACTION_STATE_INVALID"));
                 }
@@ -3946,25 +4974,36 @@ impl BridgeState {
                     .filter(|(_, record)| record.sequence > ready_attestation.1.sequence)
                     .collect::<Vec<_>>();
                 let action_valid = match reason {
-                    "disconnect" => action_records
-                        .iter()
-                        .any(|(_, record)| record.api == "mcp_disconnect"),
-                    "endpoint_change" => action_records.iter().any(|(_, record)| {
-                        matches!(record.api.as_str(), "mcp_connect" | "mcp_transport_failure")
-                            && record_request_endpoint(record)
-                                .is_some_and(|value| value != ready_endpoint)
-                    }),
-                    "failure" => action_records
-                        .iter()
-                        .any(|(_, record)| record.api == "mcp_transport_failure"),
-                    "newer_generation" => action_records.iter().any(|(_, record)| {
+                    "refresh_tools" => action_records.iter().any(|(_, record)| {
                         record.api == "mcp_fingerprint"
                             && record_request_generation(record)
                                 .is_some_and(|generation| generation > ready_generation)
                     }),
-                    "attestation_invalidation" => action_records
-                        .iter()
-                        .any(|(_, record)| record.api == "retract_mvp15_companion_approvals"),
+                    "reconnect" => {
+                        action_records
+                            .iter()
+                            .any(|(_, record)| record.api == "mcp_disconnect")
+                            && action_records.iter().any(|(_, record)| {
+                                record.api == "mcp_connect"
+                                    && record_request_generation(record)
+                                        .is_some_and(|generation| generation > ready_generation)
+                                    && record_response_session(record).is_some_and(|session| {
+                                        record_response_session(&ready.1) != Some(session)
+                                    })
+                            })
+                    }
+                    "endpoint_change" => {
+                        action_records.iter().any(|(_, record)| {
+                            record.api == "mcp_transport_failure"
+                                && record_request_endpoint(record).is_some_and(|endpoint| {
+                                    endpoint != ready_endpoint && endpoint != self.identity.endpoint
+                                })
+                        }) && action_records.iter().any(|(_, record)| {
+                            record.api == "mcp_connect"
+                                && record_request_endpoint(record)
+                                    == Some(self.identity.endpoint.as_str())
+                        })
+                    }
                     "renderer_restart" => {
                         let renderer_processes = action_records
                             .iter()
@@ -3989,6 +5028,40 @@ impl BridgeState {
                                 .iter()
                                 .any(|(_, record)| record.api == "renderer_restart_successor")
                     }
+                    "ue_restart" => {
+                        action_records.iter().any(|(_, record)| {
+                            matches!(
+                                record.api.as_str(),
+                                "terminate_managed_editor_process"
+                                    | "release_managed_editor_process"
+                            )
+                        }) && action_records
+                            .iter()
+                            .any(|(_, record)| record.api == "attach_editor_process")
+                            && action_records.iter().any(|(_, record)| {
+                                record.api == "mcp_connect"
+                                    && record_request_generation(record)
+                                        .is_some_and(|generation| generation > ready_generation)
+                            })
+                    }
+                    "stale_completion" => {
+                        let fingerprints = action_records
+                            .iter()
+                            .filter(|(_, record)| record.api == "mcp_fingerprint")
+                            .collect::<Vec<_>>();
+                        let winning_generation = fingerprints
+                            .iter()
+                            .filter_map(|(_, record)| record_request_generation(record))
+                            .max();
+                        fingerprints.len() >= 2
+                            && winning_generation.is_some_and(|winning| {
+                                winning > ready_generation
+                                    && fingerprints.iter().any(|(_, record)| {
+                                        record_request_generation(record)
+                                            .is_some_and(|generation| generation < winning)
+                                    })
+                            })
+                    }
                     _ => false,
                 };
                 if !action_valid {
@@ -4004,7 +5077,12 @@ impl BridgeState {
                     .filter(|(_, record)| {
                         matches!(record.api.as_str(), "mcp_connect" | "mcp_fingerprint")
                     })
-                    .max_by_key(|(_, record)| record.sequence);
+                    .max_by_key(|(_, record)| {
+                        (
+                            record_request_generation(record).unwrap_or(ready_generation),
+                            record.sequence,
+                        )
+                    });
                 let session_after = latest_connection_or_discovery
                     .and_then(|(_, record)| record_response_session(record))
                     .unwrap_or_default();
@@ -4047,6 +5125,122 @@ impl BridgeState {
             request,
             observation,
         })
+    }
+
+    pub fn run_gate_off_child(
+        &mut self,
+        input: GateOffChildRunInput,
+    ) -> Result<GateOffChildResult, BridgeError> {
+        const CODE: &str = "MVP15D_GATE_OFF_CHILD_INVALID";
+        let project_root = self
+            .identity
+            .evidence_root
+            .join("project")
+            .join("FinalHost");
+        if self.identity.mode != BridgeMode::Live
+            || self.identity.phase != BridgePhase::UiLifecycle
+            || !self.driver_claimed
+            || self.structured_evidence_published
+            || input.case_id != "N2"
+            || Path::new(&input.registration_input.trusted_project_root) != project_root
+        {
+            return Err(BridgeError::new(CODE));
+        }
+        let result_parent = self
+            .identity
+            .event_file
+            .parent()
+            .ok_or_else(|| BridgeError::new(CODE))?;
+        let unique = format!(
+            "gate-off-child-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| BridgeError::new(CODE))?
+                .as_nanos()
+        );
+        let result_path = result_parent.join(unique);
+        if result_path.exists() {
+            return Err(BridgeError::new(CODE));
+        }
+        let input_json =
+            serde_json::to_string(&input.registration_input).map_err(|_| BridgeError::new(CODE))?;
+        let executable = std::env::current_exe().map_err(|_| BridgeError::new(CODE))?;
+        let mut command = std::process::Command::new(executable);
+        command
+            .env(GATE_OFF_CHILD_ENV, "1")
+            .env(GATE_OFF_CHILD_INPUT_ENV, input_json)
+            .env(GATE_OFF_CHILD_RESULT_ENV, &result_path)
+            .env_remove("UAGENT_ENABLE_ASSET_MUTATION")
+            .env_remove(ENABLE_ENV)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        let mut child = command.spawn().map_err(|_| BridgeError::new(CODE))?;
+        let child_pid = child.id();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
+        let exit_status = loop {
+            if let Some(status) = child.try_wait().map_err(|_| BridgeError::new(CODE))? {
+                break status;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = fs::remove_file(&result_path);
+                return Err(BridgeError::new("MVP15D_GATE_OFF_CHILD_TIMEOUT"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        };
+        if !exit_status.success() {
+            let _ = fs::remove_file(&result_path);
+            return Err(BridgeError::new(CODE));
+        }
+        let metadata = fs::symlink_metadata(&result_path).map_err(|_| BridgeError::new(CODE))?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 16 * 1024 {
+            let _ = fs::remove_file(&result_path);
+            return Err(BridgeError::new(CODE));
+        }
+        let bytes = fs::read(&result_path).map_err(|_| BridgeError::new(CODE))?;
+        fs::remove_file(&result_path).map_err(|_| BridgeError::new(CODE))?;
+        let mut result: GateOffChildResult =
+            serde_json::from_slice(&bytes).map_err(|_| BridgeError::new(CODE))?;
+        if result.schema_version != "uagent.mvp15d.gate-off-child-result.v1"
+            || !result.ui_gate_enabled
+            || result.status != "blocked"
+            || result.reason != "feature_disabled"
+            || !result.registration_id.is_empty()
+            || result.approval_token.is_some()
+            || result.registration_count != 0
+            || result.token_count != 0
+            || result.mcp_mutation_count != 0
+            || result.manifest_ownership_count != 0
+            || result.child_closed
+            || result.child_cleanup_complete
+            || result.process_residual_count != 0
+            || result.port_residual_count != 0
+            || result.root_residual_count != 0
+            || result.native_receipt_id.is_some()
+        {
+            return Err(BridgeError::new(CODE));
+        }
+        result.process_residual_count = usize::from(task_owned_process_exists(child_pid));
+        result.port_residual_count = result.process_residual_count;
+        result.root_residual_count = usize::from(result_path.exists());
+        result.child_closed = result.process_residual_count == 0;
+        result.child_cleanup_complete = result.child_closed
+            && result.port_residual_count == 0
+            && result.root_residual_count == 0;
+        if !result.child_cleanup_complete {
+            return Err(BridgeError::new(CODE));
+        }
+        let request = serde_json::to_value(&input).map_err(|_| BridgeError::new(CODE))?;
+        let response = serde_json::to_value(&result).map_err(|_| BridgeError::new(CODE))?;
+        result.native_receipt_id =
+            issue_native_observation_receipt("gate_off_uagent_child", request, response);
+        if result.native_receipt_id.is_none() {
+            return Err(BridgeError::new(CODE));
+        }
+        Ok(result)
     }
 
     pub fn claim_driver_command(&mut self) -> Result<Option<String>, BridgeError> {
@@ -4494,6 +5688,30 @@ impl BridgeState {
 }
 
 pub fn disabled_configuration() -> RendererBridgeConfiguration {
+    if std::env::var(GATE_OFF_CHILD_ENV).as_deref() == Ok("1") {
+        return RendererBridgeConfiguration {
+            enabled: true,
+            bridge_version: BRIDGE_VERSION,
+            phase: "gate-off-negative".to_string(),
+            mode: "live".to_string(),
+            task_id: "TASK-MVP15D-GATE-OFF-CHILD".to_string(),
+            session: String::new(),
+            generation: 1,
+            endpoint: None,
+            project_root: None,
+            rendered_product_path: "negativeN2Registration".to_string(),
+            driver_poll_milliseconds: 0,
+            observation_timeout_milliseconds: 30_000,
+            approval_ttl_wait_milliseconds: 0,
+            receipt_ledger_enabled: false,
+            renderer_handoff_pending: false,
+            renderer_handoff_id: None,
+            renderer_parent_lifecycle_status: None,
+            renderer_parent_lifecycle_failure: None,
+            renderer_handoff_predecessor_mcp_generation: None,
+            renderer_handoff_predecessor_window_identity_sha256: None,
+        };
+    }
     RendererBridgeConfiguration {
         enabled: false,
         bridge_version: BRIDGE_VERSION,
@@ -4516,6 +5734,70 @@ pub fn disabled_configuration() -> RendererBridgeConfiguration {
         renderer_handoff_predecessor_mcp_generation: None,
         renderer_handoff_predecessor_window_identity_sha256: None,
     }
+}
+
+pub fn run_gate_off_child_registration_from_environment(
+    ui_gate_enabled: bool,
+) -> Result<GateOffChildResult, String> {
+    if std::env::var(GATE_OFF_CHILD_ENV).as_deref() != Ok("1")
+        || std::env::var_os("UAGENT_ENABLE_ASSET_MUTATION").is_some()
+        || std::env::var_os(ENABLE_ENV).is_some()
+        || !ui_gate_enabled
+    {
+        return Err("MVP15D_GATE_OFF_CHILD_INVALID".to_string());
+    }
+    let input = std::env::var(GATE_OFF_CHILD_INPUT_ENV)
+        .map_err(|_| "MVP15D_GATE_OFF_CHILD_INVALID".to_string())?;
+    let registration: crate::asset_mutation::RegisterAssetMutationApprovalInput =
+        serde_json::from_str(&input).map_err(|_| "MVP15D_GATE_OFF_CHILD_INVALID".to_string())?;
+    let response =
+        crate::asset_mutation::register_asset_mutation_approval_gate_off_probe(registration);
+    let (registration_count, token_count) = crate::asset_mutation::approval_ownership_counts();
+    let result = GateOffChildResult {
+        schema_version: "uagent.mvp15d.gate-off-child-result.v1".to_string(),
+        ui_gate_enabled,
+        status: response.status,
+        reason: response.reason,
+        registration_id: response.registration_id,
+        approval_token: response.approval_token,
+        registration_count,
+        token_count,
+        mcp_mutation_count: 0,
+        manifest_ownership_count: 0,
+        child_closed: false,
+        child_cleanup_complete: false,
+        process_residual_count: 0,
+        port_residual_count: 0,
+        root_residual_count: 0,
+        native_receipt_id: None,
+    };
+    let result_path = PathBuf::from(
+        std::env::var(GATE_OFF_CHILD_RESULT_ENV)
+            .map_err(|_| "MVP15D_GATE_OFF_CHILD_INVALID".to_string())?,
+    );
+    let parent = result_path
+        .parent()
+        .ok_or_else(|| "MVP15D_GATE_OFF_CHILD_INVALID".to_string())?;
+    let parent_metadata =
+        fs::symlink_metadata(parent).map_err(|_| "MVP15D_GATE_OFF_CHILD_INVALID".to_string())?;
+    if !result_path.is_absolute()
+        || !parent_metadata.is_dir()
+        || parent_metadata.file_type().is_symlink()
+        || result_path.exists()
+    {
+        return Err("MVP15D_GATE_OFF_CHILD_INVALID".to_string());
+    }
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&result_path)
+        .map_err(|_| "MVP15D_GATE_OFF_CHILD_INVALID".to_string())?;
+    serde_json::to_writer(&mut file, &result)
+        .map_err(|_| "MVP15D_GATE_OFF_CHILD_INVALID".to_string())?;
+    file.flush()
+        .and_then(|_| file.sync_all())
+        .map_err(|_| "MVP15D_GATE_OFF_CHILD_INVALID".to_string())?;
+    Ok(result)
 }
 
 pub type ManagedBridgeState = Mutex<Option<BridgeState>>;
@@ -4855,7 +6137,10 @@ mod tests {
                     let api = input.get("api").and_then(Value::as_str).unwrap_or_default();
                     if !matches!(
                         api,
-                        "attest_mvp15_companion" | "retract_mvp15_companion_approvals"
+                        "attach_editor_process"
+                            | "attest_mvp15_companion"
+                            | "retract_mvp15_companion_approvals"
+                            | "terminate_managed_editor_process"
                     ) {
                         Err("MVP15D_NATIVE_APP_HARNESS_API_REJECTED".to_string())
                     } else {
@@ -4959,7 +6244,7 @@ mod tests {
             predecessor_mcp_generation: 10,
             segment: json!({
                 "discoveries": [{}, {}],
-                "retractions": [{}, {}, {}, {}, {}],
+                "retractions": [{}, {}, {}],
                 "mutationBefore": {},
                 "readyDiscovery": {},
             }),
@@ -5249,7 +6534,7 @@ mod tests {
                     predecessor_mcp_generation: 20,
                     segment: json!({
                         "discoveries": [{}, {}],
-                        "retractions": [{}, {}, {}, {}, {}],
+                        "retractions": [{}, {}, {}],
                         "mutationBefore": {},
                         "readyDiscovery": {},
                     }),
@@ -5442,7 +6727,7 @@ mod tests {
                 predecessor_mcp_generation: 30,
                 segment: json!({
                     "discoveries": [{}, {}],
-                    "retractions": [{}, {}, {}, {}, {}],
+                    "retractions": [{}, {}, {}],
                     "mutationBefore": {},
                     "readyDiscovery": {},
                 }),
@@ -5900,6 +7185,576 @@ mod tests {
         assert!(closeout.get("processResidualCount").is_none());
         assert!(closeout.get("portResidualCount").is_none());
         drop(state);
+    }
+
+    #[test]
+    fn rendered_negative_verifier_requires_control_and_real_registration_receipts() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let (_root, state) = rendered_state(BridgePhase::UiLifecycle);
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let control_request = json!({
+            "caseId": "N1",
+            "controlId": "mvp15d-negative-n1",
+        });
+        let control_id = issue_native_observation_receipt(
+            "rendered_negative_control",
+            control_request.clone(),
+            json!({
+                "status": "observed",
+                "reason": "rendered_product_control_dispatched",
+                "caseId": "N1",
+                "controlId": "mvp15d-negative-n1",
+            }),
+        )
+        .unwrap();
+        let retained = consume_rendered_negative_control(
+            &state.identity,
+            &RawObservedCallInput {
+                receipt_id: control_id,
+                request: control_request,
+            },
+            "N1",
+            "MVP15D_BRIDGE_UI_EVIDENCE_INVALID",
+        )
+        .unwrap();
+        assert_eq!(retained["source"], "rendered_product_control");
+
+        let registration_request = json!({ "changeSetId": "negative-n1-change" });
+        let blocked_response = json!({
+            "status": "blocked",
+            "reason": "untrusted_root",
+            "registrationId": "",
+            "approvalToken": null,
+        });
+        let substituted_id = issue_native_observation_receipt(
+            "execute_asset_mutation",
+            registration_request.clone(),
+            blocked_response.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            consume_blocked_registration_attempt(
+                &state.identity,
+                &RawObservedCallInput {
+                    receipt_id: substituted_id,
+                    request: registration_request.clone(),
+                },
+                "register_asset_mutation_approval",
+                "untrusted_root",
+                "MVP15D_BRIDGE_UI_EVIDENCE_INVALID",
+            )
+            .unwrap_err()
+            .code(),
+            "MVP15D_BRIDGE_UI_EVIDENCE_INVALID"
+        );
+
+        let registration_id = issue_native_observation_receipt(
+            "register_asset_mutation_approval",
+            registration_request.clone(),
+            blocked_response,
+        )
+        .unwrap();
+        let registration = consume_blocked_registration_attempt(
+            &state.identity,
+            &RawObservedCallInput {
+                receipt_id: registration_id,
+                request: registration_request,
+            },
+            "register_asset_mutation_approval",
+            "untrusted_root",
+            "MVP15D_BRIDGE_UI_EVIDENCE_INVALID",
+        )
+        .unwrap();
+        assert_eq!(registration["status"], "blocked");
+        assert_eq!(registration["reason"], "untrusted_root");
+        drop(state);
+    }
+
+    #[test]
+    fn retained_events_bind_raw_runtime_authority_identifiers() {
+        let retained = redact_retained_event_value(json!({
+            "marker": "marker-secret",
+            "session": "phase-session-secret",
+            "nativeSessionId": "mcp-session-secret",
+            "nested": {
+                "sessionId": "editor-session-secret",
+                "sessionIdBefore": "before-session-secret",
+                "sessionIdAfter": "after-session-secret",
+            },
+            "approvalToken": "opaque-token-secret",
+            "port": 18765,
+            "endpoint": "http://127.0.0.1:18765/mcp",
+            "process": {
+                "pid": 42,
+                "runtimePid": 43,
+                "processId": "process-secret",
+                "creationFiletime": 123456789_u64,
+                "childPidBefore": 44,
+                "childPidAfter": 45,
+                "managedProcessIdBefore": "process-before-secret",
+                "managedProcessIdAfter": "process-after-secret",
+                "creationFileTimeUtcBefore": "123456789",
+                "creationFileTimeUtcAfter": "123456790",
+            },
+        }));
+        assert_eq!(
+            retained["markerSha256"],
+            retained_binding("marker", &json!("marker-secret"))
+        );
+        assert_eq!(
+            retained["sessionBindingSha256"],
+            retained_binding("session", &json!("phase-session-secret"))
+        );
+        assert_eq!(
+            retained["nativeSessionBindingSha256"],
+            retained_binding("session", &json!("mcp-session-secret"))
+        );
+        assert_eq!(
+            retained["nested"]["sessionBindingSha256"],
+            retained_binding("session", &json!("editor-session-secret"))
+        );
+        assert_eq!(
+            retained["nested"]["sessionBindingSha256Before"],
+            retained_binding("session", &json!("before-session-secret"))
+        );
+        assert_eq!(
+            retained["nested"]["sessionBindingSha256After"],
+            retained_binding("session", &json!("after-session-secret"))
+        );
+        assert_eq!(
+            retained["opaqueTokenBindingSha256"],
+            retained_binding("opaque-token", &json!("opaque-token-secret"))
+        );
+        assert_eq!(
+            retained["process"]["pidBindingSha256"],
+            retained_binding("pid", &json!(42))
+        );
+        assert_eq!(
+            retained["process"]["processIdBindingSha256"],
+            retained_binding("process-id", &json!("process-secret"))
+        );
+        assert_eq!(
+            retained["process"]["creationFiletimeBindingSha256"],
+            retained_binding("creation-filetime", &json!(123456789_u64))
+        );
+        assert_eq!(
+            retained["process"]["childPidBindingSha256Before"],
+            retained_binding("pid", &json!(44))
+        );
+        assert_eq!(
+            retained["process"]["childPidBindingSha256After"],
+            retained_binding("pid", &json!(45))
+        );
+        assert_eq!(
+            retained["process"]["managedProcessIdBindingSha256Before"],
+            retained_binding("process-id", &json!("process-before-secret"))
+        );
+        assert_eq!(
+            retained["process"]["managedProcessIdBindingSha256After"],
+            retained_binding("process-id", &json!("process-after-secret"))
+        );
+        assert_eq!(
+            retained["process"]["creationFileTimeUtcBindingSha256Before"],
+            retained_binding("creation-filetime", &json!("123456789"))
+        );
+        assert_eq!(
+            retained["process"]["creationFileTimeUtcBindingSha256After"],
+            retained_binding("creation-filetime", &json!("123456790"))
+        );
+        assert_eq!(
+            retained["endpointSha256"],
+            retained_binding("endpoint", &json!("http://127.0.0.1:18765/mcp"))
+        );
+        assert_eq!(
+            retained["portBindingSha256"],
+            retained_binding("port", &json!(18765))
+        );
+        assert!(retained.get("marker").is_none());
+        assert!(retained.get("session").is_none());
+        assert!(retained.get("approvalToken").is_none());
+        assert!(retained.get("endpoint").is_none());
+        assert!(retained.get("port").is_none());
+        let serialized = canonical_json(&retained);
+        for forbidden in [
+            "marker-secret",
+            "phase-session-secret",
+            "editor-session-secret",
+            "mcp-session-secret",
+            "before-session-secret",
+            "after-session-secret",
+            "opaque-token-secret",
+            "process-secret",
+            "process-before-secret",
+            "process-after-secret",
+            "http://127.0.0.1:18765/mcp",
+        ] {
+            assert!(!serialized.contains(forbidden));
+        }
+    }
+
+    #[test]
+    fn ui_happy_path_receipts_bind_exact_dry_runs_and_first_execute_token_only() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let (_root, state) = rendered_state(BridgePhase::UiLifecycle);
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let registration_id = "registration-happy-0001";
+        let run_id = "ui-happy-run-0001";
+        let token = "opaque-native-token-value-000000000001";
+        let registration_request = json!({
+            "runId": run_id,
+            "changeSetId": "change-set-happy-0001",
+            "editorSessionId": "editor-session-happy-0001",
+        });
+        let registration_receipt = issue_native_observation_receipt(
+            "register_asset_mutation_approval",
+            registration_request.clone(),
+            json!({
+                "status": "registered",
+                "registrationId": registration_id,
+                "approvalToken": token,
+            }),
+        )
+        .unwrap();
+        let registration = RawObservedCallInput {
+            receipt_id: registration_receipt,
+            request: registration_request,
+        };
+        let (observation, observed_token) = consume_happy_path_registration(
+            &state.identity,
+            &registration,
+            registration_id,
+            run_id,
+            "MVP15D_TEST_INVALID",
+        )
+        .unwrap();
+        assert_eq!(observed_token, token);
+        assert_eq!(
+            observation["opaqueTokenBindingSha256"],
+            retained_binding("opaque-token", &json!(token))
+        );
+
+        let expected = [
+            "ue.asset.create_folder",
+            "ue.asset.duplicate",
+            "ue.asset.rename",
+            "ue.asset.move",
+            "ue.asset.save",
+        ];
+        let calls = expected
+            .iter()
+            .enumerate()
+            .map(|(index, tool_name)| {
+                let request = json!({
+                    "toolName": tool_name,
+                    "assetPath": format!("/Game/UAgentSandbox/ui-test/{index}"),
+                    "targetAssetPath": Value::Null,
+                    "dryRunHash": format!("dry-run-hash-{index}"),
+                    "approvalToken": Value::Null,
+                });
+                let receipt_id = issue_native_observation_receipt(
+                    "dry_run_asset_mutation",
+                    request.clone(),
+                    json!({ "status": "dry_run_ready", "reason": "dry_run_allowed" }),
+                )
+                .unwrap();
+                RawObservedCallInput {
+                    receipt_id,
+                    request,
+                }
+            })
+            .collect::<Vec<_>>();
+        let observations =
+            consume_happy_path_dry_runs(&state.identity, &calls, "MVP15D_TEST_INVALID").unwrap();
+        assert_eq!(observations.len(), 5);
+        assert!(happy_path_native_token_valid(
+            0,
+            &json!({ "registrationId": registration_id, "approvalToken": token }),
+            registration_id,
+            token,
+        ));
+        assert!(happy_path_native_token_valid(
+            1,
+            &json!({ "registrationId": registration_id, "approvalToken": null }),
+            registration_id,
+            token,
+        ));
+        assert!(!happy_path_native_token_valid(
+            1,
+            &json!({ "registrationId": registration_id, "approvalToken": token }),
+            registration_id,
+            token,
+        ));
+        assert_eq!(expected_negative_case_reason("N1"), Some("untrusted_root"));
+        assert_eq!(
+            expected_negative_case_reason("N2"),
+            Some("feature_disabled")
+        );
+        drop(state);
+    }
+
+    #[test]
+    fn content_manifest_evidence_binds_test01_outside_aggregate_and_empty_container() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let (root, state) = rendered_state(BridgePhase::UiLifecycle);
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let content = root.join("project").join("FinalHost").join("Content");
+        fs::write(content.join("Test01.uasset"), b"test01-source").unwrap();
+        let mut entries = vec![
+            json!({
+                "assetPath": "/Game/Stable",
+                "size": b"stable-content".len(),
+                "sha256": sha256_bytes(b"stable-content"),
+            }),
+            json!({
+                "assetPath": "/Game/Test01",
+                "size": b"test01-source".len(),
+                "sha256": sha256_bytes(b"test01-source"),
+            }),
+        ];
+        entries.sort_by_key(|entry| entry["assetPath"].as_str().unwrap().to_string());
+        let canonical = entries
+            .iter()
+            .map(|entry| {
+                format!(
+                    "{}|{}|{}\n",
+                    entry["assetPath"].as_str().unwrap(),
+                    entry["size"].as_u64().unwrap(),
+                    entry["sha256"].as_str().unwrap()
+                )
+            })
+            .collect::<String>();
+        let request = json!({ "registrationId": "registration-content-0001" });
+        let receipt_id = issue_native_observation_receipt(
+            "snapshot_asset_content_manifest",
+            request.clone(),
+            json!({
+                "status": "observed",
+                "reason": "content_manifest_captured",
+                "entries": entries,
+                "aggregateSha256": sha256_bytes(canonical.as_bytes()),
+                "evidenceId": "asset-content-manifest:test",
+            }),
+        )
+        .unwrap();
+        let manifest = manifest_observation_data(
+            &state.identity,
+            &ContentManifestInput {
+                stage: "after".to_string(),
+                registration_id: "registration-content-0001".to_string(),
+                run_id: "ui-content-run-0001".to_string(),
+                receipt_id,
+                request,
+            },
+            "MVP15D_TEST_INVALID",
+        )
+        .unwrap();
+        assert_eq!(manifest["test01"]["size"], b"test01-source".len());
+        assert_eq!(manifest["test01"]["sha256"], sha256_bytes(b"test01-source"));
+        assert!(is_sha256(
+            manifest["outsideRunAggregateSha256"].as_str().unwrap()
+        ));
+        assert_eq!(manifest["runRootPresent"], false);
+
+        let (run_root_present, absent) = final_sandbox_directory_state(
+            &state.identity,
+            "ui-content-run-0001",
+            "MVP15D_TEST_INVALID",
+        )
+        .unwrap();
+        assert!(!run_root_present);
+        assert_eq!(absent["state"], "absent");
+        fs::create_dir(content.join("UAgentSandbox")).unwrap();
+        let (_, empty) = final_sandbox_directory_state(
+            &state.identity,
+            "ui-content-run-0001",
+            "MVP15D_TEST_INVALID",
+        )
+        .unwrap();
+        assert_eq!(empty["state"], "ordinary_directory");
+        assert_eq!(empty["reparsePoint"], false);
+        assert_eq!(empty["recursiveEntryCount"], 0);
+        drop(state);
+    }
+
+    #[test]
+    fn canonical_retractions_require_scenario_specific_native_action_receipts() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        assert_eq!(
+            MVP15D_RETRACTION_REASONS,
+            [
+                "refresh_tools",
+                "reconnect",
+                "endpoint_change",
+                "renderer_restart",
+                "ue_restart",
+                "stale_completion",
+            ]
+        );
+
+        for reason in MVP15D_RETRACTION_REASONS {
+            let (_root, mut state) = rendered_state(BridgePhase::ProductCapture);
+            activate_observation_receipt_ledger(&state.identity).unwrap();
+            let transport_request = |generation: u64, endpoint: &str| {
+                json!({
+                    "endpoint": endpoint,
+                    "intent": { "connectionGeneration": generation },
+                })
+            };
+            let ready_request = transport_request(10, &state.identity.endpoint);
+            let ready_id = issue_native_observation_receipt(
+                "mcp_fingerprint",
+                ready_request,
+                json!({ "sessionId": "ready-session-0001" }),
+            )
+            .unwrap();
+            issue_native_observation_receipt(
+                "attest_mvp15_companion",
+                json!({ "generation": 10 }),
+                json!({ "status": "observed" }),
+            )
+            .unwrap();
+
+            match reason {
+                "refresh_tools" => {
+                    issue_native_observation_receipt(
+                        "mcp_fingerprint",
+                        transport_request(11, &state.identity.endpoint),
+                        json!({ "sessionId": "ready-session-0001" }),
+                    )
+                    .unwrap();
+                }
+                "reconnect" => {
+                    issue_native_observation_receipt(
+                        "mcp_disconnect",
+                        json!({ "sessionId": "ready-session-0001" }),
+                        json!({ "status": "accepted" }),
+                    )
+                    .unwrap();
+                    issue_native_observation_receipt(
+                        "mcp_connect",
+                        transport_request(11, &state.identity.endpoint),
+                        json!({ "sessionId": "reconnected-session-0002" }),
+                    )
+                    .unwrap();
+                }
+                "endpoint_change" => {
+                    issue_native_observation_receipt(
+                        "mcp_transport_failure",
+                        transport_request(11, "http://127.0.0.1:9/mcp"),
+                        json!({ "status": "failed" }),
+                    )
+                    .unwrap();
+                    issue_native_observation_receipt(
+                        "mcp_connect",
+                        transport_request(12, &state.identity.endpoint),
+                        json!({ "sessionId": "endpoint-session-0002" }),
+                    )
+                    .unwrap();
+                }
+                "renderer_restart" => {
+                    for process_identity in ["c", "d"] {
+                        issue_native_observation_receipt(
+                            "renderer_instance_begin",
+                            json!({ "stage": process_identity }),
+                            json!({
+                                "status": "begun",
+                                "processIdentitySha256": process_identity.repeat(64),
+                            }),
+                        )
+                        .unwrap();
+                    }
+                    issue_native_observation_receipt(
+                        "mcp_connect",
+                        transport_request(11, &state.identity.endpoint),
+                        json!({ "sessionId": "renderer-session-0002" }),
+                    )
+                    .unwrap();
+                    issue_native_observation_receipt(
+                        "renderer_restart_request",
+                        json!({ "stage": "predecessor" }),
+                        json!({ "status": "restart_requested" }),
+                    )
+                    .unwrap();
+                    issue_native_observation_receipt(
+                        "renderer_restart_successor",
+                        json!({ "stage": "successor" }),
+                        json!({ "status": "successor_claimed" }),
+                    )
+                    .unwrap();
+                }
+                "ue_restart" => {
+                    issue_native_observation_receipt(
+                        "release_managed_editor_process",
+                        json!({ "processId": "ue-process-0001" }),
+                        json!({ "status": "released" }),
+                    )
+                    .unwrap();
+                    issue_native_observation_receipt(
+                        "attach_editor_process",
+                        json!({ "processId": "ue-process-0002" }),
+                        json!({ "status": "attached", "sessionId": "ue-session-0002" }),
+                    )
+                    .unwrap();
+                    issue_native_observation_receipt(
+                        "mcp_connect",
+                        transport_request(11, &state.identity.endpoint),
+                        json!({ "sessionId": "ue-mcp-session-0002" }),
+                    )
+                    .unwrap();
+                }
+                "stale_completion" => {
+                    for (generation, session) in
+                        [(12, "winning-session-0002"), (11, "stale-session-0003")]
+                    {
+                        issue_native_observation_receipt(
+                            "mcp_fingerprint",
+                            transport_request(generation, &state.identity.endpoint),
+                            json!({ "sessionId": session }),
+                        )
+                        .unwrap();
+                    }
+                }
+                _ => unreachable!(),
+            }
+            let native_retraction_id = issue_native_observation_receipt(
+                "retract_mvp15_companion_approvals",
+                json!({ "reason": reason }),
+                json!({
+                    "status": "retracted",
+                    "applied": true,
+                    "revokedApprovalCount": 0,
+                    "generation": 11,
+                }),
+            )
+            .unwrap();
+            let transition = state
+                .observe_native_state(ObserveNativeStateInput {
+                    schema_version: "uagent.mvp15d.native-state-observation.v1".to_string(),
+                    kind: "mcp_retraction_transition".to_string(),
+                    request: json!({
+                        "reason": reason,
+                        "stateBeforeReceiptId": ready_id,
+                    }),
+                })
+                .unwrap();
+            assert_eq!(transition.observation["status"], "retracted");
+            assert_eq!(transition.observation["reason"], reason);
+            if reason == "stale_completion" {
+                assert_eq!(
+                    transition.observation["sessionIdAfter"],
+                    "winning-session-0002"
+                );
+                assert_eq!(transition.observation["generationAfter"], 12);
+            }
+            assert_eq!(
+                transition.observation["stateAfterReceiptId"],
+                native_retraction_id
+            );
+            assert!(transition.observation["actionReceipts"]
+                .as_array()
+                .is_some_and(|receipts| receipts.len() >= 2));
+            drop(state);
+        }
     }
 
     #[test]

@@ -1565,6 +1565,9 @@ pub fn run() {
             mvp15d_bridge_take_driver_command,
             mvp15d_bridge_record_renderer_step,
             mvp15d_bridge_observe_native_state,
+            mvp15d_bridge_run_gate_off_child,
+            mvp15d_gate_off_child_register,
+            mvp15d_gate_off_child_complete,
             mvp15d_bridge_publish_product_evidence,
             mvp15d_bridge_publish_ui_evidence,
             mvp15d_bridge_complete,
@@ -1666,6 +1669,37 @@ fn mvp15d_bridge_configuration(
         .as_ref()
         .map(mvp15d_runtime_bridge::BridgeState::renderer_configuration)
         .unwrap_or_else(mvp15d_runtime_bridge::disabled_configuration))
+}
+
+#[tauri::command]
+fn mvp15d_bridge_run_gate_off_child(
+    input: mvp15d_runtime_bridge::GateOffChildRunInput,
+    state: tauri::State<'_, mvp15d_runtime_bridge::ManagedBridgeState>,
+) -> Result<mvp15d_runtime_bridge::GateOffChildResult, String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "MVP15D_BRIDGE_STATE_UNAVAILABLE".to_string())?;
+    guard
+        .as_mut()
+        .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?
+        .run_gate_off_child(input)
+        .map_err(|error| error.code().to_string())
+}
+
+#[tauri::command]
+fn mvp15d_gate_off_child_register(
+    ui_gate_enabled: bool,
+) -> Result<mvp15d_runtime_bridge::GateOffChildResult, String> {
+    mvp15d_runtime_bridge::run_gate_off_child_registration_from_environment(ui_gate_enabled)
+}
+
+#[tauri::command]
+fn mvp15d_gate_off_child_complete(app: tauri::AppHandle) -> Result<(), String> {
+    if std::env::var(mvp15d_runtime_bridge::GATE_OFF_CHILD_ENV).as_deref() != Ok("1") {
+        return Err("MVP15D_GATE_OFF_CHILD_INVALID".to_string());
+    }
+    app.exit(0);
+    Ok(())
 }
 
 #[derive(Clone)]

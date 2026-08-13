@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   collectMvp15dProductAuthority,
+  collectMvp15dRenderedNegativeCase,
   collectMvp15dUiAuthority,
   createDesktopRuntimeAdapter,
   type Mvp15dProductObservationPort,
@@ -129,7 +130,7 @@ describe("MVP15D authoritative product observations", () => {
       ({ requestSessionId, responseSessionId }) => requestSessionId === responseSessionId,
     )).toBe(true);
     expect(harness.nativeCommands.filter((command) => command === "attest_mvp15_companion").length)
-      .toBeGreaterThanOrEqual(8);
+      .toBeGreaterThanOrEqual(7);
     expect(harness.nativeCommands.filter((command) => command === "retract_mvp15_companion_approvals").length)
       .toBeGreaterThanOrEqual(6);
     expect(harness.nativeCommands).toContain("mcp_streamable_http_request");
@@ -139,7 +140,7 @@ describe("MVP15D authoritative product observations", () => {
     expect(harness.nativeCommands).not.toContain("mvp15d_bridge_issue_observation_receipt");
   });
 
-  it("drives all UI authority records through raw native and MCP calls", async () => {
+  it("drives the partial/unknown UI authority records through raw native and MCP calls", async () => {
     const { StreamableHttpTransport: RealStreamableHttpTransport } =
       await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");
     vi.mocked(StreamableHttpTransport).mockImplementation(
@@ -340,6 +341,24 @@ describe("MVP15D authoritative product observations", () => {
     const guardRequests = {
       execute: executeRequest,
       rollback: rollbackRequest,
+      mcpExecute: {
+        toolName: "ue.asset.create_folder",
+        args: {
+          operationId: "operation:execute",
+          execute: true,
+          rollback: false,
+          folderPath: "/Game/UAgentSandbox/run-raw-ui",
+        },
+      },
+      mcpRollback: {
+        toolName: "ue.asset.delete",
+        args: {
+          operationId: "operation:rollback",
+          execute: false,
+          rollback: true,
+          assetPath: "/Game/UAgentSandbox/run-raw-ui",
+        },
+      },
       invalidPath: {
         assetMutationGateEnabled: true,
         operation: { operationId: "operation:invalid", assetPath: "/Game/Outside/Asset" },
@@ -368,33 +387,152 @@ describe("MVP15D authoritative product observations", () => {
       { direction: "control", action: "cross_ttl", api: "execute_asset_mutation", request: executeRequest },
       { direction: "control", action: "second_rollback", api: "rollback_asset_mutation", request: rollbackRequest },
     );
+    const authorityContext = {
+      attachInput: {
+        projectId: "project-binding:raw-ui",
+        rootRef: "root:raw-ui",
+        processId: "editor-process:raw-ui",
+        pidHash: "pid:raw-ui",
+      },
+      registrationInput: {
+        changeSetId: "change-set:raw-ui",
+        runId: "run-raw-ui",
+        projectBindingId: "project-binding:raw-ui",
+        trustedProjectRoot: "G:/Projects/RawUi",
+        editorSessionId: "editor-session:raw-ui",
+        mcpBinding: "mcp-binding:raw-ui",
+        aggregateDryRunHash: "a".repeat(64),
+        aggregateArgsHash: "b".repeat(64),
+        requestedTtlMs: 60_000,
+        operations: [
+          {
+            operationId: "raw-ui-operation-1",
+            kind: "create_folder",
+            toolName: "ue.asset.create_folder",
+            pluginDryRunHash: "a".repeat(40),
+            argsHash: "a".repeat(64),
+            sourceAssetPath: null,
+            assetPath: "/Game/UAgentSandbox/run-raw-ui",
+            targetAssetPath: null,
+            rollbackAction: "cleanup_empty_folder",
+            rollbackToolName: "ue.asset.delete",
+            saveAll: false,
+            bulk: false,
+          },
+          {
+            operationId: "raw-ui-operation-2",
+            kind: "duplicate",
+            toolName: "ue.asset.duplicate",
+            pluginDryRunHash: "b".repeat(40),
+            argsHash: "b".repeat(64),
+            sourceAssetPath: "/Game/Test01",
+            assetPath: null,
+            targetAssetPath: "/Game/UAgentSandbox/run-raw-ui/Test01Copy",
+            rollbackAction: "delete_duplicate",
+            rollbackToolName: "ue.asset.delete",
+            saveAll: false,
+            bulk: false,
+          },
+          {
+            operationId: "raw-ui-operation-3",
+            kind: "rename",
+            toolName: "ue.asset.rename",
+            pluginDryRunHash: "c".repeat(40),
+            argsHash: "c".repeat(64),
+            sourceAssetPath: null,
+            assetPath: "/Game/UAgentSandbox/run-raw-ui/Test01Copy",
+            targetAssetPath: "/Game/UAgentSandbox/run-raw-ui/Test01Renamed",
+            rollbackAction: "rename_back",
+            rollbackToolName: "ue.asset.rename",
+            saveAll: false,
+            bulk: false,
+          },
+          {
+            operationId: "raw-ui-operation-4",
+            kind: "move",
+            toolName: "ue.asset.move",
+            pluginDryRunHash: "d".repeat(40),
+            argsHash: "d".repeat(64),
+            sourceAssetPath: null,
+            assetPath: "/Game/UAgentSandbox/run-raw-ui/Test01Renamed",
+            targetAssetPath: "/Game/UAgentSandbox/run-raw-ui/Final/Test01Renamed",
+            rollbackAction: "move_back",
+            rollbackToolName: "ue.asset.move",
+            saveAll: false,
+            bulk: false,
+          },
+          {
+            operationId: "raw-ui-operation-5",
+            kind: "save",
+            toolName: "ue.asset.save",
+            pluginDryRunHash: "e".repeat(40),
+            argsHash: "e".repeat(64),
+            sourceAssetPath: null,
+            assetPath: "/Game/UAgentSandbox/run-raw-ui/Final/Test01Renamed",
+            targetAssetPath: null,
+            rollbackAction: "none",
+            rollbackToolName: null,
+            saveAll: false,
+            bulk: false,
+          },
+        ],
+      },
+      guardRequests,
+    };
+    const n7 = await collectMvp15dRenderedNegativeCase(
+      adapter.getMvp15dUiObservationPort!()!,
+      "N7",
+      authorityContext,
+    );
+    const n8 = await collectMvp15dRenderedNegativeCase(
+      adapter.getMvp15dUiObservationPort!()!,
+      "N8",
+      authorityContext,
+    );
 
     const authority = await collectMvp15dUiAuthority(
       adapter.getMvp15dUiObservationPort!()!,
       partialOperations,
-      {
-        attachInput: { processId: "editor-process:raw-ui", pidHash: "pid:raw-ui" },
-        registrationInput: { changeSetId: "change-set:raw-ui", operations: [] },
-        guardRequests,
-      },
+      authorityContext,
+      false,
     );
 
-    expect(authority.negativeCases).toHaveLength(8);
+    expect(n7).toMatchObject({
+      caseId: "N7",
+      evidenceSource: "rendered_product_control",
+      guardApi: "execute_asset_mutation",
+      mcpMutationCount: 2,
+    });
+    expect(n7.setupCalls.map(({ request }) => request)).toHaveLength(8);
+    expect(n7.cleanupCalls).toHaveLength(3);
+    expect(n8).toMatchObject({
+      caseId: "N8",
+      evidenceSource: "rendered_product_control",
+      guardApi: "rollback_asset_mutation",
+      mcpMutationCount: 2,
+    });
+    expect(n7.runId).not.toBe("run-raw-ui");
+    expect(n8.runId).not.toBe("run-raw-ui");
+    expect(n8.runId).not.toBe(n7.runId);
+    expect(n7.setupCalls.slice(0, 5)).toHaveLength(5);
+    expect(n8.setupCalls.slice(0, 5)).toHaveLength(5);
+    expect(n8.setupCalls).toHaveLength(11);
+    expect(n8.cleanupCalls).toHaveLength(0);
+    expect(authority.negativeCases).toHaveLength(0);
     expect(authority.partialUnknown.operationResults).toHaveLength(9);
-    expect(harness.nativeCommands.filter((command) => command === "attach_editor_process")).toHaveLength(12);
+    expect(harness.nativeCommands.filter((command) => command === "attach_editor_process")).toHaveLength(5);
     expect(harness.nativeCommands.filter((command) => command === "register_asset_mutation_approval"))
-      .toHaveLength(11);
+      .toHaveLength(5);
     expect(harness.nativeCommands.filter((command) => command === "snapshot_mvp15_asset_content_manifest"))
-      .toHaveLength(18);
+      .toHaveLength(6);
     expect(
       harness.nativeCommands.filter((command) =>
         ["execute_asset_mutation", "rollback_asset_mutation", "dry_run_asset_mutation"].includes(command),
       ),
-    ).toHaveLength(15);
+    ).toHaveLength(10);
     expect(harness.wireCalls.filter(({ method, toolName }) => method === "tools/call" && toolName?.startsWith("ue.asset.")))
-      .toHaveLength(7);
+      .toHaveLength(21);
     expect(JSON.stringify(harness.nativeInputs)).not.toContain("testCaseId");
-    expect(authority.negativeCases.every(({ setupCalls }) => Array.isArray(setupCalls))).toBe(true);
     expect(authority.partialUnknown.operationResults.at(-2)?.setupCalls.map(({ request }) => request))
       .toHaveLength(2);
     expect(authority.partialUnknown.operationResults.at(-1)?.setupCalls).toHaveLength(6);
@@ -610,12 +748,12 @@ describe("MVP15D authoritative product observations", () => {
     expect(calls).toEqual([
       "discover:on",
       "discover:off",
-      "retract:disconnect",
+      "retract:refresh_tools",
+      "retract:reconnect",
       "retract:endpoint_change",
-      "retract:failure",
-      "retract:newer_generation",
-      "retract:attestation_invalidation",
       "retract:renderer_restart",
+      "retract:ue_restart",
+      "retract:stale_completion",
     ]);
     expect(result.discoveries.map(({ mode }) => mode)).toEqual(["on", "off"]);
     expect(result.retractions).toHaveLength(6);
@@ -698,8 +836,8 @@ describe("MVP15D authoritative product observations", () => {
       }),
     ).rejects.toThrow("native_guard_call_missing");
     expect(calls.filter((call) => call.startsWith("guard:"))).toEqual([
-      "guard:N1:execute_asset_mutation",
-      "guard:N2:dry_run_asset_mutation",
+      "guard:N1:register_asset_mutation_approval",
+      "guard:N2:register_asset_mutation_approval",
       "guard:N3:execute_asset_mutation",
       "guard:N4:execute_asset_mutation",
     ]);
@@ -1448,12 +1586,108 @@ function createMvp15dNativeBoundaryHarness(options?: {
         };
       } else if (request.method === "tools/call") {
         const simulateUnknown = request.params?.arguments?.simulateUnknown === true;
-        result = {
-          status: simulateUnknown ? "failed" : "succeeded",
-          reason: simulateUnknown ? "effect_unknown" : "none",
-          effectState: simulateUnknown ? "unknown" : "known_effect",
-          evidenceId: `mcp-evidence-${wireCalls.length}`,
-        };
+        const args = request.params?.arguments ?? {};
+        const phase = args.rollback === true ? "rollback" : "execute";
+        const formalDryRun = args.dryRun === true &&
+          typeof args.changeSetId === "string" &&
+          typeof args.runId === "string" &&
+          typeof args.operationId === "string";
+        const dryRunOperation = toolName === "ue.asset.duplicate"
+          ? "duplicate"
+          : toolName === "ue.asset.rename"
+            ? "rename"
+            : toolName === "ue.asset.move"
+              ? "move"
+              : toolName === "ue.asset.save"
+                ? "save"
+                : "create_folder";
+        const dryRunTargets = toolName === "ue.asset.create_folder"
+          ? [String(args.folderPath)]
+          : toolName === "ue.asset.duplicate"
+            ? [String(args.targetAssetPath)]
+            : toolName === "ue.asset.rename" || toolName === "ue.asset.move"
+              ? [String(args.assetPath), String(args.targetAssetPath)]
+              : [String(args.assetPath)];
+        const dryRunSources = toolName === "ue.asset.duplicate"
+          ? [String(args.sourceAssetPath)]
+          : [];
+        const rollbackAvailable = toolName !== "ue.asset.save";
+        const inverseOperation = toolName === "ue.asset.create_folder"
+          ? "cleanup_empty_folder"
+          : toolName === "ue.asset.duplicate"
+            ? "delete_duplicate"
+            : toolName === "ue.asset.rename"
+              ? "rename_back"
+              : toolName === "ue.asset.move"
+                ? "move_back"
+                : "none";
+        result = args.execute === true || args.rollback === true
+          ? {
+              structuredContent: {
+                blocked: false,
+                status: phase === "rollback" ? "rolled_back" : "executed",
+                reasonCode: "none",
+                phase,
+                toolName,
+                changeSetId: args.changeSetId,
+                runId: args.runId,
+                operationId: args.operationId,
+                sideEffectObserved: true,
+                effectState: "known_effect",
+                rollbackAvailable: phase === "execute",
+                implementationStatus: "execution_capable",
+                evidenceId: `mcp-evidence-${wireCalls.length}`,
+              },
+            }
+          : formalDryRun
+            ? {
+                structuredContent: {
+                  blocked: false,
+                  status: "dry_run_completed",
+                  reasonCode: "none",
+                  toolName,
+                  operation: dryRunOperation,
+                  phase: "dry_run",
+                  changeSetId: args.changeSetId,
+                  runId: args.runId,
+                  operationId: args.operationId,
+                  sandboxRoot: `/Game/UAgentSandbox/${String(args.runId)}`,
+                  wouldChange: true,
+                  wouldModify: dryRunTargets,
+                  wouldRead: dryRunSources,
+                  affectedAssets: {
+                    readOnlySources: dryRunSources,
+                    sandboxTargets: dryRunTargets,
+                    externalTargets: [],
+                  },
+                  rollbackPlan: {
+                    strategy: "ledger_inverse",
+                    executionEnabled: false,
+                    inverseOperation,
+                  },
+                  externalEvidenceQueries: [{
+                    queryKind: "asset_registry_snapshot",
+                    readOnly: true,
+                    paths: [...dryRunSources, ...dryRunTargets],
+                  }],
+                  dryRunHash: wireCalls.length.toString(16).padStart(40, "a").slice(-40),
+                  hashAlgorithm: "sha1",
+                  schemaVersion: "mvp15c.dry-run.v1",
+                  approvalRequired: true,
+                  sideEffectObserved: false,
+                  effectState: "known_none",
+                  rollbackAvailable,
+                  rollbackStatus: rollbackAvailable ? "available" : "not_available",
+                  implementationStatus: "execution_capable",
+                  evidenceId: `mcp-dry-run-${wireCalls.length}`,
+                },
+              }
+          : {
+              status: simulateUnknown ? "failed" : "succeeded",
+              reason: simulateUnknown ? "effect_unknown" : "none",
+              effectState: simulateUnknown ? "unknown" : "known_effect",
+              evidenceId: `mcp-evidence-${wireCalls.length}`,
+            };
       } else {
         result = null;
       }
@@ -1499,6 +1733,14 @@ function createMvp15dNativeBoundaryHarness(options?: {
           status: "begun",
           rendererInstanceId: `renderer-process:5252:${rendererProcessGeneration}`,
           processIdentitySha256: rendererProcessGeneration.toString(16).padStart(64, "a"),
+        });
+      }
+      if (kind === "rendered_control") {
+        return observedState(request, {
+          status: "observed",
+          reason: "rendered_product_control_dispatched",
+          caseId: request.caseId,
+          controlId: request.controlId,
         });
       }
       if (kind === "mutation_counters") {

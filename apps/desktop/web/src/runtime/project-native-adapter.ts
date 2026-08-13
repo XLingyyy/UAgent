@@ -24,6 +24,7 @@ export interface NativeProjectAdapterOptions {
 export interface NativeProjectAdapter {
   listProjects(): ProjectProfile[];
   getProject(id: string): ProjectProfile | null;
+  resolveRawRoot(projectId: string, rootRef: string): string;
   validateRoot(ref: string): Promise<ProjectRootValidationResult>;
   addProject(ref: string): Promise<ProjectProfile>;
   confirmTrust(id: string): Promise<ProjectProfile>;
@@ -245,6 +246,7 @@ export function createNativeProjectAdapter(
       source: "native",
       listProjects: () => Array.from(projects.values()),
       getProject: (id) => projects.get(id) ?? null,
+      resolveRawRoot,
       async validateRoot(ref) {
         const raw = await invoke<NativeValidationResult>("validate_native_project_root", {
           input: { rootRef: ref },
@@ -364,6 +366,7 @@ export function createNativeProjectAdapter(
     source: "fixture",
     listProjects: () => registry.listProjects(),
     getProject: (id) => registry.getProject(id),
+    resolveRawRoot: (_projectId, rootRef) => rootRef,
     validateRoot: async (ref) => registry.validateRoot(ref),
     addProject: async (ref) => registry.addProject(ref),
     confirmTrust: async (id) => registry.confirmTrust(id),

@@ -207,7 +207,8 @@ export interface SettingsStoreActions {
 
 export interface ProjectStoreActions {
   setActiveProject: SetActiveProject;
-  validateProjectRoot: (rootRef: string) => Promise<void>;
+  validateProjectRoot: (rootRef: string) => Promise<boolean>;
+  addProjectRoot: (rootRef: string) => Promise<string | null>;
   trustProjectRoot: (projectId: string) => Promise<void>;
   scanProjectIndex: (projectId: string) => Promise<void>;
   cancelProjectScan: (projectId: string) => Promise<void>;

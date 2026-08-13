@@ -571,6 +571,24 @@ function createNativeInvokeMockAdapter(mock: (command: string, payload?: unknown
   };
 }
 
+function createNativeDryRunObservation(
+  payload: unknown,
+  nativeReceiptId: string,
+): Record<string, unknown> {
+  const input = (payload as { input?: Record<string, unknown> } | undefined)?.input ?? {};
+  return {
+    status: "dry_run_ready",
+    reason: "sandbox_guard_passed",
+    sandboxOnly: true,
+    wouldChange: true,
+    affectedAssets: [input.assetPath, input.targetAssetPath].filter(
+      (assetPath): assetPath is string => typeof assetPath === "string" && assetPath.length > 0,
+    ),
+    evidenceId: "asset-native-evidence:redacted",
+    nativeReceiptId,
+  };
+}
+
 function Mvp15InventoryProbe() {
   const inventory = useRuntimeStore((state) => state.mvp15.mcpInventory);
   return <pre data-testid="mvp15-inventory-probe">{JSON.stringify(inventory)}</pre>;
@@ -1102,6 +1120,10 @@ describe("MVP15 desktop asset mutation UI", () => {
       if (command === "trust_native_project_root") {
         return { rootId: "root:trusted", displayRoot: "[project-root]/Mvp15", trustState: "trusted" };
       }
+      if (command === "dry_run_asset_mutation") {
+        const sequence = nativeCalls.filter((call) => call.command === command).length;
+        return createNativeDryRunObservation(payload, `mvp15d-observation-receipt:dry-run-${sequence}`);
+      }
       if (command === "register_asset_mutation_approval") {
         const operations = Array.isArray(input.operations) ? input.operations as Array<Record<string, unknown>> : [];
         const save = operations.find((operation) => operation.kind === "save");
@@ -1374,7 +1396,7 @@ describe("MVP15 desktop asset mutation UI", () => {
     expect(serializedState).toContain('"recordedOnlyActions"');
     expect(serializedState).not.toContain("asset-approval-token:");
     expect(serializedState).not.toContain("G:/Projects/Mvp15");
-    await runMvp15dUiBridgeAction("uiAuthority");
+    await runMvp15dUiBridgeAction("partialUnknownDiagnostic");
     const authorityEvidence = readMvp15dUiStoreEvidence();
     if (!authorityEvidence) throw new Error("mvp15d_ui_authority_evidence_missing");
     expect(authorityEvidence).toMatchObject({
@@ -1398,18 +1420,18 @@ describe("MVP15 desktop asset mutation UI", () => {
     });
     expect(authorityEvidence.operations).toHaveLength(0);
     expect(authorityEvidence.contentManifests).toHaveLength(0);
-    expect(authorityEvidence.negativeCases).toHaveLength(8);
+    expect(authorityEvidence.negativeCases).toHaveLength(0);
     expect(authorityEvidence.partialUnknown.operationResults).toHaveLength(9);
     expect(authorityEvidence.replayInspection.recordedRepresentation).toMatchObject({
       eventCount: 14,
       recordedOnlyActions: ["dry-run", "preview", "approval", "execute", "verify", "rollback"],
     });
-    expect(authorityTrace.filter((entry) => entry.startsWith("guard:"))).toHaveLength(8);
+    expect(authorityTrace.filter((entry) => entry.startsWith("guard:"))).toHaveLength(0);
     expect(authorityTrace.filter((entry) => entry.startsWith("partial:"))).toHaveLength(9);
-    expect(authorityTrace.filter((entry) => entry.startsWith("begin:"))).toHaveLength(9);
-    expect(authorityTrace.filter((entry) => entry.startsWith("snapshot:"))).toHaveLength(18);
-    expect(authorityTrace.filter((entry) => entry.startsWith("stop:"))).toHaveLength(9);
-    expect(authorityTrace.filter((entry) => entry.startsWith("disconnect:"))).toHaveLength(9);
+    expect(authorityTrace.filter((entry) => entry.startsWith("begin:"))).toHaveLength(1);
+    expect(authorityTrace.filter((entry) => entry.startsWith("snapshot:"))).toHaveLength(2);
+    expect(authorityTrace.filter((entry) => entry.startsWith("stop:"))).toHaveLength(1);
+    expect(authorityTrace.filter((entry) => entry.startsWith("disconnect:"))).toHaveLength(1);
     const userVisibleAudit = [
       screen.getByLabelText("Asset mutation panel").textContent,
       screen.getByLabelText("Changes panel").textContent,
@@ -1541,6 +1563,9 @@ describe("MVP15 desktop asset mutation UI", () => {
       }
       if (command === "attest_mvp15_companion") return createNativeMvp15DCompanionAttestation();
       if (command === "retract_mvp15_companion_approvals") return createNativeMvp15DCompanionRetraction(payload);
+      if (command === "dry_run_asset_mutation") {
+        return createNativeDryRunObservation(payload, "mvp15d-observation-receipt:fixture-dry-run");
+      }
       if (command === "register_asset_mutation_approval") {
         const operations = Array.isArray(input.operations) ? input.operations as Array<Record<string, unknown>> : [];
         finalTarget = String(operations.find((operation) => operation.kind === "save")?.assetPath ?? "");
@@ -1732,6 +1757,9 @@ describe("MVP15 desktop asset mutation UI", () => {
       }
       if (command === "retract_mvp15_companion_approvals") {
         return createNativeMvp15DCompanionRetraction(payload);
+      }
+      if (command === "dry_run_asset_mutation") {
+        return createNativeDryRunObservation(payload, "mvp15d-observation-receipt:premature-dry-run");
       }
       return { status: "accepted_by_native_guard", reason: "should_not_run", evidenceId: "native-called" };
     });

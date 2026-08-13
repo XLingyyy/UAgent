@@ -27,11 +27,13 @@ const SCHEMA = "uagent.mvp15d.ue581.evidence-inventory.v2";
 const REDACTION_LEDGER_SCHEMA = "uagent.mvp15d.ue581.redaction-ledger.v1";
 const REDACTION_RULES_VERSION = "uagent.mvp15d.ue581.redaction-rules.v1";
 const PACKAGE_INVENTORY_SCHEMA = "uagent.mvp15d.ue581.package-artifact-inventory.v1";
-const LOADED_MODULES_SCHEMA = "uagent.mvp15d.ue581.loaded-modules.v1";
+const LOADED_MODULES_SCHEMA = "uagent.mvp15d.final.loaded-modules.v2";
+const PRODUCTION_AUTHORITY_SCHEMA = "uagent.mvp15d.loaded-module-production-authority.v1";
+const PRODUCTION_ORIGIN = "uagent.windows-job-module-observation.v1";
 const IDENTITY_SCHEMA = "uagent.ue-companion-plugin.identity.v2";
 const MANIFEST_SCHEMA = "uagent.ue-companion-plugin.build-manifest.v3";
 const BUILD_COMMAND_SCHEMA = "uagent.mvp15d.final.build-command.v3";
-const BUILD_RESULT_SCHEMA = "uagent.mvp15d.final.build-result.v3";
+const BUILD_RESULT_SCHEMA = "uagent.mvp15d.final.build-result.v4";
 const PRODUCER_LEDGER_SCHEMA = "uagent.mvp15d.final.producer-ledger.v1";
 const EVENT_SCHEMA = "uagent.mvp15d.final.phase-event.v1";
 const RUNTIME_EVENT_SCHEMA = "uagent.mvp15d.final.runtime-event.v2";
@@ -173,6 +175,31 @@ const RETAINED_SECRET_PATTERNS = Object.freeze([
   /[A-Za-z]:[\\/](?![\\/])[^ \t\r\n"'<>|?*]+/u,
 ]);
 
+const RAW_RETAINED_KEYS = new Set([
+  "marker",
+  "taskmarker",
+  "session",
+  "sessionid",
+  "phasesessionid",
+  "pid",
+  "rootpid",
+  "childpid",
+  "wrapperpid",
+  "runtimepid",
+  "runtimeprocessid",
+  "phaseproducerpid",
+  "processpid",
+  "creationfiletimeutc",
+  "rootcreationfiletimeutc",
+  "starttime",
+  "processstarttime",
+  "endpoint",
+  "port",
+]);
+const RETAINED_WINDOWS_ABSOLUTE_PATH = /(?:^|[\s"'])[A-Za-z]:[\\/](?![\\/])/u;
+const RETAINED_UNIX_ABSOLUTE_PATH = /(?:^|[\s"'])\/(?:home|Users|tmp|var|opt|mnt|srv)\//u;
+const RETAINED_ENDPOINT = /\bhttps?:\/\/[^\s"']+/iu;
+
 class InventoryError extends Error {
   constructor(code) {
     super(code);
@@ -225,6 +252,66 @@ function exactKeys(value, expected, code) {
     fail(code);
   }
   return value;
+}
+
+function isLiveRetainedDocument(value) {
+  if (Array.isArray(value)) return value.some(isLiveRetainedDocument);
+  if (!value || typeof value !== "object") return false;
+  return (
+    value.schemaVersion === LOADED_MODULES_SCHEMA ||
+    value.schemaVersion === BUILD_RESULT_SCHEMA ||
+    value.evidenceMode === "live" ||
+    value.productionOrigin === PRODUCTION_ORIGIN ||
+    value.producer?.mode === "live" ||
+    value.data?.origin === "production_runtime" ||
+    value.data?.origin === "live_runtime" ||
+    (isHex(value.markerSha256) && isHex(value.sessionBindingSha256)) ||
+    Object.values(value).some(isLiveRetainedDocument)
+  );
+}
+
+function validateRetainedValueCanary(value, code = "UE581_RETAINED_SENSITIVE_VALUE") {
+  if (typeof value === "string") {
+    if (
+      RETAINED_WINDOWS_ABSOLUTE_PATH.test(value) ||
+      RETAINED_UNIX_ABSOLUTE_PATH.test(value) ||
+      RETAINED_ENDPOINT.test(value)
+    ) {
+      fail(code);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) validateRetainedValueCanary(entry, code);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const [key, nested] of Object.entries(value)) {
+    const lower = key.toLowerCase();
+    if (
+      !lower.endsWith("sha256") &&
+      (RAW_RETAINED_KEYS.has(lower) || lower.includes("sessionid"))
+    ) {
+      fail(code);
+    }
+    validateRetainedValueCanary(nested, code);
+  }
+}
+
+function validateRetainedDocuments(root, walked) {
+  for (const record of walked.files) {
+    if (record.type !== "json" && record.type !== "jsonl") continue;
+    const path = resolve(root, ...record.path.split("/"));
+    let values;
+    try {
+      values = record.type === "jsonl"
+        ? readFileSync(path, "utf8").split(/\r?\n/u).filter(Boolean).map((line) => JSON.parse(line))
+        : [JSON.parse(readFileSync(path, "utf8"))];
+    } catch {
+      fail("UE581_RETAINED_JSON_INVALID");
+    }
+    if (isLiveRetainedDocument(values)) validateRetainedValueCanary(values);
+  }
 }
 
 function isWithin(root, candidate) {
@@ -644,23 +731,119 @@ function validateIdentityShape(identity) {
   return identity;
 }
 
-function validateLoadedModules(root, rootDevice, taskId) {
+function loadedAuthorityBindingMaterial(value) {
+  return {
+    schemaVersion: value.schemaVersion,
+    productionOrigin: value.productionOrigin,
+    fixtureUsed: value.fixtureUsed,
+    taskGeneration: value.taskGeneration,
+    taskId: value.taskId,
+    taskMarkerSha256: value.taskMarkerSha256,
+    sessionBindingSha256: value.sessionBindingSha256,
+    generation: value.generation,
+    sourceCommit: value.sourceCommit,
+    sourceTreeSha256: value.sourceTreeSha256,
+    sourceDirty: value.sourceDirty,
+    project: value.project,
+    manifest: value.manifest,
+    package: value.package,
+    installedRoot: value.installedRoot,
+    process: value.process,
+    modules: value.modules,
+    processIdentitySha256: value.authority.processIdentitySha256,
+    sources: value.authority.sources,
+  };
+}
+
+function validateLoadedModules(root, rootDevice, manifest) {
   const path = resolve(root, "captures", "loaded-modules.json");
   requirePlainFile(path, rootDevice, "UE581_LOADED_MODULES_INVALID");
   const value = readJson(path, "UE581_LOADED_MODULES_INVALID");
   exactKeys(
     value,
-    ["schemaVersion", "taskId", "sessionId", "generation", "processIdentitySha256", "modules"],
+    [
+      "schemaVersion",
+      "productionOrigin",
+      "fixtureUsed",
+      "taskGeneration",
+      "taskId",
+      "taskMarkerSha256",
+      "sessionBindingSha256",
+      "generation",
+      "sourceCommit",
+      "sourceTreeSha256",
+      "sourceDirty",
+      "project",
+      "manifest",
+      "package",
+      "installedRoot",
+      "process",
+      "modules",
+      "authority",
+    ],
     "UE581_LOADED_MODULES_INVALID",
   );
+  exactKeys(value.project, ["id", "sha256"], "UE581_LOADED_MODULES_INVALID");
+  exactKeys(value.manifest, ["sha256"], "UE581_LOADED_MODULES_INVALID");
+  exactKeys(value.package, ["id", "artifactCount", "sha256"], "UE581_LOADED_MODULES_INVALID");
+  exactKeys(value.installedRoot, ["id", "artifactCount", "sha256"], "UE581_LOADED_MODULES_INVALID");
+  exactKeys(
+    value.process,
+    ["pidBindingSha256", "creationFileTimeUtcBindingSha256", "executableBasename", "executableSha256"],
+    "UE581_LOADED_MODULES_INVALID",
+  );
+  exactKeys(
+    value.authority,
+    ["schemaVersion", "processIdentitySha256", "sources", "bindingSha256"],
+    "UE581_LOADED_MODULES_INVALID",
+  );
+  exactKeys(
+    value.authority.sources,
+    ["phaseProducer", "helper", "observer", "jobRunner"],
+    "UE581_LOADED_MODULES_INVALID",
+  );
+  for (const source of Object.values(value.authority.sources)) {
+    exactKeys(source, ["relativePath", "size", "sha256"], "UE581_LOADED_MODULES_INVALID");
+    canonicalLogical(source.relativePath, "UE581_LOADED_MODULES_INVALID");
+    if (!Number.isSafeInteger(source.size) || source.size < 1 || !isHex(source.sha256)) {
+      fail("UE581_LOADED_MODULES_INVALID");
+    }
+  }
+  const manifestSha256 = sha256(
+    readFileSync(resolve(root, ...PACKAGE_MANIFEST.split("/"))),
+  );
+  const packageSha256 = sha256(Buffer.from(stable(manifest.artifacts), "utf8"));
   if (
     value.schemaVersion !== LOADED_MODULES_SCHEMA ||
-    value.taskId !== taskId ||
-    typeof value.sessionId !== "string" ||
-    !/^[A-Za-z0-9._:-]{16,160}$/.test(value.sessionId) ||
+    value.productionOrigin !== PRODUCTION_ORIGIN ||
+    value.fixtureUsed !== false ||
+    value.taskGeneration !== TASK_GENERATION ||
+    value.taskId !== manifest.taskId ||
+    !isHex(value.taskMarkerSha256) ||
+    !isHex(value.sessionBindingSha256) ||
     !Number.isSafeInteger(value.generation) ||
     value.generation < 1 ||
-    !isHex(value.processIdentitySha256) ||
+    value.sourceCommit !== manifest.sourceCommit ||
+    !isHex(value.sourceTreeSha256) ||
+    typeof value.sourceDirty !== "boolean" ||
+    !/^[A-Za-z0-9._-]{1,64}$/u.test(value.project.id) ||
+    !isHex(value.project.sha256) ||
+    value.manifest.sha256 !== manifestSha256 ||
+    value.package.id !== "UAgentAssetTools" ||
+    value.package.artifactCount !== manifest.artifacts.length ||
+    value.package.sha256 !== packageSha256 ||
+    value.installedRoot.id !== "UAgentAssetTools" ||
+    value.installedRoot.artifactCount !== manifest.artifacts.length ||
+    value.installedRoot.sha256 !== packageSha256 ||
+    !isHex(value.process.pidBindingSha256) ||
+    !isHex(value.process.creationFileTimeUtcBindingSha256) ||
+    typeof value.process.executableBasename !== "string" ||
+    /[\\/]/u.test(value.process.executableBasename) ||
+    !isHex(value.process.executableSha256) ||
+    value.authority.schemaVersion !== PRODUCTION_AUTHORITY_SCHEMA ||
+    !isHex(value.authority.processIdentitySha256) ||
+    value.authority.bindingSha256 !==
+      sha256(Buffer.from(stable(loadedAuthorityBindingMaterial(value)), "utf8")) ||
     !Array.isArray(value.modules) ||
     value.modules.length < 1
   ) {
@@ -669,9 +852,9 @@ function validateLoadedModules(root, rootDevice, taskId) {
   const folded = new Set();
   for (const module of value.modules) {
     exactKeys(module, ["name", "path", "sha256", "size"], "UE581_LOADED_MODULES_INVALID");
-    canonicalLogical(module.path, "UE581_LOADED_MODULES_INVALID");
     if (
-      !PACKAGE_MODULE_PATTERN.test(module.path) ||
+      typeof module.path !== "string" ||
+      !/^Binaries\/Win64\/UnrealEditor-[A-Za-z0-9_.-]+\.dll$/u.test(module.path) ||
       basename(module.path) !== module.name ||
       !Number.isSafeInteger(module.size) ||
       module.size < 1 ||
@@ -704,6 +887,30 @@ function validateBuildEvidence(root, rootDevice, manifest) {
   requirePlainFile(resultPath, rootDevice, "UE581_BUILD_RESULT_INVALID");
   const command = readJson(commandPath, "UE581_BUILD_COMMAND_INVALID");
   const result = readJson(resultPath, "UE581_BUILD_RESULT_INVALID");
+  exactKeys(
+    result,
+    [
+      "schemaVersion",
+      "taskGeneration",
+      "taskMarkerSha256",
+      "status",
+      "reason",
+      "commandFingerprint",
+      "childPidBindingSha256",
+      "childExitCode",
+      "wrapperExitCode",
+      "sourceArtifacts",
+      "packagePresent",
+      "successManifestPresent",
+      "closeout",
+    ],
+    "UE581_BUILD_RESULT_INVALID",
+  );
+  exactKeys(
+    result.closeout,
+    ["wrapperPidBindingSha256", "childExited", "taskOwnedResidualCount"],
+    "UE581_BUILD_RESULT_INVALID",
+  );
   if (
     command?.schemaVersion !== BUILD_COMMAND_SCHEMA ||
     command?.taskGeneration !== TASK_GENERATION ||
@@ -711,8 +918,18 @@ function validateBuildEvidence(root, rootDevice, manifest) {
     command?.commandFingerprint !== manifest.buildCommandFingerprint ||
     result?.schemaVersion !== BUILD_RESULT_SCHEMA ||
     result?.taskGeneration !== TASK_GENERATION ||
+    !isHex(result.taskMarkerSha256) ||
     result?.status !== "build_completed" ||
+    result?.reason !== null ||
     result?.commandFingerprint !== manifest.buildCommandFingerprint
+    || (result.childPidBindingSha256 !== null && !isHex(result.childPidBindingSha256))
+    || !isHex(result.closeout.wrapperPidBindingSha256)
+    || result.childExitCode !== 0
+    || result.wrapperExitCode !== 0
+    || result.packagePresent !== true
+    || result.successManifestPresent !== false
+    || result.closeout.childExited !== true
+    || result.closeout.taskOwnedResidualCount !== 0
   ) {
     fail("UE581_BUILD_EVIDENCE_SCHEMA_INVALID");
   }
@@ -790,11 +1007,11 @@ function derivePackageBinding(root, rootDevice) {
   }
   validatePackageSemanticIdentity(packageRoot, manifest);
   validateBuildEvidence(root, rootDevice, manifest);
-  const loaded = validateLoadedModules(root, rootDevice, manifest.taskId);
+  const loaded = validateLoadedModules(root, rootDevice, manifest);
   const loadedRecords = [...loaded.modules].sort((left, right) =>
     left.path.localeCompare(right.path, "en"),
   );
-  const expectedModules = prefixedPackageRecords(manifest.modules).sort((left, right) =>
+  const expectedModules = [...manifest.modules].sort((left, right) =>
     left.path.localeCompare(right.path, "en"),
   );
   if (
@@ -947,6 +1164,39 @@ function validateProducerLedger(root, rootDevice, phase, taskId) {
   ) {
     fail("UE581_PRODUCER_LEDGER_INVALID");
   }
+  if (value.producer.mode === "live") {
+    if (
+      value.taskGeneration !== TASK_GENERATION ||
+      typeof value.evidenceRoot !== "string" ||
+      /[\\/]/u.test(value.evidenceRoot) ||
+      !isHex(value.evidenceRootSha256) ||
+      !/^[0-9a-f]{40}$/u.test(value.sourceCommit) ||
+      !isHex(value.markerSha256) ||
+      !isHex(value.sessionBindingSha256) ||
+      !isHex(value.endpointSha256) ||
+      !isHex(value.portBindingSha256) ||
+      value.processOwnership?.kind !== "task_owned" ||
+      value.processOwnership?.markerSha256 !== value.markerSha256 ||
+      !isHex(value.processOwnership?.parentPidBindingSha256) ||
+      !isHex(value.processOwnership?.childPidBindingSha256) ||
+      !isHex(value.processOwnership?.childProcessIdBindingSha256) ||
+      value.processOwnership?.closed !== true ||
+      !isHex(value.runtimeProcess?.processIdBindingSha256) ||
+      value.runtimeProcess?.endpointSha256 !== value.endpointSha256 ||
+      value.runtimeProcess?.markerSha256 !== value.markerSha256 ||
+      !isHex(value.runtimeProcess?.executable?.sha256) ||
+      !isHex(value.runtimeProcess?.argumentVectorSha256) ||
+      !isHex(value.runtimeTransport?.nonceSha256) ||
+      value.closeout?.authorityLevel !== "parent_observed" ||
+      !isHex(value.closeout?.jobCloseoutSha256) ||
+      !isHex(value.closeout?.portObservationSha256) ||
+      value.closeout?.runtimeProcessIdBindingSha256 !== value.runtimeProcess.processIdBindingSha256 ||
+      value.closeout?.phaseSessionBindingSha256 !== value.sessionBindingSha256 ||
+      value.closeout?.phaseGeneration !== value.generation
+    ) {
+      fail("UE581_PRODUCER_LEDGER_INVALID");
+    }
+  }
   const outputRecords = Array.isArray(value.outputs) ? value.outputs : Object.values(value.outputs);
   const logicalOutputs = outputRecords.map((record) =>
     validateArtifactReference(root, rootDevice, record, "UE581_PRODUCER_OUTPUT_INVALID"),
@@ -971,6 +1221,79 @@ function validateProducerLedger(root, rootDevice, phase, taskId) {
   return value;
 }
 
+function validateLiveParentCloseouts(root, phase, taskId, ledger) {
+  if (ledger.producer.mode !== "live") return;
+  const jobPath = resolve(root, "metadata", `${phase}.job-closeout.json`);
+  const portPath = resolve(root, "metadata", `${phase}.port-closeout.json`);
+  const jobCloseout = readJson(jobPath, "UE581_PHASE_PARENT_CLOSEOUT_INVALID");
+  const portCloseout = readJson(portPath, "UE581_PHASE_PARENT_CLOSEOUT_INVALID");
+  exactKeys(
+    jobCloseout,
+    [
+      "schemaVersion",
+      "taskId",
+      "markerSha256",
+      "sessionBindingSha256",
+      "generation",
+      "jobSchemaVersion",
+      "rootPidBindingSha256",
+      "rootExitCode",
+      "timedOut",
+      "activeProcessZeroObserved",
+      "finalResidualCount",
+      "failureCode",
+    ],
+    "UE581_PHASE_PARENT_CLOSEOUT_INVALID",
+  );
+  exactKeys(
+    portCloseout,
+    [
+      "schemaVersion",
+      "phase",
+      "taskId",
+      "markerSha256",
+      "sessionBindingSha256",
+      "generation",
+      "portBindingSha256",
+      "observations",
+      "residualCount",
+    ],
+    "UE581_PHASE_PARENT_CLOSEOUT_INVALID",
+  );
+  if (
+    jobCloseout.schemaVersion !== JOB_CLOSEOUT_SCHEMA ||
+    jobCloseout.taskId !== taskId ||
+    jobCloseout.markerSha256 !== ledger.markerSha256 ||
+    jobCloseout.sessionBindingSha256 !== ledger.sessionBindingSha256 ||
+    jobCloseout.generation !== ledger.generation ||
+    jobCloseout.jobSchemaVersion !== "uagent.mvp15d.windows-job-process-run.v1" ||
+    !isHex(jobCloseout.rootPidBindingSha256) ||
+    jobCloseout.rootExitCode !== 0 ||
+    jobCloseout.timedOut !== false ||
+    jobCloseout.activeProcessZeroObserved !== true ||
+    jobCloseout.finalResidualCount !== 0 ||
+    jobCloseout.failureCode !== "" ||
+    portCloseout.schemaVersion !== PORT_CLOSEOUT_SCHEMA ||
+    portCloseout.phase !== phase ||
+    portCloseout.taskId !== taskId ||
+    portCloseout.markerSha256 !== ledger.markerSha256 ||
+    portCloseout.sessionBindingSha256 !== ledger.sessionBindingSha256 ||
+    portCloseout.generation !== ledger.generation ||
+    portCloseout.portBindingSha256 !== ledger.portBindingSha256 ||
+    portCloseout.residualCount !== 0 ||
+    !Array.isArray(portCloseout.observations) ||
+    portCloseout.observations.length !== 5 ||
+    portCloseout.observations.some(
+      (observation, index) =>
+        stable(observation) !== stable({ attempt: index + 1, accepting: false }),
+    ) ||
+    ledger.closeout.jobCloseoutSha256 !== sha256(readFileSync(jobPath)) ||
+    ledger.closeout.portObservationSha256 !== sha256(readFileSync(portPath))
+  ) {
+    fail("UE581_PHASE_PARENT_CLOSEOUT_INVALID");
+  }
+}
+
 function validateTranscript(root, rootDevice, phase, taskId) {
   const path = resolve(root, "transcripts", `${phase}.events.jsonl`);
   requirePlainFile(path, rootDevice, "UE581_TRANSCRIPT_INVALID");
@@ -993,6 +1316,13 @@ function validateTranscript(root, rootDevice, phase, taskId) {
       event?.taskId !== taskId ||
       event?.sequence !== index + 1 ||
       (event.producer?.mode ?? event.evidenceMode ?? event.mode) !== evidenceMode ||
+      (evidenceMode === "live" &&
+        (!isHex(event.markerSha256) ||
+          !isHex(event.sessionBindingSha256) ||
+          !isHex(event.producer?.processIdBindingSha256) ||
+          event.markerSha256 !== events[0].markerSha256 ||
+          event.sessionBindingSha256 !== events[0].sessionBindingSha256 ||
+          event.producer.processIdBindingSha256 !== events[0].producer.processIdBindingSha256)) ||
       /fixture|manual|direct[-_]?mcp/i.test(String(event.producer?.id ?? ""))
     ) {
       fail("UE581_TRANSCRIPT_EVENT_INVALID");
@@ -1073,8 +1403,11 @@ function validateTranscript(root, rootDevice, phase, taskId) {
         : closeout.authorityLevel !== "source_only") ||
       !isHex(closeout.jobCloseoutSha256) ||
       !isHex(closeout.portObservationSha256) ||
-      closeout.runtimeProcessId !== runtime?.pid ||
-      closeout.phaseSessionId !== events.at(-1).sessionId ||
+      (evidenceMode === "live"
+        ? closeout.runtimeProcessIdBindingSha256 !== runtime?.processIdBindingSha256 ||
+          closeout.phaseSessionBindingSha256 !== events.at(-1).sessionBindingSha256
+        : closeout.runtimeProcessId !== runtime?.pid ||
+          closeout.phaseSessionId !== events.at(-1).sessionId) ||
       closeout.phaseGeneration !== events.at(-1).generation ||
       [
         closeout.processResidualCount,
@@ -1130,10 +1463,14 @@ function validateRuntimeTranscript(root, rootDevice, phase, taskId) {
     identity &&
     (identity.taskId !== taskId ||
       !/^[0-9a-f]{40}$/.test(identity.sourceCommit) ||
+      !isHex(identity.markerSha256) ||
+      !isHex(identity.sessionBindingSha256) ||
       !Number.isSafeInteger(identity.generation) ||
       identity.generation < 1 ||
+      !isHex(identity.portBindingSha256) ||
+      !isHex(identity.endpointSha256) ||
       !isHex(identity.nonceSha256) ||
-      !Number.isSafeInteger(identity.process?.pid) ||
+      !isHex(identity.process?.pidBindingSha256) ||
       !isHex(identity.process?.executableSha256))
   ) {
     fail("UE581_RUNTIME_TRANSCRIPT_BINDING_INVALID");
@@ -1171,6 +1508,16 @@ function validateSummary(root, rootDevice, phase, taskId) {
     (value.evidenceMode === "live" && value.fixtureUsed === true) ||
     /fixture|manual|direct[-_]?mcp/i.test(String(value?.producer ?? "")) ||
     !Array.isArray(value?.sourceArtifacts)
+  ) {
+    fail("UE581_SUMMARY_INVALID");
+  }
+  if (
+    value.evidenceMode === "live" &&
+    (!isHex(value.sessionBindingSha256) ||
+      !isHex(value.endpointSha256) ||
+      !Number.isSafeInteger(value.generation) ||
+      value.generation < 1 ||
+      !isHex(value.producerLedgerSha256))
   ) {
     fail("UE581_SUMMARY_INVALID");
   }
@@ -1273,7 +1620,7 @@ function validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvent
   const jobPath = resolve(root, "metadata", `${phase}.job-closeout.json`);
   const portPath = resolve(root, "metadata", `${phase}.port-closeout.json`);
   const processIdentity = {
-    pid: runtimeProcess?.pid,
+    processIdBindingSha256: runtimeProcess?.processIdBindingSha256,
     executableBasename: runtimeProcess?.executable?.basename,
     executableSha256: runtimeProcess?.executable?.sha256,
   };
@@ -1282,23 +1629,24 @@ function validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvent
     summary.productionLaunchAuthorityVerified !== false ||
     summary.producerLedgerSha256 !== sha256(readFileSync(resolve(root, "metadata", `${phase}.producer.json`))) ||
     summary.sourceCommit !== ledger.sourceCommit ||
-    summary.sessionId !== ledger.sessionId ||
+    summary.sessionBindingSha256 !== ledger.sessionBindingSha256 ||
     summary.generation !== ledger.generation ||
     events.some(
       (event) =>
         event.taskId !== ledger.taskId ||
         event.phase !== phase ||
-        event.marker !== ledger.marker ||
-        event.sessionId !== ledger.sessionId ||
+        event.markerSha256 !== ledger.markerSha256 ||
+        event.sessionBindingSha256 !== ledger.sessionBindingSha256 ||
         event.generation !== ledger.generation ||
-        event.producer?.pid !== ledger.processOwnership?.childPid,
+        event.producer?.processIdBindingSha256 !==
+          ledger.processOwnership?.childProcessIdBindingSha256,
     ) ||
     binding.sourceCommit !== ledger.sourceCommit ||
     binding.sourceTreeSha256 !== fixedArtifact?.sourceTreeSha256 ||
-    binding.phaseProducerPid !== ledger.processOwnership?.childPid ||
-    binding.runtimePid !== ledger.runtimeProcess?.pid ||
-    binding.runtimePid !== closeout?.runtimeProcessId ||
-    binding.runtimePid !== runtimeIdentity?.process?.pid ||
+    binding.phaseProducerProcessIdBindingSha256 !==
+      ledger.processOwnership?.childProcessIdBindingSha256 ||
+    binding.runtimeProcessIdBindingSha256 !== ledger.runtimeProcess?.processIdBindingSha256 ||
+    binding.runtimeProcessIdBindingSha256 !== closeout?.runtimeProcessIdBindingSha256 ||
     binding.runtimeProcessSha256 !== sha256(Buffer.from(stable(runtimeProcess), "utf8")) ||
     binding.processIdentitySha256 !== sha256(Buffer.from(stable(processIdentity), "utf8")) ||
     binding.fixedArtifactBindingSha256 !== fixedArtifact?.producerBindingSha256 ||
@@ -1313,12 +1661,13 @@ function validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvent
     binding.portCloseoutSha256 !== sha256(readFileSync(portPath)) ||
     binding.portCloseoutSha256 !== closeout?.portObservationSha256 ||
     fixedArtifact?.sourceCommit !== ledger.sourceCommit ||
-    fixedArtifact?.phaseSessionId !== ledger.sessionId ||
+    fixedArtifact?.phaseSessionBindingSha256 !== ledger.sessionBindingSha256 ||
     fixedArtifact?.phaseGeneration !== ledger.generation ||
-    fixedArtifact?.runtimeProcessId !== ledger.runtimeProcess?.pid ||
+    fixedArtifact?.runtimeProcessIdBindingSha256 !== ledger.runtimeProcess?.processIdBindingSha256 ||
     runtimeIdentity?.sourceCommit !== ledger.sourceCommit ||
-    runtimeIdentity?.session !== ledger.sessionId ||
+    runtimeIdentity?.sessionBindingSha256 !== ledger.sessionBindingSha256 ||
     runtimeIdentity?.generation !== ledger.generation ||
+    !isHex(runtimeIdentity?.process?.pidBindingSha256) ||
     runtimeIdentity?.process?.executableBasename !== ledger.runtimeProcess?.executable?.basename ||
     runtimeIdentity?.process?.executableSha256 !== ledger.runtimeProcess?.executable?.sha256
   ) {
@@ -1349,14 +1698,14 @@ function validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvent
       "parentAcknowledgementReceiptId",
       "parentAcknowledgementReceiptSequence",
       "predecessorMcpGeneration",
-      "predecessorMcpSessionId",
+      "predecessorMcpSessionBindingSha256",
       "predecessorProcessIdentitySha256",
       "predecessorRendererInstanceId",
       "predecessorWindowIdentity",
       "requestReceiptId",
       "requestReceiptSequence",
       "successorMcpGeneration",
-      "successorMcpSessionId",
+      "successorMcpSessionBindingSha256",
       "successorProcessIdentitySha256",
       "successorRendererInstanceId",
     ].sort();
@@ -1390,8 +1739,10 @@ function validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvent
       handoff.successorRendererInstanceId !== rawHandoff.successorRenderer?.rendererInstanceId ||
       handoff.predecessorProcessIdentitySha256 !== rawHandoff.predecessorRenderer?.processIdentitySha256 ||
       handoff.successorProcessIdentitySha256 !== rawHandoff.successorRenderer?.processIdentitySha256 ||
-      handoff.predecessorMcpSessionId !== rawHandoff.predecessorMcpSessionId ||
-      handoff.successorMcpSessionId !== rawHandoff.successorMcpSessionId ||
+      handoff.predecessorMcpSessionBindingSha256 !==
+        rawHandoff.predecessorMcpSessionBindingSha256 ||
+      handoff.successorMcpSessionBindingSha256 !==
+        rawHandoff.successorMcpSessionBindingSha256 ||
       handoff.predecessorMcpGeneration !== rawHandoff.predecessorMcpGeneration ||
       handoff.successorMcpGeneration !== rawHandoff.successorMcpGeneration ||
       handoff.requestReceiptId !== rawHandoff.requestReceipt?.id ||
@@ -1416,6 +1767,7 @@ function validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvent
 function validateSchemas(root, rootDevice, taskId) {
   for (const phase of PHASES) {
     const ledger = validateProducerLedger(root, rootDevice, phase, taskId);
+    validateLiveParentCloseouts(root, phase, taskId, ledger);
     const events = validateTranscript(root, rootDevice, phase, taskId);
     const runtimeEvents = validateRuntimeTranscript(root, rootDevice, phase, taskId);
     const summary = validateSummary(root, rootDevice, phase, taskId);
@@ -1711,6 +2063,7 @@ function validateInventoryShape(inventory) {
 function validateEvidence(root, rootDevice) {
   const walked = collect(root, rootDevice);
   validateClosure(walked);
+  validateRetainedDocuments(root, walked);
   validateJsonSchemaDeclarations(root, walked);
   validateRedactions(root, rootDevice);
   const binding = derivePackageBinding(root, rootDevice);
@@ -1853,6 +2206,7 @@ export {
   sha256,
   stable,
   validateLivePhaseCrossBinding,
+  validateRetainedValueCanary,
   verify,
   verifyInProcess,
 };

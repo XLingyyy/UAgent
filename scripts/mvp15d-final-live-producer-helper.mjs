@@ -55,8 +55,10 @@ const COMMON_KEYS = [
 ];
 const RENDERED_PATHS = Object.freeze({
   "capability-probe": "capability",
-  "product-capture": "validate,add,confirmTrust,observationDiscover,observationAttach,observationReady,Connect,Initialize,Discover,Normalize,Fingerprint,disconnect",
-  "ui-lifecycle": "validate,add,confirmTrust,observationDiscover,observationAttach,observationReady,mcpConnect,mcpInitialize,mcpDiscover,mcpNormalize,mcpFingerprint,dryRun,approve,register,execute,verify,crossTtl,rollback,finalVerify,replay,observationStop,mcpDisconnect",
+  "product-capture":
+    "validate,add,confirmTrust,observationDiscover,observationAttach,observationReady,Connect,Initialize,Discover,Normalize,Fingerprint,disconnect",
+  "ui-lifecycle":
+    "validate,add,confirmTrust,observationDiscover,observationAttach,observationReady,mcpConnect,mcpInitialize,mcpDiscover,mcpNormalize,mcpFingerprint,dryRun,approve,register,execute,verify,crossTtl,rollback,finalVerify,replay,observationStop,mcpDisconnect",
 });
 const UE_AUTOMATION_TESTS = Object.freeze([
   "UAgentAssetTools.Contracts",
@@ -86,6 +88,52 @@ function stable(value) {
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function retainedBinding(kind, value) {
+  const raw = typeof value === "string" ? value : stable(value);
+  return sha256(Buffer.from(`uagent.mvp15d.retained.${kind}.v1\0${raw}`, "utf8"));
+}
+
+function retainedKeyBinding(key) {
+  const lower = key.toLowerCase();
+  if (lower === "marker") return ["markerSha256", "marker"];
+  if (lower === "session") return ["sessionBindingSha256", "session"];
+  const sessionIndex = lower.indexOf("sessionid");
+  if (sessionIndex >= 0) {
+    const originalSuffix = key.slice(sessionIndex + "sessionId".length);
+    return [`${key.slice(0, sessionIndex)}SessionBindingSha256${originalSuffix}`, "session"];
+  }
+  if (["pid", "runtimepid", "processpid"].includes(lower)) {
+    return [`${key}BindingSha256`, "pid"];
+  }
+  if (lower.endsWith("processid")) {
+    return [`${key}BindingSha256`, "process-id"];
+  }
+  if (
+    ["starttime", "processstarttime"].includes(lower) ||
+    (lower.includes("creation") && lower.includes("filetime"))
+  ) {
+    return [`${key}BindingSha256`, "creation-filetime"];
+  }
+  if (lower === "port") return ["portBindingSha256", "port"];
+  if (lower === "endpoint") return ["endpointSha256", "endpoint"];
+  return null;
+}
+
+function retainedEventValue(value) {
+  if (Array.isArray(value)) return value.map(retainedEventValue);
+  if (!value || typeof value !== "object") return value;
+  const retained = {};
+  for (const [key, nested] of Object.entries(value)) {
+    const binding = retainedKeyBinding(key);
+    if (binding) {
+      if (nested !== null) retained[binding[0]] = retainedBinding(binding[1], nested);
+    } else {
+      retained[key] = retainedEventValue(nested);
+    }
+  }
+  return retained;
 }
 
 function sha256File(path) {
@@ -376,6 +424,8 @@ function ueRuntimeCommand(binding, transport) {
       "-nullrhi",
       "-stdout",
       "-FullStdOutLogOutput",
+      "-ddc=NoZenLocalFallback",
+      `-LocalDataCachePath=${resolve(binding.project, "..", "Saved", "DerivedDataCache")}`,
       `-ExecCmds=Automation RunTests ${UE_AUTOMATION_TESTS.join("+")};Quit`,
       `-ReportExportPath=${reportDirectory}`,
       `-UAgentTaskId=${binding.taskId}`,
@@ -385,7 +435,10 @@ function ueRuntimeCommand(binding, transport) {
       `-UAgentSession=${binding.sessionId}`,
       `-UAgentGeneration=${binding.generation}`,
     ],
-    env: process.env,
+    env: {
+      ...process.env,
+      "UE-LocalDataCachePath": resolve(binding.project, "..", "Saved", "DerivedDataCache"),
+    },
     reportDirectory,
     transport,
   };
@@ -546,6 +599,21 @@ function contentTreeSha256(project) {
   };
   walk(contentRoot, "");
   return sha256(Buffer.from(stable(records), "utf8"));
+}
+
+function validateProjectSeed(project) {
+  const contentRoot = requireDirectory(
+    resolve(project, "..", "Content"),
+    "FINAL_LIVE_CONTENT_INVALID",
+  );
+  const candidates = ["Test01.uasset", "Test01.umap"]
+    .map((name) => resolve(contentRoot, name))
+    .filter(existsSync);
+  if (candidates.length !== 1) fail("FINAL_LIVE_TEST01_SOURCE_INVALID");
+  const source = requireFile(candidates[0], "FINAL_LIVE_TEST01_SOURCE_INVALID");
+  const stats = lstatSync(source);
+  if (stats.size < 1) fail("FINAL_LIVE_TEST01_SOURCE_INVALID");
+  return { size: stats.size, sha256: sha256File(source) };
 }
 
 function moduleRecord(root, record, code) {
@@ -741,6 +809,7 @@ function ensureLoadedModuleLedger(
     observation,
     producerRelativePath: "scripts/mvp15d-final-ue-automation-producer.mjs",
   });
+  rmSync(earlyIdentityPath, { force: true });
   return ledger;
 }
 
@@ -776,8 +845,8 @@ function ueArtifactBinding(binding, earlyIdentity, executable, jobCloseoutPath, 
     loadedFromDisk.productionOrigin !== PRODUCTION_ORIGIN ||
     loadedFromDisk.fixtureUsed !== false ||
     loadedFromDisk.taskId !== binding.taskId ||
-    loadedFromDisk.taskMarker !== binding.marker ||
-    loadedFromDisk.sessionId !== binding.sessionId ||
+    loadedFromDisk.taskMarkerSha256 !== retainedBinding("marker", binding.marker) ||
+    loadedFromDisk.sessionBindingSha256 !== retainedBinding("session", binding.sessionId) ||
     loadedFromDisk.generation !== binding.generation ||
     loadedFromDisk.sourceCommit !== binding.sourceCommit ||
     loadedFromDisk.sourceTreeSha256 !== source.sourceTreeSha256 ||
@@ -792,14 +861,16 @@ function ueArtifactBinding(binding, earlyIdentity, executable, jobCloseoutPath, 
     loadedFromDisk.installedRoot?.artifactCount !== installedArtifacts.length ||
     loadedFromDisk.installedRoot?.sha256 !==
       sha256(Buffer.from(stable(installedArtifacts), "utf8")) ||
-    loadedFromDisk.process?.pid !== earlyIdentity.rootPid ||
-    loadedFromDisk.process?.creationFileTimeUtc !== earlyIdentity.rootCreationFileTimeUtc ||
+    loadedFromDisk.process?.pidBindingSha256 !== retainedBinding("pid", earlyIdentity.rootPid) ||
+    loadedFromDisk.process?.creationFileTimeUtcBindingSha256 !==
+      retainedBinding("creation-filetime", earlyIdentity.rootCreationFileTimeUtc) ||
     loadedFromDisk.process?.executableBasename !== basename(executable) ||
     loadedFromDisk.process?.executableSha256 !== executableSha256 ||
     !Array.isArray(loadedFromDisk.modules) ||
     loadedFromDisk.modules.length !== packageModules.length ||
     loadedFromDisk.authority?.schemaVersion !==
       "uagent.mvp15d.loaded-module-production-authority.v1" ||
+    !/^[0-9a-f]{64}$/.test(loadedFromDisk.authority?.processIdentitySha256) ||
     !/^[0-9a-f]{64}$/.test(loadedFromDisk.authority?.bindingSha256)
   ) {
     fail("FINAL_LIVE_UE_LOADED_INVALID");
@@ -847,10 +918,10 @@ function ueArtifactBinding(binding, earlyIdentity, executable, jobCloseoutPath, 
   if (
     jobCloseout?.schemaVersion !== JOB_CLOSEOUT_SCHEMA ||
     jobCloseout.taskId !== binding.taskId ||
-    jobCloseout.marker !== binding.marker ||
-    jobCloseout.sessionId !== binding.sessionId ||
+    jobCloseout.markerSha256 !== retainedBinding("marker", binding.marker) ||
+    jobCloseout.sessionBindingSha256 !== retainedBinding("session", binding.sessionId) ||
     jobCloseout.generation !== binding.generation ||
-    jobCloseout.rootPid !== earlyIdentity.rootPid ||
+    jobCloseout.rootPidBindingSha256 !== retainedBinding("pid", earlyIdentity.rootPid) ||
     jobCloseout.rootExitCode !== 0 ||
     jobCloseout.activeProcessZeroObserved !== true ||
     jobCloseout.finalResidualCount !== 0
@@ -871,7 +942,7 @@ function ueArtifactBinding(binding, earlyIdentity, executable, jobCloseoutPath, 
         size: loadedLedgerStats.size,
         sha256: sha256File(loadedLedgerPath),
       },
-      earlyIdentity: loadedFromDisk.authority.earlyIdentity,
+      processIdentitySha256: loadedFromDisk.authority.processIdentitySha256,
       jobCloseout: {
         relativePath: "metadata/ue-automation.job-closeout.json",
         size: jobCloseoutStats.size,
@@ -879,13 +950,18 @@ function ueArtifactBinding(binding, earlyIdentity, executable, jobCloseoutPath, 
       },
       authorityBindingSha256: loadedFromDisk.authority.bindingSha256,
       taskId: binding.taskId,
-      taskMarker: binding.marker,
-      sessionId: binding.sessionId,
+      taskMarkerSha256: retainedBinding("marker", binding.marker),
+      sessionBindingSha256: retainedBinding("session", binding.sessionId),
       generation: binding.generation,
       sourceCommit: loadedFromDisk.sourceCommit,
       sourceTreeSha256: loadedFromDisk.sourceTreeSha256,
       sourceDirty: loadedFromDisk.sourceDirty,
-      process: loadedFromDisk.process,
+      process: {
+        pidBindingSha256: loadedFromDisk.process.pidBindingSha256,
+        creationFileTimeUtcBindingSha256: loadedFromDisk.process.creationFileTimeUtcBindingSha256,
+        executableBasename: loadedFromDisk.process.executableBasename,
+        executableSha256: loadedFromDisk.process.executableSha256,
+      },
       projectSha256: loadedFromDisk.project.sha256,
       manifestSha256: loadedFromDisk.manifest.sha256,
       packageInventorySha256: loadedFromDisk.package.sha256,
@@ -1040,11 +1116,11 @@ function publishJobCloseout(path, binding, ledger) {
   const value = {
     schemaVersion: JOB_CLOSEOUT_SCHEMA,
     taskId: binding.taskId,
-    marker: binding.marker,
-    sessionId: binding.sessionId,
+    markerSha256: retainedBinding("marker", binding.marker),
+    sessionBindingSha256: retainedBinding("session", binding.sessionId),
     generation: binding.generation,
     jobSchemaVersion: ledger.SchemaVersion,
-    rootPid: ledger.RootPid,
+    rootPidBindingSha256: retainedBinding("pid", ledger.RootPid),
     rootExitCode: ledger.RootExitCode,
     timedOut: ledger.TimedOut,
     activeProcessZeroObserved: ledger.ActiveProcessZeroObserved,
@@ -1091,11 +1167,10 @@ async function publishPortCloseout(path, binding) {
     schemaVersion: PORT_CLOSEOUT_SCHEMA,
     phase: binding.phase,
     taskId: binding.taskId,
-    marker: binding.marker,
-    sessionId: binding.sessionId,
+    markerSha256: retainedBinding("marker", binding.marker),
+    sessionBindingSha256: retainedBinding("session", binding.sessionId),
     generation: binding.generation,
-    port: binding.port,
-    host: "127.0.0.1",
+    portBindingSha256: retainedBinding("port", binding.port),
     observations,
     residualCount: 0,
   };
@@ -1137,6 +1212,9 @@ function fixedArtifactAuthority(binding, runtimeProcessId) {
     loaded.productionOrigin !== PRODUCTION_ORIGIN ||
     loaded.fixtureUsed !== false ||
     loaded.taskId !== binding.taskId ||
+    loaded.taskMarkerSha256 !== retainedBinding("marker", binding.marker) ||
+    loaded.sessionBindingSha256 !== retainedBinding("session", binding.sessionId) ||
+    loaded.generation !== binding.generation ||
     loaded.sourceCommit !== binding.sourceCommit ||
     loaded.sourceTreeSha256 !== source.sourceTreeSha256 ||
     loaded.manifest?.sha256 !== sha256File(manifestPath) ||
@@ -1189,9 +1267,9 @@ function fixedArtifactAuthority(binding, runtimeProcessId) {
   const material = {
     sourceCommit: loaded.sourceCommit,
     sourceTreeSha256: loaded.sourceTreeSha256,
-    phaseSessionId: binding.sessionId,
+    phaseSessionBindingSha256: retainedBinding("session", binding.sessionId),
     phaseGeneration: binding.generation,
-    runtimeProcessId,
+    runtimeProcessIdBindingSha256: retainedBinding("process-id", runtimeProcessId),
     manifest: { sha256: sha256File(manifestPath), modulesSha256 },
     packageInventory: { sha256: loaded.package.sha256, modulesSha256 },
     installedInventory: { sha256: loaded.installedRoot.sha256, modulesSha256 },
@@ -1214,22 +1292,21 @@ async function launchOwned(command, binding, transport, timeoutMilliseconds) {
   return awaitOwnedCloseout(owned, binding);
 }
 
-function runtimeIdentity(events, command, binding) {
+function runtimeIdentity(events, command, binding, runtimePid) {
   const matches = events.filter(({ type }) => type === "runtime_process_identity");
   if (matches.length !== 1) fail("FINAL_LIVE_RUNTIME_IDENTITY_INVALID");
   const data = matches[0].data;
   if (
     data.taskId !== binding.taskId ||
     data.sourceCommit !== binding.sourceCommit ||
-    data.marker !== binding.marker ||
-    data.session !== binding.sessionId ||
+    data.markerSha256 !== retainedBinding("marker", binding.marker) ||
+    data.sessionBindingSha256 !== retainedBinding("session", binding.sessionId) ||
     data.generation !== binding.generation ||
-    data.port !== binding.port ||
+    data.portBindingSha256 !== retainedBinding("port", binding.port) ||
     data.bridgeVersion !== BRIDGE_VERSION ||
-    !/^[0-9a-f]{64}$/.test(data.endpointSha256) ||
+    data.endpointSha256 !== retainedBinding("endpoint", binding.endpoint) ||
     !/^[0-9a-f]{64}$/.test(data.nonceSha256) ||
-    !Number.isSafeInteger(data.process?.pid) ||
-    data.process.pid < 1 ||
+    data.process?.pidBindingSha256 !== retainedBinding("pid", runtimePid) ||
     data.process.executableBasename !== basename(command.executable) ||
     data.process.executableSha256 !== sha256File(command.executable)
   ) {
@@ -1341,10 +1418,10 @@ async function runRuntimeCapabilityHandshake(options) {
       fail("FINAL_LIVE_RUNTIME_NONZERO");
     }
     const events = parseRuntimeEvents(readRuntimeEvents(transport.eventFile, binding), binding);
-    const identity = runtimeIdentity(events, command, binding);
+    const identity = runtimeIdentity(events, command, binding, result.runtimePid);
     if (
       identity.nonceSha256 !== transport.nonceSha256 ||
-      identity.process.pid !== result.runtimePid
+      identity.process.pidBindingSha256 !== retainedBinding("pid", result.runtimePid)
     ) {
       fail("FINAL_LIVE_RUNTIME_IDENTITY_INVALID");
     }
@@ -1479,7 +1556,7 @@ function emitRuntimeEventFile(path, binding, events) {
           schemaVersion: RUNTIME_EVENT_SCHEMA,
           phase: binding.phase,
           type: event.type,
-          data: event.data,
+          data: retainedEventValue(event.data),
         })}\n`,
         "utf8",
       );
@@ -1511,25 +1588,29 @@ function emitPhaseEvents(
         schemaVersion: PHASE_EVENT_SCHEMA,
         phase: binding.phase,
         taskId: binding.taskId,
-        marker: binding.marker,
-        sessionId: binding.sessionId,
+        markerSha256: retainedBinding("marker", binding.marker),
+        sessionBindingSha256: retainedBinding("session", binding.sessionId),
         generation: binding.generation,
-        producer: { id: producerId, pid: process.pid, mode: "live" },
+        producer: {
+          id: producerId,
+          processIdBindingSha256: retainedBinding("process-id", process.pid),
+          mode: "live",
+        },
         sequence,
         capturedAt: new Date(timestamp).toISOString(),
         type,
-        data,
+        data: retainedEventValue(data),
       }),
     );
   };
   emit("process_started", {
-    port: binding.port,
+    portBindingSha256: retainedBinding("port", binding.port),
     argumentVectorSha256: sha256(Buffer.from(stable(binding.adapterArgumentVector), "utf8")),
   });
   emit("runtime_process_started", {
-    pid: result.runtimePid ?? result.pid,
-    endpoint: binding.endpoint,
-    marker: binding.marker,
+    processIdBindingSha256: retainedBinding("process-id", result.runtimePid ?? result.pid),
+    endpointSha256: retainedBinding("endpoint", binding.endpoint),
+    markerSha256: retainedBinding("marker", binding.marker),
     executable: descriptor(command.executable),
     argumentVectorSha256: sha256(Buffer.from(stable(command.args), "utf8")),
   });
@@ -1572,8 +1653,8 @@ function emitPhaseEvents(
     partialOutputCount: 0,
     jobCloseoutSha256: "0".repeat(64),
     portObservationSha256: "0".repeat(64),
-    runtimeProcessId: result.runtimePid ?? result.pid,
-    phaseSessionId: binding.sessionId,
+    runtimeProcessIdBindingSha256: retainedBinding("process-id", result.runtimePid ?? result.pid),
+    phaseSessionBindingSha256: retainedBinding("session", binding.sessionId),
     phaseGeneration: binding.generation,
   };
   emit("closeout", closeoutData);
@@ -1619,6 +1700,7 @@ function runSyntheticProducer(phase, argv, options) {
 
 async function runRealLiveProducer(phase, argv) {
   const binding = validateBinding(phase, argv);
+  if (phase === "ui-lifecycle") validateProjectSeed(binding.project);
   const transport = bridgeTransport(binding, "live");
   const command = runtimeCommand(binding, transport);
   const contentBefore = phase === "ue-automation" ? contentTreeSha256(binding.project) : null;
@@ -1673,11 +1755,7 @@ async function runRealLiveProducer(phase, argv) {
     if (result.error || result.status !== 0 || (result.runtimeExitCode ?? result.status) !== 0) {
       fail("FINAL_LIVE_RUNTIME_NONZERO");
     }
-    const jobCloseout = publishJobCloseout(
-      transport.jobCloseoutFile,
-      binding,
-      result.jobLedger,
-    );
+    const jobCloseout = publishJobCloseout(transport.jobCloseoutFile, binding, result.jobLedger);
     const portCloseout = await publishPortCloseout(transport.portCloseoutFile, binding);
     if (phase === "ue-automation") {
       if (
@@ -1708,7 +1786,7 @@ async function runRealLiveProducer(phase, argv) {
             marker: binding.marker,
             session: binding.sessionId,
             generation: binding.generation,
-            endpointSha256: sha256(Buffer.from(binding.endpoint, "utf8")),
+            endpointSha256: retainedBinding("endpoint", binding.endpoint),
             port: binding.port,
             nonceSha256: transport.nonceSha256,
             process: {
@@ -1754,7 +1832,7 @@ async function runRealLiveProducer(phase, argv) {
       emitRuntimeEventFile(transport.eventFile, binding, runtimeEvents);
     } else {
       runtimeEvents = parseRuntimeEvents(readRuntimeEvents(transport.eventFile, binding), binding);
-      runtimeIdentity(runtimeEvents, command, binding);
+      runtimeIdentity(runtimeEvents, command, binding, result.runtimePid);
     }
     const fixedAuthority =
       phase === "product-capture" || phase === "ui-lifecycle"
@@ -1768,8 +1846,8 @@ async function runRealLiveProducer(phase, argv) {
       partialOutputCount: 0,
       jobCloseoutSha256: sha256File(transport.jobCloseoutFile),
       portObservationSha256: sha256File(transport.portCloseoutFile),
-      runtimeProcessId: result.runtimePid,
-      phaseSessionId: binding.sessionId,
+      runtimeProcessIdBindingSha256: retainedBinding("process-id", result.runtimePid),
+      phaseSessionBindingSha256: retainedBinding("session", binding.sessionId),
       phaseGeneration: binding.generation,
     };
     const eventCount = emitPhaseEvents(

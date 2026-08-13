@@ -21,7 +21,7 @@ const APPROVAL_TOKEN_BYTES: usize = 32;
 const MAX_COMPANION_MANIFEST_BYTES: u64 = 256 * 1024;
 const MAX_COMPANION_ARTIFACT_BYTES: u64 = 256 * 1024 * 1024;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub struct Mvp15CompanionAttestationInput {
@@ -117,7 +117,7 @@ pub struct AssetMutationApprovalOperation {
     pub bulk: bool,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub struct RegisterAssetMutationApprovalInput {
@@ -435,6 +435,25 @@ pub fn register_asset_mutation_approval(
     result.native_receipt_id =
         record_mvp15d_native_observation("register_asset_mutation_approval", &input, &result);
     result
+}
+
+pub(crate) fn register_asset_mutation_approval_gate_off_probe(
+    input: RegisterAssetMutationApprovalInput,
+) -> RegisterAssetMutationApprovalResult {
+    register_asset_mutation_approval_with_gate_at(input, current_time_millis(), false)
+}
+
+pub(crate) fn approval_ownership_counts() -> (usize, usize) {
+    let registry = approval_registry()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let registrations = registry.records.len();
+    let issued_tokens = registry
+        .records
+        .values()
+        .filter(|record| !record.token_hash.is_empty())
+        .count();
+    (registrations, issued_tokens)
 }
 
 #[tauri::command]
@@ -1885,6 +1904,37 @@ fn snapshot_asset_content_manifest_at(
         evidence_id: Some(format!("asset-content-manifest:{}", &aggregate[..16])),
         native_receipt_id: None,
     }
+}
+
+pub(crate) fn snapshot_task_project_content_manifest(
+    project_root: &std::path::Path,
+) -> Result<AssetContentManifestResult, String> {
+    let canonical_root = std::fs::canonicalize(project_root)
+        .map_err(|_| "project_content_root_invalid".to_string())?;
+    let content_root = std::fs::canonicalize(canonical_root.join("Content"))
+        .map_err(|_| "project_content_root_invalid".to_string())?;
+    if !content_root.is_dir() || !content_root.starts_with(&canonical_root) {
+        return Err("project_content_root_invalid".to_string());
+    }
+    let mut entries = Vec::new();
+    collect_uasset_manifest(&content_root, &content_root, &mut entries)?;
+    entries.sort_by(|left, right| left.asset_path.cmp(&right.asset_path));
+    let canonical = entries
+        .iter()
+        .map(|entry| format!("{}|{}|{}\n", entry.asset_path, entry.size, entry.sha256))
+        .collect::<String>();
+    let aggregate = sha256_bytes(canonical.as_bytes());
+    Ok(AssetContentManifestResult {
+        status: "observed".to_string(),
+        reason: "task_project_content_manifest_captured".to_string(),
+        entries,
+        aggregate_sha256: Some(aggregate.clone()),
+        evidence_id: Some(format!(
+            "task-project-content-manifest:{}",
+            &aggregate[..16]
+        )),
+        native_receipt_id: None,
+    })
 }
 
 pub fn classify_asset_mutation(
@@ -4209,6 +4259,8 @@ mod tests {
         let blocked = register_asset_mutation_approval_at(untrusted, now);
         assert_eq!(blocked.reason, "untrusted_root");
         assert!(blocked.approval_token.is_none());
+        assert!(blocked.registration_id.is_empty());
+        assert_eq!(approval_ownership_counts(), (0, 0));
 
         let mut unknown = registration("authority-unknown", now);
         unknown.editor_session_id = "editor-observation:unknown".to_string();
@@ -4326,10 +4378,11 @@ mod tests {
         let _test_guard = clear_registry();
         let now = 75;
         let disabled = registration("gate-disabled", now);
-        let blocked = register_asset_mutation_approval_with_gate_at(disabled, now, false);
+        let blocked = register_asset_mutation_approval_gate_off_probe(disabled);
         assert_eq!(blocked.reason, "feature_disabled");
         assert!(blocked.approval_token.is_none());
         assert!(blocked.registration_id.is_empty());
+        assert_eq!(approval_ownership_counts(), (0, 0));
 
         let input = registration("gate-recovery", now);
         let registered = register_asset_mutation_approval_at(input.clone(), now);

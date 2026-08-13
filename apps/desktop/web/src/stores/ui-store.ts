@@ -18,6 +18,7 @@ import {
   normalizeMvp15McpAssetToolDescriptor,
   parseUEProjectMetadata,
   replayAssetMutationSummary,
+  unwrapPluginDryRunResult,
   type AssetChangeSetService,
   type AssetMutationExternalBinder,
   type DryRunBindingInput,
@@ -60,6 +61,7 @@ import {
 } from "../runtime/runtime-store";
 import {
   collectMvp15dProductAuthority,
+  collectMvp15dRenderedNegativeCase,
   collectMvp15dUiAuthority,
   createDesktopRuntimeAdapter,
   type DesktopRuntimeAdapter,
@@ -67,6 +69,8 @@ import {
   type Mvp15dPartialUnknownRaw,
   type Mvp15dPartialOperationRaw,
   type Mvp15dProductAuthorityInput,
+  type Mvp15dProductRetractionRaw,
+  type Mvp15dNegativeCaseId,
   type Mvp15dRawObservedCall,
   type Mvp15dUiAuthorityInput,
 } from "../runtime/desktop-runtime-adapter";
@@ -80,6 +84,13 @@ import { createInitialLayoutState } from "./layout-store";
 import { createInitialProjectState } from "./project-store";
 import { createInitialProviderState } from "./provider-store";
 import { createInitialSettingsState, DEFAULT_SETTINGS_STATE } from "./settings-store";
+
+type CapturedObservationCall = {
+  request: Record<string, unknown>;
+  logicalRequest?: Record<string, unknown>;
+  response: Record<string, unknown>;
+  receiptId: string;
+};
 import { createSliceStore, type SliceStore, useSliceStore } from "./store-utils";
 import { createInitialThreadState } from "./thread-store";
 
@@ -409,12 +420,38 @@ function createMvp15RealAssetMutationService(
 async function createMvp15ExternalBinder(
   runtimeClient: DesktopRuntimeAdapter,
   ledger: Mvp15dOperationLedger,
+  dryRunObservations: CapturedObservationCall[],
 ): Promise<AssetMutationExternalBinder> {
   const callFn = runtimeClient.callMvp15AssetTool;
   if (!callFn) throw new Error("mcp_asset_bridge_unavailable");
   return {
     call: async (input: DryRunBindingInput) => {
+      const payload = buildExactDryRunPayload(input);
       const result = await callMvp15ToolSafely(callFn, input);
+      const pluginResult = unwrapPluginDryRunResult(result);
+      if (runtimeClient.dryRunMvp15AssetMutation && pluginResult) {
+        const request = {
+          toolName: payload.toolName,
+          assetPath:
+            payload.args.assetPath ?? payload.args.sourceAssetPath ?? payload.args.folderPath ?? null,
+          targetAssetPath: payload.args.targetAssetPath ?? null,
+          dryRunHash: pluginResult.dryRunHash,
+          approvalToken: null,
+          editorSessionId: input.context.editorSessionId,
+          pidHash: input.context.pidHash,
+          assetMutationGateEnabled: true,
+          observedEditorSessionId: input.context.editorSessionId,
+          observedPidHash: input.context.pidHash,
+        };
+        const nativeResult = await runtimeClient.dryRunMvp15AssetMutation(request);
+        const receiptId = typeof nativeResult.nativeReceiptId === "string"
+          ? nativeResult.nativeReceiptId
+          : "";
+        if (nativeResult.status !== "dry_run_ready" || !receiptId) {
+          throw new Error("native_asset_dry_run_observation_required");
+        }
+        dryRunObservations.push({ request, response: nativeResult, receiptId });
+      }
       ledger.dryRunCalls += 1;
       return result;
     },
@@ -430,6 +467,9 @@ export interface Mvp15dOperationLedger {
   verifyMutations: number;
   nativeRollbackGuards: number;
   rollbackCalls: number;
+  opaqueTokensIssued: number;
+  secondExecuteCalls: number;
+  secondRollbackCalls: number;
   registrationId: string | null;
   changeSetId: string | null;
   runId: string | null;
@@ -448,6 +488,9 @@ function createMvp15dOperationLedger(): Mvp15dOperationLedger {
     verifyMutations: 0,
     nativeRollbackGuards: 0,
     rollbackCalls: 0,
+    opaqueTokensIssued: 0,
+    secondExecuteCalls: 0,
+    secondRollbackCalls: 0,
     registrationId: null,
     changeSetId: null,
     runId: null,
@@ -516,6 +559,9 @@ export interface Mvp15dUiStoreEvidence {
   inverseActions: string[];
   finalVerification: RuntimeStoreState["mvp15"]["finalVerification"];
   operations: Mvp15dLifecycleOperationEvidence[];
+  registrationCall: Mvp15dRawObservedCall;
+  dryRunCalls: Mvp15dRawObservedCall[];
+  crossTtlElapsedMilliseconds: number;
   contentManifests: Mvp15dContentManifestRaw[];
   negativeCases: Mvp15dUiAuthorityInput["negativeCases"];
   partialUnknown: Mvp15dPartialUnknownRaw;
@@ -534,10 +580,39 @@ interface Mvp15dRuntimeEvidenceSource {
   product: () => Mvp15dProductStoreEvidence;
   ui: () => Mvp15dUiStoreEvidence;
   action: (
-    action: "productAuthority" | "productAuthoritySuccessor" | "uiAuthority" | "dryRun" | "approve" | "execute" | "verify" | "rollback" | "finalVerify" | "replay",
+    action: Mvp15dUiBridgeAction,
     sourceAssetPath?: string,
   ) => Promise<void>;
 }
+
+export type Mvp15dUiBridgeAction =
+  | "productAuthority"
+  | "productAuthoritySuccessor"
+  | "productDiscoveryOn"
+  | "productDiscoveryOff"
+  | "productRetractionReconnect"
+  | "productRetractionEndpointChange"
+  | "productRetractionRefreshTools"
+  | "productRetractionUeRestart"
+  | "productRetractionRendererRestart"
+  | "productRetractionStaleCompletion"
+  // Diagnostic-only partial/unknown collection; formal N1-N8 evidence uses the rendered case actions below.
+  | "partialUnknownDiagnostic"
+  | "negativeN1"
+  | "negativeN2"
+  | "negativeN3"
+  | "negativeN4"
+  | "negativeN5"
+  | "negativeN6"
+  | "negativeN7"
+  | "negativeN8"
+  | "dryRun"
+  | "approve"
+  | "execute"
+  | "verify"
+  | "rollback"
+  | "finalVerify"
+  | "replay";
 
 let activeMvp15dRuntimeEvidence: Mvp15dRuntimeEvidenceSource | null = null;
 
@@ -550,11 +625,64 @@ export function readMvp15dUiStoreEvidence(): Mvp15dUiStoreEvidence | null {
 }
 
 export async function runMvp15dUiBridgeAction(
-  action: "productAuthority" | "productAuthoritySuccessor" | "uiAuthority" | "dryRun" | "approve" | "execute" | "verify" | "rollback" | "finalVerify" | "replay",
+  action: Mvp15dUiBridgeAction,
   sourceAssetPath?: string,
 ): Promise<void> {
   if (!activeMvp15dRuntimeEvidence) throw new Error("mvp15d_ui_store_action_unavailable");
   await activeMvp15dRuntimeEvidence.action(action, sourceAssetPath);
+}
+
+function createMvp15dNegativeRegistrationInput(
+  caseId: "N1" | "N2",
+  projectId: string,
+  rootRef: string,
+): Record<string, unknown> {
+  const runId = `rendered-${caseId.toLowerCase()}-${globalThis.crypto.randomUUID()}`;
+  const runRoot = `/Game/UAgentSandbox/${runId}`;
+  const duplicate = `${runRoot}/Test01Copy`;
+  const renamed = `${runRoot}/Test01Renamed`;
+  const moved = `${runRoot}/Final/Test01Renamed`;
+  const operation = (
+    index: number,
+    kind: string,
+    toolName: string,
+    sourceAssetPath: string | null,
+    assetPath: string | null,
+    targetAssetPath: string | null,
+    rollbackAction: string,
+    rollbackToolName: string | null,
+  ) => ({
+    operationId: `${caseId.toLowerCase()}-op-${index}`,
+    kind,
+    toolName,
+    pluginDryRunHash: String.fromCharCode(97 + index).repeat(40),
+    argsHash: String.fromCharCode(97 + index).repeat(64),
+    sourceAssetPath,
+    assetPath,
+    targetAssetPath,
+    rollbackAction,
+    rollbackToolName,
+    saveAll: false,
+    bulk: false,
+  });
+  return {
+    changeSetId: `rendered-${caseId.toLowerCase()}-change`,
+    runId,
+    projectBindingId: projectId,
+    trustedProjectRoot: rootRef,
+    editorSessionId: `editor-observation:rendered-${caseId.toLowerCase()}`,
+    mcpBinding: `mcp-binding:rendered-${caseId.toLowerCase()}`,
+    aggregateDryRunHash: "d".repeat(64),
+    aggregateArgsHash: "e".repeat(64),
+    requestedTtlMs: 60_000,
+    operations: [
+      operation(0, "create_folder", "ue.asset.create_folder", null, runRoot, null, "cleanup_empty_folder", "ue.asset.delete"),
+      operation(1, "duplicate", "ue.asset.duplicate", "/Game/Test01", null, duplicate, "delete_duplicate", "ue.asset.delete"),
+      operation(2, "rename", "ue.asset.rename", null, duplicate, renamed, "rename_back", "ue.asset.rename"),
+      operation(3, "move", "ue.asset.move", null, renamed, moved, "move_back", "ue.asset.move"),
+      operation(4, "save", "ue.asset.save", null, moved, null, "none", null),
+    ],
+  };
 }
 
 const UIStoreContext = createContext<UIStoreBundle | null>(null);
@@ -612,16 +740,15 @@ function createUIStateBundle(
   let mvp15AssetMutationService = createMvp15FixtureAssetMutationService();
   let mvp15dOperationLedger = createMvp15dOperationLedger();
   let mvp15dProductAuthority: Mvp15dProductAuthorityInput | null = null;
+  let mvp15dProductAuthorityDraft: Omit<Mvp15dProductAuthorityInput, "mutationAfter"> | null = null;
   let mvp15dUiAuthority: Mvp15dUiAuthorityInput | null = null;
-  type CapturedObservationCall = {
-    request: Record<string, unknown>;
-    response: Record<string, unknown>;
-    receiptId: string;
-  };
   let mvp15dNativeOperationCalls: CapturedObservationCall[] = [];
   let mvp15dMcpOperationCalls: CapturedObservationCall[] = [];
+  let mvp15dDryRunCalls: CapturedObservationCall[] = [];
   let mvp15dContentManifestCalls: CapturedObservationCall[] = [];
   let mvp15dRegistrationCall: CapturedObservationCall | null = null;
+  let mvp15dRegistrationObservedAt: number | null = null;
+  let mvp15dCrossTtlElapsedMilliseconds = 0;
   let mvp15dReplayInspection: Mvp15dUiStoreEvidence["replayInspection"] | null = null;
   const mvp15ApprovalTokenByChangeSetId = new Map<string, string>();
   const mvp15ApprovalTokenExpiryByChangeSetId = new Map<string, ReturnType<typeof setTimeout>>();
@@ -917,14 +1044,32 @@ function createUIStateBundle(
             lastError: validation.reason,
             auditTrail: [...previousState.auditTrail, `project_root_validated:${validation.reason}`],
           }));
-          return;
+          return false;
         }
-        // Check for existing fixture project, then try to add/validate the root
+        projectStore.setState((previousState) => ({
+          ...previousState,
+          validation,
+          nativeSource: projectAdapter.source,
+          capabilityStatus: projectAdapter.getCapabilityStatus(),
+          fsPolicy: projectAdapter.getPolicy(),
+          lastError: null,
+          auditTrail: [...previousState.auditTrail, "project_root_validated:valid"],
+        }));
+        return true;
+      } catch (error) {
+        projectStore.setState((previousState) => ({
+          ...previousState,
+          lastError: error instanceof Error ? error.message : "project_validation_failed",
+        }));
+        return false;
+      }
+    },
+    addProjectRoot: async (rootRef) => {
+      try {
         const fixtureProject = projectAdapter.getProject("project-lyra-starter");
         const project = fixtureProject ?? (await projectAdapter.addProject(rootRef));
         projectStore.setState((previousState) => ({
           ...previousState,
-          validation,
           registeredProjects: projectAdapter.listProjects(),
           activeProjectId: project.id,
           scanStatus: project.indexStatus,
@@ -932,13 +1077,15 @@ function createUIStateBundle(
           capabilityStatus: projectAdapter.getCapabilityStatus(),
           fsPolicy: projectAdapter.getPolicy(),
           lastError: null,
-          auditTrail: [...previousState.auditTrail, "project_root_validated:valid"],
+          auditTrail: [...previousState.auditTrail, "project_root_added"],
         }));
+        return project.id;
       } catch (error) {
         projectStore.setState((previousState) => ({
           ...previousState,
-          lastError: error instanceof Error ? error.message : "project_validation_failed",
+          lastError: error instanceof Error ? error.message : "project_add_failed",
         }));
+        return null;
       }
     },
     trustProjectRoot: async (projectId) => {
@@ -2306,8 +2453,11 @@ function createUIStateBundle(
         mvp15dOperationLedger.dryRunActions = 1;
         mvp15dNativeOperationCalls = [];
         mvp15dMcpOperationCalls = [];
+        mvp15dDryRunCalls = [];
         mvp15dContentManifestCalls = [];
         mvp15dRegistrationCall = null;
+        mvp15dRegistrationObservedAt = null;
+        mvp15dCrossTtlElapsedMilliseconds = 0;
         mvp15dReplayInspection = null;
         mvp15AssetMutationService = createMvp15RealAssetMutationService(
           runtimeClient,
@@ -2329,11 +2479,16 @@ function createUIStateBundle(
                 response,
                 receiptId: typeof response.nativeReceiptId === "string" ? response.nativeReceiptId : "",
               };
+              mvp15dRegistrationObservedAt = Date.now();
+              if (typeof response.approvalToken === "string" && response.approvalToken.length > 0) {
+                mvp15dOperationLedger.opaqueTokensIssued += 1;
+              }
             },
             mcp: async (request, response) => {
               const receipt = runtimeClient.takeMvp15dMcpObservationReceipt?.("mcp_asset_tool_call") ?? null;
               mvp15dMcpOperationCalls.push({
                 request: receipt?.request ?? request,
+                logicalRequest: request,
                 response,
                 receiptId: receipt?.receiptId ?? "",
               });
@@ -2420,7 +2575,11 @@ function createUIStateBundle(
 
       const generation = activeGeneration;
       try {
-        const binder = await createMvp15ExternalBinder(runtimeClient, mvp15dOperationLedger);
+        const binder = await createMvp15ExternalBinder(
+          runtimeClient,
+          mvp15dOperationLedger,
+          mvp15dDryRunCalls,
+        );
         const bound = runningGeneration === generation
           ? await mvp15AssetMutationService.bindExternalDryRun({ changeSetId: result.changeSet.id, binder })
           : null;
@@ -2603,6 +2762,12 @@ function createUIStateBundle(
           mvp15: { ...previousState.mvp15, lastError: "asset_changeset_required" },
         }));
         return;
+      }
+      if (mvp15dRegistrationObservedAt !== null) {
+        mvp15dCrossTtlElapsedMilliseconds = Math.max(
+          0,
+          Date.now() - mvp15dRegistrationObservedAt,
+        );
       }
       const result = await mvp15AssetMutationService.rollback(changeSet.id);
       runtimeStore.setState((previousState) => ({
@@ -2815,6 +2980,7 @@ function createUIStateBundle(
         const port = runtimeClient.getMvp15dProductObservationPort?.();
         if (!port) throw new Error("mvp15d_product_authority_port_unavailable");
         mvp15dProductAuthority = await collectMvp15dProductAuthority(port);
+        mvp15dProductAuthorityDraft = null;
       }
       if (action === "productAuthoritySuccessor") {
         if (!sourceAssetPath || !runtimeClient.resumeMvp15dProductAuthority) {
@@ -2822,12 +2988,130 @@ function createUIStateBundle(
         }
         const [handoffId, endpoint] = sourceAssetPath.split("\n", 2);
         if (!handoffId || !endpoint) throw new Error("mvp15d_product_successor_context_invalid");
-        mvp15dProductAuthority = await runtimeClient.resumeMvp15dProductAuthority(
+        mvp15dProductAuthorityDraft = await runtimeClient.resumeMvp15dProductAuthority(
           handoffId,
           endpoint,
         );
+        mvp15dProductAuthority = null;
       }
-      if (action === "uiAuthority") {
+      const productDiscoveryMode =
+        action === "productDiscoveryOn"
+          ? "on"
+          : action === "productDiscoveryOff"
+            ? "off"
+            : null;
+      if (productDiscoveryMode) {
+        const port = runtimeClient.getMvp15dProductObservationPort?.();
+        if (!port) throw new Error("mvp15d_product_authority_port_unavailable");
+        if (!mvp15dProductAuthorityDraft) {
+          if (productDiscoveryMode !== "on") {
+            throw new Error("mvp15d_product_discovery_order_invalid");
+          }
+          mvp15dProductAuthorityDraft = {
+            discoveries: [],
+            retractions: [],
+            mutationBefore: { ...(await port.readMutationCounters()) },
+          };
+        }
+        const expectedIndex = productDiscoveryMode === "on" ? 0 : 1;
+        if (mvp15dProductAuthorityDraft.discoveries.length !== expectedIndex) {
+          throw new Error("mvp15d_product_discovery_order_invalid");
+        }
+        const discovery = await port.discover({ toolSearchEnabled: productDiscoveryMode === "on" });
+        const intent = discovery.configCall.request.intent as Record<string, unknown> | undefined;
+        if (discovery.mode !== productDiscoveryMode || intent?.toolSearchMode !== productDiscoveryMode) {
+          throw new Error("mvp15d_product_discovery_observation_invalid");
+        }
+        mvp15dProductAuthorityDraft.discoveries.push(discovery);
+      }
+      const productRetractionByAction: Partial<
+        Record<Mvp15dUiBridgeAction, Mvp15dProductRetractionRaw["reason"]>
+      > = {
+        productRetractionReconnect: "reconnect",
+        productRetractionEndpointChange: "endpoint_change",
+        productRetractionRefreshTools: "refresh_tools",
+        productRetractionUeRestart: "ue_restart",
+        productRetractionRendererRestart: "renderer_restart",
+        productRetractionStaleCompletion: "stale_completion",
+      };
+      const productRetraction = productRetractionByAction[action];
+      if (productRetraction) {
+        const port = runtimeClient.getMvp15dProductObservationPort?.();
+        if (!port || !mvp15dProductAuthorityDraft) {
+          throw new Error("mvp15d_product_authority_port_unavailable");
+        }
+        const expectedRetractions: Mvp15dProductRetractionRaw["reason"][] = [
+          "refresh_tools",
+          "reconnect",
+          "endpoint_change",
+          "renderer_restart",
+          "ue_restart",
+          "stale_completion",
+        ];
+        if (
+          mvp15dProductAuthorityDraft.discoveries.length !== 2 ||
+          expectedRetractions[mvp15dProductAuthorityDraft.retractions.length] !== productRetraction
+        ) {
+          throw new Error("mvp15d_product_retraction_order_invalid");
+        }
+        if (productRetraction === "renderer_restart" && port.requestRendererRestart) {
+          await port.requestRendererRestart(mvp15dProductAuthorityDraft);
+        }
+        const observation = await port.retract(productRetraction);
+        if (observation.reason !== productRetraction) {
+          throw new Error("mvp15d_product_retraction_observation_invalid");
+        }
+        mvp15dProductAuthorityDraft.retractions.push(observation);
+        if (mvp15dProductAuthorityDraft.retractions.length === expectedRetractions.length) {
+          mvp15dProductAuthority = {
+            ...mvp15dProductAuthorityDraft,
+            mutationAfter: { ...(await port.readMutationCounters()) },
+          };
+          mvp15dProductAuthorityDraft = null;
+        }
+      }
+      const negativeCaseByAction: Partial<Record<Mvp15dUiBridgeAction, Mvp15dNegativeCaseId>> = {
+        negativeN1: "N1",
+        negativeN2: "N2",
+        negativeN3: "N3",
+        negativeN4: "N4",
+        negativeN5: "N5",
+        negativeN6: "N6",
+        negativeN7: "N7",
+        negativeN8: "N8",
+      };
+      const negativeCaseId = negativeCaseByAction[action];
+      if (negativeCaseId === "N1" || negativeCaseId === "N2") {
+        const port = runtimeClient.getMvp15dUiObservationPort?.();
+        if (!port) throw new Error("mvp15d_ui_authority_port_unavailable");
+        const projectState = projectStore.getState();
+        const activeProject = projectState.registeredProjects.find(
+          (project) => project.id === projectState.activeProjectId,
+        );
+        if (!activeProject || activeProject.trustState === "trusted") {
+          throw new Error("mvp15d_negative_untrusted_project_required");
+        }
+        const registrationInput = createMvp15dNegativeRegistrationInput(
+          negativeCaseId,
+          activeProject.id,
+          projectAdapter.resolveRawRoot(activeProject.id, activeProject.rootRef),
+        );
+        const record = await collectMvp15dRenderedNegativeCase(port, negativeCaseId, {
+          attachInput: {},
+          registrationInput,
+          guardRequests: { execute: {}, rollback: {}, invalidPath: {} },
+        });
+        const existing = mvp15dUiAuthority?.negativeCases ?? [];
+        if (existing.length !== Number(negativeCaseId.slice(1)) - 1) {
+          throw new Error("mvp15d_negative_case_order_invalid");
+        }
+        mvp15dUiAuthority = {
+          negativeCases: [...existing, record],
+          partialUnknown: mvp15dUiAuthority?.partialUnknown
+            ?? ({ operationResults: [] } as unknown as Mvp15dPartialUnknownRaw),
+        };
+      }
+      if (action === "partialUnknownDiagnostic" || (negativeCaseId && !["N1", "N2"].includes(negativeCaseId))) {
         const port = runtimeClient.getMvp15dUiObservationPort?.();
         if (!port) throw new Error("mvp15d_ui_authority_port_unavailable");
         const changeSet = runtimeStore.getState().mvp15.activeChangeSet;
@@ -2871,6 +3155,12 @@ function createUIStateBundle(
         const guardRequests = {
           execute: structuredClone(executeRequest),
           rollback: structuredClone(rollbackRequest),
+          mcpExecute: structuredClone(
+            mvp15dMcpOperationCalls[0]!.logicalRequest ?? mvp15dMcpOperationCalls[0]!.request,
+          ),
+          mcpRollback: structuredClone(
+            mvp15dMcpOperationCalls.at(-1)!.logicalRequest ?? mvp15dMcpOperationCalls.at(-1)!.request,
+          ),
           invalidPath: {
               toolName: "ue.asset.duplicate",
               assetPath: "/Engine/EditorResources/Bad",
@@ -2895,13 +3185,18 @@ function createUIStateBundle(
             direction: "forward" as const,
             action: partialAction,
             api: "mcp_asset_tool_call",
-            request: structuredClone(partialMcpRequests[index]!.request),
+            request: structuredClone(
+              partialMcpRequests[index]!.logicalRequest ?? partialMcpRequests[index]!.request,
+            ),
           })),
           ...inverseActions.map((partialAction, index) => ({
             direction: "inverse" as const,
             action: partialAction,
             api: "mcp_asset_tool_call",
-            request: structuredClone(partialMcpRequests[index + forwardActions.length]!.request),
+            request: structuredClone(
+              partialMcpRequests[index + forwardActions.length]!.logicalRequest
+                ?? partialMcpRequests[index + forwardActions.length]!.request,
+            ),
           })),
           {
             direction: "control",
@@ -2916,7 +3211,7 @@ function createUIStateBundle(
             request: structuredClone(rollbackRequest),
           },
         ];
-        mvp15dUiAuthority = await collectMvp15dUiAuthority(port, partialOperations, {
+        const authorityContext = {
           attachInput: {
             ...getMvp14ProcessConfig(),
             processId: process.id,
@@ -2926,7 +3221,25 @@ function createUIStateBundle(
           },
           registrationInput: structuredClone(registrationInput),
           guardRequests,
-        });
+        };
+        if (negativeCaseId) {
+          const record = await collectMvp15dRenderedNegativeCase(port, negativeCaseId, authorityContext);
+          const existing = mvp15dUiAuthority?.negativeCases ?? [];
+          if (existing.length !== Number(negativeCaseId.slice(1)) - 1) {
+            throw new Error("mvp15d_negative_case_order_invalid");
+          }
+          mvp15dUiAuthority = {
+            negativeCases: [...existing, record],
+            partialUnknown: mvp15dUiAuthority?.partialUnknown
+              ?? ({ operationResults: [] } as unknown as Mvp15dPartialUnknownRaw),
+          };
+        } else {
+          const partial = await collectMvp15dUiAuthority(port, partialOperations, authorityContext, false);
+          mvp15dUiAuthority = {
+            negativeCases: mvp15dUiAuthority?.negativeCases ?? [],
+            partialUnknown: partial.partialUnknown,
+          };
+        }
       }
       if (action === "dryRun") await runtimeActions.runMvp15AssetDryRun(sourceAssetPath);
       if (action === "approve") await runtimeActions.approveMvp15AssetChangeSet();
@@ -3008,12 +3321,15 @@ function createUIStateBundle(
         && state.replayInspection.status === "recorded"
         && mvp15dNativeOperationCalls.length === 9
         && mvp15dNativeOperationCalls.every((call) => call.receiptId.length > 0)
+        && mvp15dDryRunCalls.length === 5
+        && mvp15dDryRunCalls.every((call) => call.receiptId.length > 0)
         && mvp15dMcpOperationCalls.length === 9
         && mvp15dMcpOperationCalls.every((call) => call.receiptId.length > 0)
         && mvp15dContentManifestCalls.length >= 2
         && mvp15dContentManifestCalls.every((call) => call.receiptId.length > 0)
         && Boolean((mvp15dRegistrationCall as CapturedObservationCall | null)?.receiptId)
-        && mvp15dUiAuthority !== null
+        && mvp15dUiAuthority?.negativeCases.length === 8
+        && mvp15dUiAuthority.partialUnknown.operationResults.length === 9
         && mvp15dReplayInspection !== null;
       const actions = [
         ...forwardActions.map((action) => ({ direction: "forward" as const, action })),
@@ -3058,6 +3374,19 @@ function createUIStateBundle(
         inverseActions,
         finalVerification: { ...state.finalVerification },
         operations,
+        registrationCall: mvp15dRegistrationCall
+          ? {
+              receiptId: mvp15dRegistrationCall.receiptId,
+              request: structuredClone(mvp15dRegistrationCall.request),
+            }
+          : { receiptId: "", request: {} },
+        dryRunCalls: ready
+          ? mvp15dDryRunCalls.map((call) => ({
+              receiptId: call.receiptId,
+              request: structuredClone(call.request),
+            }))
+          : [],
+        crossTtlElapsedMilliseconds: mvp15dCrossTtlElapsedMilliseconds,
         contentManifests,
         negativeCases: mvp15dUiAuthority?.negativeCases.map((record) => structuredClone(record)) ?? [],
         partialUnknown: mvp15dUiAuthority?.partialUnknown

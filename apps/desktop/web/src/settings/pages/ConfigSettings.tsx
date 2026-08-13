@@ -2,6 +2,7 @@ import { useState } from "react";
 import { SettingsPageLayout, SettingsSection } from "../SettingsPageLayout";
 import { configPageData } from "../settings-page-data";
 import {
+  runMvp15dUiBridgeAction,
   useProjectActions,
   useProjectStore,
   useRuntimeActions,
@@ -26,10 +27,123 @@ export function ConfigSettings() {
         </SettingsSection>
       ))}
       <CompanionPluginStatusDisplay />
+      <Mvp15dProductControls />
+      <Mvp15dNegativeAcceptanceControls />
       <div className="ua-settings-page__note">
         Connection and project-root changes apply to this local session only.
       </div>
     </SettingsPageLayout>
+  );
+}
+
+function Mvp15dNegativeAcceptanceControls() {
+  const [status, setStatus] = useState("idle");
+  const [busy, setBusy] = useState(false);
+  const uiGateEnabled = useRuntimeStore((state) => state.mvp15.gate.mode === "sandbox-enabled");
+  const runNegative = async (caseId: number) => {
+    if (busy) return;
+    setBusy(true);
+    setStatus(`running:N${caseId}`);
+    try {
+      await runMvp15dUiBridgeAction(`negativeN${caseId}` as Parameters<typeof runMvp15dUiBridgeAction>[0]);
+      setStatus(`completed:N${caseId}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "negative_control_failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const runChildRegistration = async () => {
+    if (busy) return;
+    setBusy(true);
+    setStatus("running:gate-off-child");
+    try {
+      const invoke = (globalThis as {
+        __TAURI_INTERNALS__?: {
+          invoke?: <T>(command: string, payload?: Record<string, unknown>) => Promise<T>;
+        };
+      }).__TAURI_INTERNALS__?.invoke;
+      if (!invoke) throw new Error("gate_off_child_native_bridge_unavailable");
+      const result = await invoke<Record<string, unknown>>("mvp15d_gate_off_child_register", {
+        uiGateEnabled,
+      });
+      if (
+        result.uiGateEnabled !== true ||
+        result.status !== "blocked" ||
+        result.reason !== "feature_disabled" ||
+        result.registrationCount !== 0 ||
+        result.tokenCount !== 0 ||
+        result.mcpMutationCount !== 0 ||
+        result.manifestOwnershipCount !== 0 ||
+        result.processResidualCount !== 0 ||
+        result.portResidualCount !== 0 ||
+        result.rootResidualCount !== 0
+      ) {
+        throw new Error("gate_off_child_registration_invalid");
+      }
+      setStatus("feature_disabled");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "gate_off_child_registration_failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const runPartialUnknown = async () => {
+    if (busy) return;
+    setBusy(true);
+    setStatus("running:partial-unknown");
+    try {
+      await runMvp15dUiBridgeAction("partialUnknownDiagnostic");
+      setStatus("completed:partial-unknown");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "partial_unknown_control_failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="ua-settings-page__static-stack" aria-label="MVP15D negative acceptance controls">
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Rendered negative case</span>
+        <span
+          className="ua-settings-page__static-value"
+          data-mvp15d-observation="negative-control-status"
+          data-mvp15d-value={status}
+        >
+          {status}
+        </span>
+      </div>
+      <div className="ua-settings-page__provider-actions">
+        {Array.from({ length: 8 }, (_, index) => index + 1).map((caseNumber) => (
+          <button
+            key={caseNumber}
+            id={`mvp15d-negative-n${caseNumber}`}
+            className="ua-settings-page__action-btn"
+            type="button"
+            disabled={busy}
+            onClick={() => void runNegative(caseNumber)}
+          >
+            {`Run N${caseNumber} rendered negative case`}
+          </button>
+        ))}
+        <button
+          className="ua-settings-page__action-btn"
+          type="button"
+          disabled={busy}
+          onClick={() => void runPartialUnknown()}
+        >
+          Run rendered partial and unknown matrix
+        </button>
+        <button
+          className="ua-settings-page__action-btn"
+          type="button"
+          disabled={busy}
+          onClick={() => void runChildRegistration()}
+        >
+          Attempt N2 gate-off approval registration
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -98,9 +212,12 @@ function CompanionPluginStatusDisplay() {
 
 function ProjectRootsDisplay() {
   const [projectRootDraft, setProjectRootDraft] = useState("");
+  const [validatedRootRef, setValidatedRootRef] = useState<string | null>(null);
+  const [addedProjectId, setAddedProjectId] = useState<string | null>(null);
   const project = useProjectStore((state) => state);
   const {
     validateProjectRoot,
+    addProjectRoot,
     trustProjectRoot,
     scanProjectIndex,
     cancelProjectScan,
@@ -113,9 +230,19 @@ function ProjectRootsDisplay() {
   const canTrust = Boolean(activeProject && activeProject.trustState !== "trusted");
   const canScan = Boolean(activeProject && activeProject.trustState === "trusted");
   const handleValidateProjectRoot = async () => {
-    await validateProjectRoot(projectRootDraft);
+    const rootRef = projectRootDraft.trim();
+    const valid = await validateProjectRoot(rootRef);
+    setValidatedRootRef(valid ? rootRef : null);
+    setAddedProjectId(null);
     setProjectRootDraft("");
   };
+  const handleAddProjectRoot = async () => {
+    if (!validatedRootRef) return;
+    const projectId = await addProjectRoot(validatedRootRef);
+    if (projectId) setAddedProjectId(projectId);
+  };
+  const isValidated = Boolean(project.validation?.ok && validatedRootRef);
+  const isAdded = Boolean(addedProjectId && activeProject?.id === addedProjectId);
 
   return (
     <div className="ua-settings-page__static-stack" aria-label="Project roots and index">
@@ -124,7 +251,11 @@ function ProjectRootsDisplay() {
         <input
           className="ua-settings-page__input"
           value={projectRootDraft}
-          onChange={(event) => setProjectRootDraft(event.target.value)}
+          onChange={(event) => {
+            setProjectRootDraft(event.target.value);
+            setValidatedRootRef(null);
+            setAddedProjectId(null);
+          }}
           placeholder="fixture://lyra"
           aria-label="Project root reference"
         />
@@ -136,6 +267,14 @@ function ProjectRootsDisplay() {
           onClick={() => void handleValidateProjectRoot()}
         >
           Validate project root
+        </button>
+        <button
+          className="ua-settings-page__action-btn"
+          type="button"
+          disabled={!isValidated || isAdded}
+          onClick={() => void handleAddProjectRoot()}
+        >
+          Add project root
         </button>
         <button
           className="ua-settings-page__action-btn"
@@ -165,10 +304,24 @@ function ProjectRootsDisplay() {
       <div className="ua-settings-page__provider-summary" role="status">
         <span className="ua-settings-page__provider-summary-item">
           <span className="ua-settings-page__provider-summary-label">Validation</span>
-          <span className="ua-settings-page__provider-summary-value">
+          <span
+            className="ua-settings-page__provider-summary-value"
+            data-mvp15d-observation="project-validation"
+            data-mvp15d-value={isValidated ? "valid" : "not_validated"}
+          >
             {project.validation?.ok
               ? `Validation ready: ${project.validation.projectName}`
               : project.validation?.reason ?? "Not validated"}
+          </span>
+        </span>
+        <span className="ua-settings-page__provider-summary-item">
+          <span className="ua-settings-page__provider-summary-label">Registration</span>
+          <span
+            className="ua-settings-page__provider-summary-value"
+            data-mvp15d-observation="project-add"
+            data-mvp15d-value={isAdded ? "added" : "not_added"}
+          >
+            {isAdded ? "added" : "not added"}
           </span>
         </span>
         <span className="ua-settings-page__provider-summary-item">
@@ -251,6 +404,128 @@ function ProjectRootsDisplay() {
         <p className="ua-settings-page__provider-help-text">{project.lastError}</p>
       )}
     </div>
+  );
+}
+
+type ProductControlAction =
+  | "productDiscoveryOn"
+  | "productDiscoveryOff"
+  | "productRetractionReconnect"
+  | "productRetractionEndpointChange"
+  | "productRetractionRefreshTools"
+  | "productRetractionUeRestart"
+  | "productRetractionRendererRestart"
+  | "productRetractionStaleCompletion"
+  | "productAuthoritySuccessor";
+
+function Mvp15dProductControls() {
+  const [status, setStatus] = useState("idle");
+  const [busy, setBusy] = useState(false);
+  const [toolSearchMode, setToolSearchMode] = useState<"on" | "off">("off");
+
+  const runControl = async (
+    action: ProductControlAction,
+    completedStatus: string,
+    context?: string,
+  ) => {
+    if (busy) return;
+    setBusy(true);
+    setStatus(`running:${completedStatus}`);
+    try {
+      await runMvp15dUiBridgeAction(action, context);
+      if (action === "productDiscoveryOn") setToolSearchMode("on");
+      if (action === "productDiscoveryOff") setToolSearchMode("off");
+      setStatus(completedStatus);
+    } catch (error) {
+      if (
+        action === "productRetractionRendererRestart" &&
+        error instanceof Error &&
+        error.message === "mvp15d_renderer_restart_handoff_requested"
+      ) {
+        setStatus("renderer_restart_requested");
+      } else {
+        setStatus(error instanceof Error ? error.message : "product_control_failed");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="ua-settings-page__static-stack" aria-label="MVP15D product controls">
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Tool Search</span>
+        <span
+          className="ua-settings-page__static-value"
+          data-mvp15d-observation="tool-search-mode"
+          data-mvp15d-value={toolSearchMode}
+        >
+          {toolSearchMode.toUpperCase()}
+        </span>
+      </div>
+      <div className="ua-settings-page__static-row">
+        <span className="ua-settings-page__static-label">Acceptance control</span>
+        <span
+          className="ua-settings-page__static-value"
+          data-mvp15d-observation="product-control-status"
+          data-mvp15d-value={status}
+        >
+          {status}
+        </span>
+      </div>
+      <div className="ua-settings-page__provider-actions">
+        <button
+          className="ua-settings-page__action-btn"
+          type="button"
+          aria-pressed={toolSearchMode === "on"}
+          disabled={busy}
+          onClick={() => void runControl("productDiscoveryOn", "tool_search_on")}
+        >
+          Tool Search ON
+        </button>
+        <button
+          className="ua-settings-page__action-btn"
+          type="button"
+          aria-pressed={toolSearchMode === "off"}
+          disabled={busy}
+          onClick={() => void runControl("productDiscoveryOff", "tool_search_off")}
+        >
+          Tool Search OFF
+        </button>
+        <button className="ua-settings-page__action-btn" type="button" disabled={busy} onClick={() => void runControl("productRetractionReconnect", "mcp_reconnected")}>
+          MCP reconnect
+        </button>
+        <button className="ua-settings-page__action-btn" type="button" disabled={busy} onClick={() => void runControl("productRetractionEndpointChange", "endpoint_changed")}>
+          Change MCP endpoint
+        </button>
+        <button className="ua-settings-page__action-btn" type="button" disabled={busy} onClick={() => void runControl("productRetractionRefreshTools", "tools_refreshed")}>
+          RefreshTools
+        </button>
+        <button className="ua-settings-page__action-btn" type="button" disabled={busy} onClick={() => void runControl("productRetractionUeRestart", "ue_restart_retracted")}>
+          Retract after UE restart
+        </button>
+        <button className="ua-settings-page__action-btn" type="button" disabled={busy} onClick={() => void runControl("productRetractionStaleCompletion", "stale_completion_retracted")}>
+          Reject stale completion
+        </button>
+        <button className="ua-settings-page__action-btn" type="button" disabled={busy} onClick={() => void runControl("productRetractionRendererRestart", "renderer_restart_completed")}>
+          Restart renderer
+        </button>
+        <button
+          className="ua-settings-page__action-btn"
+          type="button"
+          disabled={busy}
+          onClick={(event) =>
+            void runControl(
+              "productAuthoritySuccessor",
+              "renderer_restart_resumed",
+              event.currentTarget.dataset.mvp15dContext,
+            )
+          }
+        >
+          Resume renderer restart
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -374,23 +649,33 @@ function ApprovalDisplay() {
 }
 
 function SandboxDisplay() {
+  const gate = useRuntimeStore((state) => state.mvp15.gate);
+  const enabled = gate.mode === "sandbox-enabled";
   return (
     <div className="ua-settings-page__static-stack" aria-label="Sandbox mode controls">
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Mode</span>
-        <span className="ua-settings-page__static-value">Fixture only</span>
+        <span className="ua-settings-page__static-value">
+          {enabled ? "Task sandbox enabled" : "Read-only / fixture"}
+        </span>
       </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">File system</span>
-        <span className="ua-settings-page__static-value ua-settings-page__static-value--staged">Staged · not yet enabled</span>
+        <span className="ua-settings-page__static-value">
+          {enabled ? "Trusted project + fixed run root" : "Read-only"}
+        </span>
       </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Commands</span>
-        <span className="ua-settings-page__static-value ua-settings-page__static-value--staged">Staged · not yet enabled</span>
+        <span className="ua-settings-page__static-value">
+          {enabled ? "Allowlisted with approval" : "Blocked"}
+        </span>
       </div>
       <div className="ua-settings-page__static-row">
         <span className="ua-settings-page__static-label">Network</span>
-        <span className="ua-settings-page__static-value ua-settings-page__static-value--staged">Staged · not yet enabled</span>
+        <span className="ua-settings-page__static-value">
+          {enabled ? "Loopback MCP only" : "Disabled"}
+        </span>
       </div>
     </div>
   );
