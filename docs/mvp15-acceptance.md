@@ -11,10 +11,15 @@ PASS` and are checkpointed at implementation commit
 cleanup removed all 4,601 roots with failures 0 and residual 0; fresh asset
 `40/40` and bridge `14/14` regressions left zero matching roots. `External Gate /
 TEMP cleanup: PASS`; the historical mtime actor remains unconfirmed.
+Final Live Acceptance Resume Rework 1 has `Review Verdict: PASS` at
+implementation commit `de248a7028d21c53c26db7b28930d583566580a6`. Its rendered
+N1-N8 controls route through production semantics: N1/N2 use real registration
+authority, and N7/N8 bind actual MCP execute/rollback outcomes. No
+clean-checkout 15A-15C gate advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-Rework 9 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`.
+Rework 1 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`.
 Real UE 5.8.1 compatibility and overall final acceptance remain `PARTIAL`;
 D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`; D16 is
 `IN_PROGRESS`; Ready is `NO`.
@@ -50,10 +55,11 @@ directories and all 4,601 roots. Failures and residuals were zero. Fresh asset
 `40/40` and bridge `14/14` tests passed, and their post-test scan remained zero.
 Earlier mtime-only observations remain historical; their actor is unconfirmed.
 
-These are source implementation and controlled-test facts. No actual Tool
-Search, installed/load/manifest tuple, live fingerprint, retraction boundary,
-N1-N8, partial/unknown, parent closeout, 15A, UE Automation, MCP live session, or
-mutation evidence was produced. The production delta invalidates the former
+These are source implementation and controlled-test facts. No current
+clean-checkout Tool Search, installed/load/manifest tuple, live fingerprint,
+retraction boundary, full 15A N1-N8 acceptance root, partial/unknown sequence,
+parent closeout, UE Automation, MCP live session, or mutation evidence was
+produced. The production delta invalidates the former
 release and all prior 15A-15C evidence. No live Gate advance is claimed.
 
 The historical accepted Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 has a strict default-off production Tauri event-file bridge,
@@ -67,8 +73,8 @@ are capability facts; real product discovery, UE execution, Tool Search, and
 the asset lifecycle did not run (`SKIPPED_BY_TASK_BOUNDARY`).
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is deferred
-to a new clean-checkout task based on Rework 9 implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Real
+to a new clean-checkout task based on Rework 1 implementation commit
+`de248a7028d21c53c26db7b28930d583566580a6`. Real
 mutation remains prohibited.
 
 Persisted verification reopens schemas, bytes, hashes, process/artifact facts,
@@ -102,7 +108,8 @@ No serialized field or caller argument can substitute for that receipt.
 | Pre-live Source Closure Rework 7   | Production-native App handoff, parent-owned predecessor window binding, and complete TEMP inventory.                                     | PARTIAL     | Historical supervisor verdict `NEEDS_FIX`; no checkpoint. The production orchestrator was bypassed in the two-App happy path and the delayed parent lifecycle could mistake a same-label replacement for the invoking predecessor. The 4,601-entry manifest remains authoritative.            | Superseded by Rework 8 and the supervisor-reviewed Rework 9 implementation.                                      |
 | Pre-live Source Closure Rework 8   | Actual predecessor/successor production bridge orchestration and exact injected predecessor-window ownership.                           | PARTIAL     | `Review Verdict: NEEDS_FIX`. Its same-task destroy/build model did not wait for authoritative `Destroyed`/manager removal.                                                                                                                        | Superseded by the supervisor-reviewed Rework 9 implementation; no Rework 8 checkpoint.                           |
 | Pre-live Source Closure Rework 9   | Exact one-shot destroy completion, post-`Destroyed` successor continuation, timeout gate, and real Wry replacement ordering.             | COMPLETE    | `Review Verdict: PASS`; implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Hidden Webview/Wry coverage proves queued collision, manager removal/build count 0, different-HWND successor, and replacement B preservation. Authorized exact-manifest cleanup removed all 4,601 TEMP roots with zero residual. | Later clean-checkout/live evidence remains open.     |
-| D13 / 15A                          | Clean build/install/load and authoritative manifest identity.                                                                            | BLOCKED     | Historical Rework 2 observed a build and physical DLL load, but its evidence root is invalid. Rework 9 implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968` exists; clean current manifest/install/load equality proof is pending.                                               | Use that commit with the final build/manifest tooling and verify installed == loaded == manifest. |
+| Live Acceptance Resume Rework 1    | Bind visible N1-N8 controls to production registration, gate-off child, MCP outcome, and verifier semantics.                            | COMPLETE    | `Review Verdict: PASS`; implementation commit `de248a7028d21c53c26db7b28930d583566580a6`. Focused/full source suites and a production-built N2 child smoke pass. | Restart 15A from this commit in a separate clean-checkout task. |
+| D13 / 15A                          | Clean build/install/load and authoritative manifest identity.                                                                            | BLOCKED     | Historical Rework 2 observed a build and physical DLL load, but its evidence root is invalid. Rework 1 implementation commit `de248a7028d21c53c26db7b28930d583566580a6` exists; clean current manifest/install/load equality proof is pending.                                               | Use that commit with the final build/manifest tooling and verify installed == loaded == manifest. |
 | D14 / 15B                          | Current-generation product-adapter exact-six live fingerprint.                                                                           | PLANNED     | Not run because D13 / 15A did not pass.                                                                                                                                                                                                                                                      | Run only after a new final 15A package passes.                                                                   |
 | D15 / 15C                          | Fresh rendered product-UI lifecycle, negatives, replay, and cleanup.                                                                     | PLANNED     | Not run; mutation count remains zero.                                                                                                                                                                                                                                                        | Run only after 15A and 15B pass.                                                                                 |
 | D16                                | Repository documentation and final delivery.                                                                                             | IN_PROGRESS | Historical Rework states, the Rework 8 verdict, Rework 9 `PASS` and checkpoint, DELETE compatibility, report contract, and deferred live work are synchronized.                                                                                                            | Cleanup authorization and later live evidence remain outstanding.                                               |
@@ -136,7 +143,7 @@ rework.
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | G13 real UE smoke result                     | Complete a fresh product-UI dry-run, execute, verify, rollback, replay, stop, and ownership lifecycle plus negative smokes.        | BLOCKED        | Not run because the final 15A hard gate failed; mutation count is zero.                                                                                                                                                                           | Recover 15A and 15B first, then use a fresh isolated UI run. |
 | G14 documentation consistency                | Public current-state documents agree and preserve historical evidence.                                                             | IMPLEMENTED    | Final Pre-live Source Closure Rework 7 is historical; Rework 8 retains `Review Verdict: NEEDS_FIX`; Rework 9 has `Review Verdict: PASS`; its exact-manifest TEMP cleanup gate is `PASS`. Historical mtime attribution remains unclaimed. These states remain distinct from the historical 2026-08-03 checkpoint. | Preserve this state in later tasks.                          |
-| G15 checkpoint integrity                     | Supervisor records content checkpoint and SHA backfill closeout.                                                                  | COMPLETE       | Rework 9 implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968` is recorded by this documentation closeout. Historical commits `98c8b387e1124a519977849d48ab824e4e6bb9c5` and `b1c4e4a...` retain their separate scopes.                       | Push is tracked on the workflow status axis.                 |
+| G15 checkpoint integrity                     | Supervisor records content checkpoint and SHA backfill closeout.                                                                  | COMPLETE       | Current Rework 1 implementation commit `de248a7028d21c53c26db7b28930d583566580a6` is recorded by this documentation closeout. Historical commits `aa14363f15d8bdc8eaf392c67cf444496cc8a968`, `98c8b387e1124a519977849d48ab824e4e6bb9c5`, and `b1c4e4a...` retain their separate scopes. | Push is tracked on the workflow status axis. |
 | G16 authority provenance and plugin baseline | Native root/observation/gate provenance is proven and the exact companion build and six-tool contract are reproducibly identified. | PARTIAL        | Same-process launch ownership is separated from retained consistency and regression-covered; current clean installed/loaded/exact-six live evidence does not yet exist.                                                                           | Run the full read-only matrix from the new clean checkpoint. |
 
 ## Current UE 5.8.1 Rework and Final D13-D16 Posture
@@ -150,7 +157,7 @@ rework.
   `TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-8-AUTHORITATIVE-LAUNCH-BOUNDARY-AND-REPORT-CLOSURE`;
   `COMPLETE`; supervisor `PASS`; implementation commit
   `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
-- G14: `IMPLEMENTED`; current Rework 9 G15 checkpoint integrity: `COMPLETE`;
+- G14: `IMPLEMENTED`; current Rework 1 G15 checkpoint integrity: `COMPLETE`;
   G16: `PARTIAL`.
 - Desktop Tauri icon validation and MSI/NSIS bundling: `IMPLEMENTED`.
 - UE 5.8.1 compatibility: `PARTIAL`; the Rework 2 attempt is historical and
@@ -178,5 +185,5 @@ rework.
 - Read-only retained historical Source Checkpoint Rework 7 D0/build/UE validators pass and preserve Direct,
   `48/48`, and zero historical residual. They are not final evidence.
 - Recovery continues with a new clean-checkout read-only compatibility task
-  based on Rework 9 implementation commit
-  `aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Real mutation remains prohibited.
+  based on Rework 1 implementation commit
+  `de248a7028d21c53c26db7b28930d583566580a6`. Real mutation remains prohibited.

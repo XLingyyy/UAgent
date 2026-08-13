@@ -14,7 +14,8 @@ cleanup removed all 4,601 roots with failures 0 and residual 0; fresh asset
 `40/40` and bridge `14/14` regressions left zero matching roots. `External Gate /
 TEMP cleanup: PASS`.
 Final Live Acceptance Resume Rework 1 has `Review Verdict: PASS` for source
-content and controlled verification; its implementation checkpoint is pending.
+content and controlled verification and is checkpointed at implementation
+commit `de248a7028d21c53c26db7b28930d583566580a6`.
 The rendered settings controls now drive N1-N8 through the production adapter.
 N1 performs the real registration attempt before trust, N2 runs the real
 registration attempt in an exact task-owned child with the native mutation gate
@@ -30,8 +31,8 @@ entries, and a complete 356-entry production/Git watch set. New production
 files and deleted tracked production files cannot leave the identity unchanged;
 normal repositories, linked worktrees, symbolic/detached HEAD, loose refs,
 packed refs, and same-branch commits are covered. G14 is `IMPLEMENTED`; current
-Rework 1 G15 checkpoint integrity is `IN_PROGRESS` pending the supervisor
-checkpoint; G16 is `PARTIAL`. UE 5.8.1 compatibility and overall acceptance
+Rework 1 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. UE 5.8.1
+compatibility and overall acceptance
 remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C are
 `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
@@ -90,8 +91,8 @@ Controlled source and built-child checks exercise the future control flow
 without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Do not invoke 15A, live UE/MCP,
-or real mutation until a dedicated authorized task runs from the
-supervisor-reviewed Rework 1 implementation checkpoint. The old
+or real mutation until a dedicated authorized task runs from Rework 1
+implementation commit `de248a7028d21c53c26db7b28930d583566580a6`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

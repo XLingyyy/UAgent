@@ -1,6 +1,6 @@
 # MVP15 Final Verification
 
-## Current MVP15D Final 15A-15C/D16 Pre-live Source Closure — 2026-08-11
+## Current MVP15D Final 15A-15C/D16 Pre-live Source Closure — 2026-08-13
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
 submissions without checkpoints. Rework 7 is historical
@@ -17,6 +17,13 @@ successor `App` registrations and calls production
 returns before parent-ready; a lifecycle barrier then observes destroy, build,
 and acknowledgement before the fresh successor claims once, publishes, and
 completes.
+
+Final Live Acceptance Resume Rework 1 has `Review Verdict: PASS` at
+implementation commit `de248a7028d21c53c26db7b28930d583566580a6`. Visible N1-N8
+controls enter the production adapter; N1/N2 use real registration authority,
+and N7/N8 bind actual MCP outcomes. Focused/full source suites and a
+production-built N2 child smoke pass. G15 checkpoint integrity is `COMPLETE`;
+no clean-checkout 15A-15C gate advanced.
 
 Production now registers exact one-shot `Destroyed` completion before captured
 predecessor destroy. The destroy task cannot build or acknowledge success. An
@@ -42,9 +49,10 @@ regressions passed and the post-test rescan stayed at zero. The earlier mtime-on
 actor remains unconfirmed.
 
 The source delta invalidates the prior release binary and every old 15A-15C
-artifact. No actual Tool Search, installed/load/manifest tuple, live fingerprint,
-retraction boundary, N1-N8, partial/unknown, parent closeout, clean build, UE
-Automation run, live MCP capture, or mutation was executed. The stale installed
+artifact. No current clean-checkout Tool Search, installed/load/manifest tuple,
+live fingerprint, full 15A N1-N8 acceptance root, partial/unknown sequence,
+parent closeout, UE Automation run, live MCP capture, or mutation was executed.
+The stale installed
 release may fail only with `FINAL_LIVE_RUNTIME_NONZERO`. D13/15A remains
 `BLOCKED`, D14/15B and D15/15C remain `PLANNED`, D16 remains `IN_PROGRESS`, G16
 and overall acceptance remain `PARTIAL`, and Ready remains `NO`. Current
@@ -1128,16 +1136,17 @@ Separate negative ledgers must record:
 This is not final MVP15 acceptance. Final Pre-live Source Closure Rework 7 is
 historical `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
 `Review Verdict: NEEDS_FIX` because same-task Tauri destroy/build cannot create
-the production successor. The Rework 9 implementation has `Review Verdict:
-PASS`, fresh focused/full verification, and real Wry destroy/replacement
-sequencing evidence at implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Authorized exact-manifest cleanup
+the production successor. Rework 9 is the historical accepted base at
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Current Final Live Acceptance
+Resume Rework 1 has `Review Verdict: PASS`, fresh focused/full verification and
+a production-built N2 child smoke at implementation commit
+`de248a7028d21c53c26db7b28930d583566580a6`. Authorized exact-manifest cleanup
 removed all 4,601 historical TEMP roots with zero residual; its external gate is
 `PASS`. The
 separate 2026-08-03 Final
 Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
-Rework 9 G15 checkpoint integrity is `COMPLETE`, and G16 is `PARTIAL`. The
+Rework 1 G15 checkpoint integrity is `COMPLETE`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
 replace the historical 2026-08-03 Rework 8 checkpoint. No clean current-generation exact-six fingerprint or

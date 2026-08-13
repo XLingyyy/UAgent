@@ -11,10 +11,14 @@ PASS` and are checkpointed at implementation commit
 cleanup removed all 4,601 roots with failures 0 and residual 0; fresh asset
 `40/40` and bridge `14/14` regressions left zero matching roots. `External Gate /
 TEMP cleanup: PASS`.
+Final Live Acceptance Resume Rework 1 has `Review Verdict: PASS` at
+implementation commit `de248a7028d21c53c26db7b28930d583566580a6`. It binds visible
+N1-N8 controls to production registration, task-owned gate-off child, actual
+MCP outcomes and verifier semantics. No clean-checkout live gate advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-Rework 9 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
+Rework 1 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
 acceptance remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C
 are `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
@@ -39,9 +43,9 @@ files, 4,717 internal directories and all 4,601 roots. Failures/residuals were
 zero. Fresh asset `40/40` and bridge `14/14` tests passed and left zero matching
 roots. Earlier mtime-only drift remains historically unattributed.
 
-No actual Tool Search, installed/load/manifest tuple, live fingerprint,
-retraction boundary, N1-N8, partial/unknown, parent closeout, compatibility, or
-mutation evidence exists. Direct remains the selected production companion
+No current clean-checkout Tool Search, installed/load/manifest tuple, live
+fingerprint, full 15A N1-N8 acceptance root, partial/unknown sequence, parent
+closeout, compatibility, or mutation evidence exists. Direct remains the selected production companion
 route.
 
 Identity v2 / manifest v3 independently bind engine `5.8.1`, engine changelist
@@ -102,8 +106,8 @@ cleanup hardening, and native module enumeration; its supervisor verdict was
 not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
-A new clean-checkout read-only task based on Final Pre-live Rework 9
-implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968` is required
+A new clean-checkout read-only task based on Final Live Acceptance Resume
+Rework 1 implementation commit `de248a7028d21c53c26db7b28930d583566580a6` is required
 before the full UE 5.8.1 compatibility
 matrix. Real mutation
 remains prohibited and belongs to a later separate task.

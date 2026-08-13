@@ -11,10 +11,14 @@ PASS` and are checkpointed at implementation commit
 cleanup removed all 4,601 roots with failures 0 and residual 0; fresh asset
 `40/40` and bridge `14/14` regressions left zero matching roots. `External Gate /
 TEMP cleanup: PASS`.
+Final Live Acceptance Resume Rework 1 has `Review Verdict: PASS` at
+implementation commit `de248a7028d21c53c26db7b28930d583566580a6`. Rendered N1-N8
+now bind production registration, task-owned gate-off child and actual MCP
+outcomes; fresh live evidence remains open.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-Rework 9 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
+Rework 1 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
 acceptance remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C
 are `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
@@ -55,14 +59,14 @@ ran; the stale installed binary may fail only with `FINAL_LIVE_RUNTIME_NONZERO`.
 | Live observation after process exit                   | MITIGATED        | The Job runner publishes early identity before closeout; the sole publisher re-observes the live PID, requires PID plus creation FILETIME equality, and binds Job closeout. Historical Rework 8 Real Windows integration passed 6/6 with zero matching residue at that checkpoint.                                                                               |
 | Raw path / secret leakage in the loaded ledger        | MITIGATED        | The ledger binds every R5.2 identity fact, serializes only sorted approved relative module facts, and a raw absolute path anywhere in the ledger is rejected before any write.                                                                                                                                                                                    |
 | Full live runtime semantics                           | OPEN             | Capability-only handshakes intentionally omit MCP connection, UE Automation execution, product discovery, and all mutations; a post-checkpoint clean-commit read-only task must collect those facts.                                                                                                                                                              |
-| Final live phase evidence and session orchestration   | OPEN             | Rework 8 retains `Review Verdict: NEEDS_FIX`; Rework 9 has `Review Verdict: PASS` at implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968`. No fresh live evidence exists; 15A-15C remain invalid until clean rebuild and rerun. The independent TEMP cleanup gate is `PASS`. |
+| Final live phase evidence and session orchestration   | OPEN             | Rework 1 rendered production semantics have `Review Verdict: PASS` at implementation commit `de248a7028d21c53c26db7b28930d583566580a6`. No fresh clean-checkout live evidence exists; 15A-15C remain invalid until clean rebuild and rerun. The independent TEMP cleanup gate is `PASS`. |
 | Unsafe predecessor compatibility evidence             | MITIGATED        | The predecessor root was invalidated and removed for `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root was created.                                                                                                                                                                                                                                 |
 | UE 5.8.1 exact-six/product compatibility              | OPEN             | Source adapters are implemented, while the full clean-commit live matrix remains unrun. Historical Rework 2 partial observations cannot establish current compatibility.                                                                                                                                                                                          |
 | Real product mutation or later-stage evidence         | DEFERRED         | 15B/15C were skipped by the failed 15A hard gate; mutation count is zero.                                                                                                                                                                                                                                                                                         |
 
 The historical Final Source/Tooling Rework 8 is checkpointed at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. Live acceptance requires a separate clean-checkout task
-based on Rework 9 implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968`, a
+based on Rework 1 implementation commit `de248a7028d21c53c26db7b28930d583566580a6`, a
 manifest-backed build, and a new strict evidence root. Real mutation remains prohibited.
 
 ## Historical Rework 3 Source Checkpoint Risks — 2026-07-20
@@ -113,15 +117,17 @@ MVP15D source-checkpoint risks above or supply current D0-D12 evidence.
 D13 / 15A is `BLOCKED`. Final Pre-live Source Closure Rework 7 is historical
 `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
 `Review Verdict: NEEDS_FIX` for deterministic Tauri destroy/build ordering.
-The Rework 9 implementation has `Review Verdict: PASS`, fresh focused/full
-verification, and real Wry destroy/replacement sequencing evidence at
-implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968`. The resumed
+Rework 9 is the historical accepted base at
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Current Final Live Acceptance
+Resume Rework 1 has `Review Verdict: PASS`, fresh focused/full verification and
+a production-built N2 child smoke at implementation commit
+`de248a7028d21c53c26db7b28930d583566580a6`. The resumed
 scan's historical mtime drift actor remains unconfirmed; authorized exact-manifest
 cleanup removed all 4,601 roots with zero residual and closed that external gate.
 The separate
 2026-08-03 Final Source/Tooling Rework 8
 is a historical `COMPLETE / PASS` checkpoint. G14 is `IMPLEMENTED`, current
-Rework 9 G15 checkpoint integrity is `COMPLETE`, and G16 is `PARTIAL`. The historical D0-D12
+Rework 1 G15 checkpoint integrity is `COMPLETE`, and G16 is `PARTIAL`. The historical D0-D12
 checkpoint and historical Source Checkpoint Rework 7 evidence remain valid prerequisites, while no clean
 current live exact-six fingerprint exists. D14 / 15B and D15 / 15C remain
 `PLANNED`; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility and overall

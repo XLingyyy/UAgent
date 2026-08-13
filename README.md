@@ -15,7 +15,8 @@ roots with failures 0 and residual 0. Fresh asset `40/40` and bridge `14/14`
 regressions passed and left zero matching roots. `External Gate / TEMP cleanup:
 PASS`; the historical mtime actor remains unconfirmed.
 Final Live Acceptance Resume Rework 1 has `Review Verdict: PASS` for its source
-content and controlled verification; its implementation checkpoint is pending.
+content and controlled verification and is checkpointed at implementation
+commit `de248a7028d21c53c26db7b28930d583566580a6`.
 It routes visible N1-N8 settings controls through the production desktop
 adapter, obtains N1 `untrusted_root` before trust, runs N2 in an exact
 task-owned child with native mutation authority disabled, and records N7/N8
@@ -24,8 +25,7 @@ evidence is claimed.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-Rework 1 G15 checkpoint integrity is `IN_PROGRESS` pending the supervisor
-checkpoint; G16 is
+Rework 1 G15 checkpoint integrity is `COMPLETE`; G16 is
 `PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain
 `PLANNED`; D16 remains `IN_PROGRESS`; UE 5.8.1 compatibility and overall MVP15
 acceptance remain `PARTIAL`; Ready for the next stage is `NO`.
@@ -95,9 +95,9 @@ dirty. `build.rs` consumes the complete 356-entry source/Git watch set,
 including normal or linked-worktree Git metadata, symbolic or detached HEAD,
 loose refs, and packed refs. The historical 2026-08-03 checkpoint closed its
 then-current G15 scope, and Rework 9 is checkpointed at
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Current Rework 1 awaits its own
-implementation checkpoint before a separate clean-checkout rebuild may restart
-G16 and D13 / 15A.
+`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Current Rework 1 is checkpointed at
+`de248a7028d21c53c26db7b28930d583566580a6`; a separate clean-checkout rebuild
+from that commit may restart G16 and D13 / 15A.
 
 The loaded-module publisher still has one write-capable production path. It
 publishes only after the owned live process is re-observed and the private
@@ -148,7 +148,7 @@ redaction, independent verification, and secret/path rejection. The unsafe
 predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root was created.
 Full read-only compatibility is deferred to a new clean-checkout task based on
-the supervisor-reviewed Rework 1 implementation checkpoint.
+Rework 1 implementation commit `de248a7028d21c53c26db7b28930d583566580a6`.
 Real UE, Tool Search, and mutation
 are `SKIPPED_BY_TASK_BOUNDARY`; real mutation remains prohibited.
 

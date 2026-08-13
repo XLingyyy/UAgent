@@ -13,14 +13,19 @@
   cleanup removed all 4,601 roots with zero failures/residuals; fresh asset
   `40/40` and bridge `14/14` regressions left zero matching roots. `External
   Gate / TEMP cleanup: PASS`; no live Gate advanced.
+- Final Live Acceptance Resume Rework 1: source content and controlled
+  verification have `Review Verdict: PASS` at implementation commit
+  `de248a7028d21c53c26db7b28930d583566580a6`. Rendered N1-N8 controls use the
+  production adapter; N1/N2 use real registration authority and N7/N8 bind
+  actual MCP outcomes. No clean-checkout 15A-15C gate advanced.
 - The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
   historical `COMPLETE / PASS` record at implementation commit
   `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 - G14 documentation consistency: `IMPLEMENTED` after the current evidence and
   stale-state reconciliation.
-- G15 checkpoint integrity: `COMPLETE`; Rework 9 implementation commit
-  `aa14363f15d8bdc8eaf392c67cf444496cc8a968` is recorded by this documentation
-  closeout.
+- G15 checkpoint integrity: `COMPLETE`; current Rework 1 implementation commit
+  `de248a7028d21c53c26db7b28930d583566580a6` is recorded by this documentation
+  closeout. Rework 9 remains the accepted historical base.
 - G16 authority provenance and plugin baseline: `PARTIAL`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
   module BuildId `55116800`.
@@ -116,8 +121,8 @@ closed alternative and is not a production fallback. Retained historical Source 
 D0/build/UE validators continue to pass read-only, but those historical bundles
 cannot satisfy final 15A-15C.
 
-The next recovery step is a new clean-checkout read-only 5.8.1 task from Rework 9
-implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968`, covering
+The next recovery step is a new clean-checkout read-only 5.8.1 task from Rework 1
+implementation commit `de248a7028d21c53c26db7b28930d583566580a6`, covering
 both Tool Search modes, exact-six/product
 retractions, response framing, clean inventory, and the real loaded-module
 observer. Only a later separately authorized task may consider real 15C
