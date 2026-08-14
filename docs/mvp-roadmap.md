@@ -22,7 +22,8 @@
   has `Review Verdict: PASS` at implementation commit
   `25d1262528e0976d24f96056975fdb36bc790b77`. Truncated quoted secrets fail
   closed, punctuation tails remain covered, and parsing is bounded. Invalid
-  Resume 2 cleanup remains `BLOCKED_HOST_POLICY`; no live gate advanced.
+  Resume 2 cleanup is `SATISFIED` after an independent 2026-08-14 zero-residual
+  scan; no live gate advanced from cleanup alone.
 - The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
   historical `COMPLETE / PASS` record at implementation commit
   `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -126,8 +127,8 @@ closed alternative and is not a production fallback. Retained historical Source 
 D0/build/UE validators continue to pass read-only, but those historical bundles
 cannot satisfy final 15A-15C.
 
-The next recovery step follows closure of invalid Resume 2 cleanup with a new
-clean-checkout read-only 5.8.1 task from current implementation commit
+The invalid Resume 2 cleanup gate is closed. A new clean-checkout 5.8.1 task is
+dispatched from current implementation commit
 `25d1262528e0976d24f96056975fdb36bc790b77`, covering
 both Tool Search modes, exact-six/product
 retractions, response framing, clean inventory, and the real loaded-module

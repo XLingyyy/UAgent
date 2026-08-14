@@ -29,7 +29,8 @@ Final Live Acceptance Resume 2 Rework 3 has `Review Verdict: PASS` at
 implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. The retained
 transcript producer/scanner/manifest chain now fails closed on truncated quoted
 secrets, covers adjacent punctuation tails and uses bounded parsing. Invalid
-Resume 2 cleanup remains `BLOCKED_HOST_POLICY`; no live gate advanced.
+Resume 2 cleanup is `SATISFIED` after an independent 2026-08-14 zero-residual
+scan; no live gate advanced from cleanup alone.
 
 Production now registers exact one-shot `Destroyed` completion before captured
 predecessor destroy. The destroy task cannot build or acknowledge success. An

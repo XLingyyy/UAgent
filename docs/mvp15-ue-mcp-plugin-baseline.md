@@ -19,7 +19,8 @@ Final Live Acceptance Resume 2 Rework 3 has `Review Verdict: PASS` at
 implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Retained build
 transcripts now fail closed on truncated quoted secrets, cover adjacent
 punctuation tails and share a bounded producer/verifier scanner. Invalid Resume
-2 cleanup remains `BLOCKED_HOST_POLICY`; no live gate advanced.
+2 cleanup is `SATISFIED` after an independent 2026-08-14 zero-residual scan; no
+live gate advanced from cleanup alone.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -111,11 +112,10 @@ cleanup hardening, and native module enumeration; its supervisor verdict was
 not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
-A new clean-checkout read-only task based on current implementation commit
-`25d1262528e0976d24f96056975fdb36bc790b77` is required after invalid Resume 2
-cleanup and before the full UE 5.8.1 compatibility
-matrix. Real mutation
-remains prohibited and belongs to a later separate task.
+A new clean-checkout task based on current implementation commit
+`25d1262528e0976d24f96056975fdb36bc790b77` is dispatched for the full UE 5.8.1
+compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
+15B pass inside that authorized task.
 
 This document separates repository-defined expectations from facts that must be collected from the real UE/MCP environment. It contains no local absolute path, process id, endpoint credential, token, or secret.
 

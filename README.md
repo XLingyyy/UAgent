@@ -27,7 +27,9 @@ source-only retained-transcript privacy repair and is checkpointed at
 `25d1262528e0976d24f96056975fdb36bc790b77`. Unterminated quoted secrets now
 fail closed at line/EOF boundaries, bare punctuation tails remain covered, and
 the shared producer/scanner/manifest grammar is bounded. The invalid Resume 2
-clone/evidence cleanup gate remains `BLOCKED_HOST_POLICY`; no live gate advanced.
+clone/evidence cleanup gate is `SATISFIED`: an independent zero-residual scan on
+2026-08-14 found no clone, evidence root, task process or declared-port listener.
+No live gate advanced from cleanup alone.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -82,8 +84,9 @@ fingerprint, retraction session boundary, full 15A N1-N8 acceptance root,
 partial/unknown run, real parent closeout, live UE/MCP run, or real mutation
 evidence was produced. The source delta invalidates the previous release and
 all earlier 15A-15C evidence. The installed release capability gate remains
-open; 15A may restart only after the invalid Resume 2 cleanup gate closes,
-using a clean checkout of `25d1262528e0976d24f96056975fdb36bc790b77`.
+open; the invalid Resume 2 cleanup gate is closed and a fresh 15A restart has
+been dispatched from a clean checkout of
+`25d1262528e0976d24f96056975fdb36bc790b77`.
 
 The verified pre-checkpoint Tauri build embedded
 `uagent.mvp15d.source-identity.v2`: base/compiled commit
@@ -155,11 +158,12 @@ The UE 5.8.1 evidence collector uses a closed allowlist, deterministic
 redaction, independent verification, and secret/path rejection. The unsafe
 predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root was created.
-Full read-only compatibility is deferred until invalid Resume 2 cleanup closes,
-then to a new clean-checkout task based on current implementation commit
+Full compatibility and acceptance are assigned to the newly dispatched
+clean-checkout task based on current implementation commit
 `25d1262528e0976d24f96056975fdb36bc790b77`.
 Real UE, Tool Search, and mutation
-are `SKIPPED_BY_TASK_BOUNDARY`; real mutation remains prohibited.
+were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The dispatched live
+task may enter exact-sandbox 15C mutation only after fresh 15A and 15B pass.
 
 The tracked multi-size ICO and actual Tauri MSI/NSIS packaging remain accepted
 implementation facts. Identity v2 / manifest v3 independently preserve engine

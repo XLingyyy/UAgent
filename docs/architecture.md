@@ -22,7 +22,8 @@ Final Live Acceptance Resume 2 Rework 3 has `Review Verdict: PASS` at
 implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. The retained
 transcript producer, scanner and manifest verifier now share bounded fail-closed
 handling for truncated quotes and punctuation tails. Invalid Resume 2 cleanup
-remains `BLOCKED_HOST_POLICY`; no live gate advanced.
+is `SATISFIED` after an independent 2026-08-14 zero-residual scan; no live gate
+advanced from cleanup alone.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current privacy-repair G15 checkpoint integrity is `COMPLETE`; G16 is
@@ -70,9 +71,9 @@ These facts do not
 constitute the current clean-checkout live Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The former release and all
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
-fail only with `FINAL_LIVE_RUNTIME_NONZERO`. After invalid Resume 2 cleanup, a
-later authorized clean-checkout run from current implementation commit
-`25d1262528e0976d24f96056975fdb36bc790b77` is required before 15A restarts.
+fail only with `FINAL_LIVE_RUNTIME_NONZERO`. Cleanup is closed and an authorized
+clean-checkout run from current implementation commit
+`25d1262528e0976d24f96056975fdb36bc790b77` is dispatched for the 15A restart.
 
 The implemented trust-chain source path is:
 
@@ -186,8 +187,8 @@ Tauri MSI/NSIS remain preserved. The real release binary capability probes
 made zero MCP calls, zero network calls, and zero asset operations. No real UE
 session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
-Full read-only compatibility follows after invalid Resume 2 cleanup in a new
-clean-checkout task based on current implementation commit
+Full read-only compatibility is assigned to the newly dispatched clean-checkout
+task based on current implementation commit
 `25d1262528e0976d24f96056975fdb36bc790b77`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the

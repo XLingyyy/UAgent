@@ -19,7 +19,8 @@ Final Live Acceptance Resume 2 Rework 3 has `Review Verdict: PASS` at
 implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Its source-only
 retained-transcript privacy repair fails closed on truncated quoted values,
 covers punctuation tails and keeps producer/verifier scanning bounded. Invalid
-Resume 2 cleanup remains `BLOCKED_HOST_POLICY`; no live gate advanced.
+Resume 2 cleanup is `SATISFIED` after an independent 2026-08-14 zero-residual
+scan; no live gate advanced from cleanup alone.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -29,9 +30,9 @@ Real UE 5.8.1 compatibility and overall acceptance remain `PARTIAL`; D13 /
 `IN_PROGRESS`; Ready is `NO`. Current `PASS_REAL_SMOKE` is `NO`.
 The verified release binary truthfully reported a
 dirty pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
-transitive production boundary. After invalid Resume 2 cleanup closes, a
-separate clean-checkout rebuild from current implementation commit
-`25d1262528e0976d24f96056975fdb36bc790b77` remains required for G16 and D13 /
+transitive production boundary. Cleanup is closed and a separate clean-checkout
+rebuild from current implementation commit
+`25d1262528e0976d24f96056975fdb36bc790b77` is dispatched for G16 and D13 /
 15A.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
@@ -309,9 +310,9 @@ removed all 4,601 TEMP roots with zero residual; its external gate is `PASS`. Th
 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
 Rework 1 G15 checkpoint integrity is `COMPLETE`, and G16 is `PARTIAL`.
-D13 / 15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`; D16
-remains `IN_PROGRESS`; real UE 5.8.1 compatibility and overall acceptance
-remain `PARTIAL`; Ready remains `NO`. After invalid Resume 2 cleanup closes, any
-clean-checkout read-only compatibility run must use current implementation
-commit `25d1262528e0976d24f96056975fdb36bc790b77`. No next-stage or mutation work
-is authorized.
+D13 / 15A is `IN_PROGRESS` through the dispatched clean restart; D14 / 15B and
+D15 / 15C remain `PLANNED`; D16 remains `IN_PROGRESS`; real UE 5.8.1
+compatibility and overall acceptance remain `PARTIAL`; Ready remains `NO`. The
+clean-checkout run must use current implementation commit
+`25d1262528e0976d24f96056975fdb36bc790b77`. Exact-sandbox 15C mutation is
+authorized only after fresh 15A and 15B pass inside that dispatched task.

@@ -20,8 +20,9 @@ and N8 use actual MCP execute/rollback requests and outcomes. These facts do not
 advance the clean-checkout 15A-15C live gates.
 Final Live Acceptance Resume 2 Rework 3 has `Review Verdict: PASS` at
 implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Its source-only
-retained-transcript privacy repair is accepted; invalid Resume 2 cleanup remains
-`BLOCKED_HOST_POLICY`, so no live/manual-smoke gate advanced.
+retained-transcript privacy repair is accepted; invalid Resume 2 cleanup is
+`SATISFIED` after an independent 2026-08-14 zero-residual scan. Cleanup alone
+did not advance a live/manual-smoke gate.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -86,11 +87,12 @@ inverse operations, zero verify mutation, and replay delta `0 / 0 / 0 / 0 /
 read-only supporting evidence.
 
 The unsafe predecessor evidence root was invalidated and removed for
-`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. After invalid Resume 2 cleanup, full
-read-only compatibility must use a new clean-checkout task based on current
-implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Real UE, Tool Search,
-and mutation are `SKIPPED_BY_TASK_BOUNDARY`; mutation remains prohibited until
-a later separate task.
+`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is assigned
+to the newly dispatched clean-checkout task based on current implementation
+commit `25d1262528e0976d24f96056975fdb36bc790b77`. Real UE, Tool Search,
+and mutation were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The
+dispatched live task may enter exact-sandbox 15C mutation only after fresh 15A
+and 15B pass.
 
 ## Historical Rework 3 Supervisor Boundary - NEEDS_FIX
 

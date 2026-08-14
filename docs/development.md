@@ -23,8 +23,9 @@ disabled, and N7/N8 use actual MCP execute/rollback requests and outcomes.
 Final Live Acceptance Resume 2 Rework 3 has `Review Verdict: PASS` at
 implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Retained
 BuildPlugin transcripts now use bounded fail-closed secret parsing shared by
-producer and manifest verifier. Invalid Resume 2 cleanup remains
-`BLOCKED_HOST_POLICY`; no live gate advanced.
+producer and manifest verifier. Invalid Resume 2 cleanup is `SATISFIED` after an
+independent 2026-08-14 zero-residual scan; no live gate advanced from cleanup
+alone.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -95,10 +96,9 @@ future fixed live UI child.
 Controlled source and built-child checks exercise the future control flow
 without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
-release and all 15A-15C artifacts are invalid. Do not invoke 15A, live UE/MCP,
-or real mutation until invalid Resume 2 cleanup closes and a dedicated
-authorized task runs from current implementation commit
-`25d1262528e0976d24f96056975fdb36bc790b77`. The old
+release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
+mutation only through the newly dispatched dedicated task from current
+implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

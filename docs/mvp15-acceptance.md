@@ -20,7 +20,8 @@ Final Live Acceptance Resume 2 Rework 3 has `Review Verdict: PASS` at
 implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Its source-only
 retained-transcript privacy repair fails closed on truncated quotes, covers
 adjacent punctuation tails, and uses a bounded shared scanner. Invalid Resume 2
-cleanup remains `BLOCKED_HOST_POLICY`; no clean-checkout live gate advanced.
+cleanup is `SATISFIED` after an independent 2026-08-14 zero-residual scan; no
+clean-checkout live gate advanced from cleanup alone.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -77,10 +78,10 @@ capability-only handshakes with zero MCP, network, and asset actions. These
 are capability facts; real product discovery, UE execution, Tool Search, and
 the asset lifecycle did not run (`SKIPPED_BY_TASK_BOUNDARY`).
 The unsafe predecessor evidence root was invalidated and removed for
-`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is deferred
-until invalid Resume 2 cleanup closes, then to a new clean-checkout task based
-on current implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Real
-mutation remains prohibited.
+`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is assigned
+to the newly dispatched clean-checkout task based on current implementation
+commit `25d1262528e0976d24f96056975fdb36bc790b77`. Real mutation remains gated
+until 15A and 15B pass inside that authorized task.
 
 Persisted verification reopens schemas, bytes, hashes, process/artifact facts,
 events, and summaries. It returns `*_persisted_consistency_verified` and
@@ -114,11 +115,11 @@ No serialized field or caller argument can substitute for that receipt.
 | Pre-live Source Closure Rework 8   | Actual predecessor/successor production bridge orchestration and exact injected predecessor-window ownership.                           | PARTIAL     | `Review Verdict: NEEDS_FIX`. Its same-task destroy/build model did not wait for authoritative `Destroyed`/manager removal.                                                                                                                        | Superseded by the supervisor-reviewed Rework 9 implementation; no Rework 8 checkpoint.                           |
 | Pre-live Source Closure Rework 9   | Exact one-shot destroy completion, post-`Destroyed` successor continuation, timeout gate, and real Wry replacement ordering.             | COMPLETE    | `Review Verdict: PASS`; implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Hidden Webview/Wry coverage proves queued collision, manager removal/build count 0, different-HWND successor, and replacement B preservation. Authorized exact-manifest cleanup removed all 4,601 TEMP roots with zero residual. | Later clean-checkout/live evidence remains open.     |
 | Live Acceptance Resume Rework 1    | Bind visible N1-N8 controls to production registration, gate-off child, MCP outcome, and verifier semantics.                            | COMPLETE    | `Review Verdict: PASS`; implementation commit `de248a7028d21c53c26db7b28930d583566580a6`. Focused/full source suites and a production-built N2 child smoke pass. | Historical accepted scope; current restart source is the later privacy-repair checkpoint. |
-| Live Acceptance Resume 2 Rework 3  | Fail closed on truncated retained secrets, cover punctuation tails, and keep producer/verifier scanning bounded and coherent.             | COMPLETE    | `Review Verdict: PASS`; implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Source/tooling regressions pass; no live gate advanced. | Close the invalid Resume 2 cleanup gate before a clean restart. |
-| D13 / 15A                          | Clean build/install/load and authoritative manifest identity.                                                                            | BLOCKED     | Historical Rework 2 observed a build and physical DLL load, but its evidence root is invalid. Current implementation commit `25d1262528e0976d24f96056975fdb36bc790b77` exists; clean current manifest/install/load equality proof is pending.                                               | After invalid-root cleanup, use that commit with final build/manifest tooling and verify installed == loaded == manifest. |
+| Live Acceptance Resume 2 Rework 3  | Fail closed on truncated retained secrets, cover punctuation tails, and keep producer/verifier scanning bounded and coherent.             | COMPLETE    | `Review Verdict: PASS`; implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Source/tooling regressions pass; no live gate advanced. | Cleanup gate closed; execute the dispatched clean restart. |
+| D13 / 15A                          | Clean build/install/load and authoritative manifest identity.                                                                            | IN_PROGRESS | Historical Rework 2 observed a build and physical DLL load, but its evidence root is invalid. Current implementation commit `25d1262528e0976d24f96056975fdb36bc790b77` exists; cleanup is closed and the clean restart is dispatched.                                               | Use that commit with final build/manifest tooling and verify installed == loaded == manifest. |
 | D14 / 15B                          | Current-generation product-adapter exact-six live fingerprint.                                                                           | PLANNED     | Not run because D13 / 15A did not pass.                                                                                                                                                                                                                                                      | Run only after a new final 15A package passes.                                                                   |
 | D15 / 15C                          | Fresh rendered product-UI lifecycle, negatives, replay, and cleanup.                                                                     | PLANNED     | Not run; mutation count remains zero.                                                                                                                                                                                                                                                        | Run only after 15A and 15B pass.                                                                                 |
-| D16                                | Repository documentation and final delivery.                                                                                             | IN_PROGRESS | Historical Rework states, the Rework 8 verdict, Rework 9 `PASS` and checkpoint, DELETE compatibility, report contract, and deferred live work are synchronized.                                                                                                            | Cleanup authorization and later live evidence remain outstanding.                                               |
+| D16                                | Repository documentation and final delivery.                                                                                             | IN_PROGRESS | Historical Rework states, the Rework 8 verdict, Rework 9 `PASS` and checkpoint, DELETE compatibility, report contract, cleanup closure and deferred live work are synchronized.                                                                                                            | Fresh 15A-15C live evidence and final closeout remain outstanding.                                               |
 
 ## Historical Supporting Gate Evidence
 
@@ -190,6 +191,7 @@ rework.
   product retractions, UI mutation, and replay were not run.
 - Read-only retained historical Source Checkpoint Rework 7 D0/build/UE validators pass and preserve Direct,
   `48/48`, and zero historical residual. They are not final evidence.
-- Recovery continues after invalid Resume 2 cleanup closes with a new
-  clean-checkout read-only compatibility task based on current implementation
-  commit `25d1262528e0976d24f96056975fdb36bc790b77`. Real mutation remains prohibited.
+- Recovery continues in the newly dispatched clean-checkout compatibility task
+  based on current implementation commit
+  `25d1262528e0976d24f96056975fdb36bc790b77`. Real mutation remains gated until
+  15A and 15B pass inside the authorized task.
