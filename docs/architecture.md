@@ -2,7 +2,7 @@
 
 ## MVP15D Companion Trust Chain
 
-### Current Final 15A-15C/D16 Pre-live Source Closure
+### Current Final 15A-15C/D16 Live Acceptance
 
 Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
@@ -18,9 +18,14 @@ implementation commit `de248a7028d21c53c26db7b28930d583566580a6`. Visible N1-N8
 controls now enter production adapter semantics; N1/N2 bind real registration
 authority and N7/N8 bind actual MCP outcomes. No clean-checkout live gate
 advanced.
+Final Live Acceptance Resume 2 Rework 3 has `Review Verdict: PASS` at
+implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. The retained
+transcript producer, scanner and manifest verifier now share bounded fail-closed
+handling for truncated quotes and punctuation tails. Invalid Resume 2 cleanup
+remains `BLOCKED_HOST_POLICY`; no live gate advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
-`98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current Rework 1 G15 checkpoint integrity is `COMPLETE`; G16 is
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current privacy-repair G15 checkpoint integrity is `COMPLETE`; G16 is
 `PARTIAL`. UE 5.8.1 compatibility and overall acceptance remain `PARTIAL`;
 D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C are `PLANNED`; D16 is
 `IN_PROGRESS`; Ready remains `NO`.
@@ -65,10 +70,9 @@ These facts do not
 constitute the current clean-checkout live Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The former release and all
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
-fail only with `FINAL_LIVE_RUNTIME_NONZERO`. A later authorized clean-checkout
-run from Rework 1 implementation commit
-`de248a7028d21c53c26db7b28930d583566580a6` is required before 15A
-restarts.
+fail only with `FINAL_LIVE_RUNTIME_NONZERO`. After invalid Resume 2 cleanup, a
+later authorized clean-checkout run from current implementation commit
+`25d1262528e0976d24f96056975fdb36bc790b77` is required before 15A restarts.
 
 The implemented trust-chain source path is:
 
@@ -182,8 +186,9 @@ Tauri MSI/NSIS remain preserved. The real release binary capability probes
 made zero MCP calls, zero network calls, and zero asset operations. No real UE
 session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
-Full read-only compatibility follows in a new clean-checkout task based on
-Rework 1 implementation commit `de248a7028d21c53c26db7b28930d583566580a6`.
+Full read-only compatibility follows after invalid Resume 2 cleanup in a new
+clean-checkout task based on current implementation commit
+`25d1262528e0976d24f96056975fdb36bc790b77`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted

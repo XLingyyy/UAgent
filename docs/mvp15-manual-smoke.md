@@ -18,10 +18,14 @@ Visible settings controls now drive N1-N8 through the production adapter. N1
 and the task-owned N2 gate-off child use real registration attempts, while N7
 and N8 use actual MCP execute/rollback requests and outcomes. These facts do not
 advance the clean-checkout 15A-15C live gates.
+Final Live Acceptance Resume 2 Rework 3 has `Review Verdict: PASS` at
+implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Its source-only
+retained-transcript privacy repair is accepted; invalid Resume 2 cleanup remains
+`BLOCKED_HOST_POLICY`, so no live/manual-smoke gate advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-Rework 1 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. D13 / 15A
+privacy-repair G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. D13 / 15A
 remains `BLOCKED`; D14 / 15B and
 D15 / 15C remain `PLANNED`; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility
 and overall acceptance remain `PARTIAL`; Ready is `NO`.
@@ -82,9 +86,9 @@ inverse operations, zero verify mutation, and replay delta `0 / 0 / 0 / 0 /
 read-only supporting evidence.
 
 The unsafe predecessor evidence root was invalidated and removed for
-`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility must use a
-new clean-checkout task based on Rework 1 implementation commit
-`de248a7028d21c53c26db7b28930d583566580a6`. Real UE, Tool Search,
+`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. After invalid Resume 2 cleanup, full
+read-only compatibility must use a new clean-checkout task based on current
+implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Real UE, Tool Search,
 and mutation are `SKIPPED_BY_TASK_BOUNDARY`; mutation remains prohibited until
 a later separate task.
 

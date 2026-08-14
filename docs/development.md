@@ -20,6 +20,11 @@ The rendered settings controls now drive N1-N8 through the production adapter.
 N1 performs the real registration attempt before trust, N2 runs the real
 registration attempt in an exact task-owned child with the native mutation gate
 disabled, and N7/N8 use actual MCP execute/rollback requests and outcomes.
+Final Live Acceptance Resume 2 Rework 3 has `Review Verdict: PASS` at
+implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Retained
+BuildPlugin transcripts now use bounded fail-closed secret parsing shared by
+producer and manifest verifier. Invalid Resume 2 cleanup remains
+`BLOCKED_HOST_POLICY`; no live gate advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -31,7 +36,7 @@ entries, and a complete 356-entry production/Git watch set. New production
 files and deleted tracked production files cannot leave the identity unchanged;
 normal repositories, linked worktrees, symbolic/detached HEAD, loose refs,
 packed refs, and same-branch commits are covered. G14 is `IMPLEMENTED`; current
-Rework 1 G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. UE 5.8.1
+privacy-repair G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. UE 5.8.1
 compatibility and overall acceptance
 remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C are
 `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
@@ -91,8 +96,9 @@ Controlled source and built-child checks exercise the future control flow
 without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Do not invoke 15A, live UE/MCP,
-or real mutation until a dedicated authorized task runs from Rework 1
-implementation commit `de248a7028d21c53c26db7b28930d583566580a6`. The old
+or real mutation until invalid Resume 2 cleanup closes and a dedicated
+authorized task runs from current implementation commit
+`25d1262528e0976d24f96056975fdb36bc790b77`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

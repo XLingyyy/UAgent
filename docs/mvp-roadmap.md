@@ -1,6 +1,6 @@
 # UAgent MVP Roadmap
 
-## MVP15D - Final 15A-15C/D16 Pre-live Source Closure
+## MVP15D - Final 15A-15C/D16 Live Acceptance
 
 - Final Pre-live Source Closure Rework 7: historical `PARTIAL / NEEDS_FIX`; no
   checkpoint was created.
@@ -18,14 +18,19 @@
   `de248a7028d21c53c26db7b28930d583566580a6`. Rendered N1-N8 controls use the
   production adapter; N1/N2 use real registration authority and N7/N8 bind
   actual MCP outcomes. No clean-checkout 15A-15C gate advanced.
+- Final Live Acceptance Resume 2 Rework 3: retained-transcript privacy content
+  has `Review Verdict: PASS` at implementation commit
+  `25d1262528e0976d24f96056975fdb36bc790b77`. Truncated quoted secrets fail
+  closed, punctuation tails remain covered, and parsing is bounded. Invalid
+  Resume 2 cleanup remains `BLOCKED_HOST_POLICY`; no live gate advanced.
 - The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
   historical `COMPLETE / PASS` record at implementation commit
   `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 - G14 documentation consistency: `IMPLEMENTED` after the current evidence and
   stale-state reconciliation.
-- G15 checkpoint integrity: `COMPLETE`; current Rework 1 implementation commit
-  `de248a7028d21c53c26db7b28930d583566580a6` is recorded by this documentation
-  closeout. Rework 9 remains the accepted historical base.
+- G15 checkpoint integrity: `COMPLETE`; current privacy-repair implementation
+  commit `25d1262528e0976d24f96056975fdb36bc790b77` is recorded by this
+  documentation closeout. Rework 1 and Rework 9 retain their historical scopes.
 - G16 authority provenance and plugin baseline: `PARTIAL`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
   module BuildId `55116800`.
@@ -121,8 +126,9 @@ closed alternative and is not a production fallback. Retained historical Source 
 D0/build/UE validators continue to pass read-only, but those historical bundles
 cannot satisfy final 15A-15C.
 
-The next recovery step is a new clean-checkout read-only 5.8.1 task from Rework 1
-implementation commit `de248a7028d21c53c26db7b28930d583566580a6`, covering
+The next recovery step follows closure of invalid Resume 2 cleanup with a new
+clean-checkout read-only 5.8.1 task from current implementation commit
+`25d1262528e0976d24f96056975fdb36bc790b77`, covering
 both Tool Search modes, exact-six/product
 retractions, response framing, clean inventory, and the real loaded-module
 observer. Only a later separately authorized task may consider real 15C
