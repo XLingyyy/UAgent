@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 const BUILD_COMMAND_SCHEMA = "uagent.mvp15d.final.build-command.v3";
 const BUILD_RESULT_SCHEMA = "uagent.mvp15d.final.build-result.v4";
 const TASK_GENERATION = "final-d13-d16";
+const BUILD_MAX_BUFFER_BYTES = 256 * 1024 * 1024;
 const DEFAULT_TASK_ID = "TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-D13-D16";
 const CANONICAL_FIXTURES = [
   "integrations/unreal/UAgentAssetTools/Resources/mvp15d-native-binding-v2.json",
@@ -462,22 +463,486 @@ function buildCommandLedger(input) {
   };
 }
 
-function redactTranscript(text, provenance) {
+// Deterministic transcript privacy contract. Every retained BuildPlugin
+// transcript passes through redactTranscript() before it is written, hashed or
+// listed as a source artifact. The contract is machine-independent: any drive
+// letter, UNC root, user-home anchor, UE/toolchain/SDK/RunUAT/package or
+// evidence path is collapsed to a stable semantic placeholder.
+//
+// An absolute path starts at a drive, UNC or extended-device prefix; drive
+// roots and repeated separators are included. Quoted and bracketed paths are
+// collapsed as one unit so final segments may contain spaces or parentheses.
+// Unquoted paths stop at punctuation, a new absolute path, a command flag or
+// the first final-segment whitespace so neighboring diagnostics survive.
+const TRANSCRIPT_SEGMENT_RELAXED = String.raw`(?:(?!\s+(?:[A-Za-z]:[\\\/]|[\\\/]{2}|\/[A-Za-z]))[^\\\/:*?"<>|\r\n;"'])+`;
+const TRANSCRIPT_SEGMENT_FINAL = String.raw`[^\s\\\/:*?"<>|;,'"()\]}]+`;
+const TRANSCRIPT_PATH_BODY = String.raw`(?:(?:${TRANSCRIPT_SEGMENT_RELAXED}[\\\/]+)*${TRANSCRIPT_SEGMENT_FINAL})?`;
+const TRANSCRIPT_ABSOLUTE_PATH_START = String.raw`(?:[A-Za-z]:[\\\/]+|[\\\/]{2,}[?.][\\\/]+(?:UNC[\\\/]+)?(?:[A-Za-z]:[\\\/]+)?|[\\\/]{2,}(?![\\\/.?]))`;
+const TRANSCRIPT_PATH_PATTERN = new RegExp(
+  String.raw`(?:(?<![A-Za-z0-9])[A-Za-z]:[\\\/]+|(?<![:\\\/])[\\\/]{2,}[?.][\\\/]+(?:UNC[\\\/]+)?(?:[A-Za-z]:[\\\/]+)?|(?<![:\\\/])[\\\/]{2,}(?![\\\/.?]))${TRANSCRIPT_PATH_BODY}`,
+  "giu",
+);
+const TRANSCRIPT_DOUBLE_QUOTED_PATH_PATTERN = new RegExp(
+  String.raw`"(${TRANSCRIPT_ABSOLUTE_PATH_START})[^"\r\n]*"`,
+  "giu",
+);
+const TRANSCRIPT_SINGLE_QUOTED_PATH_PATTERN = new RegExp(
+  String.raw`'(${TRANSCRIPT_ABSOLUTE_PATH_START})[^'\r\n]*'`,
+  "giu",
+);
+const TRANSCRIPT_PARENTHESIZED_PATH_PATTERN = new RegExp(
+  String.raw`\((${TRANSCRIPT_ABSOLUTE_PATH_START})[^\r\n]*?\)(?=$|[\s.,;(\[{])`,
+  "giu",
+);
+const TRANSCRIPT_SQUARE_BRACKETED_PATH_PATTERN = new RegExp(
+  String.raw`\[(${TRANSCRIPT_ABSOLUTE_PATH_START})[^\]\r\n]*\]`,
+  "giu",
+);
+const TRANSCRIPT_CURLY_BRACKETED_PATH_PATTERN = new RegExp(
+  String.raw`\{(${TRANSCRIPT_ABSOLUTE_PATH_START})[^}\r\n]*\}`,
+  "giu",
+);
+const TRANSCRIPT_BARE_USER_HOME_PATTERN = new RegExp(
+  String.raw`(?<![A-Za-z0-9])[A-Za-z]:[\\\/]+(?:Users|Documents and Settings)[\\\/]+[^\\\/\r\n]*?(?=$|\s+[|;,]|[|;,])`,
+  "gimu",
+);
+const TRANSCRIPT_REDACTED = "${REDACTED}";
+const TRANSCRIPT_REDACTED_ENDPOINT = "${REDACTED_ENDPOINT}";
+const TRANSCRIPT_SECRET_KEYS = [
+  ...new Set([
+    ...transcriptSeparatedVariants(["aws", "secret", "access", "key"]),
+    ...transcriptSeparatedVariants(["aws", "session", "token"]),
+    ...transcriptSeparatedVariants(["security", "token"]),
+    ...transcriptSeparatedVariants(["refresh", "token"]),
+    ...transcriptSeparatedVariants(["session", "token"]),
+    ...transcriptSeparatedVariants(["access", "token"]),
+    ...transcriptSeparatedVariants(["client", "secret"]),
+    ...transcriptSeparatedVariants(["auth", "token"]),
+    ...transcriptSeparatedVariants(["id", "token"]),
+    ...transcriptSeparatedVariants(["x", "api", "key"]),
+    ...transcriptSeparatedVariants(["api", "key"]),
+    "api key",
+    "api\tkey",
+    "authorization",
+    "credentials",
+    "credential",
+    "password",
+    "username",
+    "tokens",
+    "passwd",
+    "secret",
+    "token",
+    "user",
+  ]),
+].sort((left, right) => right.length - left.length || left.localeCompare(right));
+const TRANSCRIPT_ENDPOINT_QUERY_KEYS = new Set([
+  "access_token",
+  "auth",
+  "authorization",
+  "api-key",
+  "api_key",
+  "apikey",
+  "credential",
+  "password",
+  "secret",
+  "token",
+]);
+const TRANSCRIPT_ENDPOINT_TERMINATORS = new Set(['"', "'", "<", ">", "(", "[", "{"]);
+const TRANSCRIPT_ENDPOINT_TERMINAL_PUNCTUATION = new Set([",", ";", ")", "]", "}"]);
+const TRANSCRIPT_TERMINAL_PUNCTUATION = new Set([".", "!", "?", ":", "/", ",", ";", ")", "]", "}"]);
+const TRANSCRIPT_USER_HOME_PREFIX = /^[A-Za-z]:[\\/](?:Users|Documents and Settings)[\\/]/i;
+
+function transcriptSeparatedVariants(parts) {
+  let variants = [parts[0]];
+  for (const part of parts.slice(1)) {
+    variants = variants.flatMap((prefix) => ["", "-", "_"].map((joiner) => prefix + joiner + part));
+  }
+  return variants;
+}
+
+function isAsciiAlphaNumeric(character) {
+  const code = character?.charCodeAt(0) ?? -1;
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function isAsciiWord(character) {
+  return isAsciiAlphaNumeric(character) || character === "_";
+}
+
+function isHorizontalWhitespace(character) {
+  return character === " " || character === "\t";
+}
+
+function isLineBreak(character) {
+  return character === "\r" || character === "\n";
+}
+
+function isEndpointTerminator(character) {
+  return (
+    character === undefined ||
+    /\s/u.test(character) ||
+    TRANSCRIPT_ENDPOINT_TERMINATORS.has(character)
+  );
+}
+
+function asciiEqualAt(value, index, expected) {
+  if (index < 0 || index + expected.length > value.length) return false;
+  for (let offset = 0; offset < expected.length; offset += 1) {
+    const actualCode = value.charCodeAt(index + offset);
+    const expectedCode = expected.charCodeAt(offset);
+    const foldedActual = actualCode >= 65 && actualCode <= 90 ? actualCode + 32 : actualCode;
+    const foldedExpected =
+      expectedCode >= 65 && expectedCode <= 90 ? expectedCode + 32 : expectedCode;
+    if (foldedActual !== foldedExpected) return false;
+  }
+  return true;
+}
+
+function parseTranscriptSecretKey(value, index) {
+  for (const key of TRANSCRIPT_SECRET_KEYS) {
+    if (asciiEqualAt(value, index, key)) return key.length;
+  }
+  return 0;
+}
+
+function terminalPunctuationStart(
+  value,
+  start,
+  end,
+  punctuation = TRANSCRIPT_TERMINAL_PUNCTUATION,
+) {
+  let cursor = end;
+  while (cursor > start && punctuation.has(value[cursor - 1])) cursor -= 1;
+  return cursor === start ? end : cursor;
+}
+
+function parseQuotedTranscriptValue(value, start, quote, outerEscaped) {
+  let cursor = start + (outerEscaped ? 2 : 1);
+  const contentStart = cursor;
+  while (cursor < value.length && !isLineBreak(value[cursor])) {
+    if (value[cursor] !== "\\") {
+      if (!outerEscaped && value[cursor] === quote) {
+        return {
+          end: cursor + 1,
+          redacted: value.slice(contentStart, cursor) === TRANSCRIPT_REDACTED,
+        };
+      }
+      cursor += 1;
+      continue;
+    }
+    const slashStart = cursor;
+    while (cursor < value.length && value[cursor] === "\\") cursor += 1;
+    const slashCount = cursor - slashStart;
+    if (cursor < value.length && value[cursor] === quote) {
+      if ((outerEscaped && slashCount === 1) || (!outerEscaped && slashCount % 2 === 0)) {
+        return {
+          end: cursor + 1,
+          redacted:
+            value.slice(contentStart, outerEscaped ? slashStart : cursor) === TRANSCRIPT_REDACTED,
+        };
+      }
+      cursor += 1;
+    }
+  }
+  return { end: cursor, redacted: false, malformed: true };
+}
+
+function parseTranscriptSecretValue(value, start) {
+  if (start >= value.length || isLineBreak(value[start])) return null;
+  if (value[start] === '"' || value[start] === "'") {
+    return parseQuotedTranscriptValue(value, start, value[start], false);
+  }
+  if (value[start] === "\\" && (value[start + 1] === '"' || value[start + 1] === "'")) {
+    return parseQuotedTranscriptValue(value, start, value[start + 1], true);
+  }
+
+  for (const scheme of ["Basic", "Bearer"]) {
+    if (!asciiEqualAt(value, start, scheme)) continue;
+    let cursor = start + scheme.length;
+    if (!isHorizontalWhitespace(value[cursor])) continue;
+    while (isHorizontalWhitespace(value[cursor])) cursor += 1;
+    const tokenStart = cursor;
+    const token = parseBareTranscriptValue(value, tokenStart);
+    return token ? { ...token, redacted: false } : null;
+  }
+
+  return parseBareTranscriptValue(value, start);
+}
+
+function parseBareTranscriptValue(value, start) {
+  let cursor = start;
+  while (
+    cursor < value.length &&
+    !isLineBreak(value[cursor]) &&
+    !isHorizontalWhitespace(value[cursor]) &&
+    value[cursor] !== '"' &&
+    value[cursor] !== "'"
+  ) {
+    cursor += 1;
+  }
+  if (cursor === start) return null;
+  if (value.startsWith(TRANSCRIPT_REDACTED, start)) {
+    const placeholderEnd = start + TRANSCRIPT_REDACTED.length;
+    let suffix = placeholderEnd;
+    while (suffix < cursor && TRANSCRIPT_TERMINAL_PUNCTUATION.has(value[suffix])) suffix += 1;
+    if (suffix === cursor) return { end: placeholderEnd, redacted: true };
+  }
+  const contentEnd = terminalPunctuationStart(value, start, cursor);
+  return {
+    end: contentEnd,
+    redacted: value.slice(start, contentEnd) === TRANSCRIPT_REDACTED,
+  };
+}
+
+function parseTranscriptSecretFieldAt(value, start) {
+  if (start > 0 && (isAsciiAlphaNumeric(value[start - 1]) || "_-".includes(value[start - 1]))) {
+    return null;
+  }
+  let cursor = start;
+  let wrapper = "";
+  if (value[cursor] === "\\" && (value[cursor + 1] === '"' || value[cursor + 1] === "'")) {
+    wrapper = value.slice(cursor, cursor + 2);
+    cursor += 2;
+  } else if (value[cursor] === '"' || value[cursor] === "'") {
+    wrapper = value[cursor];
+    cursor += 1;
+  }
+  const keyStart = cursor;
+  const keyLength = parseTranscriptSecretKey(value, cursor);
+  if (keyLength === 0) return null;
+  cursor += keyLength;
+  const keyEnd = cursor;
+  if (wrapper) {
+    if (!value.startsWith(wrapper, cursor)) return null;
+    cursor += wrapper.length;
+  }
+  const separatorStart = cursor;
+  while (isHorizontalWhitespace(value[cursor])) cursor += 1;
+  if (value[cursor] === ":" || value[cursor] === "=") {
+    cursor += 1;
+    while (isHorizontalWhitespace(value[cursor])) cursor += 1;
+  } else if (cursor === separatorStart) {
+    return null;
+  }
+  const parsedValue = parseTranscriptSecretValue(value, cursor);
+  if (!parsedValue) return null;
+  return {
+    start,
+    end: parsedValue.end,
+    redacted: parsedValue.redacted,
+    replacement: wrapper
+      ? `${value.slice(start, cursor)}${wrapper}${TRANSCRIPT_REDACTED}${wrapper}`
+      : `${value.slice(keyStart, keyEnd)}=${TRANSCRIPT_REDACTED}`,
+  };
+}
+
+function parseTranscriptSecretFlagAt(value, start) {
+  if (value[start] !== "-" || value[start + 1] !== "-") return null;
+  const keyStart = start + 2;
+  const keyLength = parseTranscriptSecretKey(value, keyStart);
+  if (keyLength === 0) return null;
+  let cursor = keyStart + keyLength;
+  const separatorStart = cursor;
+  while (isHorizontalWhitespace(value[cursor])) cursor += 1;
+  if (value[cursor] === "=") {
+    cursor += 1;
+    while (isHorizontalWhitespace(value[cursor])) cursor += 1;
+  } else if (cursor === separatorStart) {
+    return null;
+  }
+  const parsedValue = parseTranscriptSecretValue(value, cursor);
+  if (!parsedValue) return null;
+  return {
+    start,
+    end: parsedValue.end,
+    redacted: parsedValue.redacted,
+    replacement: `${value.slice(start, keyStart + keyLength)}=${TRANSCRIPT_REDACTED}`,
+  };
+}
+
+function scanTranscriptMatches(value, parser) {
+  const matches = [];
+  let cursor = 0;
+  while (cursor < value.length) {
+    const match = parser(value, cursor);
+    if (!match) {
+      cursor += 1;
+      continue;
+    }
+    matches.push(match);
+    cursor = Math.max(cursor + 1, match.end);
+  }
+  return matches;
+}
+
+function endpointHasCredentials(value, start, schemeEnd, end) {
+  let authorityEnd = schemeEnd;
+  while (authorityEnd < end && !"/?#".includes(value[authorityEnd])) authorityEnd += 1;
+  let colon = -1;
+  for (let cursor = schemeEnd; cursor < authorityEnd; cursor += 1) {
+    if (value[cursor] === ":" && colon < 0) colon = cursor;
+    if (value[cursor] === "@" && colon > schemeEnd && colon < cursor) return true;
+  }
+  let cursor = schemeEnd;
+  while (cursor < end && value[cursor] !== "?") cursor += 1;
+  if (cursor >= end) return false;
+  cursor += 1;
+  while (cursor < end) {
+    const nameStart = cursor;
+    while (cursor < end && value[cursor] !== "=" && value[cursor] !== "&") cursor += 1;
+    if (value[cursor] === "=") {
+      const name = value.slice(nameStart, cursor).toLowerCase();
+      if (TRANSCRIPT_ENDPOINT_QUERY_KEYS.has(name)) return true;
+      cursor += 1;
+      while (cursor < end && value[cursor] !== "&") cursor += 1;
+    }
+    if (value[cursor] === "&") cursor += 1;
+  }
+  return false;
+}
+
+function scanTranscriptCredentialEndpoints(value) {
+  const matches = [];
+  let cursor = 0;
+  while (cursor < value.length) {
+    const schemeLength = asciiEqualAt(value, cursor, "https://")
+      ? 8
+      : asciiEqualAt(value, cursor, "http://")
+        ? 7
+        : 0;
+    if (schemeLength === 0 || (cursor > 0 && isAsciiWord(value[cursor - 1]))) {
+      cursor += 1;
+      continue;
+    }
+    let tokenEnd = cursor + schemeLength;
+    while (tokenEnd < value.length && !isEndpointTerminator(value[tokenEnd])) tokenEnd += 1;
+    const end = terminalPunctuationStart(
+      value,
+      cursor + schemeLength,
+      tokenEnd,
+      TRANSCRIPT_ENDPOINT_TERMINAL_PUNCTUATION,
+    );
+    if (endpointHasCredentials(value, cursor, cursor + schemeLength, end)) {
+      matches.push({
+        start: cursor,
+        end,
+        redacted: false,
+        replacement: TRANSCRIPT_REDACTED_ENDPOINT,
+      });
+    }
+    cursor = Math.max(cursor + 1, tokenEnd);
+  }
+  return matches;
+}
+
+function parseTranscriptBearerAt(value, start) {
+  if (!asciiEqualAt(value, start, "Bearer") || (start > 0 && isAsciiWord(value[start - 1]))) {
+    return null;
+  }
+  let cursor = start + "Bearer".length;
+  if (!isHorizontalWhitespace(value[cursor])) return null;
+  while (isHorizontalWhitespace(value[cursor])) cursor += 1;
+  const tokenStart = cursor;
+  const token = parseBareTranscriptValue(value, tokenStart);
+  if (!token) return null;
+  return {
+    start,
+    end: token.end,
+    redacted: token.redacted,
+    replacement: `Bearer ${TRANSCRIPT_REDACTED}`,
+  };
+}
+
+function replaceTranscriptMatches(value, matches) {
+  if (matches.length === 0) return value;
+  const chunks = [];
+  let cursor = 0;
+  for (const match of matches) {
+    chunks.push(value.slice(cursor, match.start), match.replacement);
+    cursor = match.end;
+  }
+  chunks.push(value.slice(cursor));
+  return chunks.join("");
+}
+
+function transcriptRootPattern(root) {
+  return String(root)
+    .replace(/[\\/]+$/u, "")
+    .split(/[\\/]+/u)
+    .map((segment) => segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("[\\\\/]");
+}
+
+function transcriptPathLabel(value) {
+  return TRANSCRIPT_USER_HOME_PREFIX.test(String(value).replace(/^["'([{]/u, ""))
+    ? "${USER_HOME}"
+    : "${ABSOLUTE_PATH}";
+}
+
+function redactTranscript(text, roots) {
   let output = String(text ?? "");
-  const replacements = [
-    [provenance.repositoryRoot, "${SOURCE_ROOT}"],
-    [resolve(provenance.repositoryRoot, ".."), "${SOURCE_PARENT}"],
-  ];
-  for (const [raw, replacement] of replacements) {
-    if (!raw) continue;
-    output = output.split(raw).join(replacement);
-    output = output.split(raw.replaceAll("\\", "/")).join(replacement);
+  output = replaceTranscriptMatches(output, scanTranscriptCredentialEndpoints(output));
+  output = replaceTranscriptMatches(
+    output,
+    scanTranscriptMatches(output, parseTranscriptSecretFlagAt),
+  );
+  output = replaceTranscriptMatches(
+    output,
+    scanTranscriptMatches(output, parseTranscriptSecretFieldAt),
+  );
+  output = replaceTranscriptMatches(output, scanTranscriptMatches(output, parseTranscriptBearerAt));
+  for (const [root, replacement] of roots ?? []) {
+    if (!root) continue;
+    output = output.replace(
+      new RegExp(
+        String.raw`(?<![A-Za-z0-9_])${transcriptRootPattern(root)}(?=$|[\\\/\s)"',;])`,
+        "giu",
+      ),
+      replacement,
+    );
   }
   output = output
-    .replace(/[A-Za-z]:\\Users\\[^\\\r\n]+/gi, "${USER_HOME}")
-    .replace(/\b(authorization|token|password|secret|api[-_]?key)\s*[:=]\s*\S+/gi, "$1=${REDACTED}")
-    .replace(/Bearer\s+\S+/gi, "Bearer ${REDACTED}");
+    .replace(TRANSCRIPT_DOUBLE_QUOTED_PATH_PATTERN, (match) => `"${transcriptPathLabel(match)}"`)
+    .replace(TRANSCRIPT_SINGLE_QUOTED_PATH_PATTERN, (match) => `'${transcriptPathLabel(match)}'`)
+    .replace(TRANSCRIPT_PARENTHESIZED_PATH_PATTERN, (match) => `(${transcriptPathLabel(match)})`)
+    .replace(TRANSCRIPT_SQUARE_BRACKETED_PATH_PATTERN, (match) => `[${transcriptPathLabel(match)}]`)
+    .replace(TRANSCRIPT_CURLY_BRACKETED_PATH_PATTERN, (match) => `{${transcriptPathLabel(match)}}`)
+    .replace(TRANSCRIPT_BARE_USER_HOME_PATTERN, "${USER_HOME}");
+  output = output.replace(TRANSCRIPT_PATH_PATTERN, (match) => {
+    const trimmed = match.replace(/[).,\]}]+$/u, "");
+    const label = transcriptPathLabel(match);
+    return label + match.slice(trimmed.length);
+  });
   return output;
+}
+
+function findTranscriptLeaks(text) {
+  const value = String(text ?? "");
+  const absolutePaths = (value.match(TRANSCRIPT_PATH_PATTERN) ?? []).length;
+  const secrets = [
+    ...scanTranscriptCredentialEndpoints(value),
+    ...scanTranscriptMatches(value, parseTranscriptSecretFlagAt),
+    ...scanTranscriptMatches(value, parseTranscriptBearerAt),
+    ...scanTranscriptMatches(value, parseTranscriptSecretFieldAt),
+  ].filter(({ redacted }) => !redacted).length;
+  return { absolutePaths, secrets };
+}
+
+function writeRedactedTranscript(path, rawText, roots) {
+  const redacted = redactTranscript(rawText, roots);
+  const leaks = findTranscriptLeaks(redacted);
+  if (leaks.absolutePaths > 0 || leaks.secrets > 0) {
+    fail("BUILD_TRANSCRIPT_REDACTION_LEAK");
+  }
+  writeFileSync(path, redacted, "utf8");
+}
+
+function transcriptRoots({ provenance, packageRoot, ueRoot }) {
+  return [
+    [resolve(packageRoot), "${PACKAGE_ROOT}"],
+    [resolve(ueRoot), "${UE_ROOT}"],
+    [provenance.repositoryRoot, "${SOURCE_ROOT}"],
+  ].sort((left, right) => right[0].length - left[0].length || left[1].localeCompare(right[1]));
 }
 
 function deriveToolchainFacts(text, engineIdentity) {
@@ -510,10 +975,13 @@ function deriveToolchainFacts(text, engineIdentity) {
     }
     return value;
   }
-  const compiler = String(text ?? "").match(
-    /Using Visual Studio [^\r\n]*?toolchain\s*\((\d+(?:\.\d+){1,3})\)/i,
-  );
-  const sdk = String(text ?? "").match(/Windows\s+(?:10|11)?\s*SDK\s*\(?(\d+(?:\.\d+){1,3})\)?/i);
+  const compiler =
+    String(text ?? "").match(
+      /Using Visual Studio[^\r\n]*?toolchain\s*\([^\r\n]*?(\d+(?:\.\d+){1,3})[^)\r\n]*\)/i,
+    ) ?? String(text ?? "").match(/Using Visual Studio\s+(\d+(?:\.\d+){1,3})\s+toolchain/i);
+  const sdk =
+    String(text ?? "").match(/Windows\s+(\d+(?:\.\d+){1,3})\s+SDK\b/i) ??
+    String(text ?? "").match(/Windows\s+(?:10|11)?\s*SDK\s*\(?(\d+(?:\.\d+){1,3})\)?/i);
   if (!compiler || !sdk) {
     fail("BUILD_TOOLCHAIN_EVIDENCE_MISSING");
   }
@@ -592,7 +1060,9 @@ function executeBuild({
   commandLedger,
   taskMarker,
   uatLog,
+  ueRoot,
   engineIdentity,
+  maxBuffer,
 }) {
   mkdirSync(resolve(evidenceRoot, "logs"), { recursive: true });
   mkdirSync(resolve(evidenceRoot, "metadata"), { recursive: true });
@@ -606,52 +1076,10 @@ function executeBuild({
       encoding: "utf8",
       shell: false,
       windowsHide: true,
-      maxBuffer: 256 * 1024 * 1024,
+      maxBuffer,
     },
   );
   const capturedAt = new Date().toISOString();
-  const stdoutPath = resolve(evidenceRoot, "logs", "runuat.stdout.redacted.log");
-  const stderrPath = resolve(evidenceRoot, "logs", "runuat.stderr.redacted.log");
-  writeFileSync(stdoutPath, redactTranscript(result.stdout, provenance), "utf8");
-  writeFileSync(stderrPath, redactTranscript(result.stderr, provenance), "utf8");
-  const sourceArtifacts = [
-    artifactRecord(
-      evidenceRoot,
-      stdoutPath,
-      capturedAt,
-      "mvp15d-plugin-build",
-      "deterministically-redacted",
-    ),
-    artifactRecord(
-      evidenceRoot,
-      stderrPath,
-      capturedAt,
-      "mvp15d-plugin-build",
-      "deterministically-redacted",
-    ),
-  ];
-  if (uatLog) {
-    const rawLog = requireRegularFile(
-      safeWindowsPath(resolve(uatLog), "BUILD_UAT_LOG_PATH_UNSAFE"),
-      "BUILD_UAT_LOG_MISSING",
-    );
-    const derivativePath = resolve(evidenceRoot, "logs", "runuat.external.redacted.log");
-    writeFileSync(
-      derivativePath,
-      redactTranscript(readFileSync(rawLog, "utf8"), provenance),
-      "utf8",
-    );
-    const derivative = artifactRecord(
-      evidenceRoot,
-      derivativePath,
-      capturedAt,
-      "mvp15d-plugin-build",
-      "deterministically-redacted",
-    );
-    derivative.observedRawSize = lstatSync(rawLog).size;
-    derivative.observedRawSha256 = sha256File(rawLog);
-    sourceArtifacts.push(derivative);
-  }
   const childExitCode = result.error || !Number.isInteger(result.status) ? null : result.status;
   let toolchainFacts = null;
   let toolchainReason = null;
@@ -666,6 +1094,53 @@ function executeBuild({
       toolchainReason =
         error instanceof ToolingError ? error.code : "BUILD_TOOLCHAIN_EVIDENCE_INVALID";
     }
+  }
+  let sourceArtifacts;
+  try {
+    const roots = transcriptRoots({ provenance, packageRoot, ueRoot });
+    const stdoutPath = resolve(evidenceRoot, "logs", "runuat.stdout.redacted.log");
+    const stderrPath = resolve(evidenceRoot, "logs", "runuat.stderr.redacted.log");
+    writeRedactedTranscript(stdoutPath, result.stdout, roots);
+    writeRedactedTranscript(stderrPath, result.stderr, roots);
+    sourceArtifacts = [
+      artifactRecord(
+        evidenceRoot,
+        stdoutPath,
+        capturedAt,
+        "mvp15d-plugin-build",
+        "deterministically-redacted",
+      ),
+      artifactRecord(
+        evidenceRoot,
+        stderrPath,
+        capturedAt,
+        "mvp15d-plugin-build",
+        "deterministically-redacted",
+      ),
+    ];
+    if (uatLog) {
+      const rawLog = requireRegularFile(
+        safeWindowsPath(resolve(uatLog), "BUILD_UAT_LOG_PATH_UNSAFE"),
+        "BUILD_UAT_LOG_MISSING",
+      );
+      const derivativePath = resolve(evidenceRoot, "logs", "runuat.external.redacted.log");
+      writeRedactedTranscript(derivativePath, readFileSync(rawLog, "utf8"), roots);
+      const derivative = artifactRecord(
+        evidenceRoot,
+        derivativePath,
+        capturedAt,
+        "mvp15d-plugin-build",
+        "deterministically-redacted",
+      );
+      derivative.observedRawSize = lstatSync(rawLog).size;
+      derivative.observedRawSha256 = sha256File(rawLog);
+      sourceArtifacts.push(derivative);
+    }
+  } catch (error) {
+    if (existsSync(packageRoot)) {
+      rmSync(packageRoot, { recursive: true, force: true });
+    }
+    throw error;
   }
   const succeeded = !result.error && childExitCode === 0 && toolchainFacts !== null;
   if (!succeeded && existsSync(packageRoot)) {
@@ -690,7 +1165,12 @@ function executeBuild({
     status: succeeded ? "build_completed" : "build_failed",
     reason: succeeded
       ? null
-      : (toolchainReason ?? (result.error ? "RUNUAT_SPAWN_FAILED" : "RUNUAT_EXIT_NONZERO")),
+      : (toolchainReason ??
+        (result.error?.code === "ENOBUFS"
+          ? "RUNUAT_OUTPUT_TRUNCATED"
+          : result.error
+            ? "RUNUAT_SPAWN_FAILED"
+            : "RUNUAT_EXIT_NONZERO")),
     commandFingerprint: finalCommandLedger.commandFingerprint,
     childPidBindingSha256: Number.isSafeInteger(result.pid)
       ? sha256Bytes(Buffer.from(`uagent.mvp15d.retained.pid.v1\0${result.pid}`, "utf8"))
@@ -724,7 +1204,10 @@ function executeBuild({
   return { summary, result };
 }
 
-function runBuild(argv) {
+function runBuild(argv, { maxBuffer = BUILD_MAX_BUFFER_BYTES } = {}) {
+  if (!Number.isSafeInteger(maxBuffer) || maxBuffer <= 0 || maxBuffer > BUILD_MAX_BUFFER_BYTES) {
+    fail("BUILD_MAX_BUFFER_INVALID");
+  }
   const args = parseArgs(argv);
   if (!args.source || !args.package || !args.runuat || !args["ue-root"]) {
     fail("BUILD_ARGUMENT_REQUIRED");
@@ -736,7 +1219,8 @@ function runBuild(argv) {
   const packageRoot = safeWindowsPath(resolve(args.package), "PACKAGE_PATH_UNSAFE");
   if (existsSync(packageRoot)) fail("PACKAGE_TARGET_ALREADY_EXISTS");
   const runUat = resolveRunUat(args.runuat);
-  const engineIdentity = readEngineIdentity(args["ue-root"], runUat);
+  const ueRoot = safeWindowsPath(resolve(args["ue-root"]), "UE_ROOT_PATH_UNSAFE");
+  const engineIdentity = readEngineIdentity(ueRoot, runUat);
   const orderedArguments = orderedBuildArguments(plugin, packageRoot);
   const taskId = args["task-id"] ?? DEFAULT_TASK_ID;
   if (typeof taskId !== "string" || !/^TASK-MVP15D-[A-Z0-9-]+$/.test(taskId)) {
@@ -781,7 +1265,9 @@ function runBuild(argv) {
     commandLedger: ledger,
     taskMarker: args["task-marker"],
     uatLog: args["uat-log"],
+    ueRoot,
     engineIdentity,
+    maxBuffer,
   });
   return execution.summary;
 }
@@ -812,8 +1298,10 @@ export {
   deriveToolchainFacts,
   deriveGitFacts,
   exactCmdCommand,
+  findTranscriptLeaks,
   orderedBuildArguments,
   readEngineIdentity,
+  redactTranscript,
   runBuild,
   safeWindowsPath,
   stable,

@@ -17,6 +17,7 @@ import {
   BUILD_COMMAND_SCHEMA,
   buildCommandLedger,
   deriveGitFacts,
+  findTranscriptLeaks,
   orderedBuildArguments,
   readEngineIdentity,
   stable,
@@ -370,12 +371,22 @@ function validateSourceArtifact(evidenceRoot, value) {
     fail("BUILD_SOURCE_ARTIFACT_INVALID");
   }
   const path = resolve(evidenceRoot, value.relativePath.split("/").join("\\"));
+  const bytes = readFileSync(requireRegularFile(path, "BUILD_SOURCE_ARTIFACT_MISSING"));
   if (
     !isWithin(evidenceRoot, path) ||
-    lstatSync(requireRegularFile(path, "BUILD_SOURCE_ARTIFACT_MISSING")).size !== value.size ||
-    sha256File(path) !== value.sha256
+    bytes.length !== value.size ||
+    sha256Bytes(bytes) !== value.sha256
   ) {
     fail("BUILD_SOURCE_ARTIFACT_HASH_MISMATCH");
+  }
+  const transcript = bytes.toString("utf8");
+  const leaks = findTranscriptLeaks(transcript);
+  if (
+    !Buffer.from(transcript, "utf8").equals(bytes) ||
+    leaks.absolutePaths > 0 ||
+    leaks.secrets > 0
+  ) {
+    fail("BUILD_SOURCE_ARTIFACT_PRIVACY_INVALID");
   }
 }
 

@@ -18,6 +18,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { performance } from "node:perf_hooks";
 import test from "node:test";
 import {
   EVENT_SCHEMA,
@@ -66,6 +67,9 @@ import {
   CANONICAL_FIXTURE_SHA256,
   CANONICAL_FIXTURE_SIZE,
   ToolingError,
+  deriveToolchainFacts,
+  findTranscriptLeaks,
+  redactTranscript,
   runBuild,
 } from "./mvp15d-plugin-build.mjs";
 import { IconValidationError, validateIcon } from "./mvp15d-icon-validate.mjs";
@@ -305,17 +309,13 @@ function authorityEvent(type, authorityLevel, data) {
 
 function rebindAuthorityData(data, bindingKey) {
   const material = Object.fromEntries(
-    Object.entries(data).filter(
-      ([key]) => key !== "authorityLevel" && key !== bindingKey,
-    ),
+    Object.entries(data).filter(([key]) => key !== "authorityLevel" && key !== bindingKey),
   );
   data[bindingKey] = hashStableForTest(material);
 }
 
 function liveFixedArtifactEvent(context = LIVE_AUTHORITY_CONTEXT) {
-  const modules = [
-    { relativePath: "Binaries/Win64/UAgentAssetTools.dll", sha256: "c".repeat(64) },
-  ];
+  const modules = [{ relativePath: "Binaries/Win64/UAgentAssetTools.dll", sha256: "c".repeat(64) }];
   const modulesSha256 = hashStableForTest(modules);
   const material = {
     sourceCommit: context.sourceCommit,
@@ -411,9 +411,7 @@ function liveProductAuthorityFixture() {
         ? `renderer-after-${index + 1}`
         : `renderer-before-${index + 1}`,
       processIdentitySha256Before: `${index + 1}`.repeat(64),
-      processIdentitySha256After: rendererRestart
-        ? "f".repeat(64)
-        : `${index + 1}`.repeat(64),
+      processIdentitySha256After: rendererRestart ? "f".repeat(64) : `${index + 1}`.repeat(64),
       generationBefore: index + 30,
       generationAfter: index + 31,
       fingerprintSha256,
@@ -585,7 +583,12 @@ function liveUiAuthorityFixture() {
           sequence: index + 1,
           direction,
           action,
-          api: index < 7 ? "mcp_asset_tool_call" : index === 7 ? "execute_asset_mutation" : "rollback_asset_mutation",
+          api:
+            index < 7
+              ? "mcp_asset_tool_call"
+              : index === 7
+                ? "execute_asset_mutation"
+                : "rollback_asset_mutation",
           requestSha256: hashStableForTest({ index, direction: "request" }),
           responseSha256: hashStableForTest({ index, direction: "response" }),
           status,
@@ -655,8 +658,7 @@ test("live derivation rejects synthetic, renderer-authored and summary-only auth
     (error) => error?.code === "FINAL_PRODUCT_LIVE_AUTHORITY_INVALID",
   );
   assert.throws(
-    () =>
-      deriveUi(liveUiAuthorityFixture(), liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT),
+    () => deriveUi(liveUiAuthorityFixture(), liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT),
     (error) => error?.code === "FINAL_UI_LIVE_AUTHORITY_INVALID",
   );
 
@@ -665,7 +667,8 @@ test("live derivation rejects synthetic, renderer-authored and summary-only auth
       "Rework 1 synthetic N1-N8 and partial records",
       () => {
         const events = liveUiAuthorityFixture().filter(
-          ({ type }) => !["negative_case_observation", "partial_unknown_observation"].includes(type),
+          ({ type }) =>
+            !["negative_case_observation", "partial_unknown_observation"].includes(type),
         );
         events.push(
           { type: "negative_case", data: { caseId: "N1" } },
@@ -716,8 +719,9 @@ test("live derivation rejects synthetic, renderer-authored and summary-only auth
       "mismatched package/install/load hashes",
       () => {
         const events = liveProductAuthorityFixture();
-        events.find(({ type }) => type === "fixed_artifact_authority").data.loadedObserver.modulesSha256 =
-          "0".repeat(64);
+        events.find(
+          ({ type }) => type === "fixed_artifact_authority",
+        ).data.loadedObserver.modulesSha256 = "0".repeat(64);
         return deriveProduct(events, liveParentCloseout(), "live", LIVE_AUTHORITY_CONTEXT);
       },
     ],
@@ -743,7 +747,8 @@ test("live derivation rejects synthetic, renderer-authored and summary-only auth
       () => {
         const events = liveProductAuthorityFixture();
         const restart = events.find(
-          ({ type, data }) => type === "retraction_observation" && data.reason === "renderer_restart",
+          ({ type, data }) =>
+            type === "retraction_observation" && data.reason === "renderer_restart",
         ).data;
         restart.rendererInstanceIdAfter = restart.rendererInstanceIdBefore;
         restart.processIdentitySha256After = restart.processIdentitySha256Before;
@@ -828,7 +833,8 @@ test("live derivation rejects synthetic, renderer-authored and summary-only auth
       () => {
         const events = liveProductAuthorityFixture();
         const restart = events.find(
-          ({ type, data }) => type === "retraction_observation" && data.reason === "renderer_restart",
+          ({ type, data }) =>
+            type === "retraction_observation" && data.reason === "renderer_restart",
         ).data;
         restart.rendererInstanceIdAfter = "renderer-random-uuid-0001";
         restart.processIdentitySha256After = "f".repeat(64);
@@ -958,10 +964,7 @@ function livePhaseFixtureOutput({
     type: "runtime_process_started",
     data: {
       processIdBindingSha256: retainedBindingForTest("process-id", producerPid + 1),
-      endpointSha256: retainedBindingForTest(
-        "endpoint",
-        `http://127.0.0.1:${port}/mcp`,
-      ),
+      endpointSha256: retainedBindingForTest("endpoint", `http://127.0.0.1:${port}/mcp`),
       markerSha256: retainedBindingForTest("marker", marker),
       executable: {
         basename: basename(runtimeExecutable),
@@ -1336,7 +1339,503 @@ test("UE 5.8.1 response framing accepts one terminal result and rejects duplicat
   assert.throws(() => parseTerminalResponse("application/json", '{"jsonrpc":"2.0","id":10', 10));
 });
 
-function writeBuilder(path, failExit = 0) {
+test("UE 5.8.1 BuildPlugin output derives the MSVC version from its toolchain path", () => {
+  const engineIdentity = {
+    engineVersion: "5.8.1",
+    engineChangelist: 56_057_345,
+    compatibleChangelist: 55_116_800,
+    moduleBuildId: "55116800",
+  };
+  const facts = deriveToolchainFacts(
+    [
+      "===== Toolchain Information =====",
+      "Using Visual Studio 14.44.35228 toolchain (Z:\\Synthetic Toolchains\\VC\\Tools\\MSVC\\14.44.35207) and Windows 10.0.22621.0 SDK (Y:\\Synthetic SDK Root\\Windows Kits\\10).",
+    ].join("\n"),
+    engineIdentity,
+  );
+
+  assert.deepEqual(facts, {
+    ...engineIdentity,
+    compilerName: "MSVC",
+    compilerVersion: "14.44.35207",
+    sdkName: "Windows SDK",
+    sdkVersion: "10.0.22621.0",
+  });
+});
+
+test("transcript redaction collapses drive, UNC, user-home and secret bytes deterministically", () => {
+  const roots = [
+    ["Q:\\PkgRoot\\Out", "${PACKAGE_ROOT}"],
+    ["T:\\UE_5.8\\Engine Root", "${UE_ROOT}"],
+    ["S:\\Repo Root\\UAgent", "${SOURCE_ROOT}"],
+  ];
+  const cases = [
+    [
+      "actual-ue581-toolchain-line",
+      String.raw`Using Visual Studio 14.44.35228 toolchain (Z:\Synthetic Toolchains\VC\Tools\MSVC\14.44.35207) and Windows 10.0.22621.0 SDK (Y:\Synthetic SDK Root\Windows Kits\10).`,
+      "Using Visual Studio 14.44.35228 toolchain (${ABSOLUTE_PATH}) and Windows 10.0.22621.0 SDK (${ABSOLUTE_PATH}).",
+      { absolutePaths: 2, secrets: 0 },
+    ],
+    [
+      "drive-root-only",
+      String.raw`root C:\ remains diagnostic`,
+      "root ${ABSOLUTE_PATH} remains diagnostic",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "json-escaped-drive-path",
+      String.raw`json C:\\build root\\artifact.bin retained`,
+      "json ${ABSOLUTE_PATH} retained",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "extended-drive-path",
+      String.raw`device \\?\C:\build\artifact.bin retained`,
+      "device ${ABSOLUTE_PATH} retained",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "extended-unc-path",
+      String.raw`device \\?\UNC\server\share\artifact.bin retained`,
+      "device ${ABSOLUTE_PATH} retained",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "semicolon-separated-drives",
+      String.raw`list C:\alpha\one.txt;D:\beta\two.txt end`,
+      "list ${ABSOLUTE_PATH};${ABSOLUTE_PATH} end",
+      { absolutePaths: 2, secrets: 0 },
+    ],
+    [
+      "space-separated-drives",
+      String.raw`copy C:\alpha\one.txt D:\beta\two.txt done`,
+      "copy ${ABSOLUTE_PATH} ${ABSOLUTE_PATH} done",
+      { absolutePaths: 2, secrets: 0 },
+    ],
+    [
+      "punctuation-separated-drives",
+      String.raw`pair (C:\alpha\one.txt)(D:\beta\two.txt),V:\gamma\three.txt done`,
+      "pair (${ABSOLUTE_PATH})(${ABSOLUTE_PATH}),${ABSOLUTE_PATH} done",
+      { absolutePaths: 3, secrets: 0 },
+    ],
+    [
+      "quoted-path-with-spaces-and-parentheses",
+      String.raw`quoted "S:\Program Files (x86)\Tool Kit\bin\tool.exe" ran ok`,
+      'quoted "${ABSOLUTE_PATH}" ran ok',
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "quoted-final-segment-with-spaces",
+      String.raw`quoted "S:\output\sensitive artifact.bin" diagnostic retained`,
+      'quoted "${ABSOLUTE_PATH}" diagnostic retained',
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "parenthesized-final-directory-with-spaces",
+      String.raw`directory (S:\Program Files (x86)) diagnostic retained`,
+      "directory (${ABSOLUTE_PATH}) diagnostic retained",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "forward-slash-flag-after-path-survives",
+      String.raw`MSBuild Q:\MsBuild\Current\Bin\MSBuild.exe /p:Configuration=Development`,
+      "MSBuild ${ABSOLUTE_PATH} /p:Configuration=Development",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "unc-pair-with-spaced-segment",
+      String.raw`unc \\host\share\dir with space\file.txt and \\other\share\z.dll end`,
+      "unc ${ABSOLUTE_PATH} and ${ABSOLUTE_PATH} end",
+      { absolutePaths: 2, secrets: 0 },
+    ],
+    [
+      "user-home-collapses-username-and-subtree",
+      String.raw`home T:\Users\Jane.Doe\AppData\Local\Temp\file.log rolled`,
+      "home ${USER_HOME} rolled",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "bare-user-home-collapses-the-ambiguous-tail",
+      String.raw`home T:\Users\Jane Doe`,
+      "home ${USER_HOME}",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "bare-user-home-preserves-explicit-diagnostic-delimiter",
+      String.raw`home T:\Users\Jane Doe | END_MARKER retained`,
+      "home ${USER_HOME} | END_MARKER retained",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "mixed-separator-drive",
+      String.raw`mixed U:/Synthetic Toolchains/VC\Tools/MSVC\14.44.35207 ok`,
+      "mixed ${ABSOLUTE_PATH} ok",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "relative-paths-and-versions-survive",
+      String.raw`relative Engine\Binaries\Win64\UnrealEditor.exe and version 14.44.35207 stay`,
+      String.raw`relative Engine\Binaries\Win64\UnrealEditor.exe and version 14.44.35207 stay`,
+      { absolutePaths: 0, secrets: 0 },
+    ],
+    [
+      "urls-and-times-survive",
+      "url https://example.com/build/feed and time 10:30:15 stay",
+      "url https://example.com/build/feed and time 10:30:15 stay",
+      { absolutePaths: 0, secrets: 0 },
+    ],
+    [
+      "source-root-keeps-repo-relative-remainder",
+      String.raw`read S:\Repo Root\UAgent\scripts\build.mjs ok`,
+      "read ${SOURCE_ROOT}\\scripts\\build.mjs ok",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "source-root-matches-case-insensitively",
+      String.raw`read s:\REPO ROOT\uagent\scripts\x.mjs ok`,
+      "read ${SOURCE_ROOT}\\scripts\\x.mjs ok",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "ue-root-keeps-install-relative-remainder",
+      String.raw`dotnet T:\UE_5.8\Engine Root\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe ran`,
+      "dotnet ${UE_ROOT}\\Engine\\Binaries\\DotNET\\UnrealBuildTool\\UnrealBuildTool.exe ran",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "package-root-keeps-package-relative-remainder",
+      String.raw`out Q:\PkgRoot\Out\Binaries\Win64 written`,
+      "out ${PACKAGE_ROOT}\\Binaries\\Win64 written",
+      { absolutePaths: 1, secrets: 0 },
+    ],
+    [
+      "keyword-bearer-secrets",
+      "auth token=sekret123 password: hunter2 Bearer abc.def.ghi end",
+      "auth token=${REDACTED} password=${REDACTED} Bearer ${REDACTED} end",
+      { absolutePaths: 0, secrets: 3 },
+    ],
+    [
+      "quoted-and-credential-secrets",
+      'set password: "hunter2 x" and credential=zzz9 done',
+      "set password=${REDACTED} and credential=${REDACTED} done",
+      { absolutePaths: 0, secrets: 2 },
+    ],
+    [
+      "authorization-bearer-combination",
+      "header Authorization: Bearer eyJhbGciOi.payload.sig sent",
+      "header Authorization=${REDACTED} sent",
+      { absolutePaths: 0, secrets: 2 },
+    ],
+    [
+      "authorization-basic-combination",
+      "header Authorization: Basic Zm9vOmJhcg== sent",
+      "header Authorization=${REDACTED} sent",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "secret-command-flags",
+      "invoke --token abc123 --password='local pass' completed",
+      "invoke --token=${REDACTED} --password=${REDACTED} completed",
+      { absolutePaths: 0, secrets: 2 },
+    ],
+    [
+      "api-key-and-username",
+      "api key=abc123 username: local-user retained",
+      "api key=${REDACTED} username=${REDACTED} retained",
+      { absolutePaths: 0, secrets: 2 },
+    ],
+    [
+      "space-separated-secret-preserves-punctuation-and-marker",
+      "token synthetic-space-value, END_MARKER retained",
+      "token=${REDACTED}, END_MARKER retained",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "tab-separated-secret-preserves-tab-suffix",
+      "password\tsynthetic-tab-value\tTAB_MARKER retained",
+      "password=${REDACTED}\tTAB_MARKER retained",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "space-separated-quoted-secret",
+      'credential "synthetic quoted value"; QUOTED_MARKER retained',
+      "credential=${REDACTED}; QUOTED_MARKER retained",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "space-separated-quoted-secret-with-an-escaped-inner-quote",
+      String.raw`credential "synthetic \"quoted\" value"; QUOTED_INNER_MARKER retained`,
+      "credential=${REDACTED}; QUOTED_INNER_MARKER retained",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "escaped-json-space-separated-secret",
+      String.raw`payload {\"api_key\" \"synthetic-escaped-value\",\"message\":\"retained\"}`,
+      'payload {\\"api_key\\" \\"${REDACTED}\\",\\"message\\":\\"retained\\"}',
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "escaped-json-secret-with-an-escaped-inner-quote",
+      String.raw`payload {\"token\" \"synthetic \\\"quoted\\\" value\",\"message\":\"retained\"}`,
+      'payload {\\"token\\" \\"${REDACTED}\\",\\"message\\":\\"retained\\"}',
+      { absolutePaths: 2, secrets: 1 },
+    ],
+    [
+      "space-separated-secret-preserves-closing-punctuation",
+      "username synthetic-user-value?!); PUNCTUATION_MARKER retained",
+      "username=${REDACTED}?!); PUNCTUATION_MARKER retained",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "space-separated-bare-secret-retains-internal-punctuation",
+      "secret synthetic.part/path?mode=one! END_MARKER retained",
+      "secret=${REDACTED}! END_MARKER retained",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "space-separated-path-secret-is-redacted-before-path-placeholders",
+      String.raw`password Q:\PkgRoot\Out\synthetic-private.bin END_MARKER retained`,
+      "password=${REDACTED} END_MARKER retained",
+      { absolutePaths: 1, secrets: 1 },
+    ],
+    [
+      "authorization-bearer-preserves-terminal-punctuation",
+      "Authorization Bearer synthetic.token. END_MARKER retained",
+      "Authorization=${REDACTED}. END_MARKER retained",
+      { absolutePaths: 0, secrets: 2 },
+    ],
+    [
+      "multiple-secret-separators-preserve-trailing-marker",
+      "token one\tpassword 'two words' credential=three username: four; MULTI_MARKER retained",
+      "token=${REDACTED}\tpassword=${REDACTED} credential=${REDACTED} username=${REDACTED}; MULTI_MARKER retained",
+      { absolutePaths: 0, secrets: 4 },
+    ],
+    [
+      "whitespace-separated-placeholders-are-idempotent",
+      'token ${REDACTED}\tpassword "${REDACTED}"; IDEMPOTENT_MARKER retained',
+      "token=${REDACTED}\tpassword=${REDACTED}; IDEMPOTENT_MARKER retained",
+      { absolutePaths: 0, secrets: 0 },
+    ],
+    [
+      "unterminated-double-quoted-secret-at-eof",
+      'password="synthetic-double-tail',
+      "password=${REDACTED}",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "unterminated-single-quoted-secret-before-line-feed",
+      "credential='synthetic-single-tail\nNEXT_LINE_MARKER retained",
+      "credential=${REDACTED}\nNEXT_LINE_MARKER retained",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "unterminated-outer-escaped-secret-before-carriage-return-line-feed",
+      String.raw`credential \"synthetic-outer-tail` + "\r\nNEXT_CRLF_MARKER retained",
+      "credential=${REDACTED}\r\nNEXT_CRLF_MARKER retained",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "unterminated-nested-escaped-secret-at-eof",
+      String.raw`credential \"synthetic \\\"nested\\\" tail`,
+      "credential=${REDACTED}",
+      { absolutePaths: 2, secrets: 1 },
+    ],
+    [
+      "unterminated-escaped-json-secret-at-eof",
+      String.raw`payload {\"token\":\"synthetic-json-tail`,
+      'payload {\\"token\\":\\"${REDACTED}\\"',
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "bare-secret-internal-comma",
+      "password=synthetic,tail",
+      "password=${REDACTED}",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "bare-secret-internal-semicolon",
+      "password=synthetic;tail",
+      "password=${REDACTED}",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "bare-secret-internal-closing-parenthesis",
+      "password=synthetic)tail",
+      "password=${REDACTED}",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "bare-secret-internal-closing-square-bracket",
+      "password=synthetic]tail",
+      "password=${REDACTED}",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "bare-secret-internal-closing-curly-bracket",
+      "password=synthetic}tail",
+      "password=${REDACTED}",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "bare-secret-terminal-punctuation-and-marker",
+      "password=synthetic?!,;)]} END_PUNCTUATION_MARKER retained",
+      "password=${REDACTED}?!,;)]} END_PUNCTUATION_MARKER retained",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "standalone-bearer-internal-punctuation",
+      "Bearer synthetic,tail END_BEARER_MARKER retained",
+      "Bearer ${REDACTED} END_BEARER_MARKER retained",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "credential-endpoint-internal-punctuation",
+      "connect https://example.com/api?token=synthetic,tail END_ENDPOINT_MARKER retained",
+      "connect ${REDACTED_ENDPOINT} END_ENDPOINT_MARKER retained",
+      { absolutePaths: 0, secrets: 2 },
+    ],
+    [
+      "json-secret-values-preserve-neighbor-fields",
+      '{"token":"abc123","authorization":"Bearer abc.def","message":"retained"}',
+      '{"token":"${REDACTED}","authorization":"${REDACTED}","message":"retained"}',
+      { absolutePaths: 0, secrets: 3 },
+    ],
+    [
+      "escaped-json-secret-value",
+      String.raw`payload {\"token\":\"abc123\",\"message\":\"retained\"}`,
+      'payload {\\"token\\":\\"${REDACTED}\\",\\"message\\":\\"retained\\"}',
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "established-secret-key-variants",
+      "SecurityToken=one X-Api-Key: two auth_token=three passwd=four AWS_SECRET_ACCESS_KEY=five session_token=six AWS_SESSION_TOKEN=seven id_token=eight x-api_key=nine aws-secret_access-key=ten api\tkey=eleven retained",
+      "SecurityToken=${REDACTED} X-Api-Key=${REDACTED} auth_token=${REDACTED} passwd=${REDACTED} AWS_SECRET_ACCESS_KEY=${REDACTED} session_token=${REDACTED} AWS_SESSION_TOKEN=${REDACTED} id_token=${REDACTED} x-api_key=${REDACTED} aws-secret_access-key=${REDACTED} api\tkey=${REDACTED} retained",
+      { absolutePaths: 0, secrets: 11 },
+    ],
+    [
+      "credential-endpoint-userinfo",
+      "connect https://alice:SENSITIVE_PASS@example.com/api failed",
+      "connect ${REDACTED_ENDPOINT} failed",
+      { absolutePaths: 0, secrets: 1 },
+    ],
+    [
+      "credential-endpoint-query",
+      "connect https://example.com/api?access_token=SENSITIVE_TOKEN&mode=live failed",
+      "connect ${REDACTED_ENDPOINT} failed",
+      { absolutePaths: 0, secrets: 2 },
+    ],
+    [
+      "credential-endpoint-delimiters",
+      "fetch (https://alice:one@example.com/api), [https://example.com/api?token=two]; END_MARKER",
+      "fetch (${REDACTED_ENDPOINT}), [${REDACTED_ENDPOINT}]; END_MARKER",
+      { absolutePaths: 0, secrets: 3 },
+    ],
+  ];
+  for (const [name, input, expected, rawLeaks] of cases) {
+    const redacted = redactTranscript(input, roots);
+    assert.equal(redacted, expected, name);
+    assert.equal(redactTranscript(redacted, roots), redacted, `${name} idempotence`);
+    assert.deepEqual(findTranscriptLeaks(redacted), { absolutePaths: 0, secrets: 0 }, name);
+    assert.deepEqual(findTranscriptLeaks(input), rawLeaks, `${name} raw detection`);
+  }
+  assert.equal(redactTranscript("", roots), "");
+  assert.deepEqual(findTranscriptLeaks(undefined), { absolutePaths: 0, secrets: 0 });
+});
+
+test("malformed transcript quotes fail closed at EOF and every line boundary", () => {
+  const slash = String.fromCharCode(92);
+  const shapes = [
+    ["double", 'password="synthetic-double-tail'],
+    ["single", "password='synthetic-single-tail"],
+    ["outer-escaped", `password=${slash}"synthetic-outer-tail`],
+    [
+      "nested-escaped",
+      `password=${slash}"synthetic ${slash.repeat(3)}"nested${slash.repeat(3)}" tail`,
+    ],
+  ];
+  const endings = [
+    ["eof", ""],
+    ["lf", "\nNEXT_LF_MARKER retained"],
+    ["cr", "\rNEXT_CR_MARKER retained"],
+    ["crlf", "\r\nNEXT_CRLF_MARKER retained"],
+  ];
+  for (const [shape, prefix] of shapes) {
+    for (const [endingName, ending] of endings) {
+      const input = prefix + ending;
+      const redacted = redactTranscript(input, []);
+      assert.equal(redacted, `password=\${REDACTED}${ending}`, `${shape} ${endingName}`);
+      assert.equal(findTranscriptLeaks(input).secrets, 1, `${shape} ${endingName} raw`);
+      assert.deepEqual(
+        findTranscriptLeaks(redacted),
+        { absolutePaths: 0, secrets: 0 },
+        `${shape} ${endingName} post`,
+      );
+      assert.equal(redactTranscript(redacted, []), redacted, `${shape} ${endingName} idempotence`);
+    }
+  }
+});
+
+test("bare transcript punctuation distinguishes adjacent value bytes from terminal diagnostics", () => {
+  for (const punctuation of [",", ";", ")", "]", "}"]) {
+    const adjacent = `--token synthetic${punctuation}adjacent-tail`;
+    const adjacentRedacted = redactTranscript(adjacent, []);
+    assert.equal(adjacentRedacted, "--token=${REDACTED}", `${punctuation} adjacent`);
+    assert.equal(findTranscriptLeaks(adjacent).secrets, 1, `${punctuation} adjacent raw`);
+    assert.deepEqual(findTranscriptLeaks(adjacentRedacted), { absolutePaths: 0, secrets: 0 });
+
+    const terminal = `--token synthetic${punctuation} END_MARKER retained`;
+    const terminalRedacted = redactTranscript(terminal, []);
+    assert.equal(
+      terminalRedacted,
+      `--token=\${REDACTED}${punctuation} END_MARKER retained`,
+      `${punctuation} terminal`,
+    );
+    assert.equal(findTranscriptLeaks(terminal).secrets, 1, `${punctuation} terminal raw`);
+    assert.deepEqual(findTranscriptLeaks(terminalRedacted), { absolutePaths: 0, secrets: 0 });
+  }
+});
+
+test(
+  "transcript secret parsing stays bounded for long ordinary and escaped malformed values",
+  { timeout: 5_000 },
+  () => {
+    const slash = String.fromCharCode(92);
+    for (const kind of ["ordinary", "escaped"]) {
+      let previousElapsed = 0;
+      for (const size of [25_000, 50_000, 100_000, 200_000]) {
+        const input =
+          kind === "ordinary"
+            ? `password="${"x".repeat(size)}`
+            : `password=${slash}"${slash.repeat(size)}`;
+        const startedAt = performance.now();
+        let redacted;
+        let rawLeaks;
+        for (let round = 0; round < 5; round += 1) {
+          redacted = redactTranscript(input, []);
+          rawLeaks = findTranscriptLeaks(input);
+        }
+        const elapsed = performance.now() - startedAt;
+        assert.equal(redacted, "password=${REDACTED}", `${kind} ${size} redaction`);
+        assert.equal(rawLeaks.secrets, 1, `${kind} ${size} raw detection`);
+        assert.deepEqual(
+          findTranscriptLeaks(redacted),
+          { absolutePaths: 0, secrets: 0 },
+          `${kind} ${size} post scan`,
+        );
+        assert.ok(elapsed < 2_000, `${kind} ${size} exceeded the conservative bound: ${elapsed}`);
+        if (previousElapsed > 0) {
+          assert.ok(
+            elapsed <= previousElapsed * 3.25 + 20,
+            `${kind} ${size} repeated the former superlinear growth: ${previousElapsed} -> ${elapsed}`,
+          );
+        }
+        previousElapsed = elapsed;
+      }
+    }
+  },
+);
+
+function writeBuilder(path, failExit = 0, { overflowChannel = null } = {}) {
   writeFileSync(
     path,
     [
@@ -1353,7 +1852,69 @@ function writeBuilder(path, failExit = 0) {
       'writeFileSync(resolve(output,"Binaries","Win64","UnrealEditor-UAgentAssetTools.dll"),Buffer.from("fixture-module-v1"));',
       'writeFileSync(resolve(output,"Binaries","Win64","UnrealEditor.modules"),JSON.stringify({BuildId:"55116800",Modules:{UAgentAssetTools:"UnrealEditor-UAgentAssetTools.dll"}},null,2)+"\\n");',
       'console.log(\'UAGENT_TOOLCHAIN_JSON:{"compatibleChangelist":55116800,"compilerName":"MSVC","compilerVersion":"14.44.35207","engineChangelist":56057345,"engineVersion":"5.8.1","moduleBuildId":"55116800","sdkName":"Windows SDK","sdkVersion":"10.0.26100.0"}\');',
+      ...(overflowChannel
+        ? [
+            `console.${overflowChannel === "stdout" ? "log" : "error"}(${JSON.stringify(
+              overflowChannel === "stdout" ? 'password="' : "credential='",
+            )}+"x".repeat(200000));`,
+          ]
+        : []),
       `process.exit(${failExit});`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+}
+
+function writeAdversarialBuilder(path, ueRoot) {
+  const stdoutLines = [
+    "===== Toolchain Information =====",
+    String.raw`Using Visual Studio 14.44.35228 toolchain (Z:\Synthetic Toolchains\VC\Tools\MSVC\14.44.35207) and Windows 10.0.22621.0 SDK (Y:\Synthetic SDK Root\Windows Kits\10).`,
+    String.raw`MSBuild Q:\MsBuild\Current\Bin\MSBuild.exe /p:Configuration=Development`,
+    `dotnet ${ueRoot}\\Engine\\Binaries\\DotNET\\UnrealBuildTool\\UnrealBuildTool.exe running`,
+    String.raw`cache T:\Users\Build User\AppData\Local\DDC hit`,
+    String.raw`mirror \\buildshare\drop\latest build\UAgentAssetTools.dll and \\archive\ue\pkg.dll done`,
+    String.raw`compiler X:/Synthetic Toolchains/VC\Tools/MSVC\14.44.35207\bin\Hostx64\x64\cl.exe invoked`,
+    String.raw`device \\?\UNC\private-host\private-share\artifact.bin opened`,
+    String.raw`drive-root C:\ checked`,
+    String.raw`list C:\alpha\one.txt;D:\beta\two.txt end`,
+    "auth token=sekret123 password: hunter2 Bearer abc.def.ghi end",
+    "headers Authorization: Basic Zm9vOmJhcg== --token command-secret end",
+    "whitespace token synthetic-stdout-value; END_STDOUT retained",
+    'truncated password="synthetic-stdout-truncated',
+    "punctuation token=synthetic,stdout-tail END_PUNCTUATION retained",
+    "Tandem marker: build completed with 0 warnings and 0 errors",
+    "feed https://example.com/build/feed at 10:30:15 ok",
+  ];
+  const stderrLines = [
+    String.raw`warning Z:\warnings\some warning file\wb.txt stale`,
+    String.raw`fatal \\dead\share\x.dll missing`,
+    'password\t"synthetic stderr value"\tEND_STDERR retained',
+    "truncated credential='synthetic-stderr-truncated",
+    "note no absolute paths here",
+  ];
+  writeFileSync(
+    path,
+    [
+      'import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";',
+      'import { resolve } from "node:path";',
+      "const args=process.argv.slice(2);",
+      'if(args.length!==5||args[0]!=="BuildPlugin"||args[3]!=="-TargetPlatforms=Win64"||args[4]!=="-Rocket")process.exit(91);',
+      'const plugin=args[1].slice("-Plugin=".length);',
+      'const output=args[2].slice("-Package=".length);',
+      'mkdirSync(resolve(output,"Resources"),{recursive:true});',
+      'mkdirSync(resolve(output,"Binaries","Win64"),{recursive:true});',
+      'copyFileSync(plugin,resolve(output,"UAgentAssetTools.uplugin"));',
+      'copyFileSync(resolve(plugin,"..","Resources","uagent-asset-tools.schema.json"),resolve(output,"Resources","uagent-asset-tools.schema.json"));',
+      'writeFileSync(resolve(output,"Binaries","Win64","UnrealEditor-UAgentAssetTools.dll"),Buffer.from("fixture-module-v1"));',
+      'writeFileSync(resolve(output,"Binaries","Win64","UnrealEditor.modules"),JSON.stringify({BuildId:"55116800",Modules:{UAgentAssetTools:"UnrealEditor-UAgentAssetTools.dll"}},null,2)+"\\n");',
+      `const stdoutLines=${JSON.stringify(stdoutLines)};`,
+      `const stderrLines=${JSON.stringify(stderrLines)};`,
+      "for(const line of stdoutLines)console.log(line);",
+      "console.log(`writing ${output}\\\\Binaries\\\\Win64\\\\UnrealEditor-UAgentAssetTools.dll`);",
+      "console.log(`reading ${plugin}`);",
+      "for(const line of stderrLines)console.error(line);",
+      "process.exit(0);",
       "",
     ].join("\n"),
     "utf8",
@@ -2221,6 +2782,305 @@ test(
 );
 
 test(
+  "final build redacts captured stdout and stderr when spawn reports maxBuffer truncation",
+  { skip: process.platform !== "win32" },
+  () => {
+    const fixture = createCandidate();
+    try {
+      const externalLogPath = resolve(fixture.goodUeRoot, "uat-truncated-external.log");
+      writeFileSync(
+        externalLogPath,
+        String.raw`credential \"synthetic-external-truncated-tail`,
+        "utf8",
+      );
+      expectCode(
+        () => runBuild([], { maxBuffer: 256 * 1024 * 1024 + 1 }),
+        "BUILD_MAX_BUFFER_INVALID",
+      );
+      for (const [channel, prefix] of [
+        ["stdout", 'password="'],
+        ["stderr", "credential='"],
+      ]) {
+        writeBuilder(resolve(fixture.goodUeRoot, "builder.mjs"), 0, {
+          overflowChannel: channel,
+        });
+        const evidenceRoot = resolve(
+          fixture.clone,
+          "external",
+          channel === "stdout"
+            ? "mvp15d-final-d13-d16-20260728_120012"
+            : "mvp15d-final-d13-d16-20260728_120013",
+        );
+        const packageRoot = resolve(evidenceRoot, "package", "UAgentAssetTools");
+        const failed = runBuild(
+          [
+            "--mode",
+            "live",
+            "--source",
+            fixture.clone,
+            "--package",
+            packageRoot,
+            "--runuat",
+            fixture.goodRunUat,
+            "--ue-root",
+            fixture.goodUeRoot,
+            "--task-id",
+            TASK_ID,
+            "--evidence-root",
+            evidenceRoot,
+            "--task-marker",
+            `uagent-mvp15d-final-${channel}-overflow-0012`,
+            "--uat-log",
+            externalLogPath,
+          ],
+          { maxBuffer: 1_024 },
+        );
+        assert.equal(failed.status, "build_failed");
+        assert.equal(failed.reason, "RUNUAT_OUTPUT_TRUNCATED");
+        assert.equal(failed.childExitCode, null);
+        assert.equal(failed.wrapperExitCode, 1);
+        assert.equal(failed.closeout.childExited, false);
+        assert.equal(failed.packagePresent, false);
+        assert.equal(existsSync(packageRoot), false);
+        assert.equal(failed.sourceArtifacts.length, 3);
+        for (const artifact of failed.sourceArtifacts) {
+          const retained = readFileSync(
+            resolve(evidenceRoot, artifact.relativePath.split("/").join("\\")),
+            "utf8",
+          );
+          assert.deepEqual(
+            findTranscriptLeaks(retained),
+            { absolutePaths: 0, secrets: 0 },
+            `${channel} ${artifact.relativePath}`,
+          );
+          assert.equal(retained.includes("synthetic-external-truncated-tail"), false);
+          assert.equal(retained.includes(prefix), false);
+        }
+      }
+    } finally {
+      rmSync(fixture.base, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "final build removes a partial package when transcript retention fails closed",
+  { skip: process.platform !== "win32" },
+  () => {
+    const fixture = createCandidate();
+    try {
+      const evidenceRoot = resolve(
+        fixture.clone,
+        "external",
+        "mvp15d-final-d13-d16-20260728_120011",
+      );
+      const packageRoot = resolve(evidenceRoot, "package", "UAgentAssetTools");
+      expectCode(
+        () =>
+          runBuild([
+            "--mode",
+            "live",
+            "--source",
+            fixture.clone,
+            "--package",
+            packageRoot,
+            "--runuat",
+            fixture.goodRunUat,
+            "--ue-root",
+            fixture.goodUeRoot,
+            "--task-id",
+            TASK_ID,
+            "--evidence-root",
+            evidenceRoot,
+            "--task-marker",
+            "uagent-mvp15d-final-retention-fixture-0011",
+            "--uat-log",
+            resolve(fixture.base, "missing-uat.log"),
+          ]),
+        "BUILD_UAT_LOG_MISSING",
+      );
+      assert.equal(existsSync(packageRoot), false);
+    } finally {
+      rmSync(fixture.base, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "final build retained transcripts deterministically redact drive, UNC, user-home and secret bytes",
+  { skip: process.platform !== "win32" },
+  () => {
+    const fixture = createCandidate();
+    try {
+      writeAdversarialBuilder(resolve(fixture.goodUeRoot, "builder.mjs"), fixture.goodUeRoot);
+      for (const rawSecret of [
+        "whitespace token synthetic-stdout-value; END_STDOUT retained",
+        'password\t"synthetic stderr value"\tEND_STDERR retained',
+        'LogPrivacy: credential\t\\"synthetic-external-value\\"; END_EXTERNAL retained',
+        'truncated password="synthetic-stdout-truncated',
+        "truncated credential='synthetic-stderr-truncated",
+        String.raw`LogTruncated: credential=\"synthetic-external-truncated`,
+        "punctuation token=synthetic,stdout-tail END_PUNCTUATION retained",
+      ]) {
+        assert.deepEqual(findTranscriptLeaks(rawSecret), { absolutePaths: 0, secrets: 1 });
+      }
+      const externalLogPath = resolve(fixture.goodUeRoot, "uat-external-raw.log");
+      writeFileSync(
+        externalLogPath,
+        [
+          String.raw`LogInit: Y:\Synthetic SDK Root\Windows Kits\10 extension loaded`,
+          String.raw`LogTemp: W:\Synthetic Legacy Engine\file.uasset referenced`,
+          "LogAuth: api_key=abcdef123456 present",
+          'LogPrivacy: credential\t\\"synthetic-external-value\\"; END_EXTERNAL retained',
+          String.raw`LogTruncated: credential=\"synthetic-external-truncated`,
+          "",
+        ].join("\r\n"),
+        "utf8",
+      );
+      const evidenceRoot = resolve(
+        fixture.clone,
+        "external",
+        "mvp15d-final-d13-d16-20260728_120010",
+      );
+      const packageRoot = resolve(evidenceRoot, "package", "UAgentAssetTools");
+      const build = runBuild([
+        "--mode",
+        "live",
+        "--source",
+        fixture.clone,
+        "--package",
+        packageRoot,
+        "--runuat",
+        fixture.goodRunUat,
+        "--ue-root",
+        fixture.goodUeRoot,
+        "--task-id",
+        TASK_ID,
+        "--evidence-root",
+        evidenceRoot,
+        "--task-marker",
+        "uagent-mvp15d-final-redaction-fixture-0010",
+        "--uat-log",
+        externalLogPath,
+      ]);
+      assert.equal(build.status, "build_completed", JSON.stringify(build));
+      assert.equal(build.childExitCode, 0);
+      const ledger = JSON.parse(
+        readFileSync(resolve(evidenceRoot, "metadata", "build-command.json"), "utf8"),
+      );
+      assert.equal(ledger.toolchainFacts.compilerName, "MSVC");
+      assert.equal(ledger.toolchainFacts.compilerVersion, "14.44.35207");
+      assert.equal(ledger.toolchainFacts.sdkName, "Windows SDK");
+      assert.equal(ledger.toolchainFacts.sdkVersion, "10.0.22621.0");
+
+      const logs = {
+        stdout: readFileSync(resolve(evidenceRoot, "logs", "runuat.stdout.redacted.log"), "utf8"),
+        stderr: readFileSync(resolve(evidenceRoot, "logs", "runuat.stderr.redacted.log"), "utf8"),
+        external: readFileSync(
+          resolve(evidenceRoot, "logs", "runuat.external.redacted.log"),
+          "utf8",
+        ),
+      };
+      for (const [name, content] of Object.entries(logs)) {
+        assert.equal(
+          /(?<![A-Za-z])[A-Za-z]:[\\/](?![\\/])/.test(content),
+          false,
+          `${name} drive prefix`,
+        );
+        assert.equal(/(?<![:\\/])[\\/]{2}(?![\\/])\S/.test(content), false, `${name} unc prefix`);
+        assert.deepEqual(
+          findTranscriptLeaks(content),
+          { absolutePaths: 0, secrets: 0 },
+          `${name} leak scan`,
+        );
+        for (const prohibited of [
+          "sekret123",
+          "hunter2",
+          "abc.def.ghi",
+          "abcdef123456",
+          "synthetic-stdout-value",
+          "synthetic-stdout-truncated",
+          "synthetic,stdout-tail",
+          "synthetic stderr value",
+          "synthetic-stderr-truncated",
+          "synthetic-external-value",
+          "synthetic-external-truncated",
+          "Zm9vOmJhcg==",
+          "command-secret",
+          "Build User",
+          "Synthetic Toolchains",
+          String.raw`MsBuild\Current`,
+          "buildshare",
+          "Synthetic SDK Root",
+        ]) {
+          assert.equal(content.includes(prohibited), false, `${name} must not contain it`);
+        }
+      }
+
+      assert.match(
+        logs.stdout,
+        /Using Visual Studio 14\.44\.35228 toolchain \(\$\{ABSOLUTE_PATH\}\) and Windows 10\.0\.22621\.0 SDK \(\$\{ABSOLUTE_PATH\}\)\./,
+      );
+      assert.match(logs.stdout, /MSBuild \$\{ABSOLUTE_PATH\} \/p:Configuration=Development/);
+      assert.match(
+        logs.stdout,
+        /dotnet \$\{UE_ROOT\}\\Engine\\Binaries\\DotNET\\UnrealBuildTool\\UnrealBuildTool\.exe running/,
+      );
+      assert.match(
+        logs.stdout,
+        /writing \$\{PACKAGE_ROOT\}\\Binaries\\Win64\\UnrealEditor-UAgentAssetTools\.dll/,
+      );
+      assert.match(
+        logs.stdout,
+        /reading \$\{SOURCE_ROOT\}\\integrations\\unreal\\UAgentAssetTools\\UAgentAssetTools\.uplugin/,
+      );
+      assert.match(logs.stdout, /cache \$\{USER_HOME\} hit/);
+      assert.match(logs.stdout, /mirror \$\{ABSOLUTE_PATH\} and \$\{ABSOLUTE_PATH\} done/);
+      assert.match(logs.stdout, /compiler \$\{ABSOLUTE_PATH\} invoked/);
+      assert.match(logs.stdout, /device \$\{ABSOLUTE_PATH\} opened/);
+      assert.match(logs.stdout, /drive-root \$\{ABSOLUTE_PATH\} checked/);
+      assert.match(logs.stdout, /list \$\{ABSOLUTE_PATH\};\$\{ABSOLUTE_PATH\} end/);
+      assert.match(
+        logs.stdout,
+        /auth token=\$\{REDACTED\} password=\$\{REDACTED\} Bearer \$\{REDACTED\} end/,
+      );
+      assert.match(logs.stdout, /headers Authorization=\$\{REDACTED\} --token=\$\{REDACTED\} end/);
+      assert.match(logs.stdout, /whitespace token=\$\{REDACTED\}; END_STDOUT retained/);
+      assert.match(logs.stdout, /truncated password=\$\{REDACTED\}/);
+      assert.match(logs.stdout, /punctuation token=\$\{REDACTED\} END_PUNCTUATION retained/);
+      assert.match(logs.stdout, /Tandem marker: build completed with 0 warnings and 0 errors/);
+      assert.match(logs.stdout, /feed https:\/\/example\.com\/build\/feed at 10:30:15 ok/);
+      assert.match(logs.stderr, /warning \$\{ABSOLUTE_PATH\} stale/);
+      assert.match(logs.stderr, /fatal \$\{ABSOLUTE_PATH\} missing/);
+      assert.match(logs.stderr, /password=\$\{REDACTED\}\tEND_STDERR retained/);
+      assert.match(logs.stderr, /truncated credential=\$\{REDACTED\}/);
+      assert.match(logs.stderr, /note no absolute paths here/);
+      assert.match(logs.external, /LogInit: \$\{ABSOLUTE_PATH\} extension loaded/);
+      assert.match(logs.external, /LogTemp: \$\{ABSOLUTE_PATH\} referenced/);
+      assert.match(logs.external, /LogAuth: api_key=\$\{REDACTED\} present/);
+      assert.match(logs.external, /LogPrivacy: credential=\$\{REDACTED\}; END_EXTERNAL retained/);
+      assert.match(logs.external, /LogTruncated: credential=\$\{REDACTED\}/);
+
+      assert.equal(build.sourceArtifacts.length, 3);
+      for (const artifact of build.sourceArtifacts) {
+        assert.equal(artifact.redactionStatus, "deterministically-redacted");
+        const retained = readFileSync(
+          resolve(evidenceRoot, artifact.relativePath.split("/").join("\\")),
+        );
+        assert.equal(artifact.size, retained.length, artifact.relativePath);
+        assert.equal(
+          artifact.sha256,
+          createHash("sha256").update(retained).digest("hex"),
+          artifact.relativePath,
+        );
+      }
+    } finally {
+      rmSync(fixture.base, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
   "final manifest recomputes artifacts while hand-authored loaded JSON remains structural-only",
   { skip: process.platform !== "win32" },
   () => {
@@ -2262,6 +3122,33 @@ test(
       writeFileSync(rawLogPath, "tampered transcript\n");
       expectCode(() => verifyManifest(args), "BUILD_SOURCE_ARTIFACT_HASH_MISMATCH");
       writeFileSync(rawLogPath, rawLogBytes);
+
+      const buildResultPath = resolve(evidenceRoot, "metadata", "build-result.json");
+      const buildResultText = readFileSync(buildResultPath, "utf8");
+      for (const coherentLeak of [
+        Buffer.from(String.raw`coherent C:\private\artifact.bin`),
+        Buffer.from("X-Api-Key: coherent-secret"),
+        Buffer.from("token synthetic-coherent-value"),
+        Buffer.from('password="synthetic-double-truncated'),
+        Buffer.from("credential='synthetic-single-truncated"),
+        Buffer.from(String.raw`credential \"synthetic-outer-truncated`),
+        Buffer.from(String.raw`credential \"synthetic \\\"nested\\\" truncated`),
+        ...[",", ";", ")", "]", "}"].map((punctuation) =>
+          Buffer.from(`password=synthetic${punctuation}adjacent-tail`),
+        ),
+      ]) {
+        writeFileSync(rawLogPath, coherentLeak);
+        const coherentResult = JSON.parse(buildResultText);
+        const coherentArtifact = coherentResult.sourceArtifacts.find(
+          ({ relativePath }) => relativePath === "logs/runuat.stdout.redacted.log",
+        );
+        coherentArtifact.size = coherentLeak.length;
+        coherentArtifact.sha256 = cryptoHash(coherentLeak);
+        writeFileSync(buildResultPath, `${JSON.stringify(coherentResult, null, 2)}\n`);
+        expectCode(() => verifyManifest(args), "BUILD_SOURCE_ARTIFACT_PRIVACY_INVALID");
+        writeFileSync(rawLogPath, rawLogBytes);
+        writeFileSync(buildResultPath, buildResultText);
+      }
 
       const sourceDirectory = resolve(packageRoot, "Source");
       mkdirSync(sourceDirectory);
@@ -2629,12 +3516,12 @@ test(
       );
       for (const command of ["ue-automation", "product-capture", "ui-lifecycle"]) {
         const planned = runFinal(command, {
-            mode: "plan",
-            repository: fixture.clone,
-            "evidence-root": root,
-            "task-id": TASK_ID,
-            marker: preflightArgs.marker,
-            port: preflightArgs.port,
+          mode: "plan",
+          repository: fixture.clone,
+          "evidence-root": root,
+          "task-id": TASK_ID,
+          marker: preflightArgs.marker,
+          port: preflightArgs.port,
         });
         assert.match(planned.status, /_planned$/);
         if (command === "product-capture") {
@@ -2648,24 +3535,21 @@ test(
           ]);
         }
         if (command === "ui-lifecycle") {
-          assert.deepEqual(
-            planned.plan.ledger,
-            {
-              uiDryRunActions: 1,
-              dryRunCalls: 5,
-              nativeRegistrations: 1,
-              opaqueTokensIssued: 1,
-              nativeExecuteGuards: 5,
-              executeCalls: 5,
-              verifyMutations: 0,
-              nativeRollbackGuards: 4,
-              rollbackCalls: 4,
-              secondExecuteCalls: 0,
-              secondRollbackCalls: 0,
-              replaySideEffectDelta: [0, 0, 0, 0, 0],
-              waitElapsedMilliseconds: { minimum: 65_000, maximum: 90_000 },
-            },
-          );
+          assert.deepEqual(planned.plan.ledger, {
+            uiDryRunActions: 1,
+            dryRunCalls: 5,
+            nativeRegistrations: 1,
+            opaqueTokensIssued: 1,
+            nativeExecuteGuards: 5,
+            executeCalls: 5,
+            verifyMutations: 0,
+            nativeRollbackGuards: 4,
+            rollbackCalls: 4,
+            secondExecuteCalls: 0,
+            secondRollbackCalls: 0,
+            replaySideEffectDelta: [0, 0, 0, 0, 0],
+            waitElapsedMilliseconds: { minimum: 65_000, maximum: 90_000 },
+          });
         }
       }
       {
