@@ -1,8 +1,9 @@
 # MVP15 Final Verification
 
-## Resume 3 Rework 1 source-only candidate — 2026-08-15
+## Resume 3 Rework 1 accepted source checkpoint — 2026-08-15
 
-This candidate is pending supervisor review. It preserves the 11-file native
+This source work has `Review Verdict: PASS` at implementation commit
+`0b47dd41e92f941f87c45c5694ec75d2cc932771`. It preserves the 11-file native
 binding manifest repair and adds an exact live child gate matrix, an absolute UE
 root contract, a task/phase-owned UE/MCP guardian, Disconnect-after-use
 observation, and parent closeout that waits for the guardian/UE listener before
@@ -26,9 +27,10 @@ passed / 3` existing opt-in live skips; Cargo reports `188` library, `2` native
 bridge and `1` Wry integration test passed. Workspace typecheck, lint, Cargo
 fmt/check and `git diff --check` pass. Manifest focused `1/1`, UE581 inventory
 `59/59`, runtime companion `9/9`, and final environment/fixture focused `3/3`
-also pass. The full final-tooling suite remains `23/24`: its one failure is the
-expected stale release provenance gate `FINAL_UE_PRODUCTION_PROVENANCE_INVALID`,
-which this source-only task does not bypass.
+also pass. The supervisor's fresh full final-tooling run reports `24/24`; the
+release test passes by explicitly classifying the installed binary and does not
+establish a rebuilt patched release. Rust fixture roots now use scope cleanup,
+and a repeated full Cargo run adds no new matching `%TEMP%` fixture directory.
 
 No real UE live phase, asset mutation, package/release rebuild, 15A, 15B, 15C or
 D16 acceptance was run. `PASS_REAL_SMOKE` remains `NO`; Ready remains `NO`.
