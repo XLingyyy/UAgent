@@ -1839,7 +1839,7 @@ function writeBuilder(path, failExit = 0, { overflowChannel = null } = {}) {
   writeFileSync(
     path,
     [
-      'import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";',
+      'import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";',
       'import { resolve } from "node:path";',
       "const args=process.argv.slice(2);",
       'if(args.length!==5||args[0]!=="BuildPlugin"||args[3]!=="-TargetPlatforms=Win64"||args[4]!=="-Rocket")process.exit(91);',
@@ -1847,7 +1847,11 @@ function writeBuilder(path, failExit = 0, { overflowChannel = null } = {}) {
       'const output=args[2].slice("-Package=".length);',
       'mkdirSync(resolve(output,"Resources"),{recursive:true});',
       'mkdirSync(resolve(output,"Binaries","Win64"),{recursive:true});',
-      'copyFileSync(plugin,resolve(output,"UAgentAssetTools.uplugin"));',
+      'const descriptor=JSON.parse(readFileSync(plugin,"utf8"));',
+      'for(const key of ["EnabledByDefault","ExplicitlyLoaded","IsExperimentalVersion","SupportsContentBrowser"])delete descriptor[key];',
+      "descriptor.Installed=true;",
+      'descriptor.EngineVersion="5.8.0";',
+      'writeFileSync(resolve(output,"UAgentAssetTools.uplugin"),JSON.stringify(descriptor,null,2)+"\\n");',
       'copyFileSync(resolve(plugin,"..","Resources","uagent-asset-tools.schema.json"),resolve(output,"Resources","uagent-asset-tools.schema.json"));',
       'copyFileSync(resolve(plugin,"..","Resources","mvp15d-native-binding-v2.json"),resolve(output,"Resources","mvp15d-native-binding-v2.json"));',
       'writeFileSync(resolve(output,"Binaries","Win64","UnrealEditor-UAgentAssetTools.dll"),Buffer.from("fixture-module-v1"));',
@@ -1897,7 +1901,7 @@ function writeAdversarialBuilder(path, ueRoot) {
   writeFileSync(
     path,
     [
-      'import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";',
+      'import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";',
       'import { resolve } from "node:path";',
       "const args=process.argv.slice(2);",
       'if(args.length!==5||args[0]!=="BuildPlugin"||args[3]!=="-TargetPlatforms=Win64"||args[4]!=="-Rocket")process.exit(91);',
@@ -1905,7 +1909,11 @@ function writeAdversarialBuilder(path, ueRoot) {
       'const output=args[2].slice("-Package=".length);',
       'mkdirSync(resolve(output,"Resources"),{recursive:true});',
       'mkdirSync(resolve(output,"Binaries","Win64"),{recursive:true});',
-      'copyFileSync(plugin,resolve(output,"UAgentAssetTools.uplugin"));',
+      'const descriptor=JSON.parse(readFileSync(plugin,"utf8"));',
+      'for(const key of ["EnabledByDefault","ExplicitlyLoaded","IsExperimentalVersion","SupportsContentBrowser"])delete descriptor[key];',
+      "descriptor.Installed=true;",
+      'descriptor.EngineVersion="5.8.0";',
+      'writeFileSync(resolve(output,"UAgentAssetTools.uplugin"),JSON.stringify(descriptor,null,2)+"\\n");',
       'copyFileSync(resolve(plugin,"..","Resources","uagent-asset-tools.schema.json"),resolve(output,"Resources","uagent-asset-tools.schema.json"));',
       'copyFileSync(resolve(plugin,"..","Resources","mvp15d-native-binding-v2.json"),resolve(output,"Resources","mvp15d-native-binding-v2.json"));',
       'writeFileSync(resolve(output,"Binaries","Win64","UnrealEditor-UAgentAssetTools.dll"),Buffer.from("fixture-module-v1"));',
@@ -3120,11 +3128,34 @@ test(
         "uagent-mvp15d-final-manifest-fixture-0003",
       ]);
       assert.equal(build.status, "build_completed", JSON.stringify(build));
+      const sourceDescriptorPath = resolve(
+        fixture.clone,
+        "integrations",
+        "unreal",
+        "UAgentAssetTools",
+        "UAgentAssetTools.uplugin",
+      );
+      const packagedDescriptorPath = resolve(packageRoot, "UAgentAssetTools.uplugin");
+      const sourceDescriptorBytes = readFileSync(sourceDescriptorPath);
+      const packagedDescriptorText = readFileSync(packagedDescriptorPath, "utf8");
+      const packagedDescriptor = JSON.parse(packagedDescriptorText);
+      assert.notEqual(
+        cryptoHash(sourceDescriptorBytes),
+        cryptoHash(Buffer.from(packagedDescriptorText)),
+      );
+      assert.equal(packagedDescriptor.Installed, true);
+      assert.equal(packagedDescriptor.EngineVersion, "5.8.0");
+      assert.equal(Object.hasOwn(packagedDescriptor, "EnabledByDefault"), false);
       const args = manifestArgs(fixture, evidenceRoot, packageRoot);
       const created = createManifest(args);
       assert.equal(created.status, "manifest_created");
       assert.notEqual(created.manifestSelfSha256, created.manifestFileSha256);
       assert.equal(verifyManifest(args).status, "manifest_verified");
+
+      packagedDescriptor.EngineVersion = "5.8.1";
+      writeFileSync(packagedDescriptorPath, `${JSON.stringify(packagedDescriptor, null, 2)}\n`);
+      expectCode(() => verifyManifest(args), "PACKAGE_DESCRIPTOR_TRANSFORM_INVALID");
+      writeFileSync(packagedDescriptorPath, packagedDescriptorText);
 
       const manifestPath = resolve(packageRoot, "UAgentAssetTools.build.json");
       const originalManifestText = readFileSync(manifestPath, "utf8");

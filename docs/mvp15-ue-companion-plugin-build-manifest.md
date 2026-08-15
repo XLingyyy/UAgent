@@ -140,6 +140,18 @@ and contain:
 - ordered exact-six tool names, generated timestamp, non-sensitive builder
   identity, and `manifestSelfSha256`.
 
+Official UE 5.8 `BuildPlugin` rewrites the packaged descriptor, so descriptor
+verification is semantic rather than byte equality. The source descriptor must
+bind the exact toolchain engine version, declare `Installed: false`, and retain
+false defaults for `EnabledByDefault`, `ExplicitlyLoaded`,
+`IsExperimentalVersion`, and `SupportsContentBrowser`. The packaged descriptor
+must differ only by changing `Installed` to `true`, normalizing
+`EngineVersion` to `<major>.<minor>.0`, and omitting those four false defaults.
+Every other key, value, and array position remains exact. The build ledger binds
+the source descriptor bytes, while the manifest binds the rewritten packaged
+descriptor bytes; any additional drift fails with
+`PACKAGE_DESCRIPTOR_TRANSFORM_INVALID`.
+
 The self-hash rule is canonical UTF-8 JSON with lexicographically sorted object
 keys, preserved array order, no insignificant whitespace, and the
 `manifestSha256` property omitted while hashing. The final hash is not hashed

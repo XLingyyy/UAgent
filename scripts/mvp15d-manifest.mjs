@@ -45,6 +45,12 @@ const SCHEMA_RELATIVE_PATH = "Resources/uagent-asset-tools.schema.json";
 const NATIVE_BINDING_RELATIVE_PATH = "Resources/mvp15d-native-binding-v2.json";
 const MODULE_INDEX_RELATIVE_PATH = "Binaries/Win64/UnrealEditor.modules";
 const MODULE_DIRECTORY_RELATIVE_PATH = "Binaries/Win64";
+const BUILDPLUGIN_OMITTED_DESCRIPTOR_DEFAULTS = [
+  "EnabledByDefault",
+  "ExplicitlyLoaded",
+  "IsExperimentalVersion",
+  "SupportsContentBrowser",
+];
 
 class ToolingError extends Error {
   constructor(code) {
@@ -178,6 +184,42 @@ function readJson(path, code) {
   } catch {
     fail(code);
   }
+}
+
+function validatePackagedDescriptorTransform(sourcePath, packagedPath, engineVersion) {
+  const source = readJson(sourcePath, "SOURCE_PLUGIN_DESCRIPTOR_INVALID");
+  const packaged = readJson(packagedPath, "PACKAGE_DESCRIPTOR_TRANSFORM_INVALID");
+  if (
+    !source ||
+    typeof source !== "object" ||
+    Array.isArray(source) ||
+    Object.getPrototypeOf(source) !== Object.prototype
+  ) {
+    fail("SOURCE_PLUGIN_DESCRIPTOR_INVALID");
+  }
+  if (
+    !packaged ||
+    typeof packaged !== "object" ||
+    Array.isArray(packaged) ||
+    Object.getPrototypeOf(packaged) !== Object.prototype
+  ) {
+    fail("PACKAGE_DESCRIPTOR_TRANSFORM_INVALID");
+  }
+  const versionMatch = /^([0-9]+)\.([0-9]+)\.[0-9]+$/u.exec(engineVersion);
+  if (
+    !versionMatch ||
+    source.EngineVersion !== engineVersion ||
+    source.Installed !== false ||
+    BUILDPLUGIN_OMITTED_DESCRIPTOR_DEFAULTS.some((key) => source[key] !== false)
+  ) {
+    fail("SOURCE_PLUGIN_DESCRIPTOR_TRANSFORM_UNSUPPORTED");
+  }
+
+  const expected = { ...source };
+  for (const key of BUILDPLUGIN_OMITTED_DESCRIPTOR_DEFAULTS) delete expected[key];
+  expected.Installed = true;
+  expected.EngineVersion = `${versionMatch[1]}.${versionMatch[2]}.0`;
+  if (stable(packaged) !== stable(expected)) fail("PACKAGE_DESCRIPTOR_TRANSFORM_INVALID");
 }
 
 function artifact(packageRoot, logicalPath) {
@@ -789,8 +831,13 @@ function commonInputs(args, manifestPresent) {
   const packagedNativeBinding = collected.artifacts.find(
     ({ path }) => path === NATIVE_BINDING_RELATIVE_PATH,
   );
+  validatePackagedDescriptorTransform(
+    plugin,
+    resolve(packageRoot, UPLUGIN_RELATIVE_PATH),
+    build.ledger.toolchainFacts.engineVersion,
+  );
   if (
-    packagedDescriptor?.sha256 !== sha256File(plugin) ||
+    !packagedDescriptor ||
     packagedSchema?.sha256 !== sha256File(sourceSchema) ||
     packagedNativeBinding?.sha256 !== sha256File(sourceNativeBinding)
   ) {
