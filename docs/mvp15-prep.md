@@ -4,13 +4,14 @@
 > predecessor `PARTIAL`; its supervisor verdict was `NEEDS_FIX`, and no
 > checkpoint was created. Final Source/Tooling Rework 8 is `COMPLETE` with
 > supervisor `PASS` at implementation commit
-> `98c8b387e1124a519977849d48ab824e4e6bb9c5`; G14 is `IMPLEMENTED`; G15 is
-> `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1
+> `98c8b387e1124a519977849d48ab824e4e6bb9c5`; current implementation checkpoint
+> `a780fc4231b99b39153fb88c9ab460717610b3f3` preserves G14 `IMPLEMENTED` and
+> G15 `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1
 > compatibility and overall acceptance remain `PARTIAL`; D13 / 15A is
-> `BLOCKED`; D14 / 15B and D15 / 15C are `PLANNED`; D16 is `IN_PROGRESS`;
+> `DISPATCHED`; D14 / 15B waits on 15A and D15 / 15C waits on 15A/15B; D16 is `IN_PROGRESS`;
 > Ready is `NO`. The unsafe predecessor evidence root was
 > removed for `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only
-> compatibility follows in a new clean-checkout task based on that commit.
+> compatibility follows in a new clean-checkout task based on the current commit.
 > Actual release native/product/UI capability handshakes completed with
 > zero MCP/network/asset operations. Rework 7 adds sole owned production
 > a two-level verification model: persisted cross-binding reports

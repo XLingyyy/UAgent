@@ -23,12 +23,17 @@ implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. Its source-onl
 retained-transcript privacy repair is accepted; invalid Resume 2 cleanup is
 `SATISFIED` after an independent 2026-08-14 zero-residual scan. Cleanup alone
 did not advance a live/manual-smoke gate.
+Final Live Acceptance Resume 3 Rework 1 has `Review Verdict: PASS` at
+`0b47dd41e92f941f87c45c5694ec75d2cc932771`. Resume 4's source-only UE 5.8
+BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at current
+implementation commit `a780fc4231b99b39153fb88c9ab460717610b3f3`. The old live
+lineage was invalidated and removed; no manual-smoke gate advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-privacy-repair G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. D13 / 15A
-remains `BLOCKED`; D14 / 15B and
-D15 / 15C remain `PLANNED`; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility
+source-checkpoint G15 integrity is `COMPLETE`; G16 is `PARTIAL`. D13 / 15A
+is `DISPATCHED`; D14 / 15B waits on 15A and
+D15 / 15C waits on 15A/15B; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility
 and overall acceptance remain `PARTIAL`; Ready is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
 

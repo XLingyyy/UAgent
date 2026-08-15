@@ -4,8 +4,11 @@ AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent p
 
 ## Current Stage: MVP15D - Final 15A-15C/D16 Live Acceptance
 
-Final Live Acceptance Resume 3 Rework 1 has `Review Verdict: PASS` at source
-implementation commit `0b47dd41e92f941f87c45c5694ec75d2cc932771`.
+The current accepted production implementation checkpoint is
+`a780fc4231b99b39153fb88c9ab460717610b3f3`. It includes Final Live Acceptance
+Resume 3 Rework 1, whose live-owner/restart source scope passed review at
+`0b47dd41e92f941f87c45c5694ec75d2cc932771`, plus the accepted Resume 4
+source-only manifest verifier repair.
 Live product and UI children now receive an isolated UE
 editor bridge/launch gate and an absolute UE root; capability-only, UE
 Automation and N2 children cannot inherit that authority, and asset mutation
@@ -21,8 +24,15 @@ new editor and MCP sessions, newer generations, and installed/loaded module
 equality against the canonical package manifest. Raw PID, port, endpoint,
 session, FILETIME and local paths remain native-memory facts; retained product
 evidence uses hashes and receipt references. This source work does not establish
-15A, 15B, 15C, D16, a real smoke, or Stage Ready; those gates still require an
+15A, 15B, 15C, D16, a real smoke, or Stage Ready; those gates still require a
 fresh clean-checkout run from the accepted implementation SHA.
+
+Resume 4 reached a real UE 5.8.1 `BuildPlugin` package and exposed the official
+descriptor rewrite. The accepted verifier binds source and packaged descriptor
+bytes independently, allows only the observed Installed/EngineVersion/default
+field transformation, and rejects every other semantic drift. That run's
+release, package, manifest and evidence were invalidated and removed after the
+source change; no live gate advanced.
 
 Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
@@ -53,9 +63,9 @@ No live gate advanced from cleanup alone.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-privacy-repair G15 checkpoint integrity is `COMPLETE`; G16 is
-`PARTIAL`. D13 / 15A remains `BLOCKED`; D14 / 15B and D15 / 15C remain
-`PLANNED`; D16 remains `IN_PROGRESS`; UE 5.8.1 compatibility and overall MVP15
+source-checkpoint G15 integrity is `COMPLETE`; G16 is
+`PARTIAL`. D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A and D15 / 15C
+waits on 15A/15B; D16 remains `IN_PROGRESS`; UE 5.8.1 compatibility and overall MVP15
 acceptance remain `PARTIAL`; Ready for the next stage is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
 
@@ -102,11 +112,11 @@ These remain source implementation and controlled-test facts. No current
 clean-checkout Tool Search ON/OFF sessions, installed/load/manifest tuple, live
 fingerprint, retraction session boundary, full 15A N1-N8 acceptance root,
 partial/unknown run, real parent closeout, live UE/MCP run, or real mutation
-evidence was produced. The source delta invalidates the previous release and
+evidence was produced. The latest source delta invalidates the previous release and
 all earlier 15A-15C evidence. The installed release capability gate remains
-open; the invalid Resume 2 cleanup gate is closed and a fresh 15A restart has
-been dispatched from a clean checkout of
-`25d1262528e0976d24f96056975fdb36bc790b77`.
+open; the invalid Resume 2 cleanup gate is closed and a fresh 15A restart is
+dispatched from a clean checkout of
+`a780fc4231b99b39153fb88c9ab460717610b3f3`.
 
 The verified pre-checkpoint Tauri build embedded
 `uagent.mvp15d.source-identity.v2`: base/compiled commit
@@ -125,10 +135,12 @@ including normal or linked-worktree Git metadata, symbolic or detached HEAD,
 loose refs, and packed refs. The historical 2026-08-03 checkpoint closed its
 then-current G15 scope, and Rework 9 is checkpointed at
 `aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Resume Rework 1 remains recorded at
-`de248a7028d21c53c26db7b28930d583566580a6`; the current source/privacy repair is
-checkpointed at `25d1262528e0976d24f96056975fdb36bc790b77`. After cleanup closure,
-a separate clean-checkout rebuild from the current repair may restart G16 and
-D13 / 15A.
+`de248a7028d21c53c26db7b28930d583566580a6`; the privacy repair is checkpointed
+at `25d1262528e0976d24f96056975fdb36bc790b77`, the live-owner repair at
+`0b47dd41e92f941f87c45c5694ec75d2cc932771`, and the current BuildPlugin
+descriptor verifier repair at `a780fc4231b99b39153fb88c9ab460717610b3f3`.
+A separate clean-checkout rebuild from the current repair restarts G16 and D13 /
+15A.
 
 The loaded-module publisher still has one write-capable production path. It
 publishes only after the owned live process is re-observed and the private

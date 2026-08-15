@@ -11,8 +11,8 @@
   verification have `Review Verdict: PASS` at implementation commit
   `aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Authorized exact-manifest TEMP
   cleanup removed all 4,601 roots with zero failures/residuals; fresh asset
-  `40/40` and bridge `14/14` regressions left zero matching roots. `External
-  Gate / TEMP cleanup: PASS`; no live Gate advanced.
+  `40/40` and bridge `14/14` regressions left zero matching roots. The TEMP
+  cleanup external gate is `PASS`; no live gate advanced.
 - Final Live Acceptance Resume Rework 1: source content and controlled
   verification have `Review Verdict: PASS` at implementation commit
   `de248a7028d21c53c26db7b28930d583566580a6`. Rendered N1-N8 controls use the
@@ -24,23 +24,31 @@
   closed, punctuation tails remain covered, and parsing is bounded. Invalid
   Resume 2 cleanup is `SATISFIED` after an independent 2026-08-14 zero-residual
   scan; no live gate advanced from cleanup alone.
+- Final Live Acceptance Resume 3 Rework 1: live bridge isolation, exact
+  guardian/listener ownership and strict real UE restart receipt consumption
+  have `Review Verdict: PASS` at `0b47dd41e92f941f87c45c5694ec75d2cc932771`.
+- Final Live Acceptance Resume 4: the source-only UE 5.8 `BuildPlugin`
+  descriptor verifier repair has `Review Verdict: PASS` at implementation
+  commit `a780fc4231b99b39153fb88c9ab460717610b3f3`. Its pre-repair live lineage was
+  invalidated and removed; no live gate advanced.
 - The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
   historical `COMPLETE / PASS` record at implementation commit
   `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 - G14 documentation consistency: `IMPLEMENTED` after the current evidence and
   stale-state reconciliation.
-- G15 checkpoint integrity: `COMPLETE`; current privacy-repair implementation
-  commit `25d1262528e0976d24f96056975fdb36bc790b77` is recorded by this
-  documentation closeout. Rework 1 and Rework 9 retain their historical scopes.
+- G15 checkpoint integrity: `COMPLETE`; current implementation commit
+  `a780fc4231b99b39153fb88c9ab460717610b3f3` is recorded by this documentation
+  closeout. Earlier accepted repairs retain their historical scopes.
 - G16 authority provenance and plugin baseline: `PARTIAL`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
   module BuildId `55116800`.
 - Desktop bundling: `IMPLEMENTED`; icon preflight, MSI, and NSIS passed.
 - Real UE 5.8.1 compatibility: `PARTIAL`; the Rework 2 read-only attempt is
   historical and the full clean-commit matrix remains deferred.
-- D13 / 15A live execution: `BLOCKED`.
-- D14 / 15B: `PLANNED`; not run.
-- D15 / 15C: `PLANNED`; no asset mutation was attempted.
+- D13 / 15A live execution: `DISPATCHED` from a fresh clean checkout of
+  `a780fc4231b99b39153fb88c9ab460717610b3f3`.
+- D14 / 15B: `WAITING_ON_15A`; not run.
+- D15 / 15C: `WAITING_ON_15A_15B`; no asset mutation was attempted.
 - D16: `IN_PROGRESS`.
 - Overall MVP15 final acceptance: `PARTIAL`.
 - Ready for the next MVP stage: `NO`.

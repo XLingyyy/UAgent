@@ -21,12 +21,17 @@ transcripts now fail closed on truncated quoted secrets, cover adjacent
 punctuation tails and share a bounded producer/verifier scanner. Invalid Resume
 2 cleanup is `SATISFIED` after an independent 2026-08-14 zero-residual scan; no
 live gate advanced from cleanup alone.
+Final Live Acceptance Resume 3 Rework 1 has `Review Verdict: PASS` at
+`0b47dd41e92f941f87c45c5694ec75d2cc932771`; Resume 4's source-only official
+BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at current
+implementation commit `a780fc4231b99b39153fb88c9ab460717610b3f3`. Its prior live
+lineage was invalidated and removed.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-privacy-repair G15 checkpoint integrity is `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
-acceptance remain `PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C
-are `PLANNED`; D16 is `IN_PROGRESS`; Ready is `NO`.
+source-checkpoint G15 integrity is `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
+acceptance remain `PARTIAL`; D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A
+and D15 / 15C waits on 15A/15B; D16 is `IN_PROGRESS`; Ready is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`

@@ -9,9 +9,15 @@ commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`. The build wrapper and native/
 consumers use manifest v3 and identity v2 with independent engine version
 `5.8.1`, engine changelist `56057345`, compatible changelist `55116800`, and
 module BuildId `55116800`. G14 is `IMPLEMENTED`; G15 is `COMPLETE`; G16 is
-`PARTIAL`; D13 / 15A is `BLOCKED`; D14 / 15B and D15 / 15C remain `PLANNED`;
-D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility and overall acceptance
+`PARTIAL`; D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A and D15 / 15C
+waits on 15A/15B; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility and overall acceptance
 remain `PARTIAL`; Ready is `NO`.
+
+Final Live Acceptance Resume 4 has `Review Verdict: PASS` for its source-only
+descriptor verifier repair at current implementation commit
+`a780fc4231b99b39153fb88c9ab460717610b3f3`. A real UE 5.8.1 BuildPlugin package
+confirmed the rewrite contract; the pre-repair lineage was invalidated and
+removed, so installed/load/live acceptance remains open.
 
 The compiled pre-checkpoint identity uses
 `uagent.mvp15d.production-source-boundary.v2`: 335 production files discovered
@@ -195,5 +201,5 @@ checkpoint review.
 
 No clean current manifest, installed/loaded equality proof, or live exact-six
 fingerprint exists. Those facts must be produced from implementation commit
-`98c8b387e1124a519977849d48ab824e4e6bb9c5` in a separate clean-checkout
-read-only task.
+`a780fc4231b99b39153fb88c9ab460717610b3f3` in a separate clean-checkout live
+acceptance task.
