@@ -42,6 +42,7 @@ const TOOL_NAMES = [
 const MANIFEST_NAME = "UAgentAssetTools.build.json";
 const UPLUGIN_RELATIVE_PATH = "UAgentAssetTools.uplugin";
 const SCHEMA_RELATIVE_PATH = "Resources/uagent-asset-tools.schema.json";
+const NATIVE_BINDING_RELATIVE_PATH = "Resources/mvp15d-native-binding-v2.json";
 const MODULE_INDEX_RELATIVE_PATH = "Binaries/Win64/UnrealEditor.modules";
 const MODULE_DIRECTORY_RELATIVE_PATH = "Binaries/Win64";
 
@@ -268,6 +269,7 @@ function collectPackageArtifacts(packageRoot, manifestPresent) {
   const allowed = new Set([
     UPLUGIN_RELATIVE_PATH,
     SCHEMA_RELATIVE_PATH,
+    NATIVE_BINDING_RELATIVE_PATH,
     MODULE_INDEX_RELATIVE_PATH,
     ...modules,
   ]);
@@ -675,7 +677,7 @@ function validateManifestShape(manifest) {
     !Array.isArray(manifest.physicalFixtures) ||
     manifest.physicalFixtures.length !== 2 ||
     !Array.isArray(manifest.artifacts) ||
-    manifest.artifacts.length < 4 ||
+    manifest.artifacts.length < 5 ||
     !Array.isArray(manifest.modules) ||
     manifest.modules.length < 1 ||
     !Array.isArray(manifest.buildEvidenceArtifacts) ||
@@ -774,9 +776,23 @@ function commonInputs(args, manifestPresent) {
     "SOURCE_SCHEMA_MISSING",
   );
   const packagedSchema = collected.artifacts.find(({ path }) => path === SCHEMA_RELATIVE_PATH);
+  const sourceNativeBinding = requireRegularFile(
+    resolve(
+      provenance.sourceRoot,
+      "integrations",
+      "unreal",
+      "UAgentAssetTools",
+      NATIVE_BINDING_RELATIVE_PATH.split("/").join("\\"),
+    ),
+    "SOURCE_NATIVE_BINDING_MISSING",
+  );
+  const packagedNativeBinding = collected.artifacts.find(
+    ({ path }) => path === NATIVE_BINDING_RELATIVE_PATH,
+  );
   if (
     packagedDescriptor?.sha256 !== sha256File(plugin) ||
-    packagedSchema?.sha256 !== sha256File(sourceSchema)
+    packagedSchema?.sha256 !== sha256File(sourceSchema) ||
+    packagedNativeBinding?.sha256 !== sha256File(sourceNativeBinding)
   ) {
     fail("PACKAGE_SOURCE_ARTIFACT_MISMATCH");
   }

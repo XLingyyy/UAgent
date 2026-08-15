@@ -64,6 +64,20 @@ export async function publishMvp15dProductStoreEvidence(
   await invoke("mvp15d_bridge_publish_product_evidence", { input: productEvidence });
 }
 
+type ManagedListenerObservationAdapter = Pick<
+  DesktopRuntimeAdapter,
+  "observeMvp15dManagedListenerAliveThroughUse"
+>;
+
+async function observeManagedListenerAliveThroughUse(
+  runtimeAdapter: ManagedListenerObservationAdapter,
+): Promise<void> {
+  if (!runtimeAdapter.observeMvp15dManagedListenerAliveThroughUse) {
+    throw new Error("mvp15d_managed_listener_observer_unavailable");
+  }
+  await runtimeAdapter.observeMvp15dManagedListenerAliveThroughUse();
+}
+
 async function runCapabilityHandshake(
   invoke: NativeInvoke,
   configuration: BridgeConfiguration,
@@ -127,6 +141,7 @@ async function runCapabilityHandshake(
 async function runProductCapture(
   invoke: NativeInvoke,
   configuration: BridgeConfiguration,
+  runtimeAdapter: ManagedListenerObservationAdapter,
 ): Promise<void> {
   if (!configuration.endpoint) throw new Error("mvp15d_product_endpoint_missing");
   if (!configuration.projectRoot) throw new Error("mvp15d_product_project_root_missing");
@@ -198,12 +213,14 @@ async function runProductCapture(
     "mvp15d_product_disconnect_failed",
   );
   await recordStep(invoke, "disconnect");
+  await observeManagedListenerAliveThroughUse(runtimeAdapter);
   await publishMvp15dProductStoreEvidence(invoke);
 }
 
 async function runProductSuccessor(
   invoke: NativeInvoke,
   configuration: BridgeConfiguration,
+  runtimeAdapter: ManagedListenerObservationAdapter,
 ): Promise<void> {
   if (!configuration.endpoint || !configuration.projectRoot || !configuration.rendererHandoffId) {
     throw new Error("mvp15d_product_successor_context_missing");
@@ -261,6 +278,7 @@ async function runProductSuccessor(
     "mvp15d_product_successor_disconnect_failed",
   );
   await recordStep(invoke, "disconnect");
+  await observeManagedListenerAliveThroughUse(runtimeAdapter);
   await publishMvp15dProductStoreEvidence(
     invoke,
     "mvp15d_product_successor_store_evidence_missing",
@@ -595,6 +613,7 @@ async function prepareTrustedObservation(
 async function runUiLifecycle(
   invoke: NativeInvoke,
   configuration: BridgeConfiguration,
+  runtimeAdapter: ManagedListenerObservationAdapter,
 ): Promise<void> {
   if (!configuration.projectRoot) throw new Error("mvp15d_ui_project_root_missing");
   if (!configuration.endpoint) throw new Error("mvp15d_ui_endpoint_missing");
@@ -722,6 +741,7 @@ async function runUiLifecycle(
     "mvp15d_ui_mcp_disconnect_timeout",
   );
   await recordStep(invoke, "mcpDisconnect");
+  await observeManagedListenerAliveThroughUse(runtimeAdapter);
   const uiEvidence = readMvp15dUiStoreEvidence();
   if (!uiEvidence || uiEvidence.status !== "ready") {
     throw new Error("mvp15d_ui_store_evidence_missing");
@@ -744,7 +764,10 @@ async function runGateOffNegativeChild(invoke: NativeInvoke): Promise<void> {
 
 export async function startMvp15dRuntimeBridge(
   invoke: NativeInvoke | null = getNativeInvoke(),
-  runtimeAdapterOverride: Pick<DesktopRuntimeAdapter, "activateMvp15dFixedObservationAuthority"> | null = null,
+  runtimeAdapterOverride: (
+    Pick<DesktopRuntimeAdapter, "activateMvp15dFixedObservationAuthority"> &
+    Partial<ManagedListenerObservationAdapter>
+  ) | null = null,
 ): Promise<void> {
   if (!invoke) return;
   const configuration = await invoke<BridgeConfiguration>("mvp15d_bridge_configuration");
@@ -772,8 +795,12 @@ export async function startMvp15dRuntimeBridge(
   const command = configuration.rendererHandoffPending
     ? "renderer-successor"
     : await waitForDriver(invoke, configuration.driverPollMilliseconds);
+  let runtimeAdapter: (
+    Pick<DesktopRuntimeAdapter, "activateMvp15dFixedObservationAuthority"> &
+    Partial<ManagedListenerObservationAdapter>
+  ) | null = null;
   if (configuration.mode === "live") {
-    const runtimeAdapter = runtimeAdapterOverride ?? getFixedAppRuntimeAdapter();
+    runtimeAdapter = runtimeAdapterOverride ?? getFixedAppRuntimeAdapter();
     if (!runtimeAdapter?.activateMvp15dFixedObservationAuthority) {
       throw new Error("mvp15d_fixed_app_runtime_adapter_unavailable");
     }
@@ -793,7 +820,7 @@ export async function startMvp15dRuntimeBridge(
     configuration.phase === "product-capture" &&
     command === "renderer-successor"
   ) {
-    await runProductSuccessor(invoke, configuration);
+    await runProductSuccessor(invoke, configuration, runtimeAdapter!);
   } else if (configuration.mode === "capability-only" && command === "capability-handshake") {
     await runCapabilityHandshake(invoke, configuration);
   } else if (
@@ -802,7 +829,7 @@ export async function startMvp15dRuntimeBridge(
     command === "run-product-capture"
   ) {
     try {
-      await runProductCapture(invoke, configuration);
+      await runProductCapture(invoke, configuration, runtimeAdapter!);
     } catch (error) {
       if (error instanceof Error && error.message === "mvp15d_renderer_restart_handoff_requested") {
         return;
@@ -814,7 +841,7 @@ export async function startMvp15dRuntimeBridge(
     configuration.phase === "ui-lifecycle" &&
     command === "run-ui-lifecycle"
   ) {
-    await runUiLifecycle(invoke, configuration);
+    await runUiLifecycle(invoke, configuration, runtimeAdapter!);
   } else {
     throw new Error("mvp15d_bridge_driver_command_rejected");
   }

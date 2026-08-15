@@ -1131,6 +1131,7 @@ fn attest_companion_plugin_root_with_loaded_modules(
     }
     for required in [
         "UAgentAssetTools.uplugin",
+        "Resources/mvp15d-native-binding-v2.json",
         "Resources/uagent-asset-tools.schema.json",
         "Binaries/Win64/UnrealEditor.modules",
     ] {
@@ -1181,7 +1182,7 @@ fn attest_companion_plugin_root_with_loaded_modules(
         }
         installed_modules.push(artifact);
     }
-    if package_artifacts.len() != installed_modules.len() + 3 {
+    if package_artifacts.len() != installed_modules.len() + 4 {
         return blocked_companion_attestation("companion_artifact_invalid");
     }
     let module_index_path = plugin_root.join("Binaries/Win64/UnrealEditor.modules");
@@ -3271,6 +3272,14 @@ mod tests {
         }
     }
 
+    impl std::ops::Deref for TestRoot {
+        type Target = Path;
+
+        fn deref(&self) -> &Self::Target {
+            &self.path
+        }
+    }
+
     impl Drop for TestRoot {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.path);
@@ -3341,7 +3350,7 @@ mod tests {
         .unwrap();
     }
 
-    fn companion_package_root(label: &str) -> (PathBuf, serde_json::Value) {
+    fn companion_package_root(label: &str) -> (TestRoot, serde_json::Value) {
         static NEXT_ROOT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let suffix = NEXT_ROOT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let root = std::env::temp_dir().join(format!(
@@ -3352,10 +3361,16 @@ mod tests {
         std::fs::create_dir_all(root.join("Resources")).unwrap();
         std::fs::create_dir_all(root.join("Binaries").join("Win64")).unwrap();
         let uplugin = b"plugin descriptor";
+        let native_binding = b"native binding";
         let schema = b"contract schema";
         let module = b"companion module";
         let module_index = br#"{"BuildId":"55116800","Modules":{"UAgentAssetTools":"UnrealEditor-UAgentAssetTools.dll"}}"#;
         std::fs::write(root.join("UAgentAssetTools.uplugin"), uplugin).unwrap();
+        std::fs::write(
+            root.join("Resources/mvp15d-native-binding-v2.json"),
+            native_binding,
+        )
+        .unwrap();
         std::fs::write(
             root.join("Resources/uagent-asset-tools.schema.json"),
             schema,
@@ -3412,6 +3427,7 @@ mod tests {
             "artifacts": [
                 companion_artifact("Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", module),
                 companion_artifact("Binaries/Win64/UnrealEditor.modules", module_index),
+                companion_artifact("Resources/mvp15d-native-binding-v2.json", native_binding),
                 companion_artifact("Resources/uagent-asset-tools.schema.json", schema),
                 companion_artifact("UAgentAssetTools.uplugin", uplugin)
             ],
@@ -3429,7 +3445,7 @@ mod tests {
             "manifestSelfSha256": ""
         });
         write_companion_manifest(&root, &mut manifest);
-        (root, manifest)
+        (TestRoot { path: root }, manifest)
     }
 
     #[test]
@@ -3549,7 +3565,7 @@ mod tests {
             process_id: "process:binding".to_string(),
             project_id: "project:binding".to_string(),
             root_id: "root:binding".to_string(),
-            canonical_root: root.clone(),
+            canonical_root: root.path().to_path_buf(),
             pid_hash: "pid:binding".to_string(),
             pid: Some(77),
             process_start_time: Some(170),
@@ -3596,7 +3612,6 @@ mod tests {
             companion_binding_from_attestation("root:binding", &restarted_observation, &result, 4)
                 .expect("restarted process identity should bind independently");
         assert_ne!(binding.fingerprint, restarted.fingerprint);
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -4325,6 +4340,8 @@ mod tests {
         let now = current_time_millis();
         let mut registration = registration("native-generation-replacement", now);
         let create_input = crate::ue_editor_process::ManagedEditorProcessCreateInput {
+            schema_version: "uagent.mvp15d.managed-editor-process-create.v2".to_string(),
+            purpose: "negative_case_fixture".to_string(),
             task_id: "TASK-MVP15D-NATIVE-GENERATION-TEST".to_string(),
             phase: "ui-lifecycle".to_string(),
             project_id: registration.project_binding_id.clone(),

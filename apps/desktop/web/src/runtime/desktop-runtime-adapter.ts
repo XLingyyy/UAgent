@@ -63,6 +63,7 @@ import {
   createEditorObservationNativeAdapterFromEnvironment,
   type NativeEditorAttachInput,
   type NativeEditorObservationAdapter,
+  type NativeEditorProcessConfigInput,
 } from "./editor-observation-native-adapter";
 import { createNativeMcpHttpPoster } from "./mcp-native-transport";
 export type Mvp15dToolSearchMode = "on" | "off";
@@ -116,6 +117,21 @@ export interface Mvp15dProductRetractionRaw {
     parentAcknowledgementCall: Mvp15dRawObservedCall;
     claimCall: Mvp15dRawObservedCall;
   };
+}
+
+interface Mvp15dManagedEditorOwnerBinding {
+  taskId: string;
+  phase: "product-capture" | "ui-lifecycle";
+  projectId: string;
+  rootRef: string;
+  uprojectRelativePath: string;
+  processId: string;
+  pidHash: string;
+  pid: number;
+  processCreationFiletime: string;
+  listenerInstanceSha256: string;
+  ownerBindingSha256: string;
+  createCall: Mvp15dRawObservedCall | null;
 }
 
 export interface Mvp15dMutationCounters {
@@ -457,9 +473,15 @@ export interface DesktopRuntimeAdapter {
     endpoint: string,
   ): Promise<Mvp15dProductAuthorityResume>;
   observeMvp15dNativeState?(
-    kind: "mutation_counters" | "recorded_replay" | "mcp_disconnect" | "renderer_process",
+    kind:
+      | "mutation_counters"
+      | "recorded_replay"
+      | "mcp_disconnect"
+      | "renderer_process"
+      | "managed_listener_alive_through_use",
     request: Record<string, unknown>,
   ): Promise<Mvp15dRawObservedCall>;
+  observeMvp15dManagedListenerAliveThroughUse?(): Promise<Mvp15dRawObservedCall>;
   takeMvp15dMcpObservationReceipt?(api: "mcp_asset_tool_call"): Mvp15dRawObservedCall | null;
   runMvp15DProductRetractionOrchestration?(
     trustedRootId: string,
@@ -598,14 +620,49 @@ export function createDesktopRuntimeAdapter(
   const browserAdapter = createDesktopBrowserAdapterFromEnvironment(nativeInvoke);
   const textMutationAdapter = createDesktopTextMutationAdapterFromEnvironment(nativeInvoke);
   let latestEditorAttachInput: NativeEditorAttachInput | null = null;
+  let latestEditorSessionId: string | null = null;
+  let latestEditorObservationGeneration = 0;
+  let phaseManagedEditorOwner: Mvp15dManagedEditorOwnerBinding | null = null;
   const nativeEditorObservationAdapter =
     createEditorObservationNativeAdapterFromEnvironment(nativeInvoke);
   const editorObservationAdapter: NativeEditorObservationAdapter | null = nativeEditorObservationAdapter
     ? {
         ...nativeEditorObservationAdapter,
+        discoverProcesses: async (input) => {
+          const authority = fixedObservationAuthority;
+          if (authority && !phaseManagedEditorOwner && !authority.predecessorWindowIdentitySha256) {
+            await createMvp15dManagedEditorOwner(input);
+          }
+          const discovery = await nativeEditorObservationAdapter.discoverProcesses(input);
+          if (authority) {
+            phaseManagedEditorOwner = recoverMvp15dManagedEditorOwner(
+              authority,
+              input,
+              discovery.processes,
+              phaseManagedEditorOwner,
+            );
+          }
+          return discovery;
+        },
         attachProcess: async (input) => {
           const session = await nativeEditorObservationAdapter.attachProcess(input);
-          if (session?.status === "attached") latestEditorAttachInput = structuredClone(input);
+          if (session?.status === "attached") {
+            if (
+              currentMvp15DAttestationBinding &&
+              currentMvp15DAttestationBinding.editorSessionId !== session.sessionId
+            ) {
+              const retraction = retractMvp15DCompanionAttestation(
+                "installed_unverified",
+                "BLOCKED_BY_PLUGIN_PROVENANCE",
+                "editor_observation_identity_changed",
+              );
+              await settleMvp15DNativeRetractions(retraction);
+              syncMcp();
+            }
+            latestEditorAttachInput = structuredClone(input);
+            latestEditorSessionId = session.sessionId;
+            latestEditorObservationGeneration = session.observationGeneration ?? 0;
+          }
           return session;
         },
       }
@@ -1575,6 +1632,124 @@ export function createDesktopRuntimeAdapter(
     return { receiptId, request: structuredClone(observation.request) };
   };
 
+  const isMvp15dSha256 = (value: unknown): value is string =>
+    typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+  const isMvp15dCreationFiletime = (value: unknown): value is string =>
+    typeof value === "string" && /^[1-9][0-9]{0,19}$/.test(value);
+
+  const managedEditorOwnerFromRecord = (
+    authority: NonNullable<typeof fixedObservationAuthority>,
+    input: NativeEditorProcessConfigInput,
+    process: Record<string, unknown>,
+    owner: Record<string, unknown>,
+    createCall: Mvp15dRawObservedCall | null,
+  ): Mvp15dManagedEditorOwnerBinding => {
+    const pid = Number(owner.processPid ?? process.processPid ?? 0);
+    const processCreationFiletime =
+      owner.processCreationFiletime ?? process.processCreationFiletime;
+    const listenerInstanceSha256 =
+      owner.listenerInstanceSha256 ?? process.listenerInstanceSha256;
+    const ownerBindingSha256 = owner.ownerBindingSha256 ?? process.ownerBindingSha256;
+    if (
+      typeof process.id !== "string" ||
+      !process.id ||
+      typeof process.pidHash !== "string" ||
+      !process.pidHash ||
+      process.source !== "managed" ||
+      !Number.isSafeInteger(pid) ||
+      pid <= 0 ||
+      !isMvp15dCreationFiletime(processCreationFiletime) ||
+      !isMvp15dSha256(listenerInstanceSha256) ||
+      !isMvp15dSha256(ownerBindingSha256)
+    ) {
+      throw new Error("mvp15d_phase_listener_owner_identity_invalid");
+    }
+    return {
+      taskId: authority.taskId,
+      phase: authority.phase,
+      projectId: input.projectId,
+      rootRef: input.rootRef,
+      uprojectRelativePath: input.uprojectRelativePath,
+      processId: process.id,
+      pidHash: process.pidHash,
+      pid,
+      processCreationFiletime,
+      listenerInstanceSha256,
+      ownerBindingSha256,
+      createCall,
+    };
+  };
+
+  const createMvp15dManagedEditorOwner = async (
+    input: NativeEditorProcessConfigInput,
+  ): Promise<Mvp15dManagedEditorOwnerBinding> => {
+    const authority = fixedObservationAuthority;
+    if (!nativeInvoke || !authority || phaseManagedEditorOwner) {
+      throw new Error("mvp15d_phase_listener_owner_create_rejected");
+    }
+    const request = {
+      schemaVersion: "uagent.mvp15d.managed-editor-process-create.v2",
+      purpose: "phase_listener_owner",
+      taskId: authority.taskId,
+      phase: authority.phase,
+      projectId: input.projectId,
+      rootRef: input.rootRef,
+      uprojectRelativePath: input.uprojectRelativePath,
+    };
+    const response = await nativeInvoke<Record<string, unknown>>(
+      "create_managed_editor_process",
+      { input: request },
+    );
+    const process = response.process && typeof response.process === "object" && !Array.isArray(response.process)
+      ? response.process as Record<string, unknown>
+      : null;
+    if (
+      response.schemaVersion !== "uagent.mvp15d.managed-editor-process-create-result.v2" ||
+      response.status !== "ready" ||
+      response.reason !== "task_owned_listener_accepting" ||
+      response.purpose !== "phase_listener_owner" ||
+      response.ownerTaskId !== authority.taskId ||
+      response.ownerPhase !== authority.phase ||
+      !process
+    ) {
+      throw new Error("mvp15d_phase_listener_owner_create_failed");
+    }
+    const createCall = nativeReceiptReference({ request, response });
+    const owner = managedEditorOwnerFromRecord(authority, input, process, response, createCall);
+    phaseManagedEditorOwner = owner;
+    return owner;
+  };
+
+  const recoverMvp15dManagedEditorOwner = (
+    authority: NonNullable<typeof fixedObservationAuthority>,
+    input: NativeEditorProcessConfigInput,
+    processes: ReadonlyArray<unknown>,
+    expected: Mvp15dManagedEditorOwnerBinding | null,
+  ): Mvp15dManagedEditorOwnerBinding => {
+    const managed = processes.filter((candidate): candidate is Record<string, unknown> =>
+      Boolean(candidate) &&
+      typeof candidate === "object" &&
+      !Array.isArray(candidate) &&
+      (candidate as Record<string, unknown>).managedPurpose === "phase_listener_owner",
+    );
+    if (managed.length !== 1) {
+      throw new Error("mvp15d_phase_listener_owner_discovery_invalid");
+    }
+    const recovered = managedEditorOwnerFromRecord(authority, input, managed[0]!, managed[0]!, expected?.createCall ?? null);
+    if (
+      expected &&
+      (recovered.processId !== expected.processId ||
+        recovered.pidHash !== expected.pidHash ||
+        recovered.pid !== expected.pid ||
+        recovered.processCreationFiletime !== expected.processCreationFiletime ||
+        recovered.listenerInstanceSha256 !== expected.listenerInstanceSha256 ||
+        recovered.ownerBindingSha256 !== expected.ownerBindingSha256)
+    ) {
+      throw new Error("mvp15d_phase_listener_owner_discovery_mismatch");
+    }
+    return recovered;
+  };
+
   const canonicalProductDescriptors = (): Mvp15dCanonicalToolDescriptor[] => {
     const directNames = new Set((currentDiscovery?.tools ?? []).map((tool) => tool.name));
     return getMvp15AssetTools(currentDiscovery, currentMvp15FacadeTools).map((tool) => ({
@@ -1722,26 +1897,149 @@ export function createDesktopRuntimeAdapter(
       } else if (reason === "ue_restart") {
         const attestationBinding = currentMvp15DAttestationBinding;
         const attachInput = latestEditorAttachInput;
-        if (!attestationBinding || !attachInput) {
+        const predecessor = phaseManagedEditorOwner;
+        if (
+          !attestationBinding ||
+          !attachInput ||
+          !predecessor ||
+          !editorObservationAdapter ||
+          !latestEditorSessionId ||
+          latestEditorObservationGeneration <= 0 ||
+          attestationBinding.editorSessionId !== latestEditorSessionId ||
+          attachInput.processId !== predecessor.processId ||
+          attachInput.pidHash !== predecessor.pidHash
+        ) {
           throw new Error("mvp15d_product_ue_restart_context_unavailable");
         }
-        await invokeObservedNative("terminate_managed_editor_process", {
-          sessionId: attestationBinding.editorSessionId,
-        });
-        const successor = await invokeObservedNative("attach_editor_process", { ...attachInput });
-        if (
-          successor.response.status !== "attached" ||
-          typeof successor.response.sessionId !== "string" ||
-          successor.response.sessionId === attestationBinding.editorSessionId
-        ) {
-          throw new Error("mvp15d_product_ue_restart_attach_failed");
+        const predecessorObservationGeneration = latestEditorObservationGeneration;
+        const predecessorAttestationGeneration = attestationBinding.attestationGeneration;
+        const trustedRootId = attestationBinding.trustedRootId;
+        try {
+          await disconnectMcpAndWait();
+          const terminated = await invokeObservedNative("terminate_managed_editor_process", {
+            schemaVersion: "uagent.mvp15d.managed-editor-process-terminate.v2",
+            purpose: "phase_listener_owner",
+            taskId: predecessor.taskId,
+            phase: predecessor.phase,
+            sessionId: attestationBinding.editorSessionId,
+            processId: predecessor.processId,
+            pid: predecessor.pid,
+            processCreationFiletime: predecessor.processCreationFiletime,
+            listenerInstanceSha256: predecessor.listenerInstanceSha256,
+            ownerBindingSha256: predecessor.ownerBindingSha256,
+          });
+          const termination = terminated.response;
+          if (
+            termination.schemaVersion !== "uagent.mvp15d.managed-editor-process-terminate-result.v2" ||
+            termination.status !== "terminated" ||
+            termination.reason !== "task_owned_process_exited" ||
+            termination.purpose !== "phase_listener_owner" ||
+            termination.ownerTaskId !== predecessor.taskId ||
+            termination.ownerPhase !== predecessor.phase ||
+            termination.sessionId !== attestationBinding.editorSessionId ||
+            termination.processId !== predecessor.processId ||
+            termination.pid !== predecessor.pid ||
+            termination.processCreationFiletime !== predecessor.processCreationFiletime ||
+            termination.pidHash !== predecessor.pidHash ||
+            termination.observationGeneration !== predecessorObservationGeneration ||
+            !isMvp15dSha256(termination.processIdentitySha256) ||
+            termination.listenerInstanceSha256 !== predecessor.listenerInstanceSha256 ||
+            termination.ownerBindingSha256 !== predecessor.ownerBindingSha256 ||
+            termination.exitObserved !== true ||
+            termination.listenerClosed !== true
+          ) {
+            throw new Error("mvp15d_product_ue_restart_termination_failed");
+          }
+          phaseManagedEditorOwner = null;
+          const successorOwner = await createMvp15dManagedEditorOwner({
+            projectId: predecessor.projectId,
+            rootRef: predecessor.rootRef,
+            uprojectRelativePath: predecessor.uprojectRelativePath,
+          });
+          if (
+            successorOwner.processId === predecessor.processId ||
+            successorOwner.pidHash === predecessor.pidHash ||
+            (successorOwner.pid === predecessor.pid &&
+              successorOwner.processCreationFiletime === predecessor.processCreationFiletime) ||
+            successorOwner.listenerInstanceSha256 === predecessor.listenerInstanceSha256 ||
+            successorOwner.ownerBindingSha256 === predecessor.ownerBindingSha256
+          ) {
+            throw new Error("mvp15d_product_ue_restart_successor_identity_stale");
+          }
+          const successorDiscovery = await editorObservationAdapter.discoverProcesses({
+            projectId: predecessor.projectId,
+            rootRef: predecessor.rootRef,
+            uprojectRelativePath: predecessor.uprojectRelativePath,
+          });
+          const successorProcess = successorDiscovery.processes.find(
+            (process) => process.id === successorOwner.processId && process.pidHash === successorOwner.pidHash,
+          );
+          if (successorDiscovery.status !== "ready" || !successorProcess) {
+            throw new Error("mvp15d_product_ue_restart_successor_discovery_failed");
+          }
+          const successorAttachInput: NativeEditorAttachInput = {
+            ...attachInput,
+            projectId: predecessor.projectId,
+            rootRef: predecessor.rootRef,
+            uprojectRelativePath: predecessor.uprojectRelativePath,
+            processId: successorOwner.processId,
+            pidHash: successorOwner.pidHash,
+            processDisplayName: successorProcess.displayName,
+            mode: "attached",
+          };
+          const successor = await invokeObservedNative("attach_editor_process", {
+            ...successorAttachInput,
+          });
+          const successorSessionId = successor.response.sessionId;
+          const successorObservationGeneration = Number(successor.response.observationGeneration ?? 0);
+          if (
+            successor.response.status !== "attached" ||
+            typeof successorSessionId !== "string" ||
+            !successorSessionId ||
+            successorSessionId === attestationBinding.editorSessionId ||
+            successor.response.processId !== successorOwner.processId ||
+            successor.response.pidHash !== successorOwner.pidHash ||
+            !Number.isSafeInteger(successorObservationGeneration) ||
+            successorObservationGeneration <= predecessorObservationGeneration
+          ) {
+            throw new Error("mvp15d_product_ue_restart_attach_failed");
+          }
+          latestEditorAttachInput = structuredClone(successorAttachInput);
+          latestEditorSessionId = successorSessionId;
+          latestEditorObservationGeneration = successorObservationGeneration;
+          await adapter.connectMcp();
+          if (
+            adapter.getMcpState().status !== "connected" ||
+            !currentMvp15dMcpSessionId ||
+            currentMvp15dMcpSessionId === before.sessionId
+          ) {
+            throw new Error("mvp15d_product_ue_restart_connect_failed");
+          }
+          await adapter.discoverMcp();
+          if (
+            !currentDiscovery ||
+            currentMvp15Fingerprint.status !== "ready" ||
+            mcpDiscoveryGeneration <= before.generation
+          ) {
+            throw new Error("mvp15d_product_ue_restart_discovery_failed");
+          }
+          await refreshMvp15DCompanionAttestation(trustedRootId, successorSessionId);
+          if (
+            currentMvp15DCompanionStatus.status !== "verified" ||
+            currentMvp15DCompanionFingerprint.status !== "ready" ||
+            !currentMvp15DAttestationBinding ||
+            currentMvp15DAttestationBinding.editorSessionId !== successorSessionId ||
+            currentMvp15DAttestationBinding.discoveryGeneration !== mcpDiscoveryGeneration ||
+            currentMvp15DAttestationBinding.attestationGeneration <= predecessorAttestationGeneration
+          ) {
+            throw new Error("mvp15d_product_ue_restart_attestation_failed");
+          }
+        } catch (error) {
+          productTransitionState = null;
+          const failureRetraction = retractNativeMvp15DApprovals(true, false);
+          if (failureRetraction) await failureRetraction.settled;
+          throw error;
         }
-        await disconnectMcpAndWait();
-        await adapter.connectMcp();
-        if (adapter.getMcpState().status !== "connected") {
-          throw new Error("mvp15d_product_ue_restart_connect_failed");
-        }
-        await adapter.discoverMcp();
       } else if (reason === "stale_completion") {
         await adapter.discoverMcp();
         await adapter.discoverMcp();
@@ -1829,7 +2127,7 @@ export function createDesktopRuntimeAdapter(
       phase: string;
       processId: string;
       pid: number;
-      processStartTime: number;
+      processCreationFiletime: string;
     } | null;
     negativeCaseId: string | null;
     renderedControlCall: Mvp15dRawObservedCall | null;
@@ -2170,22 +2468,22 @@ export function createDesktopRuntimeAdapter(
     phase: string;
     processId: string;
     pid: number;
-    processStartTime: number;
+    processCreationFiletime: string;
   }): Promise<Mvp15dRawObservedCall> => {
     const request = {
-      schemaVersion: "uagent.mvp15d.managed-editor-process-release.v1",
+      schemaVersion: "uagent.mvp15d.managed-editor-process-release.v2",
       ...managedProcess,
     };
     const released = await invokeObservedNative("release_managed_editor_process", request);
     if (
-      released.response.schemaVersion !== "uagent.mvp15d.managed-editor-process-release-result.v1" ||
+      released.response.schemaVersion !== "uagent.mvp15d.managed-editor-process-release-result.v2" ||
       released.response.status !== "released" ||
       released.response.reason !== "task_owned_process_released" ||
       released.response.ownerTaskId !== managedProcess.taskId ||
       released.response.ownerPhase !== managedProcess.phase ||
       released.response.processId !== managedProcess.processId ||
       released.response.pid !== managedProcess.pid ||
-      released.response.processStartTime !== managedProcess.processStartTime
+      released.response.processCreationFiletime !== managedProcess.processCreationFiletime
     ) {
       throw new Error("mvp15d_ui_managed_process_release_failed");
     }
@@ -2267,12 +2565,14 @@ export function createDesktopRuntimeAdapter(
         phase: string;
         processId: string;
         pid: number;
-        processStartTime: number;
+        processCreationFiletime: string;
       } | null = null;
       try {
         if (caseId === "N4") {
           if (!nativeInvoke) throw new Error("mvp15d_native_observation_unavailable");
           const createRequest = {
+            schemaVersion: "uagent.mvp15d.managed-editor-process-create.v2",
+            purpose: "negative_case_fixture",
             taskId: authority.taskId,
             phase: authority.phase,
             projectId: attachInput.projectId,
@@ -2287,19 +2587,19 @@ export function createDesktopRuntimeAdapter(
             ? createResponse.process as Record<string, unknown>
             : null;
           const processPid = Number(createResponse.processPid ?? 0);
-          const processStartTime = Number(createResponse.processStartTime ?? 0);
+          const processCreationFiletime = createResponse.processCreationFiletime;
           if (
             process &&
             typeof process.id === "string" &&
             Number.isSafeInteger(processPid) && processPid > 0 &&
-            Number.isSafeInteger(processStartTime) && processStartTime > 0
+            isMvp15dCreationFiletime(processCreationFiletime)
           ) {
             managedProcess = {
               taskId: authority.taskId,
               phase: authority.phase,
               processId: process.id,
               pid: processPid,
-              processStartTime,
+              processCreationFiletime,
             };
           }
           const createReference = nativeReceiptReference({
@@ -2307,8 +2607,10 @@ export function createDesktopRuntimeAdapter(
             response: createResponse,
           });
           if (
+            createResponse.schemaVersion !== "uagent.mvp15d.managed-editor-process-create-result.v2" ||
             createResponse.status !== "created" ||
             createResponse.reason !== "task_owned_process_started" ||
+            createResponse.purpose !== "negative_case_fixture" ||
             createResponse.ownerTaskId !== authority.taskId ||
             createResponse.ownerPhase !== authority.phase ||
             !process ||
@@ -3191,6 +3493,46 @@ export function createDesktopRuntimeAdapter(
         throw new Error("mvp15d_fixed_observation_authority_unavailable");
       }
       return (await observeNativeState(kind, request)).call;
+    },
+    observeMvp15dManagedListenerAliveThroughUse: async () => {
+      const authority = fixedObservationAuthority;
+      const owner = phaseManagedEditorOwner;
+      if (
+        !authority ||
+        !owner ||
+        !latestEditorSessionId ||
+        !latestEditorAttachInput ||
+        mcpState.status !== "disconnected" ||
+        latestEditorAttachInput.processId !== owner.processId ||
+        latestEditorAttachInput.pidHash !== owner.pidHash
+      ) {
+        throw new Error("mvp15d_managed_listener_alive_context_invalid");
+      }
+      const request = {
+        taskId: authority.taskId,
+        phase: authority.phase,
+        sessionId: latestEditorSessionId,
+        processId: owner.processId,
+        pid: owner.pid,
+        processCreationFiletime: owner.processCreationFiletime,
+        listenerInstanceSha256: owner.listenerInstanceSha256,
+        ownerBindingSha256: owner.ownerBindingSha256,
+        stage: "after_rendered_disconnect",
+      };
+      const observed = await observeNativeState("managed_listener_alive_through_use", request);
+      if (
+        observed.observation.status !== "observed" ||
+        observed.observation.reason !== "task_owned_listener_accepting" ||
+        observed.observation.processAlive !== true ||
+        observed.observation.listenerAccepting !== true ||
+        observed.observation.stage !== "after_rendered_disconnect" ||
+        observed.observation.listenerInstanceSha256 !== owner.listenerInstanceSha256 ||
+        observed.observation.ownerBindingSha256 !== owner.ownerBindingSha256 ||
+        !isMvp15dSha256(observed.observation.processIdentitySha256)
+      ) {
+        throw new Error("mvp15d_managed_listener_alive_observation_invalid");
+      }
+      return observed.call;
     },
     takeMvp15dMcpObservationReceipt: (api) => {
       let index = -1;

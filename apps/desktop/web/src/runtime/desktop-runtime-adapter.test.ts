@@ -140,6 +140,199 @@ describe("MVP15D authoritative product observations", () => {
     expect(harness.nativeCommands).not.toContain("mvp15d_bridge_issue_observation_receipt");
   });
 
+  it.each([
+    ["process_not_managed", "mvp15d_product_ue_restart_termination_failed"],
+    ["session_not_found", "mvp15d_product_ue_restart_termination_failed"],
+    ["termination_failed", "mvp15d_product_ue_restart_termination_failed"],
+    ["same_process", "mvp15d_product_ue_restart_successor_identity_stale"],
+    ["stale_listener", "mvp15d_product_ue_restart_successor_identity_stale"],
+    ["missing_successor_identity", "mvp15d_phase_listener_owner_identity_invalid"],
+    ["same_session", "mvp15d_product_ue_restart_attach_failed"],
+    ["stale_observation_generation", "mvp15d_product_ue_restart_attach_failed"],
+  ] as const)("fails UE restart closed for %s", async (failure, expectedError) => {
+    const { StreamableHttpTransport: RealStreamableHttpTransport } =
+      await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");
+    vi.mocked(StreamableHttpTransport).mockImplementation(
+      (options) => new RealStreamableHttpTransport(options),
+    );
+    type Owner = {
+      processId: string;
+      pidHash: string;
+      pid: number;
+      processCreationFiletime: string;
+      listenerInstanceSha256: string;
+      ownerBindingSha256: string;
+    };
+    let createSequence = 0;
+    let sessionSequence = 0;
+    let observationGeneration = 0;
+    let activeOwner: Owner | null = null;
+    let predecessor: Owner | null = null;
+    let predecessorSessionId = "";
+    const harness = createMvp15dNativeBoundaryHarness({
+      handleNativeCommand: async (command, input, nextReceipt) => {
+        if (command === "create_managed_editor_process") {
+          createSequence += 1;
+          const sequence = createSequence === 2 && failure === "same_process" ? 1 : createSequence;
+          const listenerSequence = createSequence === 2 && failure === "stale_listener" ? 1 : createSequence;
+          activeOwner = {
+            processId: `managed-owner-${sequence}`,
+            pidHash: `managed-pid-${sequence}`,
+            pid: 7_000 + sequence,
+            processCreationFiletime: String(133_000_000_000_010_000n + BigInt(sequence)),
+            listenerInstanceSha256: listenerSequence.toString(16).repeat(64).slice(0, 64),
+            ownerBindingSha256: (sequence + 8).toString(16).repeat(64).slice(0, 64),
+          };
+          if (createSequence === 1) predecessor = { ...activeOwner };
+          const response = {
+            schemaVersion: "uagent.mvp15d.managed-editor-process-create-result.v2",
+            status: "ready",
+            reason: "task_owned_listener_accepting",
+            purpose: "phase_listener_owner",
+            ownerTaskId: input.taskId,
+            ownerPhase: input.phase,
+            processPid: activeOwner.pid,
+            processCreationFiletime: activeOwner.processCreationFiletime,
+            listenerInstanceSha256:
+              createSequence === 2 && failure === "missing_successor_identity"
+                ? null
+                : activeOwner.listenerInstanceSha256,
+            ownerBindingSha256: activeOwner.ownerBindingSha256,
+            process: {
+              id: activeOwner.processId,
+              pidHash: activeOwner.pidHash,
+              displayName: "UnrealEditor-Cmd.exe",
+              source: "managed",
+            },
+            nativeReceiptId: nextReceipt(),
+          };
+          return response;
+        }
+        if (command === "discover_editor_processes") {
+          if (!activeOwner) return { status: "blocked", reason: "owner_missing", processes: [] };
+          return {
+            status: "ready",
+            reason: "native_metadata",
+            processes: [{
+              id: activeOwner.processId,
+              pidHash: activeOwner.pidHash,
+              displayName: "UnrealEditor-Cmd.exe",
+              displayExecutableHash: "fixture-executable",
+              displayProjectHint: "[project-root]/FinalHost.uproject",
+              processState: "running",
+              discoveredAt: 1,
+              expiresAt: 9_999_999_999_999,
+              source: "managed",
+              managedPurpose: "phase_listener_owner",
+              processPid: activeOwner.pid,
+              processCreationFiletime: activeOwner.processCreationFiletime,
+              listenerInstanceSha256: activeOwner.listenerInstanceSha256,
+              ownerBindingSha256: activeOwner.ownerBindingSha256,
+            }],
+          };
+        }
+        if (command === "attach_editor_process") {
+          sessionSequence += 1;
+          observationGeneration += 1;
+          const sessionId =
+            sessionSequence === 2 && failure === "same_session"
+              ? predecessorSessionId
+              : `managed-editor-session-${sessionSequence}`;
+          if (sessionSequence === 1) predecessorSessionId = sessionId;
+          return {
+            status: "attached",
+            reason: "attached",
+            sessionId,
+            projectId: input.projectId,
+            rootId: "root:managed-owner-test",
+            uprojectDisplayPath: "[project-root]/FinalHost.uproject",
+            processId: input.processId,
+            pidHash: input.pidHash,
+            observationGeneration:
+              sessionSequence === 2 && failure === "stale_observation_generation"
+                ? observationGeneration - 1
+                : observationGeneration,
+            mode: "attached",
+            createdAt: 1,
+            expiresAt: 9_999_999_999_999,
+            replayOnly: false,
+            nativeReceiptId: nextReceipt(),
+          };
+        }
+        if (command === "terminate_managed_editor_process") {
+          if (!predecessor) throw new Error("fixture_predecessor_missing");
+          if (failure === "process_not_managed" || failure === "session_not_found") {
+            return {
+              schemaVersion: "uagent.mvp15d.managed-editor-process-terminate-result.v2",
+              status: "blocked",
+              reason: failure,
+              nativeReceiptId: nextReceipt(),
+            };
+          }
+          if (failure === "termination_failed") {
+            return {
+              schemaVersion: "uagent.mvp15d.managed-editor-process-terminate-result.v2",
+              status: "failed",
+              reason: "process_exit_not_observed",
+              nativeReceiptId: nextReceipt(),
+            };
+          }
+          const response = {
+            schemaVersion: "uagent.mvp15d.managed-editor-process-terminate-result.v2",
+            status: "terminated",
+            reason: "task_owned_process_exited",
+            purpose: "phase_listener_owner",
+            ownerTaskId: input.taskId,
+            ownerPhase: input.phase,
+            sessionId: input.sessionId,
+            processId: predecessor.processId,
+            pid: predecessor.pid,
+            processCreationFiletime: predecessor.processCreationFiletime,
+            pidHash: predecessor.pidHash,
+            observationGeneration,
+            processIdentitySha256: "e".repeat(64),
+            listenerInstanceSha256: predecessor.listenerInstanceSha256,
+            ownerBindingSha256: predecessor.ownerBindingSha256,
+            exitObserved: true,
+            listenerClosed: true,
+            nativeReceiptId: nextReceipt(),
+          };
+          activeOwner = null;
+          return response;
+        }
+        return undefined;
+      },
+    });
+    const adapter = createDesktopRuntimeAdapter({ nativeInvoke: harness.nativeInvoke });
+    await adapter.activateMvp15dFixedObservationAuthority?.({
+      taskId: "TASK-MVP15D-UE-RESTART-NEGATIVE",
+      phase: "product-capture",
+      session: "fixed-product-session-ue-restart-negative",
+      generation: 21,
+      receiptLedgerEnabled: true,
+    });
+    const editor = adapter.getEditorObservationAdapter();
+    const editorConfig = {
+      projectId: "project:managed-owner-test",
+      rootRef: "G:/Fixture/FinalHost",
+      uprojectRelativePath: "FinalHost.uproject",
+    };
+    const discovery = await editor!.discoverProcesses(editorConfig);
+    const process = discovery.processes[0]!;
+    const attached = await editor!.attachProcess({
+      ...editorConfig,
+      processId: process.id,
+      pidHash: process.pidHash,
+      processDisplayName: process.displayName,
+      mode: "attached",
+    });
+    await makeMvp15DForwardReady(adapter, "root:managed-owner-test", attached!.sessionId);
+
+    await expect(adapter.getMvp15dProductObservationPort!()!.retract("ue_restart"))
+      .rejects.toThrow(expectedError);
+    expect(harness.nativeInputs.some((input) => input.reason === "ue_restart")).toBe(false);
+  });
+
   it("drives the partial/unknown UI authority records through raw native and MCP calls", async () => {
     const { StreamableHttpTransport: RealStreamableHttpTransport } =
       await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");
@@ -169,12 +362,14 @@ describe("MVP15D authoritative product observations", () => {
       handleNativeCommand: async (command, input, nextReceipt) => {
       if (command === "create_managed_editor_process") {
         return {
+          schemaVersion: "uagent.mvp15d.managed-editor-process-create-result.v2",
           status: "created",
           reason: "task_owned_process_started",
+          purpose: "negative_case_fixture",
           ownerTaskId: input.taskId,
           ownerPhase: input.phase,
           processPid: 4_000 + sessionSequence,
-          processStartTime: 1_700_000_000 + sessionSequence,
+          processCreationFiletime: String(133_000_000_000_020_000n + BigInt(sessionSequence)),
           process: {
             id: `managed-process-${sessionSequence + 1}`,
             pidHash: `managed-pid-${sessionSequence + 1}`,
@@ -550,21 +745,26 @@ describe("MVP15D authoritative product observations", () => {
     vi.mocked(StreamableHttpTransport).mockImplementation(
       (options) => new RealStreamableHttpTransport(options),
     );
-    const activeManaged = new Map<string, { pid: number; processStartTime: number }>();
+    const activeManaged = new Map<string, { pid: number; processCreationFiletime: string }>();
     let releaseCount = 0;
     const harness = createMvp15dNativeBoundaryHarness({
       handleNativeCommand: async (command, input, nextReceipt) => {
         if (command === "create_managed_editor_process") {
           const processId = "managed-process-cleanup-1";
-          const identity = { pid: 9_001, processStartTime: 1_700_000_001 };
+          const identity = {
+            pid: 9_001,
+            processCreationFiletime: "133000000000030001",
+          };
           activeManaged.set(processId, identity);
           return {
+            schemaVersion: "uagent.mvp15d.managed-editor-process-create-result.v2",
             status: "created",
             reason: "task_owned_process_started",
+            purpose: "negative_case_fixture",
             ownerTaskId: input.taskId,
             ownerPhase: input.phase,
             processPid: identity.pid,
-            processStartTime: identity.processStartTime,
+            processCreationFiletime: identity.processCreationFiletime,
             process: {
               id: processId,
               pidHash: "managed-pid-cleanup-1",
@@ -579,10 +779,10 @@ describe("MVP15D authoritative product observations", () => {
           if (
             !identity ||
             input.pid !== identity.pid ||
-            input.processStartTime !== identity.processStartTime
+            input.processCreationFiletime !== identity.processCreationFiletime
           ) {
             return {
-              schemaVersion: "uagent.mvp15d.managed-editor-process-release-result.v1",
+              schemaVersion: "uagent.mvp15d.managed-editor-process-release-result.v2",
               status: "blocked",
               reason: "managed_process_identity_mismatch",
               nativeReceiptId: nextReceipt(),
@@ -591,14 +791,14 @@ describe("MVP15D authoritative product observations", () => {
           activeManaged.delete(String(input.processId));
           releaseCount += 1;
           return {
-            schemaVersion: "uagent.mvp15d.managed-editor-process-release-result.v1",
+            schemaVersion: "uagent.mvp15d.managed-editor-process-release-result.v2",
             status: "released",
             reason: "task_owned_process_released",
             ownerTaskId: input.taskId,
             ownerPhase: input.phase,
             processId: input.processId,
             pid: input.pid,
-            processStartTime: input.processStartTime,
+            processCreationFiletime: input.processCreationFiletime,
             nativeReceiptId: nextReceipt(),
           };
         }
@@ -1408,6 +1608,7 @@ function verifiedMvp15DNativeEvidence() {
     artifacts: [
       { path: "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", size: 3, sha256: "f".repeat(64) },
       { path: "Binaries/Win64/UnrealEditor.modules", size: 3, sha256: "1".repeat(64) },
+      { path: "Resources/mvp15d-native-binding-v2.json", size: 4, sha256: "9".repeat(64) },
       { path: "Resources/uagent-asset-tools.schema.json", size: 2, sha256: "e".repeat(64) },
       { path: "UAgentAssetTools.uplugin", size: 1, sha256: "d".repeat(64) },
     ],

@@ -52,6 +52,7 @@ const COMMON_KEYS = [
   "endpoint",
   "generation",
   "port",
+  "ue-root",
 ];
 const RENDERED_PATHS = Object.freeze({
   "capability-probe": "capability",
@@ -200,7 +201,7 @@ function within(root, candidate) {
 
 function parseOrderedArgs(phase, argv) {
   if (!PHASES.has(phase)) fail("FINAL_LIVE_PHASE_INVALID");
-  const keys = phase === "ue-automation" ? [...COMMON_KEYS, "ue-root"] : COMMON_KEYS;
+  const keys = COMMON_KEYS;
   if (argv.length !== keys.length * 2) fail("FINAL_LIVE_ARGUMENT_VECTOR_INVALID");
   const args = Object.create(null);
   for (let index = 0; index < keys.length; index += 1) {
@@ -224,6 +225,9 @@ function validateCommonBinding(phase, args, requireProject) {
   const external = resolve(repository, "external");
   const port = Number(args.port);
   const generation = Number(args.generation);
+  if (args["ue-root"] && !isAbsolute(args["ue-root"])) {
+    fail("FINAL_LIVE_UE_ROOT_INVALID");
+  }
   if (
     resolve(evidenceRoot, "..") !== external ||
     !ROOT_PATTERN.test(basename(evidenceRoot)) ||
@@ -360,6 +364,24 @@ function desktopRuntimeCommand(binding, transport) {
     resolve(binding.repository, "apps", "desktop", "src-tauri", "target", "release", "uagent.exe"),
     "FINAL_LIVE_EXECUTABLE_MISSING",
   );
+  const liveProductRuntime =
+    transport.mode === "live" &&
+    (binding.phase === "product-capture" || binding.phase === "ui-lifecycle");
+  const env = { ...process.env };
+  delete env.UAGENT_ENABLE_UE_EDITOR_BRIDGE;
+  delete env.UAGENT_ENABLE_UE_EDITOR_LAUNCH;
+  delete env.UAGENT_MVP15D_UE_ROOT;
+  Object.assign(env, {
+    UAGENT_ENABLE_MVP15D_TASK_BRIDGE: "1",
+    UAGENT_ENABLE_UE_EDITOR_BRIDGE: liveProductRuntime ? "1" : "0",
+    UAGENT_ENABLE_UE_EDITOR_LAUNCH: liveProductRuntime ? "1" : "0",
+    UAGENT_ENABLE_ASSET_MUTATION:
+      liveProductRuntime && binding.phase === "ui-lifecycle" ? "1" : "0",
+  });
+  if (liveProductRuntime) {
+    if (!binding.ueRoot || !isAbsolute(binding.ueRoot)) fail("FINAL_LIVE_UE_ROOT_INVALID");
+    env.UAGENT_MVP15D_UE_ROOT = binding.ueRoot;
+  }
   return {
     executable,
     args: [
@@ -397,12 +419,7 @@ function desktopRuntimeCommand(binding, transport) {
       "--rendered-product-path",
       RENDERED_PATHS[binding.phase],
     ],
-    env: {
-      ...process.env,
-      UAGENT_ENABLE_MVP15D_TASK_BRIDGE: "1",
-      UAGENT_ENABLE_ASSET_MUTATION:
-        binding.phase === "ui-lifecycle" && transport.mode === "live" ? "1" : "0",
-    },
+    env,
   };
 }
 

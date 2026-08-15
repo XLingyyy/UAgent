@@ -57,6 +57,10 @@ function configuration(overrides: Record<string, unknown> = {}) {
 
 const fixedAuthorityAdapter = {
   activateMvp15dFixedObservationAuthority: vi.fn().mockResolvedValue(undefined),
+  observeMvp15dManagedListenerAliveThroughUse: vi.fn().mockResolvedValue({
+    receiptId: `mvp15d-observation-receipt:${"a".repeat(64)}`,
+    request: { stage: "after_rendered_disconnect" },
+  }),
 };
 
 function stepCollectingInvoke(driverCommand = "capability-handshake") {
@@ -324,6 +328,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   adapterMock.createDesktopRuntimeAdapter.mockReset();
+  fixedAuthorityAdapter.activateMvp15dFixedObservationAuthority.mockClear();
+  fixedAuthorityAdapter.observeMvp15dManagedListenerAliveThroughUse.mockClear();
   evidenceMock.readMvp15dProductStoreEvidence.mockClear();
   evidenceMock.readMvp15dUiStoreEvidence.mockClear();
   evidenceMock.runMvp15dUiBridgeAction.mockClear();
@@ -471,6 +477,7 @@ describe("R5.3 live product ordered calls through a deterministic local fake tra
       "fingerprint",
       "disconnect",
     ]);
+    expect(fixedAuthorityAdapter.observeMvp15dManagedListenerAliveThroughUse).toHaveBeenCalledTimes(1);
     expect(evidenceMock.runMvp15dUiBridgeAction).not.toHaveBeenCalledWith("productAuthority");
   });
 
@@ -513,6 +520,7 @@ describe("R5.3 live product ordered calls through a deterministic local fake tra
       "stale-completion",
       "disconnect",
     ]);
+    expect(fixedAuthorityAdapter.observeMvp15dManagedListenerAliveThroughUse).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -574,6 +582,7 @@ describe("R5.3 live UI validate/add/confirmTrust ordering on a task-owned fixtur
       "observationStop",
       "mcpDisconnect",
     ]);
+    expect(fixedAuthorityAdapter.observeMvp15dManagedListenerAliveThroughUse).toHaveBeenCalledTimes(1);
     expect(clicks).toEqual([
       "validate",
       "add",

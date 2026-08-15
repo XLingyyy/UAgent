@@ -12,10 +12,16 @@ export interface NativeEditorObservationAdapter {
   refreshCapability: () => Promise<UEEditorCapabilityStatus>;
   discoverProcesses: (input: NativeEditorProcessConfigInput) => Promise<NativeEditorProcessDiscoveryResult>;
   validateAttachConfig: (input: NativeEditorProcessConfigInput) => Promise<NativeEditorAttachValidationResult>;
-  attachProcess: (input: NativeEditorAttachInput) => Promise<UEEditorSession | null>;
+  attachProcess: (input: NativeEditorAttachInput) => Promise<NativeEditorObservedSession | null>;
   readStatus: (sessionId: string) => Promise<UEEditorHeartbeat | null>;
   readSnapshot: (sessionId: string) => Promise<UEEditorObservationSnapshot | null>;
   stopSession: (sessionId: string) => Promise<UEEditorSession | null>;
+}
+
+export interface NativeEditorObservedSession extends UEEditorSession {
+  processId: string | null;
+  observationGeneration: number | null;
+  nativeReceiptId: string | null;
 }
 
 export interface NativeEditorProcessConfigInput {
@@ -60,6 +66,9 @@ interface NativeSessionResult {
   expiresAt: number;
   lastHeartbeatAt?: number | null;
   replayOnly: boolean;
+  processId?: string | null;
+  observationGeneration?: number | null;
+  nativeReceiptId?: string | null;
 }
 
 function getGlobalInvoke(): NativeInvoke | null {
@@ -116,7 +125,7 @@ export function createEditorObservationNativeAdapterFromEnvironment(
   return invoke ? createEditorObservationNativeAdapter(invoke) : null;
 }
 
-function toSession(result: NativeSessionResult): UEEditorSession | null {
+function toSession(result: NativeSessionResult): NativeEditorObservedSession | null {
   if (!result.sessionId || !result.rootId || !result.uprojectDisplayPath) return null;
   return {
     sessionId: result.sessionId,
@@ -129,5 +138,13 @@ function toSession(result: NativeSessionResult): UEEditorSession | null {
     createdAt: result.createdAt,
     expiresAt: result.expiresAt,
     replayOnly: result.replayOnly,
+    processId: result.processId ?? null,
+    observationGeneration:
+      typeof result.observationGeneration === "number" &&
+      Number.isSafeInteger(result.observationGeneration) &&
+      result.observationGeneration > 0
+        ? result.observationGeneration
+        : null,
+    nativeReceiptId: result.nativeReceiptId ?? null,
   };
 }

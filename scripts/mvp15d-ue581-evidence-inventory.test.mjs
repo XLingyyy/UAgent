@@ -126,6 +126,19 @@ function createManifest(root) {
     },
   });
   writeFileSync(
+    resolve(packageRoot, "Resources", "mvp15d-native-binding-v2.json"),
+    readFileSync(
+      resolve(
+        repository,
+        "integrations",
+        "unreal",
+        "UAgentAssetTools",
+        "Resources",
+        "mvp15d-native-binding-v2.json",
+      ),
+    ),
+  );
+  writeFileSync(
     resolve(packageRoot, "Binaries", "Win64", "UnrealEditor-UAgentAssetTools.dll"),
     Buffer.concat([
       Buffer.from([0x4d, 0x5a, 0x00, 0xff]),

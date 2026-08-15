@@ -33,7 +33,7 @@
     "windowsSdk": { "$ref": "#/$defs/toolchain" },
     "buildCommandFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "buildEvidenceArtifacts": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/artifact" } },
-    "artifacts": { "type": "array", "minItems": 4, "items": { "$ref": "#/$defs/artifact" } },
+    "artifacts": { "type": "array", "minItems": 5, "items": { "$ref": "#/$defs/artifact" } },
     "modules": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/moduleArtifact" } },
     "toolNames": {
       "type": "array",

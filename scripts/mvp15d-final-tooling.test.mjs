@@ -1849,6 +1849,7 @@ function writeBuilder(path, failExit = 0, { overflowChannel = null } = {}) {
       'mkdirSync(resolve(output,"Binaries","Win64"),{recursive:true});',
       'copyFileSync(plugin,resolve(output,"UAgentAssetTools.uplugin"));',
       'copyFileSync(resolve(plugin,"..","Resources","uagent-asset-tools.schema.json"),resolve(output,"Resources","uagent-asset-tools.schema.json"));',
+      'copyFileSync(resolve(plugin,"..","Resources","mvp15d-native-binding-v2.json"),resolve(output,"Resources","mvp15d-native-binding-v2.json"));',
       'writeFileSync(resolve(output,"Binaries","Win64","UnrealEditor-UAgentAssetTools.dll"),Buffer.from("fixture-module-v1"));',
       'writeFileSync(resolve(output,"Binaries","Win64","UnrealEditor.modules"),JSON.stringify({BuildId:"55116800",Modules:{UAgentAssetTools:"UnrealEditor-UAgentAssetTools.dll"}},null,2)+"\\n");',
       'console.log(\'UAGENT_TOOLCHAIN_JSON:{"compatibleChangelist":55116800,"compilerName":"MSVC","compilerVersion":"14.44.35207","engineChangelist":56057345,"engineVersion":"5.8.1","moduleBuildId":"55116800","sdkName":"Windows SDK","sdkVersion":"10.0.26100.0"}\');',
@@ -1906,6 +1907,7 @@ function writeAdversarialBuilder(path, ueRoot) {
       'mkdirSync(resolve(output,"Binaries","Win64"),{recursive:true});',
       'copyFileSync(plugin,resolve(output,"UAgentAssetTools.uplugin"));',
       'copyFileSync(resolve(plugin,"..","Resources","uagent-asset-tools.schema.json"),resolve(output,"Resources","uagent-asset-tools.schema.json"));',
+      'copyFileSync(resolve(plugin,"..","Resources","mvp15d-native-binding-v2.json"),resolve(output,"Resources","mvp15d-native-binding-v2.json"));',
       'writeFileSync(resolve(output,"Binaries","Win64","UnrealEditor-UAgentAssetTools.dll"),Buffer.from("fixture-module-v1"));',
       'writeFileSync(resolve(output,"Binaries","Win64","UnrealEditor.modules"),JSON.stringify({BuildId:"55116800",Modules:{UAgentAssetTools:"UnrealEditor-UAgentAssetTools.dll"}},null,2)+"\\n");',
       `const stdoutLines=${JSON.stringify(stdoutLines)};`,
@@ -2061,6 +2063,13 @@ function createHandAuthoredProvenanceFixture() {
     resolve(packageRoot, "Resources", "uagent-asset-tools.schema.json"),
     '{"type":"object"}\n',
     "utf8",
+  );
+  cpSync(
+    resolve(
+      REPOSITORY,
+      "integrations/unreal/UAgentAssetTools/Resources/mvp15d-native-binding-v2.json",
+    ),
+    resolve(packageRoot, "Resources", "mvp15d-native-binding-v2.json"),
   );
   writeFileSync(modulePath, Buffer.from("authoritative-module-fixture", "utf8"));
   writeFileSync(
@@ -3117,6 +3126,28 @@ test(
       assert.notEqual(created.manifestSelfSha256, created.manifestFileSha256);
       assert.equal(verifyManifest(args).status, "manifest_verified");
 
+      const manifestPath = resolve(packageRoot, "UAgentAssetTools.build.json");
+      const originalManifestText = readFileSync(manifestPath, "utf8");
+      const originalManifest = JSON.parse(originalManifestText);
+      assert.deepEqual(
+        originalManifest.artifacts.find(
+          ({ path }) => path === "Resources/mvp15d-native-binding-v2.json",
+        ),
+        {
+          path: "Resources/mvp15d-native-binding-v2.json",
+          size: CANONICAL_FIXTURE_SIZE,
+          sha256: CANONICAL_FIXTURE_SHA256,
+        },
+      );
+      const nativeBindingPath = resolve(packageRoot, "Resources", "mvp15d-native-binding-v2.json");
+      const nativeBindingBytes = readFileSync(nativeBindingPath);
+      writeFileSync(nativeBindingPath, Buffer.from("tampered-native-binding", "utf8"));
+      expectCode(() => verifyManifest(args), "PACKAGE_SOURCE_ARTIFACT_MISMATCH");
+      writeFileSync(nativeBindingPath, nativeBindingBytes);
+      rmSync(nativeBindingPath);
+      expectCode(() => verifyManifest(args), "PACKAGE_ARTIFACT_MISSING");
+      writeFileSync(nativeBindingPath, nativeBindingBytes);
+
       const rawLogPath = resolve(evidenceRoot, "logs", "runuat.stdout.redacted.log");
       const rawLogBytes = readFileSync(rawLogPath);
       writeFileSync(rawLogPath, "tampered transcript\n");
@@ -3156,8 +3187,6 @@ test(
       expectCode(() => verifyManifest(args), "PACKAGE_ARTIFACT_EXTRA_OR_FORBIDDEN");
       rmSync(sourceDirectory, { recursive: true, force: true });
 
-      const manifestPath = resolve(packageRoot, "UAgentAssetTools.build.json");
-      const originalManifestText = readFileSync(manifestPath, "utf8");
       const tamperedManifest = JSON.parse(originalManifestText);
       tamperedManifest.compiler.version = "99.99.99999";
       tamperedManifest.manifestSelfSha256 = manifestSelfHash(tamperedManifest);
@@ -3777,6 +3806,10 @@ test(
           `mvp15d-final-${phase}-producer.mjs`,
         );
         assert.equal(plan.plan.liveCommand.endpoint, `http://127.0.0.1:${port}/mcp`);
+        assert.deepEqual(plan.plan.liveCommand.orderedArguments.slice(-2), [
+          "--ue-root",
+          resolve(fixture.goodUeRoot),
+        ]);
         livePlans.set(phase, plan.plan.liveCommand);
       }
       assert.equal(existsSync(resolve(root, "logs", "product-capture.stdout.log")), false);
@@ -3795,22 +3828,68 @@ test(
       );
       mkdirSync(resolve(desktopExecutable, ".."), { recursive: true });
       writeFileSync(desktopExecutable, Buffer.from("deterministic-desktop-executable-fixture"));
-      const productCommand = runtimeCommand(binding);
+      const ambientKeys = [
+        "UAGENT_ENABLE_UE_EDITOR_BRIDGE",
+        "UAGENT_ENABLE_UE_EDITOR_LAUNCH",
+        "UAGENT_ENABLE_ASSET_MUTATION",
+        "UAGENT_MVP15D_UE_ROOT",
+      ];
+      const ambientBefore = new Map(ambientKeys.map((key) => [key, process.env[key]]));
+      let productCommand;
+      let uiCommand;
+      try {
+        process.env.UAGENT_ENABLE_UE_EDITOR_BRIDGE = "ambient-enabled";
+        process.env.UAGENT_ENABLE_UE_EDITOR_LAUNCH = "ambient-enabled";
+        process.env.UAGENT_ENABLE_ASSET_MUTATION = "ambient-enabled";
+        process.env.UAGENT_MVP15D_UE_ROOT = "ambient-ue-root";
+        productCommand = runtimeCommand(binding);
+        uiCommand = runtimeCommand(
+          validateBinding("ui-lifecycle", livePlans.get("ui-lifecycle").orderedArguments.slice(1)),
+        );
+        const capabilityTransport = {
+          mode: "capability-only",
+          nonceFile: resolve(root, "metadata", "capability.nonce"),
+          eventFile: resolve(root, "transcripts", "capability.runtime-events.jsonl"),
+          driverFile: resolve(root, "metadata", "capability.driver.json"),
+        };
+        for (const command of [
+          runtimeCommand(binding, capabilityTransport),
+          runtimeCommand(
+            { ...binding, phase: "capability-probe", ueRoot: null },
+            capabilityTransport,
+          ),
+        ]) {
+          assert.equal(command.env.UAGENT_ENABLE_UE_EDITOR_BRIDGE, "0");
+          assert.equal(command.env.UAGENT_ENABLE_UE_EDITOR_LAUNCH, "0");
+          assert.equal(command.env.UAGENT_ENABLE_ASSET_MUTATION, "0");
+          assert.equal(Object.hasOwn(command.env, "UAGENT_MVP15D_UE_ROOT"), false);
+        }
+      } finally {
+        for (const [key, value] of ambientBefore) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
       assert.equal(productCommand.executable, desktopExecutable);
       assert.deepEqual(productCommand.args.slice(0, 2), ["mvp15d-final-runtime-bridge", "--phase"]);
       assert.equal(productCommand.args.includes("--event-file"), true);
       assert.equal(productCommand.args.includes("--nonce-file"), true);
       assert.equal(productCommand.args.includes("--driver-file"), true);
-      const uiCommand = runtimeCommand(
-        validateBinding("ui-lifecycle", livePlans.get("ui-lifecycle").orderedArguments.slice(1)),
-      );
       assert.equal(uiCommand.executable, desktopExecutable);
       assert.deepEqual(uiCommand.args.slice(-2), [
         "--rendered-product-path",
         "validate,add,confirmTrust,observationDiscover,observationAttach,observationReady,mcpConnect,mcpInitialize,mcpDiscover,mcpNormalize,mcpFingerprint,dryRun,approve,register,execute,verify,crossTtl,rollback,finalVerify,replay,observationStop,mcpDisconnect",
       ]);
-      assert.equal(uiCommand.env.UAGENT_ENABLE_ASSET_MUTATION, "1");
+      assert.equal(productCommand.env.UAGENT_ENABLE_MVP15D_TASK_BRIDGE, "1");
+      assert.equal(productCommand.env.UAGENT_ENABLE_UE_EDITOR_BRIDGE, "1");
+      assert.equal(productCommand.env.UAGENT_ENABLE_UE_EDITOR_LAUNCH, "1");
       assert.equal(productCommand.env.UAGENT_ENABLE_ASSET_MUTATION, "0");
+      assert.equal(productCommand.env.UAGENT_MVP15D_UE_ROOT, resolve(fixture.goodUeRoot));
+      assert.equal(uiCommand.env.UAGENT_ENABLE_MVP15D_TASK_BRIDGE, "1");
+      assert.equal(uiCommand.env.UAGENT_ENABLE_UE_EDITOR_BRIDGE, "1");
+      assert.equal(uiCommand.env.UAGENT_ENABLE_UE_EDITOR_LAUNCH, "1");
+      assert.equal(uiCommand.env.UAGENT_ENABLE_ASSET_MUTATION, "1");
+      assert.equal(uiCommand.env.UAGENT_MVP15D_UE_ROOT, resolve(fixture.goodUeRoot));
       const ueExecutable = resolve(
         fixture.goodUeRoot,
         "Engine",
@@ -3851,6 +3930,18 @@ test(
           validateBinding("product-capture", [...adapterVector, "--executable", process.execPath]),
         (error) =>
           error instanceof LiveProducerError && error.code === "FINAL_LIVE_ARGUMENT_VECTOR_INVALID",
+      );
+      assert.throws(
+        () => validateBinding("product-capture", adapterVector.slice(0, -2)),
+        (error) =>
+          error instanceof LiveProducerError && error.code === "FINAL_LIVE_ARGUMENT_VECTOR_INVALID",
+      );
+      const relativeUeRoot = [...adapterVector];
+      relativeUeRoot[relativeUeRoot.length - 1] = "relative-ue-root";
+      assert.throws(
+        () => validateBinding("product-capture", relativeUeRoot),
+        (error) =>
+          error instanceof LiveProducerError && error.code === "FINAL_LIVE_UE_ROOT_INVALID",
       );
       const reordered = [...adapterVector];
       [reordered[0], reordered[2]] = [reordered[2], reordered[0]];
@@ -3909,7 +4000,35 @@ test(
         port: String(port),
         session: "final-live-product-capture-session-0005",
         generation: "5",
+        "ue-root": fixture.goodUeRoot,
       };
+      const missingUeRootArgs = { ...liveArgs };
+      delete missingUeRootArgs["ue-root"];
+      expectCode(
+        () => executeLivePhase("product-capture", missingUeRootArgs),
+        "FINAL_PHASE_ARGUMENT_INVALID",
+      );
+      expectCode(
+        () => executeLivePhase("product-capture", { ...liveArgs, "ue-root": "relative-ue-root" }),
+        "FINAL_PHASE_ARGUMENT_INVALID",
+      );
+      const productSummary = resolve(root, "summaries", "product-capture.json");
+      writeFileSync(productSummary, `${JSON.stringify({ evidenceMode: "live" })}\n`, "utf8");
+      try {
+        const verifyArgs = {
+          mode: "verify",
+          repository: fixture.clone,
+          "evidence-root": root,
+          "task-id": TASK_ID,
+        };
+        expectCode(() => runFinal("product-capture", verifyArgs), "FINAL_PHASE_ARGUMENT_INVALID");
+        expectCode(
+          () => runFinal("product-capture", { ...verifyArgs, "ue-root": "relative-ue-root" }),
+          "FINAL_PHASE_ARGUMENT_INVALID",
+        );
+      } finally {
+        rmSync(productSummary, { force: true });
+      }
       let injectedLaunchCalled = false;
       for (const injected of [
         () => {

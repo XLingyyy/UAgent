@@ -74,6 +74,7 @@ function createManifest(): UAgentCompanionBuildManifest {
     artifacts: [
       { path: "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", size: 3, sha256: "f".repeat(64) },
       { path: "Binaries/Win64/UnrealEditor.modules", size: 3, sha256: "1".repeat(64) },
+      { path: "Resources/mvp15d-native-binding-v2.json", size: 4, sha256: "9".repeat(64) },
       { path: "Resources/uagent-asset-tools.schema.json", size: 2, sha256: "e".repeat(64) },
       { path: "UAgentAssetTools.uplugin", size: 1, sha256: "d".repeat(64) },
     ],
@@ -229,6 +230,17 @@ describe("MVP15D companion contracts", () => {
     expect(validateMvp15DManifest({
       ...manifest,
       artifacts: [{ ...manifest.artifacts[0], unexpected: true }, ...manifest.artifacts.slice(1)],
+    })).toMatchObject({ valid: false, reason: "manifest_artifact_invalid" });
+    const withoutNativeBinding = {
+      ...manifest,
+      artifacts: manifest.artifacts.filter(
+        ({ path }) => path !== "Resources/mvp15d-native-binding-v2.json",
+      ),
+      manifestSelfSha256: "",
+    };
+    expect(validateMvp15DManifest({
+      ...withoutNativeBinding,
+      manifestSelfSha256: computeMvp15DManifestSha256(withoutNativeBinding),
     })).toMatchObject({ valid: false, reason: "manifest_artifact_invalid" });
   });
 

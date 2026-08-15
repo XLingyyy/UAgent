@@ -143,6 +143,7 @@ function appWiringNativeEvidence() {
     artifacts: [
       { path: "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", size: 3, sha256: "f".repeat(64) },
       { path: "Binaries/Win64/UnrealEditor.modules", size: 3, sha256: "1".repeat(64) },
+      { path: "Resources/mvp15d-native-binding-v2.json", size: 4, sha256: "9".repeat(64) },
       { path: "Resources/uagent-asset-tools.schema.json", size: 2, sha256: "e".repeat(64) },
       { path: "UAgentAssetTools.uplugin", size: 1, sha256: "d".repeat(64) },
     ],
@@ -563,6 +564,16 @@ describe("MVP15D production App registry wiring", () => {
     const commands: string[] = [];
     let mcpSessionSequence = 0;
     let editorSessionSequence = 0;
+    let editorProcessSequence = 0;
+    let editorObservationGeneration = 0;
+    let activeOwner: {
+      processId: string;
+      pidHash: string;
+      pid: number;
+      processCreationFiletime: string;
+      listenerInstanceSha256: string;
+      ownerBindingSha256: string;
+    } | null = null;
     let nativeGeneration = 8_000_000_000_000_000;
     const evidence = appWiringNativeEvidence();
     const invoke: NativeInvoke = async <T,>(
@@ -571,6 +582,37 @@ describe("MVP15D production App registry wiring", () => {
     ) => {
       commands.push(command);
       const input = (payload?.input as Record<string, unknown> | undefined) ?? {};
+      if (
+        command === "mvp15d_bridge_observe_native_state" &&
+        input.kind === "managed_listener_alive_through_use"
+      ) {
+        if (!activeOwner) throw new Error("app_wiring_owner_missing");
+        const request = (input.request as Record<string, unknown> | undefined) ?? {};
+        const observation = {
+          status: "observed",
+          reason: "task_owned_listener_accepting",
+          processAlive: true,
+          listenerAccepting: true,
+          processId: activeOwner.processId,
+          processPid: activeOwner.pid,
+          processCreationFiletime: activeOwner.processCreationFiletime,
+          processIdentitySha256: "f".repeat(64),
+          listenerInstanceSha256: activeOwner.listenerInstanceSha256,
+          ownerBindingSha256: activeOwner.ownerBindingSha256,
+          stage: "after_rendered_disconnect",
+        };
+        const receiptId = await harness.invoke<string>("record_native_fixture_observation", {
+          api: "managed_editor_listener_alive",
+          request,
+          response: observation,
+        });
+        return {
+          schemaVersion: "uagent.mvp15d.native-state-observation.v1",
+          receiptId,
+          request,
+          observation,
+        } as T;
+      }
       if (
         command === "mvp15d_bridge_configuration" ||
         command === "mvp15d_bridge_take_driver_command" ||
@@ -608,27 +650,80 @@ describe("MVP15D production App registry wiring", () => {
           mutationExecution: "blocked",
         } as T;
       }
+      if (command === "create_managed_editor_process") {
+        editorProcessSequence += 1;
+        activeOwner = {
+          processId: `process:app-wiring-${editorProcessSequence}`,
+          pidHash: `pid:app-wiring-${editorProcessSequence}`,
+          pid: 4_200 + editorProcessSequence,
+          processCreationFiletime: String(133_000_000_000_000_000n + BigInt(editorProcessSequence)),
+          listenerInstanceSha256: editorProcessSequence.toString(16).repeat(64).slice(0, 64),
+          ownerBindingSha256: (editorProcessSequence + 8).toString(16).repeat(64).slice(0, 64),
+        };
+        const response = {
+          schemaVersion: "uagent.mvp15d.managed-editor-process-create-result.v2",
+          status: "ready",
+          reason: "task_owned_listener_accepting",
+          purpose: "phase_listener_owner",
+          ownerTaskId: input.taskId,
+          ownerPhase: input.phase,
+          processPid: activeOwner.pid,
+          processCreationFiletime: activeOwner.processCreationFiletime,
+          listenerInstanceSha256: activeOwner.listenerInstanceSha256,
+          ownerBindingSha256: activeOwner.ownerBindingSha256,
+          process: {
+            id: activeOwner.processId,
+            pidHash: activeOwner.pidHash,
+            displayName: "UnrealEditor-Cmd.exe",
+            source: "managed",
+            managedPurpose: "phase_listener_owner",
+            processPid: activeOwner.pid,
+            processCreationFiletime: activeOwner.processCreationFiletime,
+            listenerInstanceSha256: activeOwner.listenerInstanceSha256,
+            ownerBindingSha256: activeOwner.ownerBindingSha256,
+          },
+          nativeReceiptId: null,
+        };
+        const nativeReceiptId = await harness.invoke<string>("record_native_fixture_observation", {
+          api: command,
+          request: input,
+          response,
+        });
+        return { ...response, nativeReceiptId } as T;
+      }
       if (command === "discover_editor_processes") {
+        if (!activeOwner) {
+          return { status: "blocked", reason: "managed_listener_owner_required", processes: [] } as T;
+        }
         return {
           status: "ready",
           reason: "native_metadata",
           processes: [
             {
-              id: "process:app-wiring",
-              pidHash: "pid:app-wiring",
-              displayName: "UnrealEditor.exe",
+              id: activeOwner.processId,
+              pidHash: activeOwner.pidHash,
+              displayName: "UnrealEditor-Cmd.exe",
               displayExecutableHash: "exe:app-wiring",
               displayProjectHint: "[project-root]/FinalHost.uproject",
               processState: "running",
               discoveredAt: 1,
               expiresAt: 9_999_999_999_999,
-              source: "native",
+              source: "managed",
+              managedPurpose: "phase_listener_owner",
+              processPid: activeOwner.pid,
+              processCreationFiletime: activeOwner.processCreationFiletime,
+              listenerInstanceSha256: activeOwner.listenerInstanceSha256,
+              ownerBindingSha256: activeOwner.ownerBindingSha256,
             },
           ],
         } as T;
       }
       if (command === "attach_editor_process" || command === "read_editor_process_status") {
-        if (command === "attach_editor_process") editorSessionSequence += 1;
+        if (!activeOwner) throw new Error("app_wiring_owner_missing");
+        if (command === "attach_editor_process") {
+          editorSessionSequence += 1;
+          editorObservationGeneration += 1;
+        }
         const sessionId = command === "attach_editor_process"
           ? editorSessionSequence === 1
             ? "editor-session:app-wiring"
@@ -639,7 +734,9 @@ describe("MVP15D production App registry wiring", () => {
           projectId: "project:app-wiring",
           rootId: "root:app-wiring",
           uprojectDisplayPath: "[project-root]/FinalHost.uproject",
-          pidHash: "pid:app-wiring",
+          processId: activeOwner.processId,
+          pidHash: activeOwner.pidHash,
+          observationGeneration: editorObservationGeneration,
           mode: "attached",
           status: "attached",
           reason: command === "attach_editor_process" ? "attached" : "heartbeat_ok",
@@ -675,12 +772,44 @@ describe("MVP15D production App registry wiring", () => {
         return { status: "stopped", reason: "stopped_by_user" } as T;
       }
       if (command === "terminate_managed_editor_process") {
-        const response = { status: "terminated", reason: "terminated_by_owner", nativeReceiptId: null };
+        const predecessor = activeOwner;
+        if (
+          !predecessor ||
+          input.schemaVersion !== "uagent.mvp15d.managed-editor-process-terminate.v2" ||
+          input.processId !== predecessor.processId ||
+          input.pid !== predecessor.pid ||
+          input.processCreationFiletime !== predecessor.processCreationFiletime ||
+          input.listenerInstanceSha256 !== predecessor.listenerInstanceSha256 ||
+          input.ownerBindingSha256 !== predecessor.ownerBindingSha256
+        ) {
+          return { status: "blocked", reason: "managed_process_identity_mismatch" } as T;
+        }
+        const response = {
+          schemaVersion: "uagent.mvp15d.managed-editor-process-terminate-result.v2",
+          status: "terminated",
+          reason: "task_owned_process_exited",
+          purpose: "phase_listener_owner",
+          ownerTaskId: input.taskId,
+          ownerPhase: input.phase,
+          sessionId: input.sessionId,
+          processId: predecessor.processId,
+          pid: predecessor.pid,
+          processCreationFiletime: predecessor.processCreationFiletime,
+          pidHash: predecessor.pidHash,
+          observationGeneration: editorObservationGeneration,
+          processIdentitySha256: "e".repeat(64),
+          listenerInstanceSha256: predecessor.listenerInstanceSha256,
+          ownerBindingSha256: predecessor.ownerBindingSha256,
+          exitObserved: true,
+          listenerClosed: true,
+          nativeReceiptId: null,
+        };
         const nativeReceiptId = await harness.invoke<string>("record_native_fixture_observation", {
           api: command,
           request: input,
           response,
         });
+        activeOwner = null;
         return { ...response, nativeReceiptId } as T;
       }
       if (command === "mcp_streamable_http_request") {
@@ -780,7 +909,7 @@ describe("MVP15D production App registry wiring", () => {
       if (command === "attest_mvp15_companion") {
         const response = {
           status: "observed",
-          reason: "native_loaded_modules_observed",
+          reason: "loaded_module_identity_verified",
           manifest: evidence.manifest,
           installedModules: evidence.installedModules,
           loadedModules: evidence.loadedModules,

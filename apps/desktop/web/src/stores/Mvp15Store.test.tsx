@@ -174,6 +174,7 @@ function createMvp15DCompanionEvidence() {
     artifacts: [
       { path: "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", size: 3, sha256: "f".repeat(64) },
       { path: "Binaries/Win64/UnrealEditor.modules", size: 3, sha256: "1".repeat(64) },
+      { path: "Resources/mvp15d-native-binding-v2.json", size: 4, sha256: "9".repeat(64) },
       { path: "Resources/uagent-asset-tools.schema.json", size: 2, sha256: "e".repeat(64) },
       { path: "UAgentAssetTools.uplugin", size: 1, sha256: "d".repeat(64) },
     ],
@@ -1698,6 +1699,10 @@ describe("MVP15 desktop asset mutation UI", () => {
     };
     await expect(startMvp15dRuntimeBridge(bridgeInvoke, {
       activateMvp15dFixedObservationAuthority: async () => undefined,
+      observeMvp15dManagedListenerAliveThroughUse: async () => ({
+        receiptId: `mvp15d-observation-receipt:${"a".repeat(64)}`,
+        request: { stage: "after_rendered_disconnect" },
+      }),
     })).rejects.toThrow("mvp15d_ui_store_evidence_missing");
     expect(published).toHaveLength(0);
     expect(manifestReads).toBe(4);

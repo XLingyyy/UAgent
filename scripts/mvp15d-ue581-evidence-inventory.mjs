@@ -86,6 +86,7 @@ const REQUIRED_FILES = Object.freeze([
   PACKAGE_MANIFEST,
   `${PACKAGE_ROOT}/UAgentAssetTools.uplugin`,
   `${PACKAGE_ROOT}/Binaries/Win64/UnrealEditor.modules`,
+  `${PACKAGE_ROOT}/Resources/mvp15d-native-binding-v2.json`,
   `${PACKAGE_ROOT}/Resources/uagent-asset-tools.schema.json`,
 ]);
 const OPTIONAL_FILES = Object.freeze([

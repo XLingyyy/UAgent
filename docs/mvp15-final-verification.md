@@ -1,5 +1,38 @@
 # MVP15 Final Verification
 
+## Resume 3 Rework 1 source-only candidate — 2026-08-15
+
+This candidate is pending supervisor review. It preserves the 11-file native
+binding manifest repair and adds an exact live child gate matrix, an absolute UE
+root contract, a task/phase-owned UE/MCP guardian, Disconnect-after-use
+observation, and parent closeout that waits for the guardian/UE listener before
+port evidence is taken. N2 removes and rejects inherited UE bridge, launch,
+root and guardian authority. Asset mutation remains enabled only for live UI
+lifecycle.
+
+UE restart now requires the ordered native chain `terminate -> create -> attach
+-> connect -> discover -> fingerprint -> attestation`. The predecessor must be
+the exact managed owner and must have exited; the successor must differ in PID,
+creation FILETIME, process/pid/listener/owner hashes, editor session and MCP
+session, with strictly newer observation, connection, discovery and attestation
+generations. Native attestation rechecks that successor's loaded modules and
+matches canonical manifest `modules[].path/size/sha256` against the installed
+and loaded module tuples. Changing editor observation identity also retracts a
+stale companion attestation before a fresh verification can publish ready.
+
+Controlled source verification passes: affected desktop files report `155
+passed / 3` existing opt-in live skips; full workspace tests report `1,675
+passed / 3` existing opt-in live skips; Cargo reports `188` library, `2` native
+bridge and `1` Wry integration test passed. Workspace typecheck, lint, Cargo
+fmt/check and `git diff --check` pass. Manifest focused `1/1`, UE581 inventory
+`59/59`, runtime companion `9/9`, and final environment/fixture focused `3/3`
+also pass. The full final-tooling suite remains `23/24`: its one failure is the
+expected stale release provenance gate `FINAL_UE_PRODUCTION_PROVENANCE_INVALID`,
+which this source-only task does not bypass.
+
+No real UE live phase, asset mutation, package/release rebuild, 15A, 15B, 15C or
+D16 acceptance was run. `PASS_REAL_SMOKE` remains `NO`; Ready remains `NO`.
+
 ## Current MVP15D Final 15A-15C/D16 Live Acceptance — 2026-08-14
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`

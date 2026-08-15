@@ -14,6 +14,22 @@ pub const DRIVER_SCHEMA: &str = "uagent.mvp15d.final.driver-command.v1";
 const TASK_GENERATION: &str = "final-d13-d16";
 const SUBCOMMAND: &str = "mvp15d-final-runtime-bridge";
 const ENABLE_ENV: &str = "UAGENT_ENABLE_MVP15D_TASK_BRIDGE";
+const UE_OWNER_ENV_NAMES: &[&str] = &[
+    "UAGENT_ENABLE_UE_EDITOR_BRIDGE",
+    "UAGENT_ENABLE_UE_EDITOR_LAUNCH",
+    "UAGENT_MVP15D_UE_ROOT",
+    "UAGENT_MVP15D_MANAGED_EDITOR_GUARDIAN",
+    "UAGENT_MVP15D_GUARDIAN_TEST_LISTENER",
+    "UAGENT_MVP15D_GUARDIAN_TEST_LISTENER_CHILD",
+    "UAGENT_MVP15D_GUARDIAN_UE_EXECUTABLE",
+    "UAGENT_MVP15D_GUARDIAN_UPROJECT",
+    "UAGENT_MVP15D_GUARDIAN_PORT",
+    "UAGENT_MVP15D_GUARDIAN_MARKER",
+    "UAGENT_MVP15D_GUARDIAN_TASK",
+    "UAGENT_MVP15D_GUARDIAN_PHASE",
+    "UAGENT_MVP15D_GUARDIAN_DDC",
+    "UAGENT_MVP15D_GUARDIAN_EVIDENCE_ROOT",
+];
 pub const GATE_OFF_CHILD_ENV: &str = "UAGENT_MVP15D_GATE_OFF_CHILD";
 pub const GATE_OFF_CHILD_INPUT_ENV: &str = "UAGENT_MVP15D_GATE_OFF_CHILD_INPUT";
 pub const GATE_OFF_CHILD_RESULT_ENV: &str = "UAGENT_MVP15D_GATE_OFF_CHILD_RESULT";
@@ -242,6 +258,22 @@ struct ObservationReceiptContext {
     runtime_pid: u32,
     runtime_process_identity_sha256: String,
     nonce_sha256: String,
+    marker: String,
+    port: u16,
+    evidence_root: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ManagedProcessOwnerContext {
+    pub task_id: String,
+    pub phase: String,
+    pub session: String,
+    pub generation: u64,
+    pub runtime_process_identity_sha256: String,
+    pub nonce_sha256: String,
+    pub marker: String,
+    pub port: u16,
+    pub evidence_root: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -288,6 +320,9 @@ fn activate_observation_receipt_ledger(identity: &BridgeIdentity) -> Result<(), 
                 .as_bytes(),
             ),
             nonce_sha256: identity.nonce_sha256.clone(),
+            marker: identity.marker.clone(),
+            port: identity.port,
+            evidence_root: identity.evidence_root.clone(),
         }
     });
     ledger.sequence = 0;
@@ -406,10 +441,47 @@ pub(crate) fn validate_managed_process_owner(
         .context
         .as_ref()
         .ok_or("managed_process_context_required")?;
-    if context.task_id != task_id || context.phase.as_str() != phase || phase != "ui-lifecycle" {
+    if context.task_id != task_id
+        || context.phase.as_str() != phase
+        || !matches!(phase, "product-capture" | "ui-lifecycle")
+    {
         return Err("managed_process_owner_mismatch");
     }
     Ok(())
+}
+
+pub(crate) fn managed_process_owner_context(
+    task_id: &str,
+    phase: &str,
+) -> Result<ManagedProcessOwnerContext, &'static str> {
+    validate_managed_process_owner(task_id, phase)?;
+    let ledger = observation_receipt_ledger()
+        .lock()
+        .map_err(|_| "native_authority_unavailable")?;
+    let context = ledger
+        .context
+        .as_ref()
+        .ok_or("managed_process_context_required")?;
+    Ok(ManagedProcessOwnerContext {
+        task_id: context.task_id.clone(),
+        phase: context.phase.as_str().to_string(),
+        session: context.session.clone(),
+        generation: context.generation,
+        runtime_process_identity_sha256: context.runtime_process_identity_sha256.clone(),
+        nonce_sha256: context.nonce_sha256.clone(),
+        marker: context.marker.clone(),
+        port: context.port,
+        evidence_root: context.evidence_root.clone(),
+    })
+}
+
+pub(crate) fn current_managed_process_owner_identity() -> Option<(String, String)> {
+    let ledger = observation_receipt_ledger().lock().ok()?;
+    let context = ledger.context.as_ref()?;
+    context
+        .phase
+        .rendered()
+        .then(|| (context.task_id.clone(), context.phase.as_str().to_string()))
 }
 
 fn validate_mcp_observation_intent(
@@ -3764,6 +3836,85 @@ fn record_response_session(record: &ObservationReceiptRecord) -> Option<&str> {
         .and_then(Value::as_str)
 }
 
+fn valid_loaded_companion_attestation(record: &ObservationReceiptRecord) -> bool {
+    let payload = receipt_response_payload(record);
+    let Some(manifest) = payload.get("manifest").and_then(Value::as_object) else {
+        return false;
+    };
+    let Some(installed) = payload.get("installedModules").and_then(Value::as_array) else {
+        return false;
+    };
+    let Some(loaded) = payload.get("loadedModules").and_then(Value::as_array) else {
+        return false;
+    };
+    let Some(manifest_modules) = manifest.get("modules").and_then(Value::as_array) else {
+        return false;
+    };
+    let artifact_valid = |value: &Value| {
+        value
+            .get("name")
+            .and_then(Value::as_str)
+            .is_some_and(|name| name.starts_with("UnrealEditor-") && name.ends_with(".dll"))
+            && value
+                .get("size")
+                .and_then(Value::as_u64)
+                .is_some_and(|size| size > 0)
+            && value
+                .get("sha256")
+                .and_then(Value::as_str)
+                .is_some_and(is_sha256)
+    };
+    let manifest_module_valid = |value: &Value| {
+        let Some(name) = value
+            .get("path")
+            .and_then(Value::as_str)
+            .and_then(|path| path.strip_prefix("Binaries/Win64/"))
+            .filter(|name| !name.contains('/') && !name.contains('\\'))
+        else {
+            return false;
+        };
+        name.starts_with("UnrealEditor-")
+            && name.ends_with(".dll")
+            && value
+                .get("size")
+                .and_then(Value::as_u64)
+                .is_some_and(|size| size > 0)
+            && value
+                .get("sha256")
+                .and_then(Value::as_str)
+                .is_some_and(is_sha256)
+            && installed.iter().any(|installed| {
+                installed.get("name").and_then(Value::as_str) == Some(name)
+                    && installed.get("size") == value.get("size")
+                    && installed.get("sha256") == value.get("sha256")
+            })
+    };
+    payload.get("status").and_then(Value::as_str) == Some("observed")
+        && payload.get("reason").and_then(Value::as_str) == Some("loaded_module_identity_verified")
+        && manifest.get("pluginId").and_then(Value::as_str) == Some("UAgentAssetTools")
+        && manifest
+            .get("manifestSelfSha256")
+            .and_then(Value::as_str)
+            .is_some_and(is_sha256)
+        && manifest
+            .get("sourceTreeSha256")
+            .and_then(Value::as_str)
+            .is_some_and(is_sha256)
+        && manifest
+            .get("moduleBuildId")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty())
+        && manifest
+            .get("artifacts")
+            .and_then(Value::as_array)
+            .is_some_and(|artifacts| !artifacts.is_empty())
+        && !installed.is_empty()
+        && installed == loaded
+        && installed.len() == manifest_modules.len()
+        && installed.iter().all(artifact_valid)
+        && manifest_modules.iter().all(manifest_module_valid)
+}
+
 fn transport_jsonrpc_result<'a>(
     record: &'a ObservationReceiptRecord,
     code: &'static str,
@@ -4749,6 +4900,13 @@ impl BridgeState {
             .collect::<Vec<_>>();
         let (api, observation) = match input.kind.as_str() {
             "renderer_process" => ("renderer_instance_begin", observe_renderer_process()?),
+            "managed_listener_alive_through_use" => (
+                "managed_editor_listener_alive",
+                crate::ue_editor_process::observe_managed_listener_alive_through_use(
+                    &input.request,
+                )
+                .map_err(|_| BridgeError::new("MVP15D_MANAGED_LISTENER_ALIVE_INVALID"))?,
+            ),
             "rendered_control" => {
                 let case_id = string_field(
                     &input.request,
@@ -5029,20 +5187,173 @@ impl BridgeState {
                                 .any(|(_, record)| record.api == "renderer_restart_successor")
                     }
                     "ue_restart" => {
-                        action_records.iter().any(|(_, record)| {
-                            matches!(
-                                record.api.as_str(),
-                                "terminate_managed_editor_process"
-                                    | "release_managed_editor_process"
-                            )
-                        }) && action_records
-                            .iter()
-                            .any(|(_, record)| record.api == "attach_editor_process")
-                            && action_records.iter().any(|(_, record)| {
-                                record.api == "mcp_connect"
-                                    && record_request_generation(record)
-                                        .is_some_and(|generation| generation > ready_generation)
-                            })
+                        let ordered = |api: &str, after: u64| {
+                            action_records
+                                .iter()
+                                .filter(|(_, record)| record.api == api && record.sequence > after)
+                                .min_by_key(|(_, record)| record.sequence)
+                                .copied()
+                        };
+                        let Some(terminate) = ordered("terminate_managed_editor_process", 0) else {
+                            return Err(BridgeError::new("MVP15D_RETRACTION_ACTION_INVALID"));
+                        };
+                        let Some(create) =
+                            ordered("create_managed_editor_process", terminate.1.sequence)
+                        else {
+                            return Err(BridgeError::new("MVP15D_RETRACTION_ACTION_INVALID"));
+                        };
+                        let Some(attach) = ordered("attach_editor_process", create.1.sequence)
+                        else {
+                            return Err(BridgeError::new("MVP15D_RETRACTION_ACTION_INVALID"));
+                        };
+                        let Some(connect) = ordered("mcp_connect", attach.1.sequence) else {
+                            return Err(BridgeError::new("MVP15D_RETRACTION_ACTION_INVALID"));
+                        };
+                        let Some(discover) = ordered("mcp_discover", connect.1.sequence) else {
+                            return Err(BridgeError::new("MVP15D_RETRACTION_ACTION_INVALID"));
+                        };
+                        let Some(fingerprint) = ordered("mcp_fingerprint", discover.1.sequence)
+                        else {
+                            return Err(BridgeError::new("MVP15D_RETRACTION_ACTION_INVALID"));
+                        };
+                        let Some(attestation) =
+                            ordered("attest_mvp15_companion", fingerprint.1.sequence)
+                        else {
+                            return Err(BridgeError::new("MVP15D_RETRACTION_ACTION_INVALID"));
+                        };
+                        let old = receipt_response_payload(&terminate.1);
+                        let new_owner = receipt_response_payload(&create.1);
+                        let attached = receipt_response_payload(&attach.1);
+                        let new_process = new_owner.get("process").and_then(Value::as_object);
+                        let old_pid = old.get("pid").and_then(Value::as_u64);
+                        let new_pid = new_owner.get("processPid").and_then(Value::as_u64);
+                        let old_creation =
+                            old.get("processCreationFiletime").and_then(Value::as_str);
+                        let new_creation = new_owner
+                            .get("processCreationFiletime")
+                            .and_then(Value::as_str);
+                        let old_process = old.get("processId").and_then(Value::as_str);
+                        let new_process_id = new_process
+                            .and_then(|process| process.get("id"))
+                            .and_then(Value::as_str);
+                        let old_pid_hash = old.get("pidHash").and_then(Value::as_str);
+                        let new_pid_hash = new_process
+                            .and_then(|process| process.get("pidHash"))
+                            .and_then(Value::as_str);
+                        let old_session = old.get("sessionId").and_then(Value::as_str);
+                        let new_session = attached.get("sessionId").and_then(Value::as_str);
+                        let old_observation =
+                            old.get("observationGeneration").and_then(Value::as_u64);
+                        let new_observation = attached
+                            .get("observationGeneration")
+                            .and_then(Value::as_u64);
+                        let connect_generation = record_request_generation(&connect.1);
+                        let discover_generation = record_request_generation(&discover.1);
+                        let fingerprint_generation = record_request_generation(&fingerprint.1);
+                        let ready_attestation_generation = ready_attestation
+                            .1
+                            .request
+                            .get("attestationGeneration")
+                            .or_else(|| ready_attestation.1.request.get("generation"))
+                            .and_then(Value::as_u64);
+                        let successor_attestation_generation = attestation
+                            .1
+                            .request
+                            .get("attestationGeneration")
+                            .or_else(|| attestation.1.request.get("generation"))
+                            .and_then(Value::as_u64);
+                        receipt_response_payload(&terminate.1)
+                            .get("status")
+                            .and_then(Value::as_str)
+                            == Some("terminated")
+                            && old.get("reason").and_then(Value::as_str)
+                                == Some("task_owned_process_exited")
+                            && old.get("purpose").and_then(Value::as_str)
+                                == Some("phase_listener_owner")
+                            && old.get("ownerTaskId").and_then(Value::as_str)
+                                == Some(self.identity.task_id.as_str())
+                            && old.get("ownerPhase").and_then(Value::as_str)
+                                == Some(self.identity.phase.as_str())
+                            && old.get("exitObserved").and_then(Value::as_bool) == Some(true)
+                            && old.get("listenerClosed").and_then(Value::as_bool) == Some(true)
+                            && new_owner.get("status").and_then(Value::as_str) == Some("ready")
+                            && new_owner.get("reason").and_then(Value::as_str)
+                                == Some("task_owned_listener_accepting")
+                            && new_owner.get("purpose").and_then(Value::as_str)
+                                == Some("phase_listener_owner")
+                            && new_owner.get("ownerTaskId").and_then(Value::as_str)
+                                == Some(self.identity.task_id.as_str())
+                            && new_owner.get("ownerPhase").and_then(Value::as_str)
+                                == Some(self.identity.phase.as_str())
+                            && old_pid.zip(new_pid).is_some_and(|(old, new)| old != new)
+                            && old_creation
+                                .zip(new_creation)
+                                .is_some_and(|(old, new)| old != new)
+                            && old_process
+                                .zip(new_process_id)
+                                .is_some_and(|(old, new)| old != new)
+                            && old_pid_hash
+                                .zip(new_pid_hash)
+                                .is_some_and(|(old, new)| old != new)
+                            && old_session
+                                .zip(new_session)
+                                .is_some_and(|(old, new)| old != new)
+                            && old_observation
+                                .zip(new_observation)
+                                .is_some_and(|(old, new)| new > old)
+                            && new_process
+                                .and_then(|process| process.get("managedPurpose"))
+                                .and_then(Value::as_str)
+                                == Some("phase_listener_owner")
+                            && new_process
+                                .and_then(|process| process.get("processPid"))
+                                .and_then(Value::as_u64)
+                                == new_pid
+                            && new_process
+                                .and_then(|process| process.get("processCreationFiletime"))
+                                .and_then(Value::as_str)
+                                == new_creation
+                            && new_process.and_then(|process| process.get("listenerInstanceSha256"))
+                                == new_owner.get("listenerInstanceSha256")
+                            && new_process.and_then(|process| process.get("ownerBindingSha256"))
+                                == new_owner.get("ownerBindingSha256")
+                            && new_owner.get("listenerInstanceSha256")
+                                != old.get("listenerInstanceSha256")
+                            && new_owner.get("ownerBindingSha256") != old.get("ownerBindingSha256")
+                            && attach.1.request.get("processId").and_then(Value::as_str)
+                                == new_process_id
+                            && attach.1.request.get("pidHash").and_then(Value::as_str)
+                                == new_pid_hash
+                            && attached.get("status").and_then(Value::as_str) == Some("attached")
+                            && attached.get("reason").and_then(Value::as_str) == Some("attached")
+                            && attached.get("processId").and_then(Value::as_str) == new_process_id
+                            && attached.get("pidHash").and_then(Value::as_str) == new_pid_hash
+                            && connect_generation.is_some_and(|value| value > ready_generation)
+                            && connect_generation
+                                .zip(discover_generation)
+                                .is_some_and(|(connect, discover)| discover > connect)
+                            && fingerprint_generation == discover_generation
+                            && record_request_endpoint(&connect.1)
+                                == Some(self.identity.endpoint.as_str())
+                            && record_request_endpoint(&discover.1)
+                                == Some(self.identity.endpoint.as_str())
+                            && record_request_endpoint(&fingerprint.1)
+                                == Some(self.identity.endpoint.as_str())
+                            && record_response_session(&connect.1)
+                                .zip(record_response_session(&ready.1))
+                                .is_some_and(|(new, old)| new != old)
+                            && record_response_session(&fingerprint.1)
+                                == record_response_session(&connect.1)
+                            && attestation
+                                .1
+                                .request
+                                .get("editorSessionId")
+                                .and_then(Value::as_str)
+                                == new_session
+                            && successor_attestation_generation
+                                .zip(ready_attestation_generation)
+                                .is_some_and(|(new, old)| new > old)
+                            && valid_loaded_companion_attestation(&attestation.1)
                     }
                     "stale_completion" => {
                         let fingerprints = action_records
@@ -5176,6 +5487,9 @@ impl BridgeState {
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
+        for name in UE_OWNER_ENV_NAMES {
+            command.env_remove(name);
+        }
         let mut child = command.spawn().map_err(|_| BridgeError::new(CODE))?;
         let child_pid = child.id();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
@@ -5658,6 +5972,14 @@ impl BridgeState {
         {
             return Err(BridgeError::new("MVP15D_BRIDGE_RENDERER_SEQUENCE_INVALID"));
         }
+        if self.identity.mode == BridgeMode::Live
+            && self.identity.phase.rendered()
+            && !managed_listener_alive_through_use_valid(&self.identity)?
+        {
+            return Err(BridgeError::new(
+                "MVP15D_MANAGED_LISTENER_ALIVE_THROUGH_USE_REQUIRED",
+            ));
+        }
         append_event(
             &mut self.file,
             &self.identity,
@@ -5685,6 +6007,64 @@ impl BridgeState {
         self.completed = true;
         Ok(())
     }
+}
+
+fn managed_listener_alive_through_use_valid(
+    identity: &BridgeIdentity,
+) -> Result<bool, BridgeError> {
+    let ledger = observation_receipt_ledger()
+        .lock()
+        .map_err(|_| BridgeError::new("MVP15D_BRIDGE_RECEIPT_LEDGER_UNAVAILABLE"))?;
+    let latest_owner = ledger
+        .records
+        .iter()
+        .filter(|(_, record)| {
+            record.api == "create_managed_editor_process"
+                && receipt_response_payload(record)
+                    .get("purpose")
+                    .and_then(Value::as_str)
+                    == Some("phase_listener_owner")
+                && receipt_response_payload(record)
+                    .get("status")
+                    .and_then(Value::as_str)
+                    == Some("ready")
+        })
+        .max_by_key(|(_, record)| record.sequence);
+    let Some((_, owner)) = latest_owner else {
+        return Ok(false);
+    };
+    let owner_payload = receipt_response_payload(owner);
+    if owner_payload.get("ownerTaskId").and_then(Value::as_str) != Some(identity.task_id.as_str())
+        || owner_payload.get("ownerPhase").and_then(Value::as_str) != Some(identity.phase.as_str())
+    {
+        return Ok(false);
+    }
+    let disconnect = ledger
+        .records
+        .values()
+        .filter(|record| record.api == "mcp_disconnect" && record.sequence > owner.sequence)
+        .max_by_key(|record| record.sequence);
+    let Some(disconnect) = disconnect else {
+        return Ok(false);
+    };
+    Ok(ledger.records.values().any(|record| {
+        if record.api != "managed_editor_listener_alive" || record.sequence <= disconnect.sequence {
+            return false;
+        }
+        let payload = receipt_response_payload(record);
+        payload.get("status").and_then(Value::as_str) == Some("observed")
+            && payload.get("reason").and_then(Value::as_str)
+                == Some("task_owned_listener_accepting")
+            && payload.get("stage").and_then(Value::as_str) == Some("after_rendered_disconnect")
+            && payload.get("processAlive").and_then(Value::as_bool) == Some(true)
+            && payload.get("listenerAccepting").and_then(Value::as_bool) == Some(true)
+            && payload.get("processId") == owner_payload.get("process").and_then(|v| v.get("id"))
+            && payload.get("processPid") == owner_payload.get("processPid")
+            && payload.get("processCreationFiletime")
+                == owner_payload.get("processCreationFiletime")
+            && payload.get("listenerInstanceSha256") == owner_payload.get("listenerInstanceSha256")
+            && payload.get("ownerBindingSha256") == owner_payload.get("ownerBindingSha256")
+    }))
 }
 
 pub fn disabled_configuration() -> RendererBridgeConfiguration {
@@ -5742,6 +6122,9 @@ pub fn run_gate_off_child_registration_from_environment(
     if std::env::var(GATE_OFF_CHILD_ENV).as_deref() != Ok("1")
         || std::env::var_os("UAGENT_ENABLE_ASSET_MUTATION").is_some()
         || std::env::var_os(ENABLE_ENV).is_some()
+        || UE_OWNER_ENV_NAMES
+            .iter()
+            .any(|name| std::env::var_os(name).is_some())
         || !ui_gate_enabled
     {
         return Err("MVP15D_GATE_OFF_CHILD_INVALID".to_string());
@@ -5809,6 +6192,35 @@ mod tests {
     use std::ops::Deref;
 
     static LEDGER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    struct RemovedEnvironment(Vec<(&'static str, Option<std::ffi::OsString>)>);
+
+    impl RemovedEnvironment {
+        fn new(names: &[&'static str]) -> Self {
+            Self(
+                names
+                    .iter()
+                    .map(|name| {
+                        let previous = std::env::var_os(name);
+                        std::env::remove_var(name);
+                        (*name, previous)
+                    })
+                    .collect(),
+            )
+        }
+    }
+
+    impl Drop for RemovedEnvironment {
+        fn drop(&mut self) {
+            for (name, previous) in self.0.drain(..) {
+                if let Some(previous) = previous {
+                    std::env::set_var(name, previous);
+                } else {
+                    std::env::remove_var(name);
+                }
+            }
+        }
+    }
 
     struct TestRoot(PathBuf);
 
@@ -6137,8 +6549,10 @@ mod tests {
                     let api = input.get("api").and_then(Value::as_str).unwrap_or_default();
                     if !matches!(
                         api,
-                        "attach_editor_process"
+                        "create_managed_editor_process"
+                            | "attach_editor_process"
                             | "attest_mvp15_companion"
+                            | "managed_editor_listener_alive"
                             | "retract_mvp15_companion_approvals"
                             | "terminate_managed_editor_process"
                     ) {
@@ -6839,6 +7253,8 @@ mod tests {
         })
         .unwrap();
         let create_input = crate::ue_editor_process::ManagedEditorProcessCreateInput {
+            schema_version: "uagent.mvp15d.managed-editor-process-create.v2".to_string(),
+            purpose: "negative_case_fixture".to_string(),
             task_id: state.identity.task_id.clone(),
             phase: state.identity.phase.as_str().to_string(),
             project_id: "project:mvp15d-managed".to_string(),
@@ -6882,7 +7298,8 @@ mod tests {
         let terminated = crate::ue_editor_process::terminate_managed_editor_process(
             crate::ue_editor_process::EditorObservationSessionIdInput {
                 session_id: session_id.clone(),
-            },
+            }
+            .into(),
         )
         .unwrap();
         assert_eq!(
@@ -6910,15 +7327,20 @@ mod tests {
         .unwrap();
         let releasable_process = releasable.process.clone().unwrap();
         let release_input = crate::ue_editor_process::ManagedEditorProcessReleaseInput {
-            schema_version: "uagent.mvp15d.managed-editor-process-release.v1".to_string(),
+            schema_version: "uagent.mvp15d.managed-editor-process-release.v2".to_string(),
             task_id: create_input.task_id.clone(),
             phase: create_input.phase.clone(),
             process_id: releasable_process.id.clone(),
             pid: releasable.process_pid.unwrap(),
-            process_start_time: releasable.process_start_time.unwrap(),
+            process_creation_filetime: releasable.process_creation_filetime.unwrap(),
         };
         let mut mismatched = release_input.clone();
-        mismatched.process_start_time += 1;
+        mismatched.process_creation_filetime = mismatched
+            .process_creation_filetime
+            .parse::<u64>()
+            .unwrap()
+            .saturating_add(1)
+            .to_string();
         assert_eq!(
             crate::ue_editor_process::release_managed_editor_process(mismatched)
                 .unwrap()
@@ -6955,12 +7377,12 @@ mod tests {
             "managed_process_release_replay"
         );
         let unknown = crate::ue_editor_process::ManagedEditorProcessReleaseInput {
-            schema_version: "uagent.mvp15d.managed-editor-process-release.v1".to_string(),
+            schema_version: "uagent.mvp15d.managed-editor-process-release.v2".to_string(),
             task_id: create_input.task_id.clone(),
             phase: create_input.phase.clone(),
             process_id: "process:managed:unknown".to_string(),
             pid: 1,
-            process_start_time: 1,
+            process_creation_filetime: "1".to_string(),
         };
         assert_eq!(
             crate::ue_editor_process::release_managed_editor_process(unknown)
@@ -6992,12 +7414,12 @@ mod tests {
         crate::ue_editor_process::mark_managed_process_external_for_test(&external.id);
         let external_release = crate::ue_editor_process::release_managed_editor_process(
             crate::ue_editor_process::ManagedEditorProcessReleaseInput {
-                schema_version: "uagent.mvp15d.managed-editor-process-release.v1".to_string(),
+                schema_version: "uagent.mvp15d.managed-editor-process-release.v2".to_string(),
                 task_id: create_input.task_id.clone(),
                 phase: create_input.phase.clone(),
                 process_id: external.id.clone(),
                 pid: external_created.process_pid.unwrap(),
-                process_start_time: external_created.process_start_time.unwrap(),
+                process_creation_filetime: external_created.process_creation_filetime.unwrap(),
             },
         )
         .unwrap();
@@ -7011,7 +7433,8 @@ mod tests {
         let blocked = crate::ue_editor_process::terminate_managed_editor_process(
             crate::ue_editor_process::EditorObservationSessionIdInput {
                 session_id: external_session,
-            },
+            }
+            .into(),
         )
         .unwrap();
         assert_eq!(
@@ -7577,6 +8000,169 @@ mod tests {
     }
 
     #[test]
+    fn ue_restart_rejects_api_name_only_receipts() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let (_root, mut state) = rendered_state(BridgePhase::ProductCapture);
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let transport = |generation: u64| {
+            json!({
+                "endpoint": state.identity.endpoint,
+                "intent": { "connectionGeneration": generation },
+            })
+        };
+        let ready_id = issue_native_observation_receipt(
+            "mcp_fingerprint",
+            transport(10),
+            json!({ "sessionId": "ready-session-0001" }),
+        )
+        .unwrap();
+        issue_native_observation_receipt(
+            "attest_mvp15_companion",
+            json!({ "generation": 10 }),
+            json!({ "status": "observed" }),
+        )
+        .unwrap();
+        issue_native_observation_receipt(
+            "release_managed_editor_process",
+            json!({ "processId": "same-process" }),
+            json!({ "status": "released" }),
+        )
+        .unwrap();
+        issue_native_observation_receipt(
+            "attach_editor_process",
+            json!({ "processId": "same-process" }),
+            json!({ "status": "attached", "sessionId": "same-session" }),
+        )
+        .unwrap();
+        issue_native_observation_receipt(
+            "mcp_connect",
+            transport(11),
+            json!({ "sessionId": "same-session" }),
+        )
+        .unwrap();
+        issue_native_observation_receipt(
+            "retract_mvp15_companion_approvals",
+            json!({ "reason": "ue_restart" }),
+            json!({ "status": "retracted", "applied": true }),
+        )
+        .unwrap();
+        assert_eq!(
+            state
+                .observe_native_state(ObserveNativeStateInput {
+                    schema_version: "uagent.mvp15d.native-state-observation.v1".to_string(),
+                    kind: "mcp_retraction_transition".to_string(),
+                    request: json!({
+                        "reason": "ue_restart",
+                        "stateBeforeReceiptId": ready_id,
+                    }),
+                })
+                .unwrap_err()
+                .code(),
+            "MVP15D_RETRACTION_ACTION_INVALID"
+        );
+    }
+
+    #[test]
+    fn ue_restart_attestation_rejects_loaded_module_manifest_mismatch() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let (_root, state) = rendered_state(BridgePhase::ProductCapture);
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let receipt_id = issue_native_observation_receipt(
+            "attest_mvp15_companion",
+            json!({
+                "editorSessionId": "ue-editor-session-0002",
+                "attestationGeneration": 12,
+            }),
+            json!({
+                "status": "observed",
+                "reason": "loaded_module_identity_verified",
+                "manifest": {
+                    "pluginId": "UAgentAssetTools",
+                    "manifestSelfSha256": "c".repeat(64),
+                    "sourceTreeSha256": "d".repeat(64),
+                    "moduleBuildId": "55116800",
+                    "artifacts": [{
+                        "name": "UnrealEditor-UAgentAssetTools.dll",
+                        "size": 4096,
+                        "sha256": "e".repeat(64),
+                    }],
+                    "modules": [{
+                        "name": "UnrealEditor-UAgentAssetTools.dll",
+                        "size": 4096,
+                        "sha256": "e".repeat(64),
+                    }],
+                },
+                "installedModules": [{
+                    "name": "UnrealEditor-UAgentAssetTools.dll",
+                    "size": 4096,
+                    "sha256": "e".repeat(64),
+                }],
+                "loadedModules": [{
+                    "name": "UnrealEditor-UAgentAssetTools.dll",
+                    "size": 4096,
+                    "sha256": "f".repeat(64),
+                }],
+            }),
+        )
+        .unwrap();
+        let ledger = observation_receipt_ledger().lock().unwrap();
+        assert!(!valid_loaded_companion_attestation(
+            ledger.records.get(&receipt_id).unwrap()
+        ));
+    }
+
+    #[test]
+    fn phase_listener_owner_requires_native_ue_gates_and_closeout_requires_owner_receipts() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let _registry_guard = crate::reset_shared_registries_for_test();
+        let (root, state) = rendered_state(BridgePhase::ProductCapture);
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        assert!(!managed_listener_alive_through_use_valid(&state.identity).unwrap());
+        let project_root = root.join("project").join("FinalHost");
+        fs::write(project_root.join("FinalHost.uproject"), b"{}").unwrap();
+        crate::trust_native_project_root(crate::TrustRootInput {
+            root_ref: project_root.to_string_lossy().to_string(),
+        })
+        .unwrap();
+        let _environment = RemovedEnvironment::new(&[
+            "UAGENT_ENABLE_UE_EDITOR_BRIDGE",
+            "UAGENT_ENABLE_UE_EDITOR_LAUNCH",
+            "UAGENT_MVP15D_UE_ROOT",
+        ]);
+        let blocked = crate::ue_editor_process::create_managed_editor_process(
+            crate::ue_editor_process::ManagedEditorProcessCreateInput {
+                schema_version: "uagent.mvp15d.managed-editor-process-create.v2".to_string(),
+                purpose: "phase_listener_owner".to_string(),
+                task_id: state.identity.task_id.clone(),
+                phase: state.identity.phase.as_str().to_string(),
+                project_id: "project:mvp15d-owner-gate".to_string(),
+                root_ref: project_root.to_string_lossy().to_string(),
+                uproject_relative_path: "FinalHost.uproject".to_string(),
+            },
+        )
+        .unwrap();
+        assert_eq!(blocked.status, "blocked");
+        assert_eq!(blocked.reason, "managed_phase_owner_gate_disabled");
+    }
+
+    #[test]
+    fn gate_off_child_entry_rejects_inherited_ue_owner_authority() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let _environment = RemovedEnvironment::new(&[
+            GATE_OFF_CHILD_ENV,
+            "UAGENT_ENABLE_ASSET_MUTATION",
+            ENABLE_ENV,
+            "UAGENT_ENABLE_UE_EDITOR_BRIDGE",
+        ]);
+        std::env::set_var(GATE_OFF_CHILD_ENV, "1");
+        std::env::set_var("UAGENT_ENABLE_UE_EDITOR_BRIDGE", "1");
+        assert_eq!(
+            run_gate_off_child_registration_from_environment(true).unwrap_err(),
+            "MVP15D_GATE_OFF_CHILD_INVALID"
+        );
+    }
+
+    #[test]
     fn canonical_retractions_require_scenario_specific_native_action_receipts() {
         let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
         assert_eq!(
@@ -7684,21 +8270,138 @@ mod tests {
                 }
                 "ue_restart" => {
                     issue_native_observation_receipt(
-                        "release_managed_editor_process",
-                        json!({ "processId": "ue-process-0001" }),
-                        json!({ "status": "released" }),
+                        "terminate_managed_editor_process",
+                        json!({
+                            "schemaVersion": "uagent.mvp15d.managed-editor-process-terminate.v2",
+                            "purpose": "phase_listener_owner",
+                            "taskId": state.identity.task_id,
+                            "phase": state.identity.phase.as_str(),
+                            "sessionId": "ue-editor-session-0001",
+                            "processId": "ue-process-0001",
+                            "pid": 1101,
+                            "processCreationFiletime": "134000000000000001",
+                            "listenerInstanceSha256": "old-listener",
+                            "ownerBindingSha256": "old-owner",
+                        }),
+                        json!({
+                            "status": "terminated",
+                            "reason": "task_owned_process_exited",
+                            "purpose": "phase_listener_owner",
+                            "ownerTaskId": state.identity.task_id,
+                            "ownerPhase": state.identity.phase.as_str(),
+                            "sessionId": "ue-editor-session-0001",
+                            "processId": "ue-process-0001",
+                            "pid": 1101,
+                            "processCreationFiletime": "134000000000000001",
+                            "pidHash": "old-pid-hash",
+                            "observationGeneration": 10,
+                            "listenerInstanceSha256": "old-listener",
+                            "ownerBindingSha256": "old-owner",
+                            "exitObserved": true,
+                            "listenerClosed": true,
+                        }),
+                    )
+                    .unwrap();
+                    issue_native_observation_receipt(
+                        "create_managed_editor_process",
+                        json!({
+                            "schemaVersion": "uagent.mvp15d.managed-editor-process-create.v2",
+                            "purpose": "phase_listener_owner",
+                            "taskId": state.identity.task_id,
+                            "phase": state.identity.phase.as_str(),
+                        }),
+                        json!({
+                            "status": "ready",
+                            "reason": "task_owned_listener_accepting",
+                            "purpose": "phase_listener_owner",
+                            "ownerTaskId": state.identity.task_id,
+                            "ownerPhase": state.identity.phase.as_str(),
+                            "processPid": 2202,
+                            "processCreationFiletime": "134000000000000002",
+                            "listenerInstanceSha256": "new-listener",
+                            "ownerBindingSha256": "new-owner",
+                            "process": {
+                                "id": "ue-process-0002",
+                                "pidHash": "new-pid-hash",
+                                "managedPurpose": "phase_listener_owner",
+                                "processPid": 2202,
+                                "processCreationFiletime": "134000000000000002",
+                                "listenerInstanceSha256": "new-listener",
+                                "ownerBindingSha256": "new-owner",
+                            },
+                        }),
                     )
                     .unwrap();
                     issue_native_observation_receipt(
                         "attach_editor_process",
-                        json!({ "processId": "ue-process-0002" }),
-                        json!({ "status": "attached", "sessionId": "ue-session-0002" }),
+                        json!({
+                            "processId": "ue-process-0002",
+                            "pidHash": "new-pid-hash",
+                        }),
+                        json!({
+                            "status": "attached",
+                            "reason": "attached",
+                            "sessionId": "ue-editor-session-0002",
+                            "processId": "ue-process-0002",
+                            "pidHash": "new-pid-hash",
+                            "observationGeneration": 11,
+                        }),
                     )
                     .unwrap();
                     issue_native_observation_receipt(
                         "mcp_connect",
                         transport_request(11, &state.identity.endpoint),
                         json!({ "sessionId": "ue-mcp-session-0002" }),
+                    )
+                    .unwrap();
+                    issue_native_observation_receipt(
+                        "mcp_discover",
+                        transport_request(12, &state.identity.endpoint),
+                        json!({ "status": "ready" }),
+                    )
+                    .unwrap();
+                    issue_native_observation_receipt(
+                        "mcp_fingerprint",
+                        transport_request(12, &state.identity.endpoint),
+                        json!({ "sessionId": "ue-mcp-session-0002" }),
+                    )
+                    .unwrap();
+                    issue_native_observation_receipt(
+                        "attest_mvp15_companion",
+                        json!({
+                            "editorSessionId": "ue-editor-session-0002",
+                            "attestationGeneration": 12,
+                        }),
+                        json!({
+                            "status": "observed",
+                            "reason": "loaded_module_identity_verified",
+                            "manifest": {
+                                "pluginId": "UAgentAssetTools",
+                                "manifestSelfSha256": "c".repeat(64),
+                                "sourceTreeSha256": "d".repeat(64),
+                                "moduleBuildId": "55116800",
+                                "artifacts": [{
+                                    "path": "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll",
+                                    "size": 4096,
+                                    "sha256": "e".repeat(64),
+                                }],
+                                "modules": [{
+                                    "path": "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll",
+                                    "size": 4096,
+                                    "sha256": "e".repeat(64),
+                                }],
+                            },
+                            "installedModules": [{
+                                "name": "UnrealEditor-UAgentAssetTools.dll",
+                                "size": 4096,
+                                "sha256": "e".repeat(64),
+                            }],
+                            "loadedModules": [{
+                                "name": "UnrealEditor-UAgentAssetTools.dll",
+                                "size": 4096,
+                                "sha256": "e".repeat(64),
+                            }],
+                        }),
                     )
                     .unwrap();
                 }

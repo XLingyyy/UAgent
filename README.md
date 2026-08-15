@@ -4,6 +4,25 @@ AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent p
 
 ## Current Stage: MVP15D - Final 15A-15C/D16 Live Acceptance
 
+Final Live Acceptance Resume 3 Rework 1 is a source-only candidate pending
+supervisor review. Live product and UI children now receive an isolated UE
+editor bridge/launch gate and an absolute UE root; capability-only, UE
+Automation and N2 children cannot inherit that authority, and asset mutation
+remains enabled only for live UI lifecycle. The native bridge starts one
+task/phase-owned guardian which owns the exact UE/MCP listener, task-local DDC
+and PID/creation-FILETIME identity from pre-Connect readiness through rendered
+Disconnect and root-process closeout.
+
+The same candidate makes UE restart consume an ordered native
+terminate/create/attach/MCP/attestation receipt chain. A successful transition
+requires confirmed predecessor exit, a different process and listener identity,
+new editor and MCP sessions, newer generations, and installed/loaded module
+equality against the canonical package manifest. Raw PID, port, endpoint,
+session, FILETIME and local paths remain native-memory facts; retained product
+evidence uses hashes and receipt references. This source work does not establish
+15A, 15B, 15C, D16, a real smoke, or Stage Ready; those gates still require an
+accepted checkpoint and a fresh clean-checkout run.
+
 Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.

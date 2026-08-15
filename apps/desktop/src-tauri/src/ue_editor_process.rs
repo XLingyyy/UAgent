@@ -5,14 +5,38 @@ use crate::{
     resolve_trusted_root_binding_by_id,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+#[cfg(not(test))]
+use std::io::Read;
+use std::io::{BufRead, BufReader, Write};
+use std::net::{SocketAddrV4, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 const DEFAULT_OBSERVATION_TTL_MILLIS: u64 = 2 * 60 * 1000;
+const MANAGED_CREATE_SCHEMA: &str = "uagent.mvp15d.managed-editor-process-create.v2";
+const MANAGED_CREATE_RESULT_SCHEMA: &str = "uagent.mvp15d.managed-editor-process-create-result.v2";
+const MANAGED_TERMINATE_SCHEMA: &str = "uagent.mvp15d.managed-editor-process-terminate.v2";
+const MANAGED_TERMINATE_RESULT_SCHEMA: &str =
+    "uagent.mvp15d.managed-editor-process-terminate-result.v2";
+const PHASE_LISTENER_OWNER: &str = "phase_listener_owner";
+const NEGATIVE_CASE_FIXTURE: &str = "negative_case_fixture";
+const GUARDIAN_ENV: &str = "UAGENT_MVP15D_MANAGED_EDITOR_GUARDIAN";
+const GUARDIAN_TEST_LISTENER_ENV: &str = "UAGENT_MVP15D_GUARDIAN_TEST_LISTENER";
+const GUARDIAN_TEST_LISTENER_CHILD_ENV: &str = "UAGENT_MVP15D_GUARDIAN_TEST_LISTENER_CHILD";
+const GUARDIAN_UE_EXECUTABLE_ENV: &str = "UAGENT_MVP15D_GUARDIAN_UE_EXECUTABLE";
+const GUARDIAN_UPROJECT_ENV: &str = "UAGENT_MVP15D_GUARDIAN_UPROJECT";
+const GUARDIAN_PORT_ENV: &str = "UAGENT_MVP15D_GUARDIAN_PORT";
+const GUARDIAN_MARKER_ENV: &str = "UAGENT_MVP15D_GUARDIAN_MARKER";
+const GUARDIAN_TASK_ENV: &str = "UAGENT_MVP15D_GUARDIAN_TASK";
+const GUARDIAN_PHASE_ENV: &str = "UAGENT_MVP15D_GUARDIAN_PHASE";
+const GUARDIAN_DDC_ENV: &str = "UAGENT_MVP15D_GUARDIAN_DDC";
+const GUARDIAN_EVIDENCE_ROOT_ENV: &str = "UAGENT_MVP15D_GUARDIAN_EVIDENCE_ROOT";
 
 fn next_observation_generation() -> u64 {
     static GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -39,10 +63,16 @@ fn process_registry() -> &'static Mutex<HashMap<String, DiscoveredProcessRecord>
 
 struct ManagedChildRecord {
     child: Child,
+    purpose: String,
     owner_task_id: String,
     owner_phase: String,
     pid: u32,
     process_start_time: u64,
+    guardian_pid: u32,
+    guardian_process_start_time: u64,
+    listener_port: Option<u16>,
+    listener_instance_sha256: Option<String>,
+    owner_binding_sha256: Option<String>,
 }
 
 fn managed_child_registry() -> &'static Mutex<HashMap<String, ManagedChildRecord>> {
@@ -559,6 +589,16 @@ pub struct EditorProcessDescriptor {
     pub source: String,
     pub discovered_at: u64,
     pub expires_at: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub managed_purpose: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_pid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_creation_filetime: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub listener_instance_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_binding_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -572,6 +612,8 @@ pub struct EditorProcessDiscoveryResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ManagedEditorProcessCreateInput {
+    pub schema_version: String,
+    pub purpose: String,
     pub task_id: String,
     pub phase: String,
     pub project_id: String,
@@ -582,15 +624,85 @@ pub struct ManagedEditorProcessCreateInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedEditorProcessCreateResult {
+    pub schema_version: String,
     pub status: String,
     pub reason: String,
+    pub purpose: String,
     pub owner_task_id: String,
     pub owner_phase: String,
     pub process: Option<EditorProcessDescriptor>,
     pub process_pid: Option<u32>,
-    pub process_start_time: Option<u64>,
+    pub process_creation_filetime: Option<String>,
+    pub listener_instance_sha256: Option<String>,
+    pub owner_binding_sha256: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_receipt_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManagedEditorProcessTerminateInput {
+    pub schema_version: String,
+    pub purpose: String,
+    pub task_id: String,
+    pub phase: String,
+    pub session_id: String,
+    pub process_id: String,
+    pub pid: u32,
+    pub process_creation_filetime: String,
+    pub listener_instance_sha256: String,
+    pub owner_binding_sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", untagged)]
+pub enum ManagedEditorProcessTerminateCommandInput {
+    Strict(ManagedEditorProcessTerminateInput),
+    Legacy(EditorObservationSessionIdInput),
+}
+
+impl From<EditorObservationSessionIdInput> for ManagedEditorProcessTerminateCommandInput {
+    fn from(value: EditorObservationSessionIdInput) -> Self {
+        Self::Legacy(value)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedEditorProcessTerminateResult {
+    pub schema_version: String,
+    pub status: String,
+    pub reason: String,
+    pub purpose: String,
+    pub owner_task_id: String,
+    pub owner_phase: String,
+    pub session_id: Option<String>,
+    pub process_id: Option<String>,
+    pub pid: Option<u32>,
+    pub process_creation_filetime: Option<String>,
+    pub pid_hash: Option<String>,
+    pub observation_generation: Option<u64>,
+    pub process_identity_sha256: Option<String>,
+    pub listener_instance_sha256: Option<String>,
+    pub owner_binding_sha256: Option<String>,
+    pub exit_observed: bool,
+    pub listener_closed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receipt_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ManagedListenerAliveInput {
+    task_id: String,
+    phase: String,
+    session_id: String,
+    process_id: String,
+    pid: u32,
+    process_creation_filetime: String,
+    listener_instance_sha256: String,
+    owner_binding_sha256: String,
+    stage: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -601,7 +713,7 @@ pub struct ManagedEditorProcessReleaseInput {
     pub phase: String,
     pub process_id: String,
     pub pid: u32,
-    pub process_start_time: u64,
+    pub process_creation_filetime: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -614,7 +726,7 @@ pub struct ManagedEditorProcessReleaseResult {
     pub owner_phase: String,
     pub process_id: String,
     pub pid: u32,
-    pub process_start_time: u64,
+    pub process_creation_filetime: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_receipt_id: Option<String>,
 }
@@ -625,14 +737,14 @@ fn managed_process_release_result(
     reason: &str,
 ) -> ManagedEditorProcessReleaseResult {
     ManagedEditorProcessReleaseResult {
-        schema_version: "uagent.mvp15d.managed-editor-process-release-result.v1".to_string(),
+        schema_version: "uagent.mvp15d.managed-editor-process-release-result.v2".to_string(),
         status: status.to_string(),
         reason: reason.to_string(),
         owner_task_id: input.task_id.clone(),
         owner_phase: input.phase.clone(),
         process_id: input.process_id.clone(),
         pid: input.pid,
-        process_start_time: input.process_start_time,
+        process_creation_filetime: input.process_creation_filetime.clone(),
         native_receipt_id: None,
     }
 }
@@ -655,8 +767,49 @@ fn observed_managed_process_release_result(
 pub fn create_managed_editor_process(
     input: ManagedEditorProcessCreateInput,
 ) -> Result<ManagedEditorProcessCreateResult, String> {
+    if input.schema_version != MANAGED_CREATE_SCHEMA {
+        return Ok(blocked_managed_create_result(
+            &input,
+            "managed_process_create_schema_invalid",
+        ));
+    }
     crate::mvp15d_runtime_bridge::validate_managed_process_owner(&input.task_id, &input.phase)
         .map_err(str::to_string)?;
+    if managed_child_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .values()
+        .any(|record| {
+            record.owner_task_id == input.task_id
+                && record.owner_phase == input.phase
+                && record.purpose == input.purpose
+        })
+    {
+        return Ok(blocked_managed_create_result(
+            &input,
+            "managed_phase_owner_already_exists",
+        ));
+    }
+    if input.purpose == PHASE_LISTENER_OWNER {
+        if std::env::var("UAGENT_ENABLE_UE_EDITOR_BRIDGE").as_deref() != Ok("1")
+            || !launch_enabled()
+            || std::env::var("UAGENT_MVP15D_UE_ROOT")
+                .map(|value| value.trim().is_empty())
+                .unwrap_or(true)
+        {
+            return Ok(blocked_managed_create_result(
+                &input,
+                "managed_phase_owner_gate_disabled",
+            ));
+        }
+        return create_managed_phase_listener_owner(input);
+    }
+    if input.purpose != NEGATIVE_CASE_FIXTURE || input.phase != "ui-lifecycle" {
+        return Ok(blocked_managed_create_result(
+            &input,
+            "managed_process_purpose_invalid",
+        ));
+    }
     let executable = std::env::current_exe().map_err(|_| "managed_process_spawn_failed")?;
     let mut command = Command::new(executable);
     command
@@ -741,10 +894,16 @@ fn create_managed_editor_process_with_command(
         process_id.clone(),
         ManagedChildRecord {
             child,
+            purpose: input.purpose.clone(),
             owner_task_id: input.task_id.clone(),
             owner_phase: input.phase.clone(),
             pid,
             process_start_time,
+            guardian_pid: pid,
+            guardian_process_start_time: process_start_time,
+            listener_port: None,
+            listener_instance_sha256: None,
+            owner_binding_sha256: None,
         },
     );
     process_registry()
@@ -752,13 +911,17 @@ fn create_managed_editor_process_with_command(
         .unwrap()
         .insert(process_id, record.clone());
     let mut result = ManagedEditorProcessCreateResult {
+        schema_version: MANAGED_CREATE_RESULT_SCHEMA.to_string(),
         status: "created".to_string(),
         reason: "task_owned_process_started".to_string(),
+        purpose: input.purpose.clone(),
         owner_task_id: input.task_id,
         owner_phase: input.phase,
         process: Some(descriptor_from_record(&record)),
         process_pid: Some(pid),
-        process_start_time: Some(process_start_time),
+        process_creation_filetime: Some(process_start_time.to_string()),
+        listener_instance_sha256: None,
+        owner_binding_sha256: None,
         native_receipt_id: None,
     };
     result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
@@ -767,6 +930,650 @@ fn create_managed_editor_process_with_command(
         serde_json::to_value(&result).map_err(|error| error.to_string())?,
     );
     Ok(result)
+}
+
+fn blocked_managed_create_result(
+    input: &ManagedEditorProcessCreateInput,
+    reason: &str,
+) -> ManagedEditorProcessCreateResult {
+    ManagedEditorProcessCreateResult {
+        schema_version: MANAGED_CREATE_RESULT_SCHEMA.to_string(),
+        status: "blocked".to_string(),
+        reason: reason.to_string(),
+        purpose: input.purpose.clone(),
+        owner_task_id: input.task_id.clone(),
+        owner_phase: input.phase.clone(),
+        process: None,
+        process_pid: None,
+        process_creation_filetime: None,
+        listener_instance_sha256: None,
+        owner_binding_sha256: None,
+        native_receipt_id: None,
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ManagedGuardianReady {
+    schema_version: String,
+    pid: u32,
+    process_creation_filetime: u64,
+    port: u16,
+}
+
+fn create_managed_phase_listener_owner(
+    input: ManagedEditorProcessCreateInput,
+) -> Result<ManagedEditorProcessCreateResult, String> {
+    let context =
+        crate::mvp15d_runtime_bridge::managed_process_owner_context(&input.task_id, &input.phase)
+            .map_err(str::to_string)?;
+    let validation = validate_config_details(EditorProcessConfigInput {
+        project_id: input.project_id.clone(),
+        root_ref: input.root_ref.clone(),
+        uproject_relative_path: input.uproject_relative_path.clone(),
+        editor_executable: None,
+        args: None,
+    })
+    .map_err(|result| result.reason)?;
+    let canonical_uproject = validation
+        .canonical_uproject
+        .as_deref()
+        .map(PathBuf::from)
+        .ok_or_else(|| "managed_process_project_identity_unavailable".to_string())?;
+    if !canonical_uproject.is_file() || context.port == 0 {
+        return Ok(blocked_managed_create_result(
+            &input,
+            "managed_process_project_identity_unavailable",
+        ));
+    }
+    let test_listener =
+        cfg!(test) && std::env::var(GUARDIAN_TEST_LISTENER_ENV).as_deref() == Ok("1");
+    let ue_executable = if test_listener {
+        std::env::current_exe().map_err(|_| "managed_process_spawn_failed")?
+    } else {
+        resolve_managed_ue_executable()?
+    };
+    let evidence_root = std::fs::canonicalize(&context.evidence_root)
+        .map_err(|_| "managed_process_evidence_root_invalid".to_string())?;
+    let ddc_root = evidence_root.join("managed-ue-ddc").join(&input.phase);
+    std::fs::create_dir_all(&ddc_root)
+        .map_err(|_| "managed_process_ddc_create_failed".to_string())?;
+    let ddc_root = std::fs::canonicalize(&ddc_root)
+        .map_err(|_| "managed_process_ddc_create_failed".to_string())?;
+    if !ddc_root.starts_with(&evidence_root) {
+        return Err("managed_process_ddc_outside_task_root".to_string());
+    }
+
+    let mut command = Command::new(
+        std::env::current_exe().map_err(|_| "managed_process_spawn_failed".to_string())?,
+    );
+    command
+        .env(GUARDIAN_ENV, "1")
+        .env(GUARDIAN_UE_EXECUTABLE_ENV, &ue_executable)
+        .env(GUARDIAN_UPROJECT_ENV, &canonical_uproject)
+        .env(GUARDIAN_PORT_ENV, context.port.to_string())
+        .env(GUARDIAN_MARKER_ENV, &context.marker)
+        .env(GUARDIAN_TASK_ENV, &context.task_id)
+        .env(GUARDIAN_PHASE_ENV, &context.phase)
+        .env(GUARDIAN_DDC_ENV, &ddc_root)
+        .env(GUARDIAN_EVIDENCE_ROOT_ENV, &evidence_root)
+        .env(
+            GUARDIAN_TEST_LISTENER_ENV,
+            if test_listener { "1" } else { "0" },
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    let request = serde_json::to_value(&input).map_err(|error| error.to_string())?;
+    let mut guardian = match command.spawn() {
+        Ok(guardian) => guardian,
+        Err(_) => {
+            let _ = cleanup_task_owned_ddc(&evidence_root, &ddc_root, &input.phase);
+            return Err("managed_process_spawn_failed".to_string());
+        }
+    };
+    let guardian_pid = guardian.id();
+    let guardian_process_start_time = match observe_process_start_time(guardian_pid) {
+        Some(value) => value,
+        None => {
+            cleanup_guardian_after_create_failure(&mut guardian);
+            let _ = cleanup_task_owned_ddc(&evidence_root, &ddc_root, &input.phase);
+            return Err("managed_process_guardian_identity_unavailable".to_string());
+        }
+    };
+    let stdout = match guardian.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            cleanup_phase_owner_create_failure(
+                &mut guardian,
+                &evidence_root,
+                &ddc_root,
+                &input.phase,
+            );
+            return Err("managed_process_guardian_channel_unavailable".to_string());
+        }
+    };
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let mut line = String::new();
+        let result = BufReader::new(stdout).read_line(&mut line).map(|_| line);
+        let _ = sender.send(result);
+    });
+    let ready = match receiver.recv_timeout(Duration::from_secs(120)) {
+        Ok(Ok(ready)) => ready,
+        Ok(Err(_)) => {
+            cleanup_phase_owner_create_failure(
+                &mut guardian,
+                &evidence_root,
+                &ddc_root,
+                &input.phase,
+            );
+            return Err("managed_process_guardian_channel_unavailable".to_string());
+        }
+        Err(_) => {
+            cleanup_phase_owner_create_failure(
+                &mut guardian,
+                &evidence_root,
+                &ddc_root,
+                &input.phase,
+            );
+            return Err("managed_process_guardian_ready_timeout".to_string());
+        }
+    };
+    let ready: ManagedGuardianReady = match serde_json::from_str(ready.trim()) {
+        Ok(ready) => ready,
+        Err(_) => {
+            cleanup_phase_owner_create_failure(
+                &mut guardian,
+                &evidence_root,
+                &ddc_root,
+                &input.phase,
+            );
+            return Err("managed_process_guardian_ready_invalid".to_string());
+        }
+    };
+    if ready.schema_version != "uagent.mvp15d.managed-editor-guardian-ready.v1"
+        || ready.port != context.port
+        || observe_process_start_time(ready.pid) != Some(ready.process_creation_filetime)
+        || !loopback_port_accepting(ready.port)
+        || !listener_owned_by_process(ready.port, ready.pid)
+    {
+        cleanup_guardian_after_create_failure(&mut guardian);
+        let _ = cleanup_task_owned_ddc(&evidence_root, &ddc_root, &input.phase);
+        return Err("managed_process_guardian_ready_invalid".to_string());
+    }
+    let listener_instance_sha256 = sha256_binding(&[
+        "managed-listener-v1",
+        &context.task_id,
+        &context.phase,
+        &context.session,
+        &context.generation.to_string(),
+        &context.marker,
+        &ready.pid.to_string(),
+        &ready.process_creation_filetime.to_string(),
+        &ready.port.to_string(),
+    ]);
+    let owner_binding_sha256 = sha256_binding(&[
+        "managed-owner-v1",
+        &context.task_id,
+        &context.phase,
+        &context.session,
+        &context.generation.to_string(),
+        &context.runtime_process_identity_sha256,
+        &context.nonce_sha256,
+        &input.project_id,
+        &validation.root_id,
+        &listener_instance_sha256,
+    ]);
+    let process_id = format!(
+        "process:managed:{}",
+        sha256_binding(&[
+            &input.task_id,
+            &input.phase,
+            &input.project_id,
+            &ready.pid.to_string(),
+            &ready.process_creation_filetime.to_string(),
+            &listener_instance_sha256,
+        ])
+    );
+    let pid_hash = format!(
+        "pid:{}",
+        sha256_binding(&[
+            &validation.root_id,
+            &ready.pid.to_string(),
+            &ready.process_creation_filetime.to_string(),
+        ])
+    );
+    let now = now_millis();
+    let record = DiscoveredProcessRecord {
+        process_id: process_id.clone(),
+        pid_hash,
+        pid: Some(ready.pid),
+        process_start_time: Some(ready.process_creation_filetime),
+        project_id: input.project_id.clone(),
+        root_id: validation.root_id,
+        uproject_display_path: validation.uproject_display_path.clone(),
+        canonical_root: validation.canonical_root,
+        canonical_uproject: validation.canonical_uproject,
+        display_project_hint: validation.uproject_display_path,
+        display_executable_hash: format!(
+            "exe:{}",
+            sha256_binding(&[&ue_executable.to_string_lossy()])
+        ),
+        display_name: "UnrealEditor-Cmd.exe".to_string(),
+        process_state: "running".to_string(),
+        source: "managed".to_string(),
+        owner_task_id: Some(input.task_id.clone()),
+        owner_phase: Some(input.phase.clone()),
+        discovered_at: now,
+        expires_at: now + DEFAULT_OBSERVATION_TTL_MILLIS,
+    };
+    let mut managed_registry = match managed_child_registry().lock() {
+        Ok(registry) => registry,
+        Err(_) => {
+            cleanup_phase_owner_create_failure(
+                &mut guardian,
+                &evidence_root,
+                &ddc_root,
+                &input.phase,
+            );
+            return Err("native_authority_unavailable".to_string());
+        }
+    };
+    let mut process_registry = match process_registry().lock() {
+        Ok(registry) => registry,
+        Err(_) => {
+            drop(managed_registry);
+            cleanup_phase_owner_create_failure(
+                &mut guardian,
+                &evidence_root,
+                &ddc_root,
+                &input.phase,
+            );
+            return Err("native_authority_unavailable".to_string());
+        }
+    };
+    managed_registry.insert(
+        process_id.clone(),
+        ManagedChildRecord {
+            child: guardian,
+            purpose: input.purpose.clone(),
+            owner_task_id: input.task_id.clone(),
+            owner_phase: input.phase.clone(),
+            pid: ready.pid,
+            process_start_time: ready.process_creation_filetime,
+            guardian_pid,
+            guardian_process_start_time,
+            listener_port: Some(ready.port),
+            listener_instance_sha256: Some(listener_instance_sha256.clone()),
+            owner_binding_sha256: Some(owner_binding_sha256.clone()),
+        },
+    );
+    process_registry.insert(process_id, record.clone());
+    drop(process_registry);
+    drop(managed_registry);
+    let mut result = ManagedEditorProcessCreateResult {
+        schema_version: MANAGED_CREATE_RESULT_SCHEMA.to_string(),
+        status: "ready".to_string(),
+        reason: "task_owned_listener_accepting".to_string(),
+        purpose: input.purpose,
+        owner_task_id: input.task_id,
+        owner_phase: input.phase,
+        process: Some(descriptor_from_record(&record)),
+        process_pid: Some(ready.pid),
+        process_creation_filetime: Some(ready.process_creation_filetime.to_string()),
+        listener_instance_sha256: Some(listener_instance_sha256),
+        owner_binding_sha256: Some(owner_binding_sha256),
+        native_receipt_id: None,
+    };
+    result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
+        "create_managed_editor_process",
+        request,
+        serde_json::to_value(&result).map_err(|error| error.to_string())?,
+    );
+    Ok(result)
+}
+
+fn resolve_managed_ue_executable() -> Result<PathBuf, String> {
+    let root = std::env::var_os("UAGENT_MVP15D_UE_ROOT")
+        .map(PathBuf::from)
+        .ok_or_else(|| "managed_process_ue_root_required".to_string())?;
+    let root =
+        std::fs::canonicalize(root).map_err(|_| "managed_process_ue_root_invalid".to_string())?;
+    let executable = if root.is_file() {
+        root
+    } else {
+        root.join("Engine")
+            .join("Binaries")
+            .join("Win64")
+            .join("UnrealEditor-Cmd.exe")
+    };
+    let executable = std::fs::canonicalize(executable)
+        .map_err(|_| "managed_process_ue_executable_missing".to_string())?;
+    if !executable.is_file()
+        || executable
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_none_or(|value| !value.eq_ignore_ascii_case("UnrealEditor-Cmd.exe"))
+    {
+        return Err("managed_process_ue_executable_invalid".to_string());
+    }
+    Ok(executable)
+}
+
+fn cleanup_guardian_after_create_failure(guardian: &mut Child) {
+    drop(guardian.stdin.take());
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        match guardian.try_wait() {
+            Ok(Some(_)) => return,
+            _ if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(25)),
+            _ => break,
+        }
+    }
+    let _ = guardian.kill();
+    let _ = guardian.wait();
+}
+
+fn cleanup_phase_owner_create_failure(
+    guardian: &mut Child,
+    evidence_root: &Path,
+    ddc_root: &Path,
+    phase: &str,
+) {
+    cleanup_guardian_after_create_failure(guardian);
+    let _ = cleanup_task_owned_ddc(evidence_root, ddc_root, phase);
+}
+
+fn cleanup_task_owned_ddc(
+    evidence_root: &Path,
+    ddc_root: &Path,
+    phase: &str,
+) -> Result<(), String> {
+    if !matches!(phase, "product-capture" | "ui-lifecycle") {
+        return Err("managed_process_ddc_identity_invalid".to_string());
+    }
+    let evidence_root = std::fs::canonicalize(evidence_root)
+        .map_err(|_| "managed_process_ddc_identity_invalid".to_string())?;
+    let expected = evidence_root.join("managed-ue-ddc").join(phase);
+    if ddc_root.exists() {
+        let metadata = std::fs::symlink_metadata(ddc_root)
+            .map_err(|_| "managed_process_ddc_identity_invalid".to_string())?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err("managed_process_ddc_identity_invalid".to_string());
+        }
+        let canonical_ddc = std::fs::canonicalize(ddc_root)
+            .map_err(|_| "managed_process_ddc_identity_invalid".to_string())?;
+        let canonical_expected = std::fs::canonicalize(&expected)
+            .map_err(|_| "managed_process_ddc_identity_invalid".to_string())?;
+        if canonical_ddc != canonical_expected || !canonical_ddc.starts_with(&evidence_root) {
+            return Err("managed_process_ddc_identity_invalid".to_string());
+        }
+        std::fs::remove_dir_all(&canonical_ddc)
+            .map_err(|_| "managed_process_ddc_cleanup_failed".to_string())?;
+    } else if ddc_root != expected {
+        return Err("managed_process_ddc_identity_invalid".to_string());
+    }
+    if ddc_root.exists() {
+        return Err("managed_process_ddc_cleanup_failed".to_string());
+    }
+    let parent = evidence_root.join("managed-ue-ddc");
+    match std::fs::remove_dir(&parent) {
+        Ok(()) => {}
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
+            ) => {}
+        Err(_) => return Err("managed_process_ddc_cleanup_failed".to_string()),
+    }
+    Ok(())
+}
+
+struct TaskOwnedDdcCleanup {
+    evidence_root: PathBuf,
+    ddc_root: PathBuf,
+    phase: String,
+    active: bool,
+}
+
+impl TaskOwnedDdcCleanup {
+    fn cleanup(&mut self) -> Result<(), String> {
+        cleanup_task_owned_ddc(&self.evidence_root, &self.ddc_root, &self.phase)?;
+        self.active = false;
+        Ok(())
+    }
+}
+
+impl Drop for TaskOwnedDdcCleanup {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = cleanup_task_owned_ddc(&self.evidence_root, &self.ddc_root, &self.phase);
+        }
+    }
+}
+
+struct GuardianEditorChild(Child);
+
+impl std::ops::Deref for GuardianEditorChild {
+    type Target = Child;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for GuardianEditorChild {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Drop for GuardianEditorChild {
+    fn drop(&mut self) {
+        if self.0.try_wait().ok().flatten().is_none() {
+            let _ = self.0.kill();
+        }
+        let _ = self.0.wait();
+    }
+}
+
+fn run_managed_editor_guardian() -> Result<(), String> {
+    let executable = PathBuf::from(
+        std::env::var_os(GUARDIAN_UE_EXECUTABLE_ENV)
+            .ok_or_else(|| "managed_guardian_environment_invalid".to_string())?,
+    );
+    let uproject = PathBuf::from(
+        std::env::var_os(GUARDIAN_UPROJECT_ENV)
+            .ok_or_else(|| "managed_guardian_environment_invalid".to_string())?,
+    );
+    let port = std::env::var(GUARDIAN_PORT_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "managed_guardian_environment_invalid".to_string())?;
+    let marker = std::env::var(GUARDIAN_MARKER_ENV)
+        .map_err(|_| "managed_guardian_environment_invalid".to_string())?;
+    let task_id = std::env::var(GUARDIAN_TASK_ENV)
+        .map_err(|_| "managed_guardian_environment_invalid".to_string())?;
+    let phase = std::env::var(GUARDIAN_PHASE_ENV)
+        .map_err(|_| "managed_guardian_environment_invalid".to_string())?;
+    let ddc = PathBuf::from(
+        std::env::var_os(GUARDIAN_DDC_ENV)
+            .ok_or_else(|| "managed_guardian_environment_invalid".to_string())?,
+    );
+    let evidence_root = PathBuf::from(
+        std::env::var_os(GUARDIAN_EVIDENCE_ROOT_ENV)
+            .ok_or_else(|| "managed_guardian_environment_invalid".to_string())?,
+    );
+    if marker.is_empty()
+        || task_id.is_empty()
+        || !matches!(phase.as_str(), "product-capture" | "ui-lifecycle")
+        || !uproject.is_file()
+        || !ddc.is_dir()
+        || !evidence_root.is_dir()
+    {
+        return Err("managed_guardian_environment_invalid".to_string());
+    }
+    let evidence_root = std::fs::canonicalize(evidence_root)
+        .map_err(|_| "managed_guardian_environment_invalid".to_string())?;
+    let ddc = std::fs::canonicalize(ddc)
+        .map_err(|_| "managed_guardian_environment_invalid".to_string())?;
+    if ddc != evidence_root.join("managed-ue-ddc").join(&phase) || !ddc.starts_with(&evidence_root)
+    {
+        return Err("managed_guardian_environment_invalid".to_string());
+    }
+    let mut ddc_cleanup = TaskOwnedDdcCleanup {
+        evidence_root,
+        ddc_root: ddc.clone(),
+        phase: phase.clone(),
+        active: true,
+    };
+    let test_listener = std::env::var(GUARDIAN_TEST_LISTENER_ENV).as_deref() == Ok("1");
+    let mut command = if test_listener {
+        #[cfg(test)]
+        {
+            let mut command = Command::new("powershell.exe");
+            let script = format!(
+                "$listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,{port});$listener.Start();while($true){{$client=$listener.AcceptTcpClient();$client.Close()}}"
+            );
+            command
+                .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"])
+                .arg(script);
+            command
+        }
+        #[cfg(not(test))]
+        {
+            let mut command = Command::new(
+                std::env::current_exe().map_err(|_| "managed_guardian_spawn_failed".to_string())?,
+            );
+            command
+                .env(GUARDIAN_TEST_LISTENER_CHILD_ENV, "1")
+                .env(GUARDIAN_PORT_ENV, port.to_string());
+            command
+        }
+    } else {
+        let mut command = Command::new(&executable);
+        command
+            .arg(&uproject)
+            .arg("-Unattended")
+            .arg("-NoSplash")
+            .arg("-NoSound")
+            .arg("-ddc=noshared")
+            .arg(format!("-LocalDataCachePath={}", ddc.to_string_lossy()))
+            .arg("-ModelContextProtocolStartServer")
+            .arg(format!("-ModelContextProtocolPort={port}"))
+            .arg(format!("-UAgentTaskMarker={marker}"))
+            .env("UE-LocalDataCachePath", &ddc)
+            .env("UE-SharedDataCachePath", "None");
+        command
+    };
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    let mut editor = GuardianEditorChild(
+        command
+            .spawn()
+            .map_err(|_| "managed_guardian_spawn_failed".to_string())?,
+    );
+    let pid = editor.id();
+    let creation = observe_process_start_time(pid)
+        .ok_or_else(|| "managed_guardian_process_identity_unavailable".to_string())?;
+    let ready_deadline = Instant::now() + Duration::from_secs(120);
+    while Instant::now() < ready_deadline {
+        if editor
+            .try_wait()
+            .map_err(|_| "managed_guardian_process_wait_failed".to_string())?
+            .is_some()
+        {
+            return Err("managed_guardian_process_exited_early".to_string());
+        }
+        if observe_process_start_time(pid) == Some(creation)
+            && loopback_port_accepting(port)
+            && listener_owned_by_process(port, pid)
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if !loopback_port_accepting(port) || !listener_owned_by_process(port, pid) {
+        let _ = editor.kill();
+        let _ = editor.wait();
+        return Err("managed_guardian_listener_not_ready".to_string());
+    }
+    let ready = ManagedGuardianReady {
+        schema_version: "uagent.mvp15d.managed-editor-guardian-ready.v1".to_string(),
+        pid,
+        process_creation_filetime: creation,
+        port,
+    };
+    serde_json::to_writer(std::io::stdout(), &ready)
+        .map_err(|_| "managed_guardian_ready_write_failed".to_string())?;
+    std::io::stdout()
+        .write_all(b"\n")
+        .map_err(|_| "managed_guardian_ready_write_failed".to_string())?;
+    std::io::stdout()
+        .flush()
+        .map_err(|_| "managed_guardian_ready_write_failed".to_string())?;
+    #[cfg(test)]
+    std::thread::sleep(Duration::from_millis(100));
+    #[cfg(not(test))]
+    {
+        let mut lease = Vec::new();
+        let _ = std::io::stdin().read_to_end(&mut lease);
+    }
+    let _ = editor.kill();
+    let _ = editor.wait();
+    let close_deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < close_deadline {
+        if !listener_owned_by_process(port, pid) && !loopback_port_accepting(port) {
+            ddc_cleanup.cleanup()?;
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Err("managed_guardian_closeout_failed".to_string())
+}
+
+fn run_guardian_test_listener_child() -> Result<(), String> {
+    let port = std::env::var(GUARDIAN_PORT_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "managed_guardian_test_port_invalid".to_string())?;
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
+        .map_err(|_| "managed_guardian_test_bind_failed".to_string())?;
+    loop {
+        let _ = listener.accept();
+    }
+}
+
+fn sha256_binding(parts: &[&str]) -> String {
+    let mut hash = Sha256::new();
+    for part in parts {
+        hash.update((part.len() as u64).to_be_bytes());
+        hash.update(part.as_bytes());
+    }
+    format!("{:x}", hash.finalize())
+}
+
+fn loopback_port_accepting(port: u16) -> bool {
+    TcpStream::connect_timeout(
+        &std::net::SocketAddr::V4(SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, port)),
+        Duration::from_millis(250),
+    )
+    .is_ok()
 }
 
 #[cfg(test)]
@@ -781,13 +1588,22 @@ pub(crate) fn create_managed_editor_process_fixture(
 pub fn release_managed_editor_process(
     input: ManagedEditorProcessReleaseInput,
 ) -> Result<ManagedEditorProcessReleaseResult, String> {
-    if input.schema_version != "uagent.mvp15d.managed-editor-process-release.v1" {
+    if input.schema_version != "uagent.mvp15d.managed-editor-process-release.v2" {
         return observed_managed_process_release_result(
             &input,
             "blocked",
             "managed_process_release_schema_invalid",
         );
     }
+    let Some(process_creation_filetime) =
+        parse_canonical_process_creation_filetime(&input.process_creation_filetime)
+    else {
+        return observed_managed_process_release_result(
+            &input,
+            "blocked",
+            "managed_process_creation_filetime_invalid",
+        );
+    };
     if let Err(reason) =
         crate::mvp15d_runtime_bridge::validate_managed_process_owner(&input.task_id, &input.phase)
     {
@@ -830,7 +1646,7 @@ pub fn release_managed_editor_process(
         );
     }
     if process.pid != Some(input.pid)
-        || process.process_start_time != Some(input.process_start_time)
+        || process.process_start_time != Some(process_creation_filetime)
     {
         return observed_managed_process_release_result(
             &input,
@@ -846,20 +1662,22 @@ pub fn release_managed_editor_process(
     let Some(mut managed) = managed else {
         return observed_managed_process_release_result(&input, "blocked", "process_not_managed");
     };
-    if managed.owner_task_id != input.task_id
+    if managed.purpose != NEGATIVE_CASE_FIXTURE
+        || managed.owner_task_id != input.task_id
         || managed.owner_phase != input.phase
         || managed.pid != input.pid
-        || managed.process_start_time != input.process_start_time
+        || managed.process_start_time != process_creation_filetime
     {
+        let reason = if managed.purpose != NEGATIVE_CASE_FIXTURE {
+            "managed_process_strict_termination_required"
+        } else {
+            "managed_process_identity_mismatch"
+        };
         managed_child_registry()
             .lock()
             .map_err(|_| "native_authority_unavailable".to_string())?
             .insert(input.process_id.clone(), managed);
-        return observed_managed_process_release_result(
-            &input,
-            "blocked",
-            "managed_process_identity_mismatch",
-        );
+        return observed_managed_process_release_result(&input, "blocked", reason);
     }
     drop(managed.child.stdin.take());
     if managed.child.wait().is_err() {
@@ -928,6 +1746,20 @@ pub(crate) fn mark_managed_process_external_for_test(process_id: &str) {
 }
 
 pub fn run_managed_editor_process_fixture_from_environment() -> bool {
+    if std::env::var(GUARDIAN_TEST_LISTENER_CHILD_ENV).as_deref() == Ok("1") {
+        if let Err(error) = run_guardian_test_listener_child() {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
+        return true;
+    }
+    if std::env::var(GUARDIAN_ENV).as_deref() == Ok("1") {
+        if let Err(error) = run_managed_editor_guardian() {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
+        return true;
+    }
     if std::env::var("UAGENT_MVP15D_MANAGED_EDITOR_FIXTURE").as_deref() != Ok("1") {
         return false;
     }
@@ -947,6 +1779,38 @@ pub fn discover_editor_processes(
         Ok(validation) => validation,
         Err(validation) => return Ok(blocked_discovery(&validation.reason)),
     };
+    let current_owner = crate::mvp15d_runtime_bridge::current_managed_process_owner_identity();
+    let managed_phase_owner = {
+        let managed = managed_child_registry()
+            .lock()
+            .map_err(|_| "native_authority_unavailable".to_string())?;
+        let processes = process_registry()
+            .lock()
+            .map_err(|_| "native_authority_unavailable".to_string())?;
+        managed
+            .iter()
+            .filter(|(_, owner)| {
+                owner.purpose == PHASE_LISTENER_OWNER
+                    && current_owner.as_ref().is_some_and(|(task_id, phase)| {
+                        owner.owner_task_id == *task_id && owner.owner_phase == *phase
+                    })
+            })
+            .filter_map(|(process_id, _)| processes.get(process_id))
+            .find(|process| {
+                process.project_id == input.project_id
+                    && process.root_id == validation.root_id
+                    && process.uproject_display_path == validation.uproject_display_path
+                    && check_managed_record_current(process).alive
+            })
+            .cloned()
+    };
+    if let Some(record) = managed_phase_owner {
+        return Ok(EditorProcessDiscoveryResult {
+            status: "ready".to_string(),
+            reason: "task_owned_managed_process_matched".to_string(),
+            processes: vec![descriptor_from_record(&record)],
+        });
+    }
     if !validation.fixture {
         let candidates = match enumerate_native_processes() {
             Ok(candidates) => candidates,
@@ -1238,7 +2102,7 @@ pub fn launch_editor_process(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EditorObservationSessionIdInput {
     pub session_id: String,
 }
@@ -1464,131 +2328,521 @@ pub fn stop_editor_observation_session(
     Ok(result)
 }
 
+pub(crate) fn observe_managed_listener_alive_through_use(
+    request: &serde_json::Value,
+) -> Result<serde_json::Value, &'static str> {
+    let input: ManagedListenerAliveInput =
+        serde_json::from_value(request.clone()).map_err(|_| "managed_listener_request_invalid")?;
+    if input.stage != "after_rendered_disconnect" {
+        return Err("managed_listener_stage_invalid");
+    }
+    parse_canonical_process_creation_filetime(&input.process_creation_filetime)
+        .ok_or("managed_process_creation_filetime_invalid")?;
+    crate::mvp15d_runtime_bridge::validate_managed_process_owner(&input.task_id, &input.phase)
+        .map_err(|_| "managed_process_owner_mismatch")?;
+    let session = observation_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable")?
+        .get(&input.session_id)
+        .cloned()
+        .ok_or("session_not_found")?;
+    if !matches!(session.status.as_str(), "attached" | "stopped")
+        || session.process_id != input.process_id
+    {
+        return Err("managed_process_session_identity_mismatch");
+    }
+    let process = process_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable")?
+        .get(&input.process_id)
+        .cloned()
+        .ok_or("managed_process_unknown")?;
+    let creation = parse_canonical_process_creation_filetime(&input.process_creation_filetime)
+        .ok_or("managed_process_creation_filetime_invalid")?;
+    if process.source != "managed"
+        || process.owner_task_id.as_deref() != Some(input.task_id.as_str())
+        || process.owner_phase.as_deref() != Some(input.phase.as_str())
+        || process.pid != Some(input.pid)
+        || process.process_start_time != Some(creation)
+        || process.pid_hash != session.pid_hash
+    {
+        return Err("managed_process_identity_mismatch");
+    }
+    let managed = managed_child_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable")?;
+    let managed = managed
+        .get(&input.process_id)
+        .ok_or("managed_process_unknown")?;
+    let port = managed
+        .listener_port
+        .ok_or("managed_listener_unavailable")?;
+    if managed.purpose != PHASE_LISTENER_OWNER
+        || managed.owner_task_id != input.task_id
+        || managed.owner_phase != input.phase
+        || managed.pid != input.pid
+        || managed.process_start_time != creation
+        || managed.listener_instance_sha256.as_deref()
+            != Some(input.listener_instance_sha256.as_str())
+        || managed.owner_binding_sha256.as_deref() != Some(input.owner_binding_sha256.as_str())
+        || observe_process_start_time(managed.guardian_pid)
+            != Some(managed.guardian_process_start_time)
+        || observe_process_start_time(input.pid) != Some(creation)
+        || !listener_owned_by_process(port, input.pid)
+        || !loopback_port_accepting(port)
+    {
+        return Err("managed_listener_not_alive");
+    }
+    Ok(serde_json::json!({
+        "status": "observed",
+        "reason": "task_owned_listener_accepting",
+        "purpose": PHASE_LISTENER_OWNER,
+        "ownerTaskId": input.task_id,
+        "ownerPhase": input.phase,
+        "sessionId": input.session_id,
+        "processId": input.process_id,
+        "processPid": input.pid,
+        "processCreationFiletime": input.process_creation_filetime,
+        "pidHash": process.pid_hash,
+        "observationGeneration": session.generation,
+        "processIdentitySha256": sha256_binding(&[
+            process.process_id.as_str(),
+            &input.pid.to_string(),
+            input.process_creation_filetime.as_str(),
+        ]),
+        "listenerInstanceSha256": input.listener_instance_sha256,
+        "ownerBindingSha256": input.owner_binding_sha256,
+        "stage": input.stage,
+        "processAlive": true,
+        "listenerAccepting": true,
+    }))
+}
+
 /// Test/owned-launch lifecycle transition used by the fixed MVP15D driver.
 /// Attached external UE processes are never terminated by this command.
 #[tauri::command]
 pub fn terminate_managed_editor_process(
-    input: EditorObservationSessionIdInput,
-) -> Result<EditorObservationSessionResult, String> {
+    input: ManagedEditorProcessTerminateCommandInput,
+) -> Result<ManagedEditorProcessTerminateResult, String> {
+    match input {
+        ManagedEditorProcessTerminateCommandInput::Strict(input) => {
+            terminate_phase_listener_owner(input)
+        }
+        ManagedEditorProcessTerminateCommandInput::Legacy(input) => {
+            terminate_negative_case_fixture(input)
+        }
+    }
+}
+
+fn terminate_phase_listener_owner(
+    input: ManagedEditorProcessTerminateInput,
+) -> Result<ManagedEditorProcessTerminateResult, String> {
+    if input.schema_version != MANAGED_TERMINATE_SCHEMA {
+        return observed_managed_terminate_result(
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            managed_terminate_result_from_strict(
+                &input,
+                "blocked",
+                "managed_process_terminate_schema_invalid",
+            ),
+        );
+    }
+    if input.purpose != PHASE_LISTENER_OWNER {
+        return observed_managed_terminate_result(
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            managed_terminate_result_from_strict(
+                &input,
+                "blocked",
+                "managed_process_purpose_invalid",
+            ),
+        );
+    }
+    let process_creation_filetime =
+        match parse_canonical_process_creation_filetime(&input.process_creation_filetime) {
+            Some(value) => value,
+            None => {
+                return observed_managed_terminate_result(
+                    serde_json::to_value(&input).map_err(|error| error.to_string())?,
+                    managed_terminate_result_from_strict(
+                        &input,
+                        "blocked",
+                        "managed_process_creation_filetime_invalid",
+                    ),
+                )
+            }
+        };
+    if let Err(reason) =
+        crate::mvp15d_runtime_bridge::validate_managed_process_owner(&input.task_id, &input.phase)
+    {
+        return observed_managed_terminate_result(
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            managed_terminate_result_from_strict(&input, "blocked", reason),
+        );
+    }
+
     let session_snapshot = observation_registry()
         .lock()
         .map_err(|_| "native_authority_unavailable".to_string())?
         .get(&input.session_id)
         .cloned();
     let Some(session_snapshot) = session_snapshot else {
-        let mut result = blocked_session("", "attached", "session_not_found");
-        result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
-            "terminate_managed_editor_process",
+        return observed_managed_terminate_result(
             serde_json::to_value(&input).map_err(|error| error.to_string())?,
-            serde_json::to_value(&result).map_err(|error| error.to_string())?,
+            managed_terminate_result_from_strict(&input, "blocked", "session_not_found"),
         );
-        return Ok(result);
     };
+    if session_snapshot.process_id != input.process_id || session_snapshot.status != "attached" {
+        return observed_managed_terminate_result(
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            managed_terminate_result_from_strict(
+                &input,
+                "blocked",
+                "managed_process_session_identity_mismatch",
+            ),
+        );
+    }
     let process_snapshot = process_registry()
         .lock()
         .map_err(|_| "native_authority_unavailable".to_string())?
         .get(&session_snapshot.process_id)
         .cloned();
     let Some(process_snapshot) = process_snapshot else {
-        let mut result = session_result(&session_snapshot, "process_exited", false);
-        result.status = "degraded".to_string();
-        result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
-            "terminate_managed_editor_process",
+        return observed_managed_terminate_result(
             serde_json::to_value(&input).map_err(|error| error.to_string())?,
-            serde_json::to_value(&result).map_err(|error| error.to_string())?,
+            managed_terminate_result_from_strict(&input, "blocked", "managed_process_unknown"),
         );
-        return Ok(result);
     };
-    if process_snapshot.source != "fixture" && process_snapshot.source != "managed" {
-        let mut result = session_result(&session_snapshot, "process_not_managed", false);
-        result.status = "blocked".to_string();
-        result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
-            "terminate_managed_editor_process",
+    if process_snapshot.source != "managed" {
+        return observed_managed_terminate_result(
             serde_json::to_value(&input).map_err(|error| error.to_string())?,
-            serde_json::to_value(&result).map_err(|error| error.to_string())?,
+            managed_terminate_result_from_strict(&input, "blocked", "process_not_managed"),
         );
-        return Ok(result);
     }
-    if process_snapshot.source == "managed" {
-        let owner_task_id = process_snapshot
-            .owner_task_id
-            .as_deref()
-            .unwrap_or_default();
-        let owner_phase = process_snapshot.owner_phase.as_deref().unwrap_or_default();
-        if crate::mvp15d_runtime_bridge::validate_managed_process_owner(owner_task_id, owner_phase)
-            .is_err()
-        {
-            let mut result =
-                session_result(&session_snapshot, "managed_process_owner_mismatch", false);
-            result.status = "blocked".to_string();
-            result.native_receipt_id =
-                crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
-                    "terminate_managed_editor_process",
-                    serde_json::to_value(&input).map_err(|error| error.to_string())?,
-                    serde_json::to_value(&result).map_err(|error| error.to_string())?,
-                );
-            return Ok(result);
-        }
-        let managed = managed_child_registry()
+    if process_snapshot.owner_task_id.as_deref() != Some(input.task_id.as_str())
+        || process_snapshot.owner_phase.as_deref() != Some(input.phase.as_str())
+    {
+        return observed_managed_terminate_result(
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            managed_terminate_result_from_strict(
+                &input,
+                "blocked",
+                "managed_process_owner_mismatch",
+            ),
+        );
+    }
+    if process_snapshot.pid != Some(input.pid)
+        || process_snapshot.process_start_time != Some(process_creation_filetime)
+        || process_snapshot.pid_hash != session_snapshot.pid_hash
+    {
+        return observed_managed_terminate_result(
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            managed_terminate_result_from_strict(
+                &input,
+                "blocked",
+                "managed_process_identity_mismatch",
+            ),
+        );
+    }
+
+    let managed_matches = managed_child_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .get(&input.process_id)
+        .is_some_and(|managed| {
+            managed.purpose == PHASE_LISTENER_OWNER
+                && managed.owner_task_id == input.task_id
+                && managed.owner_phase == input.phase
+                && managed.pid == input.pid
+                && managed.process_start_time == process_creation_filetime
+                && managed.listener_port.is_some()
+                && managed.listener_instance_sha256.as_deref()
+                    == Some(input.listener_instance_sha256.as_str())
+                && managed.owner_binding_sha256.as_deref()
+                    == Some(input.owner_binding_sha256.as_str())
+                && observe_process_start_time(managed.guardian_pid)
+                    == Some(managed.guardian_process_start_time)
+        });
+    if !managed_matches {
+        return observed_managed_terminate_result(
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            managed_terminate_result_from_strict(
+                &input,
+                "blocked",
+                "managed_process_identity_mismatch",
+            ),
+        );
+    }
+    let listener_port = managed_child_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .get(&input.process_id)
+        .and_then(|managed| managed.listener_port)
+        .ok_or_else(|| "native_authority_unavailable".to_string())?;
+    if observe_process_start_time(input.pid) != Some(process_creation_filetime)
+        || !listener_owned_by_process(listener_port, input.pid)
+        || !loopback_port_accepting(listener_port)
+    {
+        return observed_managed_terminate_result(
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            managed_terminate_result_from_strict(&input, "blocked", "managed_process_not_live"),
+        );
+    }
+
+    let mut managed = managed_child_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .remove(&input.process_id)
+        .ok_or_else(|| "native_authority_unavailable".to_string())?;
+    drop(managed.child.stdin.take());
+    let guardian_exited = wait_for_child_exit(&mut managed.child, Duration::from_secs(45));
+    if !guardian_exited {
+        let _ = managed.child.kill();
+        let _ = managed.child.wait();
+    }
+    let editor_exited = wait_for_process_identity_exit(
+        input.pid,
+        process_creation_filetime,
+        Duration::from_secs(10),
+    );
+    let listener_closed =
+        wait_for_listener_closed(listener_port, input.pid, Duration::from_secs(5));
+    if !(guardian_exited && editor_exited && listener_closed) {
+        let mut result = managed_terminate_result_from_strict(
+            &input,
+            "failed",
+            "managed_process_termination_unconfirmed",
+        );
+        result.exit_observed = editor_exited;
+        result.listener_closed = listener_closed;
+        return observed_managed_terminate_result(
+            serde_json::to_value(&input).map_err(|error| error.to_string())?,
+            result,
+        );
+    }
+
+    process_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .remove(&input.process_id);
+    let process_identity_sha256 = sha256_binding(&[
+        input.process_id.as_str(),
+        &input.pid.to_string(),
+        input.process_creation_filetime.as_str(),
+    ]);
+    let mut result =
+        managed_terminate_result_from_strict(&input, "terminated", "task_owned_process_exited");
+    result.pid_hash = Some(process_snapshot.pid_hash);
+    result.observation_generation = Some(session_snapshot.generation);
+    result.process_identity_sha256 = Some(process_identity_sha256);
+    result.exit_observed = true;
+    result.listener_closed = true;
+    observed_managed_terminate_result(
+        serde_json::to_value(&input).map_err(|error| error.to_string())?,
+        result,
+    )
+}
+
+fn terminate_negative_case_fixture(
+    input: EditorObservationSessionIdInput,
+) -> Result<ManagedEditorProcessTerminateResult, String> {
+    let request = serde_json::to_value(&input).map_err(|error| error.to_string())?;
+    let session = observation_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .get(&input.session_id)
+        .cloned();
+    let Some(session) = session else {
+        return observed_managed_terminate_result(
+            request,
+            legacy_managed_terminate_result(&input, None, "blocked", "session_not_found"),
+        );
+    };
+    let process = process_registry()
+        .lock()
+        .map_err(|_| "native_authority_unavailable".to_string())?
+        .get(&session.process_id)
+        .cloned();
+    let Some(process) = process else {
+        return observed_managed_terminate_result(
+            request,
+            legacy_managed_terminate_result(
+                &input,
+                Some(&session),
+                "blocked",
+                "managed_process_unknown",
+            ),
+        );
+    };
+    if process.source == "managed" {
+        let purpose = managed_child_registry()
             .lock()
             .map_err(|_| "native_authority_unavailable".to_string())?
-            .remove(&session_snapshot.process_id);
-        let Some(mut managed) = managed else {
-            let mut result = session_result(&session_snapshot, "process_not_managed", false);
-            result.status = "blocked".to_string();
-            result.native_receipt_id =
-                crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
-                    "terminate_managed_editor_process",
-                    serde_json::to_value(&input).map_err(|error| error.to_string())?,
-                    serde_json::to_value(&result).map_err(|error| error.to_string())?,
-                );
-            return Ok(result);
-        };
-        if managed.owner_task_id != owner_task_id
-            || managed.owner_phase != owner_phase
-            || Some(managed.pid) != process_snapshot.pid
-            || Some(managed.process_start_time) != process_snapshot.process_start_time
-        {
+            .get(&process.process_id)
+            .map(|record| record.purpose.clone());
+        if purpose.as_deref() != Some(NEGATIVE_CASE_FIXTURE) {
+            return observed_managed_terminate_result(
+                request,
+                legacy_managed_terminate_result(
+                    &input,
+                    Some(&session),
+                    "blocked",
+                    "managed_process_strict_identity_required",
+                ),
+            );
+        }
+        let mut managed = managed_child_registry()
+            .lock()
+            .map_err(|_| "native_authority_unavailable".to_string())?
+            .remove(&process.process_id)
+            .ok_or_else(|| "native_authority_unavailable".to_string())?;
+        drop(managed.child.stdin.take());
+        if !wait_for_child_exit(&mut managed.child, Duration::from_secs(15)) {
             managed_child_registry()
                 .lock()
-                .unwrap()
-                .insert(session_snapshot.process_id.clone(), managed);
-            let mut result = session_result(
-                &session_snapshot,
-                "managed_process_identity_mismatch",
-                false,
+                .map_err(|_| "native_authority_unavailable".to_string())?
+                .insert(process.process_id.clone(), managed);
+            return observed_managed_terminate_result(
+                request,
+                legacy_managed_terminate_result(
+                    &input,
+                    Some(&session),
+                    "failed",
+                    "managed_process_termination_failed",
+                ),
             );
-            result.status = "blocked".to_string();
-            result.native_receipt_id =
-                crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
-                    "terminate_managed_editor_process",
-                    serde_json::to_value(&input).map_err(|error| error.to_string())?,
-                    serde_json::to_value(&result).map_err(|error| error.to_string())?,
-                );
-            return Ok(result);
         }
-        drop(managed.child.stdin.take());
-        managed
-            .child
-            .wait()
-            .map_err(|_| "managed_process_termination_failed".to_string())?;
+    } else if process.source != "fixture" {
+        return observed_managed_terminate_result(
+            request,
+            legacy_managed_terminate_result(
+                &input,
+                Some(&session),
+                "blocked",
+                "process_not_managed",
+            ),
+        );
     }
     if let Some(process) = process_registry()
         .lock()
         .map_err(|_| "native_authority_unavailable".to_string())?
-        .get_mut(&session_snapshot.process_id)
+        .get_mut(&session.process_id)
     {
         process.process_state = "exited".to_string();
         process.expires_at = now_millis();
     }
-    let mut result = session_result(&session_snapshot, "process_exited", false);
-    result.status = "degraded".to_string();
+    observed_managed_terminate_result(
+        request,
+        legacy_managed_terminate_result(&input, Some(&session), "degraded", "process_exited"),
+    )
+}
+
+fn parse_canonical_process_creation_filetime(value: &str) -> Option<u64> {
+    let parsed = value.parse::<u64>().ok()?;
+    (parsed > 0 && parsed.to_string() == value).then_some(parsed)
+}
+
+fn managed_terminate_result_from_strict(
+    input: &ManagedEditorProcessTerminateInput,
+    status: &str,
+    reason: &str,
+) -> ManagedEditorProcessTerminateResult {
+    ManagedEditorProcessTerminateResult {
+        schema_version: MANAGED_TERMINATE_RESULT_SCHEMA.to_string(),
+        status: status.to_string(),
+        reason: reason.to_string(),
+        purpose: input.purpose.clone(),
+        owner_task_id: input.task_id.clone(),
+        owner_phase: input.phase.clone(),
+        session_id: Some(input.session_id.clone()),
+        process_id: Some(input.process_id.clone()),
+        pid: Some(input.pid),
+        process_creation_filetime: Some(input.process_creation_filetime.clone()),
+        pid_hash: None,
+        observation_generation: None,
+        process_identity_sha256: None,
+        listener_instance_sha256: Some(input.listener_instance_sha256.clone()),
+        owner_binding_sha256: Some(input.owner_binding_sha256.clone()),
+        exit_observed: false,
+        listener_closed: false,
+        native_receipt_id: None,
+    }
+}
+
+fn legacy_managed_terminate_result(
+    input: &EditorObservationSessionIdInput,
+    session: Option<&ObservationSessionRecord>,
+    status: &str,
+    reason: &str,
+) -> ManagedEditorProcessTerminateResult {
+    ManagedEditorProcessTerminateResult {
+        schema_version: MANAGED_TERMINATE_RESULT_SCHEMA.to_string(),
+        status: status.to_string(),
+        reason: reason.to_string(),
+        purpose: NEGATIVE_CASE_FIXTURE.to_string(),
+        owner_task_id: String::new(),
+        owner_phase: String::new(),
+        session_id: Some(input.session_id.clone()),
+        process_id: session.map(|value| value.process_id.clone()),
+        pid: None,
+        process_creation_filetime: None,
+        pid_hash: session.map(|value| value.pid_hash.clone()),
+        observation_generation: session.map(|value| value.generation),
+        process_identity_sha256: None,
+        listener_instance_sha256: None,
+        owner_binding_sha256: None,
+        exit_observed: reason == "process_exited",
+        listener_closed: false,
+        native_receipt_id: None,
+    }
+}
+
+fn observed_managed_terminate_result(
+    request: serde_json::Value,
+    mut result: ManagedEditorProcessTerminateResult,
+) -> Result<ManagedEditorProcessTerminateResult, String> {
     result.native_receipt_id = crate::mvp15d_runtime_bridge::issue_native_observation_receipt(
         "terminate_managed_editor_process",
-        serde_json::to_value(&input).map_err(|error| error.to_string())?,
+        request,
         serde_json::to_value(&result).map_err(|error| error.to_string())?,
     );
     Ok(result)
+}
+
+fn wait_for_child_exit(child: &mut Child, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(25)),
+            _ => return false,
+        }
+    }
+}
+
+fn wait_for_process_identity_exit(pid: u32, creation: u64, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if observe_process_start_time(pid) != Some(creation) {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn wait_for_listener_closed(port: u16, pid: u32, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if !listener_owned_by_process(port, pid) && !loopback_port_accepting(port) {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }
 
 fn validate_config(input: EditorProcessConfigInput) -> EditorAttachValidationResult {
@@ -1789,6 +3043,33 @@ fn check_native_record_current(record: &DiscoveredProcessRecord) -> NativeLifecy
     }
 }
 
+#[cfg(windows)]
+fn observe_process_start_time(pid: u32) -> Option<u64> {
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle == 0 {
+        return None;
+    }
+    let mut creation = FileTime {
+        low_date_time: 0,
+        high_date_time: 0,
+    };
+    let mut exit = creation;
+    let mut kernel = creation;
+    let mut user = creation;
+    let ok = unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) };
+    unsafe {
+        CloseHandle(handle);
+    }
+    if ok == 0 {
+        None
+    } else {
+        let value = ((creation.high_date_time as u64) << 32) | creation.low_date_time as u64;
+        (value > 0).then_some(value)
+    }
+}
+
+#[cfg(not(windows))]
 fn observe_process_start_time(pid: u32) -> Option<u64> {
     use sysinfo::{Pid, System};
     for _ in 0..50 {
@@ -1800,6 +3081,58 @@ fn observe_process_start_time(pid: u32) -> Option<u64> {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     None
+}
+
+#[cfg(windows)]
+fn listener_owned_by_process(port: u16, pid: u32) -> bool {
+    const AF_INET: u32 = 2;
+    const TCP_TABLE_OWNER_PID_LISTENER: u32 = 3;
+    const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
+    let mut byte_count = 0_u32;
+    let first = unsafe {
+        GetExtendedTcpTable(
+            std::ptr::null_mut(),
+            &mut byte_count,
+            0,
+            AF_INET,
+            TCP_TABLE_OWNER_PID_LISTENER,
+            0,
+        )
+    };
+    if first != ERROR_INSUFFICIENT_BUFFER || byte_count < 4 {
+        return false;
+    }
+    let word_count = (byte_count as usize).div_ceil(std::mem::size_of::<u32>());
+    let mut buffer = vec![0_u32; word_count];
+    let result = unsafe {
+        GetExtendedTcpTable(
+            buffer.as_mut_ptr().cast(),
+            &mut byte_count,
+            0,
+            AF_INET,
+            TCP_TABLE_OWNER_PID_LISTENER,
+            0,
+        )
+    };
+    if result != 0 {
+        return false;
+    }
+    let count = buffer[0] as usize;
+    let rows = unsafe {
+        std::slice::from_raw_parts(
+            buffer.as_ptr().add(1).cast::<MibTcpRowOwnerPid>(),
+            count.min((byte_count as usize - 4) / std::mem::size_of::<MibTcpRowOwnerPid>()),
+        )
+    };
+    rows.iter().any(|row| {
+        let local_port = u16::from_be((row.local_port & 0xffff) as u16);
+        row.owning_pid == pid && local_port == port
+    })
+}
+
+#[cfg(not(windows))]
+fn listener_owned_by_process(port: u16, _pid: u32) -> bool {
+    loopback_port_accepting(port)
 }
 
 fn check_managed_record_current(record: &DiscoveredProcessRecord) -> NativeLifecycleCheck {
@@ -1899,12 +3232,14 @@ fn enumerate_native_processes() -> Result<Vec<NativeProcessCandidate>, String> {
     Ok(system
         .processes()
         .iter()
-        .map(|(pid, process)| NativeProcessCandidate {
-            pid: pid.as_u32(),
-            start_time: process.start_time(),
-            executable_name: process.name().to_string(),
-            executable_path: process.exe().map(|path| path.to_string_lossy().to_string()),
-            command_line: process.cmd().to_vec(),
+        .filter_map(|(pid, process)| {
+            Some(NativeProcessCandidate {
+                pid: pid.as_u32(),
+                start_time: observe_process_start_time(pid.as_u32())?,
+                executable_name: process.name().to_string(),
+                executable_path: process.exe().map(|path| path.to_string_lossy().to_string()),
+                command_line: process.cmd().to_vec(),
+            })
         })
         .collect())
 }
@@ -1931,6 +3266,25 @@ struct ModuleEntry32W {
 }
 
 #[cfg(windows)]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct FileTime {
+    low_date_time: u32,
+    high_date_time: u32,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct MibTcpRowOwnerPid {
+    state: u32,
+    local_addr: u32,
+    local_port: u32,
+    remote_addr: u32,
+    remote_port: u32,
+    owning_pid: u32,
+}
+
+#[cfg(windows)]
 const TH32CS_SNAPMODULE: u32 = 0x0000_0008;
 #[cfg(windows)]
 const TH32CS_SNAPMODULE32: u32 = 0x0000_0010;
@@ -1942,11 +3296,32 @@ const INVALID_HANDLE_VALUE: isize = -1;
 #[cfg(windows)]
 #[link(name = "Kernel32")]
 unsafe extern "system" {
+    fn OpenProcess(desired_access: u32, inherit_handle: i32, process_id: u32) -> isize;
+    fn GetProcessTimes(
+        process: isize,
+        creation_time: *mut FileTime,
+        exit_time: *mut FileTime,
+        kernel_time: *mut FileTime,
+        user_time: *mut FileTime,
+    ) -> i32;
     fn CreateToolhelp32Snapshot(flags: u32, process_id: u32) -> isize;
     fn Module32FirstW(snapshot: isize, entry: *mut ModuleEntry32W) -> i32;
     fn Module32NextW(snapshot: isize, entry: *mut ModuleEntry32W) -> i32;
     fn CloseHandle(handle: isize) -> i32;
     fn GetLastError() -> u32;
+}
+
+#[cfg(windows)]
+#[link(name = "iphlpapi")]
+unsafe extern "system" {
+    fn GetExtendedTcpTable(
+        table: *mut std::ffi::c_void,
+        size: *mut u32,
+        order: i32,
+        address_family: u32,
+        table_class: u32,
+        reserved: u32,
+    ) -> u32;
 }
 
 #[cfg(windows)]
@@ -2100,6 +3475,21 @@ fn path_is_inside_root(root: &str, candidate: &str) -> bool {
 }
 
 fn descriptor_from_record(record: &DiscoveredProcessRecord) -> EditorProcessDescriptor {
+    let managed = (record.source == "managed")
+        .then(|| {
+            managed_child_registry()
+                .lock()
+                .ok()?
+                .get(&record.process_id)
+                .map(|managed| {
+                    (
+                        managed.purpose.clone(),
+                        managed.listener_instance_sha256.clone(),
+                        managed.owner_binding_sha256.clone(),
+                    )
+                })
+        })
+        .flatten();
     EditorProcessDescriptor {
         id: record.process_id.clone(),
         pid_hash: record.pid_hash.clone(),
@@ -2110,6 +3500,13 @@ fn descriptor_from_record(record: &DiscoveredProcessRecord) -> EditorProcessDesc
         source: record.source.clone(),
         discovered_at: record.discovered_at,
         expires_at: record.expires_at,
+        managed_purpose: managed.as_ref().map(|value| value.0.clone()),
+        process_pid: managed.as_ref().map(|_| record.pid).flatten(),
+        process_creation_filetime: managed
+            .as_ref()
+            .and_then(|_| record.process_start_time.map(|value| value.to_string())),
+        listener_instance_sha256: managed.as_ref().and_then(|value| value.1.clone()),
+        owner_binding_sha256: managed.and_then(|value| value.2),
     }
 }
 
@@ -2275,6 +3672,43 @@ mod tests {
     use std::sync::{Arc, Barrier};
     use std::thread;
 
+    struct EnvironmentRestore(Vec<(&'static str, Option<std::ffi::OsString>)>);
+
+    impl EnvironmentRestore {
+        fn set(values: &[(&'static str, String)]) -> Self {
+            Self(
+                values
+                    .iter()
+                    .map(|(name, value)| {
+                        let previous = std::env::var_os(name);
+                        std::env::set_var(name, value);
+                        (*name, previous)
+                    })
+                    .collect(),
+            )
+        }
+    }
+
+    impl Drop for EnvironmentRestore {
+        fn drop(&mut self) {
+            for (name, previous) in self.0.drain(..) {
+                if let Some(previous) = previous {
+                    std::env::set_var(name, previous);
+                } else {
+                    std::env::remove_var(name);
+                }
+            }
+        }
+    }
+
+    struct TestDirectory(PathBuf);
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     fn trust(root: &str) {
         trusted_roots()
             .lock()
@@ -2394,9 +3828,12 @@ mod tests {
         let (session_id, root_id, root) =
             registered_asset_fixture("managed-termination", now_millis());
 
-        let terminated = terminate_managed_editor_process(EditorObservationSessionIdInput {
-            session_id: session_id.clone(),
-        })
+        let terminated = terminate_managed_editor_process(
+            EditorObservationSessionIdInput {
+                session_id: session_id.clone(),
+            }
+            .into(),
+        )
         .unwrap();
 
         assert_eq!(terminated.status, "degraded");
@@ -2406,6 +3843,91 @@ mod tests {
             "process_exited"
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn task_owned_ddc_cleanup_removes_only_the_exact_phase_directory() {
+        let _guard = reset();
+        let evidence_root =
+            std::env::temp_dir().join(format!("uagent-managed-ddc-cleanup-{}", now_millis()));
+        let ddc = evidence_root.join("managed-ue-ddc").join("ui-lifecycle");
+        std::fs::create_dir_all(&ddc).unwrap();
+        std::fs::write(ddc.join("cache.bin"), b"owned-cache").unwrap();
+        let evidence_root = std::fs::canonicalize(&evidence_root).unwrap();
+        let ddc = std::fs::canonicalize(&ddc).unwrap();
+
+        cleanup_task_owned_ddc(&evidence_root, &ddc, "ui-lifecycle").unwrap();
+
+        assert!(evidence_root.is_dir());
+        assert!(!ddc.exists());
+        assert!(!evidence_root.join("managed-ue-ddc").exists());
+        std::fs::remove_dir_all(evidence_root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn managed_guardian_safe_listener_is_live_then_closes_and_removes_ddc() {
+        let _guard = reset();
+        let evidence_root =
+            std::env::temp_dir().join(format!("uagent-managed-guardian-listener-{}", now_millis()));
+        let _test_directory = TestDirectory(evidence_root.clone());
+        let project = evidence_root.join("FinalHost.uproject");
+        let ddc = evidence_root.join("managed-ue-ddc").join("ui-lifecycle");
+        std::fs::create_dir_all(&ddc).unwrap();
+        std::fs::write(&project, b"{}").unwrap();
+        let port_probe = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = port_probe.local_addr().unwrap().port();
+        drop(port_probe);
+        let executable = std::env::current_exe().unwrap();
+        let _environment = EnvironmentRestore::set(&[
+            (GUARDIAN_UE_EXECUTABLE_ENV, executable.display().to_string()),
+            (GUARDIAN_UPROJECT_ENV, project.display().to_string()),
+            (GUARDIAN_PORT_ENV, port.to_string()),
+            (GUARDIAN_MARKER_ENV, "test-marker".to_string()),
+            (GUARDIAN_TASK_ENV, "TASK-GUARDIAN-TEST".to_string()),
+            (GUARDIAN_PHASE_ENV, "ui-lifecycle".to_string()),
+            (GUARDIAN_DDC_ENV, ddc.display().to_string()),
+            (
+                GUARDIAN_EVIDENCE_ROOT_ENV,
+                evidence_root.display().to_string(),
+            ),
+            (GUARDIAN_TEST_LISTENER_ENV, "1".to_string()),
+        ]);
+
+        run_managed_editor_guardian().unwrap();
+
+        assert!(!loopback_port_accepting(port));
+        assert!(!ddc.exists());
+        assert!(!evidence_root.join("managed-ue-ddc").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_process_creation_filetime_round_trips_as_an_exact_decimal_string() {
+        let _guard = reset();
+        let mut child = Command::new("powershell.exe")
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Start-Sleep -Seconds 30",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let creation = observe_process_start_time(child.id()).unwrap();
+        let encoded = creation.to_string();
+        assert!(creation > 9_007_199_254_740_991);
+        assert_eq!(
+            parse_canonical_process_creation_filetime(&encoded),
+            Some(creation)
+        );
+        assert_eq!(parse_canonical_process_creation_filetime("01"), None);
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[test]

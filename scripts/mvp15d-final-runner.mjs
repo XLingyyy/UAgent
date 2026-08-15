@@ -550,13 +550,14 @@ function liveProducerVector(kind, args, identity, taskId, ownership, session) {
     "port",
     "session",
     "generation",
-    ...(kind === "ue-automation" ? ["ue-root"] : []),
+    "ue-root",
   ]);
   if (
     !sourceCommit ||
     !/^[0-9a-f]{40}$/.test(sourceCommit) ||
     Object.keys(args).some((key) => !allowed.has(key)) ||
-    (kind === "ue-automation" && (!args["ue-root"] || !isAbsolute(args["ue-root"])))
+    !args["ue-root"] ||
+    !isAbsolute(args["ue-root"])
   ) {
     fail("FINAL_PHASE_ARGUMENT_INVALID");
   }
@@ -586,7 +587,8 @@ function liveProducerVector(kind, args, identity, taskId, ownership, session) {
       String(session.generation),
       "--port",
       String(ownership.port),
-      ...(kind === "ue-automation" ? ["--ue-root", resolve(args["ue-root"])] : []),
+      "--ue-root",
+      resolve(args["ue-root"]),
     ],
   };
 }
@@ -620,9 +622,8 @@ function fixedProducerPlan(kind, args, identity, taskId, ownership) {
     String(session.generation),
     "--port",
     String(ownership.port),
-    ...(kind === "ue-automation"
-      ? ["--ue-root", args["ue-root"] ? resolve(args["ue-root"]) : "<required-ue-root>"]
-      : []),
+    "--ue-root",
+    args["ue-root"] ? resolve(args["ue-root"]) : "<required-ue-root>",
   ];
   return {
     executable: process.execPath,
@@ -4677,6 +4678,10 @@ function verifyPhaseSummary(kind, args) {
   const input = resolve(args.input ?? paths.summary);
   if (input !== paths.summary) fail("FINAL_PHASE_SUMMARY_NONCANONICAL");
   const summary = readJson(input, "FINAL_PHASE_SUMMARY_INVALID");
+  const isLive = summary.evidenceMode === "live";
+  if (isLive && (!args["ue-root"] || !isAbsolute(args["ue-root"]))) {
+    fail("FINAL_PHASE_ARGUMENT_INVALID");
+  }
   validateSummarySources(root, summary, "FINAL_PHASE_SOURCE_INVALID");
   const eventsArtifact = summary.sourceArtifacts.find(
     ({ relativePath, schema }) =>
@@ -4715,7 +4720,6 @@ function verifyPhaseSummary(kind, args) {
     fail("FINAL_PHASE_SOURCE_COVERAGE_INVALID");
   }
   const ledger = readJson(paths.ledger, "FINAL_PHASE_LEDGER_INVALID");
-  const isLive = summary.evidenceMode === "live";
   const liveOwnership = isLive ? validateMarkerPort(args) : null;
   const liveSession = isLive ? validatePhaseSession(args, kind, "live") : null;
   const liveEndpoint = isLive ? `http://127.0.0.1:${liveOwnership.port}/mcp` : null;
@@ -4829,7 +4833,8 @@ function verifyPhaseSummary(kind, args) {
         String(ledger.generation),
         "--port",
         String(liveOwnership.port),
-        ...(kind === "ue-automation" ? ["--ue-root", resolve(args["ue-root"] ?? "")] : []),
+        "--ue-root",
+        resolve(args["ue-root"] ?? ""),
       ]
     : [
         "--phase",
