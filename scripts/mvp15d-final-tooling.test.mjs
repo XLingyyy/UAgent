@@ -199,7 +199,7 @@ test(
   },
 );
 
-test("official UE Automation report derives the fixed pass matrix and rejects failed cases", () => {
+test("official UE Automation report accepts UTF-8 BOM, derives the fixed pass matrix, and rejects failed cases", () => {
   const directory = mkdtempSync(join(tmpdir(), "uagent-mvp15d-ue-report-"));
   const binding = {
     taskId: TASK_ID,
@@ -216,7 +216,7 @@ test("official UE Automation report derives the fixed pass matrix and rejects fa
   try {
     writeFileSync(
       resolve(directory, "index.json"),
-      `${JSON.stringify({
+      `\uFEFF${JSON.stringify({
         tests: matrix.map((name) => ({ fullTestPath: name, state: "Success" })),
       })}\n`,
     );

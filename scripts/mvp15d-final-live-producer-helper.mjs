@@ -1493,7 +1493,7 @@ function parseOfficialAutomationReport(reportDirectory, binding) {
   if (!reportPath) fail("FINAL_LIVE_UE_REPORT_MISSING");
   let report;
   try {
-    report = JSON.parse(readFileSync(reportPath, "utf8"));
+    report = JSON.parse(readFileSync(reportPath, "utf8").replace(/^\uFEFF/, ""));
   } catch {
     fail("FINAL_LIVE_UE_REPORT_INVALID");
   }
