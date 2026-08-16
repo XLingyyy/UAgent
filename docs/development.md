@@ -28,9 +28,12 @@ independent 2026-08-14 zero-residual scan; no live gate advanced from cleanup
 alone.
 Final Live Acceptance Resume 3 Rework 1 has `Review Verdict: PASS` at
 `0b47dd41e92f941f87c45c5694ec75d2cc932771`; Resume 4's source-only UE 5.8
-BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at current
-implementation commit `a780fc4231b99b39153fb88c9ab460717610b3f3`. Future engine
-descriptor changes fail closed until their source and tests are updated.
+BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at
+`a780fc4231b99b39153fb88c9ab460717610b3f3`. Resume 5's official
+Automation-report UTF-8 BOM repair has `Review Verdict: PASS` at current
+implementation commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`. One leading
+decoded BOM is accepted; strict JSON/matrix validation and raw-byte hashing stay
+unchanged. Future engine output changes fail closed until source and tests are updated.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -103,7 +106,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `25d1262528e0976d24f96056975fdb36bc790b77`. The old
+implementation commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

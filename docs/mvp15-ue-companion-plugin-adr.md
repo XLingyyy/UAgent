@@ -18,7 +18,7 @@ Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
 its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
 Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
 commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`. Current source checkpoint
-`a780fc4231b99b39153fb88c9ab460717610b3f3` preserves the Direct route while
+`7916cf74cb205049e1c8967b9217cb8b64df36ca` preserves the Direct route while
 accepting only the official UE 5.8 BuildPlugin descriptor transform. Its release-binary
 capability bridge and two-level persisted-consistency / owned-launch authority
 reaches the existing normal-product adapter without changing Direct or strict

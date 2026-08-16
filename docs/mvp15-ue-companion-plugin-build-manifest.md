@@ -14,10 +14,15 @@ waits on 15A/15B; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility and overall 
 remain `PARTIAL`; Ready is `NO`.
 
 Final Live Acceptance Resume 4 has `Review Verdict: PASS` for its source-only
-descriptor verifier repair at current implementation commit
+descriptor verifier repair at implementation commit
 `a780fc4231b99b39153fb88c9ab460717610b3f3`. A real UE 5.8.1 BuildPlugin package
 confirmed the rewrite contract; the pre-repair lineage was invalidated and
 removed, so installed/load/live acceptance remains open.
+
+Final Live Acceptance Resume 5 has `Review Verdict: PASS` for official
+Automation-report BOM handling at current implementation commit
+`7916cf74cb205049e1c8967b9217cb8b64df36ca`. It does not change the package or
+manifest contract; the pre-repair live lineage was invalidated and removed.
 
 The compiled pre-checkpoint identity uses
 `uagent.mvp15d.production-source-boundary.v2`: 335 production files discovered
@@ -201,5 +206,5 @@ checkpoint review.
 
 No clean current manifest, installed/loaded equality proof, or live exact-six
 fingerprint exists. Those facts must be produced from implementation commit
-`a780fc4231b99b39153fb88c9ab460717610b3f3` in a separate clean-checkout live
+`7916cf74cb205049e1c8967b9217cb8b64df36ca` in a separate clean-checkout live
 acceptance task.

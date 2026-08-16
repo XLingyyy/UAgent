@@ -23,8 +23,10 @@ punctuation tails and share a bounded producer/verifier scanner. Invalid Resume
 live gate advanced from cleanup alone.
 Final Live Acceptance Resume 3 Rework 1 has `Review Verdict: PASS` at
 `0b47dd41e92f941f87c45c5694ec75d2cc932771`; Resume 4's source-only official
-BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at current
-implementation commit `a780fc4231b99b39153fb88c9ab460717610b3f3`. Its prior live
+BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at
+`a780fc4231b99b39153fb88c9ab460717610b3f3`. Resume 5's source-only official
+Automation-report UTF-8 BOM repair has `Review Verdict: PASS` at current
+implementation commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`. Its prior live
 lineage was invalidated and removed.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
@@ -118,7 +120,7 @@ not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
 A new clean-checkout task based on current implementation commit
-`25d1262528e0976d24f96056975fdb36bc790b77` is dispatched for the full UE 5.8.1
+`7916cf74cb205049e1c8967b9217cb8b64df36ca` is dispatched for the full UE 5.8.1
 compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
 15B pass inside that authorized task.
 

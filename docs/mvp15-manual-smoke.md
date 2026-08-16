@@ -25,9 +25,11 @@ retained-transcript privacy repair is accepted; invalid Resume 2 cleanup is
 did not advance a live/manual-smoke gate.
 Final Live Acceptance Resume 3 Rework 1 has `Review Verdict: PASS` at
 `0b47dd41e92f941f87c45c5694ec75d2cc932771`. Resume 4's source-only UE 5.8
-BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at current
-implementation commit `a780fc4231b99b39153fb88c9ab460717610b3f3`. The old live
-lineage was invalidated and removed; no manual-smoke gate advanced.
+BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at
+`a780fc4231b99b39153fb88c9ab460717610b3f3`. Resume 5's source-only official
+Automation-report BOM repair has `Review Verdict: PASS` at current implementation
+commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`. The old live lineage was
+invalidated and removed; no manual-smoke gate advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -94,7 +96,7 @@ read-only supporting evidence.
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is assigned
 to the newly dispatched clean-checkout task based on current implementation
-commit `25d1262528e0976d24f96056975fdb36bc790b77`. Real UE, Tool Search,
+commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`. Real UE, Tool Search,
 and mutation were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The
 dispatched live task may enter exact-sandbox 15C mutation only after fresh 15A
 and 15B pass.

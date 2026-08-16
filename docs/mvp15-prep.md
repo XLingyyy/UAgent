@@ -5,7 +5,7 @@
 > checkpoint was created. Final Source/Tooling Rework 8 is `COMPLETE` with
 > supervisor `PASS` at implementation commit
 > `98c8b387e1124a519977849d48ab824e4e6bb9c5`; current implementation checkpoint
-> `a780fc4231b99b39153fb88c9ab460717610b3f3` preserves G14 `IMPLEMENTED` and
+> `7916cf74cb205049e1c8967b9217cb8b64df36ca` preserves G14 `IMPLEMENTED` and
 > G15 `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1
 > compatibility and overall acceptance remain `PARTIAL`; D13 / 15A is
 > `DISPATCHED`; D14 / 15B waits on 15A and D15 / 15C waits on 15A/15B; D16 is `IN_PROGRESS`;

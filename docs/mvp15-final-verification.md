@@ -1,5 +1,21 @@
 # MVP15 Final Verification
 
+## Resume 5 accepted source checkpoint — 2026-08-17
+
+Resume 5 has `Review Verdict: PASS` for its source-only official Automation
+report parser repair at implementation commit
+`7916cf74cb205049e1c8967b9217cb8b64df36ca`. The pre-repair clean run reached a
+UE 5.8.1 report with all three fixed tests successful, then failed because UE's
+`ForceUTF8` writer emitted a leading BOM that Node retained as `U+FEFF`. The
+accepted parser removes exactly one first-character BOM, retains the original
+report bytes for SHA-256, and leaves strict JSON and fixed-matrix checks intact.
+
+Supervisor verification passes final tooling `24/24`, workspace `1,675 passed /
+3` retained opt-in live skips, typecheck, exact Prettier/ESLint and diff check.
+The invalidated release/package/install/load/live lineage was removed; exact
+task root, marker process and port residuals are zero. No 15A, 15B, 15C, D16,
+real-smoke or Stage Ready claim advances from that invalidated lineage.
+
 ## Resume 4 accepted source checkpoint — 2026-08-16
 
 Resume 4 has `Review Verdict: PASS` for its source-only verifier repair at
@@ -114,7 +130,7 @@ live fingerprint, full 15A N1-N8 acceptance root, partial/unknown sequence,
 parent closeout, UE Automation run, live MCP capture, or mutation was executed.
 The stale installed
 release may fail only with `FINAL_LIVE_RUNTIME_NONZERO`. D13/15A is
-`DISPATCHED` from `a780fc4231b99b39153fb88c9ab460717610b3f3`, D14/15B waits on
+`DISPATCHED` from `7916cf74cb205049e1c8967b9217cb8b64df36ca`, D14/15B waits on
 15A, D15/15C waits on 15A/15B, D16 remains `IN_PROGRESS`, G16
 and overall acceptance remain `PARTIAL`, and Ready remains `NO`. Current
 `PASS_REAL_SMOKE` is `NO`.
@@ -1210,7 +1226,7 @@ separate 2026-08-03 Final
 Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
 source-checkpoint G15 integrity is `COMPLETE` at
-`a780fc4231b99b39153fb88c9ab460717610b3f3`, and G16 is `PARTIAL`. The
+`7916cf74cb205049e1c8967b9217cb8b64df36ca`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
 replace the historical 2026-08-03 Rework 8 checkpoint. No clean current-generation exact-six fingerprint or
