@@ -135,6 +135,26 @@ function isMvp15DTextCatalogRegex(rel, line) {
   );
 }
 
+function isMvp15NegativeAssetOperationVocabulary(rel, line, pattern) {
+  return (
+    rel === "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts" &&
+    pattern.label === "filesystem mutation" &&
+    (line === '"rename_asset",' ||
+      line ===
+        'const nativeKinds = ["create_folder", "duplicate", "rename", "move", "save"] as const;' ||
+      line ===
+        ': operationKind === "duplicate_asset" || operationKind === "rename_asset" || operationKind === "move_asset"')
+  );
+}
+
+function isMvp15MutationCountAssertion(rel, line, pattern) {
+  return (
+    rel === "apps/desktop/web/src/settings/pages/ConfigSettings.tsx" &&
+    pattern.label === "MCP mutation marker" &&
+    /\bmcpMutationCount\b/.test(line)
+  );
+}
+
 const CATEGORIES = [
   {
     id: "provider-secret-boundary",
@@ -333,6 +353,7 @@ const CATEGORIES = [
       (rel) => /packages\/runtime\/src\/mvp15-/.test(rel),
       (rel) => /packages\/runtime\/src\/mvp15d-companion/.test(rel),
       (rel) => /apps\/desktop\/web\/src\/(runtime\/runtime-store|stores\/ui-store)/.test(rel),
+      isMvp15NegativeAssetOperationVocabulary,
       (rel) => /packages\/runtime\/src\/sandbox-policy/.test(rel),
       isMvp15DTextCatalogRegex,
     ],
@@ -999,6 +1020,7 @@ const CATEGORIES = [
       (rel) => /\.test\./.test(rel),
       (rel) => /scripts\/side-effect-scan/.test(rel),
       isTitleBarMcpReadOnlyStatus,
+      isMvp15MutationCountAssertion,
     ],
     blockWhen: [
       (rel) =>
@@ -1679,14 +1701,20 @@ const AUTHORITY_CATEGORIES = [
           );
         }
       }
-      const contractSource =
-        rel === "apps/desktop/src-tauri/src/asset_mutation.rs"
-          ? functionSlice(
-              source,
-              /pub\s+struct\s+RegisterAssetMutationApprovalInput\b/,
-              /pub\s+struct\s+RecordAssetMutationOutcomeInput\b/,
-            )
-          : source;
+      let contractSource = source;
+      if (rel === "apps/desktop/src-tauri/src/asset_mutation.rs") {
+        contractSource = functionSlice(
+          source,
+          /pub\s+struct\s+RegisterAssetMutationApprovalInput\b/,
+          /pub\s+struct\s+RecordAssetMutationOutcomeInput\b/,
+        );
+      } else if (rel === "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts") {
+        const negativeStart = source.search(/const\s+prepareIndependentNegativeRegistration\b/);
+        const nextFunction = source.search(/const\s+callObservedMcpMutation\b/);
+        if (negativeStart >= 0 && nextFunction > negativeStart) {
+          contractSource = source.slice(0, negativeStart) + source.slice(nextFunction);
+        }
+      }
       if (
         [
           "apps/desktop/src-tauri/src/asset_mutation.rs",
@@ -2125,6 +2153,65 @@ function runScanSelfTests() {
     if (safeFindings.some((finding) => finding.severity === "BLOCKED")) {
       throw new Error(`${sample.id} self-test blocked safe authoritative sample`);
     }
+  }
+
+  const mvp7Category = CATEGORIES.find(
+    (candidate) => candidate.id === "mvp7-capability-bridge-boundary",
+  );
+  if (!mvp7Category) throw new Error("mvp7 capability scan category missing");
+  for (const line of [
+    '"rename_asset",',
+    'const nativeKinds = ["create_folder", "duplicate", "rename", "move", "save"] as const;',
+    ': operationKind === "duplicate_asset" || operationKind === "rename_asset" || operationKind === "move_asset"',
+  ]) {
+    const findings = scanContent("apps/desktop/web/src/runtime/desktop-runtime-adapter.ts", line, [
+      mvp7Category,
+    ]);
+    if (findings.some((finding) => finding.severity === "BLOCKED")) {
+      throw new Error("mvp7 capability self-test blocked the exact MVP15 negative vocabulary");
+    }
+  }
+  const unsafeRuntimeRename = scanContent(
+    "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts",
+    "rename(payload);",
+    [mvp7Category],
+  );
+  if (!unsafeRuntimeRename.some((finding) => finding.severity === "BLOCKED")) {
+    throw new Error("mvp7 capability self-test did not block a runtime filesystem mutation");
+  }
+
+  const mvp13Category = CATEGORIES.find(
+    (candidate) => candidate.id === "mvp13-mcp-tools-call-boundary",
+  );
+  if (!mvp13Category) throw new Error("mvp13 MCP scan category missing");
+  const safeMutationCount = scanContent(
+    "apps/desktop/web/src/settings/pages/ConfigSettings.tsx",
+    "if (result.mcpMutationCount !== 0) throw new Error('unexpected mutation');",
+    [mvp13Category],
+  );
+  if (safeMutationCount.some((finding) => finding.severity === "BLOCKED")) {
+    throw new Error("mvp13 MCP self-test blocked a read-only mutation-count assertion");
+  }
+  const unsafeSettingsCall = scanContent(
+    "apps/desktop/web/src/settings/pages/ConfigSettings.tsx",
+    'callTool("ue.asset.delete");',
+    [mvp13Category],
+  );
+  if (!unsafeSettingsCall.some((finding) => finding.severity === "BLOCKED")) {
+    throw new Error("mvp13 MCP self-test did not block a settings-layer tool call");
+  }
+
+  const observationCategory = AUTHORITY_CATEGORIES.find(
+    (candidate) => candidate.id === "mvp15-observation-authority-boundary",
+  );
+  if (!observationCategory) throw new Error("mvp15 observation scan category missing");
+  const negativeObservationPayload = scanAuthorityContent(
+    "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts",
+    "const prepareIndependentNegativeRegistration = () => { const invalid = { observedEditorSessionId, observedPidHash }; }; const callObservedMcpMutation = () => {};",
+    [observationCategory],
+  );
+  if (negativeObservationPayload.some((finding) => finding.severity === "BLOCKED")) {
+    throw new Error("mvp15 observation self-test blocked the exact negative-case payload scope");
   }
 }
 

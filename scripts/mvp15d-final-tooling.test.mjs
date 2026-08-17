@@ -44,8 +44,10 @@ import {
   RUNTIME_EVENT_SCHEMA,
   parseOfficialAutomationReport,
   parseRuntimeEvents,
+  retainedEventValue,
   runRuntimeCapabilityHandshake,
   runtimeCommand,
+  ueProductionProcessProvenance,
   validateBinding,
 } from "./mvp15d-final-live-producer-helper.mjs";
 import { runProductCaptureProducer } from "./mvp15d-final-product-capture-producer.mjs";
@@ -243,6 +245,34 @@ test("official UE Automation report accepts UTF-8 BOM, derives the fixed pass ma
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("UE production provenance retains the creation FILETIME binding exactly once", () => {
+  const rootCreationFileTimeUtc = "134314104106257757";
+  const retained = retainedEventValue(
+    ueProductionProcessProvenance(
+      {
+        pidBindingSha256: "1".repeat(64),
+        creationFileTimeUtcBindingSha256: retainedBindingForTest(
+          "creation-filetime",
+          rootCreationFileTimeUtc,
+        ),
+        executableBasename: "UnrealEditor-Cmd.exe",
+        executableSha256: "2".repeat(64),
+      },
+      { rootCreationFileTimeUtc },
+    ),
+  );
+  assert.deepEqual(retained, {
+    pidBindingSha256: "1".repeat(64),
+    creationFileTimeUtcBindingSha256: retainedBindingForTest(
+      "creation-filetime",
+      rootCreationFileTimeUtc,
+    ),
+    executableBasename: "UnrealEditor-Cmd.exe",
+    executableSha256: "2".repeat(64),
+  });
+  assert.equal(Object.hasOwn(retained, "creationFileTimeUtcBindingSha256BindingSha256"), false);
 });
 
 function git(cwd, args) {

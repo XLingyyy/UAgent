@@ -137,6 +137,15 @@ function retainedEventValue(value) {
   return retained;
 }
 
+function ueProductionProcessProvenance(loadedProcess, earlyIdentity) {
+  return {
+    pidBindingSha256: loadedProcess.pidBindingSha256,
+    creationFileTimeUtc: earlyIdentity.rootCreationFileTimeUtc,
+    executableBasename: loadedProcess.executableBasename,
+    executableSha256: loadedProcess.executableSha256,
+  };
+}
+
 function sha256File(path) {
   return sha256(readFileSync(path));
 }
@@ -973,12 +982,7 @@ function ueArtifactBinding(binding, earlyIdentity, executable, jobCloseoutPath, 
       sourceCommit: loadedFromDisk.sourceCommit,
       sourceTreeSha256: loadedFromDisk.sourceTreeSha256,
       sourceDirty: loadedFromDisk.sourceDirty,
-      process: {
-        pidBindingSha256: loadedFromDisk.process.pidBindingSha256,
-        creationFileTimeUtcBindingSha256: loadedFromDisk.process.creationFileTimeUtcBindingSha256,
-        executableBasename: loadedFromDisk.process.executableBasename,
-        executableSha256: loadedFromDisk.process.executableSha256,
-      },
+      process: ueProductionProcessProvenance(loadedFromDisk.process, earlyIdentity),
       projectSha256: loadedFromDisk.project.sha256,
       manifestSha256: loadedFromDisk.manifest.sha256,
       packageInventorySha256: loadedFromDisk.package.sha256,
@@ -1931,8 +1935,10 @@ export {
   parseOfficialAutomationReport,
   parseOrderedArgs,
   parseRuntimeEvents,
+  retainedEventValue,
   runLiveProducer,
   runRuntimeCapabilityHandshake,
   runtimeCommand,
+  ueProductionProcessProvenance,
   validateBinding,
 };
