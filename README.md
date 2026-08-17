@@ -134,19 +134,20 @@ open; the invalid Resume 2 cleanup gate is closed and a fresh 15A restart is
 dispatched from a clean checkout of
 `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
 
-The verified pre-checkpoint Tauri build embedded
+The last verified pre-checkpoint Tauri build embedded
 `uagent.mvp15d.source-identity.v2`: base/compiled commit
 `d308d80a994079dc22af2b982e70ae416d832e4f`, resolved head ref, honest
 `sourceDirty: true`, and SHA-256
 `ccf061de9f2583d26b9562a9739255f04b288c84672603424859c04fee686099`
-over the complete
-`uagent.mvp15d.production-source-boundary.v2`. The boundary currently contains
-335 production files discovered from 14 approved roots plus 28 exact files;
+over its complete 335-file
+`uagent.mvp15d.production-source-boundary.v2`. The current source-only candidate
+adds the independent final-live verifier, so its boundary contains 336
+production files discovered from 14 approved roots plus 28 exact files;
 9 exact exclusion classes account for 126 excluded entries. Tests, docs,
 workflow data, build output, evidence, caches, logs, installers, secrets, and
 external roots stay outside it. A new production file is included
 automatically, and deletion of a tracked production file marks the identity
-dirty. `build.rs` consumes the complete 356-entry source/Git watch set,
+dirty. The current candidate's `build.rs` watch set contains 357 entries,
 including normal or linked-worktree Git metadata, symbolic or detached HEAD,
 loose refs, and packed refs. The historical 2026-08-03 checkpoint closed its
 then-current G15 scope, and Rework 9 is checkpointed at

@@ -100,14 +100,14 @@ clean source
 ```
 
 `uagent.mvp15d.source-identity.v2` hashes the deterministic
-`uagent.mvp15d.production-source-boundary.v2`: 335 files discovered from 14
+`uagent.mvp15d.production-source-boundary.v2`: 336 files discovered from 14
 approved production roots plus 28 exact files, with 9 documented exclusion
 classes and 126 excluded entries. It covers the native bridge, bundled renderer
 and Settings controls, desktop/runtime/MCP/shared production dependencies,
 build and lock configuration, final tooling chain, and companion plugin
 source/resources/build inputs. New files below an approved production root are
 included automatically; deletion of a tracked production file makes the
-identity dirty. The 356-entry watch set includes every production file plus
+identity dirty. The 357-entry watch set includes every production file plus
 normal/worktree Git-dir metadata, symbolic/detached HEAD, loose refs, and packed
 refs, and `build.rs` consumes it verbatim. `.gitattributes` fixes the two
 canonical checkout paths to LF.
@@ -122,6 +122,16 @@ fixed executable and validated argument vector:
 `mvp15d-final-ue-automation-producer.mjs`,
 `mvp15d-final-product-capture-producer.mjs`, and
 `mvp15d-final-ui-lifecycle-producer.mjs`.
+`mvp15d-final-live-verifier.mjs` independently rehashes the exact official
+Automation report bytes against the live phase transcript before privacy
+cleanup. Bridge creation repeats that raw-byte recomputation before accepting
+the retained record. It creates one deterministic bridge record in both the
+final-runner and UE581 retained roots before inventory sealing, then verifies
+both official inventory schemas, their complete filesystem closure and
+self/bundle hashes, plus the shared file, package and source bindings after
+each root has been sealed by its own inventory implementation. UE581-local
+`metadata/identity.json` is excluded from the shared path set because the
+final-runner does not produce it.
 
 The real Tauri binary recognizes only the ordered
 `mvp15d-final-runtime-bridge` contract while

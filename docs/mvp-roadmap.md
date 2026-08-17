@@ -111,9 +111,9 @@ cross-binding, and consumption of an unexported single-use object-identity
 receipt. The publisher's earlier in-process brand is not claimed to survive
 serialization.
 
-The source identity now uses a deterministic production boundary: 335 files
+The source identity now uses a deterministic production boundary: 336 files
 discovered from 14 roots plus 28 exact files, 9 exclusion classes, 126 excluded
-entries, and a 356-entry source/Git watch set. It covers transitive native,
+entries, and a 357-entry source/Git watch set. It covers transitive native,
 renderer, Settings, runtime/MCP/shared, build/lock/config, final tooling, and
 companion plugin inputs. New production files are included automatically and
 tracked production deletion makes the identity dirty. Normal repositories,

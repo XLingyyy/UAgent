@@ -203,8 +203,8 @@ rework.
 - The loaded-module ledger production path now requires one owned branded live
   authority, PID plus creation identity, independently derived facts, complete
   downstream cross-binding, ancestor-reparse rejection, and fail-closed cleanup.
-- The source identity covers the transitive 335-file production boundary and
-  complete 356-entry source/Git watch set.
+- The source identity covers the transitive 336-file production boundary and
+  complete 357-entry source/Git watch set.
 - Clean manifest create/verify, exact-six live fingerprint, Tool Search off,
   product retractions, UI mutation, and replay were not run.
 - Read-only retained historical Source Checkpoint Rework 7 D0/build/UE validators pass and preserve Direct,

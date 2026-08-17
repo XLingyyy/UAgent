@@ -4,5 +4,7 @@
 output/
 tmp/
 apps/desktop/web/dist/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
 docs/project-status.md
 docs/context-index.md

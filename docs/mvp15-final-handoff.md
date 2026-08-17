@@ -110,7 +110,7 @@ non-injected launcher, checked the actual child and retained cross-binding, and
 consumed its private single-use `WeakSet` receipt can return
 `*_owned_launch_verified` with `productionLaunchAuthorityVerified: true`.
 `build.rs` consumes the validated
-356-entry Git/source watch set (worktrees, loose/packed refs,
+357-entry Git/source watch set (worktrees, loose/packed refs,
 symbolic/detached HEAD), so a same-branch commit, production-file addition, or
 tracked production-file deletion deterministically invalidates the identity.
 

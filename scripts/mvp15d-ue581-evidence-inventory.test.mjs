@@ -3,7 +3,15 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import test from "node:test";
@@ -33,6 +41,10 @@ import {
   verify,
 } from "./mvp15d-ue581-evidence-inventory.mjs";
 import { collectPackageArtifacts, manifestSelfHash } from "./mvp15d-manifest.mjs";
+import {
+  createAutomationReportVerification,
+  createInventoryBridge,
+} from "./mvp15d-final-live-verifier.mjs";
 
 const repository = process.cwd();
 const external = resolve(repository, "external");
@@ -40,6 +52,98 @@ const TASK_ID =
   "TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-3-CHECKPOINT-READINESS";
 const COMMAND_FINGERPRINT = "c".repeat(64);
 let rootCounter = 0;
+const UE_AUTOMATION_TESTS = [
+  "UAgentAssetTools.Contracts",
+  "UAgentAssetTools.ReadOnly",
+  "UAgentAssetTools.Closeout",
+];
+
+function automationReportBytes() {
+  return Buffer.from(
+    `${JSON.stringify(
+      {
+        succeeded: 3,
+        succeededWithWarnings: 0,
+        failed: 0,
+        notRun: 0,
+        tests: UE_AUTOMATION_TESTS.map((fullTestPath) => ({
+          fullTestPath,
+          state: "Success",
+        })),
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+}
+
+function automationAuthorityEvents(root) {
+  const manifestBytes = readFileSync(
+    resolve(root, "package", "UAgentAssetTools", "UAgentAssetTools.build.json"),
+  );
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
+  const loaded = JSON.parse(readFileSync(resolve(root, "captures", "loaded-modules.json"), "utf8"));
+  const reportSha256 = sha256(automationReportBytes());
+  const producer = {
+    id: "mvp15d-final-ue-automation-producer",
+    processIdBindingSha256: loaded.process.pidBindingSha256,
+    mode: "live",
+  };
+  const base = (type, data, sequence) => ({
+    schemaVersion: EVENT_SCHEMA,
+    phase: "ue-automation",
+    taskId: TASK_ID,
+    markerSha256: loaded.taskMarkerSha256,
+    sessionBindingSha256: loaded.sessionBindingSha256,
+    generation: loaded.generation,
+    producer,
+    sequence,
+    capturedAt: `2099-12-31T23:59:${String(sequence).padStart(2, "0")}.000Z`,
+    type,
+    data,
+  });
+  const moduleSha256 = loaded.package.sha256;
+  const facts = [
+    ["process_started", { markerSha256: loaded.taskMarkerSha256 }],
+    [
+      "runtime_process_started",
+      {
+        processIdBindingSha256: loaded.process.pidBindingSha256,
+        executable: { sha256: loaded.process.executableSha256 },
+      },
+    ],
+    [
+      "production_provenance",
+      {
+        sourceCommit: manifest.sourceCommit,
+        sourceDirty: false,
+        sourceTreeSha256: manifest.sourceTreeSha256,
+        projectSha256: loaded.project.sha256,
+        manifestSha256: sha256(manifestBytes),
+        loadedModulesSha256: moduleSha256,
+      },
+    ],
+    [
+      "automation_report_binding",
+      {
+        reportSha256,
+        taskBindingSha256: "2".repeat(64),
+        projectSha256: loaded.project.sha256,
+        manifestSha256: sha256(manifestBytes),
+        packageModulesSha256: moduleSha256,
+        installedModulesSha256: moduleSha256,
+        loadedModulesSha256: moduleSha256,
+        executableSha256: loaded.process.executableSha256,
+        processIdBindingSha256: loaded.process.pidBindingSha256,
+      },
+    ],
+    ["automation_summary", { expected: 3, passed: 3, failed: 0, skipped: 0 }],
+    ...UE_AUTOMATION_TESTS.map((name) => ["automation_test", { name, status: "passed" }]),
+    ["closeout", { processResidualCount: 0, portResidualCount: 0 }],
+  ];
+  return facts.map(([type, data], index) => base(type, data, index + 1));
+}
 
 function retainedBinding(kind, value) {
   return sha256(Buffer.from(`uagent.mvp15d.retained.${kind}.v1\0${value}`, "utf8"));
@@ -249,7 +353,7 @@ function writePhaseEvidence(root, phase) {
     })),
     residualCount: 0,
   });
-  const events = [
+  let events = [
     {
       schemaVersion: EVENT_SCHEMA,
       phase,
@@ -339,10 +443,38 @@ function writePhaseEvidence(root, phase) {
       data: { residualCount: 0 },
     });
   }
+  if (phase === "ue-automation") events = automationAuthorityEvents(root);
   const transcriptLogical = `transcripts/${phase}.events.jsonl`;
   writeFileSync(
     resolve(root, ...transcriptLogical.split("/")),
     `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+    "utf8",
+  );
+  const runtimeTranscriptLogical = `transcripts/${phase}.runtime-events.jsonl`;
+  const runtimeEvents = [
+    {
+      schemaVersion: "uagent.mvp15d.final.runtime-event.v2",
+      phase,
+      type: "evidence_origin",
+      data: { origin: "production_runtime", fixtureUsed: false },
+    },
+    {
+      schemaVersion: "uagent.mvp15d.final.runtime-event.v2",
+      phase,
+      type: "closeout",
+      data:
+        phase === "ue-automation"
+          ? { processResidualCount: 0, portResidualCount: 0 }
+          : {
+              authorityLevel: "runtime_observed",
+              rendererCompleted: true,
+              driverCommandConsumed: true,
+            },
+    },
+  ];
+  writeFileSync(
+    resolve(root, ...runtimeTranscriptLogical.split("/")),
+    `${runtimeEvents.map((event) => JSON.stringify(event)).join("\n")}\n`,
     "utf8",
   );
   const logLogical = `logs/${phase}.stderr.log`;
@@ -361,6 +493,7 @@ function writePhaseEvidence(root, phase) {
     outputs: {
       events: sourceRecord(transcriptLogical, root),
       stdout: sourceRecord(transcriptLogical, root),
+      runtimeEvents: sourceRecord(runtimeTranscriptLogical, root),
       stderr: sourceRecord(logLogical, root),
     },
     exitCode: 0,
@@ -377,6 +510,7 @@ function writePhaseEvidence(root, phase) {
     generation,
     sourceArtifacts: [
       sourceRecord(transcriptLogical, root),
+      sourceRecord(runtimeTranscriptLogical, root),
       sourceRecord(logLogical, root),
       sourceRecord(ledgerLogical, root),
       sourceRecord(jobLogical, root),
@@ -476,12 +610,17 @@ function makeFixture() {
       "133987008000000000",
     );
     const executableSha256 = "e".repeat(64);
-    const processIdentitySha256 = sha256(Buffer.from(stable({
-      pidBindingSha256,
-      creationFileTimeUtcBindingSha256,
-      executableBasename: "UnrealEditor-Cmd.exe",
-      executableSha256,
-    }), "utf8"));
+    const processIdentitySha256 = sha256(
+      Buffer.from(
+        stable({
+          pidBindingSha256,
+          creationFileTimeUtcBindingSha256,
+          executableBasename: "UnrealEditor-Cmd.exe",
+          executableSha256,
+        }),
+        "utf8",
+      ),
+    );
     const packageSha256 = sha256(Buffer.from(stable(collected.artifacts), "utf8"));
     const loaded = {
       schemaVersion: LOADED_MODULES_SCHEMA,
@@ -497,10 +636,20 @@ function makeFixture() {
       sourceDirty: false,
       project: { id: "Mvp15Final", sha256: "f".repeat(64) },
       manifest: {
-        sha256: sha256(readFileSync(resolve(root, "package", "UAgentAssetTools", "UAgentAssetTools.build.json"))),
+        sha256: sha256(
+          readFileSync(resolve(root, "package", "UAgentAssetTools", "UAgentAssetTools.build.json")),
+        ),
       },
-      package: { id: "UAgentAssetTools", artifactCount: collected.artifacts.length, sha256: packageSha256 },
-      installedRoot: { id: "UAgentAssetTools", artifactCount: collected.artifacts.length, sha256: packageSha256 },
+      package: {
+        id: "UAgentAssetTools",
+        artifactCount: collected.artifacts.length,
+        sha256: packageSha256,
+      },
+      installedRoot: {
+        id: "UAgentAssetTools",
+        artifactCount: collected.artifacts.length,
+        sha256: packageSha256,
+      },
       process: {
         pidBindingSha256,
         creationFileTimeUtcBindingSha256,
@@ -529,6 +678,34 @@ function makeFixture() {
     writeJson(resolve(root, "captures", "loaded-modules.json"), loaded);
     bindPackageArtifacts(root);
     for (const phase of PHASES) writePhaseEvidence(root, phase);
+    const stamp = basename(root).slice("mvp15d-ue581-compat-".length);
+    const finalRoot = resolve(external, `mvp15d-final-d13-d16-${stamp}-ue581`);
+    cpSync(root, finalRoot, { recursive: true });
+    try {
+      rmSync(resolve(finalRoot, "metadata", "identity.json"));
+      const rawReportPath = resolve(finalRoot, "captures", "ue-automation-report", "index.json");
+      mkdirSync(resolve(rawReportPath, ".."), { recursive: true });
+      writeFileSync(rawReportPath, automationReportBytes());
+      createAutomationReportVerification({
+        repository,
+        "evidence-root": finalRoot,
+        "task-id": TASK_ID,
+        "source-commit": manifest.sourceCommit,
+      });
+      cpSync(
+        resolve(finalRoot, "metadata", "automation-report-verification.json"),
+        resolve(root, "metadata", "automation-report-verification.json"),
+      );
+      createInventoryBridge({
+        repository,
+        "evidence-root": finalRoot,
+        "ue581-root": root,
+        "task-id": TASK_ID,
+        "source-commit": manifest.sourceCommit,
+      });
+    } finally {
+      rmSync(finalRoot, { recursive: true, force: true });
+    }
     return { root, rawRoot };
   } catch (error) {
     rmSync(root, { recursive: true, force: true });
@@ -924,34 +1101,45 @@ test("package artifact inventory and identity remain bound to manifest v3", () =
 
 test("product inventory rejects mixed/source-only authority, missing raw observations, and copied legacy identity", async (t) => {
   const substitutions = [
-    ["mixed authority", (events) => {
-      events.find(({ type }) => type === "product_discovery_observation").data.authorityLevel =
-        "runtime_observed";
-      return events;
-    }],
-    ["source only presented as live", (events) => {
-      for (const event of events) {
-        event.producer.mode = "live";
-      }
-      return events;
-    }],
-    ["missing raw discovery", (events) =>
-      events.filter(({ type }) => type !== "product_discovery_observation")],
-    ["copied legacy installed/load/manifest", (events) =>
-      events.map((event) =>
-        event.type === "fixed_artifact_authority"
-          ? {
-              ...event,
-              type: "installed_loaded",
-              data: {
-                authorityLevel: "runtime_observed",
-                installed: ["One.dll"],
-                loaded: ["One.dll"],
-                manifest: ["One.dll"],
-              },
-            }
-          : event,
-      )],
+    [
+      "mixed authority",
+      (events) => {
+        events.find(({ type }) => type === "product_discovery_observation").data.authorityLevel =
+          "runtime_observed";
+        return events;
+      },
+    ],
+    [
+      "source only presented as live",
+      (events) => {
+        for (const event of events) {
+          event.producer.mode = "live";
+        }
+        return events;
+      },
+    ],
+    [
+      "missing raw discovery",
+      (events) => events.filter(({ type }) => type !== "product_discovery_observation"),
+    ],
+    [
+      "copied legacy installed/load/manifest",
+      (events) =>
+        events.map((event) =>
+          event.type === "fixed_artifact_authority"
+            ? {
+                ...event,
+                type: "installed_loaded",
+                data: {
+                  authorityLevel: "runtime_observed",
+                  installed: ["One.dll"],
+                  loaded: ["One.dll"],
+                  manifest: ["One.dll"],
+                },
+              }
+            : event,
+        ),
+    ],
   ];
   for (const [name, change] of substitutions) {
     await t.test(name, () => {
@@ -962,7 +1150,7 @@ test("product inventory rejects mixed/source-only authority, missing raw observa
           () => create(fixture.root),
           name === "source only presented as live"
             ? "UE581_RETAINED_SENSITIVE_VALUE"
-            : "UE581_TRANSCRIPT_AUTHORITY_INVALID",
+            : "FINAL_LIVE_VERIFIER_BRIDGE_RECORD_INVALID",
         );
       } finally {
         cleanup(fixture);
@@ -1184,13 +1372,10 @@ test("live phase cross-binding rejects raw ledger, process, artifact, and parent
         handoffId: rendererHandoff.handoffId,
         predecessorRendererInstanceId: rendererHandoff.predecessorRenderer.rendererInstanceId,
         successorRendererInstanceId: rendererHandoff.successorRenderer.rendererInstanceId,
-        predecessorProcessIdentitySha256:
-          rendererHandoff.predecessorRenderer.processIdentitySha256,
+        predecessorProcessIdentitySha256: rendererHandoff.predecessorRenderer.processIdentitySha256,
         successorProcessIdentitySha256: rendererHandoff.successorRenderer.processIdentitySha256,
-        predecessorMcpSessionBindingSha256:
-          rendererHandoff.predecessorMcpSessionBindingSha256,
-        successorMcpSessionBindingSha256:
-          rendererHandoff.successorMcpSessionBindingSha256,
+        predecessorMcpSessionBindingSha256: rendererHandoff.predecessorMcpSessionBindingSha256,
+        successorMcpSessionBindingSha256: rendererHandoff.successorMcpSessionBindingSha256,
         predecessorMcpGeneration: rendererHandoff.predecessorMcpGeneration,
         successorMcpGeneration: rendererHandoff.successorMcpGeneration,
         requestReceiptId: receiptId(1),
@@ -1243,7 +1428,8 @@ test("live phase cross-binding rejects raw ledger, process, artifact, and parent
         changedSummary.rendererRestartHandoff.requestReceiptSequence = 3;
       },
       (changedSummary) => {
-        changedSummary.rendererRestartHandoff.predecessorWindowIdentity.taskId = "TASK-MVP15D-CROSS-TASK";
+        changedSummary.rendererRestartHandoff.predecessorWindowIdentity.taskId =
+          "TASK-MVP15D-CROSS-TASK";
       },
     ]) {
       const changed = structuredClone(summary);

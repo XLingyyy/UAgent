@@ -21,6 +21,12 @@ import {
   manifestSelfHash,
   validateManifestShape,
 } from "./mvp15d-manifest.mjs";
+import {
+  AUTOMATION_REPORT_VERIFICATION_SCHEMA,
+  INVENTORY_BRIDGE_SCHEMA,
+  validateAutomationVerificationRecord,
+  validateInventoryBridgeRecord,
+} from "./mvp15d-final-live-verifier.mjs";
 
 const ROOT_NAME = /^mvp15d-ue581-compat-\d{8}_\d{6}$/;
 const SCHEMA = "uagent.mvp15d.ue581.evidence-inventory.v2";
@@ -76,6 +82,8 @@ const REQUIRED_FILES = Object.freeze([
   "metadata/build-command.json",
   "metadata/build-result.json",
   "metadata/identity.json",
+  "metadata/automation-report-verification.json",
+  "metadata/inventory-bridge.json",
   "metadata/package-artifacts.json",
   "metadata/redaction-ledger.json",
   ...PHASES.map((phase) => `metadata/${phase}.producer.json`),
@@ -305,9 +313,13 @@ function validateRetainedDocuments(root, walked) {
     const path = resolve(root, ...record.path.split("/"));
     let values;
     try {
-      values = record.type === "jsonl"
-        ? readFileSync(path, "utf8").split(/\r?\n/u).filter(Boolean).map((line) => JSON.parse(line))
-        : [JSON.parse(readFileSync(path, "utf8"))];
+      values =
+        record.type === "jsonl"
+          ? readFileSync(path, "utf8")
+              .split(/\r?\n/u)
+              .filter(Boolean)
+              .map((line) => JSON.parse(line))
+          : [JSON.parse(readFileSync(path, "utf8"))];
     } catch {
       fail("UE581_RETAINED_JSON_INVALID");
     }
@@ -790,7 +802,12 @@ function validateLoadedModules(root, rootDevice, manifest) {
   exactKeys(value.installedRoot, ["id", "artifactCount", "sha256"], "UE581_LOADED_MODULES_INVALID");
   exactKeys(
     value.process,
-    ["pidBindingSha256", "creationFileTimeUtcBindingSha256", "executableBasename", "executableSha256"],
+    [
+      "pidBindingSha256",
+      "creationFileTimeUtcBindingSha256",
+      "executableBasename",
+      "executableSha256",
+    ],
     "UE581_LOADED_MODULES_INVALID",
   );
   exactKeys(
@@ -810,9 +827,7 @@ function validateLoadedModules(root, rootDevice, manifest) {
       fail("UE581_LOADED_MODULES_INVALID");
     }
   }
-  const manifestSha256 = sha256(
-    readFileSync(resolve(root, ...PACKAGE_MANIFEST.split("/"))),
-  );
+  const manifestSha256 = sha256(readFileSync(resolve(root, ...PACKAGE_MANIFEST.split("/"))));
   const packageSha256 = sha256(Buffer.from(stable(manifest.artifacts), "utf8"));
   if (
     value.schemaVersion !== LOADED_MODULES_SCHEMA ||
@@ -922,15 +937,15 @@ function validateBuildEvidence(root, rootDevice, manifest) {
     !isHex(result.taskMarkerSha256) ||
     result?.status !== "build_completed" ||
     result?.reason !== null ||
-    result?.commandFingerprint !== manifest.buildCommandFingerprint
-    || (result.childPidBindingSha256 !== null && !isHex(result.childPidBindingSha256))
-    || !isHex(result.closeout.wrapperPidBindingSha256)
-    || result.childExitCode !== 0
-    || result.wrapperExitCode !== 0
-    || result.packagePresent !== true
-    || result.successManifestPresent !== false
-    || result.closeout.childExited !== true
-    || result.closeout.taskOwnedResidualCount !== 0
+    result?.commandFingerprint !== manifest.buildCommandFingerprint ||
+    (result.childPidBindingSha256 !== null && !isHex(result.childPidBindingSha256)) ||
+    !isHex(result.closeout.wrapperPidBindingSha256) ||
+    result.childExitCode !== 0 ||
+    result.wrapperExitCode !== 0 ||
+    result.packagePresent !== true ||
+    result.successManifestPresent !== false ||
+    result.closeout.childExited !== true ||
+    result.closeout.taskOwnedResidualCount !== 0
   ) {
     fail("UE581_BUILD_EVIDENCE_SCHEMA_INVALID");
   }
@@ -1191,7 +1206,8 @@ function validateProducerLedger(root, rootDevice, phase, taskId) {
       value.closeout?.authorityLevel !== "parent_observed" ||
       !isHex(value.closeout?.jobCloseoutSha256) ||
       !isHex(value.closeout?.portObservationSha256) ||
-      value.closeout?.runtimeProcessIdBindingSha256 !== value.runtimeProcess.processIdBindingSha256 ||
+      value.closeout?.runtimeProcessIdBindingSha256 !==
+        value.runtimeProcess.processIdBindingSha256 ||
       value.closeout?.phaseSessionBindingSha256 !== value.sessionBindingSha256 ||
       value.closeout?.phaseGeneration !== value.generation
     ) {
@@ -1423,6 +1439,13 @@ function validateTranscript(root, rootDevice, phase, taskId) {
   return events;
 }
 
+function containsFixtureOrBypassValue(value) {
+  if (typeof value === "string") return /fixture|manual|direct[-_]?mcp/iu.test(value);
+  if (Array.isArray(value)) return value.some((entry) => containsFixtureOrBypassValue(entry));
+  if (!value || typeof value !== "object") return false;
+  return Object.values(value).some((entry) => containsFixtureOrBypassValue(entry));
+}
+
 function validateRuntimeTranscript(root, rootDevice, phase, taskId) {
   const logical = `transcripts/${phase}.runtime-events.jsonl`;
   const path = resolve(root, ...logical.split("/"));
@@ -1455,7 +1478,7 @@ function validateRuntimeTranscript(root, rootDevice, phase, taskId) {
   if (
     origin.data.origin !== "production_runtime" ||
     origin.data.fixtureUsed !== false ||
-    /fixture|manual|direct[-_]?mcp/i.test(JSON.stringify(events))
+    containsFixtureOrBypassValue(events)
   ) {
     fail("UE581_RUNTIME_TRANSCRIPT_ORIGIN_INVALID");
   }
@@ -1584,10 +1607,7 @@ function collectObservationReceipts(value, receipts, receiptSequences, code) {
     receipts.set(value[key], value[sequenceKey]);
     receiptSequences.set(value[sequenceKey], value[key]);
   }
-  if (
-    Object.hasOwn(value, "id") &&
-    Object.hasOwn(value, "sequence")
-  ) {
+  if (Object.hasOwn(value, "id") && Object.hasOwn(value, "sequence")) {
     if (
       typeof value.id !== "string" ||
       !/^mvp15d-observation-receipt:[0-9a-f]{64}$/u.test(value.id) ||
@@ -1607,16 +1627,16 @@ function collectObservationReceipts(value, receipts, receiptSequences, code) {
 }
 
 function validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvents, summary) {
-  if (
-    summary.evidenceMode !== "live" ||
-    (phase !== "product-capture" && phase !== "ui-lifecycle")
-  ) return;
+  if (summary.evidenceMode !== "live" || (phase !== "product-capture" && phase !== "ui-lifecycle"))
+    return;
   const code = "UE581_LIVE_PHASE_CROSS_BINDING_INVALID";
   const binding = summary.ownedLaunchBinding;
   const fixedArtifact = events.find(({ type }) => type === "fixed_artifact_authority")?.data;
   const runtimeProcess = events.find(({ type }) => type === "runtime_process_started")?.data;
   const closeout = events.at(-1)?.data;
-  const runtimeIdentity = runtimeEvents?.find(({ type }) => type === "runtime_process_identity")?.data;
+  const runtimeIdentity = runtimeEvents?.find(
+    ({ type }) => type === "runtime_process_identity",
+  )?.data;
   const rawPath = resolve(root, "transcripts", `${phase}.runtime-events.jsonl`);
   const jobPath = resolve(root, "metadata", `${phase}.job-closeout.json`);
   const portPath = resolve(root, "metadata", `${phase}.port-closeout.json`);
@@ -1628,7 +1648,8 @@ function validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvent
   if (
     !binding ||
     summary.productionLaunchAuthorityVerified !== false ||
-    summary.producerLedgerSha256 !== sha256(readFileSync(resolve(root, "metadata", `${phase}.producer.json`))) ||
+    summary.producerLedgerSha256 !==
+      sha256(readFileSync(resolve(root, "metadata", `${phase}.producer.json`))) ||
     summary.sourceCommit !== ledger.sourceCommit ||
     summary.sessionBindingSha256 !== ledger.sessionBindingSha256 ||
     summary.generation !== ledger.generation ||
@@ -1664,7 +1685,8 @@ function validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvent
     fixedArtifact?.sourceCommit !== ledger.sourceCommit ||
     fixedArtifact?.phaseSessionBindingSha256 !== ledger.sessionBindingSha256 ||
     fixedArtifact?.phaseGeneration !== ledger.generation ||
-    fixedArtifact?.runtimeProcessIdBindingSha256 !== ledger.runtimeProcess?.processIdBindingSha256 ||
+    fixedArtifact?.runtimeProcessIdBindingSha256 !==
+      ledger.runtimeProcess?.processIdBindingSha256 ||
     runtimeIdentity?.sourceCommit !== ledger.sourceCommit ||
     runtimeIdentity?.sessionBindingSha256 !== ledger.sessionBindingSha256 ||
     runtimeIdentity?.generation !== ledger.generation ||
@@ -1689,7 +1711,8 @@ function validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvent
   if (phase === "product-capture") {
     const handoff = summary.rendererRestartHandoff;
     const rendererRestartEvents = events.filter(
-      (event) => event.type === "retraction_observation" && event.data?.reason === "renderer_restart",
+      (event) =>
+        event.type === "retraction_observation" && event.data?.reason === "renderer_restart",
     );
     const rawHandoff = rendererRestartEvents[0]?.data?.rendererHandoff;
     const expectedHandoffKeys = [
@@ -1736,20 +1759,23 @@ function validateLivePhaseCrossBinding(root, phase, ledger, events, runtimeEvent
       handoff.predecessorWindowIdentity.handoffId !== handoff.handoffId ||
       !/^[0-9a-f]{64}$/u.test(handoff.predecessorWindowIdentity.stableIdentitySha256) ||
       handoff.handoffId !== rawHandoff.handoffId ||
-      handoff.predecessorRendererInstanceId !== rawHandoff.predecessorRenderer?.rendererInstanceId ||
+      handoff.predecessorRendererInstanceId !==
+        rawHandoff.predecessorRenderer?.rendererInstanceId ||
       handoff.successorRendererInstanceId !== rawHandoff.successorRenderer?.rendererInstanceId ||
-      handoff.predecessorProcessIdentitySha256 !== rawHandoff.predecessorRenderer?.processIdentitySha256 ||
-      handoff.successorProcessIdentitySha256 !== rawHandoff.successorRenderer?.processIdentitySha256 ||
+      handoff.predecessorProcessIdentitySha256 !==
+        rawHandoff.predecessorRenderer?.processIdentitySha256 ||
+      handoff.successorProcessIdentitySha256 !==
+        rawHandoff.successorRenderer?.processIdentitySha256 ||
       handoff.predecessorMcpSessionBindingSha256 !==
         rawHandoff.predecessorMcpSessionBindingSha256 ||
-      handoff.successorMcpSessionBindingSha256 !==
-        rawHandoff.successorMcpSessionBindingSha256 ||
+      handoff.successorMcpSessionBindingSha256 !== rawHandoff.successorMcpSessionBindingSha256 ||
       handoff.predecessorMcpGeneration !== rawHandoff.predecessorMcpGeneration ||
       handoff.successorMcpGeneration !== rawHandoff.successorMcpGeneration ||
       handoff.requestReceiptId !== rawHandoff.requestReceipt?.id ||
       handoff.requestReceiptSequence !== rawHandoff.requestReceipt?.sequence ||
       handoff.parentAcknowledgementReceiptId !== rawHandoff.parentAcknowledgementReceipt?.id ||
-      handoff.parentAcknowledgementReceiptSequence !== rawHandoff.parentAcknowledgementReceipt?.sequence ||
+      handoff.parentAcknowledgementReceiptSequence !==
+        rawHandoff.parentAcknowledgementReceipt?.sequence ||
       handoff.claimReceiptId !== rawHandoff.claimReceipt?.id ||
       handoff.claimReceiptSequence !== rawHandoff.claimReceipt?.sequence ||
       stable(handoff.predecessorWindowIdentity) !== stable(rawHandoff.predecessorWindow) ||
@@ -1778,7 +1804,8 @@ function validateSchemas(root, rootDevice, taskId) {
 
 function fileType(logical) {
   if (PACKAGE_MODULE_PATTERN.test(logical)) return "ue-module";
-  if (logical.endsWith(".events.jsonl")) return "jsonl";
+  if (logical.endsWith(".events.jsonl") || logical.endsWith(".runtime-events.jsonl"))
+    return "jsonl";
   if (logical.endsWith(".log")) return "redacted-log";
   if (logical.endsWith(".uplugin")) return "ue-plugin-descriptor";
   if (logical.endsWith(".modules")) return "ue-module-index";
@@ -1791,15 +1818,23 @@ function expectedSchema(logical) {
   if (logical === "metadata/build-command.json") return BUILD_COMMAND_SCHEMA;
   if (logical === "metadata/build-result.json") return BUILD_RESULT_SCHEMA;
   if (logical === "metadata/identity.json") return IDENTITY_SCHEMA;
+  if (logical === "metadata/automation-report-verification.json") {
+    return AUTOMATION_REPORT_VERIFICATION_SCHEMA;
+  }
+  if (logical === "metadata/inventory-bridge.json") return INVENTORY_BRIDGE_SCHEMA;
   if (logical === "metadata/package-artifacts.json") return PACKAGE_INVENTORY_SCHEMA;
   if (logical === "metadata/redaction-ledger.json") return REDACTION_LEDGER_SCHEMA;
   if (/^metadata\/(?:ue-automation|product-capture|ui-lifecycle)\.producer\.json$/.test(logical)) {
     return PRODUCER_LEDGER_SCHEMA;
   }
-  if (/^metadata\/(?:ue-automation|product-capture|ui-lifecycle)\.job-closeout\.json$/.test(logical)) {
+  if (
+    /^metadata\/(?:ue-automation|product-capture|ui-lifecycle)\.job-closeout\.json$/.test(logical)
+  ) {
     return JOB_CLOSEOUT_SCHEMA;
   }
-  if (/^metadata\/(?:ue-automation|product-capture|ui-lifecycle)\.port-closeout\.json$/.test(logical)) {
+  if (
+    /^metadata\/(?:ue-automation|product-capture|ui-lifecycle)\.port-closeout\.json$/.test(logical)
+  ) {
     return PORT_CLOSEOUT_SCHEMA;
   }
   const summary = logical.match(/^summaries\/(ue-automation|product-capture|ui-lifecycle)\.json$/);
@@ -2069,6 +2104,26 @@ function validateEvidence(root, rootDevice) {
   validateRedactions(root, rootDevice);
   const binding = derivePackageBinding(root, rootDevice);
   validatePackageArtifactLedger(root, rootDevice, binding);
+  validateAutomationVerificationRecord(
+    readJson(
+      resolve(root, "metadata", "automation-report-verification.json"),
+      "UE581_AUTOMATION_REPORT_VERIFICATION_INVALID",
+    ),
+    {
+      root,
+      taskId: binding.manifest.taskId,
+      sourceCommit: binding.manifest.sourceCommit,
+    },
+  );
+  validateInventoryBridgeRecord(
+    readJson(resolve(root, "metadata", "inventory-bridge.json"), "UE581_INVENTORY_BRIDGE_INVALID"),
+    {
+      root,
+      role: "ue581",
+      taskId: binding.manifest.taskId,
+      sourceCommit: binding.manifest.sourceCommit,
+    },
+  );
   validateSchemas(root, rootDevice, binding.manifest.taskId);
   return { walked, taskId: binding.manifest.taskId };
 }

@@ -26,10 +26,10 @@ for exact-once creation-FILETIME provenance at current implementation commit
 `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. Neither repair changes the package
 or manifest contract; the pre-repair live lineage was invalidated and removed.
 
-The compiled pre-checkpoint identity uses
-`uagent.mvp15d.production-source-boundary.v2`: 335 production files discovered
+The current source-only candidate identity uses
+`uagent.mvp15d.production-source-boundary.v2`: 336 production files discovered
 from 14 roots plus 28 exact files, 9 exclusion classes, 126 excluded entries,
-and 356 source/Git watches. It includes the companion source, resources,
+and 357 source/Git watches. It includes the companion source, resources,
 descriptor, and build inputs along with the transitive desktop and final-tooling
 inputs. New production files and tracked production deletion cannot remain
 unhashed.

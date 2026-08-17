@@ -42,9 +42,9 @@ historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 `scripts/mvp15d-source-identity.mjs` and `build.rs` bind
 the compiled source identity to
-`uagent.mvp15d.production-source-boundary.v2`: 335 production files discovered
+`uagent.mvp15d.production-source-boundary.v2`: 336 production files discovered
 from 14 approved roots plus 28 exact files, 9 exclusion classes, 126 excluded
-entries, and a complete 356-entry production/Git watch set. New production
+entries, and a complete 357-entry production/Git watch set. New production
 files and deleted tracked production files cannot leave the identity unchanged;
 normal repositories, linked worktrees, symbolic/detached HEAD, loose refs,
 packed refs, and same-branch commits are covered. G14 is `IMPLEMENTED`; current
@@ -160,15 +160,27 @@ node scripts/mvp15d-plugin-build.mjs --mode live --source <clean-detached-source
 node scripts/mvp15d-manifest.mjs create --source <clean-detached-source> --package-root <sealed-package> --runuat <RunUAT.bat> --ue-root <UE-root> --build-ledger <build-command.json> --build-result <build-result.json>
 node scripts/mvp15d-manifest.mjs verify --source <clean-detached-source> --package-root <sealed-package> --runuat <RunUAT.bat> --ue-root <UE-root> --build-ledger <build-command.json> --build-result <build-result.json>
 node scripts/mvp15d-final-runner.mjs <preflight|build-plan|build|manifest-create|manifest-verify|project-create|package-install|ue-automation|product-capture|ui-lifecycle|inventory-create|inventory-verify|closeout> <explicit inputs>
+node scripts/mvp15d-final-live-verifier.mjs <automation-report-create|automation-report-verify> --repository <repository> --evidence-root <final-root> --task-id <task-id> --source-commit <source-commit>
+node scripts/mvp15d-final-live-verifier.mjs <inventory-bridge-create|inventory-bridge-verify> --repository <repository> --evidence-root <final-root> --ue581-root <ue581-root> --task-id <task-id> --source-commit <source-commit>
 node scripts/mvp15d-ue581-evidence-inventory.mjs <create|verify> <explicit inputs>
 node scripts/mvp15d-icon-validate.mjs
 ```
 
 The final-runner evidence root and `mvp15d-ue581-compat-*` retained bundle are
 separate contracts. Run each inventory command only on its matching root and
-record deterministic hash cross-links. After official UE closeout, independently
-hash the exact raw `captures/ue-automation-report/index.json` and compare it with
-`automation_report_binding.reportSha256` before privacy cleanup.
+record deterministic hash cross-links. After official UE closeout, run
+`automation-report-create` and `automation-report-verify` while the exact raw
+`captures/ue-automation-report/index.json` still exists. Run
+`inventory-bridge-create` after both retained products contain their complete
+shared evidence, while the raw report is still present in the final root, and
+before either inventory is sealed. Bridge creation recomputes the raw-report
+binding instead of trusting a copied or hand-authored retained record. After
+allowed privacy cleanup, run each product's own create/verify commands, then
+run `inventory-bridge-verify`; it requires both official inventory schemas,
+full filesystem closure, valid inventory self/bundle hashes, and the same
+bridge record hash-bound in both inventories. The UE581 closed contract
+requires both retained verification records. `metadata/identity.json` remains
+UE581-local because the final-runner does not produce it.
 
 The runner-owned live adapters are
 `scripts/mvp15d-final-ue-automation-producer.mjs`,

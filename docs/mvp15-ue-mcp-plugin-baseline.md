@@ -94,8 +94,8 @@ coverage, observes build count 0 at manager removal, builds a distinct successor
 and preserves an injected replacement. The exact-manifest cleanup gate is
 `PASS`, as recorded above.
 
-The compiled identity covers a deterministic 335-file transitive production
-boundary and a 356-entry production/Git watch set. The boundary includes native,
+The compiled identity covers a deterministic 336-file transitive production
+boundary and a 357-entry production/Git watch set. The boundary includes native,
 renderer, Settings, runtime/MCP/shared, configuration/lock, final tooling, and
 companion plugin inputs; new production files and tracked production deletion
 cannot leave the identity unchanged.

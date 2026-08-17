@@ -166,8 +166,8 @@ C14A is getter/adapter hardening, not another live attempt and not the R10 mutat
   private single-use launch receipt exists only in `executeLivePhase()` and no
   public hash, nonce, PID, JSON object, or caller argument can recreate it.
 - The source checkpoint must identify the complete transitive production
-  boundary and Git watch set. The current identity covers 335 production files
-  and 356 watch entries; a new production file or tracked production deletion
+  boundary and Git watch set. The current identity covers 336 production files
+  and 357 watch entries; a new production file or tracked production deletion
   must change the identity.
 - Before any module hash, reject a leaf link or a symlink/junction/reparse
   ancestor below the installed root. After each Windows fixture, require its

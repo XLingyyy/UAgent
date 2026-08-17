@@ -50,6 +50,14 @@ import {
   ueProductionProcessProvenance,
   validateBinding,
 } from "./mvp15d-final-live-producer-helper.mjs";
+import {
+  FinalLiveVerifierError,
+  SHARED_EVIDENCE_PATHS,
+  createAutomationReportVerification,
+  createInventoryBridge,
+  verifyAutomationReportVerification,
+  verifyInventoryBridge,
+} from "./mvp15d-final-live-verifier.mjs";
 import { runProductCaptureProducer } from "./mvp15d-final-product-capture-producer.mjs";
 import {
   collectPackageArtifacts,
@@ -244,6 +252,464 @@ test("official UE Automation report accepts UTF-8 BOM, derives the fixed pass ma
     );
   } finally {
     rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+function createAutomationVerifierFixture() {
+  const repository = mkdtempSync(join(tmpdir(), "uagent-mvp15d-live-verifier-"));
+  const external = resolve(repository, "external");
+  const root = resolve(external, "mvp15d-final-d13-d16-20991231_235959-fixture");
+  const taskId = TASK_ID;
+  const sourceCommit = "a".repeat(40);
+  const sourceTreeSha256 = "b".repeat(64);
+  for (const logical of ["captures/ue-automation-report", "metadata", "transcripts"]) {
+    mkdirSync(resolve(root, ...logical.split("/")), { recursive: true });
+  }
+  const reportPath = resolve(root, "captures", "ue-automation-report", "index.json");
+  const testNames = [
+    "UAgentAssetTools.Contracts",
+    "UAgentAssetTools.ReadOnly",
+    "UAgentAssetTools.Closeout",
+  ];
+  writeFileSync(
+    reportPath,
+    `\uFEFF${JSON.stringify({
+      succeeded: 3,
+      succeededWithWarnings: 0,
+      failed: 0,
+      notRun: 0,
+      tests: testNames.map((name) => ({ fullTestPath: name, state: "Success" })),
+    })}\n`,
+    "utf8",
+  );
+  const hashes = {
+    task: "1".repeat(64),
+    project: "2".repeat(64),
+    manifest: "3".repeat(64),
+    modules: "4".repeat(64),
+    executable: "5".repeat(64),
+    process: "6".repeat(64),
+    marker: "7".repeat(64),
+    session: "8".repeat(64),
+    producer: "9".repeat(64),
+  };
+  const base = (type, data, sequence) => ({
+    schemaVersion: "uagent.mvp15d.final.phase-event.v1",
+    phase: "ue-automation",
+    taskId,
+    markerSha256: hashes.marker,
+    sessionBindingSha256: hashes.session,
+    generation: 1,
+    producer: {
+      id: "mvp15d-final-ue-automation-producer",
+      processIdBindingSha256: hashes.producer,
+      mode: "live",
+    },
+    sequence,
+    capturedAt: new Date(Date.UTC(2099, 11, 31, 23, 59, sequence)).toISOString(),
+    type,
+    data,
+  });
+  const events = [
+    [
+      "runtime_process_started",
+      {
+        processIdBindingSha256: hashes.process,
+        endpointSha256: "a".repeat(64),
+        markerSha256: hashes.marker,
+        executable: { basename: "UnrealEditor-Cmd.exe", size: 1, sha256: hashes.executable },
+        argumentVectorSha256: "b".repeat(64),
+      },
+    ],
+    [
+      "production_provenance",
+      {
+        sourceCommit,
+        sourceTreeSha256,
+        sourceDirty: false,
+        projectSha256: hashes.project,
+        manifestSha256: hashes.manifest,
+        loadedModulesSha256: hashes.modules,
+      },
+    ],
+    [
+      "automation_report_binding",
+      {
+        reportSha256: cryptoHash(readFileSync(reportPath)),
+        taskBindingSha256: hashes.task,
+        projectSha256: hashes.project,
+        manifestSha256: hashes.manifest,
+        packageModulesSha256: hashes.modules,
+        installedModulesSha256: hashes.modules,
+        loadedModulesSha256: hashes.modules,
+        executableSha256: hashes.executable,
+        processIdBindingSha256: hashes.process,
+      },
+    ],
+    ["automation_summary", { expected: 3, passed: 3, failed: 0, skipped: 0 }],
+    ...testNames.map((name) => ["automation_test", { name, status: "passed" }]),
+    ["closeout", { processResidualCount: 0, portResidualCount: 0 }],
+  ].map(([type, data], index) => base(type, data, index + 1));
+  const eventPath = resolve(root, "transcripts", "ue-automation.events.jsonl");
+  writeFileSync(eventPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
+  const args = {
+    repository,
+    "evidence-root": root,
+    "task-id": taskId,
+    "source-commit": sourceCommit,
+  };
+  return {
+    repository,
+    external,
+    root,
+    taskId,
+    sourceCommit,
+    sourceTreeSha256,
+    reportPath,
+    eventPath,
+    args,
+  };
+}
+
+function inventoryFixturePayload(root, current = "", output = { directories: [], files: [] }) {
+  const directory = current ? resolve(root, ...current.split("/")) : root;
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const logical = current ? `${current}/${entry.name}` : entry.name;
+    if (logical === "inventory.json") continue;
+    const path = resolve(root, ...logical.split("/"));
+    if (entry.isDirectory()) {
+      output.directories.push(logical);
+      inventoryFixturePayload(root, logical, output);
+    } else {
+      const bytes = readFileSync(path);
+      output.files.push({ path: logical, size: bytes.length, sha256: cryptoHash(bytes) });
+    }
+  }
+  return output;
+}
+
+function inventoryFixtureFileType(logical) {
+  if (logical.endsWith(".dll")) return "ue-module";
+  if (logical.endsWith(".events.jsonl") || logical.endsWith(".runtime-events.jsonl")) {
+    return "jsonl";
+  }
+  if (logical.endsWith(".log")) return "redacted-log";
+  if (logical.endsWith(".uplugin")) return "ue-plugin-descriptor";
+  if (logical.endsWith(".modules")) return "ue-module-index";
+  return "json";
+}
+
+function inventoryFixtureSchema(root, logical) {
+  if (!logical.endsWith(".json") && !logical.endsWith(".jsonl")) return null;
+  const text = readFileSync(resolve(root, ...logical.split("/")), "utf8");
+  try {
+    const value = JSON.parse(
+      logical.endsWith(".jsonl") ? text.split(/\r?\n/u).find(Boolean) : text,
+    );
+    return typeof value?.schemaVersion === "string" ? value.schemaVersion : null;
+  } catch {
+    return null;
+  }
+}
+
+function sealInventoryFixture(root, role, taskId, omittedPath) {
+  const payload = inventoryFixturePayload(root);
+  const directories = payload.directories.sort((left, right) => left.localeCompare(right, "en"));
+  let files = payload.files.sort((left, right) => left.path.localeCompare(right.path, "en"));
+  if (omittedPath) files = files.filter(({ path }) => path !== omittedPath);
+  if (role === "ue581") {
+    files = files.map((file) => ({
+      ...file,
+      type: inventoryFixtureFileType(file.path),
+      schemaVersion: inventoryFixtureSchema(root, file.path),
+    }));
+  }
+  const bundleMaterial =
+    role === "final"
+      ? files.map(({ path, size, sha256 }) => `${path}\0${size}\0${sha256}`).join("\n")
+      : [
+          ...directories.map((path) => `D\0${path}`),
+          ...files.map(
+            ({ path, size, sha256, type, schemaVersion }) =>
+              `F\0${path}\0${size}\0${sha256}\0${type}\0${schemaVersion ?? ""}`,
+          ),
+        ].join("\n");
+  const base = {
+    schemaVersion:
+      role === "final"
+        ? "uagent.mvp15d.final.inventory.v1"
+        : "uagent.mvp15d.ue581.evidence-inventory.v2",
+    taskGeneration: "final-d13-d16",
+    taskId,
+    ...(role === "ue581" ? { status: "complete" } : {}),
+    directoryCount: directories.length,
+    fileCount: files.length,
+    directories,
+    files,
+    bundleSha256: cryptoHash(Buffer.from(bundleMaterial, "utf8")),
+  };
+  writeFileSync(
+    resolve(root, "inventory.json"),
+    `${JSON.stringify(
+      {
+        ...base,
+        inventorySelfSha256: cryptoHash(Buffer.from(stableForTest(base), "utf8")),
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+}
+
+function createInventoryBridgeFixture(options = {}) {
+  const fixture = createAutomationVerifierFixture();
+  createAutomationReportVerification(fixture.args);
+  const packageRoot = resolve(fixture.root, "package", "UAgentAssetTools");
+  const packageFiles = [
+    ["UAgentAssetTools.uplugin", Buffer.from('{"FileVersion":3}\n', "utf8")],
+    ["Binaries/Win64/UnrealEditor-UAgentAssetTools.dll", Buffer.from("fixture-module", "utf8")],
+  ];
+  for (const [logical, bytes] of packageFiles) {
+    const path = resolve(packageRoot, ...logical.split("/"));
+    mkdirSync(resolve(path, ".."), { recursive: true });
+    writeFileSync(path, bytes);
+  }
+  const artifacts = packageFiles.map(([logical]) => {
+    const bytes = readFileSync(resolve(packageRoot, ...logical.split("/")));
+    return { path: logical, size: bytes.length, sha256: cryptoHash(bytes) };
+  });
+  writeFileSync(
+    resolve(packageRoot, "UAgentAssetTools.build.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: "uagent.ue-companion-plugin.build-manifest.v3",
+        taskGeneration: "final-d13-d16",
+        taskId: fixture.taskId,
+        sourceCommit: fixture.sourceCommit,
+        sourceTreeSha256: fixture.sourceTreeSha256,
+        dirty: false,
+        artifacts,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  for (const logical of SHARED_EVIDENCE_PATHS) {
+    const path = resolve(fixture.root, ...logical.split("/"));
+    if (existsSync(path)) continue;
+    mkdirSync(resolve(path, ".."), { recursive: true });
+    writeFileSync(path, `${JSON.stringify({ schemaVersion: "fixture.shared.v1", logical })}\n`);
+  }
+  const ue581Root = resolve(fixture.external, "mvp15d-ue581-compat-20991231_235959");
+  cpSync(fixture.root, ue581Root, { recursive: true });
+  rmSync(resolve(ue581Root, "captures", "ue-automation-report"), {
+    recursive: true,
+    force: true,
+  });
+  const bridgeArgs = { ...fixture.args, "ue581-root": ue581Root };
+  if (options.deferBridge) return { ...fixture, ue581Root, bridgeArgs };
+  createInventoryBridge(bridgeArgs);
+  rmSync(resolve(fixture.root, "captures", "ue-automation-report"), {
+    recursive: true,
+    force: true,
+  });
+  sealInventoryFixture(fixture.root, "final", fixture.taskId);
+  sealInventoryFixture(ue581Root, "ue581", fixture.taskId);
+  return { ...fixture, ue581Root, bridgeArgs };
+}
+
+test("independent raw Automation report verifier binds exact bytes, live events, source and fixed matrix", () => {
+  const fixture = createAutomationVerifierFixture();
+  try {
+    const created = createAutomationReportVerification(fixture.args);
+    assert.equal(created.status, "automation_report_binding_created");
+    assert.equal(created.reportSha256, cryptoHash(readFileSync(fixture.reportPath)));
+    assert.equal(
+      verifyAutomationReportVerification(fixture.args).status,
+      "automation_report_binding_verified",
+    );
+
+    const report = readFileSync(fixture.reportPath);
+    writeFileSync(fixture.reportPath, Buffer.concat([report, Buffer.from(" ")]));
+    assert.throws(
+      () => verifyAutomationReportVerification(fixture.args),
+      (error) =>
+        error instanceof FinalLiveVerifierError &&
+        error.code === "FINAL_LIVE_VERIFIER_REPORT_BINDING_INVALID",
+    );
+    writeFileSync(fixture.reportPath, report);
+
+    const eventBytes = readFileSync(fixture.eventPath);
+    const events = eventBytes
+      .toString("utf8")
+      .trimEnd()
+      .split(/\r?\n/u)
+      .map((line) => JSON.parse(line));
+    events.find((event) => event.type === "automation_report_binding").data.reportSha256 =
+      "f".repeat(64);
+    writeFileSync(
+      fixture.eventPath,
+      `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+      "utf8",
+    );
+    assert.throws(
+      () => verifyAutomationReportVerification(fixture.args),
+      (error) =>
+        error instanceof FinalLiveVerifierError &&
+        error.code === "FINAL_LIVE_VERIFIER_REPORT_BINDING_INVALID",
+    );
+    writeFileSync(fixture.eventPath, eventBytes);
+  } finally {
+    rmSync(fixture.repository, { recursive: true, force: true });
+  }
+});
+
+test("inventory bridge creation rebinds the retained Automation record to raw report bytes", () => {
+  const fixture = createInventoryBridgeFixture({ deferBridge: true });
+  try {
+    for (const root of [fixture.root, fixture.ue581Root]) {
+      const path = resolve(root, "metadata", "automation-report-verification.json");
+      const record = JSON.parse(readFileSync(path, "utf8"));
+      record.report.sha256 = "f".repeat(64);
+      record.eventBinding.reportSha256 = record.report.sha256;
+      const basis = { ...record };
+      delete basis.verificationSelfSha256;
+      record.verificationSelfSha256 = cryptoHash(Buffer.from(stableForTest(basis), "utf8"));
+      writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+    }
+    assert.throws(
+      () => createInventoryBridge(fixture.bridgeArgs),
+      (error) =>
+        error instanceof FinalLiveVerifierError &&
+        error.code === "FINAL_LIVE_VERIFIER_AUTOMATION_RECORD_DRIFT",
+    );
+  } finally {
+    rmSync(fixture.repository, { recursive: true, force: true });
+  }
+});
+
+test("two-product inventory bridge binds exact shared files, package artifacts and inventory entries", () => {
+  const fixture = createInventoryBridgeFixture();
+  try {
+    const verified = verifyInventoryBridge(fixture.bridgeArgs);
+    assert.equal(verified.status, "inventory_bridge_verified");
+    assert.equal(verified.sharedFileCount, SHARED_EVIDENCE_PATHS.length);
+    assert.equal(verified.packageArtifactCount, 2);
+
+    const inventoryPath = resolve(fixture.ue581Root, "inventory.json");
+    const originalInventory = readFileSync(inventoryPath, "utf8");
+    const stubInventory = {
+      schemaVersion: "fixture.inventory.v1",
+      taskId: fixture.taskId,
+      files: [],
+    };
+    writeFileSync(inventoryPath, `${JSON.stringify(stubInventory, null, 2)}\n`, "utf8");
+    assert.throws(
+      () => verifyInventoryBridge(fixture.bridgeArgs),
+      (error) =>
+        error instanceof FinalLiveVerifierError &&
+        error.code === "FINAL_LIVE_VERIFIER_INVENTORY_INVALID",
+    );
+    writeFileSync(inventoryPath, originalInventory, "utf8");
+
+    const wrongSelfHash = JSON.parse(originalInventory);
+    wrongSelfHash.inventorySelfSha256 = "0".repeat(64);
+    writeFileSync(inventoryPath, `${JSON.stringify(wrongSelfHash, null, 2)}\n`, "utf8");
+    assert.throws(
+      () => verifyInventoryBridge(fixture.bridgeArgs),
+      (error) =>
+        error instanceof FinalLiveVerifierError &&
+        error.code === "FINAL_LIVE_VERIFIER_INVENTORY_INVALID",
+    );
+
+    sealInventoryFixture(fixture.ue581Root, "ue581", fixture.taskId, "metadata/build-command.json");
+    assert.throws(
+      () => verifyInventoryBridge(fixture.bridgeArgs),
+      (error) =>
+        error instanceof FinalLiveVerifierError &&
+        error.code === "FINAL_LIVE_VERIFIER_INVENTORY_INVALID",
+    );
+  } finally {
+    rmSync(fixture.repository, { recursive: true, force: true });
+  }
+});
+
+test("inventory bridge rejects missing, unequal, ambiguous and wrong-contract roots", () => {
+  const missing = createInventoryBridgeFixture();
+  try {
+    rmSync(resolve(missing.ue581Root, "metadata", "build-command.json"));
+    assert.throws(
+      () => verifyInventoryBridge(missing.bridgeArgs),
+      (error) =>
+        error instanceof FinalLiveVerifierError &&
+        error.code === "FINAL_LIVE_VERIFIER_BRIDGE_RECORD_INVALID",
+    );
+    assert.throws(
+      () =>
+        createInventoryBridge({
+          ...missing.bridgeArgs,
+          "evidence-root": missing.ue581Root,
+          "ue581-root": missing.root,
+        }),
+      (error) =>
+        error instanceof FinalLiveVerifierError &&
+        error.code === "FINAL_LIVE_VERIFIER_FINAL_ROOT_INVALID",
+    );
+  } finally {
+    rmSync(missing.repository, { recursive: true, force: true });
+  }
+
+  const unequal = createAutomationVerifierFixture();
+  try {
+    createAutomationReportVerification(unequal.args);
+    const packageRoot = resolve(unequal.root, "package", "UAgentAssetTools");
+    mkdirSync(resolve(packageRoot, "Binaries", "Win64"), { recursive: true });
+    writeFileSync(resolve(packageRoot, "UAgentAssetTools.uplugin"), "descriptor");
+    const modulePath = resolve(
+      packageRoot,
+      "Binaries",
+      "Win64",
+      "UnrealEditor-UAgentAssetTools.dll",
+    );
+    writeFileSync(modulePath, "module");
+    const descriptors = [
+      "UAgentAssetTools.uplugin",
+      "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll",
+    ].map((logical) => {
+      const bytes = readFileSync(resolve(packageRoot, ...logical.split("/")));
+      return { path: logical, size: bytes.length, sha256: cryptoHash(bytes) };
+    });
+    writeFileSync(
+      resolve(packageRoot, "UAgentAssetTools.build.json"),
+      `${JSON.stringify({
+        schemaVersion: "uagent.ue-companion-plugin.build-manifest.v3",
+        taskGeneration: "final-d13-d16",
+        taskId: unequal.taskId,
+        sourceCommit: unequal.sourceCommit,
+        sourceTreeSha256: unequal.sourceTreeSha256,
+        dirty: false,
+        artifacts: [...descriptors, descriptors[0]],
+      })}\n`,
+    );
+    for (const logical of SHARED_EVIDENCE_PATHS) {
+      const path = resolve(unequal.root, ...logical.split("/"));
+      if (!existsSync(path)) {
+        mkdirSync(resolve(path, ".."), { recursive: true });
+        writeFileSync(path, "shared");
+      }
+    }
+    const ue581Root = resolve(unequal.external, "mvp15d-ue581-compat-20991230_235959");
+    cpSync(unequal.root, ue581Root, { recursive: true });
+    assert.throws(
+      () => createInventoryBridge({ ...unequal.args, "ue581-root": ue581Root }),
+      (error) =>
+        error instanceof FinalLiveVerifierError &&
+        error.code === "FINAL_LIVE_VERIFIER_PACKAGE_AMBIGUOUS",
+    );
+  } finally {
+    rmSync(unequal.repository, { recursive: true, force: true });
   }
 });
 
