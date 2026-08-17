@@ -5,7 +5,7 @@
 > checkpoint was created. Final Source/Tooling Rework 8 is `COMPLETE` with
 > supervisor `PASS` at implementation commit
 > `98c8b387e1124a519977849d48ab824e4e6bb9c5`; current implementation checkpoint
-> `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa` preserves G14 `IMPLEMENTED` and
+> `33743bb8327b7ca8bdf5aff6469db46503c01c67` preserves G14 `IMPLEMENTED` and
 > G15 `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1
 > compatibility and overall acceptance remain `PARTIAL`; D13 / 15A is
 > `DISPATCHED`; D14 / 15B waits on 15A and D15 / 15C waits on 15A/15B; D16 is `IN_PROGRESS`;
@@ -17,7 +17,7 @@
 > a two-level verification model: persisted cross-binding reports
 > `productionLaunchAuthorityVerified: false`, while only the same-process fixed
 > producer launch can consume the private receipt and report owned launch
-> authority. It preserves the 335-file transitive source boundary with 356
+> authority. It preserves the 336-file transitive source boundary with 357
 > watches, ancestor-reparse rejection, and fail-closed cleanup;
 > these are runtime/source facts, not live compatibility. Real UE, Tool Search,
 > and mutation are `SKIPPED_BY_TASK_BOUNDARY`; mutation remains prohibited.

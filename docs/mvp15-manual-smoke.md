@@ -30,9 +30,12 @@ BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at
 Automation-report BOM repair has `Review Verdict: PASS` at historical
 implementation commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`.
 Resume 6's exact-once creation-FILETIME provenance repair has `Review Verdict:
-PASS` at current implementation commit
+PASS` at historical implementation commit
 `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. The old live lineage was invalidated
 and removed; no manual-smoke gate advanced.
+Resume 7 has `Review Verdict: PASS` for its D16.5 source-only raw-report verifier
+and sealed two-inventory bridge at current implementation commit
+`33743bb8327b7ca8bdf5aff6469db46503c01c67`; it did not run manual smoke.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -99,7 +102,7 @@ read-only supporting evidence.
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is assigned
 to the newly dispatched clean-checkout task based on current implementation
-commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. Real UE, Tool Search,
+commit `33743bb8327b7ca8bdf5aff6469db46503c01c67`. Real UE, Tool Search,
 and mutation were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The
 dispatched live task may enter exact-sandbox 15C mutation only after fresh 15A
 and 15B pass.

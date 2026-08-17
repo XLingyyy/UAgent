@@ -33,10 +33,14 @@ BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at
 Automation-report UTF-8 BOM repair has `Review Verdict: PASS` at historical
 implementation commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`. Resume 6's
 exact-once creation-FILETIME provenance repair has `Review Verdict: PASS` at
-current implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
+historical implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
 The required side-effect scan also has exact negative-case exceptions with
 unsafe-positive self-tests and currently reports zero blocked findings. Future
 engine output changes fail closed until source and tests are updated.
+Final Live Acceptance Resume 7 has `Review Verdict: PASS` for its D16.5
+source-only verifier and inventory bridge at current implementation commit
+`33743bb8327b7ca8bdf5aff6469db46503c01c67`; it intentionally produced no live
+lineage.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -109,7 +113,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. The old
+implementation commit `33743bb8327b7ca8bdf5aff6469db46503c01c67`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

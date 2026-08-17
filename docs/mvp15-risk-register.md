@@ -36,8 +36,11 @@ Final Live Acceptance Resume 5 has `Review Verdict: PASS` for its source-only
 official Automation-report UTF-8 BOM repair at historical implementation commit
 `7916cf74cb205049e1c8967b9217cb8b64df36ca`. Resume 6 has `Review Verdict: PASS`
 for exact-once creation-FILETIME provenance and required scanner closeout at
-current implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
+historical implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
 The pre-repair lineage was invalidated and removed.
+Resume 7 has `Review Verdict: PASS` for the D16.5 source-only raw-report verifier
+and two-inventory bridge at current implementation commit
+`33743bb8327b7ca8bdf5aff6469db46503c01c67`; no live gate advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -102,7 +105,7 @@ ran; the stale installed binary may fail only with `FINAL_LIVE_RUNTIME_NONZERO`.
 The historical Final Source/Tooling Rework 8 is checkpointed at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. Cleanup is closed and live
 acceptance is dispatched as a separate clean-checkout task based on current
-implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`, with a manifest-backed
+implementation commit `33743bb8327b7ca8bdf5aff6469db46503c01c67`, with a manifest-backed
 build and a new strict evidence root. Exact-sandbox 15C mutation remains gated
 until fresh 15A and 15B pass inside that authorized task.
 
@@ -151,7 +154,7 @@ MVP15D source-checkpoint risks above or supply current D0-D12 evidence.
 
 ## Current Conclusion
 
-D13 / 15A is `DISPATCHED` from `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. Final Pre-live Source Closure Rework 7 is historical
+D13 / 15A is `DISPATCHED` from `33743bb8327b7ca8bdf5aff6469db46503c01c67`. Final Pre-live Source Closure Rework 7 is historical
 `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
 `Review Verdict: NEEDS_FIX` for deterministic Tauri destroy/build ordering.
 Rework 9 is the historical accepted base at
@@ -164,10 +167,12 @@ repair has `Review Verdict: PASS` at implementation commit
 at `0b47dd41e92f941f87c45c5694ec75d2cc932771`, Resume 4 descriptor verification
 is accepted at `a780fc4231b99b39153fb88c9ab460717610b3f3`, Resume 5
 Automation-report BOM handling is accepted at
-`7916cf74cb205049e1c8967b9217cb8b64df36ca`, and current Resume 6 provenance
+`7916cf74cb205049e1c8967b9217cb8b64df36ca`, and Resume 6 provenance
 handling is accepted at `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. The resumed
 scan's historical mtime drift actor remains unconfirmed; authorized exact-manifest
 cleanup removed all 4,601 roots with zero residual and closed that external gate.
+Resume 7's verifier and inventory bridge are accepted at current implementation
+commit `33743bb8327b7ca8bdf5aff6469db46503c01c67`.
 The separate
 2026-08-03 Final Source/Tooling Rework 8
 is a historical `COMPLETE / PASS` checkpoint. G14 is `IMPLEMENTED`, current

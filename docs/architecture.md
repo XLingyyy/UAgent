@@ -31,10 +31,15 @@ BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at
 Automation-report UTF-8 BOM repair has `Review Verdict: PASS` at historical
 implementation commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`. Resume 6's
 exact-once creation-FILETIME provenance repair has `Review Verdict: PASS` at
-current implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
+historical implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
 The generic retention transform now hashes and names the validated early-process
 FILETIME once; strict report JSON/matrix and loaded-process authority remain
 unchanged.
+Final Live Acceptance Resume 7 has `Review Verdict: PASS` for its D16.5
+source-only stop at current implementation commit
+`33743bb8327b7ca8bdf5aff6469db46503c01c67`. The checkpoint independently binds
+the raw official report and seals a deterministic bridge across the distinct
+final-runner and UE581 inventories; no live gate advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current source-checkpoint G15 integrity is `COMPLETE`; G16 is
@@ -84,7 +89,7 @@ fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The form
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
 fail only with `FINAL_LIVE_RUNTIME_NONZERO`. Cleanup is closed and an authorized
 clean-checkout run from current implementation commit
-`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa` is dispatched for the 15A restart.
+`33743bb8327b7ca8bdf5aff6469db46503c01c67` is dispatched for the 15A restart.
 
 The implemented trust-chain source path is:
 
@@ -217,7 +222,7 @@ session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
 Full read-only compatibility is assigned to the newly dispatched clean-checkout
 task based on current implementation commit
-`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
+`33743bb8327b7ca8bdf5aff6469db46503c01c67`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted

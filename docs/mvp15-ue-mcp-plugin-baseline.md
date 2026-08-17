@@ -28,8 +28,11 @@ BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at
 Automation-report UTF-8 BOM repair has `Review Verdict: PASS` at historical
 implementation commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`. Resume 6's
 exact-once creation-FILETIME provenance repair has `Review Verdict: PASS` at
-current implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
-Its prior live lineage was invalidated and removed.
+historical implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
+Its prior live lineage was invalidated and removed. Resume 7 has `Review Verdict:
+PASS` for its D16.5 source-only raw-report verifier and sealed final-runner/UE581
+inventory bridge at current implementation commit
+`33743bb8327b7ca8bdf5aff6469db46503c01c67`; no live gate advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -122,7 +125,7 @@ not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
 A new clean-checkout task based on current implementation commit
-`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa` is dispatched for the full UE 5.8.1
+`33743bb8327b7ca8bdf5aff6469db46503c01c67` is dispatched for the full UE 5.8.1
 compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
 15B pass inside that authorized task.
 

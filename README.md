@@ -5,10 +5,12 @@ AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent p
 ## Current Stage: MVP15D - Final 15A-15C/D16 Live Acceptance
 
 The current accepted production implementation checkpoint is
-`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. It includes Final Live Acceptance
+`33743bb8327b7ca8bdf5aff6469db46503c01c67`. It includes Final Live Acceptance
 Resume 3 Rework 1's live-owner/restart repair, Resume 4's BuildPlugin descriptor
 verifier repair, Resume 5's official Automation-report UTF-8 BOM repair, and
-Resume 6's exact-once creation-FILETIME provenance repair.
+Resume 6's exact-once creation-FILETIME provenance repair. Resume 7 adds the
+independent raw Automation-report verifier and the sealed final-runner/UE581
+inventory bridge required before a fresh live lineage may be accepted.
 Live product and UI children now receive an isolated UE
 editor bridge/launch gate and an absolute UE root; capability-only, UE
 Automation and N2 children cannot inherit that authority, and asset mutation
@@ -132,7 +134,7 @@ evidence was produced. The latest source delta invalidates the previous release 
 all earlier 15A-15C evidence. The installed release capability gate remains
 open; the invalid Resume 2 cleanup gate is closed and a fresh 15A restart is
 dispatched from a clean checkout of
-`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
+`33743bb8327b7ca8bdf5aff6469db46503c01c67`.
 
 The last verified pre-checkpoint Tauri build embedded
 `uagent.mvp15d.source-identity.v2`: base/compiled commit
@@ -140,14 +142,14 @@ The last verified pre-checkpoint Tauri build embedded
 `sourceDirty: true`, and SHA-256
 `ccf061de9f2583d26b9562a9739255f04b288c84672603424859c04fee686099`
 over its complete 335-file
-`uagent.mvp15d.production-source-boundary.v2`. The current source-only candidate
-adds the independent final-live verifier, so its boundary contains 336
+`uagent.mvp15d.production-source-boundary.v2`. The accepted Resume 7 source
+checkpoint adds the independent final-live verifier, so its boundary contains 336
 production files discovered from 14 approved roots plus 28 exact files;
 9 exact exclusion classes account for 126 excluded entries. Tests, docs,
 workflow data, build output, evidence, caches, logs, installers, secrets, and
 external roots stay outside it. A new production file is included
 automatically, and deletion of a tracked production file marks the identity
-dirty. The current candidate's `build.rs` watch set contains 357 entries,
+dirty. The accepted checkpoint's `build.rs` watch set contains 357 entries,
 including normal or linked-worktree Git metadata, symbolic or detached HEAD,
 loose refs, and packed refs. The historical 2026-08-03 checkpoint closed its
 then-current G15 scope, and Rework 9 is checkpointed at
@@ -157,10 +159,11 @@ at `25d1262528e0976d24f96056975fdb36bc790b77`, the live-owner repair at
 `0b47dd41e92f941f87c45c5694ec75d2cc932771`, and the Resume 4 BuildPlugin
 descriptor verifier repair at `a780fc4231b99b39153fb88c9ab460717610b3f3`.
 The historical Automation-report BOM repair is checkpointed at
-`7916cf74cb205049e1c8967b9217cb8b64df36ca`. The current exact-once UE process
+`7916cf74cb205049e1c8967b9217cb8b64df36ca`. The exact-once UE process
 provenance repair is checkpointed at
-`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`; a separate clean-checkout rebuild
-from this checkpoint restarts G16 and D13 / 15A.
+`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. The current final-live evidence
+verifier source checkpoint is `33743bb8327b7ca8bdf5aff6469db46503c01c67`;
+a separate clean-checkout rebuild from this checkpoint restarts G16 and D13 / 15A.
 
 The loaded-module publisher still has one write-capable production path. It
 publishes only after the owned live process is re-observed and the private
@@ -212,7 +215,7 @@ predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root was created.
 Full compatibility and acceptance are assigned to the newly dispatched
 clean-checkout task based on current implementation commit
-`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
+`33743bb8327b7ca8bdf5aff6469db46503c01c67`.
 Real UE, Tool Search, and mutation
 were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The dispatched live
 task may enter exact-sandbox 15C mutation only after fresh 15A and 15B pass.

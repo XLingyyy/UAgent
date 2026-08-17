@@ -22,11 +22,14 @@ removed, so installed/load/live acceptance remains open.
 Final Live Acceptance Resume 5 has `Review Verdict: PASS` for official
 Automation-report BOM handling at historical implementation commit
 `7916cf74cb205049e1c8967b9217cb8b64df36ca`. Resume 6 has `Review Verdict: PASS`
-for exact-once creation-FILETIME provenance at current implementation commit
+for exact-once creation-FILETIME provenance at historical implementation commit
 `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. Neither repair changes the package
 or manifest contract; the pre-repair live lineage was invalidated and removed.
+Resume 7 has `Review Verdict: PASS` for its D16.5 source-only evidence verifier
+and inventory bridge at current implementation commit
+`33743bb8327b7ca8bdf5aff6469db46503c01c67`; the package contract remains unchanged.
 
-The current source-only candidate identity uses
+The current accepted source-checkpoint identity uses
 `uagent.mvp15d.production-source-boundary.v2`: 336 production files discovered
 from 14 roots plus 28 exact files, 9 exclusion classes, 126 excluded entries,
 and 357 source/Git watches. It includes the companion source, resources,
@@ -208,5 +211,5 @@ checkpoint review.
 
 No clean current manifest, installed/loaded equality proof, or live exact-six
 fingerprint exists. Those facts must be produced from implementation commit
-`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa` in a separate clean-checkout live
+`33743bb8327b7ca8bdf5aff6469db46503c01c67` in a separate clean-checkout live
 acceptance task.
