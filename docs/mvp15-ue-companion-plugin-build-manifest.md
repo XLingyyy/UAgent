@@ -20,9 +20,11 @@ confirmed the rewrite contract; the pre-repair lineage was invalidated and
 removed, so installed/load/live acceptance remains open.
 
 Final Live Acceptance Resume 5 has `Review Verdict: PASS` for official
-Automation-report BOM handling at current implementation commit
-`7916cf74cb205049e1c8967b9217cb8b64df36ca`. It does not change the package or
-manifest contract; the pre-repair live lineage was invalidated and removed.
+Automation-report BOM handling at historical implementation commit
+`7916cf74cb205049e1c8967b9217cb8b64df36ca`. Resume 6 has `Review Verdict: PASS`
+for exact-once creation-FILETIME provenance at current implementation commit
+`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. Neither repair changes the package
+or manifest contract; the pre-repair live lineage was invalidated and removed.
 
 The compiled pre-checkpoint identity uses
 `uagent.mvp15d.production-source-boundary.v2`: 335 production files discovered
@@ -206,5 +208,5 @@ checkpoint review.
 
 No clean current manifest, installed/loaded equality proof, or live exact-six
 fingerprint exists. Those facts must be produced from implementation commit
-`7916cf74cb205049e1c8967b9217cb8b64df36ca` in a separate clean-checkout live
+`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa` in a separate clean-checkout live
 acceptance task.

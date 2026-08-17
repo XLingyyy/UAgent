@@ -1,6 +1,6 @@
 # MVP15 Native Authority Binding Rework Handoff
 
-## Current MVP15D Final 15A-15C/D16 Live Acceptance Handoff — 2026-08-14
+## Current MVP15D Final 15A-15C/D16 Live Acceptance Handoff — 2026-08-17
 
 Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
@@ -30,9 +30,12 @@ the official descriptor transformation boundary. That source-only repair has
 manifest lineage was removed and cannot be reused.
 Resume 5 then reached a successful official three-test Automation report but
 failed on its UTF-8 BOM. The source-only BOM parser repair has `Review Verdict:
-PASS` at current implementation commit
-`7916cf74cb205049e1c8967b9217cb8b64df36ca`; its invalidated live lineage was
-removed and cannot be reused.
+PASS` at historical implementation commit
+`7916cf74cb205049e1c8967b9217cb8b64df36ca`. Resume 6 reached the same official
+matrix and canonical loaded authority, then failed on a double-retained creation
+FILETIME key. Its exact-once provenance/scanner repair has `Review Verdict: PASS`
+at current implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
+Both invalidated live lineages were removed and cannot be reused.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -44,7 +47,7 @@ The verified release binary truthfully reported a
 dirty pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
 transitive production boundary. Cleanup is closed and a separate clean-checkout
 rebuild from current implementation commit
-`7916cf74cb205049e1c8967b9217cb8b64df36ca` is dispatched for G16 and D13 /
+`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa` is dispatched for G16 and D13 /
 15A.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
@@ -278,7 +281,7 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 - A sealed final package and live manifest/install/load equality after cleanup,
   from a clean checkout of current implementation commit
-  `7916cf74cb205049e1c8967b9217cb8b64df36ca`.
+  `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
 - Fresh current-task UE Automation output, exact-six product-adapter capture,
   and rendered product-UI happy/negative/replay/cleanup evidence.
 - A retained final inventory produced and verified from those live source
@@ -318,9 +321,10 @@ implementation commit `de248a7028d21c53c26db7b28930d583566580a6`. Current Resume
 Rework 3 privacy repair has `Review Verdict: PASS` at implementation commit
 `25d1262528e0976d24f96056975fdb36bc790b77`. Resume 3 Rework 1 is accepted at
 `0b47dd41e92f941f87c45c5694ec75d2cc932771`, Resume 4 descriptor verification
-is accepted at `a780fc4231b99b39153fb88c9ab460717610b3f3`, and current Resume 5
-Automation-report BOM handling is accepted at
-`7916cf74cb205049e1c8967b9217cb8b64df36ca`. Authorized exact-manifest cleanup
+is accepted at `a780fc4231b99b39153fb88c9ab460717610b3f3`, Resume 5 Automation-report
+BOM handling is accepted at `7916cf74cb205049e1c8967b9217cb8b64df36ca`,
+and current Resume 6 provenance handling is accepted at
+`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. Authorized exact-manifest cleanup
 removed all 4,601 TEMP roots with zero residual; its external gate is `PASS`. The separate
 2026-08-03 Final Source/Tooling Rework 8
 is a historical `COMPLETE / PASS` checkpoint at
@@ -330,5 +334,5 @@ D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A and
 D15 / 15C waits on 15A/15B; D16 remains `IN_PROGRESS`; real UE 5.8.1
 compatibility and overall acceptance remain `PARTIAL`; Ready remains `NO`. The
 clean-checkout run must use current implementation commit
-`7916cf74cb205049e1c8967b9217cb8b64df36ca`. Exact-sandbox 15C mutation is
+`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. Exact-sandbox 15C mutation is
 authorized only after fresh 15A and 15B pass inside that dispatched task.

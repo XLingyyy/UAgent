@@ -30,10 +30,13 @@ Final Live Acceptance Resume 3 Rework 1 has `Review Verdict: PASS` at
 `0b47dd41e92f941f87c45c5694ec75d2cc932771`; Resume 4's source-only UE 5.8
 BuildPlugin descriptor verifier repair has `Review Verdict: PASS` at
 `a780fc4231b99b39153fb88c9ab460717610b3f3`. Resume 5's official
-Automation-report UTF-8 BOM repair has `Review Verdict: PASS` at current
-implementation commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`. One leading
-decoded BOM is accepted; strict JSON/matrix validation and raw-byte hashing stay
-unchanged. Future engine output changes fail closed until source and tests are updated.
+Automation-report UTF-8 BOM repair has `Review Verdict: PASS` at historical
+implementation commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`. Resume 6's
+exact-once creation-FILETIME provenance repair has `Review Verdict: PASS` at
+current implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
+The required side-effect scan also has exact negative-case exceptions with
+unsafe-positive self-tests and currently reports zero blocked findings. Future
+engine output changes fail closed until source and tests are updated.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -106,7 +109,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`. The old
+implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 
@@ -160,6 +163,12 @@ node scripts/mvp15d-final-runner.mjs <preflight|build-plan|build|manifest-create
 node scripts/mvp15d-ue581-evidence-inventory.mjs <create|verify> <explicit inputs>
 node scripts/mvp15d-icon-validate.mjs
 ```
+
+The final-runner evidence root and `mvp15d-ue581-compat-*` retained bundle are
+separate contracts. Run each inventory command only on its matching root and
+record deterministic hash cross-links. After official UE closeout, independently
+hash the exact raw `captures/ue-automation-report/index.json` and compare it with
+`automation_report_binding.reportSha256` before privacy cleanup.
 
 The runner-owned live adapters are
 `scripts/mvp15d-final-ue-automation-producer.mjs`,

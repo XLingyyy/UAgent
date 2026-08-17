@@ -1,5 +1,30 @@
 # MVP15 Final Verification
 
+## Resume 6 accepted source checkpoint — 2026-08-17
+
+Resume 6 has `Review Verdict: PASS` for its source-only exact-once UE process
+provenance repair at implementation commit
+`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. The canonical diagnostic run
+reached official UE Automation `3 / 3 / 0 / 0`, canonical package/installed/
+loaded identity, unchanged Content and zero process/port closeout, then failed
+because `creationFileTimeUtcBindingSha256` was retained again as
+`creationFileTimeUtcBindingSha256BindingSha256`.
+
+The accepted producer now passes the validated raw early-process FILETIME to the
+generic retention transform, which produces one exact binding. The side-effect
+scan's five accepted negative-context false positives were closed with narrow
+exceptions and unsafe-positive self-tests. Supervisor verification passed final
+tooling `25/25`, source identity `20/20`, UE581 inventory `59/59`, workspace
+`1,675 passed / 3 retained live skips`, typecheck, exact lint/format, diff check,
+and side-effect scan over 2,289 files with zero blocked findings.
+
+Both Resume 6 task roots, its `R:` alias, markers and ports are absent. Every
+diagnostic binary/package/live artifact predates the source repair and remains
+invalid. No 15A, 15B, 15C, D16, real-smoke or Stage Ready gate advanced. Resume
+7 is dispatched from the new implementation checkpoint and must independently
+bind the raw official report hash and keep the final-runner and UE581 inventory
+products separate with deterministic cross-links.
+
 ## Resume 5 accepted source checkpoint — 2026-08-17
 
 Resume 5 has `Review Verdict: PASS` for its source-only official Automation
@@ -130,7 +155,7 @@ live fingerprint, full 15A N1-N8 acceptance root, partial/unknown sequence,
 parent closeout, UE Automation run, live MCP capture, or mutation was executed.
 The stale installed
 release may fail only with `FINAL_LIVE_RUNTIME_NONZERO`. D13/15A is
-`DISPATCHED` from `7916cf74cb205049e1c8967b9217cb8b64df36ca`, D14/15B waits on
+`DISPATCHED` from `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`, D14/15B waits on
 15A, D15/15C waits on 15A/15B, D16 remains `IN_PROGRESS`, G16
 and overall acceptance remain `PARTIAL`, and Ready remains `NO`. Current
 `PASS_REAL_SMOKE` is `NO`.
@@ -1226,7 +1251,7 @@ separate 2026-08-03 Final
 Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
 source-checkpoint G15 integrity is `COMPLETE` at
-`7916cf74cb205049e1c8967b9217cb8b64df36ca`, and G16 is `PARTIAL`. The
+`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
 replace the historical 2026-08-03 Rework 8 checkpoint. No clean current-generation exact-six fingerprint or

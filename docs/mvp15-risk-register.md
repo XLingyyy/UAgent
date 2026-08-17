@@ -33,10 +33,11 @@ Final Live Acceptance Resume 4 has `Review Verdict: PASS` for its source-only UE
 official Installed/EngineVersion/default-field transformation and rejects all
 other semantic drift. The pre-repair lineage was invalidated and removed.
 Final Live Acceptance Resume 5 has `Review Verdict: PASS` for its source-only
-official Automation-report UTF-8 BOM repair at current implementation commit
-`7916cf74cb205049e1c8967b9217cb8b64df36ca`. It accepts one leading decoded BOM,
-retains the original report-byte hash and leaves strict JSON/matrix validation
-unchanged. The pre-repair lineage was invalidated and removed.
+official Automation-report UTF-8 BOM repair at historical implementation commit
+`7916cf74cb205049e1c8967b9217cb8b64df36ca`. Resume 6 has `Review Verdict: PASS`
+for exact-once creation-FILETIME provenance and required scanner closeout at
+current implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
+The pre-repair lineage was invalidated and removed.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -44,6 +45,14 @@ source-checkpoint G15 integrity is `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 c
 acceptance remain `PARTIAL`; D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A
 and D15 / 15C waits on 15A/15B; D16 is `IN_PROGRESS`; Ready is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
+
+Two D16 evidence-contract risks remain open for the dispatched clean run. The
+final-runner root and UE581 retained bundle enforce different root names and
+closures, so they must be separate products with deterministic hash cross-links.
+The raw official Automation `index.json` is not a phase-summary `sourceArtifact`;
+its exact bytes must be independently hashed against
+`automation_report_binding.reportSha256` before privacy cleanup. Missing or
+hand-authored bridging evidence blocks 15A/D16 acceptance.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
 submissions without checkpoints. The supervisor-reviewed Rework 9 implementation makes both actual `App`
@@ -90,7 +99,7 @@ ran; the stale installed binary may fail only with `FINAL_LIVE_RUNTIME_NONZERO`.
 The historical Final Source/Tooling Rework 8 is checkpointed at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. Cleanup is closed and live
 acceptance is dispatched as a separate clean-checkout task based on current
-implementation commit `7916cf74cb205049e1c8967b9217cb8b64df36ca`, with a manifest-backed
+implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`, with a manifest-backed
 build and a new strict evidence root. Exact-sandbox 15C mutation remains gated
 until fresh 15A and 15B pass inside that authorized task.
 
@@ -139,7 +148,7 @@ MVP15D source-checkpoint risks above or supply current D0-D12 evidence.
 
 ## Current Conclusion
 
-D13 / 15A is `DISPATCHED` from `7916cf74cb205049e1c8967b9217cb8b64df36ca`. Final Pre-live Source Closure Rework 7 is historical
+D13 / 15A is `DISPATCHED` from `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. Final Pre-live Source Closure Rework 7 is historical
 `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
 `Review Verdict: NEEDS_FIX` for deterministic Tauri destroy/build ordering.
 Rework 9 is the historical accepted base at
@@ -150,9 +159,10 @@ production-built N2 child smoke at implementation commit
 repair has `Review Verdict: PASS` at implementation commit
 `25d1262528e0976d24f96056975fdb36bc790b77`; Resume 3 Rework 1 remains accepted
 at `0b47dd41e92f941f87c45c5694ec75d2cc932771`, Resume 4 descriptor verification
-is accepted at `a780fc4231b99b39153fb88c9ab460717610b3f3`, and current Resume 5
+is accepted at `a780fc4231b99b39153fb88c9ab460717610b3f3`, Resume 5
 Automation-report BOM handling is accepted at
-`7916cf74cb205049e1c8967b9217cb8b64df36ca`. The resumed
+`7916cf74cb205049e1c8967b9217cb8b64df36ca`, and current Resume 6 provenance
+handling is accepted at `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. The resumed
 scan's historical mtime drift actor remains unconfirmed; authorized exact-manifest
 cleanup removed all 4,601 roots with zero residual and closed that external gate.
 The separate
