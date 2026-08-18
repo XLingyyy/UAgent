@@ -50,7 +50,7 @@
 - G14 documentation consistency: `IMPLEMENTED` after the current evidence and
   stale-state reconciliation.
 - G15 checkpoint integrity: `COMPLETE`; current implementation commit
-  `33743bb8327b7ca8bdf5aff6469db46503c01c67` is recorded by this documentation
+  `af483722d08212374f67bfc756fa34b79e195e8c` is recorded by this documentation
   closeout. Earlier accepted repairs retain their historical scopes.
 - G16 authority provenance and plugin baseline: `PARTIAL`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
@@ -59,7 +59,7 @@
 - Real UE 5.8.1 compatibility: `PARTIAL`; the Rework 2 read-only attempt is
   historical and the full clean-commit matrix remains deferred.
 - D13 / 15A live execution: `DISPATCHED` from a fresh clean checkout of
-  `33743bb8327b7ca8bdf5aff6469db46503c01c67`.
+  `af483722d08212374f67bfc756fa34b79e195e8c`.
 - D14 / 15B: `WAITING_ON_15A`; not run.
 - D15 / 15C: `WAITING_ON_15A_15B`; no asset mutation was attempted.
 - D16: `IN_PROGRESS`.
@@ -150,7 +150,7 @@ cannot satisfy final 15A-15C.
 
 The invalid Resume 2 cleanup gate is closed. A new clean-checkout 5.8.1 task is
 dispatched from current implementation commit
-`33743bb8327b7ca8bdf5aff6469db46503c01c67`, covering
+`af483722d08212374f67bfc756fa34b79e195e8c`, covering
 both Tool Search modes, exact-six/product
 retractions, response framing, clean inventory, and the real loaded-module
 observer. Only a later separately authorized task may consider real 15C

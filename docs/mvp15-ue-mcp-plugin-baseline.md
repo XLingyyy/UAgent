@@ -31,7 +31,7 @@ exact-once creation-FILETIME provenance repair has `Review Verdict: PASS` at
 historical implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
 Its prior live lineage was invalidated and removed. Resume 7 has `Review Verdict:
 PASS` for its D16.5 source-only raw-report verifier and sealed final-runner/UE581
-inventory bridge at current implementation commit
+inventory bridge at implementation commit
 `33743bb8327b7ca8bdf5aff6469db46503c01c67`; no live gate advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
@@ -125,7 +125,7 @@ not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
 A new clean-checkout task based on current implementation commit
-`33743bb8327b7ca8bdf5aff6469db46503c01c67` is dispatched for the full UE 5.8.1
+`af483722d08212374f67bfc756fa34b79e195e8c` is dispatched for the full UE 5.8.1
 compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
 15B pass inside that authorized task.
 

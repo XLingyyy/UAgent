@@ -39,7 +39,7 @@ for exact-once creation-FILETIME provenance and required scanner closeout at
 historical implementation commit `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`.
 The pre-repair lineage was invalidated and removed.
 Resume 7 has `Review Verdict: PASS` for the D16.5 source-only raw-report verifier
-and two-inventory bridge at current implementation commit
+and two-inventory bridge at implementation commit
 `33743bb8327b7ca8bdf5aff6469db46503c01c67`; no live gate advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
@@ -93,7 +93,7 @@ ran; the stale installed binary may fail only with `FINAL_LIVE_RUNTIME_NONZERO`.
 | Workspace-test process stability                      | MITIGATED        | Historical supervisor attempt exited `134`; two consecutive historical Source Checkpoint Rework 7 full-workspace processes exit 0 with identical counts.                                                                                                                                                                                                                                                                                                                                                                      |
 | Default Rust test isolation                           | MITIGATED        | Two consecutive fresh Cargo processes each pass 176 library tests, 2 native invoke bridge tests, and the real hidden Wry integration target.                                                                                                                                                                                                                                                                                                                                                                                  |
 | Final-task runner and inventory coverage              | MITIGATED        | `mvp15d-final-runner.mjs` dispatches fixed UE Automation, normal-product, and rendered-UI adapters, binds native event transcripts, and verifies producer ledgers. The inventory is file/directory allowlisted, redacted, secret/path gated, and independently verified.                                                                                                                                                                                                                                                      |
-| Production runtime bridge reachability                | OPEN             | Resume 8 reached official read-only 15A on the accepted release, then 15B exposed that a canonical local Windows `\\?\X:\...` project root was rejected as `network_path` before rendered validation. The source-only repair candidate maps only that exact form to ordinary `X:/...`, retains double-separator rejection for UNC, verbatim UNC, pseudo and other device namespaces, and sends only the ordinary form through trust, scan and later browser-root resolution. Focused shared `4/4`, adapter `10/10` and Rust `2/2` pass; full workspace `1,678` passed / `3` skipped and Cargo `190 + 2 + 1` pass. A reviewed checkpoint and rebuilt clean-checkout 15A/15B remain required. |
+| Production runtime bridge reachability                | OPEN             | Resume 8 reached official read-only 15A on the accepted release, then 15B exposed that a canonical local Windows `\\?\X:\...` project root was rejected as `network_path` before rendered validation. The accepted repair at `af483722d08212374f67bfc756fa34b79e195e8c` maps only that exact form to ordinary `X:/...`, retains double-separator rejection for UNC, verbatim UNC, pseudo and other device namespaces, and sends only the ordinary form through trust, scan and later browser-root resolution. Focused shared `4/4`, adapter `10/10`, Rust `190/190` and full workspace `1,678/1,678` pass with 3 retained skips. A rebuilt clean-checkout 15A/15B remains required. |
 | Live observation after process exit                   | MITIGATED        | The current source candidate observes the exact PID/creation/listener owner after rendered Disconnect, keeps guardian ownership until root exit, and takes port closeout evidence only after the owned Job reaches zero. Guardian TCP/process/DDC tests pass; a fresh real UE phase remains required.                                                                                                                                                                                                                         |
 | Raw path / secret leakage in the loaded ledger        | MITIGATED        | The ledger binds every R5.2 identity fact, serializes only sorted approved relative module facts, and a raw absolute path anywhere in the ledger is rejected before any write.                                                                                                                                                                                                                                                                                                                                                |
 | Full live runtime semantics                           | OPEN             | Resume 8 established official UE Automation `3 / 3 / 0 / 0`, unchanged Content, canonical package/install/load identity and zero mutation/residue on the pre-repair release. Product capture stopped before rendered validation, so discovery, exact-six, retractions and UI mutation remain open; the source repair invalidates that release for current acceptance.                                                                                                                                                            |
@@ -105,7 +105,7 @@ ran; the stale installed binary may fail only with `FINAL_LIVE_RUNTIME_NONZERO`.
 The historical Final Source/Tooling Rework 8 is checkpointed at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. Cleanup is closed and live
 acceptance is dispatched as a separate clean-checkout task based on current
-implementation commit `33743bb8327b7ca8bdf5aff6469db46503c01c67`, with a manifest-backed
+implementation commit `af483722d08212374f67bfc756fa34b79e195e8c`, with a manifest-backed
 build and a new strict evidence root. Exact-sandbox 15C mutation remains gated
 until fresh 15A and 15B pass inside that authorized task.
 
@@ -154,7 +154,7 @@ MVP15D source-checkpoint risks above or supply current D0-D12 evidence.
 
 ## Current Conclusion
 
-D13 / 15A is `DISPATCHED` from `33743bb8327b7ca8bdf5aff6469db46503c01c67`. Final Pre-live Source Closure Rework 7 is historical
+D13 / 15A is `DISPATCHED` from `af483722d08212374f67bfc756fa34b79e195e8c`. Final Pre-live Source Closure Rework 7 is historical
 `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
 `Review Verdict: NEEDS_FIX` for deterministic Tauri destroy/build ordering.
 Rework 9 is the historical accepted base at
@@ -171,7 +171,7 @@ Automation-report BOM handling is accepted at
 handling is accepted at `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. The resumed
 scan's historical mtime drift actor remains unconfirmed; authorized exact-manifest
 cleanup removed all 4,601 roots with zero residual and closed that external gate.
-Resume 7's verifier and inventory bridge are accepted at current implementation
+Resume 7's verifier and inventory bridge are accepted at historical implementation
 commit `33743bb8327b7ca8bdf5aff6469db46503c01c67`.
 The separate
 2026-08-03 Final Source/Tooling Rework 8

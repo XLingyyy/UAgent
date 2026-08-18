@@ -38,7 +38,7 @@ The required side-effect scan also has exact negative-case exceptions with
 unsafe-positive self-tests and currently reports zero blocked findings. Future
 engine output changes fail closed until source and tests are updated.
 Final Live Acceptance Resume 7 has `Review Verdict: PASS` for its D16.5
-source-only verifier and inventory bridge at current implementation commit
+source-only verifier and inventory bridge at implementation commit
 `33743bb8327b7ca8bdf5aff6469db46503c01c67`; it intentionally produced no live
 lineage.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
@@ -128,7 +128,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `33743bb8327b7ca8bdf5aff6469db46503c01c67`. The old
+implementation commit `af483722d08212374f67bfc756fa34b79e195e8c`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

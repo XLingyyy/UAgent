@@ -36,7 +36,7 @@ The generic retention transform now hashes and names the validated early-process
 FILETIME once; strict report JSON/matrix and loaded-process authority remain
 unchanged.
 Final Live Acceptance Resume 7 has `Review Verdict: PASS` for its D16.5
-source-only stop at current implementation commit
+source-only stop at implementation commit
 `33743bb8327b7ca8bdf5aff6469db46503c01c67`. The checkpoint independently binds
 the raw official report and seals a deterministic bridge across the distinct
 final-runner and UE581 inventories; no live gate advanced.
@@ -89,7 +89,7 @@ fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The form
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
 fail only with `FINAL_LIVE_RUNTIME_NONZERO`. Cleanup is closed and an authorized
 clean-checkout run from current implementation commit
-`33743bb8327b7ca8bdf5aff6469db46503c01c67` is dispatched for the 15A restart.
+`af483722d08212374f67bfc756fa34b79e195e8c` is dispatched for the 15A restart.
 
 The implemented trust-chain source path is:
 
@@ -222,7 +222,7 @@ session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
 Full read-only compatibility is assigned to the newly dispatched clean-checkout
 task based on current implementation commit
-`33743bb8327b7ca8bdf5aff6469db46503c01c67`.
+`af483722d08212374f67bfc756fa34b79e195e8c`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted
