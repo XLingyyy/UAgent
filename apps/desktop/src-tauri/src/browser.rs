@@ -138,7 +138,7 @@ fn classify_file_url(url: &tauri::Url, root_ref: Option<&str>) -> BrowserTargetC
     let Some(root_ref) = root_ref.map(str::trim).filter(|r| !r.is_empty()) else {
         return blocked_classification("file:// preview requires trusted root", true);
     };
-    if root_ref.starts_with("\\\\") || root_ref.starts_with("//") {
+    if crate::is_network_or_unsupported_windows_device_path(root_ref) {
         return blocked_classification("Network trusted roots are blocked", true);
     }
     let normalized_root = crate::normalize_project_path(root_ref);
@@ -488,14 +488,20 @@ mod tests {
         let file = root.join("output").join("report.html");
         std::fs::write(&file, "<html>ok</html>").unwrap();
         let root_str = root.to_str().unwrap().to_string();
+        #[cfg(windows)]
+        let root_ref = root.canonicalize().unwrap().to_string_lossy().to_string();
+        #[cfg(not(windows))]
+        let root_ref = root_str.clone();
+        #[cfg(windows)]
+        assert!(root_ref.starts_with(r"\\?\"));
         let file_url = tauri::Url::from_file_path(&file).unwrap().to_string();
-        let root_hash = crate::hash_path(&crate::normalize_project_path(&root_str));
+        let root_hash = crate::hash_path(&crate::normalize_project_path(&root_ref));
         crate::trusted_roots().lock().unwrap().insert(root_hash);
 
         let result = browser_preview(BrowserPreviewInput {
             url: file_url.clone(),
             task_id: None,
-            root_ref: Some(root_str.clone()),
+            root_ref: Some(root_ref.clone()),
         })
         .unwrap();
         let serialized = serde_json::to_string(&result).unwrap();
@@ -506,6 +512,7 @@ mod tests {
             Some("[local file] report.html")
         );
         assert!(!serialized.contains(&root_str));
+        assert!(!serialized.contains(&root_ref));
         assert!(!serialized.contains(&file_url));
         assert!(!serialized.contains("file://"));
 

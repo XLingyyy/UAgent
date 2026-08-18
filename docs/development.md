@@ -108,6 +108,21 @@ unattributed. Any future matching root is new residue and fails verification.
 `UAGENT_ENABLE_ASSET_MUTATION` remains default-off and is set to `1` only by a
 future fixed live UI child.
 
+On Windows, `std::fs::canonicalize` can return a local project root in verbatim
+drive form (`\\?\X:\...`). Project-root normalization removes only that exact
+local-drive prefix, preserves the ordinary drive/root contract, and stores the
+ordinary `X:/...` form before trust binding or later read-only invokes. UNC,
+verbatim UNC, forward-slash pseudo namespaces and other device paths retain a
+double-separator namespace and remain fail closed; they cannot collapse to a
+`/?/X:/...` pseudo-root. Run the focused boundary regressions from the repository
+root:
+
+```powershell
+pnpm --filter @uagent/shared exec vitest run src/mvp7-policy.test.ts
+pnpm --filter @uagent/desktop exec vitest run web/src/runtime/project-native-adapter.test.ts
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked verbatim
+```
+
 Controlled source and built-child checks exercise the future control flow
 without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old

@@ -4,6 +4,8 @@ import { createDesktopBrowserAdapter } from "./browser-native-adapter";
 import { createDesktopTerminalAdapter } from "./terminal-native-adapter";
 
 const RAW_PATH = "C:/Users/Dev/LyraStarter";
+const VERBATIM_PATH = String.raw`\\?\F:\u8\d\Project`;
+const NORMALIZED_VERBATIM_PATH = "F:/u8/d/Project";
 
 describe("project-native-adapter", () => {
   const nativeDirectories = [
@@ -88,6 +90,150 @@ describe("project-native-adapter", () => {
       previewStatus: "blocked",
     },
   ] as const;
+
+  it("normalizes a canonical verbatim drive before trust and later read-only invokes", async () => {
+    const calls: { command: string; payload: unknown }[] = [];
+    const invoke = async <T,>(command: string, payload: unknown): Promise<T> => {
+      calls.push({ command, payload });
+      if (command === "validate_native_project_root") {
+        return {
+          ok: true,
+          reason: "valid",
+          displayRoot: "[project-root]/Project",
+          projectName: "Project",
+          engine: { label: "UE 5.8", association: "5.8", source: "uproject" },
+        } as T;
+      }
+      if (command === "trust_native_project_root") {
+        return {
+          rootId: "trusted-root:verbatim-project",
+          displayRoot: "[project-root]/Project",
+          trustState: "trusted",
+        } as T;
+      }
+      if (command === "scan_native_project_index") {
+        return {
+          id: "index:verbatim-project",
+          projectId: "trusted-root:verbatim-project",
+          status: "ready",
+          directories: nativeDirectories,
+          files: nativeFiles,
+          assets: nativeAssets,
+          summary: {
+            projectId: "trusted-root:verbatim-project",
+            scannedAt: 8100,
+            status: "ready",
+            directoryCount: nativeDirectories.length,
+            fileCount: nativeFiles.length,
+            assetCount: nativeAssets.length,
+            ignoredCount: 0,
+            limitReasons: [],
+            warnings: [],
+            redactedRoot: "[project-root]/Project",
+          },
+        } as T;
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    };
+    const adapter = createNativeProjectAdapter({ invoke });
+
+    expect((await adapter.validateRoot(VERBATIM_PATH)).ok).toBe(true);
+    const project = await adapter.addProject(VERBATIM_PATH);
+    expect(adapter.resolveRawRoot(project.id, project.rootRef)).toBe(NORMALIZED_VERBATIM_PATH);
+    const trusted = await adapter.confirmTrust(project.id);
+    await adapter.scanProject(trusted.id);
+
+    expect(resolveTrustedNativeRootRef(trusted.id)).toBe(NORMALIZED_VERBATIM_PATH);
+    expect(resolveTrustedNativeRootRef(trusted.rootRef)).toBe(NORMALIZED_VERBATIM_PATH);
+    expect(JSON.stringify(adapter.listProjects())).not.toContain(VERBATIM_PATH);
+    expect(JSON.stringify(adapter.listProjects())).not.toContain("/?/F:/");
+
+    const rootRefs = calls.map(
+      ({ payload }) => (payload as { input?: { rootRef?: string } }).input?.rootRef,
+    );
+    expect(rootRefs).toEqual([
+      VERBATIM_PATH,
+      VERBATIM_PATH,
+      NORMALIZED_VERBATIM_PATH,
+      NORMALIZED_VERBATIM_PATH,
+    ]);
+    expect(JSON.stringify(calls)).not.toContain("/?/F:/");
+
+    let browserPayload: unknown = null;
+    const browserAdapter = createDesktopBrowserAdapter(
+      async <T,>(command: string, payload: unknown): Promise<T> => {
+        if (command !== "browser_preview")
+          throw new Error(`Unexpected browser command: ${command}`);
+        browserPayload = payload;
+        return {
+          sessionId: "session-verbatim-project",
+          url: "[local file] report.html",
+          targetId: "browser-target:verbatim-project",
+          policy: "local_only",
+          blocked: false,
+          reason: "",
+          displayTarget: "[local file] report.html",
+          displayUrl: "[local file] report.html",
+          needsTrustedRoot: true,
+        } as T;
+      },
+    );
+    await browserAdapter.classifyUrl("file:///F:/u8/d/Project/report.html", trusted.rootRef);
+    expect((browserPayload as { input?: { rootRef?: string } }).input?.rootRef).toBe(
+      NORMALIZED_VERBATIM_PATH,
+    );
+
+    const ordinaryAdapter = createNativeProjectAdapter({ invoke });
+    const ordinaryProject = await ordinaryAdapter.addProject(NORMALIZED_VERBATIM_PATH);
+    expect(ordinaryProject.id).toBe(project.id);
+    expect(ordinaryProject.rootRef).toBe(project.rootRef);
+
+    adapter.removeProject(trusted.id);
+    expect(resolveTrustedNativeRootRef(trusted.id)).toBeUndefined();
+    expect(resolveTrustedNativeRootRef(trusted.rootRef)).toBeUndefined();
+  });
+
+  it("keeps UNC and unsupported Windows namespaces outside adapter storage", async () => {
+    const rejectedPaths = [
+      String.raw`\\server\share\Project`,
+      String.raw`\\?\UNC\server\share\Project`,
+      String.raw`\\.\F:\device\Project`,
+      String.raw`\\?\Volume{00000000-0000-0000-0000-000000000000}\Project`,
+      "//?/F:/u8/d/Project",
+    ];
+
+    for (const rejectedPath of rejectedPaths) {
+      const calls: { command: string; payload: unknown }[] = [];
+      const adapter = createNativeProjectAdapter({
+        invoke: async <T,>(command: string, payload: unknown): Promise<T> => {
+          calls.push({ command, payload });
+          return {
+            ok: false,
+            reason: "network_path",
+            displayRoot: "[blocked-root]",
+            projectName: null,
+            engine: { label: "Unknown", association: null, source: "unknown" },
+          } as T;
+        },
+      });
+
+      expect((await adapter.validateRoot(rejectedPath)).reason).toBe("network_path");
+      await expect(adapter.addProject(rejectedPath)).rejects.toThrow(
+        "Invalid project root: network_path",
+      );
+      expect(adapter.listProjects()).toEqual([]);
+      expect(calls.map(({ command }) => command)).toEqual([
+        "validate_native_project_root",
+        "validate_native_project_root",
+      ]);
+      expect(
+        calls.every(
+          ({ payload }) =>
+            (payload as { input?: { rootRef?: string } }).input?.rootRef === rejectedPath,
+        ),
+      ).toBe(true);
+    }
+  });
 
   it("routes trusted real project operations through the MVP8 Tauri commands", async () => {
     const calls: { command: string; payload: unknown }[] = [];

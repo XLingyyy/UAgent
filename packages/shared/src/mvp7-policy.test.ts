@@ -53,6 +53,34 @@ describe("MVP7 shared project and capability contracts", () => {
     expect(isInsideProjectRoot(root, normalizeProjectPath("C:/Projects/LyraSymlink/Content/Hero.uasset"))).toBe(false);
   });
 
+  it("normalizes only Windows verbatim local drives into the ordinary drive contract", () => {
+    const ordinary = "F:/u8/d/Project";
+    const verbatim = String.raw`\\?\F:\u8\d\Project`;
+
+    expect(normalizeProjectPath(verbatim)).toBe(ordinary);
+    expect(normalizeProjectPath(String.raw`\\?\F:\u8\.\stage\..\d\Project`)).toBe(ordinary);
+    expect(normalizeProjectPath("\\\\?\\f:\\")).toBe("f:/");
+    expect(normalizeProjectPath("f:/")).toBe("f:/");
+    expect(
+      isInsideProjectRoot(verbatim, String.raw`\\?\F:\u8\d\Project\Config\DefaultGame.ini`),
+    ).toBe(true);
+    expect(redactPathForUi(String.raw`\\?\C:\Users\Ada\Projects\Lyra`)).toBe(
+      redactPathForUi("C:/Users/Ada/Projects/Lyra"),
+    );
+
+    for (const unsupported of [
+      String.raw`\\server\share\Project`,
+      String.raw`\\?\UNC\server\share\Project`,
+      String.raw`\\.\F:\device\Project`,
+      String.raw`\\?\Volume{00000000-0000-0000-0000-000000000000}\Project`,
+      "//?/F:/u8/d/Project",
+    ]) {
+      const normalized = normalizeProjectPath(unsupported);
+      expect(normalized.startsWith("//")).toBe(true);
+      expect(normalized).not.toMatch(/^\/\?\/[A-Za-z]:/);
+    }
+  });
+
   it("applies ignore directories, preview allowlist, and UI path redaction", () => {
     expect(shouldIgnoreProjectPath("Content/Hero.uasset")).toBe(false);
     expect(shouldIgnoreProjectPath("Saved/Logs/session.log")).toBe(true);

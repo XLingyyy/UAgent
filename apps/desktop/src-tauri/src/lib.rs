@@ -350,7 +350,7 @@ pub struct ProjectRootValidationResult {
 #[tauri::command]
 fn validate_native_project_root(input: ProjectRootValidationInput) -> ProjectRootValidationResult {
     let raw = input.root_ref.trim();
-    if raw.starts_with("//") || raw.starts_with("\\\\") {
+    if is_network_or_unsupported_windows_device_path(raw) {
         return blocked_result("network_path", raw);
     }
     let normalized = normalize_project_path(&input.root_ref);
@@ -686,7 +686,7 @@ fn preview_native_project_file(
         return Ok(blocked_preview("unknown_project"));
     }
     let raw_root = input.root_ref.trim();
-    if raw_root.starts_with("//") || raw_root.starts_with("\\\\") {
+    if is_network_or_unsupported_windows_device_path(raw_root) {
         return Ok(blocked_preview("invalid_root"));
     }
     let normalized_root = normalize_project_path(&input.root_ref);
@@ -869,8 +869,45 @@ fn blocked_preview(reason: &str) -> PreviewProjectFileResult {
     }
 }
 
+fn windows_verbatim_drive_path(path: &str) -> Option<&str> {
+    let bytes = path.as_bytes();
+    if bytes.len() >= 7
+        && bytes[0] == b'\\'
+        && bytes[1] == b'\\'
+        && bytes[2] == b'?'
+        && bytes[3] == b'\\'
+        && bytes[4].is_ascii_alphabetic()
+        && bytes[5] == b':'
+        && bytes[6] == b'\\'
+    {
+        Some(&path[4..])
+    } else {
+        None
+    }
+}
+
+fn is_network_or_unsupported_windows_device_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    let has_double_leading_separator = bytes.len() >= 2
+        && (bytes[0] == b'/' || bytes[0] == b'\\')
+        && (bytes[1] == b'/' || bytes[1] == b'\\');
+    windows_verbatim_drive_path(path).is_none() && has_double_leading_separator
+}
+
 pub(crate) fn normalize_project_path(path: &str) -> String {
-    let raw = path.trim().replace('\\', "/");
+    let trimmed = path.trim();
+    let verbatim_drive_path = windows_verbatim_drive_path(trimmed);
+    let unsupported_namespace = verbatim_drive_path.is_none()
+        && trimmed
+            .as_bytes()
+            .get(..2)
+            .map(|prefix| {
+                (prefix[0] == b'/' || prefix[0] == b'\\')
+                    && (prefix[1] == b'/' || prefix[1] == b'\\')
+            })
+            .unwrap_or(false);
+    let local_path = verbatim_drive_path.unwrap_or(trimmed);
+    let raw = local_path.replace('\\', "/");
     if raw.starts_with("fixture://") {
         return raw.trim_end_matches('/').to_string();
     }
@@ -905,6 +942,12 @@ pub(crate) fn normalize_project_path(path: &str) -> String {
             format!("{}/", d)
         } else {
             format!("{}/{}", d, segments.join("/"))
+        }
+    } else if unsupported_namespace {
+        if segments.is_empty() {
+            "//".to_string()
+        } else {
+            format!("//{}", segments.join("/"))
         }
     } else if unix_absolute {
         if segments.is_empty() {
@@ -2557,6 +2600,79 @@ mod tests {
         assert_eq!(result.reason, "valid");
         assert_eq!(result.project_name.as_deref(), Some("SampleNativeProject"));
         assert_eq!(result.engine.source, "uproject");
+    }
+
+    #[test]
+    fn windows_verbatim_drive_paths_normalize_without_allowing_unc_paths() {
+        assert_eq!(
+            normalize_project_path(r"\\?\F:\project\.\stage\..\FinalHost"),
+            "F:/project/FinalHost"
+        );
+        assert_eq!(normalize_project_path(r"\\?\f:\"), "f:/");
+        assert_eq!(
+            hash_path(&normalize_project_path(r"\\?\F:\project\FinalHost")),
+            hash_path(&normalize_project_path("F:/project/FinalHost"))
+        );
+        assert_eq!(
+            redact_path_for_ui(r"\\?\C:\Users\Ada\Project"),
+            redact_path_for_ui("C:/Users/Ada/Project")
+        );
+        assert!(!is_network_or_unsupported_windows_device_path(
+            r"\\?\F:\project\FinalHost"
+        ));
+        for unsupported in [
+            r"\\server\share\FinalHost",
+            r"\\?\UNC\server\share\FinalHost",
+            r"\\.\F:\device\FinalHost",
+            r"\\?\Volume{00000000-0000-0000-0000-000000000000}\FinalHost",
+            "//?/F:/project/FinalHost",
+        ] {
+            assert!(is_network_or_unsupported_windows_device_path(unsupported));
+            let normalized = normalize_project_path(unsupported);
+            assert!(normalized.starts_with("//"));
+            assert!(!normalized.starts_with("/?/F:/"));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn real_project_validation_and_trust_accept_verbatim_local_root() {
+        let _test_guard = reset_shared_registries_for_test();
+        trusted_roots().lock().unwrap().clear();
+        let root = create_real_project_validation_test_root();
+        let canonical_root = root.path.canonicalize().unwrap();
+        let root_ref = canonical_root.to_string_lossy().to_string();
+        assert!(root_ref.starts_with(r"\\?\"));
+
+        let validation = validate_native_project_root(ProjectRootValidationInput {
+            root_ref: root_ref.clone(),
+        });
+        assert!(validation.ok);
+        assert_eq!(validation.reason, "valid");
+        assert_eq!(
+            validation.project_name.as_deref(),
+            Some("SampleNativeProject")
+        );
+
+        let trusted = trust_native_project_root(TrustRootInput {
+            root_ref: root_ref.clone(),
+        })
+        .unwrap();
+        assert_eq!(
+            resolve_trusted_root_binding(&root_ref).unwrap().root_id,
+            trusted.root_id
+        );
+
+        let preview = preview_native_project_file(PreviewProjectFileInput {
+            project_id: trusted.root_id,
+            root_ref,
+            root_relative_path: "SampleNativeProject.uproject".to_string(),
+            byte_limit: 4096,
+            line_limit: 80,
+        })
+        .unwrap();
+        assert_eq!(preview.status, "ready");
+        assert_eq!(preview.reason, "allowed_text_preview");
     }
 
     #[test]

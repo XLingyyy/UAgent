@@ -212,14 +212,43 @@ const DEFAULT_TEXT_EXTENSIONS = [
   ".md",
 ] as const;
 
+function windowsVerbatimDrivePath(path: string): string | null {
+  if (
+    path.length >= 7 &&
+    path.startsWith("\\\\?\\") &&
+    /^[A-Za-z]$/.test(path[4] ?? "") &&
+    path[5] === ":" &&
+    path[6] === "\\"
+  ) {
+    return path.slice(4);
+  }
+  return null;
+}
+
+function hasDoubleLeadingSeparator(path: string): boolean {
+  const isSeparator = (value: string | undefined) => value === "/" || value === "\\";
+  return isSeparator(path[0]) && isSeparator(path[1]);
+}
+
 export function normalizeProjectPath(path: string): string {
-  const raw = path.trim().replace(/\\/g, "/");
+  const trimmedInput = path.trim();
+  const verbatimDrivePath = windowsVerbatimDrivePath(trimmedInput);
+  const localPath = verbatimDrivePath ?? trimmedInput;
+  const unsupportedNamespace =
+    verbatimDrivePath === null && hasDoubleLeadingSeparator(trimmedInput);
+  const raw = localPath.replace(/\\/g, "/");
   if (raw.startsWith("fixture://")) return raw.replace(/\/+$/g, "");
   const trimmed = raw.replace(/\/+/g, "/");
   if (!trimmed) return "";
 
   const driveMatch = trimmed.match(/^([A-Za-z]:)(\/.*)?$/);
-  const prefix = driveMatch ? `${driveMatch[1]}/` : trimmed.startsWith("/") ? "/" : "";
+  const prefix = driveMatch
+    ? `${driveMatch[1]}/`
+    : unsupportedNamespace
+      ? "//"
+      : trimmed.startsWith("/")
+        ? "/"
+        : "";
   const body = driveMatch ? (driveMatch[2] ?? "/").slice(1) : trimmed.replace(/^\/+/, "");
   const segments: string[] = [];
   for (const segment of body.split("/")) {
@@ -230,6 +259,7 @@ export function normalizeProjectPath(path: string): string {
     }
     segments.push(segment);
   }
+  if (driveMatch && segments.length === 0) return prefix;
   const normalized = `${prefix}${segments.join("/")}`;
   return normalized.replace(/\/+$/g, "") || prefix || ".";
 }
