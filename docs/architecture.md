@@ -42,11 +42,17 @@ the raw official report and seals a deterministic bridge across the distinct
 final-runner and UE581 inventories; no live gate advanced.
 Final Live Acceptance Resume 8 Rework 1 has `Review Verdict: PASS` at historical
 implementation commit `af483722d08212374f67bfc756fa34b79e195e8c`. Resume 9 has
-`Review Verdict: PASS` at current implementation commit
+`Review Verdict: PASS` at historical implementation commit
 `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`: the task-owned managed UE guardian
 now launches with `-NullRHI` while retaining the same isolated DDC, loopback MCP
 port, marker and process-identity ownership. The pre-repair 15A/15B lineage is
 partial evidence and does not advance a current-source live gate.
+Resume 10 has `Review Verdict: PASS` at current implementation commit
+`4b6e2fa35ad999882dd3b50d697ab7cb36a1552e`. Its clean pre-repair run reached
+rendered `confirmTrust` and exposed a strict package-manifest cardinality mismatch:
+the UE companion omitted `Resources/mvp15d-native-binding-v2.json` from its exact
+six-artifact allowlist. Production and its exact-manifest test fixture now accept
+that sealed artifact without weakening hash or directory-closure verification.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current source-checkpoint G15 integrity is `COMPLETE`; G16 is
@@ -96,7 +102,7 @@ fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The form
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
 fail only with `FINAL_LIVE_RUNTIME_NONZERO`. Cleanup is closed and an authorized
 clean-checkout run from current implementation commit
-`51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46` is dispatched for the 15A restart.
+`4b6e2fa35ad999882dd3b50d697ab7cb36a1552e` is dispatched for the 15A restart.
 
 The implemented trust-chain source path is:
 
@@ -229,7 +235,7 @@ session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
 Full read-only compatibility is assigned to the newly dispatched clean-checkout
 task based on current implementation commit
-`51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`.
+`4b6e2fa35ad999882dd3b50d697ab7cb36a1552e`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted

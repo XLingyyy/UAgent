@@ -43,10 +43,15 @@ source-only verifier and inventory bridge at implementation commit
 lineage.
 Final Live Acceptance Resume 8 Rework 1 remains accepted at historical
 implementation commit `af483722d08212374f67bfc756fa34b79e195e8c`. Resume 9 has
-`Review Verdict: PASS` at current implementation commit
+`Review Verdict: PASS` at historical implementation commit
 `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`; the managed UE guardian now uses
 the same `-NullRHI` headless contract as repository Automation and product
 adapter launchers. Its pre-repair live output is partial evidence only.
+Resume 10 has `Review Verdict: PASS` at current implementation commit
+`4b6e2fa35ad999882dd3b50d697ab7cb36a1552e`. The UE companion's strict package
+identity now includes `Resources/mvp15d-native-binding-v2.json` in the exact
+allowlist, and the production-manifest test candidate copies the same artifact.
+The pre-repair Resume 10 release and live output remain partial evidence only.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -134,7 +139,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`. The old
+implementation commit `4b6e2fa35ad999882dd3b50d697ab7cb36a1552e`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

@@ -35,10 +35,15 @@ inventory bridge at implementation commit
 `33743bb8327b7ca8bdf5aff6469db46503c01c67`; no live gate advanced.
 Resume 8 Rework 1 remains accepted at historical implementation commit
 `af483722d08212374f67bfc756fa34b79e195e8c`. Resume 9 has `Review Verdict: PASS`
-at current implementation commit `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`.
+at historical implementation commit `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`.
 Its task-owned managed UE guardian now includes `-NullRHI`; retained real UE
 diagnostics establish listener readiness and read-only Automation for the repair,
 while the pre-repair live lineage remains partial evidence.
+Resume 10 has `Review Verdict: PASS` at current implementation commit
+`4b6e2fa35ad999882dd3b50d697ab7cb36a1552e`. The companion's strict package
+identity now expects the sealed `Resources/mvp15d-native-binding-v2.json` as the
+sixth artifact, and the exact-manifest test fixture copies it. The pre-repair
+clean package and rendered path are diagnostic only.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -131,7 +136,7 @@ not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
 A new clean-checkout task based on current implementation commit
-`51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46` is dispatched for the full UE 5.8.1
+`4b6e2fa35ad999882dd3b50d697ab7cb36a1552e` is dispatched for the full UE 5.8.1
 compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
 15B pass inside that authorized task.
 
