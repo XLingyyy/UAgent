@@ -361,9 +361,11 @@ namespace
 		Candidate.ManifestPath = FPaths::Combine(Candidate.Root, TEXT("UAgentAssetTools.build.json"));
 		const FString CandidateUplugin = FPaths::Combine(Candidate.Root, TEXT("UAgentAssetTools.uplugin"));
 		const FString CandidateSchema = FPaths::Combine(CandidateResources, TEXT("uagent-asset-tools.schema.json"));
+		const FString CandidateNativeBinding = FPaths::Combine(CandidateResources, TEXT("mvp15d-native-binding-v2.json"));
 		if (FileManager.Copy(*Candidate.ManifestPath, *SourceManifest) != COPY_OK
 			|| FileManager.Copy(*CandidateUplugin, *FPaths::Combine(SourceRoot, TEXT("UAgentAssetTools.uplugin"))) != COPY_OK
-			|| FileManager.Copy(*CandidateSchema, *FPaths::Combine(SourceRoot, TEXT("Resources/uagent-asset-tools.schema.json"))) != COPY_OK)
+			|| FileManager.Copy(*CandidateSchema, *FPaths::Combine(SourceRoot, TEXT("Resources/uagent-asset-tools.schema.json"))) != COPY_OK
+			|| FileManager.Copy(*CandidateNativeBinding, *FPaths::Combine(SourceRoot, TEXT("Resources/mvp15d-native-binding-v2.json"))) != COPY_OK)
 		{
 			return Candidate;
 		}

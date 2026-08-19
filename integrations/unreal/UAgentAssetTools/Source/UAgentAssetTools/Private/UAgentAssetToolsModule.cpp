@@ -709,6 +709,7 @@ TSharedPtr<FJsonObject> FUAgentAssetToolsModule::LoadBuildIdentityCandidateInter
 	}
 	TSet<FString> ExpectedPackagePaths = {
 		TEXT("UAgentAssetTools.uplugin"),
+		TEXT("Resources/mvp15d-native-binding-v2.json"),
 		TEXT("Resources/uagent-asset-tools.schema.json"),
 		TEXT("Binaries/Win64/UnrealEditor.modules"),
 	};
