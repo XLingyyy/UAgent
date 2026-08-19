@@ -7,6 +7,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
 #[cfg(not(test))]
 use std::io::Read;
@@ -1460,15 +1461,9 @@ fn run_managed_editor_guardian() -> Result<(), String> {
     } else {
         let mut command = Command::new(&executable);
         command
-            .arg(&uproject)
-            .arg("-Unattended")
-            .arg("-NoSplash")
-            .arg("-NoSound")
-            .arg("-ddc=noshared")
-            .arg(format!("-LocalDataCachePath={}", ddc.to_string_lossy()))
-            .arg("-ModelContextProtocolStartServer")
-            .arg(format!("-ModelContextProtocolPort={port}"))
-            .arg(format!("-UAgentTaskMarker={marker}"))
+            .args(managed_editor_headless_arguments(
+                &uproject, &ddc, port, &marker,
+            ))
             .env("UE-LocalDataCachePath", &ddc)
             .env("UE-SharedDataCachePath", "None");
         command
@@ -1544,6 +1539,26 @@ fn run_managed_editor_guardian() -> Result<(), String> {
         std::thread::sleep(Duration::from_millis(50));
     }
     Err("managed_guardian_closeout_failed".to_string())
+}
+
+fn managed_editor_headless_arguments(
+    uproject: &Path,
+    ddc: &Path,
+    port: u16,
+    marker: &str,
+) -> Vec<OsString> {
+    vec![
+        uproject.as_os_str().to_os_string(),
+        OsString::from("-Unattended"),
+        OsString::from("-NoSplash"),
+        OsString::from("-NullRHI"),
+        OsString::from("-NoSound"),
+        OsString::from("-ddc=noshared"),
+        OsString::from(format!("-LocalDataCachePath={}", ddc.to_string_lossy())),
+        OsString::from("-ModelContextProtocolStartServer"),
+        OsString::from(format!("-ModelContextProtocolPort={port}")),
+        OsString::from(format!("-UAgentTaskMarker={marker}")),
+    ]
 }
 
 fn run_guardian_test_listener_child() -> Result<(), String> {
@@ -3843,6 +3858,35 @@ mod tests {
             "process_exited"
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn managed_editor_listener_uses_the_headless_null_rhi_startup_contract() {
+        let arguments = managed_editor_headless_arguments(
+            Path::new("C:\\Task\\FinalHost.uproject"),
+            Path::new("C:\\Task\\DerivedDataCache"),
+            49171,
+            "task-marker",
+        )
+        .into_iter()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+        assert_eq!(
+            arguments,
+            vec![
+                "C:\\Task\\FinalHost.uproject",
+                "-Unattended",
+                "-NoSplash",
+                "-NullRHI",
+                "-NoSound",
+                "-ddc=noshared",
+                "-LocalDataCachePath=C:\\Task\\DerivedDataCache",
+                "-ModelContextProtocolStartServer",
+                "-ModelContextProtocolPort=49171",
+                "-UAgentTaskMarker=task-marker",
+            ]
+        );
     }
 
     #[test]
