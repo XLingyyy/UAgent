@@ -1,5 +1,23 @@
 # MVP15 Final Verification
 
+## Resume 9 accepted source checkpoint — 2026-08-19
+
+Resume 9 has `Review Verdict: PASS` for its required D16.5 source-only stop at
+implementation commit `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`. The predecessor
+source completed official UE 5.8.1 Automation `3 / 3 / 0 / 0`, unchanged
+Content, mutation 0 and zero residue, then the rendered 15B path stopped after
+`confirmTrust` because the managed guardian did not establish its MCP listener
+inside 120 seconds. The accepted repair adds `-NullRHI` only to that task-owned
+headless UE launch vector.
+
+Retained real-UE logs bind the old and repaired vectors. The repaired diagnostic
+started MCP on the declared loopback port, passed `UAgentAssetTools.ReadOnly`,
+exited normally and left zero process/port residue. Fresh supervisor verification
+passed the exact argument test, Rust library `191/191`, format, locked check and
+diff check. This diagnostic is source-repair evidence; it does not establish a
+current-source release, 15A, 15B, 15C, D16 closeout, real smoke or Stage Ready.
+Those gates restart from a clean checkout of the accepted implementation commit.
+
 ## Resume 7 accepted source checkpoint — 2026-08-17
 
 Resume 7 has `Review Verdict: PASS` for its required D16.5 source-only stop at
@@ -169,7 +187,7 @@ live fingerprint, full 15A N1-N8 acceptance root, partial/unknown sequence,
 parent closeout, UE Automation run, live MCP capture, or mutation was executed.
 The stale installed
 release may fail only with `FINAL_LIVE_RUNTIME_NONZERO`. D13/15A is
-`DISPATCHED` from `af483722d08212374f67bfc756fa34b79e195e8c`, D14/15B waits on
+`DISPATCHED` from `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`, D14/15B waits on
 15A, D15/15C waits on 15A/15B, D16 remains `IN_PROGRESS`, G16
 and overall acceptance remain `PARTIAL`, and Ready remains `NO`. Current
 `PASS_REAL_SMOKE` is `NO`.
@@ -1265,7 +1283,7 @@ separate 2026-08-03 Final
 Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
 source-checkpoint G15 integrity is `COMPLETE` at
-`af483722d08212374f67bfc756fa34b79e195e8c`, and G16 is `PARTIAL`. The
+`51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
 replace the historical 2026-08-03 Rework 8 checkpoint. No clean current-generation exact-six fingerprint or

@@ -44,13 +44,21 @@
 - Final Live Acceptance Resume 7: the D16.5 source-only raw-report verifier and
   two-inventory bridge have `Review Verdict: PASS` at implementation commit
   `33743bb8327b7ca8bdf5aff6469db46503c01c67`. No live gate advanced.
+- Final Live Acceptance Resume 8 Rework 1: exact Windows verbatim local-drive
+  normalization has `Review Verdict: PASS` at implementation commit
+  `af483722d08212374f67bfc756fa34b79e195e8c`.
+- Final Live Acceptance Resume 9: the managed headless UE guardian repair has
+  `Review Verdict: PASS` at implementation commit
+  `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`. Its pre-repair 15A `3 / 3 / 0 /
+  0` and 15B failure remain source-invalidated partial evidence; the accepted
+  source adds `-NullRHI` and requires a fresh build/15A restart.
 - The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
   historical `COMPLETE / PASS` record at implementation commit
   `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 - G14 documentation consistency: `IMPLEMENTED` after the current evidence and
   stale-state reconciliation.
 - G15 checkpoint integrity: `COMPLETE`; current implementation commit
-  `af483722d08212374f67bfc756fa34b79e195e8c` is recorded by this documentation
+  `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46` is recorded by this documentation
   closeout. Earlier accepted repairs retain their historical scopes.
 - G16 authority provenance and plugin baseline: `PARTIAL`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
@@ -59,7 +67,7 @@
 - Real UE 5.8.1 compatibility: `PARTIAL`; the Rework 2 read-only attempt is
   historical and the full clean-commit matrix remains deferred.
 - D13 / 15A live execution: `DISPATCHED` from a fresh clean checkout of
-  `af483722d08212374f67bfc756fa34b79e195e8c`.
+  `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`.
 - D14 / 15B: `WAITING_ON_15A`; not run.
 - D15 / 15C: `WAITING_ON_15A_15B`; no asset mutation was attempted.
 - D16: `IN_PROGRESS`.
@@ -150,7 +158,7 @@ cannot satisfy final 15A-15C.
 
 The invalid Resume 2 cleanup gate is closed. A new clean-checkout 5.8.1 task is
 dispatched from current implementation commit
-`af483722d08212374f67bfc756fa34b79e195e8c`, covering
+`51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`, covering
 both Tool Search modes, exact-six/product
 retractions, response framing, clean inventory, and the real loaded-module
 observer. Only a later separately authorized task may consider real 15C

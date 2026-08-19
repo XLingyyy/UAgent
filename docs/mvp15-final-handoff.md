@@ -42,8 +42,11 @@ at implementation commit `33743bb8327b7ca8bdf5aff6469db46503c01c67`.
 No live gate advanced.
 Resume 8 Rework 1 has `Review Verdict: PASS` for the cross-layer Windows
 verbatim local-drive repair at current implementation commit
-`af483722d08212374f67bfc756fa34b79e195e8c`; current-source live acceptance
-still requires a fresh restart from 15A.
+`af483722d08212374f67bfc756fa34b79e195e8c`. Resume 9 has `Review Verdict: PASS`
+at current implementation commit `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`.
+It adds `-NullRHI` to the task-owned managed UE guardian after the pre-repair
+rendered 15B run failed before observation discovery. Current-source live
+acceptance still requires a fresh restart from build and 15A.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -55,7 +58,7 @@ The verified release binary truthfully reported a
 dirty pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
 transitive production boundary. Cleanup is closed and a separate clean-checkout
 rebuild from current implementation commit
-`af483722d08212374f67bfc756fa34b79e195e8c` is dispatched for G16 and D13 /
+`51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46` is dispatched for G16 and D13 /
 15A.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
@@ -289,7 +292,7 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 - A sealed final package and live manifest/install/load equality after cleanup,
   from a clean checkout of current implementation commit
-  `af483722d08212374f67bfc756fa34b79e195e8c`.
+  `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`.
 - Fresh current-task UE Automation output, exact-six product-adapter capture,
   and rendered product-UI happy/negative/replay/cleanup evidence.
 - A retained final inventory produced and verified from those live source
@@ -342,5 +345,5 @@ D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A and
 D15 / 15C waits on 15A/15B; D16 remains `IN_PROGRESS`; real UE 5.8.1
 compatibility and overall acceptance remain `PARTIAL`; Ready remains `NO`. The
 clean-checkout run must use current implementation commit
-`af483722d08212374f67bfc756fa34b79e195e8c`. Exact-sandbox 15C mutation is
+`51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`. Exact-sandbox 15C mutation is
 authorized only after fresh 15A and 15B pass inside that dispatched task.

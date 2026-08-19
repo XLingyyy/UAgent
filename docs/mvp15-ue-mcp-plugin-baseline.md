@@ -33,6 +33,12 @@ Its prior live lineage was invalidated and removed. Resume 7 has `Review Verdict
 PASS` for its D16.5 source-only raw-report verifier and sealed final-runner/UE581
 inventory bridge at implementation commit
 `33743bb8327b7ca8bdf5aff6469db46503c01c67`; no live gate advanced.
+Resume 8 Rework 1 remains accepted at historical implementation commit
+`af483722d08212374f67bfc756fa34b79e195e8c`. Resume 9 has `Review Verdict: PASS`
+at current implementation commit `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`.
+Its task-owned managed UE guardian now includes `-NullRHI`; retained real UE
+diagnostics establish listener readiness and read-only Automation for the repair,
+while the pre-repair live lineage remains partial evidence.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -125,7 +131,7 @@ not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
 A new clean-checkout task based on current implementation commit
-`af483722d08212374f67bfc756fa34b79e195e8c` is dispatched for the full UE 5.8.1
+`51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46` is dispatched for the full UE 5.8.1
 compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
 15B pass inside that authorized task.
 
