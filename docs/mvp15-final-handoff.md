@@ -47,11 +47,18 @@ at historical implementation commit `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`.
 It adds `-NullRHI` to the task-owned managed UE guardian after the pre-repair
 rendered 15B run failed before observation discovery. Current-source live
 acceptance still requires a fresh restart from build and 15A.
-Resume 10 has `Review Verdict: PASS` at current implementation commit
+Resume 10 has `Review Verdict: PASS` at historical implementation commit
 `4b6e2fa35ad999882dd3b50d697ab7cb36a1552e`. Its pre-repair clean lineage passed
 the official `3 / 3 / 0 / 0` matrix and reached rendered `confirmTrust`, then
 failed closed on a five-versus-six package artifact allowlist. The checkpoint
 adds the sealed native-binding resource to production and its manifest fixture.
+Resume 11 has `Review Verdict: PASS` at current implementation commit
+`f14dc69543a42d553542b73547c3598fb39947b6`. Its clean predecessor build reached
+the required exact-six Automation gate, which failed closed because the C++
+canonical serializer ordered manifest keys case-insensitively while the Node
+producer orders them case-sensitively. The checkpoint aligns C++ ordering with
+the manifest contract and makes the real production manifest a positive fixture
+before retaining the wrong-self-hash negative. No patched live lineage exists.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -63,7 +70,7 @@ The verified release binary truthfully reported a
 dirty pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
 transitive production boundary. Cleanup is closed and a separate clean-checkout
 rebuild from current implementation commit
-`4b6e2fa35ad999882dd3b50d697ab7cb36a1552e` is dispatched for G16 and D13 /
+`f14dc69543a42d553542b73547c3598fb39947b6` is dispatched for G16 and D13 /
 15A.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
@@ -297,7 +304,7 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 - A sealed final package and live manifest/install/load equality after cleanup,
   from a clean checkout of current implementation commit
-  `4b6e2fa35ad999882dd3b50d697ab7cb36a1552e`.
+  `f14dc69543a42d553542b73547c3598fb39947b6`.
 - Fresh current-task UE Automation output, exact-six product-adapter capture,
   and rendered product-UI happy/negative/replay/cleanup evidence.
 - A retained final inventory produced and verified from those live source
@@ -343,8 +350,10 @@ and Resume 6 provenance handling is accepted at
 `8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. Authorized exact-manifest cleanup
 removed all 4,601 TEMP roots with zero residual; its external gate is `PASS`.
 Resume 9 remains accepted at `51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`;
-Resume 10's exact-six manifest repair is accepted at current implementation
-commit `4b6e2fa35ad999882dd3b50d697ab7cb36a1552e`. The separate
+Resume 10's exact-six manifest repair is accepted at historical implementation
+commit `4b6e2fa35ad999882dd3b50d697ab7cb36a1552e`; Resume 11's manifest canonical-
+ordering repair is accepted at current implementation commit
+`f14dc69543a42d553542b73547c3598fb39947b6`. The separate
 2026-08-03 Final Source/Tooling Rework 8
 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
@@ -353,5 +362,5 @@ D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A and
 D15 / 15C waits on 15A/15B; D16 remains `IN_PROGRESS`; real UE 5.8.1
 compatibility and overall acceptance remain `PARTIAL`; Ready remains `NO`. The
 clean-checkout run must use current implementation commit
-`4b6e2fa35ad999882dd3b50d697ab7cb36a1552e`. Exact-sandbox 15C mutation is
+`f14dc69543a42d553542b73547c3598fb39947b6`. Exact-sandbox 15C mutation is
 authorized only after fresh 15A and 15B pass inside that dispatched task.
