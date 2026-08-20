@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { UIProvider } from "../app/providers";
+import { EditorPanel } from "../inspector/EditorPanel";
 import { ConfigSettings } from "../settings/pages/ConfigSettings";
 import {
   useComposerActions,
@@ -355,6 +356,71 @@ describe("ui-store", () => {
     });
     expect(screen.queryByDisplayValue(rawRoot)).toBeNull();
     expect(document.body.textContent).not.toContain("C:/Users/Ada");
+  });
+
+  it("discovers the validated native project descriptor before an index scan exists", async () => {
+    const rawRoot = "C:/Owned/FinalHost";
+    const invoke = vi.fn(async (command: string) => {
+      if (command === "validate_native_project_root") {
+        return {
+          ok: true,
+          reason: "valid",
+          displayRoot: "[project-root]/FinalHost",
+          projectName: "FinalHost",
+          engine: { label: "UE 5.8", association: "5.8", source: "uproject" },
+        };
+      }
+      if (command === "trust_native_project_root") {
+        return {
+          rootId: "root:final-host",
+          displayRoot: "[project-root]/FinalHost",
+          trustState: "trusted",
+        };
+      }
+      if (command === "editor_observation_capability_status") {
+        return {
+          enabled: true,
+          mode: "native",
+          reason: "ue_editor_bridge_feature_enabled",
+          trustedRootRequired: true,
+          launchEnabled: true,
+          mutationExecution: "blocked",
+        };
+      }
+      if (command === "discover_editor_processes") {
+        return { status: "degraded", reason: "no_editor_process", processes: [] };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    tauriGlobal.__TAURI_INTERNALS__ = { invoke };
+
+    render(
+      <UIProvider>
+        <ConfigSettings />
+        <EditorPanel />
+      </UIProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText("Project root reference"), {
+      target: { value: rawRoot },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Validate project root" }));
+    await screen.findByText("Validation ready: FinalHost");
+    fireEvent.click(screen.getByRole("button", { name: "Add project root" }));
+    const trustButton = screen.getByRole("button", { name: "Trust project root" });
+    await waitFor(() => expect((trustButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(trustButton);
+    await waitFor(() => {
+      expect(document.querySelector('[data-mvp15d-observation="project-trust"]')?.getAttribute("data-mvp15d-value"))
+        .toBe("trusted");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Discover editor processes" }));
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("discover_editor_processes", {
+        input: expect.objectContaining({ uprojectRelativePath: "FinalHost.uproject" }),
+      });
+    });
   });
 
   it("routes rendered MVP15D product controls through the ordered store handlers", async () => {

@@ -928,7 +928,7 @@ function createUIStateBundle(
       null;
     const uprojectRelativePath =
       projectState.activeProjectIndex?.files.find((file) => file.extension === ".uproject")?.rootRelativePath ??
-      "Game.uproject";
+      (activeProject ? `${activeProject.name}.uproject` : "Game.uproject");
 
     return {
       projectId: projectState.activeProjectIndex?.projectId ?? activeProject?.id ?? "project:fixture",
