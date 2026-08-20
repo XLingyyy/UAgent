@@ -3,8 +3,15 @@ import { createDesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter"
 import { registerFixedAppRuntimeAdapter } from "../runtime/runtime-store";
 import { UIProvider } from "./providers";
 
-const fixedAppRuntimeAdapter = createDesktopRuntimeAdapter();
-registerFixedAppRuntimeAdapter(fixedAppRuntimeAdapter);
+let fixedAppRuntimeAdapter: ReturnType<typeof createDesktopRuntimeAdapter> | null = null;
+
+export function initializeFixedAppRuntimeAdapter() {
+  if (!fixedAppRuntimeAdapter) {
+    fixedAppRuntimeAdapter = createDesktopRuntimeAdapter();
+    registerFixedAppRuntimeAdapter(fixedAppRuntimeAdapter);
+  }
+  return fixedAppRuntimeAdapter;
+}
 
 /**
  * UAgent desktop application root.
@@ -13,8 +20,9 @@ registerFixedAppRuntimeAdapter(fixedAppRuntimeAdapter);
  * can access shared UI state (inspector toggle, theme).
  */
 export default function App() {
+  const runtimeAdapter = initializeFixedAppRuntimeAdapter();
   return (
-    <UIProvider runtimeClient={fixedAppRuntimeAdapter}>
+    <UIProvider runtimeClient={runtimeAdapter}>
       <AppShell />
     </UIProvider>
   );

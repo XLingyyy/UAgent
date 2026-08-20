@@ -559,6 +559,44 @@ describe("UIProvider", () => {
 });
 
 describe("MVP15D production App registry wiring", () => {
+  it("binds the fixed adapter after the Tauri invoke bridge becomes available", async () => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
+    const appModule = await import("./App");
+    const commands: string[] = [];
+    const invoke: NativeInvoke = async <T,>(command: string) => {
+      commands.push(command);
+      if (command === "editor_observation_capability_status") {
+        return {
+          enabled: true,
+          mode: "native",
+          reason: "ue_editor_bridge_feature_enabled",
+          trustedRootRequired: true,
+          launchEnabled: true,
+          saveAllBlocked: true,
+          mutationExecution: "blocked",
+        } as T;
+      }
+      return {} as T;
+    };
+    vi.stubGlobal("__TAURI_INTERNALS__", { invoke });
+
+    try {
+      const adapter = appModule.initializeFixedAppRuntimeAdapter();
+      const editorObservation = adapter.getEditorObservationAdapter();
+      expect(editorObservation).not.toBeNull();
+      await expect(editorObservation?.refreshCapability()).resolves.toMatchObject({
+        enabled: true,
+        mode: "native",
+      });
+      expect(commands).toContain("editor_observation_capability_status");
+    } finally {
+      cleanup();
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
+  });
+
   it("runs predecessor request, parent acknowledgement, successor claim, and final publish through two actual App registrations", async () => {
     const harness = await startNativeAppHarness();
     const commands: string[] = [];
