@@ -50,11 +50,17 @@ the Node producer's case-sensitive canonical key ordering, and the contract test
 accepts the real production manifest before retaining the wrong-self-hash
 negative. Its clean predecessor lineage stopped at the exact-six gate and is
 diagnostic only.
-Resume 12 has `Review Verdict: PASS` at current implementation commit
+Resume 12 has `Review Verdict: PASS` at historical implementation commit
 `38cec6f3e11af1e4b991430d3941e71c57d2c45d`. The predecessor package passed
 ExactSix and fixed 15A before rendered 15B exposed a desktop fixed adapter that
 had captured native-null during module evaluation. Bootstrap initialization and
 late-Tauri injection coverage repair that source contract; the predecessor live
+lineage remains diagnostic only.
+Resume 13 has `Review Verdict: PASS` at current implementation commit
+`c60a094e0225d19e10238618abfeb73c299eacf0`. Its predecessor package again
+passed ExactSix and fixed 15A, then rendered 15B exposed missing fixture
+`Game.uproject` before managed guardian spawn. The accepted pre-index descriptor
+derivation uses the native-validated `FinalHost.uproject`; the predecessor live
 lineage remains diagnostic only.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
@@ -148,7 +154,7 @@ not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
 A new clean-checkout task based on current implementation commit
-`38cec6f3e11af1e4b991430d3941e71c57d2c45d` is dispatched for the full UE 5.8.1
+`c60a094e0225d19e10238618abfeb73c299eacf0` is dispatched for the full UE 5.8.1
 compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
 15B pass inside that authorized task.
 

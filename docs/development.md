@@ -56,11 +56,16 @@ Resume 11 has `Review Verdict: PASS` at historical implementation commit
 `f14dc69543a42d553542b73547c3598fb39947b6`. Canonical manifest object keys now
 sort through explicit case-sensitive `FString::Compare`, and the self-hash
 Automation contract first accepts the complete production manifest candidate.
-Resume 12 has `Review Verdict: PASS` at current implementation commit
+Resume 12 has `Review Verdict: PASS` at historical implementation commit
 `38cec6f3e11af1e4b991430d3941e71c57d2c45d`. `main.tsx` initializes the fixed
 desktop runtime adapter after dependency-module evaluation and before React
 render; `App` uses the same idempotent initializer. The regression imports App
 before injecting the Tauri global and then proves native editor capability.
+Resume 13 has `Review Verdict: PASS` at current implementation commit
+`c60a094e0225d19e10238618abfeb73c299eacf0`. `getMvp14ProcessConfig()` now uses
+the native-validated project name to form `<ProjectName>.uproject` before an
+index scan exists, preventing a real trusted project from inheriting the fixture
+`Game.uproject` descriptor.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -148,7 +153,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `38cec6f3e11af1e4b991430d3941e71c57d2c45d`. The old
+implementation commit `c60a094e0225d19e10238618abfeb73c299eacf0`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

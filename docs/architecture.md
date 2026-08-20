@@ -58,11 +58,16 @@ Resume 11 has `Review Verdict: PASS` at historical implementation commit
 explicit case-sensitive predicate for every canonical JSON object key, matching
 the producer's ordinal ordering; the self-hash contract requires the complete
 production manifest to load before exercising its tampered-hash rejection.
-Resume 12 has `Review Verdict: PASS` at current implementation commit
+Resume 12 has `Review Verdict: PASS` at historical implementation commit
 `38cec6f3e11af1e4b991430d3941e71c57d2c45d`. The fixed desktop runtime adapter
 is now created and registered once during application bootstrap, after the Tauri
 invoke bridge can exist, and `App` idempotently reuses that same instance. This
 prevents a dependency-module evaluation from permanently capturing native-null.
+Resume 13 has `Review Verdict: PASS` at current implementation commit
+`c60a094e0225d19e10238618abfeb73c299eacf0`. Before an index snapshot exists,
+the editor-process config now derives the `.uproject` relative path from the
+native-validated project filename; the indexed descriptor remains authoritative
+after a scan and the no-project fixture fallback remains `Game.uproject`.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current source-checkpoint G15 integrity is `COMPLETE`; G16 is
@@ -112,7 +117,7 @@ fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The form
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
 fail only with `FINAL_LIVE_RUNTIME_NONZERO`. Cleanup is closed and an authorized
 clean-checkout run from current implementation commit
-`38cec6f3e11af1e4b991430d3941e71c57d2c45d` is dispatched for the 15A restart.
+`c60a094e0225d19e10238618abfeb73c299eacf0` is dispatched for the 15A restart.
 
 The implemented trust-chain source path is:
 
@@ -245,7 +250,7 @@ session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
 Full read-only compatibility is assigned to the newly dispatched clean-checkout
 task based on current implementation commit
-`38cec6f3e11af1e4b991430d3941e71c57d2c45d`.
+`c60a094e0225d19e10238618abfeb73c299eacf0`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted
