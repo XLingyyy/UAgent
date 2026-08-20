@@ -44,12 +44,18 @@ Resume 10 has `Review Verdict: PASS` at historical implementation commit
 identity now expects the sealed `Resources/mvp15d-native-binding-v2.json` as the
 sixth artifact, and the exact-manifest test fixture copies it. The pre-repair
 clean package and rendered path are diagnostic only.
-Resume 11 has `Review Verdict: PASS` at current implementation commit
+Resume 11 has `Review Verdict: PASS` at historical implementation commit
 `f14dc69543a42d553542b73547c3598fb39947b6`. The C++ manifest verifier now applies
 the Node producer's case-sensitive canonical key ordering, and the contract test
 accepts the real production manifest before retaining the wrong-self-hash
 negative. Its clean predecessor lineage stopped at the exact-six gate and is
 diagnostic only.
+Resume 12 has `Review Verdict: PASS` at current implementation commit
+`38cec6f3e11af1e4b991430d3941e71c57d2c45d`. The predecessor package passed
+ExactSix and fixed 15A before rendered 15B exposed a desktop fixed adapter that
+had captured native-null during module evaluation. Bootstrap initialization and
+late-Tauri injection coverage repair that source contract; the predecessor live
+lineage remains diagnostic only.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -142,7 +148,7 @@ not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
 A new clean-checkout task based on current implementation commit
-`f14dc69543a42d553542b73547c3598fb39947b6` is dispatched for the full UE 5.8.1
+`38cec6f3e11af1e4b991430d3941e71c57d2c45d` is dispatched for the full UE 5.8.1
 compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
 15B pass inside that authorized task.
 

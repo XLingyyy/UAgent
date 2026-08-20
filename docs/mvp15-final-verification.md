@@ -1,5 +1,24 @@
 # MVP15 Final Verification
 
+## Resume 12 accepted source checkpoint — 2026-08-20
+
+Resume 12 has `Review Verdict: PASS` for its required D16.5 source-only stop at
+implementation commit `38cec6f3e11af1e4b991430d3941e71c57d2c45d`. A fresh detached
+checkout of `f14dc695...` built the Tauri release and official UE 5.8.1 plugin,
+then passed the separate ExactSix report `1 / 1 / 0 / 0` and fixed 15A report
+`3 / 3 / 0 / 0`. Those results predate the following source repair.
+
+Rendered 15B reached `renderer_ready`, native bridge, validate, add and
+`confirmTrust`, then timed out before editor observation. Native capability was
+enabled while the UI store retained `feature_disabled`. The fixed adapter had
+captured native-null during dependency-module evaluation. The accepted repair
+creates/registers one adapter during application bootstrap and idempotently
+reuses it from `App`; late-Tauri injection and existing actual-App/disabled
+startup cases pass. Fresh focused `25/25`, workspace shared `34`, MCP `51`,
+runtime `825`, desktop `769 + 3 retained skips`, typecheck, lint and web build
+all pass. No patched ExactSix, 15A, 15B, 15C, D16 closeout, real smoke or Stage
+Ready claim exists.
+
 ## Resume 11 accepted source checkpoint — 2026-08-20
 
 Resume 11 has `Review Verdict: PASS` for its required D16.5 source-only stop at
@@ -224,7 +243,7 @@ live fingerprint, full 15A N1-N8 acceptance root, partial/unknown sequence,
 parent closeout, UE Automation run, live MCP capture, or mutation was executed.
 The stale installed
 release may fail only with `FINAL_LIVE_RUNTIME_NONZERO`. D13/15A is
-`DISPATCHED` from `f14dc69543a42d553542b73547c3598fb39947b6`, D14/15B waits on
+`DISPATCHED` from `38cec6f3e11af1e4b991430d3941e71c57d2c45d`, D14/15B waits on
 15A, D15/15C waits on 15A/15B, D16 remains `IN_PROGRESS`, G16
 and overall acceptance remain `PARTIAL`, and Ready remains `NO`. Current
 `PASS_REAL_SMOKE` is `NO`.
@@ -1320,7 +1339,7 @@ separate 2026-08-03 Final
 Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
 source-checkpoint G15 integrity is `COMPLETE` at
-`f14dc69543a42d553542b73547c3598fb39947b6`, and G16 is `PARTIAL`. The
+`38cec6f3e11af1e4b991430d3941e71c57d2c45d`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
 replace the historical 2026-08-03 Rework 8 checkpoint. No clean current-generation exact-six fingerprint or
