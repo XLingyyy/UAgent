@@ -221,7 +221,10 @@ namespace
 		{
 			Keys.Add(FString(Pair.Key.ToView()));
 		}
-		Keys.Sort();
+		Keys.Sort([](const FString& Left, const FString& Right)
+		{
+			return Left.Compare(Right, ESearchCase::CaseSensitive) < 0;
+		});
 		Out += TEXT("{");
 		for (int32 Index = 0; Index < Keys.Num(); ++Index)
 		{

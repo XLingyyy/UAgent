@@ -783,6 +783,9 @@ bool FUAgentAssetToolsManifestSelfHashContractTest::RunTest(const FString& Param
 	TSharedPtr<FJsonObject> Manifest = LoadJsonFile(Candidate.ManifestPath);
 	if (Manifest.IsValid())
 	{
+		TestTrue(
+			TEXT("production manifest accepts its canonical self hash"),
+			FUAgentAssetToolsModule::LoadBuildIdentityCandidate(Candidate.Root, Candidate.ManifestPath, Candidate.LoadedModulePath).IsValid());
 		Manifest->SetStringField(TEXT("manifestSelfSha256"), FString::ChrN(64, TEXT('0')));
 		TestTrue(TEXT("wrong-self-hash candidate was written"), WriteJsonFile(Candidate.ManifestPath, Manifest));
 		TestFalse(
