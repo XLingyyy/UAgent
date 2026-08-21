@@ -68,7 +68,7 @@ ExactSix and fixed 15A, then rendered 15B failed closed because the pre-index
 process config requested missing fixture `Game.uproject`. The accepted repair
 derives the actual descriptor from native validation; no patched live gate advanced.
 Resume 14 has `Review Verdict: PASS` at current implementation commit
-`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. Its clean `c60a094e...` predecessor
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Its clean `c60a094e...` predecessor
 passed ExactSix and fixed 15A, then rendered 15B exposed an opaque trusted-root
 token at the direct managed-process boundary. Direct native editor create/attach
 calls now resolve the trusted mapping locally while native canonical trust remains
@@ -137,7 +137,7 @@ ran; the stale installed binary may fail only with `FINAL_LIVE_RUNTIME_NONZERO`.
 The historical Final Source/Tooling Rework 8 is checkpointed at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. Cleanup is closed and live
 acceptance is dispatched as a separate clean-checkout task based on current
-implementation commit `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`, with a manifest-backed
+implementation commit `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`, with a manifest-backed
 build and a new strict evidence root. Exact-sandbox 15C mutation remains gated
 until fresh 15A and 15B pass inside that authorized task.
 
@@ -186,7 +186,7 @@ MVP15D source-checkpoint risks above or supply current D0-D12 evidence.
 
 ## Current Conclusion
 
-D13 / 15A is `DISPATCHED` from `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. Final Pre-live Source Closure Rework 7 is historical
+D13 / 15A is `DISPATCHED` from `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Final Pre-live Source Closure Rework 7 is historical
 `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
 `Review Verdict: NEEDS_FIX` for deterministic Tauri destroy/build ordering.
 Rework 9 is the historical accepted base at

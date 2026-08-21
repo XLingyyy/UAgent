@@ -67,7 +67,7 @@ the native-validated project name to form `<ProjectName>.uproject` before an
 index scan exists, preventing a real trusted project from inheriting the fixture
 `Game.uproject` descriptor.
 Resume 14 has `Review Verdict: PASS` at current implementation commit
-`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. The fixed runtime adapter now calls
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. The fixed runtime adapter now calls
 `resolveTrustedNativeRootRef` at every direct managed editor create/attach IPC
 boundary, while stored UI and product state retains the opaque root token. Native
 trusted-root, canonical-object and `.uproject` validation remains unchanged.
@@ -158,7 +158,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. The old
+implementation commit `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

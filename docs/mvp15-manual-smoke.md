@@ -61,7 +61,7 @@ passed ExactSix and fixed 15A, then rendered 15B exposed missing
 uses the native-validated `FinalHost.uproject`; current-source manual smoke still
 requires a complete restart.
 Resume 14 has `Review Verdict: PASS` at current implementation commit
-`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`; its clean `c60a094e...` source
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`; its clean `c60a094e...` source
 passed ExactSix and fixed 15A, then rendered 15B exposed an opaque trusted-root
 token at a direct native managed-process boundary. The boundary-local resolver
 repair passes source verification, while every retained live artifact predates
@@ -132,7 +132,7 @@ read-only supporting evidence.
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is assigned
 to the newly dispatched clean-checkout task based on current implementation
-commit `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. Real UE, Tool Search,
+commit `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Real UE, Tool Search,
 and mutation were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The
 dispatched live task may enter exact-sandbox 15C mutation only after fresh 15A
 and 15B pass.

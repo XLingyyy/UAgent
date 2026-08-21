@@ -69,7 +69,7 @@ the editor-process config now derives the `.uproject` relative path from the
 native-validated project filename; the indexed descriptor remains authoritative
 after a scan and the no-project fixture fallback remains `Game.uproject`.
 Resume 14 has `Review Verdict: PASS` at current implementation commit
-`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. Direct fixed-authority editor
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Direct fixed-authority editor
 create/attach calls now resolve the opaque trusted-root token immediately before
 IPC while UI/product state remains opaque; native canonical object and descriptor
 validation stays authoritative. Its `c60a094e...` ExactSix/15A pass and rendered
@@ -123,7 +123,7 @@ fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The form
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
 fail only with `FINAL_LIVE_RUNTIME_NONZERO`. Cleanup is closed and an authorized
 clean-checkout run from current implementation commit
-`9d04ef745800f8f6d29574b366d6ad4ae8876fdf` is dispatched for the 15A restart.
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5` is dispatched for the 15A restart.
 
 The implemented trust-chain source path is:
 
@@ -256,7 +256,7 @@ session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
 Full read-only compatibility is assigned to the newly dispatched clean-checkout
 task based on current implementation commit
-`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`.
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted

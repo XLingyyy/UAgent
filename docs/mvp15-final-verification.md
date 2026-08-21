@@ -3,7 +3,7 @@
 ## Resume 14 accepted source checkpoint — 2026-08-21
 
 Resume 14 has `Review Verdict: PASS` for its required D16.5 source-only stop at
-implementation commit `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. A fresh detached
+implementation commit `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. A fresh detached
 checkout of `c60a094e...` built the Tauri release and official UE 5.8.1 plugin,
 passed separate ExactSix `1 / 1 / 0 / 0` and fixed 15A `3 / 3 / 0 / 0`, then
 reached rendered 15B through `confirmTrust`. The phase failed closed before
@@ -282,7 +282,7 @@ live fingerprint, full 15A N1-N8 acceptance root, partial/unknown sequence,
 parent closeout, UE Automation run, live MCP capture, or mutation was executed.
 The stale installed
 release may fail only with `FINAL_LIVE_RUNTIME_NONZERO`. D13/15A is
-`DISPATCHED` from `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`, D14/15B waits on
+`DISPATCHED` from `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`, D14/15B waits on
 15A, D15/15C waits on 15A/15B, D16 remains `IN_PROGRESS`, G16
 and overall acceptance remain `PARTIAL`, and Ready remains `NO`. Current
 `PASS_REAL_SMOKE` is `NO`.
@@ -1378,7 +1378,7 @@ separate 2026-08-03 Final
 Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
 source-checkpoint G15 integrity is `COMPLETE` at
-`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`, and G16 is `PARTIAL`. The
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
 replace the historical 2026-08-03 Rework 8 checkpoint. No clean current-generation exact-six fingerprint or

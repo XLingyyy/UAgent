@@ -81,14 +81,14 @@
   failed closed because a direct managed-process boundary sent the UI's opaque
   trusted-root token to native validation. Boundary-local resolution and its
   full direct create/attach regression have `Review Verdict: PASS` at current
-  implementation commit `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`.
+  implementation commit `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`.
 - The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
   historical `COMPLETE / PASS` record at implementation commit
   `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 - G14 documentation consistency: `IMPLEMENTED` after the current evidence and
   stale-state reconciliation.
 - G15 checkpoint integrity: `COMPLETE`; current implementation commit
-  `9d04ef745800f8f6d29574b366d6ad4ae8876fdf` is recorded by this documentation
+  `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5` is recorded by this documentation
   closeout. Earlier accepted repairs retain their historical scopes.
 - G16 authority provenance and plugin baseline: `PARTIAL`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
@@ -97,7 +97,7 @@
 - Real UE 5.8.1 compatibility: `PARTIAL`; the Rework 2 read-only attempt is
   historical and the full clean-commit matrix remains deferred.
 - D13 / 15A live execution: `DISPATCHED` from a fresh clean checkout of
-  `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`.
+  `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`.
 - D14 / 15B: `WAITING_ON_15A`; not run.
 - D15 / 15C: `WAITING_ON_15A_15B`; no asset mutation was attempted.
 - D16: `IN_PROGRESS`.
@@ -188,7 +188,7 @@ cannot satisfy final 15A-15C.
 
 The invalid Resume 2 cleanup gate is closed. A new clean-checkout 5.8.1 task is
 dispatched from current implementation commit
-`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`, covering
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`, covering
 both Tool Search modes, exact-six/product
 retractions, response framing, clean inventory, and the real loaded-module
 observer. Only a later separately authorized task may consider real 15C

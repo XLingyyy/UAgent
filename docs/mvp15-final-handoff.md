@@ -72,7 +72,7 @@ fallback to missing `Game.uproject` in the validated `FinalHost` project. The
 checkpoint derives `FinalHost.uproject` from native validation before indexing;
 all retained Resume 13 live evidence predates the repair.
 Resume 14 has `Review Verdict: PASS` at current implementation commit
-`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. Its clean `c60a094e...` lineage
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Its clean `c60a094e...` lineage
 passed ExactSix and fixed 15A, then rendered 15B exposed the UI's opaque trusted-
 root token at the direct managed-process create boundary. The checkpoint resolves
 opaque bindings at every direct native editor create/attach boundary while native
@@ -89,7 +89,7 @@ The verified release binary truthfully reported a
 dirty pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
 transitive production boundary. Cleanup is closed and a separate clean-checkout
 rebuild from current implementation commit
-`9d04ef745800f8f6d29574b366d6ad4ae8876fdf` is dispatched for G16 and D13 /
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5` is dispatched for G16 and D13 /
 15A.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
@@ -323,7 +323,7 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 - A sealed final package and live manifest/install/load equality after cleanup,
   from a clean checkout of current implementation commit
-  `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`.
+  `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`.
 - Fresh current-task UE Automation output, exact-six product-adapter capture,
   and rendered product-UI happy/negative/replay/cleanup evidence.
 - A retained final inventory produced and verified from those live source
@@ -378,7 +378,7 @@ repair is accepted at historical implementation commit
 repair is accepted at historical implementation commit
 `c60a094e0225d19e10238618abfeb73c299eacf0`; Resume 14's trusted-root IPC
 boundary repair is accepted at current implementation commit
-`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. The separate
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. The separate
 2026-08-03 Final Source/Tooling Rework 8
 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
@@ -387,5 +387,5 @@ D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A and
 D15 / 15C waits on 15A/15B; D16 remains `IN_PROGRESS`; real UE 5.8.1
 compatibility and overall acceptance remain `PARTIAL`; Ready remains `NO`. The
 clean-checkout run must use current implementation commit
-`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. Exact-sandbox 15C mutation is
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Exact-sandbox 15C mutation is
 authorized only after fresh 15A and 15B pass inside that dispatched task.
