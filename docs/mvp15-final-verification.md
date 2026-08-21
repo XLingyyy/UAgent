@@ -1,5 +1,26 @@
 # MVP15 Final Verification
 
+## Resume 15 accepted interim source checkpoint — 2026-08-22
+
+Resume 15 has `Review Verdict: PASS` for its interim source checkpoint at
+implementation commit `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. A fresh detached
+checkout of predecessor `9d04ef7...` passed separate ExactSix `1 / 1 / 0 / 0`
+and fixed 15A `3 / 3 / 0 / 0`, then rendered 15B exposed two production
+contract defects: the native MCP observer rejected a legal notification HTTP
+202 empty body, and exact-six UE descriptors published only `schemaVersion` and
+`input` instead of every required contract object.
+
+The accepted repair permits an empty body only for a valid id-less JSON-RPC 2.0
+notification with HTTP 202 and keeps id-bearing or wrong-status responses fail
+closed. All exact-six descriptors now publish `input`, `dryRunSchema`,
+`rollbackContract`, `affectedAssetsSchema`, and `evidenceQuery`. Fresh supervisor
+verification on the exact diff passed workspace tests (`34 + 51 + 825 + 771`,
+with 3 retained desktop skips), typecheck, lint, the 259-module web build, Cargo
+fmt/check/tests (`195 / 195`), and current-source identity/tooling (`49 / 49`).
+The predecessor live artifacts are diagnostic only. The same Resume 15 task
+remains active for fresh 15A, 15B, 15C and D16; `PASS_REAL_SMOKE` is `NO` and
+Stage Ready is `NO`.
+
 ## Resume 14 accepted source checkpoint — 2026-08-21
 
 Resume 14 has `Review Verdict: PASS` for its required D16.5 source-only stop at
@@ -282,7 +303,7 @@ live fingerprint, full 15A N1-N8 acceptance root, partial/unknown sequence,
 parent closeout, UE Automation run, live MCP capture, or mutation was executed.
 The stale installed
 release may fail only with `FINAL_LIVE_RUNTIME_NONZERO`. D13/15A is
-`DISPATCHED` from `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`, D14/15B waits on
+`DISPATCHED` from `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`, D14/15B waits on
 15A, D15/15C waits on 15A/15B, D16 remains `IN_PROGRESS`, G16
 and overall acceptance remain `PARTIAL`, and Ready remains `NO`. Current
 `PASS_REAL_SMOKE` is `NO`.
@@ -1378,7 +1399,7 @@ separate 2026-08-03 Final
 Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
 source-checkpoint G15 integrity is `COMPLETE` at
-`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`, and G16 is `PARTIAL`. The
+`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
 replace the historical 2026-08-03 Rework 8 checkpoint. No clean current-generation exact-six fingerprint or

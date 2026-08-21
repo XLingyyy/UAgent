@@ -60,12 +60,18 @@ passed ExactSix and fixed 15A, then rendered 15B exposed missing
 `Game.uproject` before guardian spawn. The accepted pre-index descriptor repair
 uses the native-validated `FinalHost.uproject`; current-source manual smoke still
 requires a complete restart.
-Resume 14 has `Review Verdict: PASS` at current implementation commit
+Resume 14 has `Review Verdict: PASS` at historical implementation commit
 `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`; its clean `c60a094e...` source
 passed ExactSix and fixed 15A, then rendered 15B exposed an opaque trusted-root
 token at a direct native managed-process boundary. The boundary-local resolver
 repair passes source verification, while every retained live artifact predates
 the repair and manual smoke still requires a complete restart.
+Resume 15 has an accepted interim source checkpoint at current implementation
+commit `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`; its clean `9d04ef7...` source
+passed ExactSix and fixed 15A, then rendered 15B exposed legal notification 202
+empty-body handling and incomplete exact-six descriptor contracts. Both source
+repairs pass automated verification. Current-source manual smoke still requires
+a complete restart from this checkpoint.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -102,7 +108,7 @@ Controlled source and built-child checks do not constitute the current
 clean-checkout live acceptance root. No current Tool Search,
 installed/load/manifest tuple, live fingerprint, full 15A N1-N8 sequence,
 partial/unknown sequence, parent closeout, or manual/live smoke is accepted for
-Resume 14. The pre-repair release and all old 15A-15C evidence are stale; the
+Resume 15. The pre-repair release and all old 15A-15C evidence are stale; the
 dispatched dedicated task must rebuild and pass 15A/15B before authorized 15C.
 
 Historical Final Source/Tooling Rework 4 connected the fixed adapters to the
@@ -132,7 +138,7 @@ read-only supporting evidence.
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is assigned
 to the newly dispatched clean-checkout task based on current implementation
-commit `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Real UE, Tool Search,
+commit `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. Real UE, Tool Search,
 and mutation were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The
 dispatched live task may enter exact-sandbox 15C mutation only after fresh 15A
 and 15B pass.

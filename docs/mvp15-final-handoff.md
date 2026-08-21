@@ -71,13 +71,19 @@ passed ExactSix and fixed 15A, then rendered 15B exposed a pre-index descriptor
 fallback to missing `Game.uproject` in the validated `FinalHost` project. The
 checkpoint derives `FinalHost.uproject` from native validation before indexing;
 all retained Resume 13 live evidence predates the repair.
-Resume 14 has `Review Verdict: PASS` at current implementation commit
+Resume 14 has `Review Verdict: PASS` at historical implementation commit
 `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Its clean `c60a094e...` lineage
 passed ExactSix and fixed 15A, then rendered 15B exposed the UI's opaque trusted-
 root token at the direct managed-process create boundary. The checkpoint resolves
 opaque bindings at every direct native editor create/attach boundary while native
 canonical trust and descriptor checks remain authoritative; all retained Resume
 14 live evidence predates the repair.
+Resume 15 has an accepted interim source checkpoint at current implementation
+commit `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. Its clean `9d04ef7...` lineage
+passed ExactSix and fixed 15A, then rendered 15B exposed a legal notification
+HTTP 202 empty-body boundary and incomplete exact-six descriptor contracts. The
+checkpoint repairs both contracts and passes fresh source verification; all
+retained Resume 15 live evidence predates the repair.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -89,7 +95,7 @@ The verified release binary truthfully reported a
 dirty pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
 transitive production boundary. Cleanup is closed and a separate clean-checkout
 rebuild from current implementation commit
-`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5` is dispatched for G16 and D13 /
+`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f` is dispatched for G16 and D13 /
 15A.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
@@ -323,7 +329,7 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 - A sealed final package and live manifest/install/load equality after cleanup,
   from a clean checkout of current implementation commit
-  `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`.
+  `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`.
 - Fresh current-task UE Automation output, exact-six product-adapter capture,
   and rendered product-UI happy/negative/replay/cleanup evidence.
 - A retained final inventory produced and verified from those live source
@@ -377,8 +383,10 @@ repair is accepted at historical implementation commit
 `38cec6f3e11af1e4b991430d3941e71c57d2c45d`; Resume 13's validated-descriptor
 repair is accepted at historical implementation commit
 `c60a094e0225d19e10238618abfeb73c299eacf0`; Resume 14's trusted-root IPC
-boundary repair is accepted at current implementation commit
-`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. The separate
+boundary repair is accepted at historical implementation commit
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`; Resume 15's MCP notification and
+exact-six descriptor contract repair is accepted as the current interim source
+checkpoint at `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. The separate
 2026-08-03 Final Source/Tooling Rework 8
 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
@@ -387,5 +395,5 @@ D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A and
 D15 / 15C waits on 15A/15B; D16 remains `IN_PROGRESS`; real UE 5.8.1
 compatibility and overall acceptance remain `PARTIAL`; Ready remains `NO`. The
 clean-checkout run must use current implementation commit
-`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Exact-sandbox 15C mutation is
+`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. Exact-sandbox 15C mutation is
 authorized only after fresh 15A and 15B pass inside that dispatched task.

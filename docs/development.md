@@ -66,11 +66,17 @@ Resume 13 has `Review Verdict: PASS` at historical implementation commit
 the native-validated project name to form `<ProjectName>.uproject` before an
 index scan exists, preventing a real trusted project from inheriting the fixture
 `Game.uproject` descriptor.
-Resume 14 has `Review Verdict: PASS` at current implementation commit
+Resume 14 has `Review Verdict: PASS` at historical implementation commit
 `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. The fixed runtime adapter now calls
 `resolveTrustedNativeRootRef` at every direct managed editor create/attach IPC
 boundary, while stored UI and product state retains the opaque root token. Native
 trusted-root, canonical-object and `.uproject` validation remains unchanged.
+Resume 15 has an accepted interim source checkpoint at current implementation
+commit `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. The Rust runtime bridge accepts
+empty MCP response bodies only for valid id-less notifications with HTTP 202,
+while id-bearing requests and other statuses remain fail closed. The UE plugin
+publishes the complete exact-six descriptor contract and regression-checks every
+required member.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -158,7 +164,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. The old
+implementation commit `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

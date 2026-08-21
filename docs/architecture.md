@@ -68,12 +68,18 @@ Resume 13 has `Review Verdict: PASS` at historical implementation commit
 the editor-process config now derives the `.uproject` relative path from the
 native-validated project filename; the indexed descriptor remains authoritative
 after a scan and the no-project fixture fallback remains `Game.uproject`.
-Resume 14 has `Review Verdict: PASS` at current implementation commit
+Resume 14 has `Review Verdict: PASS` at historical implementation commit
 `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Direct fixed-authority editor
 create/attach calls now resolve the opaque trusted-root token immediately before
 IPC while UI/product state remains opaque; native canonical object and descriptor
 validation stays authoritative. Its `c60a094e...` ExactSix/15A pass and rendered
 15B failure predate the repair and remain diagnostic.
+Resume 15 has an accepted interim source checkpoint at current implementation
+commit `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. The native MCP observation
+boundary now accepts an empty response body only for a valid id-less JSON-RPC
+notification that received HTTP 202. The UE exact-six descriptors now publish
+`input`, `dryRunSchema`, `rollbackContract`, `affectedAssetsSchema`, and
+`evidenceQuery`; fresh current-source live gates remain open.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current source-checkpoint G15 integrity is `COMPLETE`; G16 is
@@ -123,7 +129,7 @@ fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The form
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
 fail only with `FINAL_LIVE_RUNTIME_NONZERO`. Cleanup is closed and an authorized
 clean-checkout run from current implementation commit
-`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5` is dispatched for the 15A restart.
+`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f` is dispatched for the 15A restart.
 
 The implemented trust-chain source path is:
 
@@ -256,7 +262,7 @@ session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
 Full read-only compatibility is assigned to the newly dispatched clean-checkout
 task based on current implementation commit
-`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`.
+`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted
