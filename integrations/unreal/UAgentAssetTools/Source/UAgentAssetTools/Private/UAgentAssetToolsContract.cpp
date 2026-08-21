@@ -683,7 +683,33 @@ namespace UAgentAssetTools
 		for (const TCHAR* Field : {TEXT("blocked"), TEXT("status"), TEXT("reasonCode"), TEXT("toolName"), TEXT("operation"), TEXT("phase"), TEXT("changeSetId"), TEXT("runId"), TEXT("operationId"), TEXT("sandboxRoot"), TEXT("wouldChange"), TEXT("wouldRead"), TEXT("wouldModify"), TEXT("affectedAssets"), TEXT("rollbackPlan"), TEXT("externalEvidenceQueries"), TEXT("dryRunHash"), TEXT("hashAlgorithm"), TEXT("schemaVersion"), TEXT("approvalRequired"), TEXT("sideEffectObserved"), TEXT("effectState"), TEXT("rollbackAvailable"), TEXT("rollbackStatus"), TEXT("implementationStatus"), TEXT("evidenceId")}) Required.Add(StringValue(Field));
 		Schema->SetArrayField(TEXT("required"), Required);
 		if (Identity.IsValid()) Schema->SetObjectField(TEXT("x-uagent-plugin"), Identity);
-		TSharedPtr<FJsonObject> Contract = MakeShared<FJsonObject>(); Contract->SetStringField(TEXT("schemaVersion"), ContractVersion); Contract->SetObjectField(TEXT("input"), BuildInputSchema(Operation)); Schema->SetObjectField(TEXT("x-uagent-contract"), Contract);
+
+		TSharedPtr<FJsonObject> DryRunSchema = MakeShared<FJsonObject>();
+		DryRunSchema->SetStringField(TEXT("type"), TEXT("object"));
+		DryRunSchema->SetBoolField(TEXT("additionalProperties"), false);
+		DryRunSchema->SetObjectField(TEXT("properties"), Properties);
+		DryRunSchema->SetArrayField(TEXT("required"), Required);
+		TSharedPtr<FJsonObject> DryRunPhase = MakeShared<FJsonObject>();
+		DryRunPhase->SetStringField(TEXT("const"), TEXT("dry_run"));
+		TSharedPtr<FJsonObject> DryRunProperties = MakeShared<FJsonObject>();
+		DryRunProperties->SetObjectField(TEXT("phase"), DryRunPhase);
+		TSharedPtr<FJsonObject> DryRunConstraint = MakeShared<FJsonObject>();
+		DryRunConstraint->SetObjectField(TEXT("properties"), DryRunProperties);
+		TArray<TSharedPtr<FJsonValue>> DryRunRequired;
+		DryRunRequired.Add(StringValue(TEXT("phase")));
+		DryRunConstraint->SetArrayField(TEXT("required"), DryRunRequired);
+		TArray<TSharedPtr<FJsonValue>> DryRunConditions;
+		DryRunConditions.Add(MakeShared<FJsonValueObject>(DryRunConstraint));
+		DryRunSchema->SetArrayField(TEXT("allOf"), DryRunConditions);
+
+		TSharedPtr<FJsonObject> Contract = MakeShared<FJsonObject>();
+		Contract->SetStringField(TEXT("schemaVersion"), ContractVersion);
+		Contract->SetObjectField(TEXT("input"), BuildInputSchema(Operation));
+		Contract->SetObjectField(TEXT("dryRunSchema"), DryRunSchema);
+		Contract->SetObjectField(TEXT("rollbackContract"), RollbackSchema);
+		Contract->SetObjectField(TEXT("affectedAssetsSchema"), AffectedAssetsSchema);
+		Contract->SetObjectField(TEXT("evidenceQuery"), QuerySchema);
+		Schema->SetObjectField(TEXT("x-uagent-contract"), Contract);
 		return Schema;
 	}
 }

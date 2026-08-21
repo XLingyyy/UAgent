@@ -578,7 +578,22 @@ fn native_mcp_response_basis(
             "runtimePid": std::process::id(),
         }));
     }
-    let parsed_body = parse_mcp_json_body(&result.body)?;
+    let parsed_body = if result.body.trim().is_empty() {
+        let request_body = parse_mcp_json_body(&input.body)?;
+        let accepted_notification = result.status == 202
+            && request_body.get("jsonrpc").and_then(Value::as_str) == Some("2.0")
+            && request_body
+                .get("method")
+                .and_then(Value::as_str)
+                .is_some_and(|method| !method.is_empty())
+            && request_body.get("id").is_none();
+        if !accepted_notification {
+            return Err(BridgeError::new("MVP15D_MCP_OBSERVATION_BODY_INVALID"));
+        }
+        Value::Null
+    } else {
+        parse_mcp_json_body(&result.body)?
+    };
     Ok(json!({
         "status": result.status,
         "body": result.body,
@@ -8554,6 +8569,107 @@ mod tests {
             .unwrap_err()
             .code(),
             "MVP15D_TEST_INVALID"
+        );
+        drop(state);
+    }
+
+    #[test]
+    fn native_mcp_boundary_accepts_empty_202_notification_and_delete_responses() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let (_root, state) = rendered_state(BridgePhase::ProductCapture);
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let input = crate::mcp::McpHttpRequestInput {
+            endpoint: state.identity.endpoint.clone(),
+            method: crate::mcp::McpHttpMethod::Post,
+            body: json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized"
+            })
+            .to_string(),
+            protocol_version: Some("2025-06-18".to_string()),
+            session_id: Some("native-session-actual-0001".to_string()),
+            timeout_ms: Some(5_000),
+            observation: Some(crate::mcp::McpObservationIntent {
+                schema_version: MCP_OBSERVATION_INTENT_SCHEMA.to_string(),
+                task_id: state.identity.task_id.clone(),
+                phase: state.identity.phase.as_str().to_string(),
+                phase_session_id: state.identity.session.clone(),
+                phase_generation: state.identity.generation,
+                connection_generation: 17,
+                tool_search_mode: "off".to_string(),
+            }),
+        };
+        let mut result = crate::mcp::McpHttpRequestResult {
+            method: crate::mcp::McpHttpMethod::Post,
+            status: 202,
+            body: String::new(),
+            content_type: None,
+            session_id: None,
+            protocol_version: None,
+            observation_request: None,
+            observation_receipts: None,
+        };
+
+        attach_native_mcp_transport_observation(&input, &mut result).unwrap();
+
+        let request = result.observation_request.clone().unwrap();
+        let receipts = result.observation_receipts.clone().unwrap();
+        assert_eq!(receipts.len(), 1);
+        let notification = consume_observation_receipt(
+            &state.identity,
+            receipts.get("mcp_auxiliary_transport").unwrap(),
+            "mcp_auxiliary_transport",
+            &request,
+            "MVP15D_TEST_INVALID",
+        )
+        .unwrap();
+        assert_eq!(notification.response["status"], 202);
+        assert_eq!(notification.response["body"], "");
+        assert!(notification.response["parsedBody"].is_null());
+        let delete_input = crate::mcp::McpHttpRequestInput {
+            method: crate::mcp::McpHttpMethod::Delete,
+            body: String::new(),
+            ..input.clone()
+        };
+        let mut delete_result = crate::mcp::McpHttpRequestResult {
+            method: crate::mcp::McpHttpMethod::Delete,
+            status: 202,
+            body: String::new(),
+            content_type: None,
+            session_id: None,
+            protocol_version: None,
+            observation_request: None,
+            observation_receipts: None,
+        };
+
+        attach_native_mcp_transport_observation(&delete_input, &mut delete_result).unwrap();
+
+        let delete_request = delete_result.observation_request.clone().unwrap();
+        let delete_receipts = delete_result.observation_receipts.clone().unwrap();
+        let delete = consume_observation_receipt(
+            &state.identity,
+            delete_receipts.get("mcp_disconnect").unwrap(),
+            "mcp_disconnect",
+            &delete_request,
+            "MVP15D_TEST_INVALID",
+        )
+        .unwrap();
+        assert_eq!(delete.response["status"], "accepted");
+        assert_eq!(delete.response["httpStatus"], 202);
+        assert_eq!(delete.response["body"], "");
+        assert!(delete.response.get("parsedBody").is_none());
+        let mut request_with_id = input.clone();
+        request_with_id.body = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "notifications/initialized"
+        })
+        .to_string();
+        assert_eq!(
+            native_mcp_response_basis(&request_with_id, &result)
+                .unwrap_err()
+                .code(),
+            "MVP15D_MCP_OBSERVATION_BODY_INVALID"
         );
         drop(state);
     }

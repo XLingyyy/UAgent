@@ -1412,6 +1412,18 @@ bool FUAgentAssetToolsDescriptorSchemaTest::RunTest(const FString& Parameters)
 		TestTrue(FString::Printf(TEXT("%s output schema exists"), *ToolName), Output.IsValid());
 		if (Input.IsValid()) TestTrue(FString::Printf(TEXT("%s input schema forbids extra fields"), *ToolName), Input->TryGetBoolField(TEXT("additionalProperties"), bInputClosed) && !bInputClosed);
 		if (Output.IsValid()) TestTrue(FString::Printf(TEXT("%s output schema forbids extra fields"), *ToolName), Output->TryGetBoolField(TEXT("additionalProperties"), bOutputClosed) && !bOutputClosed);
+		const TSharedPtr<FJsonObject>* Contract = nullptr;
+		TestTrue(FString::Printf(TEXT("%s publishes the wire contract"), *ToolName), Output.IsValid() && Output->TryGetObjectField(TEXT("x-uagent-contract"), Contract) && Contract && Contract->IsValid());
+		if (Contract && Contract->IsValid())
+		{
+			FString SchemaVersion;
+			TestTrue(FString::Printf(TEXT("%s publishes the contract version"), *ToolName), (*Contract)->TryGetStringField(TEXT("schemaVersion"), SchemaVersion) && SchemaVersion == UAgentAssetTools::ContractVersion);
+			for (const TCHAR* Field : {TEXT("input"), TEXT("dryRunSchema"), TEXT("rollbackContract"), TEXT("affectedAssetsSchema"), TEXT("evidenceQuery")})
+			{
+				const TSharedPtr<FJsonObject>* ContractField = nullptr;
+				TestTrue(FString::Printf(TEXT("%s publishes %s"), *ToolName, Field), (*Contract)->TryGetObjectField(Field, ContractField) && ContractField && ContractField->IsValid());
+			}
+		}
 	}
 	return true;
 }
