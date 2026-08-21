@@ -623,6 +623,8 @@ export function createDesktopRuntimeAdapter(
   let latestEditorSessionId: string | null = null;
   let latestEditorObservationGeneration = 0;
   let phaseManagedEditorOwner: Mvp15dManagedEditorOwnerBinding | null = null;
+  const resolveNativeEditorRootRef = (rootRef: unknown): unknown =>
+    typeof rootRef === "string" ? resolveTrustedNativeRootRef(rootRef) ?? rootRef : rootRef;
   const nativeEditorObservationAdapter =
     createEditorObservationNativeAdapterFromEnvironment(nativeInvoke);
   const editorObservationAdapter: NativeEditorObservationAdapter | null = nativeEditorObservationAdapter
@@ -1693,7 +1695,7 @@ export function createDesktopRuntimeAdapter(
       taskId: authority.taskId,
       phase: authority.phase,
       projectId: input.projectId,
-      rootRef: input.rootRef,
+      rootRef: resolveNativeEditorRootRef(input.rootRef),
       uprojectRelativePath: input.uprojectRelativePath,
     };
     const response = await nativeInvoke<Record<string, unknown>>(
@@ -1989,6 +1991,7 @@ export function createDesktopRuntimeAdapter(
           };
           const successor = await invokeObservedNative("attach_editor_process", {
             ...successorAttachInput,
+            rootRef: resolveNativeEditorRootRef(successorAttachInput.rootRef),
           });
           const successorSessionId = successor.response.sessionId;
           const successorObservationGeneration = Number(successor.response.observationGeneration ?? 0);
@@ -2576,7 +2579,7 @@ export function createDesktopRuntimeAdapter(
             taskId: authority.taskId,
             phase: authority.phase,
             projectId: attachInput.projectId,
-            rootRef: attachInput.rootRef,
+            rootRef: resolveNativeEditorRootRef(attachInput.rootRef),
             uprojectRelativePath: attachInput.uprojectRelativePath,
           };
           const createResponse = await nativeInvoke<Record<string, unknown>>(
@@ -2630,7 +2633,11 @@ export function createDesktopRuntimeAdapter(
             mode: "managed",
           };
         }
-        const attached = await invokeObservedNative("attach_editor_process", effectiveAttachInput);
+        const nativeAttachInput = {
+          ...effectiveAttachInput,
+          rootRef: resolveNativeEditorRootRef(effectiveAttachInput.rootRef),
+        };
+        const attached = await invokeObservedNative("attach_editor_process", nativeAttachInput);
         const sessionId = String(attached.response.sessionId ?? "");
         const processId = String(attached.response.processId ?? "");
         const observationGeneration = Number(attached.response.observationGeneration ?? 0);
@@ -2846,7 +2853,10 @@ export function createDesktopRuntimeAdapter(
           throw error;
         }
       } else if (caseId === "N5") {
-        const successor = await invokeObservedNative("attach_editor_process", state.attachInput);
+        const successor = await invokeObservedNative("attach_editor_process", {
+          ...state.attachInput,
+          rootRef: resolveNativeEditorRootRef(state.attachInput.rootRef),
+        });
         const successorGeneration = Number(successor.response.observationGeneration ?? 0);
         if (
           successor.response.status !== "attached" ||
@@ -3076,7 +3086,10 @@ export function createDesktopRuntimeAdapter(
         );
       } else {
         if (operation.action === "cross_ttl" || operation.action === "second_rollback") {
-          const attached = await invokeObservedNative("attach_editor_process", state.attachInput);
+          const attached = await invokeObservedNative("attach_editor_process", {
+            ...state.attachInput,
+            rootRef: resolveNativeEditorRootRef(state.attachInput.rootRef),
+          });
           setupCalls.push(attached.reference);
           const freshSessionId = String(attached.response.sessionId ?? "");
           const freshGeneration = Number(attached.response.observationGeneration ?? 0);

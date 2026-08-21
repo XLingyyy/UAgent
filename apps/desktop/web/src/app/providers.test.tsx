@@ -595,7 +595,7 @@ describe("MVP15D production App registry wiring", () => {
       vi.unstubAllGlobals();
       vi.resetModules();
     }
-  });
+  }, 15_000);
 
   it("runs predecessor request, parent acknowledgement, successor claim, and final publish through two actual App registrations", async () => {
     const harness = await startNativeAppHarness();

@@ -140,6 +140,108 @@ describe("MVP15D authoritative product observations", () => {
     expect(harness.nativeCommands).not.toContain("mvp15d_bridge_issue_observation_receipt");
   });
 
+  it("resolves an opaque trusted root before creating and discovering the fixed phase listener", async () => {
+    const rawRoot = "G:/Fixture/TrustedFinalHost";
+    const nativeRoots: Array<{ command: string; rootRef: unknown }> = [];
+    const owner = {
+      processId: "managed-owner-trusted-root",
+      pidHash: "managed-pid-trusted-root",
+      pid: 7_101,
+      processCreationFiletime: "133000000000010101",
+      listenerInstanceSha256: "a".repeat(64),
+      ownerBindingSha256: "b".repeat(64),
+    };
+    const harness = createMvp15dNativeBoundaryHarness({
+      handleNativeCommand: async (command, input, nextReceipt) => {
+        if (command === "validate_native_project_root") {
+          return {
+            ok: true,
+            reason: "valid",
+            displayRoot: "[project-root]/TrustedFinalHost",
+            projectName: "TrustedFinalHost",
+            engine: { label: "UE 5.8", association: "5.8", source: "uproject" },
+          };
+        }
+        if (command === "trust_native_project_root") {
+          return {
+            rootId: "root:trusted-final-host",
+            displayRoot: "[project-root]/TrustedFinalHost",
+            trustState: "trusted",
+          };
+        }
+        if (command === "create_managed_editor_process") {
+          nativeRoots.push({ command, rootRef: input.rootRef });
+          return {
+            schemaVersion: "uagent.mvp15d.managed-editor-process-create-result.v2",
+            status: "ready",
+            reason: "task_owned_listener_accepting",
+            purpose: "phase_listener_owner",
+            ownerTaskId: input.taskId,
+            ownerPhase: input.phase,
+            processPid: owner.pid,
+            processCreationFiletime: owner.processCreationFiletime,
+            listenerInstanceSha256: owner.listenerInstanceSha256,
+            ownerBindingSha256: owner.ownerBindingSha256,
+            process: {
+              id: owner.processId,
+              pidHash: owner.pidHash,
+              displayName: "UnrealEditor-Cmd.exe",
+              source: "managed",
+            },
+            nativeReceiptId: nextReceipt(),
+          };
+        }
+        if (command === "discover_editor_processes") {
+          nativeRoots.push({ command, rootRef: input.rootRef });
+          return {
+            status: "ready",
+            reason: "task_owned_managed_process_matched",
+            processes: [{
+              id: owner.processId,
+              pidHash: owner.pidHash,
+              displayName: "UnrealEditor-Cmd.exe",
+              displayExecutableHash: "fixture-executable",
+              displayProjectHint: "[project-root]/TrustedFinalHost.uproject",
+              processState: "running",
+              discoveredAt: 1,
+              expiresAt: 9_999_999_999_999,
+              source: "managed",
+              managedPurpose: "phase_listener_owner",
+              processPid: owner.pid,
+              processCreationFiletime: owner.processCreationFiletime,
+              listenerInstanceSha256: owner.listenerInstanceSha256,
+              ownerBindingSha256: owner.ownerBindingSha256,
+            }],
+          };
+        }
+        return undefined;
+      },
+    });
+    const projectAdapter = createNativeProjectAdapter({ invoke: harness.nativeInvoke, now: () => 1 });
+    const project = await projectAdapter.addProject(rawRoot);
+    const trusted = await projectAdapter.confirmTrust(project.id);
+    const adapter = createDesktopRuntimeAdapter({ nativeInvoke: harness.nativeInvoke });
+    await adapter.activateMvp15dFixedObservationAuthority?.({
+      taskId: "TASK-MVP15D-TRUSTED-ROOT",
+      phase: "product-capture",
+      session: "fixed-product-session-trusted-root-0001",
+      generation: 10,
+      receiptLedgerEnabled: true,
+    });
+
+    expect(trusted.rootRef).not.toBe(rawRoot);
+    await expect(adapter.getEditorObservationAdapter()!.discoverProcesses({
+      projectId: trusted.id,
+      rootRef: trusted.rootRef,
+      uprojectRelativePath: "TrustedFinalHost.uproject",
+    })).resolves.toMatchObject({ status: "ready" });
+    expect(nativeRoots).toEqual([
+      { command: "create_managed_editor_process", rootRef: rawRoot },
+      { command: "discover_editor_processes", rootRef: rawRoot },
+    ]);
+    projectAdapter.removeProject(trusted.id);
+  });
+
   it.each([
     ["process_not_managed", "mvp15d_product_ue_restart_termination_failed"],
     ["session_not_found", "mvp15d_product_ue_restart_termination_failed"],
@@ -163,6 +265,7 @@ describe("MVP15D authoritative product observations", () => {
       listenerInstanceSha256: string;
       ownerBindingSha256: string;
     };
+    const rawRoot = `G:/Fixture/RestartFinalHost-${failure}`;
     let createSequence = 0;
     let sessionSequence = 0;
     let observationGeneration = 0;
@@ -171,7 +274,24 @@ describe("MVP15D authoritative product observations", () => {
     let predecessorSessionId = "";
     const harness = createMvp15dNativeBoundaryHarness({
       handleNativeCommand: async (command, input, nextReceipt) => {
+        if (command === "validate_native_project_root") {
+          return {
+            ok: true,
+            reason: "valid",
+            displayRoot: "[project-root]/FinalHost",
+            projectName: "FinalHost",
+            engine: { label: "UE 5.8", association: "5.8", source: "uproject" },
+          };
+        }
+        if (command === "trust_native_project_root") {
+          return {
+            rootId: `root:restart-${failure}`,
+            displayRoot: "[project-root]/FinalHost",
+            trustState: "trusted",
+          };
+        }
         if (command === "create_managed_editor_process") {
+          expect(input.rootRef).toBe(rawRoot);
           createSequence += 1;
           const sequence = createSequence === 2 && failure === "same_process" ? 1 : createSequence;
           const listenerSequence = createSequence === 2 && failure === "stale_listener" ? 1 : createSequence;
@@ -232,6 +352,7 @@ describe("MVP15D authoritative product observations", () => {
           };
         }
         if (command === "attach_editor_process") {
+          expect(input.rootRef).toBe(rawRoot);
           sessionSequence += 1;
           observationGeneration += 1;
           const sessionId =
@@ -303,6 +424,9 @@ describe("MVP15D authoritative product observations", () => {
         return undefined;
       },
     });
+    const projectAdapter = createNativeProjectAdapter({ invoke: harness.nativeInvoke, now: () => 1 });
+    const project = await projectAdapter.addProject(rawRoot);
+    const trusted = await projectAdapter.confirmTrust(project.id);
     const adapter = createDesktopRuntimeAdapter({ nativeInvoke: harness.nativeInvoke });
     await adapter.activateMvp15dFixedObservationAuthority?.({
       taskId: "TASK-MVP15D-UE-RESTART-NEGATIVE",
@@ -314,7 +438,7 @@ describe("MVP15D authoritative product observations", () => {
     const editor = adapter.getEditorObservationAdapter();
     const editorConfig = {
       projectId: "project:managed-owner-test",
-      rootRef: "G:/Fixture/FinalHost",
+      rootRef: trusted.rootRef,
       uprojectRelativePath: "FinalHost.uproject",
     };
     const discovery = await editor!.discoverProcesses(editorConfig);
@@ -331,6 +455,7 @@ describe("MVP15D authoritative product observations", () => {
     await expect(adapter.getMvp15dProductObservationPort!()!.retract("ue_restart"))
       .rejects.toThrow(expectedError);
     expect(harness.nativeInputs.some((input) => input.reason === "ue_restart")).toBe(false);
+    projectAdapter.removeProject(trusted.id);
   });
 
   it("drives the partial/unknown UI authority records through raw native and MCP calls", async () => {
@@ -344,6 +469,7 @@ describe("MVP15D authoritative product observations", () => {
     let sessionSequence = 0;
     let registrationSequence = 0;
     let evidenceSequence = 0;
+    const rawRoot = "G:/Projects/RawUi";
     const sessions = new Map<string, { generation: number; stopped: boolean; processAlive: boolean }>();
     const registrations = new Map<string, {
       sessionId: string;
@@ -360,7 +486,24 @@ describe("MVP15D authoritative product observations", () => {
         attestationValid = false;
       },
       handleNativeCommand: async (command, input, nextReceipt) => {
+      if (command === "validate_native_project_root") {
+        return {
+          ok: true,
+          reason: "valid",
+          displayRoot: "[project-root]/RawUi",
+          projectName: "RawUi",
+          engine: { label: "UE 5.8", association: "5.8", source: "uproject" },
+        };
+      }
+      if (command === "trust_native_project_root") {
+        return {
+          rootId: "root:raw-ui-trusted",
+          displayRoot: "[project-root]/RawUi",
+          trustState: "trusted",
+        };
+      }
       if (command === "create_managed_editor_process") {
+        expect(input.rootRef).toBe(rawRoot);
         return {
           schemaVersion: "uagent.mvp15d.managed-editor-process-create-result.v2",
           status: "created",
@@ -380,6 +523,7 @@ describe("MVP15D authoritative product observations", () => {
         };
       }
       if (command === "attach_editor_process") {
+        expect(input.rootRef).toBe(rawRoot);
         sessionSequence += 1;
         const sessionId = `native-editor-session-${sessionSequence.toString().padStart(4, "0")}`;
         sessions.set(sessionId, { generation: sessionSequence, stopped: false, processAlive: true });
@@ -505,6 +649,9 @@ describe("MVP15D authoritative product observations", () => {
       return undefined;
     },
     });
+    const projectAdapter = createNativeProjectAdapter({ invoke: harness.nativeInvoke, now: () => 1 });
+    const project = await projectAdapter.addProject(rawRoot);
+    const trusted = await projectAdapter.confirmTrust(project.id);
     const adapter = createDesktopRuntimeAdapter({
       nativeInvoke: harness.nativeInvoke,
       mvp15dAdvanceClock: async (milliseconds) => {
@@ -585,7 +732,7 @@ describe("MVP15D authoritative product observations", () => {
     const authorityContext = {
       attachInput: {
         projectId: "project-binding:raw-ui",
-        rootRef: "root:raw-ui",
+        rootRef: trusted.rootRef,
         processId: "editor-process:raw-ui",
         pidHash: "pid:raw-ui",
       },
@@ -731,6 +878,7 @@ describe("MVP15D authoritative product observations", () => {
     expect(authority.partialUnknown.operationResults.at(-2)?.setupCalls.map(({ request }) => request))
       .toHaveLength(2);
     expect(authority.partialUnknown.operationResults.at(-1)?.setupCalls).toHaveLength(6);
+    projectAdapter.removeProject(trusted.id);
   });
 
   it.each([
@@ -745,11 +893,29 @@ describe("MVP15D authoritative product observations", () => {
     vi.mocked(StreamableHttpTransport).mockImplementation(
       (options) => new RealStreamableHttpTransport(options),
     );
+    const rawRoot = `G:/Fixture/FinalHost-${failure}`;
     const activeManaged = new Map<string, { pid: number; processCreationFiletime: string }>();
     let releaseCount = 0;
     const harness = createMvp15dNativeBoundaryHarness({
       handleNativeCommand: async (command, input, nextReceipt) => {
+        if (command === "validate_native_project_root") {
+          return {
+            ok: true,
+            reason: "valid",
+            displayRoot: "[project-root]/FinalHost",
+            projectName: "FinalHost",
+            engine: { label: "UE 5.8", association: "5.8", source: "uproject" },
+          };
+        }
+        if (command === "trust_native_project_root") {
+          return {
+            rootId: `root:n4-${failure}`,
+            displayRoot: "[project-root]/FinalHost",
+            trustState: "trusted",
+          };
+        }
         if (command === "create_managed_editor_process") {
+          expect(input.rootRef).toBe(rawRoot);
           const processId = "managed-process-cleanup-1";
           const identity = {
             pid: 9_001,
@@ -803,6 +969,7 @@ describe("MVP15D authoritative product observations", () => {
           };
         }
         if (command === "attach_editor_process") {
+          expect(input.rootRef).toBe(rawRoot);
           if (failure === "attach_failure") {
             return { status: "blocked", reason: "fixture_attach_failure", nativeReceiptId: nextReceipt() };
           }
@@ -849,6 +1016,9 @@ describe("MVP15D authoritative product observations", () => {
         return undefined;
       },
     });
+    const projectAdapter = createNativeProjectAdapter({ invoke: harness.nativeInvoke, now: () => 1 });
+    const project = await projectAdapter.addProject(rawRoot);
+    const trusted = await projectAdapter.confirmTrust(project.id);
     const adapter = createDesktopRuntimeAdapter({ nativeInvoke: harness.nativeInvoke });
     await makeMvp15DForwardReady(adapter);
     await adapter.activateMvp15dFixedObservationAuthority?.({
@@ -863,7 +1033,7 @@ describe("MVP15D authoritative product observations", () => {
       caseId: "N4",
       attachInput: {
         projectId: "project:managed-cleanup",
-        rootRef: "G:/Fixture/FinalHost",
+        rootRef: trusted.rootRef,
         uprojectRelativePath: "FinalHost.uproject",
       },
       registrationInput: { changeSetId: "change-set:managed-cleanup", operations: [] },
@@ -886,6 +1056,7 @@ describe("MVP15D authoritative product observations", () => {
     expect(releaseCount).toBe(expectedReleaseCount);
     expect(harness.nativeCommands.filter((command) => command === "release_managed_editor_process"))
       .toHaveLength(expectedReleaseCount);
+    projectAdapter.removeProject(trusted.id);
   });
 
   it("calls two actual configuration discoveries and all six native retraction transitions", async () => {
