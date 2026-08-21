@@ -56,12 +56,18 @@ ExactSix and fixed 15A before rendered 15B exposed a desktop fixed adapter that
 had captured native-null during module evaluation. Bootstrap initialization and
 late-Tauri injection coverage repair that source contract; the predecessor live
 lineage remains diagnostic only.
-Resume 13 has `Review Verdict: PASS` at current implementation commit
+Resume 13 has `Review Verdict: PASS` at historical implementation commit
 `c60a094e0225d19e10238618abfeb73c299eacf0`. Its predecessor package again
 passed ExactSix and fixed 15A, then rendered 15B exposed missing fixture
 `Game.uproject` before managed guardian spawn. The accepted pre-index descriptor
 derivation uses the native-validated `FinalHost.uproject`; the predecessor live
 lineage remains diagnostic only.
+Resume 14 has `Review Verdict: PASS` at current implementation commit
+`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. Its clean `c60a094e...` package
+passed ExactSix and fixed 15A before rendered 15B exposed an opaque trusted-root
+token at direct managed-process creation. Boundary-local resolution now covers
+all direct native editor create/attach calls and preserves native canonical trust;
+the predecessor package and live lineage remain diagnostic only.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -154,7 +160,7 @@ not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
 A new clean-checkout task based on current implementation commit
-`c60a094e0225d19e10238618abfeb73c299eacf0` is dispatched for the full UE 5.8.1
+`9d04ef745800f8f6d29574b366d6ad4ae8876fdf` is dispatched for the full UE 5.8.1
 compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
 15B pass inside that authorized task.
 

@@ -61,11 +61,16 @@ Resume 12 has `Review Verdict: PASS` at historical implementation commit
 desktop runtime adapter after dependency-module evaluation and before React
 render; `App` uses the same idempotent initializer. The regression imports App
 before injecting the Tauri global and then proves native editor capability.
-Resume 13 has `Review Verdict: PASS` at current implementation commit
+Resume 13 has `Review Verdict: PASS` at historical implementation commit
 `c60a094e0225d19e10238618abfeb73c299eacf0`. `getMvp14ProcessConfig()` now uses
 the native-validated project name to form `<ProjectName>.uproject` before an
 index scan exists, preventing a real trusted project from inheriting the fixture
 `Game.uproject` descriptor.
+Resume 14 has `Review Verdict: PASS` at current implementation commit
+`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. The fixed runtime adapter now calls
+`resolveTrustedNativeRootRef` at every direct managed editor create/attach IPC
+boundary, while stored UI and product state retains the opaque root token. Native
+trusted-root, canonical-object and `.uproject` validation remains unchanged.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -153,7 +158,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `c60a094e0225d19e10238618abfeb73c299eacf0`. The old
+implementation commit `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

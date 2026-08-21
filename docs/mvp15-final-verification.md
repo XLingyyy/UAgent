@@ -1,5 +1,26 @@
 # MVP15 Final Verification
 
+## Resume 14 accepted source checkpoint — 2026-08-21
+
+Resume 14 has `Review Verdict: PASS` for its required D16.5 source-only stop at
+implementation commit `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. A fresh detached
+checkout of `c60a094e...` built the Tauri release and official UE 5.8.1 plugin,
+passed separate ExactSix `1 / 1 / 0 / 0` and fixed 15A `3 / 3 / 0 / 0`, then
+reached rendered 15B through `confirmTrust`. The phase failed closed before
+discovery because the fixed-authority path passed the UI's opaque trusted-root
+token to native managed-process creation.
+
+The accepted repair resolves opaque trusted-root bindings only at direct native
+editor create/attach boundaries and retains opaque UI/product state plus native
+canonical object, descriptor and trust validation. Fresh focused adapter
+`119 + 3 retained skips`, full workspace `34 + 51 + 825 + 771` with 3 retained
+desktop skips, typecheck, lint, 259-module web build, Cargo fmt and source-
+identity `20/20` pass. A load-sensitive provider dynamic-import test received a
+local 15-second bound after two full-suite 5-second timeouts and an isolated
+`25/25` pass; the unchanged full-suite command then passed. No post-repair
+release, ExactSix, 15A, 15B, 15C, D16 closeout, real smoke or Stage Ready claim
+exists.
+
 ## Resume 13 accepted source checkpoint — 2026-08-21
 
 Resume 13 has `Review Verdict: PASS` for its required D16.5 source-only stop at
@@ -261,7 +282,7 @@ live fingerprint, full 15A N1-N8 acceptance root, partial/unknown sequence,
 parent closeout, UE Automation run, live MCP capture, or mutation was executed.
 The stale installed
 release may fail only with `FINAL_LIVE_RUNTIME_NONZERO`. D13/15A is
-`DISPATCHED` from `c60a094e0225d19e10238618abfeb73c299eacf0`, D14/15B waits on
+`DISPATCHED` from `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`, D14/15B waits on
 15A, D15/15C waits on 15A/15B, D16 remains `IN_PROGRESS`, G16
 and overall acceptance remain `PARTIAL`, and Ready remains `NO`. Current
 `PASS_REAL_SMOKE` is `NO`.
@@ -1357,7 +1378,7 @@ separate 2026-08-03 Final
 Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
 source-checkpoint G15 integrity is `COMPLETE` at
-`c60a094e0225d19e10238618abfeb73c299eacf0`, and G16 is `PARTIAL`. The
+`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
 replace the historical 2026-08-03 Rework 8 checkpoint. No clean current-generation exact-six fingerprint or

@@ -1,6 +1,6 @@
 # MVP15 Native Authority Binding Rework Handoff
 
-## Current MVP15D Final 15A-15C/D16 Live Acceptance Handoff — 2026-08-20
+## Current MVP15D Final 15A-15C/D16 Live Acceptance Handoff — 2026-08-21
 
 Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
@@ -65,12 +65,19 @@ ExactSix `1 / 1 / 0 / 0` and fixed 15A `3 / 3 / 0 / 0`, then rendered 15B
 exposed native-enabled/UI-disabled editor capability. The checkpoint creates and
 registers the single fixed adapter during bootstrap after dependency evaluation
 and before React render. No patched live lineage exists.
-Resume 13 has `Review Verdict: PASS` at current implementation commit
+Resume 13 has `Review Verdict: PASS` at historical implementation commit
 `c60a094e0225d19e10238618abfeb73c299eacf0`. Its clean predecessor source again
 passed ExactSix and fixed 15A, then rendered 15B exposed a pre-index descriptor
 fallback to missing `Game.uproject` in the validated `FinalHost` project. The
 checkpoint derives `FinalHost.uproject` from native validation before indexing;
 all retained Resume 13 live evidence predates the repair.
+Resume 14 has `Review Verdict: PASS` at current implementation commit
+`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. Its clean `c60a094e...` lineage
+passed ExactSix and fixed 15A, then rendered 15B exposed the UI's opaque trusted-
+root token at the direct managed-process create boundary. The checkpoint resolves
+opaque bindings at every direct native editor create/attach boundary while native
+canonical trust and descriptor checks remain authoritative; all retained Resume
+14 live evidence predates the repair.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -82,7 +89,7 @@ The verified release binary truthfully reported a
 dirty pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
 transitive production boundary. Cleanup is closed and a separate clean-checkout
 rebuild from current implementation commit
-`c60a094e0225d19e10238618abfeb73c299eacf0` is dispatched for G16 and D13 /
+`9d04ef745800f8f6d29574b366d6ad4ae8876fdf` is dispatched for G16 and D13 /
 15A.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
@@ -316,7 +323,7 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 - A sealed final package and live manifest/install/load equality after cleanup,
   from a clean checkout of current implementation commit
-  `c60a094e0225d19e10238618abfeb73c299eacf0`.
+  `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`.
 - Fresh current-task UE Automation output, exact-six product-adapter capture,
   and rendered product-UI happy/negative/replay/cleanup evidence.
 - A retained final inventory produced and verified from those live source
@@ -368,8 +375,10 @@ ordering repair is accepted at historical implementation commit
 `f14dc69543a42d553542b73547c3598fb39947b6`; Resume 12's fixed-adapter bootstrap
 repair is accepted at historical implementation commit
 `38cec6f3e11af1e4b991430d3941e71c57d2c45d`; Resume 13's validated-descriptor
-repair is accepted at current implementation commit
-`c60a094e0225d19e10238618abfeb73c299eacf0`. The separate
+repair is accepted at historical implementation commit
+`c60a094e0225d19e10238618abfeb73c299eacf0`; Resume 14's trusted-root IPC
+boundary repair is accepted at current implementation commit
+`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. The separate
 2026-08-03 Final Source/Tooling Rework 8
 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
@@ -378,5 +387,5 @@ D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A and
 D15 / 15C waits on 15A/15B; D16 remains `IN_PROGRESS`; real UE 5.8.1
 compatibility and overall acceptance remain `PARTIAL`; Ready remains `NO`. The
 clean-checkout run must use current implementation commit
-`c60a094e0225d19e10238618abfeb73c299eacf0`. Exact-sandbox 15C mutation is
+`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. Exact-sandbox 15C mutation is
 authorized only after fresh 15A and 15B pass inside that dispatched task.

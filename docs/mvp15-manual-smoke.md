@@ -54,12 +54,18 @@ implementation commit `38cec6f3e11af1e4b991430d3941e71c57d2c45d`; its predecesso
 source passed ExactSix and fixed 15A, then rendered 15B exposed a fixed adapter
 that had captured native-null before the Tauri bridge became available. The
 bootstrap repair passes source verification. Resume 13 has `Review Verdict:
-PASS` at current implementation commit
+PASS` at historical implementation commit
 `c60a094e0225d19e10238618abfeb73c299eacf0`; its clean predecessor source again
 passed ExactSix and fixed 15A, then rendered 15B exposed missing
 `Game.uproject` before guardian spawn. The accepted pre-index descriptor repair
 uses the native-validated `FinalHost.uproject`; current-source manual smoke still
 requires a complete restart.
+Resume 14 has `Review Verdict: PASS` at current implementation commit
+`9d04ef745800f8f6d29574b366d6ad4ae8876fdf`; its clean `c60a094e...` source
+passed ExactSix and fixed 15A, then rendered 15B exposed an opaque trusted-root
+token at a direct native managed-process boundary. The boundary-local resolver
+repair passes source verification, while every retained live artifact predates
+the repair and manual smoke still requires a complete restart.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -96,7 +102,7 @@ Controlled source and built-child checks do not constitute the current
 clean-checkout live acceptance root. No current Tool Search,
 installed/load/manifest tuple, live fingerprint, full 15A N1-N8 sequence,
 partial/unknown sequence, parent closeout, or manual/live smoke is accepted for
-Resume 13. The pre-repair release and all old 15A-15C evidence are stale; the
+Resume 14. The pre-repair release and all old 15A-15C evidence are stale; the
 dispatched dedicated task must rebuild and pass 15A/15B before authorized 15C.
 
 Historical Final Source/Tooling Rework 4 connected the fixed adapters to the
@@ -126,7 +132,7 @@ read-only supporting evidence.
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is assigned
 to the newly dispatched clean-checkout task based on current implementation
-commit `c60a094e0225d19e10238618abfeb73c299eacf0`. Real UE, Tool Search,
+commit `9d04ef745800f8f6d29574b366d6ad4ae8876fdf`. Real UE, Tool Search,
 and mutation were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The
 dispatched live task may enter exact-sandbox 15C mutation only after fresh 15A
 and 15B pass.
