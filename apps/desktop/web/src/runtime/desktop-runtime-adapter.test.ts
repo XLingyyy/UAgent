@@ -94,6 +94,75 @@ describe("MVP15D authoritative product observations", () => {
     expect(nativeInvokeMock).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts a renderer restart acknowledgement window with serde_json wire key order", async () => {
+    const { StreamableHttpTransport: RealStreamableHttpTransport } =
+      await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");
+    vi.mocked(StreamableHttpTransport).mockImplementation(
+      (options) => new RealStreamableHttpTransport(options),
+    );
+    const taskId = "TASK-MVP15D-RENDERER-WIRE-ORDER";
+    const handoffId = `renderer-handoff:${"b".repeat(64)}`;
+    const predecessorWindowIdentitySha256 = "c".repeat(64);
+    const predecessorWindow = {
+      schemaVersion: "uagent.mvp15d.predecessor-window-identity.v1",
+      status: "observed",
+      windowLabel: "main",
+      taskId,
+      phase: "product-capture",
+      handoffId,
+      stableIdentitySha256: predecessorWindowIdentitySha256,
+    };
+    const acknowledgementWindow = {
+      handoffId,
+      phase: "product-capture",
+      schemaVersion: "uagent.mvp15d.predecessor-window-identity.v1",
+      stableIdentitySha256: predecessorWindowIdentitySha256,
+      status: "observed",
+      taskId,
+      windowLabel: "main",
+    };
+    const harness = createMvp15dNativeBoundaryHarness({
+      handleNativeCommand: async (command) => {
+        if (command !== "mvp15d_bridge_claim_renderer_restart") return undefined;
+        return {
+          schemaVersion: "uagent.mvp15d.renderer-restart-claim-result.v3",
+          handoffId,
+          claimReceiptId: `mvp15d-observation-receipt:${"f".repeat(64)}`,
+          requestReceiptId: `mvp15d-observation-receipt:${"1".repeat(64)}`,
+          requestReceiptRequest: { schemaVersion: "uagent.mvp15d.renderer-restart-request.v2" },
+          parentAcknowledgementReceiptId: `mvp15d-observation-receipt:${"2".repeat(64)}`,
+          parentAcknowledgementReceiptRequest: {
+            handoffId,
+            phase: "product-capture",
+            predecessorWindow: acknowledgementWindow,
+            schemaVersion: "uagent.mvp15d.renderer-parent-lifecycle-acknowledgement.v2",
+            taskId,
+          },
+          parentAcknowledgementReceiptSequence: 2,
+          claimReceiptRequest: { predecessorWindowIdentitySha256 },
+          segment: {},
+          predecessorWindow,
+        };
+      },
+    });
+    const adapter = createDesktopRuntimeAdapter({
+      nativeInvoke: harness.nativeInvoke,
+    });
+    await adapter.activateMvp15dFixedObservationAuthority?.({
+      taskId,
+      phase: "product-capture",
+      session: "renderer-wire-order-session",
+      generation: 1,
+      receiptLedgerEnabled: true,
+      minimumMcpGeneration: 1,
+      predecessorWindowIdentitySha256,
+    });
+
+    await expect(
+      adapter.resumeMvp15dProductAuthority?.(handoffId, "http://127.0.0.1:18765/mcp"),
+    ).rejects.toThrow("mvp15d_renderer_successor_segment_invalid");
+  });
+
   it("drives the production product port through raw MCP and native calls", async () => {
     const { StreamableHttpTransport: RealStreamableHttpTransport } =
       await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");

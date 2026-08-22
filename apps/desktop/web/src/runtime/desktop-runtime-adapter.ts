@@ -3421,6 +3421,14 @@ export function createDesktopRuntimeAdapter(
       const predecessorWindow = claim.predecessorWindow;
       const acknowledgementWindow = claim.parentAcknowledgementReceiptRequest
         ?.predecessorWindow as Record<string, unknown> | undefined;
+      // serde_json::Value and struct responses can emit the same flat record in different key orders.
+      const acknowledgementWindowMatches =
+        !!predecessorWindow &&
+        !!acknowledgementWindow &&
+        Object.keys(predecessorWindow).length === Object.keys(acknowledgementWindow).length &&
+        Object.entries(predecessorWindow).every(
+          ([key, value]) => acknowledgementWindow[key] === value,
+        );
       if (
         claim.schemaVersion !== "uagent.mvp15d.renderer-restart-claim-result.v3" ||
         claim.handoffId !== handoffId ||
@@ -3443,7 +3451,7 @@ export function createDesktopRuntimeAdapter(
         predecessorWindow.phase !== authority.phase ||
         predecessorWindow.handoffId !== handoffId ||
         predecessorWindow.stableIdentitySha256 !== authority.predecessorWindowIdentitySha256 ||
-        JSON.stringify(acknowledgementWindow) !== JSON.stringify(predecessorWindow) ||
+        !acknowledgementWindowMatches ||
         claim.parentAcknowledgementReceiptRequest.schemaVersion !==
           "uagent.mvp15d.renderer-parent-lifecycle-acknowledgement.v2" ||
         claim.parentAcknowledgementReceiptRequest.handoffId !== handoffId ||
