@@ -79,9 +79,12 @@ predecessor passed ExactSix and fixed 15A, then rendered 15B exposed legal
 notification 202 empty-body handling and incomplete exact-six descriptor
 contracts. Both source defects are repaired and verified. That checkpoint then
 passed ExactSix and fixed 15A before rendered 15B exposed managed observation,
-first-connect recovery and legal meta-tool identity defects. The current second
-interim source checkpoint `6fb99447f3158c9f0326c93774fe03c5319762ff`
-repairs all three; no current-source live gate has advanced.
+first-connect recovery and legal meta-tool identity defects. The second interim
+source checkpoint `6fb99447f3158c9f0326c93774fe03c5319762ff` repairs all three.
+Its clean lineage then exposed order-sensitive equality for renderer predecessor-
+window records. The current third checkpoint
+`96e7183f9bb6644bf72191b68277b112c33ccc1d` compares exact keys and values
+independently of member order; no current-source live gate has advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -146,7 +149,7 @@ ran; the stale installed binary may fail only with `FINAL_LIVE_RUNTIME_NONZERO`.
 The historical Final Source/Tooling Rework 8 is checkpointed at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. Cleanup is closed and live
 acceptance is dispatched as a separate clean-checkout task based on current
-implementation commit `6fb99447f3158c9f0326c93774fe03c5319762ff`, with a manifest-backed
+implementation commit `96e7183f9bb6644bf72191b68277b112c33ccc1d`, with a manifest-backed
 build and a new strict evidence root. Exact-sandbox 15C mutation remains gated
 until fresh 15A and 15B pass inside that authorized task.
 
@@ -195,7 +198,7 @@ MVP15D source-checkpoint risks above or supply current D0-D12 evidence.
 
 ## Current Conclusion
 
-D13 / 15A is `DISPATCHED` from `6fb99447f3158c9f0326c93774fe03c5319762ff`. Final Pre-live Source Closure Rework 7 is historical
+D13 / 15A is `DISPATCHED` from `96e7183f9bb6644bf72191b68277b112c33ccc1d`. Final Pre-live Source Closure Rework 7 is historical
 `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
 `Review Verdict: NEEDS_FIX` for deterministic Tauri destroy/build ordering.
 Rework 9 is the historical accepted base at

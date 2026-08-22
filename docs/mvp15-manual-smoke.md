@@ -72,10 +72,12 @@ passed ExactSix and fixed 15A, then rendered 15B exposed legal notification 202
 empty-body handling and incomplete exact-six descriptor contracts. Both source
 repairs pass automated verification. That checkpoint then passed ExactSix and
 fixed 15A before rendered 15B exposed managed-provenance, first-connect recovery,
-and legal meta-tool identity defects. The current second interim checkpoint is
-`6fb99447f3158c9f0326c93774fe03c5319762ff`; its three source repairs pass
-automated verification. Current-source manual smoke still requires a complete
-restart from this checkpoint.
+and legal meta-tool identity defects. The second interim checkpoint is historical
+at `6fb99447f3158c9f0326c93774fe03c5319762ff`; its three source repairs pass
+automated verification. Its clean lineage then exposed order-sensitive equality
+for renderer predecessor-window records. The current third checkpoint is
+`96e7183f9bb6644bf72191b68277b112c33ccc1d`; exact key/value comparison is order
+independent. Current-source manual smoke still requires a complete restart.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -142,7 +144,7 @@ read-only supporting evidence.
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is assigned
 to the newly dispatched clean-checkout task based on current implementation
-commit `6fb99447f3158c9f0326c93774fe03c5319762ff`. Real UE, Tool Search,
+commit `96e7183f9bb6644bf72191b68277b112c33ccc1d`. Real UE, Tool Search,
 and mutation were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The
 dispatched live task may enter exact-sandbox 15C mutation only after fresh 15A
 and 15B pass.

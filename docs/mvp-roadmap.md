@@ -93,8 +93,13 @@
   / 0`, then rendered 15B exposed managed observation-source rejection, a
   first-connect error requiring bounded recovery, and exact-six identity
   aggregation across legal MCP meta tools. All three repairs have `Review
-  Verdict: PASS` at current implementation commit
-  `6fb99447f3158c9f0326c93774fe03c5319762ff`; the same task remains active for a
+  Verdict: PASS` at historical implementation commit
+  `6fb99447f3158c9f0326c93774fe03c5319762ff`.
+- Final Live Acceptance Resume 15 third interim checkpoint: clean `6fb9944...`
+  passed ExactSix `1 / 1 / 0 / 0` and fixed 15A `3 / 3 / 0 / 0`, then rendered
+  15B exposed order-sensitive comparison of equal renderer predecessor-window
+  records. The repair has `Review Verdict: PASS` at current implementation commit
+  `96e7183f9bb6644bf72191b68277b112c33ccc1d`; the same task remains active for a
   fresh full live chain.
 - The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
   historical `COMPLETE / PASS` record at implementation commit
@@ -102,7 +107,7 @@
 - G14 documentation consistency: `IMPLEMENTED` after the current evidence and
   stale-state reconciliation.
 - G15 checkpoint integrity: `COMPLETE`; current implementation commit
-  `6fb99447f3158c9f0326c93774fe03c5319762ff` is recorded by this documentation
+  `96e7183f9bb6644bf72191b68277b112c33ccc1d` is recorded by this documentation
   closeout. Earlier accepted repairs retain their historical scopes.
 - G16 authority provenance and plugin baseline: `PARTIAL`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
@@ -111,7 +116,7 @@
 - Real UE 5.8.1 compatibility: `PARTIAL`; the Rework 2 read-only attempt is
   historical and the full clean-commit matrix remains deferred.
 - D13 / 15A live execution: `DISPATCHED` from a fresh clean checkout of
-  `6fb99447f3158c9f0326c93774fe03c5319762ff`.
+  `96e7183f9bb6644bf72191b68277b112c33ccc1d`.
 - D14 / 15B: `WAITING_ON_15A`; not run.
 - D15 / 15C: `WAITING_ON_15A_15B`; no asset mutation was attempted.
 - D16: `IN_PROGRESS`.
@@ -202,7 +207,7 @@ cannot satisfy final 15A-15C.
 
 The invalid Resume 2 cleanup gate is closed. A new clean-checkout 5.8.1 task is
 dispatched from current implementation commit
-`6fb99447f3158c9f0326c93774fe03c5319762ff`, covering
+`96e7183f9bb6644bf72191b68277b112c33ccc1d`, covering
 both Tool Search modes, exact-six/product
 retractions, response framing, clean inventory, and the real loaded-module
 observer. Only a later separately authorized task may consider real 15C

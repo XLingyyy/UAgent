@@ -76,10 +76,13 @@ Resume 15's first accepted interim source checkpoint is historical at
 empty MCP response bodies only for valid id-less notifications with HTTP 202,
 while id-bearing requests and other statuses remain fail closed. The UE plugin
 publishes the complete exact-six descriptor contract and regression-checks every
-required member. The current second interim source checkpoint is
+required member. The second interim source checkpoint is historical at
 `6fb99447f3158c9f0326c93774fe03c5319762ff`; it accepts only native or managed
 OS-observed module provenance, adds one bounded rendered-connect recovery, and
-attests exact-six identity independently of legal MCP meta tools.
+attests exact-six identity independently of legal MCP meta tools. Its clean run
+then exposed order-sensitive equality for renderer predecessor-window records.
+The current third checkpoint `96e7183f9bb6644bf72191b68277b112c33ccc1d`
+compares their exact key/value set independently of JSON member order.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -167,7 +170,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `6fb99447f3158c9f0326c93774fe03c5319762ff`. The old
+implementation commit `96e7183f9bb6644bf72191b68277b112c33ccc1d`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 
