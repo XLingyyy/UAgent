@@ -5,7 +5,7 @@ AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent p
 ## Current Stage: MVP15D - Final 15A-15C/D16 Live Acceptance
 
 The current accepted production implementation checkpoint is
-`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. It includes Final Live Acceptance
+`6fb99447f3158c9f0326c93774fe03c5319762ff`. It includes Final Live Acceptance
 Resume 3 Rework 1's live-owner/restart repair, Resume 4's BuildPlugin descriptor
 verifier repair, Resume 5's official Automation-report UTF-8 BOM repair, and
 Resume 6's exact-once creation-FILETIME provenance repair. Resume 7 adds the
@@ -62,10 +62,17 @@ Resume 15 rebuilt `9d04ef7...`, passed the separate ExactSix `1 / 1 / 0 / 0`
 diagnostic and fixed 15A `3 / 3 / 0 / 0`, then exposed two rendered 15B
 contract defects: the native MCP observer rejected a legal notification
 `HTTP 202` empty body, and the exact-six descriptors omitted four required
-contract objects. The accepted Resume 15 source checkpoint accepts an empty
-body only for a valid id-less JSON-RPC notification with status 202 and
-publishes all required descriptor contract objects. Earlier Resume 15 live
-artifacts predate this repair and remain diagnostic only.
+contract objects. The first accepted Resume 15 source checkpoint at
+`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f` accepts an empty body only for a
+valid id-less JSON-RPC notification with status 202 and publishes all required
+descriptor contract objects. That clean checkpoint then passed ExactSix `1 / 1
+/ 0 / 0` and fixed 15A `3 / 3 / 0 / 0`; rendered 15B exposed three further
+production defects. The second accepted Resume 15 source checkpoint accepts
+task-owned OS-observed `managed` module provenance, retries the same rendered
+Connect control once after an explicit `error`, and limits identity aggregation
+to the exact-six asset descriptors when legal MCP meta tools are also present.
+All live artifacts from `f5b514c...` predate this second repair and remain
+diagnostic only.
 Live product and UI children now receive an isolated UE
 editor bridge/launch gate and an absolute UE root; capability-only, UE
 Automation and N2 children cannot inherit that authority, and asset mutation
@@ -137,7 +144,7 @@ The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
 source-checkpoint G15 integrity is `COMPLETE`; G16 is
-`PARTIAL`. D13 / 15A is `DISPATCHED` from `f5b514c...`; D14 / 15B waits on 15A and D15 / 15C
+`PARTIAL`. D13 / 15A is `DISPATCHED` from `6fb9944...`; D14 / 15B waits on 15A and D15 / 15C
 waits on 15A/15B; D16 remains `IN_PROGRESS`; UE 5.8.1 compatibility and overall MVP15
 acceptance remain `PARTIAL`; Ready for the next stage is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
@@ -189,7 +196,7 @@ evidence was produced. The latest source delta invalidates the previous release 
 all earlier 15A-15C evidence. The installed release capability gate remains
 open; the invalid Resume 2 cleanup gate is closed and a fresh 15A restart is
 dispatched from a clean checkout of
-`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`.
+`6fb99447f3158c9f0326c93774fe03c5319762ff`.
 
 The last verified pre-checkpoint Tauri build embedded
 `uagent.mvp15d.source-identity.v2`: base/compiled commit
@@ -222,8 +229,9 @@ provenance repair is checkpointed at
 `f14dc69543a42d553542b73547c3598fb39947b6`. Resume 12's fixed-adapter bootstrap
 repair remains accepted at `38cec6f3e11af1e4b991430d3941e71c57d2c45d`. Resume 14's
 trusted-root boundary repair remains accepted at
-`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. The current final-live source
-checkpoint is `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`;
+`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Resume 15's first interim source
+checkpoint remains historical at `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`.
+The current final-live source checkpoint is `6fb99447f3158c9f0326c93774fe03c5319762ff`;
 a separate clean-checkout rebuild from this checkpoint restarts G16 and D13 / 15A.
 
 The loaded-module publisher still has one write-capable production path. It
@@ -276,7 +284,7 @@ predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root was created.
 Full compatibility and acceptance are assigned to the newly dispatched
 clean-checkout task based on current implementation commit
-`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`.
+`6fb99447f3158c9f0326c93774fe03c5319762ff`.
 Real UE, Tool Search, and mutation
 were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The dispatched live
 task may enter exact-sandbox 15C mutation only after fresh 15A and 15B pass.

@@ -74,12 +74,17 @@ create/attach calls now resolve the opaque trusted-root token immediately before
 IPC while UI/product state remains opaque; native canonical object and descriptor
 validation stays authoritative. Its `c60a094e...` ExactSix/15A pass and rendered
 15B failure predate the repair and remain diagnostic.
-Resume 15 has an accepted interim source checkpoint at current implementation
-commit `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. The native MCP observation
+Resume 15's first accepted interim source checkpoint is historical at
+`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. The native MCP observation
 boundary now accepts an empty response body only for a valid id-less JSON-RPC
 notification that received HTTP 202. The UE exact-six descriptors now publish
 `input`, `dryRunSchema`, `rollbackContract`, `affectedAssetsSchema`, and
-`evidenceQuery`; fresh current-source live gates remain open.
+`evidenceQuery`. The current second interim source checkpoint is
+`6fb99447f3158c9f0326c93774fe03c5319762ff`: task-owned OS-observed `managed`
+module provenance is accepted, rendered Connect receives one bounded recovery
+after an explicit error, and exact-six identity ignores legal non-asset MCP meta
+tools while descriptor validation remains strict. Fresh current-source live
+gates remain open.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current source-checkpoint G15 integrity is `COMPLETE`; G16 is
@@ -129,7 +134,7 @@ fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The form
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
 fail only with `FINAL_LIVE_RUNTIME_NONZERO`. Cleanup is closed and an authorized
 clean-checkout run from current implementation commit
-`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f` is dispatched for the 15A restart.
+`6fb99447f3158c9f0326c93774fe03c5319762ff` is dispatched for the 15A restart.
 
 The implemented trust-chain source path is:
 
@@ -262,7 +267,7 @@ session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
 Full read-only compatibility is assigned to the newly dispatched clean-checkout
 task based on current implementation commit
-`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`.
+`6fb99447f3158c9f0326c93774fe03c5319762ff`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted

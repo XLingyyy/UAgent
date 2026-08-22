@@ -71,12 +71,15 @@ Resume 14 has `Review Verdict: PASS` at historical implementation commit
 `resolveTrustedNativeRootRef` at every direct managed editor create/attach IPC
 boundary, while stored UI and product state retains the opaque root token. Native
 trusted-root, canonical-object and `.uproject` validation remains unchanged.
-Resume 15 has an accepted interim source checkpoint at current implementation
-commit `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. The Rust runtime bridge accepts
+Resume 15's first accepted interim source checkpoint is historical at
+`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. The Rust runtime bridge accepts
 empty MCP response bodies only for valid id-less notifications with HTTP 202,
 while id-bearing requests and other statuses remain fail closed. The UE plugin
 publishes the complete exact-six descriptor contract and regression-checks every
-required member.
+required member. The current second interim source checkpoint is
+`6fb99447f3158c9f0326c93774fe03c5319762ff`; it accepts only native or managed
+OS-observed module provenance, adds one bounded rendered-connect recovery, and
+attests exact-six identity independently of legal MCP meta tools.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -164,7 +167,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. The old
+implementation commit `6fb99447f3158c9f0326c93774fe03c5319762ff`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 
