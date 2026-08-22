@@ -301,8 +301,8 @@ export function createMvp15DCompanionLiveFingerprint(input: {
     return blockedCompanionFingerprint(normalized.discoveryGeneration, emptyBase(), "companion_input_invalid");
   }
   try {
-    const directIdentity = identityForToolSet(normalized.directTools);
-    const facadeIdentity = identityForToolSet(normalized.facadeTools);
+    const directIdentity = identityForToolSet(companionToolDescriptors(normalized.directTools));
+    const facadeIdentity = identityForToolSet(companionToolDescriptors(normalized.facadeTools));
     const source: Mvp15DCompanionFingerprintSource | null = directIdentity ? "direct" : facadeIdentity ? "facade" : null;
     const selectedTools = source === "direct"
       ? normalized.directTools
@@ -372,6 +372,15 @@ function identityForToolSet(tools: readonly Mvp15DCompanionDescriptorLike[]): Mv
   if (identities.some((identity) => identity === null)) return null;
   const first = identities[0]!;
   return identities.every((identity) => identityEqual(first, identity!)) ? first : "mismatch";
+}
+
+function companionToolDescriptors(
+  tools: readonly Mvp15DCompanionDescriptorLike[],
+): Mvp15DCompanionDescriptorLike[] {
+  return tools.filter((tool) => {
+    const descriptor = toPlainRecord(tool);
+    return descriptor !== null && isCompanionToolName(descriptor.name);
+  });
 }
 
 function identityEqual(left: Mvp15DCompanionIdentityEvidence, right: Mvp15DCompanionIdentityEvidence): boolean {

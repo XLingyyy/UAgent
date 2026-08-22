@@ -359,6 +359,10 @@ pub(crate) fn observe_native_loaded_modules_for_asset_mutation(
     Ok(modules)
 }
 
+fn is_native_module_observation_source(source: &str) -> bool {
+    matches!(source, "native" | "managed")
+}
+
 pub(crate) fn validate_native_asset_mutation_observation_for_root(
     session_id: &str,
     expected_root_id: &str,
@@ -371,12 +375,13 @@ pub(crate) fn validate_native_asset_mutation_observation_for_root(
         .get(session_id)
         .cloned()
         .ok_or("observation_session_unknown")?;
-    if session.root_id != expected_root_id || session.source != "native" {
+    if session.root_id != expected_root_id || !is_native_module_observation_source(&session.source)
+    {
         return Err("native_process_observation_required");
     }
     let binding =
         validate_asset_mutation_observation(session_id, &session.project_id, expected_root_id)?;
-    if binding.process_source != "native"
+    if !is_native_module_observation_source(&binding.process_source)
         || binding.pid.is_none()
         || binding.process_start_time.is_none()
     {
@@ -3745,6 +3750,15 @@ mod tests {
         let test_guard = crate::reset_shared_registries_for_test();
         trust("fixture://lyra-starter");
         test_guard
+    }
+
+    #[test]
+    fn native_module_observation_accepts_os_observed_sources_only() {
+        let _test_guard = reset();
+        assert!(is_native_module_observation_source("native"));
+        assert!(is_native_module_observation_source("managed"));
+        assert!(!is_native_module_observation_source("fixture"));
+        assert!(!is_native_module_observation_source("unknown"));
     }
 
     fn attach_fixture() -> (String, String, u64) {

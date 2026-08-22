@@ -89,7 +89,7 @@ function mountUiControls() {
   `;
 }
 
-function mountProductControls(clicks: string[]) {
+function mountProductControls(clicks: string[], failFirstConnect = false) {
   document.body.innerHTML = `
     <button type="button" aria-label="Back to app">Back</button>
     <button type="button" aria-label="Open utility drawer">Tools</button>
@@ -220,8 +220,14 @@ function mountProductControls(clicks: string[]) {
   const region = document.querySelector('[aria-label="MCP connection"]')!;
   const buttons = Array.from(region.querySelectorAll("button"));
   const [connect, discover, disconnect] = buttons;
+  let connectAttempts = 0;
   connect.addEventListener("click", () => {
     clicks.push("connect");
+    connectAttempts += 1;
+    if (failFirstConnect && connectAttempts === 1) {
+      region.querySelector('[data-mvp15d-observation="mcp-status"]')!.textContent = "error";
+      return;
+    }
     region.querySelector('[data-mvp15d-observation="mcp-status"]')!.textContent = "connected";
     region.querySelector('[data-mvp15d-observation="mcp-protocol"]')!.textContent = "2025-06-18";
     connect.disabled = true;
@@ -445,7 +451,8 @@ describe("R5.3 capability-only rendered UI binding", () => {
 
 describe("R5.3 live product ordered calls through a deterministic local fake transport", () => {
   it("calls connect -> initialize -> discover -> normalize -> fingerprint in order", async () => {
-    mountProductControls([]);
+    const clicks: string[] = [];
+    mountProductControls(clicks, true);
     const configured = configuration({
       phase: "product-capture",
       mode: "live",
@@ -477,6 +484,7 @@ describe("R5.3 live product ordered calls through a deterministic local fake tra
       "fingerprint",
       "disconnect",
     ]);
+    expect(clicks.filter((click) => click === "connect")).toHaveLength(2);
     expect(fixedAuthorityAdapter.observeMvp15dManagedListenerAliveThroughUse).toHaveBeenCalledTimes(1);
     expect(evidenceMock.runMvp15dUiBridgeAction).not.toHaveBeenCalledWith("productAuthority");
   });

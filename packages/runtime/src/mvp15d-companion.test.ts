@@ -134,6 +134,24 @@ describe("MVP15D companion contracts", () => {
     expect(result.fingerprint.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("ignores non-asset MCP meta tools when attesting exact-six descriptors", () => {
+    const manifest = createManifest();
+    const descriptors = createMvp15DCompanionToolDescriptors(createIdentity(manifest));
+    const result = attestMvp15DCompanion({
+      manifest,
+      installedModules: moduleEvidence(manifest),
+      loadedModules: moduleEvidence(manifest),
+      directTools: [
+        ...descriptors,
+        { name: "list_toolsets", inputSchema: { type: "object" } },
+        { name: "describe_toolset", inputSchema: { type: "object" } },
+        { name: "call_tool", inputSchema: { type: "object" } },
+      ],
+      discoveryGeneration: 4,
+    });
+    expect(result.status.status).toBe("verified");
+  });
+
   it("retracts readiness when the live identity is missing or stale", () => {
     const manifest = createManifest();
     const descriptors = createMvp15DCompanionToolDescriptors(createIdentity(manifest));

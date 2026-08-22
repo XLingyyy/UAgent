@@ -149,15 +149,12 @@ async function runProductCapture(
   await recordStep(invoke, "native_bridge_bound");
   await prepareTrustedObservation(invoke, configuration.projectRoot);
   await openSettingsPage();
-  const mcpRegion = findRegion("MCP connection");
+  let mcpRegion = findRegion("MCP connection");
   setInputValue(findInputByAccessibleName("MCP endpoint URL"), configuration.endpoint);
   await settleRenderedInput();
-  findButton("Connect", mcpRegion).click();
-  await waitUntil(
-    () => observationText("mcp-status", mcpRegion) === "connected",
-    "mvp15d_product_connect_failed",
-  );
+  await connectRenderedMcp("mvp15d_product_connect_failed");
   await recordStep(invoke, "connect");
+  mcpRegion = findRegion("MCP connection");
   await waitUntil(
     () => {
       const protocol = observationText("mcp-protocol", mcpRegion);
@@ -207,6 +204,7 @@ async function runProductCapture(
   }
   await activateProductControl("Retract after UE restart", "ue_restart_retracted");
   await activateProductControl("Reject stale completion", "stale_completion_retracted");
+  mcpRegion = findRegion("MCP connection");
   findButton("Disconnect", mcpRegion).click();
   await waitUntil(
     () => observationText("mcp-status", mcpRegion) === "disconnected",
@@ -227,14 +225,11 @@ async function runProductSuccessor(
   }
   await prepareTrustedObservation(invoke, configuration.projectRoot, false);
   await openSettingsPage();
-  const mcpRegion = findRegion("MCP connection");
+  let mcpRegion = findRegion("MCP connection");
   setInputValue(findInputByAccessibleName("MCP endpoint URL"), configuration.endpoint);
   await settleRenderedInput();
-  findButton("Connect", mcpRegion).click();
-  await waitUntil(
-    () => observationText("mcp-status", mcpRegion) === "connected",
-    "mvp15d_product_successor_connect_failed",
-  );
+  await connectRenderedMcp("mvp15d_product_successor_connect_failed");
+  mcpRegion = findRegion("MCP connection");
   findButton("Discover", mcpRegion).click();
   await waitUntil(
     () => observationText("companion-tools", findRegion("UAgent UE Companion Plugin")).includes("6 summaries"),
@@ -536,6 +531,21 @@ async function waitUntil(predicate: () => boolean, code: string): Promise<void> 
   throw new Error(code);
 }
 
+async function connectRenderedMcp(failureCode: string): Promise<void> {
+  let retriedAfterError = false;
+  findButton("Connect", findRegion("MCP connection")).click();
+  await waitUntil(() => {
+    const region = findRegion("MCP connection");
+    const status = observationText("mcp-status", region);
+    if (status === "connected") return true;
+    if (status === "error" && !retriedAfterError) {
+      retriedAfterError = true;
+      findButton("Connect", region).click();
+    }
+    return false;
+  }, failureCode);
+}
+
 async function prepareTrustedObservation(
   invoke: NativeInvoke,
   projectRoot: string,
@@ -624,15 +634,12 @@ async function runUiLifecycle(
     await activateNegativeControl(2);
   });
   await openSettingsPage();
-  const mcpRegion = findRegion("MCP connection");
+  let mcpRegion = findRegion("MCP connection");
   setInputValue(findInputByAccessibleName("MCP endpoint URL"), configuration.endpoint);
   await settleRenderedInput();
-  findButton("Connect", mcpRegion).click();
-  await waitUntil(
-    () => observationText("mcp-status", mcpRegion) === "connected",
-    "mvp15d_ui_mcp_connect_timeout",
-  );
+  await connectRenderedMcp("mvp15d_ui_mcp_connect_timeout");
   await recordStep(invoke, "mcpConnect");
+  mcpRegion = findRegion("MCP connection");
   await waitUntil(
     () => observationText("mcp-protocol", mcpRegion) !== "Not initialized",
     "mvp15d_ui_mcp_initialize_timeout",
