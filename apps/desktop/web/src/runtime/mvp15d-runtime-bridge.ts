@@ -493,7 +493,7 @@ async function restartEditorObservationThroughControls(): Promise<void> {
   );
   findButtonByAccessibleName("Attach editor observation session", findRegion("Editor panel")).click();
   await waitUntil(
-    () => !findButtonByAccessibleName("Read editor observation snapshot", findRegion("Editor panel")).disabled,
+    () => observationText("editor-session-state", findRegion("Editor panel")) === "attached",
     "mvp15d_editor_attach_timeout",
   );
   findButtonByAccessibleName("Read editor observation snapshot", findRegion("Editor panel")).click();

@@ -3066,7 +3066,9 @@ fn check_native_record_current(record: &DiscoveredProcessRecord) -> NativeLifecy
 #[cfg(windows)]
 fn observe_process_start_time(pid: u32) -> Option<u64> {
     const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
-    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    const SYNCHRONIZE: u32 = 0x0010_0000;
+    const WAIT_TIMEOUT: u32 = 258;
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid) };
     if handle == 0 {
         return None;
     }
@@ -3078,10 +3080,11 @@ fn observe_process_start_time(pid: u32) -> Option<u64> {
     let mut kernel = creation;
     let mut user = creation;
     let ok = unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) };
+    let wait = unsafe { WaitForSingleObject(handle, 0) };
     unsafe {
         CloseHandle(handle);
     }
-    if ok == 0 {
+    if ok == 0 || wait != WAIT_TIMEOUT {
         None
     } else {
         let value = ((creation.high_date_time as u64) << 32) | creation.low_date_time as u64;
@@ -3317,6 +3320,7 @@ const INVALID_HANDLE_VALUE: isize = -1;
 #[link(name = "Kernel32")]
 unsafe extern "system" {
     fn OpenProcess(desired_access: u32, inherit_handle: i32, process_id: u32) -> isize;
+    fn WaitForSingleObject(handle: isize, milliseconds: u32) -> u32;
     fn GetProcessTimes(
         process: isize,
         creation_time: *mut FileTime,
@@ -3872,6 +3876,39 @@ mod tests {
             "process_exited"
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn exited_process_is_not_reported_as_a_live_identity() {
+        use std::os::windows::process::CommandExt;
+
+        let mut command = Command::new("powershell.exe");
+        command
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Start-Sleep -Seconds 30",
+            ])
+            .creation_flags(0x08000000)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut child = command.spawn().unwrap();
+        let pid = child.id();
+        let creation = observe_process_start_time(pid).unwrap();
+
+        child.kill().unwrap();
+        child.wait().unwrap();
+
+        assert_eq!(observe_process_start_time(pid), None);
+        assert!(wait_for_process_identity_exit(
+            pid,
+            creation,
+            Duration::from_millis(100),
+        ));
     }
 
     #[test]

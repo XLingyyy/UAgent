@@ -3686,18 +3686,24 @@ fn observe_renderer_process() -> Result<Value, BridgeError> {
             continue;
         }
         let mut ancestor = process.parent();
+        let mut descendant_start_time = process.start_time();
         let mut owned = false;
         for _ in 0..4 {
             let Some(parent_pid) = ancestor else {
                 break;
             };
+            let Some(parent) = system.process(parent_pid) else {
+                break;
+            };
+            if !process_start_times_allow_parent_edge(descendant_start_time, parent.start_time()) {
+                break;
+            }
             if parent_pid.as_u32() == runtime_pid {
                 owned = true;
                 break;
             }
-            ancestor = system
-                .process(parent_pid)
-                .and_then(|parent| parent.parent());
+            descendant_start_time = parent.start_time();
+            ancestor = parent.parent();
         }
         if owned {
             candidates.push((
@@ -3726,6 +3732,13 @@ fn observe_renderer_process() -> Result<Value, BridgeError> {
         "processIdentitySha256": process_identity_sha256,
         "process": process_identity,
     }))
+}
+
+fn process_start_times_allow_parent_edge(
+    descendant_start_time: u64,
+    parent_start_time: u64,
+) -> bool {
+    parent_start_time <= descendant_start_time
 }
 
 #[cfg(windows)]
@@ -3851,6 +3864,18 @@ fn record_response_session(record: &ObservationReceiptRecord) -> Option<&str> {
         .and_then(Value::as_str)
 }
 
+fn record_request_session(record: &ObservationReceiptRecord) -> Option<&str> {
+    record
+        .request
+        .as_object()
+        .and_then(|request| request.get("sessionId"))
+        .and_then(Value::as_str)
+}
+
+fn record_bound_session(record: &ObservationReceiptRecord) -> Option<&str> {
+    record_response_session(record).or_else(|| record_request_session(record))
+}
+
 fn valid_loaded_companion_attestation(record: &ObservationReceiptRecord) -> bool {
     let payload = receipt_response_payload(record);
     let Some(manifest) = payload.get("manifest").and_then(Value::as_object) else {
@@ -3952,11 +3977,15 @@ fn product_descriptor_from_value(
     if !MVP15D_TOOL_NAMES.contains(&name) {
         return None;
     }
-    let contract = record
+    let output_schema = record
         .get("outputSchema")
         .or_else(|| record.get("output_schema"))
         .and_then(Value::as_object)
         .unwrap_or(record);
+    let contract = output_schema
+        .get("x-uagent-contract")
+        .and_then(Value::as_object)
+        .unwrap_or(output_schema);
     let contract_object = |keys: &[&str]| {
         keys.iter()
             .find_map(|key| record.get(*key).filter(|value| value.is_object()).cloned())
@@ -5161,7 +5190,7 @@ impl BridgeState {
                                     && record_request_generation(record)
                                         .is_some_and(|generation| generation > ready_generation)
                                     && record_response_session(record).is_some_and(|session| {
-                                        record_response_session(&ready.1) != Some(session)
+                                        record_bound_session(&ready.1) != Some(session)
                                     })
                             })
                     }
@@ -5355,9 +5384,9 @@ impl BridgeState {
                             && record_request_endpoint(&fingerprint.1)
                                 == Some(self.identity.endpoint.as_str())
                             && record_response_session(&connect.1)
-                                .zip(record_response_session(&ready.1))
+                                .zip(record_bound_session(&ready.1))
                                 .is_some_and(|(new, old)| new != old)
-                            && record_response_session(&fingerprint.1)
+                            && record_bound_session(&fingerprint.1)
                                 == record_response_session(&connect.1)
                             && attestation
                                 .1
@@ -5410,7 +5439,7 @@ impl BridgeState {
                         )
                     });
                 let session_after = latest_connection_or_discovery
-                    .and_then(|(_, record)| record_response_session(record))
+                    .and_then(|(_, record)| record_bound_session(record))
                     .unwrap_or_default();
                 let generation_after = action_records
                     .iter()
@@ -6207,6 +6236,13 @@ mod tests {
     use std::ops::Deref;
 
     static LEDGER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn renderer_ownership_rejects_a_parent_pid_reused_by_a_newer_process() {
+        assert!(process_start_times_allow_parent_edge(200, 100));
+        assert!(process_start_times_allow_parent_edge(200, 200));
+        assert!(!process_start_times_allow_parent_edge(100, 200));
+    }
 
     struct RemovedEnvironment(Vec<(&'static str, Option<std::ffi::OsString>)>);
 
@@ -8201,11 +8237,19 @@ mod tests {
                     "intent": { "connectionGeneration": generation },
                 })
             };
-            let ready_request = transport_request(10, &state.identity.endpoint);
+            let transport_session_request = |generation: u64, endpoint: &str, session: &str| {
+                json!({
+                    "endpoint": endpoint,
+                    "sessionId": session,
+                    "intent": { "connectionGeneration": generation },
+                })
+            };
+            let ready_request =
+                transport_session_request(10, &state.identity.endpoint, "ready-session-0001");
             let ready_id = issue_native_observation_receipt(
                 "mcp_fingerprint",
                 ready_request,
-                json!({ "sessionId": "ready-session-0001" }),
+                json!({ "status": "ready" }),
             )
             .unwrap();
             issue_native_observation_receipt(
@@ -8219,8 +8263,12 @@ mod tests {
                 "refresh_tools" => {
                     issue_native_observation_receipt(
                         "mcp_fingerprint",
-                        transport_request(11, &state.identity.endpoint),
-                        json!({ "sessionId": "ready-session-0001" }),
+                        transport_session_request(
+                            11,
+                            &state.identity.endpoint,
+                            "ready-session-0001",
+                        ),
+                        json!({ "status": "ready" }),
                     )
                     .unwrap();
                 }
@@ -8377,8 +8425,12 @@ mod tests {
                     .unwrap();
                     issue_native_observation_receipt(
                         "mcp_fingerprint",
-                        transport_request(12, &state.identity.endpoint),
-                        json!({ "sessionId": "ue-mcp-session-0002" }),
+                        transport_session_request(
+                            12,
+                            &state.identity.endpoint,
+                            "ue-mcp-session-0002",
+                        ),
+                        json!({ "status": "ready" }),
                     )
                     .unwrap();
                     issue_native_observation_receipt(
@@ -8426,8 +8478,12 @@ mod tests {
                     {
                         issue_native_observation_receipt(
                             "mcp_fingerprint",
-                            transport_request(generation, &state.identity.endpoint),
-                            json!({ "sessionId": session }),
+                            transport_session_request(
+                                generation,
+                                &state.identity.endpoint,
+                                session,
+                            ),
+                            json!({ "status": "ready" }),
                         )
                         .unwrap();
                     }
@@ -8686,7 +8742,15 @@ mod tests {
         let direct = json!({
             "name": MVP15D_TOOL_NAMES[0],
             "inputSchema": { "type": "object" },
-            "outputSchema": contract,
+            "outputSchema": contract.clone(),
+        });
+        let ue_direct = json!({
+            "name": MVP15D_TOOL_NAMES[0],
+            "inputSchema": { "type": "object" },
+            "outputSchema": {
+                "type": "object",
+                "x-uagent-contract": contract,
+            },
         });
         let facade = json!({
             "toolset": {
@@ -8705,10 +8769,14 @@ mod tests {
         });
         let mut direct_descriptors = Vec::new();
         collect_product_descriptors(&direct, "direct", None, &mut direct_descriptors);
+        let mut ue_direct_descriptors = Vec::new();
+        collect_product_descriptors(&ue_direct, "direct", None, &mut ue_direct_descriptors);
         let mut facade_descriptors = Vec::new();
         collect_product_descriptors(&facade, "facade", None, &mut facade_descriptors);
         assert_eq!(direct_descriptors.len(), 1);
         assert_eq!(direct_descriptors[0].source, "direct");
+        assert_eq!(ue_direct_descriptors.len(), 1);
+        assert_eq!(ue_direct_descriptors[0].source, "direct");
         assert_eq!(facade_descriptors.len(), 1);
         assert_eq!(facade_descriptors[0].source, "facade");
         assert_eq!(

@@ -89,7 +89,11 @@ function mountUiControls() {
   `;
 }
 
-function mountProductControls(clicks: string[], failFirstConnect = false) {
+function mountProductControls(
+  clicks: string[],
+  failFirstConnect = false,
+  delaySecondEditorAttach = false,
+) {
   document.body.innerHTML = `
     <button type="button" aria-label="Back to app">Back</button>
     <button type="button" aria-label="Open utility drawer">Tools</button>
@@ -202,14 +206,31 @@ function mountProductControls(clicks: string[], failFirstConnect = false) {
     editor.querySelector('[data-mvp15d-observation="editor-process"]')!.textContent = "UnrealEditor / running";
     editorButton("Attach editor observation session").disabled = false;
   });
+  let editorAttachCount = 0;
   editorButton("Attach editor observation session").addEventListener("click", () => {
     clicks.push("editor-attach");
-    editor.querySelector('[data-mvp15d-observation="editor-session-state"]')!.textContent = "attached";
-    editorButton("Read editor observation snapshot").disabled = false;
-    editorButton("Stop editor observation session").disabled = false;
+    editorAttachCount += 1;
+    const completeAttach = () => {
+      editor.querySelector('[data-mvp15d-observation="editor-session-state"]')!.textContent = "attached";
+      editorButton("Read editor observation snapshot").disabled = false;
+      editorButton("Stop editor observation session").disabled = false;
+    };
+    if (delaySecondEditorAttach && editorAttachCount === 2) {
+      globalThis.setTimeout(completeAttach, 100);
+    } else {
+      completeAttach();
+    }
   });
   editorButton("Read editor observation snapshot").addEventListener("click", () => {
     clicks.push("editor-snapshot");
+    if (
+      editor.querySelector('[data-mvp15d-observation="editor-session-state"]')!.textContent !==
+      "attached"
+    ) {
+      editor.querySelector('[data-mvp15d-observation="editor-heartbeat"]')!.textContent =
+        "local_observation_stopped / alive false";
+      return;
+    }
     editor.querySelector('[data-mvp15d-observation="editor-heartbeat"]')!.textContent = "ready / alive true";
     editor.querySelector('[data-mvp15d-observation="editor-snapshot"]')!.textContent = "idle / FinalHost";
   });
@@ -529,6 +550,40 @@ describe("R5.3 live product ordered calls through a deterministic local fake tra
       "disconnect",
     ]);
     expect(fixedAuthorityAdapter.observeMvp15dManagedListenerAliveThroughUse).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the successor observation attach before reading a fresh snapshot", async () => {
+    const clicks: string[] = [];
+    mountProductControls(clicks, false, true);
+    const configured = configuration({
+      phase: "product-capture",
+      mode: "live",
+      endpoint: "http://127.0.0.1:18765/mcp",
+      projectRoot: "C:\\repo\\external\\mvp15d-final-d13-d16-20260731_120000\\project\\FinalHost",
+      rendererHandoffPending: true,
+      rendererHandoffId: `renderer-handoff:${"a".repeat(64)}`,
+      rendererParentLifecycleStatus: "acknowledged",
+      rendererHandoffPredecessorMcpGeneration: 2,
+      rendererHandoffPredecessorWindowIdentitySha256: "b".repeat(64),
+    });
+    const { invoke } = stepCollectingInvoke();
+    const configuredInvoke: NativeInvoke = (command, payload) => {
+      if (command === "mvp15d_bridge_configuration") return Promise.resolve(configured as never);
+      return invoke(command, payload);
+    };
+
+    await startMvp15dRuntimeBridge(configuredInvoke, fixedAuthorityAdapter);
+
+    expect(clicks.slice(clicks.indexOf("renderer-resume") + 1)).toEqual([
+      "editor-stop",
+      "editor-discover",
+      "editor-attach",
+      "editor-snapshot",
+      "verify-companion",
+      "ue-restart",
+      "stale-completion",
+      "disconnect",
+    ]);
   });
 });
 
