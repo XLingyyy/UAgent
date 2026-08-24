@@ -40,6 +40,7 @@ import {
 } from "./mvp15d-final-runner.mjs";
 import {
   BRIDGE_VERSION,
+  LIVE_PROCESS_TIMEOUT_MILLISECONDS,
   LiveProducerError,
   RUNTIME_EVENT_SCHEMA,
   parseOfficialAutomationReport,
@@ -90,6 +91,10 @@ const TASK_ID = "TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-D13-D16";
 const CURRENT_REWORK_TASK_ID =
   "TASK-MVP15D-FINAL-PRE-LIVE-SOURCE-CLOSURE-REWORK-7-PRODUCTION-APP-NATIVE-HANDOFF-WINDOW-BINDING-AND-COMPLETE-TEMP-INVENTORY";
 let handAuthoredFixtureSequence = 0;
+
+test("real rendered phases retain a bounded budget for UE startup and the 15C TTL window", () => {
+  assert.equal(LIVE_PROCESS_TIMEOUT_MILLISECONDS, 600_000);
+});
 
 test("structured runtime contracts reject mixed v1 evidence", () => {
   assert.equal(BRIDGE_VERSION, "uagent.mvp15d.runtime-bridge.v5");

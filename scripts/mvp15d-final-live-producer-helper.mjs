@@ -39,6 +39,7 @@ const BRIDGE_VERSION = "uagent.mvp15d.runtime-bridge.v5";
 const UE_AUTOMATION_REPORT_SCHEMA = "uagent.mvp15d.ue-automation-report.v1";
 const JOB_CLOSEOUT_SCHEMA = "uagent.mvp15d.final.job-closeout.v1";
 const PORT_CLOSEOUT_SCHEMA = "uagent.mvp15d.final.port-closeout.v1";
+const LIVE_PROCESS_TIMEOUT_MILLISECONDS = 600_000;
 const ROOT_PATTERN = /^mvp15d-final-d13-d16-\d{8}_\d{6}(?:-[A-Za-z0-9]+)?$/;
 const PHASES = new Set(["ue-automation", "product-capture", "ui-lifecycle"]);
 const COMMON_KEYS = [
@@ -1725,7 +1726,7 @@ async function runRealLiveProducer(phase, argv) {
   const transport = bridgeTransport(binding, "live");
   const command = runtimeCommand(binding, transport);
   const contentBefore = phase === "ue-automation" ? contentTreeSha256(binding.project) : null;
-  const owned = spawnOwned(command, binding, transport, 180_000);
+  const owned = spawnOwned(command, binding, transport, LIVE_PROCESS_TIMEOUT_MILLISECONDS);
   const closeout = awaitOwnedCloseout(owned, binding);
   const isClosed = () => owned.child.exitCode !== null || owned.child.signalCode !== null;
   let runtimeEvents;
@@ -1927,6 +1928,7 @@ async function liveProducerMain(phase, argv = process.argv.slice(2)) {
 export {
   BRIDGE_VERSION,
   DRIVER_SCHEMA,
+  LIVE_PROCESS_TIMEOUT_MILLISECONDS,
   LiveProducerError,
   PHASE_EVENT_SCHEMA,
   RUNTIME_EVENT_SCHEMA,
