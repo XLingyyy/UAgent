@@ -1619,6 +1619,16 @@ fn retained_key_binding(key: &str) -> Option<(String, &'static str)> {
     None
 }
 
+fn is_retained_process_identity_sha256(key: &str, value: &Value) -> bool {
+    let lower = key.to_ascii_lowercase();
+    let base = lower
+        .strip_suffix("before")
+        .or_else(|| lower.strip_suffix("after"))
+        .unwrap_or(&lower);
+    base.ends_with("processidentitysha256")
+        && value.as_str().is_some_and(|value| is_lower_hex(value, 64))
+}
+
 fn redact_retained_event_value(value: Value) -> Value {
     match value {
         Value::Array(values) => Value::Array(
@@ -1630,7 +1640,9 @@ fn redact_retained_event_value(value: Value) -> Value {
         Value::Object(values) => {
             let mut retained = serde_json::Map::new();
             for (key, value) in values {
-                if let Some((binding_key, kind)) = retained_key_binding(&key) {
+                if is_retained_process_identity_sha256(&key, &value) {
+                    retained.insert(key, value);
+                } else if let Some((binding_key, kind)) = retained_key_binding(&key) {
                     if !value.is_null() {
                         retained.insert(binding_key, Value::String(retained_binding(kind, &value)));
                     }
@@ -7756,6 +7768,11 @@ mod tests {
                 "sessionIdAfter": "after-session-secret",
             },
             "approvalToken": "opaque-token-secret",
+            "processIdentitySha256": "a".repeat(64),
+            "processIdentitySha256Before": "b".repeat(64),
+            "processIdentitySha256After": "c".repeat(64),
+            "parentProcessIdentitySha256": "d".repeat(64),
+            "invalidProcessIdentitySha256": "raw-process-identity-secret",
             "port": 18765,
             "endpoint": "http://127.0.0.1:18765/mcp",
             "process": {
@@ -7798,6 +7815,14 @@ mod tests {
         assert_eq!(
             retained["opaqueTokenBindingSha256"],
             retained_binding("opaque-token", &json!("opaque-token-secret"))
+        );
+        assert_eq!(retained["processIdentitySha256"], "a".repeat(64));
+        assert_eq!(retained["processIdentitySha256Before"], "b".repeat(64));
+        assert_eq!(retained["processIdentitySha256After"], "c".repeat(64));
+        assert_eq!(retained["parentProcessIdentitySha256"], "d".repeat(64));
+        assert_eq!(
+            retained["invalidProcessIdentitySha256BindingSha256"],
+            retained_binding("process-id", &json!("raw-process-identity-secret"))
         );
         assert_eq!(
             retained["process"]["pidBindingSha256"],
@@ -7860,6 +7885,7 @@ mod tests {
             "process-secret",
             "process-before-secret",
             "process-after-secret",
+            "raw-process-identity-secret",
             "http://127.0.0.1:18765/mcp",
         ] {
             assert!(!serialized.contains(forbidden));
