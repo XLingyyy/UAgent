@@ -106,14 +106,17 @@
   repair has `Review Verdict: PASS` at predecessor implementation commit
   `e20a9921caf77d1ac05c95ff8811acef9c63938a`. A fifth interim checkpoint at
   `bb89126d82416f0958050405ff1ab693505614f7` extends the bounded owned live-phase
-  budget to 600 seconds; the same task remains active.
+  budget to 600 seconds. Its clean chain completed the rendered 15B producer and
+  exposed retained-event process-identity key drift. A sixth interim checkpoint
+  at `39bccbc4a88d925bd3f44ad5c5a44add10a48b39` preserves validated hashes and
+  continues binding raw values; the same task remains active.
 - The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
   historical `COMPLETE / PASS` record at implementation commit
   `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 - G14 documentation consistency: `IMPLEMENTED` after the current evidence and
   stale-state reconciliation.
 - G15 checkpoint integrity: `COMPLETE`; current implementation commit
-  `bb89126d82416f0958050405ff1ab693505614f7` is recorded by this documentation
+  `39bccbc4a88d925bd3f44ad5c5a44add10a48b39` is recorded by this documentation
   closeout. Earlier accepted repairs retain their historical scopes.
 - G16 authority provenance and plugin baseline: `PARTIAL`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
@@ -122,7 +125,7 @@
 - Real UE 5.8.1 compatibility: `PARTIAL`; the Rework 2 read-only attempt is
   historical and the full clean-commit matrix remains deferred.
 - D13 / 15A live execution: `DISPATCHED` from a fresh clean checkout of
-  `bb89126d82416f0958050405ff1ab693505614f7`.
+  `39bccbc4a88d925bd3f44ad5c5a44add10a48b39`.
 - D14 / 15B: `WAITING_ON_15A`; not run.
 - D15 / 15C: `WAITING_ON_15A_15B`; no asset mutation was attempted.
 - D16: `IN_PROGRESS`.
@@ -213,7 +216,7 @@ cannot satisfy final 15A-15C.
 
 The invalid Resume 2 cleanup gate is closed. A new clean-checkout 5.8.1 task is
 dispatched from current implementation commit
-`bb89126d82416f0958050405ff1ab693505614f7`, covering
+`39bccbc4a88d925bd3f44ad5c5a44add10a48b39`, covering
 both Tool Search modes, exact-six/product
 retractions, response framing, clean inventory, and the real loaded-module
 observer. Only a later separately authorized task may consider real 15C

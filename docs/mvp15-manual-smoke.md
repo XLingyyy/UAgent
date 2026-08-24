@@ -78,9 +78,12 @@ automated verification. Its clean lineage then exposed order-sensitive equality
 for renderer predecessor-window records. Historical third checkpoint
 `96e7183f9bb6644bf72191b68277b112c33ccc1d` makes exact key/value comparison
 order independent. Its clean run exposed five further live runtime defects;
-checkpoint `e20a9921caf77d1ac05c95ff8811acef9c63938a` closes them. Current checkpoint
+checkpoint `e20a9921caf77d1ac05c95ff8811acef9c63938a` closes them. Fifth checkpoint
 `bb89126d82416f0958050405ff1ab693505614f7` adds a bounded 600-second live-phase
-budget. Current-source manual smoke still requires a complete restart.
+budget. Its clean rendered producer exposed retained process-identity key drift;
+current checkpoint `39bccbc4a88d925bd3f44ad5c5a44add10a48b39` preserves validated
+hashes while binding raw values. Current-source manual smoke still requires a
+complete restart.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -147,7 +150,7 @@ read-only supporting evidence.
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is assigned
 to the newly dispatched clean-checkout task based on current implementation
-commit `bb89126d82416f0958050405ff1ab693505614f7`. Real UE, Tool Search,
+commit `39bccbc4a88d925bd3f44ad5c5a44add10a48b39`. Real UE, Tool Search,
 and mutation were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The
 dispatched live task may enter exact-sandbox 15C mutation only after fresh 15A
 and 15B pass.

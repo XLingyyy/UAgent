@@ -91,9 +91,14 @@ independent of JSON member order. Its clean lineage exposed five further live
 runtime defects. Checkpoint `e20a9921caf77d1ac05c95ff8811acef9c63938a`
 requires fresh successor attach, active Windows identity, causal renderer ancestry,
 request-bound MCP session identity and nested production contracts. Fresh live
-evidence then exposed a fixed 180-second whole-phase limit; current checkpoint
+evidence then exposed a fixed 180-second whole-phase limit; fifth checkpoint
 `bb89126d82416f0958050405ff1ab693505614f7` raises that bounded budget to 600
-seconds without changing readiness, observation, authority or closeout gates.
+seconds. Its real producer completed 15B and exposed retained-event key drift:
+the generic process-ID redactor rebound an already validated process-identity
+SHA-256. Current checkpoint `39bccbc4a88d925bd3f44ad5c5a44add10a48b39`
+preserves the exact hash field only for a 64-character lowercase digest and
+continues binding invalid/raw values without changing readiness, observation,
+authority or closeout gates.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current source-checkpoint G15 integrity is `COMPLETE`; G16 is
@@ -143,7 +148,7 @@ fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The form
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
 fail only with `FINAL_LIVE_RUNTIME_NONZERO`. Cleanup is closed and an authorized
 clean-checkout run from current implementation commit
-`bb89126d82416f0958050405ff1ab693505614f7` is dispatched for the 15A restart.
+`39bccbc4a88d925bd3f44ad5c5a44add10a48b39` is dispatched for the 15A restart.
 
 The implemented trust-chain source path is:
 
@@ -276,7 +281,7 @@ session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
 Full read-only compatibility is assigned to the newly dispatched clean-checkout
 task based on current implementation commit
-`bb89126d82416f0958050405ff1ab693505614f7`.
+`39bccbc4a88d925bd3f44ad5c5a44add10a48b39`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted

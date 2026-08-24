@@ -94,8 +94,11 @@ makes exact key/value equality independent of JSON member order. Its clean run
 exposed five additional live runtime defects. Fourth checkpoint
 `e20a9921caf77d1ac05c95ff8811acef9c63938a` closes those defects. Fifth checkpoint
 `bb89126d82416f0958050405ff1ab693505614f7` extends the bounded owned live-phase
-budget to 600 seconds. All retained Resume 15 live evidence predates the current
-repair.
+budget to 600 seconds. Its clean chain completed the real rendered 15B producer
+and exposed retained-event process-identity key drift. Sixth checkpoint
+`39bccbc4a88d925bd3f44ad5c5a44add10a48b39` preserves validated digest fields
+while binding raw values. All retained Resume 15 live evidence predates the
+current repair.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -107,7 +110,7 @@ The verified release binary truthfully reported a
 dirty pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
 transitive production boundary. Cleanup is closed and a separate clean-checkout
 rebuild from current implementation commit
-`bb89126d82416f0958050405ff1ab693505614f7` is dispatched for G16 and D13 /
+`39bccbc4a88d925bd3f44ad5c5a44add10a48b39` is dispatched for G16 and D13 /
 15A.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
@@ -341,7 +344,7 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 - A sealed final package and live manifest/install/load equality after cleanup,
   from a clean checkout of current implementation commit
-  `bb89126d82416f0958050405ff1ab693505614f7`.
+  `39bccbc4a88d925bd3f44ad5c5a44add10a48b39`.
 - Fresh current-task UE Automation output, exact-six product-adapter capture,
   and rendered product-UI happy/negative/replay/cleanup evidence.
 - A retained final inventory produced and verified from those live source
@@ -401,8 +404,9 @@ exact-six descriptor contract repair is accepted as its first interim source
 checkpoint at `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`. Its second
 interim source checkpoint is `6fb99447f3158c9f0326c93774fe03c5319762ff`, and its third is
 `96e7183f9bb6644bf72191b68277b112c33ccc1d`. Its fourth checkpoint is
-`e20a9921caf77d1ac05c95ff8811acef9c63938a`; its fifth and current checkpoint is
-`bb89126d82416f0958050405ff1ab693505614f7`. The separate
+`e20a9921caf77d1ac05c95ff8811acef9c63938a`; its fifth checkpoint is
+`bb89126d82416f0958050405ff1ab693505614f7`; its sixth and current checkpoint is
+`39bccbc4a88d925bd3f44ad5c5a44add10a48b39`. The separate
 2026-08-03 Final Source/Tooling Rework 8
 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
@@ -411,5 +415,5 @@ D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A and
 D15 / 15C waits on 15A/15B; D16 remains `IN_PROGRESS`; real UE 5.8.1
 compatibility and overall acceptance remain `PARTIAL`; Ready remains `NO`. The
 clean-checkout run must use current implementation commit
-`bb89126d82416f0958050405ff1ab693505614f7`. Exact-sandbox 15C mutation is
+`39bccbc4a88d925bd3f44ad5c5a44add10a48b39`. Exact-sandbox 15C mutation is
 authorized only after fresh 15A and 15B pass inside that dispatched task.
