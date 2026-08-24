@@ -85,8 +85,9 @@ Its clean lineage then exposed order-sensitive equality for renderer predecessor
 window records. Historical third checkpoint
 `96e7183f9bb6644bf72191b68277b112c33ccc1d` compares exact keys and values
 independently of member order. Its clean run exposed five live runtime defects;
-current checkpoint `e20a9921caf77d1ac05c95ff8811acef9c63938a` closes them. No
-current-source live gate has advanced.
+checkpoint `e20a9921caf77d1ac05c95ff8811acef9c63938a` closes them. Current checkpoint
+`bb89126d82416f0958050405ff1ab693505614f7` extends the bounded live-phase timeout
+to 600 seconds. No current-source live gate has advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -151,7 +152,7 @@ ran; the stale installed binary may fail only with `FINAL_LIVE_RUNTIME_NONZERO`.
 The historical Final Source/Tooling Rework 8 is checkpointed at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. Cleanup is closed and live
 acceptance is dispatched as a separate clean-checkout task based on current
-implementation commit `e20a9921caf77d1ac05c95ff8811acef9c63938a`, with a manifest-backed
+implementation commit `bb89126d82416f0958050405ff1ab693505614f7`, with a manifest-backed
 build and a new strict evidence root. Exact-sandbox 15C mutation remains gated
 until fresh 15A and 15B pass inside that authorized task.
 
@@ -200,7 +201,7 @@ MVP15D source-checkpoint risks above or supply current D0-D12 evidence.
 
 ## Current Conclusion
 
-D13 / 15A is `DISPATCHED` from `e20a9921caf77d1ac05c95ff8811acef9c63938a`. Final Pre-live Source Closure Rework 7 is historical
+D13 / 15A is `DISPATCHED` from `bb89126d82416f0958050405ff1ab693505614f7`. Final Pre-live Source Closure Rework 7 is historical
 `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
 `Review Verdict: NEEDS_FIX` for deterministic Tauri destroy/build ordering.
 Rework 9 is the historical accepted base at

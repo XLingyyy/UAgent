@@ -82,10 +82,12 @@ OS-observed module provenance, adds one bounded rendered-connect recovery, and
 attests exact-six identity independently of legal MCP meta tools. Its clean run
 then exposed order-sensitive equality for renderer predecessor-window records.
 The historical third checkpoint `96e7183f9bb6644bf72191b68277b112c33ccc1d`
-compares their exact key/value set independently of JSON member order. Current
-checkpoint `e20a9921caf77d1ac05c95ff8811acef9c63938a` additionally requires exact
+compares their exact key/value set independently of JSON member order. Checkpoint
+`e20a9921caf77d1ac05c95ff8811acef9c63938a` additionally requires exact
 successor attach, active process identity, causal ancestry, request-bound session
-identity and nested production descriptor contracts.
+identity and nested production descriptor contracts. Current checkpoint
+`bb89126d82416f0958050405ff1ab693505614f7` retains those rules and gives each
+owned live phase a bounded 600-second total budget.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -173,7 +175,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `e20a9921caf77d1ac05c95ff8811acef9c63938a`. The old
+implementation commit `bb89126d82416f0958050405ff1ab693505614f7`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 
