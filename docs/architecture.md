@@ -85,9 +85,13 @@ module provenance is accepted, rendered Connect receives one bounded recovery
 after an explicit error, and exact-six identity ignores legal non-asset MCP meta
 tools while descriptor validation remains strict. Its clean lineage passed
 ExactSix and fixed 15A, then rendered 15B exposed order-sensitive comparison of
-equal predecessor-window records. The current third interim checkpoint is
-`96e7183f9bb6644bf72191b68277b112c33ccc1d`; exact key/value equality is now
-independent of JSON member order. Fresh current-source live gates remain open.
+equal predecessor-window records. The historical third interim checkpoint is
+`96e7183f9bb6644bf72191b68277b112c33ccc1d`; exact key/value equality is
+independent of JSON member order. Its clean lineage exposed five further live
+runtime defects. Current checkpoint `e20a9921caf77d1ac05c95ff8811acef9c63938a`
+requires fresh successor attach, active Windows identity, causal renderer ancestry,
+request-bound MCP session identity and nested production contracts. Fresh live
+gates remain open.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current source-checkpoint G15 integrity is `COMPLETE`; G16 is
@@ -137,7 +141,7 @@ fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The form
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
 fail only with `FINAL_LIVE_RUNTIME_NONZERO`. Cleanup is closed and an authorized
 clean-checkout run from current implementation commit
-`96e7183f9bb6644bf72191b68277b112c33ccc1d` is dispatched for the 15A restart.
+`e20a9921caf77d1ac05c95ff8811acef9c63938a` is dispatched for the 15A restart.
 
 The implemented trust-chain source path is:
 
@@ -270,7 +274,7 @@ session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
 Full read-only compatibility is assigned to the newly dispatched clean-checkout
 task based on current implementation commit
-`96e7183f9bb6644bf72191b68277b112c33ccc1d`.
+`e20a9921caf77d1ac05c95ff8811acef9c63938a`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted

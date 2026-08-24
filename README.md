@@ -5,7 +5,7 @@ AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent p
 ## Current Stage: MVP15D - Final 15A-15C/D16 Live Acceptance
 
 The current accepted production implementation checkpoint is
-`96e7183f9bb6644bf72191b68277b112c33ccc1d`. It includes Final Live Acceptance
+`e20a9921caf77d1ac05c95ff8811acef9c63938a`. It includes Final Live Acceptance
 Resume 3 Rework 1's live-owner/restart repair, Resume 4's BuildPlugin descriptor
 verifier repair, Resume 5's official Automation-report UTF-8 BOM repair, and
 Resume 6's exact-once creation-FILETIME provenance repair. Resume 7 adds the
@@ -76,8 +76,11 @@ diagnostic only.
 That second checkpoint at `6fb99447f3158c9f0326c93774fe03c5319762ff`
 passed clean ExactSix and fixed 15A, then rendered 15B rejected an equal renderer
 predecessor window because its JSON object members arrived in a different order.
-The third accepted Resume 15 checkpoint compares exact key count and values
-independently of member order. Every `6fb9944...` live artifact is now historical.
+The historical third checkpoint `96e7183f9bb6644bf72191b68277b112c33ccc1d`
+compares exact key count and values independently of member order. Its clean run
+passed ExactSix and fixed 15A, then rendered 15B exposed stale successor attach,
+exited-process liveness, causal ancestry, request-bound session and nested contract
+handling defects. The current fourth checkpoint closes those five defects.
 Live product and UI children now receive an isolated UE
 editor bridge/launch gate and an absolute UE root; capability-only, UE
 Automation and N2 children cannot inherit that authority, and asset mutation
@@ -149,7 +152,7 @@ The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
 source-checkpoint G15 integrity is `COMPLETE`; G16 is
-`PARTIAL`. D13 / 15A is `DISPATCHED` from `6fb9944...`; D14 / 15B waits on 15A and D15 / 15C
+`PARTIAL`. D13 / 15A is `DISPATCHED` from `e20a992...`; D14 / 15B waits on 15A and D15 / 15C
 waits on 15A/15B; D16 remains `IN_PROGRESS`; UE 5.8.1 compatibility and overall MVP15
 acceptance remain `PARTIAL`; Ready for the next stage is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
@@ -201,7 +204,7 @@ evidence was produced. The latest source delta invalidates the previous release 
 all earlier 15A-15C evidence. The installed release capability gate remains
 open; the invalid Resume 2 cleanup gate is closed and a fresh 15A restart is
 dispatched from a clean checkout of
-`96e7183f9bb6644bf72191b68277b112c33ccc1d`.
+`e20a9921caf77d1ac05c95ff8811acef9c63938a`.
 
 The last verified pre-checkpoint Tauri build embedded
 `uagent.mvp15d.source-identity.v2`: base/compiled commit
@@ -237,9 +240,10 @@ trusted-root boundary repair remains accepted at
 `9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Resume 15's first interim source
 checkpoint remains historical at `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`.
 Its second interim checkpoint is historical at
-`6fb99447f3158c9f0326c93774fe03c5319762ff`. The current final-live source
-checkpoint is `96e7183f9bb6644bf72191b68277b112c33ccc1d`;
-a separate clean-checkout rebuild from this checkpoint restarts G16 and D13 / 15A.
+`6fb99447f3158c9f0326c93774fe03c5319762ff`, and its third at
+`96e7183f9bb6644bf72191b68277b112c33ccc1d`. The current fourth final-live source
+checkpoint is `e20a9921caf77d1ac05c95ff8811acef9c63938a`; a separate clean-checkout
+rebuild from this checkpoint restarts G16 and D13 / 15A.
 
 The loaded-module publisher still has one write-capable production path. It
 publishes only after the owned live process is re-observed and the private
@@ -291,7 +295,7 @@ predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root was created.
 Full compatibility and acceptance are assigned to the newly dispatched
 clean-checkout task based on current implementation commit
-`96e7183f9bb6644bf72191b68277b112c33ccc1d`.
+`e20a9921caf77d1ac05c95ff8811acef9c63938a`.
 Real UE, Tool Search, and mutation
 were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The dispatched live
 task may enter exact-sandbox 15C mutation only after fresh 15A and 15B pass.

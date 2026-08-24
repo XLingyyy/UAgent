@@ -79,9 +79,12 @@ second interim source checkpoint is historical at
 `6fb99447f3158c9f0326c93774fe03c5319762ff`: native module observation accepts
 task-owned managed OS evidence, Connect has one bounded recovery, and exact-six
 identity excludes legal non-asset MCP meta tools. Its clean lineage then exposed
-order-sensitive equality for renderer predecessor-window records. The current
-third checkpoint is `96e7183f9bb6644bf72191b68277b112c33ccc1d`; exact key/value
-comparison is order independent. Fresh live evidence remains open.
+order-sensitive equality for renderer predecessor-window records. Historical
+third checkpoint `96e7183f9bb6644bf72191b68277b112c33ccc1d` makes exact key/value
+comparison order independent. Its clean run exposed successor freshness, process
+liveness, ancestry, request-session and nested-contract defects. Current checkpoint
+`e20a9921caf77d1ac05c95ff8811acef9c63938a` closes them. Fresh live evidence
+remains open.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -174,7 +177,7 @@ not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
 A new clean-checkout task based on current implementation commit
-`96e7183f9bb6644bf72191b68277b112c33ccc1d` is dispatched for the full UE 5.8.1
+`e20a9921caf77d1ac05c95ff8811acef9c63938a` is dispatched for the full UE 5.8.1
 compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
 15B pass inside that authorized task.
 
