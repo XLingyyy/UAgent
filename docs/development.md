@@ -87,10 +87,12 @@ compares their exact key/value set independently of JSON member order. Checkpoin
 successor attach, active process identity, causal ancestry, request-bound session
 identity and nested production descriptor contracts. Fifth checkpoint
 `bb89126d82416f0958050405ff1ab693505614f7` retains those rules and gives each
-owned live phase a bounded 600-second total budget. Current checkpoint
+owned live phase a bounded 600-second total budget. Sixth checkpoint
 `39bccbc4a88d925bd3f44ad5c5a44add10a48b39` additionally preserves only valid
 64-character lowercase process-identity SHA-256 fields through retained-event
-redaction; raw or malformed values remain domain-bound.
+redaction; raw or malformed values remain domain-bound. Current checkpoint
+`9fc667bceeaf81bcd087cec0f690c76bf067ad9f` recomputes observation bindings only
+after the complete retained session/PID transformation.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -178,7 +180,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `39bccbc4a88d925bd3f44ad5c5a44add10a48b39`. The old
+implementation commit `9fc667bceeaf81bcd087cec0f690c76bf067ad9f`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 
