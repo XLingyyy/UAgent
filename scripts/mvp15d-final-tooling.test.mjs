@@ -746,6 +746,37 @@ test("UE production provenance retains the creation FILETIME binding exactly onc
   assert.equal(Object.hasOwn(retained, "creationFileTimeUtcBindingSha256BindingSha256"), false);
 });
 
+test("retained authority events bind the redacted session and PID material", () => {
+  const rawMaterial = {
+    mode: "on",
+    mcpSessionId: "mcp-session-authority-redaction-0001",
+    runtimePid: 4517,
+    generation: 19,
+  };
+  const retained = retainedEventValue({
+    ...rawMaterial,
+    authorityLevel: "runtime_observed",
+    observationBindingSha256: hashStableForTest(rawMaterial),
+  });
+  const retainedMaterial = Object.fromEntries(
+    Object.entries(retained).filter(
+      ([key]) => key !== "authorityLevel" && key !== "observationBindingSha256",
+    ),
+  );
+
+  assert.deepEqual(retainedMaterial, {
+    mode: "on",
+    mcpSessionBindingSha256: retainedBindingForTest(
+      "session",
+      rawMaterial.mcpSessionId,
+    ),
+    runtimePidBindingSha256: retainedBindingForTest("pid", rawMaterial.runtimePid),
+    generation: 19,
+  });
+  assert.equal(retained.observationBindingSha256, hashStableForTest(retainedMaterial));
+  assert.notEqual(retained.observationBindingSha256, hashStableForTest(rawMaterial));
+});
+
 function git(cwd, args) {
   const result = spawnSync("git", ["-C", cwd, ...args], {
     encoding: "utf8",

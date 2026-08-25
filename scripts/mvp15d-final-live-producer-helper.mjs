@@ -126,6 +126,7 @@ function retainedKeyBinding(key) {
 function retainedEventValue(value) {
   if (Array.isArray(value)) return value.map(retainedEventValue);
   if (!value || typeof value !== "object") return value;
+  const rebindObservation = Object.hasOwn(value, "observationBindingSha256");
   const retained = {};
   for (const [key, nested] of Object.entries(value)) {
     const binding = retainedKeyBinding(key);
@@ -134,6 +135,14 @@ function retainedEventValue(value) {
     } else {
       retained[key] = retainedEventValue(nested);
     }
+  }
+  if (rebindObservation) {
+    const bindingMaterial = Object.fromEntries(
+      Object.entries(retained).filter(
+        ([key]) => key !== "authorityLevel" && key !== "observationBindingSha256",
+      ),
+    );
+    retained.observationBindingSha256 = sha256(Buffer.from(stable(bindingMaterial), "utf8"));
   }
   return retained;
 }
