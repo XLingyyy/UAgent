@@ -90,9 +90,12 @@ drift; sixth checkpoint `39bccbc4a88d925bd3f44ad5c5a44add10a48b39`
 preserves validated SHA-256 fields while binding invalid/raw values. That clean
 lineage passed release, ExactSix and fixed 15A and completed the rendered 15B
 producer before the verifier exposed a stale observation binding after retained
-session/PID conversion. Current seventh checkpoint
+session/PID conversion. Seventh checkpoint
 `9fc667bceeaf81bcd087cec0f690c76bf067ad9f` recomputes the binding over final
-retained authority material. Fresh live evidence remains open.
+retained authority material. Its clean rendered producer exposed a runner lookup
+against filtered phase events. Current eighth checkpoint
+`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b` recovers the PID binding from the
+descriptor-bound canonical raw-runtime file. Fresh live evidence remains open.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -185,7 +188,7 @@ not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
 A new clean-checkout task based on current implementation commit
-`9fc667bceeaf81bcd087cec0f690c76bf067ad9f` is dispatched for the full UE 5.8.1
+`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b` is dispatched for the full UE 5.8.1
 compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
 15B pass inside that authorized task.
 

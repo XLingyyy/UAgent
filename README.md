@@ -5,7 +5,7 @@ AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent p
 ## Current Stage: MVP15D - Final 15A-15C/D16 Live Acceptance
 
 The current accepted production implementation checkpoint is
-`9fc667bceeaf81bcd087cec0f690c76bf067ad9f`. It includes Final Live Acceptance
+`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`. It includes Final Live Acceptance
 Resume 3 Rework 1's live-owner/restart repair, Resume 4's BuildPlugin descriptor
 verifier repair, Resume 5's official Automation-report UTF-8 BOM repair, and
 Resume 6's exact-once creation-FILETIME provenance repair. Resume 7 adds the
@@ -152,7 +152,7 @@ The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
 source-checkpoint G15 integrity is `COMPLETE`; G16 is
-`PARTIAL`. D13 / 15A is `DISPATCHED` from `9fc667bc...`; D14 / 15B waits on 15A and D15 / 15C
+`PARTIAL`. D13 / 15A is `DISPATCHED` from `e50022dd...`; D14 / 15B waits on 15A and D15 / 15C
 waits on 15A/15B; D16 remains `IN_PROGRESS`; UE 5.8.1 compatibility and overall MVP15
 acceptance remain `PARTIAL`; Ready for the next stage is `NO`.
 Current `PASS_REAL_SMOKE` is `NO`.
@@ -204,7 +204,7 @@ evidence was produced. The latest source delta invalidates the previous release 
 all earlier 15A-15C evidence. The installed release capability gate remains
 open; the invalid Resume 2 cleanup gate is closed and a fresh 15A restart is
 dispatched from a clean checkout of
-`9fc667bceeaf81bcd087cec0f690c76bf067ad9f`. The fifth interim checkpoint
+`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`. The fifth interim checkpoint
 `bb89126d82416f0958050405ff1ab693505614f7` extends the owned live-phase budget
 from 180 to 600 seconds. Its clean chain passed ExactSix and fixed 15A and
 completed the real rendered 15B producer, which exposed an overbroad retained-
@@ -212,8 +212,13 @@ event process-ID redaction. The sixth checkpoint preserves validated 64-characte
 lowercase process-identity SHA-256 fields while continuing to bind raw or invalid
 values. Its clean chain again passed ExactSix and fixed 15A and completed rendered
 15B, which exposed a stale observation binding after session/PID retention. The
-seventh checkpoint recomputes that binding over the final retained material;
-all phase-specific readiness and closeout gates remain unchanged.
+seventh checkpoint recomputes that binding over the final retained material. Its
+clean chain again passed ExactSix and fixed 15A and completed rendered 15B, where
+the runner looked for raw runtime PID identity in the intentionally filtered
+phase transcript. The eighth checkpoint reads the canonical raw-runtime file,
+verifies its descriptor and full task/source/runtime context, and supplies the
+validated PID binding to both execute and persisted verification paths; all
+phase-specific readiness and closeout gates remain unchanged.
 
 The last verified pre-checkpoint Tauri build embedded
 `uagent.mvp15d.source-identity.v2`: base/compiled commit
@@ -253,8 +258,9 @@ Its second interim checkpoint is historical at
 `96e7183f9bb6644bf72191b68277b112c33ccc1d`. The fourth checkpoint is
 `e20a9921caf77d1ac05c95ff8811acef9c63938a`; the fifth final-live source
 checkpoint is `bb89126d82416f0958050405ff1ab693505614f7`; the sixth
-checkpoint is `39bccbc4a88d925bd3f44ad5c5a44add10a48b39`; the current seventh
-checkpoint is `9fc667bceeaf81bcd087cec0f690c76bf067ad9f`. A separate clean-checkout
+checkpoint is `39bccbc4a88d925bd3f44ad5c5a44add10a48b39`; the seventh checkpoint
+is `9fc667bceeaf81bcd087cec0f690c76bf067ad9f`; the current eighth checkpoint is
+`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`. A separate clean-checkout
 rebuild from this checkpoint restarts G16 and D13 / 15A.
 
 The loaded-module publisher still has one write-capable production path. It
@@ -307,7 +313,7 @@ predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root was created.
 Full compatibility and acceptance are assigned to the newly dispatched
 clean-checkout task based on current implementation commit
-`9fc667bceeaf81bcd087cec0f690c76bf067ad9f`.
+`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`.
 Real UE, Tool Search, and mutation
 were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The dispatched live
 task may enter exact-sandbox 15C mutation only after fresh 15A and 15B pass.

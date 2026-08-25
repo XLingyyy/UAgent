@@ -98,9 +98,13 @@ the generic process-ID redactor rebound an already validated process-identity
 SHA-256. Sixth checkpoint `39bccbc4a88d925bd3f44ad5c5a44add10a48b39`
 preserves the exact hash field only for a 64-character lowercase digest and
 continues binding invalid/raw values. Its clean chain exposed a stale native
-observation binding after retained session/PID conversion. Current checkpoint
+observation binding after retained session/PID conversion. Seventh checkpoint
 `9fc667bceeaf81bcd087cec0f690c76bf067ad9f` recomputes that binding over the final
-retained material without changing readiness, observation, authority or closeout
+retained material. Its clean rendered producer exposed a runner-side boundary:
+raw runtime identity is intentionally absent from phase stdout. Current checkpoint
+`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b` reads the descriptor-bound canonical
+raw-runtime file and supplies its fully cross-bound PID binding to both live
+derivation paths without changing readiness, observation, authority or closeout
 gates.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
@@ -151,7 +155,7 @@ fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The form
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
 fail only with `FINAL_LIVE_RUNTIME_NONZERO`. Cleanup is closed and an authorized
 clean-checkout run from current implementation commit
-`9fc667bceeaf81bcd087cec0f690c76bf067ad9f` is dispatched for the 15A restart.
+`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b` is dispatched for the 15A restart.
 
 The implemented trust-chain source path is:
 
@@ -284,7 +288,7 @@ session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
 Full read-only compatibility is assigned to the newly dispatched clean-checkout
 task based on current implementation commit
-`9fc667bceeaf81bcd087cec0f690c76bf067ad9f`.
+`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted

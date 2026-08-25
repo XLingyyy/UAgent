@@ -84,10 +84,13 @@ budget. Its clean rendered producer exposed retained process-identity key drift;
 sixth checkpoint `39bccbc4a88d925bd3f44ad5c5a44add10a48b39` preserves validated
 hashes while binding raw values. That clean lineage passed release, ExactSix and
 fixed 15A and completed the rendered 15B producer before the verifier exposed a
-stale observation binding after retained session/PID conversion. Current seventh
+stale observation binding after retained session/PID conversion. Seventh
 checkpoint `9fc667bceeaf81bcd087cec0f690c76bf067ad9f` recomputes the binding over
-final retained authority material. Current-source manual smoke still requires a
-complete restart.
+final retained authority material. Its clean rendered producer exposed a runner
+lookup against filtered phase events. Current eighth checkpoint
+`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b` recovers the PID binding from the
+descriptor-bound canonical raw-runtime file. Current-source manual smoke still
+requires a complete restart.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -154,7 +157,7 @@ read-only supporting evidence.
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is assigned
 to the newly dispatched clean-checkout task based on current implementation
-commit `9fc667bceeaf81bcd087cec0f690c76bf067ad9f`. Real UE, Tool Search,
+commit `e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`. Real UE, Tool Search,
 and mutation were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The
 dispatched live task may enter exact-sandbox 15C mutation only after fresh 15A
 and 15B pass.
