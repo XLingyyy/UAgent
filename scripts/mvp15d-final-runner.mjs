@@ -742,6 +742,80 @@ function exactData(event, keys, code) {
   return event.data;
 }
 
+function runtimePidBindingFromRawEvents(path, kind, transport, binding) {
+  const code = "FINAL_PHASE_RUNTIME_IDENTITY_INVALID";
+  if (!["product-capture", "ui-lifecycle"].includes(kind)) return null;
+  const bytes = readFileSync(requireFile(path, code));
+  if (
+    bytes.length !== transport.eventFile.size ||
+    sha256Bytes(bytes) !== transport.eventFile.sha256
+  ) {
+    fail(code);
+  }
+  let events;
+  try {
+    events = bytes
+      .toString("utf8")
+      .split(/\r?\n/)
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line));
+  } catch {
+    fail(code);
+  }
+  const matches = events.filter(({ type }) => type === "runtime_process_identity");
+  if (matches.length !== 1) fail(code);
+  const event = matches[0];
+  assertExactKeys(event, ["schemaVersion", "phase", "type", "data"], code);
+  const data = exactData(
+    event,
+    [
+      "bridgeVersion",
+      "endpointSha256",
+      "generation",
+      "markerSha256",
+      "nonceSha256",
+      "portBindingSha256",
+      "process",
+      "sessionBindingSha256",
+      "sourceCommit",
+      "sourceDirty",
+      "sourceHeadRef",
+      "sourceTreeSha256",
+      "taskId",
+    ],
+    code,
+  );
+  assertExactKeys(
+    data.process,
+    ["executableBasename", "executableSha256", "pidBindingSha256"],
+    code,
+  );
+  if (
+    event.schemaVersion !== RUNTIME_EVENT_SCHEMA ||
+    event.phase !== kind ||
+    event.type !== "runtime_process_identity" ||
+    data.bridgeVersion !== "uagent.mvp15d.runtime-bridge.v5" ||
+    data.endpointSha256 !== retainedBindingSha256("endpoint", binding.endpoint) ||
+    data.generation !== binding.generation ||
+    data.markerSha256 !== retainedBindingSha256("marker", binding.marker) ||
+    data.nonceSha256 !== transport.nonceSha256 ||
+    data.portBindingSha256 !== retainedBindingSha256("port", binding.port) ||
+    data.sessionBindingSha256 !== retainedBindingSha256("session", binding.sessionId) ||
+    data.sourceCommit !== binding.sourceCommit ||
+    data.sourceDirty !== false ||
+    typeof data.sourceHeadRef !== "string" ||
+    data.sourceHeadRef.length === 0 ||
+    data.sourceTreeSha256 !== binding.sourceTreeSha256 ||
+    data.taskId !== binding.taskId ||
+    data.process.executableBasename !== binding.runtimeProcess.executable.basename ||
+    data.process.executableSha256 !== binding.runtimeProcess.executable.sha256 ||
+    !isHex(data.process.pidBindingSha256)
+  ) {
+    fail(code);
+  }
+  return data.process.pidBindingSha256;
+}
+
 function parsePhaseEvents(text, kind, binding) {
   const lines = String(text)
     .split(/\r?\n/)
@@ -4462,6 +4536,7 @@ function executeLivePhase(kind, args) {
   writeFileSync(paths.stderr, stderr.text, { encoding: "utf8", flag: "wx" });
 
   let parsed = null;
+  let runtimePidBindingSha256 = null;
   let failure = null;
   if (stderr.sensitive) {
     failure = new FinalRunnerError("FINAL_PHASE_STDERR_SENSITIVE");
@@ -4480,6 +4555,22 @@ function executeLivePhase(kind, args) {
         pid: result.pid,
         producerId: producer.id,
       });
+      runtimePidBindingSha256 = runtimePidBindingFromRawEvents(
+        paths.runtimeEvents,
+        kind,
+        parsed.runtimeTransport,
+        {
+          taskId,
+          marker: ownership.marker,
+          sessionId: session.sessionId,
+          generation: session.generation,
+          port: ownership.port,
+          endpoint: launch.endpoint,
+          sourceCommit: launch.sourceCommit,
+          sourceTreeSha256: sourceIdentity.sourceTreeSha256,
+          runtimeProcess: parsed.runtimeProcess,
+        },
+      );
     } catch (error) {
       failure = error;
     }
@@ -4606,9 +4697,7 @@ function executeLivePhase(kind, args) {
     sessionBindingSha256: retainedBindingSha256("session", session.sessionId),
     generation: session.generation,
     runtimeProcessIdBindingSha256: parsed.runtimeProcess.processIdBindingSha256,
-    runtimePidBindingSha256:
-      parsed.events.find(({ type }) => type === "runtime_process_identity")?.data?.process
-        ?.pidBindingSha256 ?? null,
+    runtimePidBindingSha256,
     runtimeProcess: parsed.runtimeProcess,
   };
   const ownedDerivationAuthority =
@@ -5030,6 +5119,20 @@ function verifyPhaseSummary(kind, args) {
       : null,
     producerId: producer.id,
   });
+  const verificationSourceIdentity = isLive ? computeSourceIdentity(repository) : null;
+  const runtimePidBindingSha256 = isLive
+    ? runtimePidBindingFromRawEvents(paths.runtimeEvents, kind, parsed.runtimeTransport, {
+        taskId,
+        marker: liveOwnership.marker,
+        sessionId: liveSession.sessionId,
+        generation: ledger.generation,
+        port: liveOwnership.port,
+        endpoint: liveEndpoint,
+        sourceCommit: ledger.sourceCommit,
+        sourceTreeSha256: verificationSourceIdentity.sourceTreeSha256,
+        runtimeProcess: parsed.runtimeProcess,
+      })
+    : null;
   if (isLive) {
     const jobCloseout = readJson(
       resolve(root, "metadata", `${kind}.job-closeout.json`),
@@ -5130,15 +5233,13 @@ function verifyPhaseSummary(kind, args) {
   }
   const verificationContext = {
     sourceCommit: ledger.sourceCommit,
-    sourceTreeSha256: isLive ? computeSourceIdentity(repository).sourceTreeSha256 : undefined,
+    sourceTreeSha256: verificationSourceIdentity?.sourceTreeSha256,
     ...(isLive
       ? { sessionBindingSha256: ledger.sessionBindingSha256 }
       : { sessionId: ledger.sessionId }),
     generation: ledger.generation,
     runtimeProcessIdBindingSha256: parsed.runtimeProcess?.processIdBindingSha256,
-    runtimePidBindingSha256:
-      parsed.events.find(({ type }) => type === "runtime_process_identity")?.data?.process
-        ?.pidBindingSha256 ?? null,
+    runtimePidBindingSha256,
     runtimeProcess: parsed.runtimeProcess,
   };
   const persistedAuthority =
@@ -5577,6 +5678,7 @@ export {
   EVENT_SCHEMA,
   inventoryCreate,
   inventoryVerify,
+  runtimePidBindingFromRawEvents,
   run,
   validateProductCapture,
   validateUiLifecycle,

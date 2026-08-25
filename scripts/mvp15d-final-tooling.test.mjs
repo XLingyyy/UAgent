@@ -33,6 +33,7 @@ import {
   executeOwnedLaunchReceiptFixture,
   inventoryCreate,
   inventoryVerify,
+  runtimePidBindingFromRawEvents,
   run as runFinal,
   verifyUeProductionArtifactConsistency,
   validateProductCapture,
@@ -115,6 +116,91 @@ test("structured runtime contracts reject mixed v1 evidence", () => {
     (error) =>
       error instanceof LiveProducerError && error.code === "FINAL_LIVE_RUNTIME_EVENT_INVALID",
   );
+});
+
+test("raw runtime identity supplies the PID binding omitted from phase events", () => {
+  const directory = mkdtempSync(join(tmpdir(), "uagent-mvp15d-runtime-identity-"));
+  const path = resolve(directory, "product-capture.runtime-events.jsonl");
+  const marker = "uagent-mvp15d-runtime-identity-fixture-0001";
+  const sessionId = "final-runtime-identity-fixture-session-0001";
+  const port = 31413;
+  const endpoint = `http://127.0.0.1:${port}/mcp`;
+  const sourceCommit = "1".repeat(40);
+  const sourceTreeSha256 = "2".repeat(64);
+  const pidBindingSha256 = "3".repeat(64);
+  const nonceSha256 = "4".repeat(64);
+  const runtimeProcess = {
+    executable: {
+      basename: basename(process.execPath),
+      size: lstatSync(process.execPath).size,
+      sha256: cryptoHash(readFileSync(process.execPath)),
+    },
+  };
+  const event = {
+    schemaVersion: RUNTIME_EVENT_SCHEMA,
+    phase: "product-capture",
+    type: "runtime_process_identity",
+    data: {
+      bridgeVersion: "uagent.mvp15d.runtime-bridge.v5",
+      endpointSha256: retainedBindingForTest("endpoint", endpoint),
+      generation: 1,
+      markerSha256: retainedBindingForTest("marker", marker),
+      nonceSha256,
+      portBindingSha256: retainedBindingForTest("port", port),
+      process: {
+        executableBasename: runtimeProcess.executable.basename,
+        executableSha256: runtimeProcess.executable.sha256,
+        pidBindingSha256,
+      },
+      sessionBindingSha256: retainedBindingForTest("session", sessionId),
+      sourceCommit,
+      sourceDirty: false,
+      sourceHeadRef: "HEAD",
+      sourceTreeSha256,
+      taskId: TASK_ID,
+    },
+  };
+  const binding = {
+    taskId: TASK_ID,
+    marker,
+    sessionId,
+    generation: 1,
+    port,
+    endpoint,
+    sourceCommit,
+    sourceTreeSha256,
+    runtimeProcess,
+  };
+  const writeEvent = (value) => {
+    writeFileSync(path, `${JSON.stringify(value)}\n`, "utf8");
+    const bytes = readFileSync(path);
+    return {
+      nonceSha256,
+      eventFile: { size: bytes.length, sha256: cryptoHash(bytes) },
+    };
+  };
+  try {
+    const transport = writeEvent(event);
+    assert.equal(
+      runtimePidBindingFromRawEvents(path, "product-capture", transport, binding),
+      pidBindingSha256,
+    );
+
+    const wrongSource = structuredClone(event);
+    wrongSource.data.sourceTreeSha256 = "5".repeat(64);
+    assert.throws(
+      () =>
+        runtimePidBindingFromRawEvents(
+          path,
+          "product-capture",
+          writeEvent(wrongSource),
+          binding,
+        ),
+      (error) => error?.code === "FINAL_PHASE_RUNTIME_IDENTITY_INVALID",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("owned launch receipt fixture uses a private same-process brand without production authority", () => {
