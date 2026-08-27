@@ -95,7 +95,10 @@ checkpoint `3331e220f53f528c7cc98e61efc927428d4eaeca` captured a verified ready
 snapshot, but its clean lineage proved that the snapshot still used a later
 mutable observation. Current tenth checkpoint
 `8c78b172dd7ac03c7d38f0d28cc157611e4a63a7` binds restart to the immutable native
-connect-receipt generation. Current-source manual smoke still requires a complete restart.
+connect-receipt generation. Current eleventh checkpoint
+`f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed` repairs the later 15B
+`stale_completion` session-transition validation. Current-source manual smoke
+still requires a complete restart.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -162,7 +165,7 @@ read-only supporting evidence.
 The unsafe predecessor evidence root was invalidated and removed for
 `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only compatibility is assigned
 to the newly dispatched clean-checkout task based on current implementation
-commit `8c78b172dd7ac03c7d38f0d28cc157611e4a63a7`. Real UE, Tool Search,
+commit `f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed`. Real UE, Tool Search,
 and mutation were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The
 dispatched live task may enter exact-sandbox 15C mutation only after fresh 15A
 and 15B pass.

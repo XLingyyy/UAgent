@@ -121,14 +121,17 @@
   captured a verified ready snapshot; its clean lineage proved that snapshot still
   used a later mutable observation. Current tenth checkpoint
   `8c78b172dd7ac03c7d38f0d28cc157611e4a63a7` binds restart to the immutable
-  native connect-receipt generation. The same task remains active.
+  native connect-receipt generation. Current eleventh checkpoint
+  `f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed` accepts same-session advancing
+  `stale_completion` while retaining fail-closed session replacement for the
+  connection and restart boundaries. The same task remains active.
 - The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
   historical `COMPLETE / PASS` record at implementation commit
   `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
 - G14 documentation consistency: `IMPLEMENTED` after the current evidence and
   stale-state reconciliation.
 - G15 checkpoint integrity: `COMPLETE`; current implementation commit
-  `8c78b172dd7ac03c7d38f0d28cc157611e4a63a7` is recorded by this documentation
+  `f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed` is recorded by this documentation
   closeout. Earlier accepted repairs retain their historical scopes.
 - G16 authority provenance and plugin baseline: `PARTIAL`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
@@ -137,7 +140,7 @@
 - Real UE 5.8.1 compatibility: `PARTIAL`; the Rework 2 read-only attempt is
   historical and the full clean-commit matrix remains deferred.
 - D13 / 15A live execution: `DISPATCHED` from a fresh clean checkout of
-  `8c78b172dd7ac03c7d38f0d28cc157611e4a63a7`.
+  `f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed`.
 - D14 / 15B: `WAITING_ON_15A`; not run.
 - D15 / 15C: `WAITING_ON_15A_15B`; no asset mutation was attempted.
 - D16: `IN_PROGRESS`.
@@ -228,7 +231,7 @@ cannot satisfy final 15A-15C.
 
 The invalid Resume 2 cleanup gate is closed. A new clean-checkout 5.8.1 task is
 dispatched from current implementation commit
-`8c78b172dd7ac03c7d38f0d28cc157611e4a63a7`, covering
+`f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed`, covering
 both Tool Search modes, exact-six/product
 retractions, response framing, clean inventory, and the real loaded-module
 observer. Only a later separately authorized task may consider real 15C
