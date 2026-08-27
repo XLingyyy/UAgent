@@ -97,10 +97,12 @@ checkpoint `e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b` obtains the runtime PID
 binding from
 the canonical raw-runtime transcript after verifying its byte descriptor and
 task/source/session/runtime context. Its clean lineage exposed mutable discovery
-generation drift during renderer predecessor observation. Current ninth
-checkpoint `3331e220f53f528c7cc98e61efc927428d4eaeca` passes the verified
-ready-generation snapshot into restart and retains dirty-source fail-closed
-classification.
+generation drift during renderer predecessor observation. Historical ninth
+checkpoint `3331e220f53f528c7cc98e61efc927428d4eaeca` captured a ready snapshot,
+while the next clean lineage proved that the snapshot still reflected a later
+mutable observation. Current tenth checkpoint
+`17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800` reads the immutable generation from
+the native connect receipt and retains dirty-source fail-closed classification.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -188,7 +190,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `3331e220f53f528c7cc98e61efc927428d4eaeca`. The old
+implementation commit `17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

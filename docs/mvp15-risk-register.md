@@ -97,9 +97,12 @@ final retained authority material. Its clean rendered producer exposed a runner
 lookup against filtered phase events. Historical eighth checkpoint
 `e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b` recovers the fully cross-bound PID
 identity from the canonical raw-runtime file. Its clean lineage exposed renderer
-predecessor-generation drift during concurrent discovery. Current ninth checkpoint
-`3331e220f53f528c7cc98e61efc927428d4eaeca` pins restart to the verified
-ready-generation snapshot. No current-source live gate has advanced.
+predecessor-generation drift during concurrent discovery. Historical ninth checkpoint
+`3331e220f53f528c7cc98e61efc927428d4eaeca` captured a verified ready snapshot,
+but its clean lineage proved that the snapshot still used a later mutable
+observation. Current tenth checkpoint
+`17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800` binds restart to the immutable native
+connect-receipt generation. No current-source live gate has advanced.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -138,7 +141,7 @@ ran; the stale installed binary may fail only with `FINAL_LIVE_RUNTIME_NONZERO`.
 | Final wrapper command identity                        | MITIGATED        | Rework source invokes validated caller-supplied `RunUAT.bat` through the exact ordered `-Rocket` argument builder; plan/live fixtures fingerprint the actual launcher and arguments.                                                                                                                                                                                                                                                                                                                                          |
 | Clean-checkout physical byte identity                 | MITIGATED        | Two path-specific LF attributes and a fresh no-hardlink `core.autocrlf=true` checkout test preserve 4,865 bytes / `771168ec...` with clean Git status.                                                                                                                                                                                                                                                                                                                                                                        |
 | Build commit-memory capacity                          | MITIGATED        | Historical Rework 2 UE 5.8.1 RunUAT BuildPlugin completed 16/16 actions with exit 0; Rework 3 did not repeat the live build.                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Final package provenance / loaded identity            | OPEN             | Resume 15 repeatedly passed clean ExactSix and fixed 15A before rendered 15B exposed source defects. The PID-binding and predecessor-generation defects are repaired through current checkpoint `3331e220...`; installed == loaded == fresh current-source manifest remains unproved after that source change.                                                                                  |
+| Final package provenance / loaded identity            | OPEN             | Resume 15 repeatedly passed clean ExactSix and fixed 15A before rendered 15B exposed source defects. The PID-binding and predecessor-generation defects are repaired through current checkpoint `17c20bb...`; installed == loaded == fresh current-source manifest remains unproved after that source change.                                                                                  |
 | Desktop bundle icon                                   | MITIGATED        | Tracked nonblank ICO has 16/24/32/48/64/128/256 entries; icon preflight and actual MSI/NSIS bundling pass.                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Caller-authored final evidence                        | OPEN             | Rework 9 source tests run both actual App instances through the production orchestrator and reject legacy/missing/wrong/cross-window/task/phase/handoff identity, reordered/replayed receipts, fake/same successors, same-label replacement, and raw-summary drift. The native harness now returns restart before parent-ready; real Wry coverage supplies destroy/removal ordering. `Review Verdict: PASS`; implementation commit `aa14363f15d8bdc8eaf392c67cf444496cc8a968` exists, while fresh live evidence remains open. |
 | Transitive source dependency drift                    | MITIGATED        | Source identity v2 hashes a deterministic 336-file production boundary discovered from 14 roots plus 28 exact files, with 9 exclusion classes and 357 source/Git watches. Representative native/renderer/CSS/package/config/lock/plugin/tooling changes, new production files, tracked deletion, worktrees, refs, and same-branch commits are regression-covered.                                                                                                                                                             |
@@ -164,7 +167,7 @@ ran; the stale installed binary may fail only with `FINAL_LIVE_RUNTIME_NONZERO`.
 The historical Final Source/Tooling Rework 8 is checkpointed at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. Cleanup is closed and live
 acceptance is dispatched as a separate clean-checkout task based on current
-implementation commit `3331e220f53f528c7cc98e61efc927428d4eaeca`, with a manifest-backed
+implementation commit `17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800`, with a manifest-backed
 build and a new strict evidence root. Exact-sandbox 15C mutation remains gated
 until fresh 15A and 15B pass inside that authorized task.
 
@@ -213,7 +216,7 @@ MVP15D source-checkpoint risks above or supply current D0-D12 evidence.
 
 ## Current Conclusion
 
-D13 / 15A is `DISPATCHED` from `3331e220f53f528c7cc98e61efc927428d4eaeca`. Final Pre-live Source Closure Rework 7 is historical
+D13 / 15A is `DISPATCHED` from `17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800`. Final Pre-live Source Closure Rework 7 is historical
 `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains
 `Review Verdict: NEEDS_FIX` for deterministic Tauri destroy/build ordering.
 Rework 9 is the historical accepted base at
