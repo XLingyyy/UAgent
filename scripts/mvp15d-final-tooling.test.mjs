@@ -4184,19 +4184,20 @@ test(
         marker: "uagent-mvp15d-final-phase-fixture-0004",
         port: "31415",
       };
-      assert.equal(runFinal("preflight", preflightArgs).status, "preflight_planned");
-      assert.equal(
-        runFinal("preflight", { ...preflightArgs, mode: "create" }).status,
-        "preflight_created",
-      );
-      assert.equal(
-        runFinal("project-create", {
-          mode: "plan",
-          repository: fixture.clone,
-          "evidence-root": root,
-        }).status,
-        "project_create_planned",
-      );
+      const expectedTaskLocalDdc = "project/FinalHost/Saved/DerivedDataCache";
+      const preflightPlan = runFinal("preflight", preflightArgs);
+      assert.equal(preflightPlan.status, "preflight_planned");
+      assert.equal(preflightPlan.plan.taskLocalCache, expectedTaskLocalDdc);
+      const preflightCreate = runFinal("preflight", { ...preflightArgs, mode: "create" });
+      assert.equal(preflightCreate.status, "preflight_created");
+      assert.equal(preflightCreate.plan.taskLocalCache, expectedTaskLocalDdc);
+      const projectPlan = runFinal("project-create", {
+        mode: "plan",
+        repository: fixture.clone,
+        "evidence-root": root,
+      });
+      assert.equal(projectPlan.status, "project_create_planned");
+      assert.equal(projectPlan.plan.taskLocalDdc, expectedTaskLocalDdc);
       for (const command of ["ue-automation", "product-capture", "ui-lifecycle"]) {
         const planned = runFinal(command, {
           mode: "plan",

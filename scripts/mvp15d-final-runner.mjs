@@ -363,7 +363,7 @@ function preflight(args) {
     ueRootIdentity: sha256Bytes(Buffer.from(resolve(args["ue-root"]).toLowerCase(), "utf8")),
     marker: ownership.marker,
     port: ownership.port,
-    taskLocalCache: "project/Saved/DerivedDataCache",
+    taskLocalCache: "project/FinalHost/Saved/DerivedDataCache",
     project: "project/FinalHost",
     package: "package/UAgentAssetTools",
     sandboxPrefix: "/Game/UAgentSandbox/",
