@@ -101,10 +101,13 @@ while binding raw values. Its clean chain exposed a stale observation binding
 after retained session/PID conversion. Seventh checkpoint
 `9fc667bceeaf81bcd087cec0f690c76bf067ad9f` recomputes that binding over the final
 retained material. Its clean rendered producer exposed a runner lookup against
-the filtered phase transcript. Eighth checkpoint
+the filtered phase transcript. Historical eighth checkpoint
 `e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b` validates the canonical raw-runtime
-file and supplies its bound PID identity to both live derivation paths. All
-retained Resume 15 live evidence predates the current repair.
+file and supplies its bound PID identity to both live derivation paths. Its clean
+lineage exposed a concurrent-discovery predecessor-generation drift. Current
+ninth checkpoint `3331e220f53f528c7cc98e61efc927428d4eaeca` pins restart to the
+verified ready-generation snapshot. All retained Resume 15 live evidence
+predates the current repair.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -116,7 +119,7 @@ The verified release binary truthfully reported a
 dirty pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
 transitive production boundary. Cleanup is closed and a separate clean-checkout
 rebuild from current implementation commit
-`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b` is dispatched for G16 and D13 /
+`3331e220f53f528c7cc98e61efc927428d4eaeca` is dispatched for G16 and D13 /
 15A.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
@@ -350,7 +353,7 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 - A sealed final package and live manifest/install/load equality after cleanup,
   from a clean checkout of current implementation commit
-  `e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`.
+  `3331e220f53f528c7cc98e61efc927428d4eaeca`.
 - Fresh current-task UE Automation output, exact-six product-adapter capture,
   and rendered product-UI happy/negative/replay/cleanup evidence.
 - A retained final inventory produced and verified from those live source
@@ -413,8 +416,9 @@ interim source checkpoint is `6fb99447f3158c9f0326c93774fe03c5319762ff`, and its
 `e20a9921caf77d1ac05c95ff8811acef9c63938a`; its fifth checkpoint is
 `bb89126d82416f0958050405ff1ab693505614f7`; its sixth checkpoint is
 `39bccbc4a88d925bd3f44ad5c5a44add10a48b39`; its seventh checkpoint is
-`9fc667bceeaf81bcd087cec0f690c76bf067ad9f`; its eighth and current checkpoint is
-`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`. The separate
+`9fc667bceeaf81bcd087cec0f690c76bf067ad9f`; its eighth checkpoint is
+`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`; its ninth and current checkpoint is
+`3331e220f53f528c7cc98e61efc927428d4eaeca`. The separate
 2026-08-03 Final Source/Tooling Rework 8
 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
@@ -423,5 +427,5 @@ D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A and
 D15 / 15C waits on 15A/15B; D16 remains `IN_PROGRESS`; real UE 5.8.1
 compatibility and overall acceptance remain `PARTIAL`; Ready remains `NO`. The
 clean-checkout run must use current implementation commit
-`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`. Exact-sandbox 15C mutation is
+`3331e220f53f528c7cc98e61efc927428d4eaeca`. Exact-sandbox 15C mutation is
 authorized only after fresh 15A and 15B pass inside that dispatched task.

@@ -1,5 +1,28 @@
 # MVP15 Final Verification
 
+## Resume 15 ninth accepted interim source checkpoint - 2026-08-27
+
+The clean `e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b` lineage passed release,
+BuildPlugin, ExactSix `1 / 1 / 0 / 0` and fixed 15A `3 / 3 / 0 / 0`. The rendered
+15B producer completed its owned runtime path, but the formal runner failed
+closed because a concurrent discovery advanced the mutable MCP generation while
+renderer predecessor observation was pending. The restart request used that
+advanced value instead of the already verified ready-generation snapshot.
+
+Current checkpoint `3331e220f53f528c7cc98e61efc927428d4eaeca` passes
+`before.generation` into restart and adds a real-adapter regression that advances
+discovery during predecessor observation. Dirty source remains fail closed; a
+clean stale release retains its distinct nonzero classification. Supervisor
+verification passed final tooling `32 / 32`, source identity `20 / 20`, workspace
+tests `1685` with three existing skips, Rust `198 / 198`, lint, typecheck, build,
+`git diff --check`, clone integrity and zero process/port residue.
+
+All release, package, ExactSix, 15A and rejected rendered 15B artifacts from
+`e50022d...` retain causal value only and are source-invalidated for final
+acceptance. D13 / 15A is redispatched from `3331e220...`; D14 / 15B waits on the
+new 15A lineage, D15 / 15C waits on 15A/15B, D16 remains in progress,
+`PASS_REAL_SMOKE` is `NO`, and Stage Ready is `NO`.
+
 ## Resume 15 eighth accepted interim source checkpoint — 2026-08-25
 
 The clean `9fc667bceeaf81bcd087cec0f690c76bf067ad9f` lineage passed release,
@@ -7,7 +30,7 @@ BuildPlugin, ExactSix `1 / 1 / 0 / 0`, fixed 15A `3 / 3 / 0 / 0`, and the
 rendered 15B producer through ON/OFF discovery, six retractions and parent
 closeout. The formal runner then failed closed because it searched the filtered
 phase transcript for `runtime_process_identity`, which is retained only in the
-canonical raw-runtime transcript. Current checkpoint
+canonical raw-runtime transcript. The eighth checkpoint
 `e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b` verifies that raw file's byte
 descriptor and full task, session, endpoint, source and executable context, then
 supplies its PID binding to execute and persisted verification paths. All live
@@ -407,7 +430,7 @@ live fingerprint, full 15A N1-N8 acceptance root, partial/unknown sequence,
 parent closeout, UE Automation run, live MCP capture, or mutation was executed.
 The stale installed
 release may fail only with `FINAL_LIVE_RUNTIME_NONZERO`. D13/15A is
-`DISPATCHED` from `e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`, D14/15B waits on
+`DISPATCHED` from `3331e220f53f528c7cc98e61efc927428d4eaeca`, D14/15B waits on
 15A, D15/15C waits on 15A/15B, D16 remains `IN_PROGRESS`, G16
 and overall acceptance remain `PARTIAL`, and Ready remains `NO`. Current
 `PASS_REAL_SMOKE` is `NO`.
@@ -1503,7 +1526,7 @@ separate 2026-08-03 Final
 Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
 source-checkpoint G15 integrity is `COMPLETE` at
-`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`, and G16 is `PARTIAL`. The
+`3331e220f53f528c7cc98e61efc927428d4eaeca`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
 replace the historical 2026-08-03 Rework 8 checkpoint. No clean current-generation exact-six fingerprint or
