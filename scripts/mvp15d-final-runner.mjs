@@ -1332,6 +1332,19 @@ function persistedOwnedLaunchBinding(receipt) {
   };
 }
 
+function validRetractionSessionTransition(record) {
+  if (["reconnect", "endpoint_change", "renderer_restart", "ue_restart"].includes(record.reason)) {
+    return record.sessionBindingSha256After !== record.sessionBindingSha256Before;
+  }
+  if (["refresh_tools", "stale_completion"].includes(record.reason)) {
+    return (
+      record.sessionBindingSha256After === record.sessionBindingSha256Before &&
+      record.generationAfter > record.generationBefore
+    );
+  }
+  return false;
+}
+
 function deriveLiveProduct(events, closeout, context) {
   const code = "FINAL_PRODUCT_LIVE_AUTHORITY_INVALID";
   verifyLiveDerivationAuthority("product-capture", events, closeout, context);
@@ -1841,15 +1854,7 @@ function deriveLiveProduct(events, closeout, context) {
     ) {
       fail("FINAL_PRODUCT_RENDERER_RESTART_INVALID");
     }
-    const expectedSessionTransition =
-      ["reconnect", "endpoint_change", "renderer_restart", "ue_restart", "stale_completion"].includes(
-        record.reason,
-      )
-        ? record.sessionBindingSha256After !== record.sessionBindingSha256Before
-        : record.reason === "refresh_tools"
-          ? record.sessionBindingSha256After === record.sessionBindingSha256Before &&
-            record.generationAfter > record.generationBefore
-          : false;
+    const expectedSessionTransition = validRetractionSessionTransition(record);
     if (!expectedSessionTransition) {
       fail("FINAL_PRODUCT_RETRACTION_SOURCE_INVALID");
     }
@@ -5684,6 +5689,7 @@ export {
   validateUiLifecycle,
   validateUeAutomation,
   validateEarlyIdentityArtifact,
+  validRetractionSessionTransition,
   verifyUeProductionArtifactConsistency,
   executeFixturePhase,
   executeOwnedLaunchReceiptFixture,

@@ -38,6 +38,7 @@ import {
   verifyUeProductionArtifactConsistency,
   validateProductCapture,
   validateUeAutomation,
+  validRetractionSessionTransition,
 } from "./mvp15d-final-runner.mjs";
 import {
   BRIDGE_VERSION,
@@ -95,6 +96,36 @@ let handAuthoredFixtureSequence = 0;
 
 test("real rendered phases retain a bounded budget for UE startup and the 15C TTL window", () => {
   assert.equal(LIVE_PROCESS_TIMEOUT_MILLISECONDS, 600_000);
+});
+
+test("stale completion retracts within one session while advancing generation", () => {
+  const staleCompletion = {
+    reason: "stale_completion",
+    sessionBindingSha256Before: "a".repeat(64),
+    sessionBindingSha256After: "a".repeat(64),
+    generationBefore: 41,
+    generationAfter: 42,
+  };
+  assert.equal(validRetractionSessionTransition(staleCompletion), true);
+  assert.equal(
+    validRetractionSessionTransition({
+      ...staleCompletion,
+      sessionBindingSha256After: "b".repeat(64),
+    }),
+    false,
+  );
+  assert.equal(
+    validRetractionSessionTransition({ ...staleCompletion, generationAfter: 41 }),
+    false,
+  );
+  assert.equal(
+    validRetractionSessionTransition({
+      ...staleCompletion,
+      reason: "reconnect",
+      sessionBindingSha256After: "b".repeat(64),
+    }),
+    true,
+  );
 });
 
 test("structured runtime contracts reject mixed v1 evidence", () => {
@@ -1022,7 +1053,7 @@ function liveProductAuthorityFixture() {
   ];
   for (const [index, reason] of reasons.entries()) {
     const rendererRestart = reason === "renderer_restart";
-    const replacesSession = reason !== "refresh_tools";
+    const replacesSession = !["refresh_tools", "stale_completion"].includes(reason);
     const material = {
       reason,
       sessionIdBefore: `retraction-session-before-${index + 1}`,
