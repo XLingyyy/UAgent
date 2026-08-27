@@ -100,7 +100,7 @@ predecessor-generation drift during concurrent discovery. Historical ninth check
 `3331e220f53f528c7cc98e61efc927428d4eaeca` captured a verified ready snapshot,
 but its clean lineage proved that the snapshot still used a later mutable
 observation. Current tenth checkpoint
-`17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800` binds restart to the immutable native
+`8c78b172dd7ac03c7d38f0d28cc157611e4a63a7` binds restart to the immutable native
 connect-receipt generation. Fresh live evidence remains open.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
@@ -194,7 +194,7 @@ not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
 A new clean-checkout task based on current implementation commit
-`17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800` is dispatched for the full UE 5.8.1
+`8c78b172dd7ac03c7d38f0d28cc157611e4a63a7` is dispatched for the full UE 5.8.1
 compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
 15B pass inside that authorized task.
 

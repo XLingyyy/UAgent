@@ -101,7 +101,7 @@ generation drift during renderer predecessor observation. Historical ninth
 checkpoint `3331e220f53f528c7cc98e61efc927428d4eaeca` captured a ready snapshot,
 while the next clean lineage proved that the snapshot still reflected a later
 mutable observation. Current tenth checkpoint
-`17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800` reads the immutable generation from
+`8c78b172dd7ac03c7d38f0d28cc157611e4a63a7` reads the immutable generation from
 the native connect receipt and retains dirty-source fail-closed classification.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
@@ -190,7 +190,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800`. The old
+implementation commit `8c78b172dd7ac03c7d38f0d28cc157611e4a63a7`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

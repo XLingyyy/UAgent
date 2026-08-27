@@ -111,7 +111,7 @@ gates. Its clean lineage passed release, ExactSix and fixed 15A before rendered
 `3331e220f53f528c7cc98e61efc927428d4eaeca` pinned renderer restart to a captured
 ready-generation value, but the next clean lineage proved that value could still
 come from a later mutable observation. Current tenth checkpoint
-`17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800` binds the transition and handoff to
+`8c78b172dd7ac03c7d38f0d28cc157611e4a63a7` binds the transition and handoff to
 the verified connect receipt's immutable generation.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
@@ -162,7 +162,7 @@ fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The form
 prior 15A-15C artifacts are stale; no live gate ran. The old installed binary may
 fail only with `FINAL_LIVE_RUNTIME_NONZERO`. Cleanup is closed and an authorized
 clean-checkout run from current implementation commit
-`17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800` is dispatched for the 15A restart.
+`8c78b172dd7ac03c7d38f0d28cc157611e4a63a7` is dispatched for the 15A restart.
 
 The implemented trust-chain source path is:
 
@@ -295,7 +295,7 @@ session, live product discovery, Tool Search, or mutation ran; those operations
 are `SKIPPED_BY_TASK_BOUNDARY`.
 Full read-only compatibility is assigned to the newly dispatched clean-checkout
 task based on current implementation commit
-`17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800`.
+`8c78b172dd7ac03c7d38f0d28cc157611e4a63a7`.
 
 Historical Source Checkpoint Rework 7 D0/build/UE evidence remains valid and Direct remains the
 selected route. It is source-checkpoint evidence only and cannot be substituted

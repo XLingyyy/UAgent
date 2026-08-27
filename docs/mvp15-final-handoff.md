@@ -108,7 +108,7 @@ lineage exposed a concurrent-discovery predecessor-generation drift. Historical
 ninth checkpoint `3331e220f53f528c7cc98e61efc927428d4eaeca` captured a verified
 ready snapshot; its clean lineage proved that the snapshot still came from a
 later mutable observation. Current tenth checkpoint
-`17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800` binds restart to the immutable native
+`8c78b172dd7ac03c7d38f0d28cc157611e4a63a7` binds restart to the immutable native
 connect-receipt generation. All retained Resume 15 live evidence predates the
 current repair.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
@@ -122,7 +122,7 @@ The verified release binary truthfully reported a
 dirty pre-checkpoint source identity (`sourceDirty: true`) over the 335-file
 transitive production boundary. Cleanup is closed and a separate clean-checkout
 rebuild from current implementation commit
-`17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800` is dispatched for G16 and D13 /
+`8c78b172dd7ac03c7d38f0d28cc157611e4a63a7` is dispatched for G16 and D13 /
 15A.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
@@ -356,7 +356,7 @@ Historical 11A automated evidence includes TypeScript typecheck/lint, shared 32,
 
 - A sealed final package and live manifest/install/load equality after cleanup,
   from a clean checkout of current implementation commit
-  `17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800`.
+  `8c78b172dd7ac03c7d38f0d28cc157611e4a63a7`.
 - Fresh current-task UE Automation output, exact-six product-adapter capture,
   and rendered product-UI happy/negative/replay/cleanup evidence.
 - A retained final inventory produced and verified from those live source
@@ -422,7 +422,7 @@ interim source checkpoint is `6fb99447f3158c9f0326c93774fe03c5319762ff`, and its
 `9fc667bceeaf81bcd087cec0f690c76bf067ad9f`; its eighth checkpoint is
 `e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`; its ninth checkpoint is
 `3331e220f53f528c7cc98e61efc927428d4eaeca`; its tenth and current checkpoint is
-`17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800`. The separate
+`8c78b172dd7ac03c7d38f0d28cc157611e4a63a7`. The separate
 2026-08-03 Final Source/Tooling Rework 8
 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
@@ -431,5 +431,5 @@ D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A and
 D15 / 15C waits on 15A/15B; D16 remains `IN_PROGRESS`; real UE 5.8.1
 compatibility and overall acceptance remain `PARTIAL`; Ready remains `NO`. The
 clean-checkout run must use current implementation commit
-`17c20bb72d9e1a4609ce5be6b3ff7cd8fbf4d800`. Exact-sandbox 15C mutation is
+`8c78b172dd7ac03c7d38f0d28cc157611e4a63a7`. Exact-sandbox 15C mutation is
 authorized only after fresh 15A and 15B pass inside that dispatched task.
