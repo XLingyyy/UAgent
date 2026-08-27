@@ -209,7 +209,7 @@ describe("MVP15D authoritative product observations", () => {
     expect(harness.nativeCommands).not.toContain("mvp15d_bridge_issue_observation_receipt");
   });
 
-  it("pins renderer restart to the verified ready generation during a concurrent discovery", async () => {
+  it("pins renderer restart to the verified ready connect generation during a concurrent discovery", async () => {
     const { StreamableHttpTransport: RealStreamableHttpTransport } =
       await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");
     vi.mocked(StreamableHttpTransport).mockImplementation(
@@ -219,7 +219,6 @@ describe("MVP15D authoritative product observations", () => {
     const adapterRef: { current: ReturnType<typeof createDesktopRuntimeAdapter> | null } = {
       current: null,
     };
-    let readyGeneration: number | null = null;
     let concurrentDiscoveryObserved = false;
     const nativeInvoke: NativeInvoke = async <T = unknown>(command: string, payload?: unknown) => {
       const input = (payload as { input?: Record<string, unknown> } | undefined)?.input ?? {};
@@ -231,13 +230,6 @@ describe("MVP15D authoritative product observations", () => {
         request.stage === "predecessor" &&
         !concurrentDiscoveryObserved
       ) {
-        const readyInput = [...harness.nativeInputs].reverse().find((candidate) => {
-          const observation = candidate.observation as Record<string, unknown> | undefined;
-          return Number.isSafeInteger(observation?.connectionGeneration);
-        });
-        readyGeneration = Number(
-          (readyInput?.observation as Record<string, unknown> | undefined)?.connectionGeneration,
-        );
         concurrentDiscoveryObserved = true;
         await adapterRef.current!.discoverMcp();
       }
@@ -259,6 +251,12 @@ describe("MVP15D authoritative product observations", () => {
     ).rejects.toThrow("native_handoff_requires_production_rust");
     const restartIndex = harness.nativeCommands.lastIndexOf("mvp15d_bridge_request_renderer_restart");
     const restartInput = harness.nativeInputs[restartIndex]!;
+    const segment = restartInput.segment as Record<string, unknown>;
+    const readyDiscovery = segment.readyDiscovery as Record<string, unknown>;
+    const connectCall = readyDiscovery.connectCall as Record<string, unknown>;
+    const connectRequest = connectCall.request as Record<string, unknown>;
+    const connectIntent = connectRequest.intent as Record<string, unknown>;
+    const readyConnectGeneration = Number(connectIntent.connectionGeneration);
     const latestObservedGeneration = Math.max(
       ...harness.nativeInputs.flatMap((candidate) => {
         const observation = candidate.observation as Record<string, unknown> | undefined;
@@ -268,9 +266,9 @@ describe("MVP15D authoritative product observations", () => {
       }),
     );
     expect(concurrentDiscoveryObserved).toBe(true);
-    expect(readyGeneration).not.toBeNull();
-    expect(latestObservedGeneration).toBeGreaterThan(readyGeneration!);
-    expect(restartInput.predecessorMcpGeneration).toBe(readyGeneration);
+    expect(Number.isSafeInteger(readyConnectGeneration)).toBe(true);
+    expect(latestObservedGeneration).toBeGreaterThan(readyConnectGeneration);
+    expect(restartInput.predecessorMcpGeneration).toBe(readyConnectGeneration);
   });
 
   it("resolves an opaque trusted root before creating and discovering the fixed phase listener", async () => {

@@ -1812,10 +1812,16 @@ export function createDesktopRuntimeAdapter(
       if (!currentDiscovery || currentMvp15Fingerprint.status !== "ready") {
         throw new Error("mvp15d_product_discovery_failed");
       }
-      const generation = mcpDiscoveryGeneration;
       const transportRecords = mvp15dTransportObservations.slice(observationStart);
       const configCall = requireTransportObservation(transportRecords, "mcp_configure_tool_search");
       const connectCall = requireTransportObservation(transportRecords, "mcp_connect");
+      const connectIntent = connectCall.request.intent;
+      const generation = connectIntent && typeof connectIntent === "object" && !Array.isArray(connectIntent)
+        ? (connectIntent as Record<string, unknown>).connectionGeneration
+        : null;
+      if (typeof generation !== "number" || !Number.isSafeInteger(generation) || generation < 1) {
+        throw new Error("mvp15d_product_connect_generation_invalid");
+      }
       const initializeCall = requireTransportObservation(transportRecords, "mcp_initialize");
       const discoverCall = requireTransportObservation(transportRecords, "mcp_discover");
       const normalizeCall = requireTransportObservation(transportRecords, "mcp_normalize");
