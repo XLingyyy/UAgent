@@ -237,7 +237,7 @@ test(
     const external = resolve(REPOSITORY, "external");
     mkdirSync(external, { recursive: true });
     const phases = ["capability-probe", "product-capture", "ui-lifecycle"];
-    let staleInstalledReleaseObserved = false;
+    let unusableInstalledReleaseObserved = false;
     let completedPhases = 0;
     for (const [index, phase] of phases.entries()) {
       const suffix = createHash("sha256")
@@ -263,6 +263,7 @@ test(
             timeoutMilliseconds: 90_000,
           });
         } catch (error) {
+          const identity = computeSourceIdentity(REPOSITORY);
           const newestRuntimeSource = Math.max(
             ...[
               "apps/desktop/src-tauri/src/lib.rs",
@@ -271,9 +272,13 @@ test(
             ].map((path) => lstatSync(resolve(REPOSITORY, path)).mtimeMs),
           );
           assert.equal(index, 0);
-          assert.equal(error?.code, "FINAL_LIVE_RUNTIME_NONZERO");
-          assert.equal(lstatSync(executable).mtimeMs < newestRuntimeSource, true);
-          staleInstalledReleaseObserved = true;
+          if (identity.sourceDirty) {
+            assert.equal(error?.code, "FINAL_LIVE_SOURCE_DIRTY_REJECTED");
+          } else {
+            assert.equal(error?.code, "FINAL_LIVE_RUNTIME_NONZERO");
+            assert.equal(lstatSync(executable).mtimeMs < newestRuntimeSource, true);
+          }
+          unusableInstalledReleaseObserved = true;
           break;
         }
         assert.equal(result.status, "runtime_capability_verified");
@@ -296,7 +301,7 @@ test(
         rmSync(root, { recursive: true, force: true });
       }
     }
-    assert.equal(staleInstalledReleaseObserved || completedPhases === phases.length, true);
+    assert.equal(unusableInstalledReleaseObserved || completedPhases === phases.length, true);
   },
 );
 

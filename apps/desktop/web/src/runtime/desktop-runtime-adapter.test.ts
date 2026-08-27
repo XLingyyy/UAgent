@@ -209,6 +209,70 @@ describe("MVP15D authoritative product observations", () => {
     expect(harness.nativeCommands).not.toContain("mvp15d_bridge_issue_observation_receipt");
   });
 
+  it("pins renderer restart to the verified ready generation during a concurrent discovery", async () => {
+    const { StreamableHttpTransport: RealStreamableHttpTransport } =
+      await vi.importActual<typeof import("@uagent/mcp-client")>("@uagent/mcp-client");
+    vi.mocked(StreamableHttpTransport).mockImplementation(
+      (options) => new RealStreamableHttpTransport(options),
+    );
+    const harness = createMvp15dNativeBoundaryHarness();
+    const adapterRef: { current: ReturnType<typeof createDesktopRuntimeAdapter> | null } = {
+      current: null,
+    };
+    let readyGeneration: number | null = null;
+    let concurrentDiscoveryObserved = false;
+    const nativeInvoke: NativeInvoke = async <T = unknown>(command: string, payload?: unknown) => {
+      const input = (payload as { input?: Record<string, unknown> } | undefined)?.input ?? {};
+      const request = (input.request as Record<string, unknown> | undefined) ?? {};
+      if (
+        command === "mvp15d_bridge_observe_native_state" &&
+        input.kind === "renderer_process" &&
+        request.reason === "renderer_restart" &&
+        request.stage === "predecessor" &&
+        !concurrentDiscoveryObserved
+      ) {
+        const readyInput = [...harness.nativeInputs].reverse().find((candidate) => {
+          const observation = candidate.observation as Record<string, unknown> | undefined;
+          return Number.isSafeInteger(observation?.connectionGeneration);
+        });
+        readyGeneration = Number(
+          (readyInput?.observation as Record<string, unknown> | undefined)?.connectionGeneration,
+        );
+        concurrentDiscoveryObserved = true;
+        await adapterRef.current!.discoverMcp();
+      }
+      return harness.nativeInvoke<T>(command, payload);
+    };
+    const adapter = createDesktopRuntimeAdapter({ nativeInvoke });
+    adapterRef.current = adapter;
+    await makeMvp15DForwardReady(adapter);
+    await adapter.activateMvp15dFixedObservationAuthority?.({
+      taskId: "TASK-MVP15D-RENDERER-GENERATION-BINDING",
+      phase: "product-capture",
+      session: "renderer-generation-binding-session",
+      generation: 1,
+      receiptLedgerEnabled: true,
+    });
+
+    await expect(
+      collectMvp15dProductAuthority(adapter.getMvp15dProductObservationPort!()!),
+    ).rejects.toThrow("native_handoff_requires_production_rust");
+    const restartIndex = harness.nativeCommands.lastIndexOf("mvp15d_bridge_request_renderer_restart");
+    const restartInput = harness.nativeInputs[restartIndex]!;
+    const latestObservedGeneration = Math.max(
+      ...harness.nativeInputs.flatMap((candidate) => {
+        const observation = candidate.observation as Record<string, unknown> | undefined;
+        return Number.isSafeInteger(observation?.connectionGeneration)
+          ? [Number(observation?.connectionGeneration)]
+          : [];
+      }),
+    );
+    expect(concurrentDiscoveryObserved).toBe(true);
+    expect(readyGeneration).not.toBeNull();
+    expect(latestObservedGeneration).toBeGreaterThan(readyGeneration!);
+    expect(restartInput.predecessorMcpGeneration).toBe(readyGeneration);
+  });
+
   it("resolves an opaque trusted root before creating and discovering the fixed phase listener", async () => {
     const rawRoot = "G:/Fixture/TrustedFinalHost";
     const nativeRoots: Array<{ command: string; rootRef: unknown }> = [];

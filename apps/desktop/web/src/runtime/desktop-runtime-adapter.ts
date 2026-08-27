@@ -2093,7 +2093,7 @@ export function createDesktopRuntimeAdapter(
           phase: authority.phase,
           rendererBefore: rendererBefore.call,
           predecessorMcpSessionId: currentMvp15dMcpSessionId,
-          predecessorMcpGeneration: mcpDiscoveryGeneration,
+          predecessorMcpGeneration: before.generation,
           segment: { ...segment, readyDiscovery },
         },
       });
