@@ -103,9 +103,13 @@ while the next clean lineage proved that the snapshot still reflected a later
 mutable observation. Current tenth checkpoint
 `8c78b172dd7ac03c7d38f0d28cc157611e4a63a7` reads the immutable generation from
 the native connect receipt and retains dirty-source fail-closed classification.
-Current eleventh checkpoint `f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed`
+Eleventh checkpoint `f50b8361fc0dd2fd1543cb7a30161c8d5d3ebe02`
 validates retraction transitions by reason: same-session generation advance for
 refresh/stale completion and a changed session for connection/restart boundaries.
+Current twelfth checkpoint `4f0247ab8ac67bc55d50d2ae89b92077199cab2e`
+binds persisted launch authority before retirement, gives N2 child processes
+isolated WebView2 profiles with bounded cleanup, compares strict canonical local
+roots, and uses the companion's operation-ID and rollback-status grammar.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
@@ -193,7 +197,7 @@ without claiming current clean-checkout Tool Search, installed/load/manifest,
 fingerprint, retraction, full 15A N1-N8, partial, or closeout evidence. The old
 release and all 15A-15C artifacts are invalid. Invoke 15A, live UE/MCP and real
 mutation only through the newly dispatched dedicated task from current
-implementation commit `f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed`. The old
+implementation commit `4f0247ab8ac67bc55d50d2ae89b92077199cab2e`. The old
 installed release may fail only with
 `FINAL_LIVE_RUNTIME_NONZERO`; every source-level authority validation must pass.
 

@@ -101,9 +101,12 @@ predecessor-generation drift during concurrent discovery. Historical ninth check
 but its clean lineage proved that the snapshot still used a later mutable
 observation. Current tenth checkpoint
 `8c78b172dd7ac03c7d38f0d28cc157611e4a63a7` binds restart to the immutable native
-connect-receipt generation. Current eleventh checkpoint
-`f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed` repairs the rendered 15B
-same-session `stale_completion` validation. Fresh live evidence remains open.
+connect-receipt generation. Eleventh checkpoint
+`f50b8361fc0dd2fd1543cb7a30161c8d5d3ebe02` repairs the rendered 15B
+same-session `stale_completion` validation. Current twelfth checkpoint
+`4f0247ab8ac67bc55d50d2ae89b92077199cab2e` repairs persisted authority
+lifetime, N2 child WebView/path cleanup and the 15C companion contract. Fresh
+live evidence remains open.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
@@ -196,7 +199,7 @@ not UAgent product-adapter evidence. They do not make this an accepted plugin
 baseline or route decision.
 
 A new clean-checkout task based on current implementation commit
-`f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed` is dispatched for the full UE 5.8.1
+`4f0247ab8ac67bc55d50d2ae89b92077199cab2e` is dispatched for the full UE 5.8.1
 compatibility matrix. Exact-sandbox 15C mutation is gated until fresh 15A and
 15B pass inside that authorized task.
 

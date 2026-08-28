@@ -22,7 +22,7 @@ closeout repair also aligns preflight `taskLocalCache` with the owned
 `project/FinalHost/Saved/DerivedDataCache`; its focused regression, final tooling
 `32 / 32`, full tooling `114 / 114`, lint and source identity `20 / 20` pass.
 
-Current eleventh checkpoint `f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed`
+Eleventh checkpoint `f50b8361fc0dd2fd1543cb7a30161c8d5d3ebe02`
 repairs the next rendered 15B validator boundary: `refresh_tools` and
 `stale_completion` retain the MCP session and must advance generation; reconnect,
 endpoint change, renderer restart and UE restart must replace the session. Fresh
@@ -31,9 +31,18 @@ source identity `20 / 20`, workspace `1685 / 1685` with three retained skips,
 typecheck, lint, build, diff checks and direct validation of all six retained 15B
 retraction observations plus three negative cases.
 
+Current twelfth checkpoint `4f0247ab8ac67bc55d50d2ae89b92077199cab2e`
+repairs persisted launch-authority lifetime, isolates N2 child WebView2 profiles,
+normalizes strict local Windows roots, uses companion-safe operation IDs, and
+accepts canonical `rollbackStatus:none` for successful non-rollback dry-runs.
+Fresh supervisor checks pass the focused runner, runtime, desktop and Rust
+boundaries plus typecheck, lint and Rust formatting; the implementation matrix
+also passes final tooling `34 / 34`, full tooling `275 / 275`, workspace `1685`
+with three retained skips and Rust `200 / 200`.
+
 All release, package, ExactSix, 15A and rejected rendered 15B artifacts from
 `8c78b172...` retain causal value only and are source-invalidated for final
-acceptance. D13 / 15A is redispatched from `f50b836c...`; D14 / 15B waits on the
+acceptance. D13 / 15A is redispatched from `4f0247ab...`; D14 / 15B waits on the
 new 15A lineage, D15 / 15C waits on 15A/15B, D16 remains in progress,
 `PASS_REAL_SMOKE` is `NO`, and Stage Ready is `NO`.
 
@@ -467,7 +476,7 @@ live fingerprint, full 15A N1-N8 acceptance root, partial/unknown sequence,
 parent closeout, UE Automation run, live MCP capture, or mutation was executed.
 The stale installed
 release may fail only with `FINAL_LIVE_RUNTIME_NONZERO`. D13/15A is
-`DISPATCHED` from `f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed`, D14/15B waits on
+`DISPATCHED` from `4f0247ab8ac67bc55d50d2ae89b92077199cab2e`, D14/15B waits on
 15A, D15/15C waits on 15A/15B, D16 remains `IN_PROGRESS`, G16
 and overall acceptance remain `PARTIAL`, and Ready remains `NO`. Current
 `PASS_REAL_SMOKE` is `NO`.
@@ -1563,7 +1572,7 @@ separate 2026-08-03 Final
 Source/Tooling Rework 8 is a historical `COMPLETE / PASS` checkpoint at
 `98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`, current
 source-checkpoint G15 integrity is `COMPLETE` at
-`f50b836cfd5370f4f01d3bb5e1cf79a42ccd48ed`, and G16 is `PARTIAL`. The
+`4f0247ab8ac67bc55d50d2ae89b92077199cab2e`, and G16 is `PARTIAL`. The
 `b1c4e4a...` /
 Rework 9 checkpoint remains valid historical D0-D12 evidence and does not
 replace the historical 2026-08-03 Rework 8 checkpoint. No clean current-generation exact-six fingerprint or
