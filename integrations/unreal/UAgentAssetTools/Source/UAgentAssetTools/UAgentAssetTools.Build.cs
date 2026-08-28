@@ -22,6 +22,7 @@ public class UAgentAssetTools : ModuleRules
 			"Projects",
 			"ModelContextProtocolEngine",
 			"ToolsetRegistry",
+			"TypedElementFramework",
 		});
 		if (Target.Platform == UnrealTargetPlatform.Win64)
 		{

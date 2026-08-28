@@ -974,9 +974,15 @@ export function validateMvp15PluginExecutionResult(
   // delete_duplicate dispatch through ue.asset.delete.
   const expectedOperation = rollback ? pluginOperationForToolName(call.toolName) : pluginOperationForKind(operation.kind);
   const expectedModify = expectedModifiedPaths(operation, rollback);
-  const expectedRead = !rollback && operation.kind === "duplicate_asset" && operation.assetPathBefore ? [operation.assetPathBefore] : [];
+  const expectedRead = rollback
+    ? operation.assetPathAfter
+      ? [operation.assetPathAfter]
+      : []
+    : operation.kind === "duplicate_asset" && operation.assetPathBefore
+      ? [operation.assetPathBefore]
+      : [];
   const rollbackAvailable = rollback ? false : operation.kind !== "save_single_asset";
-  const expectedEvidencePaths = [...expectedRead, ...expectedModify];
+  const expectedEvidencePaths = [...new Set([...expectedRead, ...expectedModify])];
   const commonChecks = [
     hasOnlyKeys(structured, allowedTopLevelKeys),
     typeof result.blocked === "boolean",

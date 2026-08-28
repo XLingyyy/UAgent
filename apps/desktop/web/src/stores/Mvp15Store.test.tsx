@@ -23,6 +23,7 @@ import {
   UIProvider,
   readMvp15dUiStoreEvidence,
   runMvp15dUiBridgeAction,
+  toMvp15dNativeGuardObservationRequest,
   useOptionalRuntimeActions,
   useRuntimeStore,
 } from "./ui-store";
@@ -47,6 +48,24 @@ describe("MVP15 UI blocker redaction", () => {
     expect(formatMvp15UiBlocker("G:\\private\\project")).toBe("asset_mutation_blocked");
     expect(formatMvp15UiBlocker("pid:12345")).toBe("asset_mutation_blocked");
     expect(formatMvp15UiBlocker("session:private-session")).toBe("asset_mutation_blocked");
+  });
+});
+
+describe("MVP15D native guard observation DTO", () => {
+  it("removes the renderer-only guard command before the request is reused by native controls", () => {
+    const rendererRequest = {
+      command: "guard",
+      phase: "execute",
+      registrationId: "asset-registration:test",
+      operationIndex: 0,
+    };
+
+    expect(toMvp15dNativeGuardObservationRequest(rendererRequest)).toEqual({
+      phase: "execute",
+      registrationId: "asset-registration:test",
+      operationIndex: 0,
+    });
+    expect(rendererRequest).toHaveProperty("command", "guard");
   });
 });
 
@@ -354,13 +373,17 @@ function structuredExecutionResult(
   const isDuplicate = toolName === "ue.asset.duplicate";
   const isRenameOrMove = toolName === "ue.asset.rename" || toolName === "ue.asset.move";
   const isDelete = toolName === "ue.asset.delete";
-  const wouldRead = isDuplicate && beforePath ? [beforePath] : [];
+  const rollback = args.rollback === true;
+  const wouldRead = rollback && beforePath
+    ? [beforePath]
+    : isDuplicate && beforePath
+      ? [beforePath]
+      : [];
   const wouldModify = isDelete
     ? (beforePath ? [beforePath] : [])
     : isRenameOrMove
       ? (beforePath && afterPath ? [beforePath, afterPath] : [])
       : (afterPath ? [afterPath] : []);
-  const rollback = args.rollback === true;
   const rollbackAvailable = !rollback && toolName !== "ue.asset.save";
   return {
     blocked: false,
@@ -378,7 +401,11 @@ function structuredExecutionResult(
     wouldRead,
     affectedAssets: { readOnlySources: wouldRead, sandboxTargets: wouldModify, externalTargets: [] },
     rollbackPlan: { strategy: "ledger_inverse", inverseOperation: "recorded_inverse", executionEnabled: rollbackAvailable },
-    externalEvidenceQueries: [{ queryKind: "asset_registry_snapshot", readOnly: true, paths: [...wouldRead, ...wouldModify] }],
+    externalEvidenceQueries: [{
+      queryKind: "asset_registry_snapshot",
+      readOnly: true,
+      paths: [...new Set([...wouldRead, ...wouldModify])],
+    }],
     dryRunHash: args.dryRunHash,
     hashAlgorithm: "sha1",
     schemaVersion: "mvp15c.dry-run.v1",
@@ -1422,13 +1449,42 @@ describe("MVP15 desktop asset mutation UI", () => {
     expect(authorityEvidence.operations).toHaveLength(0);
     expect(authorityEvidence.contentManifests).toHaveLength(0);
     expect(authorityEvidence.negativeCases).toHaveLength(0);
-    expect(authorityEvidence.partialUnknown.operationResults).toHaveLength(9);
+    expect(authorityEvidence.partialUnknown.operationResults).toHaveLength(10);
+    expect(authorityEvidence.partialUnknown.operationResults.map(({ direction, action }) => ({
+      direction,
+      action,
+    }))).toEqual([
+      { direction: "forward", action: "create_run_root" },
+      { direction: "forward", action: "duplicate_test01" },
+      { direction: "forward", action: "rename_duplicate" },
+      { direction: "forward", action: "move_duplicate" },
+      { direction: "inverse", action: "move_back" },
+      { direction: "inverse", action: "rename_back" },
+      { direction: "inverse", action: "delete_duplicate" },
+      { direction: "inverse", action: "cleanup_empty_folder" },
+      { direction: "control", action: "cross_ttl" },
+      { direction: "control", action: "second_rollback" },
+    ]);
+    expect(authorityEvidence.forwardActions).toEqual([
+      "create_run_root",
+      "duplicate_test01",
+      "rename_duplicate",
+      "move_duplicate",
+      "save_one_package",
+    ]);
+    expect(authorityEvidence.inverseActions).toEqual([
+      "move_back",
+      "rename_back",
+      "delete_duplicate",
+      "cleanup_empty_folder",
+    ]);
+    expect(authorityEvidence.registrationCall.request).toEqual(registrationCall?.input);
     expect(authorityEvidence.replayInspection.recordedRepresentation).toMatchObject({
       eventCount: 14,
       recordedOnlyActions: ["dry-run", "preview", "approval", "execute", "verify", "rollback"],
     });
     expect(authorityTrace.filter((entry) => entry.startsWith("guard:"))).toHaveLength(0);
-    expect(authorityTrace.filter((entry) => entry.startsWith("partial:"))).toHaveLength(9);
+    expect(authorityTrace.filter((entry) => entry.startsWith("partial:"))).toHaveLength(10);
     expect(authorityTrace.filter((entry) => entry.startsWith("begin:"))).toHaveLength(1);
     expect(authorityTrace.filter((entry) => entry.startsWith("snapshot:"))).toHaveLength(2);
     expect(authorityTrace.filter((entry) => entry.startsWith("stop:"))).toHaveLength(1);
@@ -1703,7 +1759,7 @@ describe("MVP15 desktop asset mutation UI", () => {
         receiptId: `mvp15d-observation-receipt:${"a".repeat(64)}`,
         request: { stage: "after_rendered_disconnect" },
       }),
-    })).rejects.toThrow("mvp15d_ui_store_evidence_missing");
+    })).rejects.toThrow("mvp15d_ui_evidence_native_receipt_missing");
     expect(published).toHaveLength(0);
     expect(manifestReads).toBe(4);
   }, 15_000);

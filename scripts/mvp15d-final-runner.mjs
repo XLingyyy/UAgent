@@ -2108,12 +2108,80 @@ function observedCall(value, expectedApi, expectedStatus, code, observedReceipts
     value.reason.length === 0 ||
     !isHex(value.requestSha256) ||
     !isHex(value.responseSha256) ||
-    typeof value.evidenceId !== "string" ||
-    value.evidenceId.length < 8
+    (expectedStatus === "blocked"
+      ? value.evidenceId !== null
+      : typeof value.evidenceId !== "string" || value.evidenceId.length < 8)
   ) {
     fail(code);
   }
   return value;
+}
+
+function validPartialObservationBoundary({
+  record,
+  guard,
+  lateMcp,
+  outcome,
+  registrationId,
+  nativeSessionBindingSha256,
+}) {
+  return (
+    record?.api === "asset_mutation_observation_boundary" &&
+    record?.sourceStatus === "observed" &&
+    record?.sourceReason === "operation_response_pending" &&
+    record?.status === "failed" &&
+    record?.effectState === "unknown" &&
+    record?.reason === "operation_response_pending" &&
+    isHex(record?.pendingRequestSha256) &&
+    guard?.api === "execute_asset_mutation" &&
+    guard?.status === "accepted_by_native_guard" &&
+    guard?.phase === "execute" &&
+    guard?.registrationId === registrationId &&
+    guard?.requestRegistrationId === registrationId &&
+    typeof guard?.operationId === "string" &&
+    guard.operationId.length >= 8 &&
+    lateMcp?.api === "mcp_asset_tool_call" &&
+    lateMcp?.status === "executed" &&
+    lateMcp?.reason === "none" &&
+    lateMcp?.phase === "execute" &&
+    lateMcp?.registrationId === null &&
+    lateMcp?.requestRegistrationId === null &&
+    lateMcp?.operationId === guard.operationId &&
+    lateMcp?.toolName === "ue.asset.move" &&
+    lateMcp?.sideEffectObserved === true &&
+    lateMcp?.effectState === "known_effect" &&
+    lateMcp?.rollbackAvailable === true &&
+    typeof lateMcp?.evidenceId === "string" &&
+    lateMcp.evidenceId.length >= 8 &&
+    isHex(lateMcp?.requestSha256) &&
+    isHex(lateMcp?.responseSha256) &&
+    (typeof lateMcp?.jsonRpcRequestId === "string" ||
+      Number.isSafeInteger(lateMcp?.jsonRpcRequestId)) &&
+    lateMcp.jsonRpcResponseId === lateMcp.jsonRpcRequestId &&
+    lateMcp.jsonRpcRequestId === record?.jsonRpcRequestId &&
+    isHex(lateMcp?.mcpSessionBindingSha256) &&
+    lateMcp.mcpSessionBindingSha256 === nativeSessionBindingSha256 &&
+    outcome?.api === "record_asset_mutation_outcome" &&
+    outcome?.status === "recorded" &&
+    outcome?.phase === "execute" &&
+    outcome?.registrationId === registrationId &&
+    outcome?.requestRegistrationId === registrationId &&
+    outcome?.operationId === guard.operationId &&
+    outcome?.requestSuccess === true &&
+    outcome?.requestSideEffectObserved === true &&
+    outcome?.requestEffectState === "known_effect" &&
+    outcome?.requestRollbackAvailable === true &&
+    outcome?.requestReasonCode === "none" &&
+    outcome?.requestEvidenceId === lateMcp.evidenceId &&
+    Number.isSafeInteger(guard?.sequence) &&
+    Number.isSafeInteger(record?.receiptSequence) &&
+    Number.isSafeInteger(lateMcp?.sequence) &&
+    Number.isSafeInteger(outcome?.sequence) &&
+    guard.sequence < record.receiptSequence &&
+    record.receiptSequence < lateMcp.sequence &&
+    lateMcp.sequence < outcome.sequence &&
+    record.pendingRequestSha256 === lateMcp.requestSha256
+  );
 }
 
 function deriveLiveUi(events, closeout, context) {
@@ -2193,14 +2261,18 @@ function deriveLiveUi(events, closeout, context) {
   const inverse = operationRecords.filter(({ direction }) => direction === "inverse");
   const registrationIds = new Set(operationRecords.map(({ registrationId }) => registrationId));
   const runIds = new Set(operationRecords.map(({ runId }) => runId));
-  const operationIds = new Set(operationRecords.map(({ operationId }) => operationId));
+  const forwardOperationIds = forward.map(({ operationId }) => operationId);
+  const expectedInverseOperationIds = forwardOperationIds
+    .slice(0, INVERSE_ORDER.length)
+    .reverse();
   if (
     stable(forward.map(({ action }) => action)) !== stable(FORWARD_ORDER) ||
     stable(inverse.map(({ action }) => action)) !== stable(INVERSE_ORDER) ||
     operationRecords.length !== FORWARD_ORDER.length + INVERSE_ORDER.length ||
     registrationIds.size !== 1 ||
     runIds.size !== 1 ||
-    operationIds.size !== operationRecords.length ||
+    new Set(forwardOperationIds).size !== FORWARD_ORDER.length ||
+    stable(inverse.map(({ operationId }) => operationId)) !== stable(expectedInverseOperationIds) ||
     operationRecords.some(
       ({ registrationId, runId, operationId, sideEffectCount }) =>
         typeof registrationId !== "string" ||
@@ -2214,7 +2286,8 @@ function deriveLiveUi(events, closeout, context) {
   ) {
     fail("FINAL_UI_ACTION_SOURCE_INVALID");
   }
-  const rawCallEvidence = new Set();
+  const nativeCallEvidence = new Set();
+  const forwardMcpCallEvidence = [];
   const observedReceipts = new Set();
   const lifecycleLedger = authorityData(
     oneEvent(events, "lifecycle_ledger_observation", "FINAL_UI_LEDGER_EVENT_INVALID"),
@@ -2317,7 +2390,7 @@ function deriveLiveUi(events, closeout, context) {
       fail("FINAL_UI_LEDGER_EVENT_INVALID");
     }
   }
-  for (const record of operationRecords) {
+  for (const [index, record] of operationRecords.entries()) {
     const nativeApi = record.direction === "forward" ? "execute_asset_mutation" : "rollback_asset_mutation";
     const nativeCall = observedCall(
       record.nativeCall,
@@ -2329,13 +2402,24 @@ function deriveLiveUi(events, closeout, context) {
     const mcpCall = observedCall(
       record.mcpCall,
       "mcp_asset_tool_call",
-      "succeeded",
+      record.direction === "forward" ? "executed" : "rolled_back",
       "FINAL_UI_ACTION_SOURCE_INVALID",
       observedReceipts,
     );
-    for (const value of [nativeCall.evidenceId, mcpCall.evidenceId]) {
-      if (rawCallEvidence.has(value)) fail("FINAL_UI_ACTION_SOURCE_INVALID");
-      rawCallEvidence.add(value);
+    if (nativeCallEvidence.has(nativeCall.evidenceId)) {
+      fail("FINAL_UI_ACTION_SOURCE_INVALID");
+    }
+    nativeCallEvidence.add(nativeCall.evidenceId);
+    if (index < FORWARD_ORDER.length) {
+      if (forwardMcpCallEvidence.includes(mcpCall.evidenceId)) {
+        fail("FINAL_UI_ACTION_SOURCE_INVALID");
+      }
+      forwardMcpCallEvidence.push(mcpCall.evidenceId);
+    } else {
+      const inverseIndex = index - FORWARD_ORDER.length;
+      if (mcpCall.evidenceId !== forwardMcpCallEvidence[INVERSE_ORDER.length - 1 - inverseIndex]) {
+        fail("FINAL_UI_ACTION_SOURCE_INVALID");
+      }
     }
   }
   const manifests = events
@@ -2377,7 +2461,7 @@ function deriveLiveUi(events, closeout, context) {
         !isHex(record.outsideRunAggregateSha256) ||
         record.runRootPresent !== false,
     ) ||
-    manifests[0].evidenceId === manifests[1].evidenceId ||
+    manifests[0].evidenceId !== manifests[1].evidenceId ||
     manifests[0].sha256 !== manifests[1].sha256 ||
     stable(manifests[0].test01) !== stable(manifests[1].test01) ||
     manifests[0].outsideRunAggregateSha256 !== manifests[1].outsideRunAggregateSha256
@@ -2493,21 +2577,22 @@ function deriveLiveUi(events, closeout, context) {
   }
   for (const record of negativeCases) {
     const dryRunSetup = Array(5).fill("mcp_asset_tool_call");
+    const attestedDryRunSetup = ["attest_mvp15_companion", ...dryRunSetup];
     const expectedSetupApis = {
       N1: [],
       N2: [],
       N3: [...dryRunSetup, "stop_editor_observation_session"],
       N4: ["create_managed_editor_process", ...dryRunSetup, "terminate_managed_editor_process"],
       N5: [...dryRunSetup, "attach_editor_process"],
-      N6: dryRunSetup,
+      N6: attestedDryRunSetup,
       N7: [
-        ...dryRunSetup,
+        ...attestedDryRunSetup,
         "execute_asset_mutation",
         "mcp_asset_tool_call",
         "record_asset_mutation_outcome",
       ],
       N8: [
-        ...dryRunSetup,
+        ...attestedDryRunSetup,
         "execute_asset_mutation",
         "mcp_asset_tool_call",
         "record_asset_mutation_outcome",
@@ -2627,7 +2712,25 @@ function deriveLiveUi(events, closeout, context) {
     const setupResponseValid = (() => {
       const setup = record.setupReceipts;
       if (["N1", "N2"].includes(record.caseId)) return setup.length === 0;
-      const dryRunOffset = record.caseId === "N4" ? 1 : 0;
+      const attestationRequired = ["N6", "N7", "N8"].includes(record.caseId);
+      const dryRunOffset = record.caseId === "N4" || attestationRequired ? 1 : 0;
+      if (
+        attestationRequired &&
+        (setup[0]?.status !== "observed" ||
+          setup[0]?.reason !== "loaded_module_identity_verified" ||
+          setup[0]?.sideEffectObserved !== null ||
+          setup[0]?.effectState !== null ||
+          setup[0]?.evidenceId !== null ||
+          setup[0]?.registrationId !== null ||
+          setup[0]?.phase !== null ||
+          setup[0]?.operationId !== null ||
+          setup[0]?.toolName !== null ||
+          setup[0]?.ownerTaskId !== null ||
+          setup[0]?.ownerPhase !== null ||
+          setup[0]?.observationGeneration !== null)
+      ) {
+        return false;
+      }
       const dryRunReceipts = setup.slice(dryRunOffset, dryRunOffset + 5);
       const expectedDryRunTools = [
         "ue.asset.create_folder",
@@ -2646,7 +2749,7 @@ function deriveLiveUi(events, closeout, context) {
           receipt.effectState === "known_none",
       );
       if (!dryRunsValid) return false;
-      if (record.caseId === "N6") return setup.length === 5;
+      if (record.caseId === "N6") return setup.length === 6;
       if (record.caseId === "N3") {
         return setup[5]?.status === "stopped" &&
           setup[5]?.sessionBindingSha256 === record.sessionBindingSha256;
@@ -2668,9 +2771,11 @@ function deriveLiveUi(events, closeout, context) {
           setup[5].observationGeneration > 0;
       }
       const registrationMatches = setup.every(
-        (receipt) => receipt.api === "mcp_asset_tool_call" || receipt.registrationId === record.registrationId,
+        (receipt) =>
+          ["attest_mvp15_companion", "mcp_asset_tool_call"].includes(receipt.api) ||
+          receipt.registrationId === record.registrationId,
       );
-      const mutationSetup = setup.slice(5);
+      const mutationSetup = setup.slice(dryRunOffset + 5);
       if (record.caseId === "N7") {
         return registrationMatches && mutationSetup[0]?.status === "accepted_by_native_guard" &&
           mutationSetup[0]?.phase === "execute" && mutationSetup[1]?.status === "executed" &&
@@ -2705,11 +2810,22 @@ function deriveLiveUi(events, closeout, context) {
           : record.caseId === "N8"
             ? "rollback_asset_mutation"
             : "execute_asset_mutation";
-    const call = preRegistration
-      ? (() => {
+      const call = preRegistration
+        ? (() => {
+          const preRegistrationKeys = ["api", "id", "sequence", "status", "reason", "responseSha256"];
           assertExactKeys(
             record.guardCall,
-            ["api", "id", "sequence", "status", "reason", "responseSha256"],
+            record.caseId === "N2"
+              ? [
+                  ...preRegistrationKeys,
+                  "uiGateEnabled",
+                  "childClosed",
+                  "childCleanupComplete",
+                  "processResidualCount",
+                  "portResidualCount",
+                  "rootResidualCount",
+                ]
+              : preRegistrationKeys,
             "FINAL_UI_NEGATIVE_SOURCE_INVALID",
           );
           receiptReference(
@@ -2720,7 +2836,14 @@ function deriveLiveUi(events, closeout, context) {
           if (
             record.guardCall.api !== expectedGuardApi ||
             record.guardCall.status !== "blocked" ||
-            !isHex(record.guardCall.responseSha256)
+            !isHex(record.guardCall.responseSha256) ||
+            (record.caseId === "N2" &&
+              (record.guardCall.uiGateEnabled !== true ||
+                record.guardCall.childClosed !== true ||
+                record.guardCall.childCleanupComplete !== true ||
+                record.guardCall.processResidualCount !== 0 ||
+                record.guardCall.portResidualCount !== 0 ||
+                record.guardCall.rootResidualCount !== 0))
           ) {
             fail("FINAL_UI_NEGATIVE_SOURCE_INVALID");
           }
@@ -2767,8 +2890,12 @@ function deriveLiveUi(events, closeout, context) {
       : record.identityReceipts.renderedControl.sequence <
           record.identityReceipts.sessionRegistration.sessionBegin.sequence &&
         record.identityReceipts.sessionRegistration.sessionBegin.sequence <
-          record.setupReceipts[record.caseId === "N4" ? 1 : 0]?.sequence &&
-        record.setupReceipts[record.caseId === "N4" ? 5 : 4]?.sequence <
+          record.setupReceipts[
+            ["N4", "N6", "N7", "N8"].includes(record.caseId) ? 1 : 0
+          ]?.sequence &&
+        record.setupReceipts[
+          ["N4", "N6", "N7", "N8"].includes(record.caseId) ? 5 : 4
+        ]?.sequence <
           record.identityReceipts.sessionRegistration.registration.sequence;
     const deltas = after.map((count, index) => count - before[index]);
     const expectedDeltas = ["N7", "N8"].includes(record.caseId)
@@ -2783,7 +2910,7 @@ function deriveLiveUi(events, closeout, context) {
       call.reason !== expectedNegativeReasons.find(([caseId]) => caseId === record.caseId)?.[1] ||
       typeof record.contentBefore.evidenceId !== "string" ||
       typeof record.contentAfter.evidenceId !== "string" ||
-      record.contentBefore.evidenceId === record.contentAfter.evidenceId ||
+      record.contentBefore.evidenceId !== record.contentAfter.evidenceId ||
       !isHex(record.contentBefore.sha256) ||
       record.contentAfter.sha256 !== record.contentBefore.sha256 ||
       stable(deltas) !== stable(expectedDeltas) ||
@@ -2813,6 +2940,7 @@ function deriveLiveUi(events, closeout, context) {
       "runId",
       "registrationId",
       "identityReceipts",
+      "sessionSetupReceipts",
       "operationResults",
       "contentBefore",
       "contentAfter",
@@ -2830,19 +2958,73 @@ function deriveLiveUi(events, closeout, context) {
     "FINAL_UI_PARTIAL_SOURCE_INVALID",
   );
   const expectedPartial = [
-    ["forward", "create_run_root", "succeeded", "known_effect", "none"],
-    ["forward", "duplicate_test01", "succeeded", "known_effect", "none"],
-    ["forward", "rename_duplicate", "succeeded", "known_effect", "none"],
-    ["forward", "move_duplicate", "failed", "unknown", "effect_unknown"],
-    ["inverse", "rename_back", "succeeded", "known_effect", "none"],
-    ["inverse", "delete_duplicate", "succeeded", "known_effect", "none"],
-    ["inverse", "cleanup_empty_folder", "succeeded", "known_effect", "none"],
+    ["forward", "create_run_root", "executed", "known_effect", "none"],
+    ["forward", "duplicate_test01", "executed", "known_effect", "none"],
+    ["forward", "rename_duplicate", "executed", "known_effect", "none"],
+    ["forward", "move_duplicate", "failed", "unknown", "operation_response_pending"],
+    ["inverse", "move_back", "rolled_back", "known_effect", "none"],
+    ["inverse", "rename_back", "rolled_back", "known_effect", "none"],
+    ["inverse", "delete_duplicate", "rolled_back", "known_effect", "none"],
+    ["inverse", "cleanup_empty_folder", "rolled_back", "known_effect", "none"],
     ["control", "cross_ttl", "blocked", "known_none", "approval_expired"],
     ["control", "second_rollback", "blocked", "known_none", "rollback_replay"],
   ];
   if (!Array.isArray(partial.operationResults) || partial.operationResults.length !== expectedPartial.length) {
     fail("FINAL_UI_PARTIAL_SOURCE_INVALID");
   }
+  const expectedSessionSetupTools = [
+    "ue.asset.create_folder",
+    "ue.asset.duplicate",
+    "ue.asset.rename",
+    "ue.asset.move",
+    "ue.asset.save",
+  ];
+  if (!Array.isArray(partial.sessionSetupReceipts) || partial.sessionSetupReceipts.length !== 6) {
+    fail("FINAL_UI_PARTIAL_SOURCE_INVALID");
+  }
+  const [sessionAttestation, ...sessionDryRuns] = partial.sessionSetupReceipts;
+  assertExactKeys(
+    sessionAttestation,
+    ["api", "id", "sequence", "status", "reason", "editorSessionBindingSha256"],
+    "FINAL_UI_PARTIAL_SOURCE_INVALID",
+  );
+  receiptReference(
+    { id: sessionAttestation.id, sequence: sessionAttestation.sequence },
+    "FINAL_UI_PARTIAL_SOURCE_INVALID",
+    observedReceipts,
+  );
+  if (
+    sessionAttestation.api !== "attest_mvp15_companion" ||
+    sessionAttestation.status !== "observed" ||
+    sessionAttestation.reason !== "loaded_module_identity_verified" ||
+    !isHex(sessionAttestation.editorSessionBindingSha256)
+  ) {
+    fail("FINAL_UI_PARTIAL_SOURCE_INVALID");
+  }
+  for (const [index, dryRun] of sessionDryRuns.entries()) {
+    assertExactKeys(
+      dryRun,
+      ["api", "id", "sequence", "status", "phase", "toolName"],
+      "FINAL_UI_PARTIAL_SOURCE_INVALID",
+    );
+    receiptReference(
+      { id: dryRun.id, sequence: dryRun.sequence },
+      "FINAL_UI_PARTIAL_SOURCE_INVALID",
+      observedReceipts,
+    );
+    if (
+      dryRun.api !== "mcp_asset_tool_call" ||
+      dryRun.status !== "dry_run_completed" ||
+      dryRun.phase !== "dry_run" ||
+      dryRun.toolName !== expectedSessionSetupTools[index]
+    ) {
+      fail("FINAL_UI_PARTIAL_SOURCE_INVALID");
+    }
+  }
+  const sessionSetupSequenceValid = partial.sessionSetupReceipts.every(
+    (receipt, index) =>
+      index === 0 || partial.sessionSetupReceipts[index - 1].sequence < receipt.sequence,
+  );
   const observedPartial = partial.operationResults.map((record, index) => {
     assertExactKeys(
       record,
@@ -2854,10 +3036,14 @@ function deriveLiveUi(events, closeout, context) {
         "receiptId",
         "receiptSequence",
         "requestSha256",
+        "pendingRequestSha256",
+        "jsonRpcRequestId",
         "responseSha256",
         "status",
+        "sourceStatus",
         "effectState",
         "reason",
+        "sourceReason",
         "evidenceId",
         "setupReceipts",
       ],
@@ -2865,18 +3051,22 @@ function deriveLiveUi(events, closeout, context) {
     );
     inlineReceipt(record, "FINAL_UI_PARTIAL_SOURCE_INVALID", observedReceipts);
     const expectedSetupApis =
-      index < 7
-        ? []
-        : index === 7
-          ? ["attach_editor_process", "register_asset_mutation_approval"]
-          : [
-              "attach_editor_process",
-              "register_asset_mutation_approval",
-              "execute_asset_mutation",
-              "record_asset_mutation_outcome",
-              "rollback_asset_mutation",
-              "record_asset_mutation_outcome",
-            ];
+      index < 3
+        ? ["execute_asset_mutation", "record_asset_mutation_outcome"]
+        : index === 3
+          ? ["execute_asset_mutation", "mcp_asset_tool_call", "record_asset_mutation_outcome"]
+          : index < 8
+            ? ["rollback_asset_mutation", "record_asset_mutation_outcome"]
+            : index === 8
+              ? ["attach_editor_process", "register_asset_mutation_approval"]
+              : [
+                  "attach_editor_process",
+                  "register_asset_mutation_approval",
+                  "execute_asset_mutation",
+                  "record_asset_mutation_outcome",
+                  "rollback_asset_mutation",
+                  "record_asset_mutation_outcome",
+                ];
     if (
       !Array.isArray(record.setupReceipts) ||
       stable(record.setupReceipts.map(({ api }) => api)) !== stable(expectedSetupApis)
@@ -2902,10 +3092,38 @@ function deriveLiveUi(events, closeout, context) {
           ...(Object.hasOwn(setupReceipt, "requestSessionBindingSha256")
             ? ["requestSessionBindingSha256"]
             : []),
+          ...(setupReceipt.api === "mcp_asset_tool_call"
+            ? [
+                "requestSha256",
+                "responseSha256",
+                "jsonRpcRequestId",
+                "jsonRpcResponseId",
+                "mcpSessionBindingSha256",
+                "toolName",
+                "sideEffectObserved",
+                "effectState",
+                "rollbackAvailable",
+                "evidenceId",
+              ]
+            : []),
+          ...(setupReceipt.api === "record_asset_mutation_outcome"
+            ? [
+                "requestSuccess",
+                "requestSideEffectObserved",
+                "requestEffectState",
+                "requestRollbackAvailable",
+                "requestEvidenceId",
+                "requestReasonCode",
+              ]
+            : []),
         ],
         "FINAL_UI_PARTIAL_SOURCE_INVALID",
       );
-      if (typeof setupReceipt.api !== "string") {
+      if (
+        typeof setupReceipt.api !== "string" ||
+        (setupReceipt.api === "mcp_asset_tool_call" &&
+          (!isHex(setupReceipt.requestSha256) || !isHex(setupReceipt.responseSha256)))
+      ) {
         fail("FINAL_UI_PARTIAL_SOURCE_INVALID");
       }
       receiptReference(
@@ -2918,13 +3136,39 @@ function deriveLiveUi(events, closeout, context) {
       (receipt, setupIndex) =>
         setupIndex === 0 || record.setupReceipts[setupIndex - 1].sequence < receipt.sequence,
     );
-    let setupResponsesValid = record.setupReceipts.length === 0;
-    if (index === 7) {
+    let setupResponsesValid = false;
+    if (index < 8) {
+      const guard = record.setupReceipts[0];
+      const lateMcp = index === 3 ? record.setupReceipts[1] : null;
+      const outcome = record.setupReceipts[index === 3 ? 2 : 1];
+      const expectedPhase = index < 4 ? "execute" : "rollback";
+      setupResponsesValid =
+        guard?.status === "accepted_by_native_guard" &&
+        guard?.phase === expectedPhase &&
+        guard?.registrationId === partial.registrationId &&
+        guard?.requestRegistrationId === partial.registrationId &&
+        typeof guard?.operationId === "string" &&
+        guard.operationId.length >= 8 &&
+        outcome?.status === "recorded" &&
+        outcome?.phase === expectedPhase &&
+        outcome?.registrationId === partial.registrationId &&
+        outcome?.requestRegistrationId === partial.registrationId &&
+        outcome?.operationId === guard.operationId &&
+        (index !== 3 ||
+          validPartialObservationBoundary({
+            record,
+            guard,
+            lateMcp,
+            outcome,
+            registrationId: partial.registrationId,
+            nativeSessionBindingSha256: partial.nativeSessionBindingSha256,
+          }));
+    } else if (index === 8) {
       const [attach, registration] = record.setupReceipts;
       setupResponsesValid = attach?.status === "attached" &&
         registration?.status === "registered" &&
         attach?.sessionBindingSha256 === registration?.requestSessionBindingSha256;
-    } else if (index === 8) {
+    } else if (index === 9) {
       const [attach, registration, execute, executeOutcome, rollback, rollbackOutcome] =
         record.setupReceipts;
       const freshRegistration = registration?.registrationId;
@@ -2948,11 +3192,22 @@ function deriveLiveUi(events, closeout, context) {
       !setupSequenceValid ||
       !setupResponsesValid ||
       !isHex(record.requestSha256) ||
+      (index === 3
+        ? !isHex(record.pendingRequestSha256)
+        : record.pendingRequestSha256 !== null) ||
+      (index === 3
+        ? typeof record.jsonRpcRequestId !== "string" && !Number.isSafeInteger(record.jsonRpcRequestId)
+        : record.jsonRpcRequestId !== null) ||
       !isHex(record.responseSha256) ||
       typeof record.api !== "string" ||
       record.api.length === 0 ||
-      typeof record.evidenceId !== "string" ||
-      record.evidenceId.length < 8
+      (index >= 8
+        ? record.evidenceId !== null
+        : typeof record.evidenceId !== "string" || record.evidenceId.length < 8) ||
+      (index === 3
+        ? record.sourceStatus !== "observed" ||
+          record.sourceReason !== "operation_response_pending"
+        : record.sourceStatus !== record.status || record.sourceReason !== record.reason)
     ) {
       fail("FINAL_UI_PARTIAL_SOURCE_INVALID");
     }
@@ -2960,15 +3215,29 @@ function deriveLiveUi(events, closeout, context) {
   });
   assertExactKeys(
     partial.contentBefore,
-    ["evidenceId", "sha256", "receiptId", "receiptSequence"],
+    ["evidenceId", "sha256", "receiptId", "receiptSequence", "registrationId"],
     "FINAL_UI_PARTIAL_SOURCE_INVALID",
   );
   assertExactKeys(
     partial.contentAfter,
-    ["evidenceId", "sha256", "receiptId", "receiptSequence"],
+    ["evidenceId", "sha256", "receiptId", "receiptSequence", "registrationId"],
     "FINAL_UI_PARTIAL_SOURCE_INVALID",
   );
-  identityReceipts(partial.identityReceipts, "FINAL_UI_PARTIAL_SOURCE_INVALID", observedReceipts);
+  assertExactKeys(
+    partial.identityReceipts,
+    ["sessionBegin", "registration"],
+    "FINAL_UI_PARTIAL_SOURCE_INVALID",
+  );
+  receiptReference(
+    partial.identityReceipts.sessionBegin,
+    "FINAL_UI_PARTIAL_SOURCE_INVALID",
+    observedReceipts,
+  );
+  receiptReference(
+    partial.identityReceipts.registration,
+    "FINAL_UI_PARTIAL_SOURCE_INVALID",
+    observedReceipts,
+  );
   inlineReceipt(partial.contentBefore, "FINAL_UI_PARTIAL_SOURCE_INVALID", observedReceipts);
   inlineReceipt(partial.contentAfter, "FINAL_UI_PARTIAL_SOURCE_INVALID", observedReceipts);
   const partialBefore = counterVector(partial.countersBefore, "FINAL_UI_PARTIAL_SOURCE_INVALID");
@@ -2988,6 +3257,9 @@ function deriveLiveUi(events, closeout, context) {
   closeoutReceipts(partial.closeoutReceipts, "FINAL_UI_PARTIAL_SOURCE_INVALID", observedReceipts);
   if (
     stable(observedPartial) !== stable(expectedPartial) ||
+    !sessionSetupSequenceValid ||
+    partial.identityReceipts.sessionBegin.sequence >= sessionAttestation.sequence ||
+    sessionDryRuns.at(-1).sequence >= partial.identityReceipts.registration.sequence ||
     !isHex(partial.sessionBindingSha256) ||
     !isHex(partial.nativeSessionBindingSha256) ||
     [partial.runId, partial.registrationId].some(
@@ -2995,7 +3267,11 @@ function deriveLiveUi(events, closeout, context) {
     ) ||
     !isHex(partial.contentBefore.sha256) ||
     partial.contentAfter.sha256 !== partial.contentBefore.sha256 ||
-    partial.contentBefore.evidenceId === partial.contentAfter.evidenceId ||
+    partial.contentBefore.evidenceId !== partial.contentAfter.evidenceId ||
+    partial.contentBefore.registrationId !== partial.registrationId ||
+    partial.contentAfter.registrationId !==
+      partial.operationResults[9].setupReceipts[1].registrationId ||
+    partial.contentAfter.registrationId === partial.contentBefore.registrationId ||
     partialAfter.some((count, index) => count < partialBefore[index]) ||
     !partialAfter.some((count, index) => count > partialBefore[index]) ||
     partial.observationStopped !== true ||
@@ -3934,6 +4210,7 @@ function deriveUi(events, closeout, mode, context = {}) {
         "rename_duplicate",
       ]) ||
       stable(partialRecord.inverseRollbackOrder) !== stable([
+        "move_back",
         "rename_back",
         "delete_duplicate",
         "cleanup_empty_folder",
@@ -4211,7 +4488,7 @@ function redactProducerStderr(text, identity, args) {
   }
   redacted = redacted
     .replace(/\\\\[^\\/\s]+[\\/][^\r\n"'<>|]*/g, "<unc-path>")
-    .replace(/\b[A-Za-z]:[\\/][^\r\n"'<>|]*/g, "<absolute-path>");
+    .replace(/[A-Za-z]:[\\/](?![\\/])[^ \t\r\n"'<>|?*]+/g, "<absolute-path>");
   return { text: redacted, sensitive: false };
 }
 
@@ -5447,8 +5724,9 @@ function validateRetainedSources(root, walked) {
         typeof lifecycle.n4OwnerTaskId !== "string" ||
         lifecycle.n4OwnerPhase !== "ui-lifecycle" ||
         !isHex(lifecycle.n5SuccessorSessionBindingSha256) ||
-        !Number.isSafeInteger(lifecycle.n5ObservationGeneration) ||
-        lifecycle.n5ObservationGeneration < 1 ||
+        (lifecycle.n5ObservationGeneration !== null &&
+          (!Number.isSafeInteger(lifecycle.n5ObservationGeneration) ||
+            lifecycle.n5ObservationGeneration < 1)) ||
         stable(lifecycle.secondRollbackSetupApis) !== stable([
           "attach_editor_process",
           "register_asset_mutation_approval",
@@ -5462,7 +5740,11 @@ function validateRetainedSources(root, walked) {
         lifecycle.secondRollbackSetupReceiptIds.some((id) => !isObservationReceiptId(id)) ||
         !termination ||
         termination.localCloseCount !== 9 ||
-        termination.acceptedCount + termination.unsupportedCount !== 9 ||
+        !Number.isSafeInteger(termination.acceptedCount) ||
+        termination.acceptedCount < 0 ||
+        !Number.isSafeInteger(termination.unsupportedCount) ||
+        termination.unsupportedCount < 0 ||
+        termination.acceptedCount + termination.unsupportedCount !== 7 ||
         !Array.isArray(termination.receiptIds) ||
         termination.receiptIds.length !== 9 ||
         termination.receiptIds.some((id) => !isObservationReceiptId(id))
@@ -5687,12 +5969,14 @@ export {
   EVENT_SCHEMA,
   inventoryCreate,
   inventoryVerify,
+  redactProducerStderr,
   runtimePidBindingFromRawEvents,
   run,
   validateProductCapture,
   validateUiLifecycle,
   validateUeAutomation,
   validateEarlyIdentityArtifact,
+  validPartialObservationBoundary,
   validRetractionSessionTransition,
   verifyUeProductionArtifactConsistency,
   executeFixturePhase,

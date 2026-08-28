@@ -11,6 +11,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   startMvp15dRuntimeBridge,
+  startMvp15dRuntimeBridgeFromApp,
 } from "./mvp15d-runtime-bridge";
 
 // The bridge imports the real adapter; isolate it so product-capability and
@@ -23,6 +24,7 @@ vi.mock("./desktop-runtime-adapter", () => adapterMock);
 const evidenceMock = vi.hoisted(() => ({
   readMvp15dProductStoreEvidence: vi.fn(() => ({ status: "ready" })),
   readMvp15dUiStoreEvidence: vi.fn(() => ({ status: "ready" })),
+  readMvp15dUiStoreReadinessReason: vi.fn(() => null),
   runMvp15dUiBridgeAction: vi.fn(async () => {}),
 }));
 vi.mock("../stores/ui-store", () => evidenceMock);
@@ -93,6 +95,11 @@ function mountProductControls(
   clicks: string[],
   failFirstConnect = false,
   delaySecondEditorAttach = false,
+  negativeFailureCase: number | null = null,
+  partialUnknownDelayMilliseconds = 0,
+  negativeSettleDelayMilliseconds = 0,
+  partialUnknownFailureCode: string | null = null,
+  editorDiscoveryFailuresBeforeSuccess = 0,
 ) {
   document.body.innerHTML = `
     <button type="button" aria-label="Back to app">Back</button>
@@ -115,6 +122,7 @@ function mountProductControls(
         <span data-mvp15d-observation="asset-execution-mode"></span>
         <span data-mvp15d-observation="asset-binding">local_fixture</span>
         <span data-mvp15d-observation="asset-registration">required</span>
+        <span data-mvp15d-observation="asset-last-error"></span>
         <span data-mvp15d-observation="asset-execution"></span>
         <span data-mvp15d-observation="asset-verification"></span>
         <span data-mvp15d-observation="asset-rollback"></span>
@@ -201,8 +209,11 @@ function mountProductControls(
   const editor = document.querySelector('[aria-label="Editor panel"]')!;
   const editorButton = (name: string) =>
     editor.querySelector(`[aria-label="${name}"]`) as HTMLButtonElement;
+  let editorDiscoveryCount = 0;
   editorButton("Discover editor processes").addEventListener("click", () => {
     clicks.push("editor-discover");
+    editorDiscoveryCount += 1;
+    if (editorDiscoveryCount <= editorDiscoveryFailuresBeforeSuccess) return;
     editor.querySelector('[data-mvp15d-observation="editor-process"]')!.textContent = "UnrealEditor / running";
     editorButton("Attach editor observation session").disabled = false;
   });
@@ -291,15 +302,44 @@ function mountProductControls(
     });
   }
   const negativeStatus = document.querySelector('[data-mvp15d-observation="negative-control-status"]')!;
+  const negativeButtons = Array.from(
+    document.querySelector('[aria-label="MVP15D negative acceptance controls"]')!
+      .querySelectorAll("button"),
+  ) as HTMLButtonElement[];
+  let negativeControlsBusy = false;
   for (let caseNumber = 1; caseNumber <= 8; caseNumber += 1) {
     named(`Run N${caseNumber} rendered negative case`).addEventListener("click", () => {
+      if (negativeControlsBusy) return;
       clicks.push(`negative-n${caseNumber}`);
-      negativeStatus.textContent = `completed:N${caseNumber}`;
+      negativeStatus.textContent = caseNumber === negativeFailureCase
+        ? "mvp15d_ui_negative_observation_failed:field-detail"
+        : `completed:N${caseNumber}`;
+      if (caseNumber === 8 && negativeSettleDelayMilliseconds > 0) {
+        negativeControlsBusy = true;
+        for (const button of negativeButtons) button.disabled = true;
+        globalThis.setTimeout(() => {
+          negativeControlsBusy = false;
+          for (const button of negativeButtons) button.disabled = false;
+        }, negativeSettleDelayMilliseconds);
+      }
     });
   }
   named("Run rendered partial and unknown matrix").addEventListener("click", () => {
+    if (negativeControlsBusy) return;
     clicks.push("partial-unknown");
-    negativeStatus.textContent = "completed:partial-unknown";
+    if (partialUnknownFailureCode) {
+      negativeStatus.textContent = partialUnknownFailureCode;
+      return;
+    }
+    const complete = () => {
+      negativeStatus.textContent = "completed:partial-unknown";
+    };
+    if (partialUnknownDelayMilliseconds > 0) {
+      negativeStatus.textContent = "running:partial-unknown:operation_8_ttl_wait_start";
+      globalThis.setTimeout(complete, partialUnknownDelayMilliseconds);
+    } else {
+      complete();
+    }
   });
   named("Attempt N2 gate-off approval registration").addEventListener("click", () => {
     clicks.push("gate-off-registration");
@@ -552,6 +592,56 @@ describe("R5.3 live product ordered calls through a deterministic local fake tra
     expect(fixedAuthorityAdapter.observeMvp15dManagedListenerAliveThroughUse).toHaveBeenCalledTimes(1);
   });
 
+  it("retries bounded editor discovery while the task-owned editor is still starting", async () => {
+    const clicks: string[] = [];
+    mountProductControls(clicks, false, false, null, 0, 0, null, 1);
+    const configured = configuration({
+      phase: "product-capture",
+      mode: "live",
+      endpoint: "http://127.0.0.1:18765/mcp",
+      projectRoot: "C:\\repo\\external\\mvp15d-final-d13-d16-20260731_120000\\project\\FinalHost",
+      observationTimeoutMilliseconds: 10,
+    });
+    const { invoke } = stepCollectingInvoke("run-product-capture");
+    const configuredInvoke: NativeInvoke = (command, payload) => {
+      if (command === "mvp15d_bridge_configuration") return Promise.resolve(configured as never);
+      return invoke(command, payload);
+    };
+
+    await startMvp15dRuntimeBridge(configuredInvoke, fixedAuthorityAdapter);
+
+    expect(clicks.filter((click) => click === "editor-discover")).toHaveLength(2);
+  });
+
+  it("propagates a safe product control failure without waiting for the timeout", async () => {
+    const clicks: string[] = [];
+    mountProductControls(clicks);
+    const original = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.trim() === "Tool Search ON",
+    )!;
+    const replacement = original.cloneNode(true) as HTMLButtonElement;
+    original.replaceWith(replacement);
+    replacement.addEventListener("click", () => {
+      const status = document.querySelector('[data-mvp15d-observation="product-control-status"]');
+      if (status) status.textContent = "mvp15d_product_test_failure";
+    });
+    const configured = configuration({
+      phase: "product-capture",
+      mode: "live",
+      endpoint: "http://127.0.0.1:18765/mcp",
+      projectRoot: "C:\\repo\\external\\mvp15d-final-d13-d16-20260731_120000\\project\\FinalHost",
+    });
+    const { invoke } = stepCollectingInvoke("run-product-capture");
+    const configuredInvoke: NativeInvoke = (command, payload) => {
+      if (command === "mvp15d_bridge_configuration") return Promise.resolve(configured as never);
+      return invoke(command, payload);
+    };
+
+    await expect(startMvp15dRuntimeBridge(configuredInvoke, fixedAuthorityAdapter)).rejects.toThrow(
+      "mvp15d_product_test_failure",
+    );
+  });
+
   it("waits for the successor observation attach before reading a fresh snapshot", async () => {
     const clicks: string[] = [];
     mountProductControls(clicks, false, true);
@@ -588,7 +678,7 @@ describe("R5.3 live product ordered calls through a deterministic local fake tra
 });
 
 describe("R5.3 live UI validate/add/confirmTrust ordering on a task-owned fixture root", () => {
-  function liveUiInvoke(projectRoot: string) {
+  function liveUiInvoke(projectRoot: string, overrides: Record<string, unknown> = {}) {
     const { invoke, steps } = stepCollectingInvoke();
     const configuredInvoke: NativeInvoke = (command, payload) => {
       if (command === "mvp15d_bridge_configuration") {
@@ -597,6 +687,7 @@ describe("R5.3 live UI validate/add/confirmTrust ordering on a task-owned fixtur
             mode: "live",
             projectRoot,
             endpoint: "http://127.0.0.1:18765/mcp",
+            ...overrides,
           }) as never,
         );
       }
@@ -687,6 +778,76 @@ describe("R5.3 live UI validate/add/confirmTrust ordering on a task-owned fixtur
       "inspect-replay",
     ]));
   });
+
+  it("propagates a safe approval-registration failure without waiting for the timeout", async () => {
+    const clicks: string[] = [];
+    mountProductControls(clicks);
+    const original = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Approve sandbox asset mutation"]',
+    )!;
+    const replacement = original.cloneNode(true) as HTMLButtonElement;
+    original.replaceWith(replacement);
+    replacement.addEventListener("click", () => {
+      const issue = document.querySelector('[data-mvp15d-observation="asset-last-error"]');
+      if (issue) issue.textContent = "native_registration_failed";
+    });
+    const projectRoot = "C:\\repo\\external\\mvp15d-final-d13-d16-20260731_120000";
+    const { configuredInvoke } = liveUiInvoke(projectRoot);
+
+    await expect(
+      startMvp15dRuntimeBridge(configuredInvoke, fixedAuthorityAdapter),
+    ).rejects.toThrow("mvp15d_ui_registration_native_registration_failed");
+  });
+
+  it("propagates a rendered negative-control failure without waiting for the timeout", async () => {
+    const clicks: string[] = [];
+    mountProductControls(clicks, false, false, 3);
+    const projectRoot = "C:\\repo\\external\\mvp15d-final-d13-d16-20260731_120000";
+    const { configuredInvoke } = liveUiInvoke(projectRoot);
+
+    await expect(
+      startMvp15dRuntimeBridge(configuredInvoke, fixedAuthorityAdapter),
+    ).rejects.toThrow("mvp15d_ui_negative_observation_failed_field_detail");
+    expect(clicks).toContain("negative-n3");
+    expect(clicks).not.toContain("negative-n4");
+  });
+
+  it("allows the partial matrix to consume its TTL wait before the observation budget", async () => {
+    const clicks: string[] = [];
+    mountProductControls(clicks, false, false, null, 60);
+    const projectRoot = "C:\\repo\\external\\mvp15d-final-d13-d16-20260731_120000";
+    const { configuredInvoke } = liveUiInvoke(projectRoot, {
+      observationTimeoutMilliseconds: 20,
+      approvalTtlWaitMilliseconds: 50,
+    });
+
+    await startMvp15dRuntimeBridge(configuredInvoke, fixedAuthorityAdapter);
+
+    expect(clicks).toContain("partial-unknown");
+  });
+
+  it("waits for the shared negative-control busy state to settle before the partial matrix", async () => {
+    const clicks: string[] = [];
+    mountProductControls(clicks, false, false, null, 0, 30);
+    const projectRoot = "C:\\repo\\external\\mvp15d-final-d13-d16-20260731_120000";
+    const { configuredInvoke } = liveUiInvoke(projectRoot);
+
+    await startMvp15dRuntimeBridge(configuredInvoke, fixedAuthorityAdapter);
+
+    expect(clicks.indexOf("partial-unknown")).toBe(clicks.indexOf("negative-n8") + 1);
+  });
+
+  it("propagates an uppercase native partial-control failure without waiting for timeout", async () => {
+    const clicks: string[] = [];
+    mountProductControls(clicks, false, false, null, 0, 0, "MVP15D_NATIVE_PARTIAL_FAILED");
+    const projectRoot = "C:\\repo\\external\\mvp15d-final-d13-d16-20260731_120000";
+    const { configuredInvoke } = liveUiInvoke(projectRoot);
+
+    await expect(
+      startMvp15dRuntimeBridge(configuredInvoke, fixedAuthorityAdapter),
+    ).rejects.toThrow("MVP15D_NATIVE_PARTIAL_FAILED");
+    expect(clicks).toContain("partial-unknown");
+  });
 });
 
 describe("R5.3 default off, error propagation and terminal closeout absence", () => {
@@ -767,5 +928,28 @@ describe("R5.3 default off, error propagation and terminal closeout absence", ()
       "mvp15d_rendered_button_missing",
     );
     expect(steps.some(({ command }) => command === "mvp15d_bridge_complete")).toBe(false);
+  });
+
+  it.each([
+    [
+      new Error("mvp15d_rendered_button_missing:fieldDetail"),
+      "mvp15d_rendered_button_missing_field_detail",
+    ],
+    ["MVP15D_BRIDGE_UI_EVIDENCE_INVALID", "MVP15D_BRIDGE_UI_EVIDENCE_INVALID"],
+    [new Error("unexpected failure with details"), "mvp15d_runtime_bridge_failed"],
+  ])("reports a sanitized app-start failure and resolves", async (failure, expectedCode) => {
+    const calls: Array<{ command: string; payload?: Record<string, unknown> }> = [];
+    const invoke: NativeInvoke = async <T,>(command: string, payload?: Record<string, unknown>) => {
+      calls.push({ command, payload });
+      if (command === "mvp15d_bridge_configuration") throw failure;
+      if (command === "mvp15d_bridge_fail") return undefined as T;
+      throw new Error(`unexpected_failure_boundary_command:${command}`);
+    };
+
+    await expect(startMvp15dRuntimeBridgeFromApp(invoke)).resolves.toBeUndefined();
+    expect(calls).toEqual([
+      { command: "mvp15d_bridge_configuration", payload: undefined },
+      { command: "mvp15d_bridge_fail", payload: { input: { reasonCode: expectedCode } } },
+    ]);
   });
 });

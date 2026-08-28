@@ -315,6 +315,7 @@ function structuredExecuteResult(
 ): Record<string, unknown> {
   const runId = String(args.runId ?? "");
   const dryRunHash = String(args.dryRunHash ?? "");
+  const rollback = args.rollback === true;
   const operation = toolName === "ue.asset.duplicate"
     ? "duplicate"
     : toolName === "ue.asset.rename"
@@ -326,22 +327,24 @@ function structuredExecuteResult(
           : toolName === "ue.asset.delete"
             ? "delete"
             : "create_folder";
-  const wouldRead = toolName === "ue.asset.duplicate" && typeof args.sourceAssetPath === "string"
-    ? [args.sourceAssetPath]
-    : [];
+  const wouldRead = rollback && typeof args.assetPath === "string"
+    ? [args.assetPath]
+    : toolName === "ue.asset.duplicate" && typeof args.sourceAssetPath === "string"
+      ? [args.sourceAssetPath]
+      : [];
   const wouldModify = toolName === "ue.asset.rename" || toolName === "ue.asset.move"
     ? [args.assetPath, args.targetAssetPath].filter((value): value is string => typeof value === "string")
     : toolName === "ue.asset.duplicate"
       ? [args.targetAssetPath].filter((value): value is string => typeof value === "string")
       : [args.folderPath ?? args.assetPath].filter((value): value is string => typeof value === "string");
-  const rollbackAvailable = toolName !== "ue.asset.save";
+  const rollbackAvailable = !rollback && toolName !== "ue.asset.save";
   return {
     blocked: false,
-    status: "executed",
+    status: rollback ? "rolled_back" : "executed",
     reasonCode: "none",
     toolName,
     operation,
-    phase: "execute",
+    phase: rollback ? "rollback" : "execute",
     changeSetId: String(args.changeSetId ?? ""),
     runId,
     operationId: String(args.operationId ?? ""),
@@ -359,7 +362,7 @@ function structuredExecuteResult(
       executionEnabled: rollbackAvailable,
       inverseOperation: rollbackAvailable ? `rollback_${operation}` : "none",
     },
-    externalEvidenceQueries: [{ queryKind: "asset_registry_snapshot", readOnly: true, paths: [...wouldRead, ...wouldModify] }],
+    externalEvidenceQueries: [{ queryKind: "asset_registry_snapshot", readOnly: true, paths: [...new Set([...wouldRead, ...wouldModify])] }],
     dryRunHash,
     hashAlgorithm: "sha1",
     schemaVersion: "mvp15c.dry-run.v1",
@@ -368,7 +371,7 @@ function structuredExecuteResult(
     sideEffectObserved: true,
     effectState: "known_effect",
     rollbackAvailable,
-    rollbackStatus: rollbackAvailable ? "available" : "none",
+    rollbackStatus: rollback ? "completed" : rollbackAvailable ? "available" : "none",
     implementationStatus: "execution_capable",
     ...overrides,
   };

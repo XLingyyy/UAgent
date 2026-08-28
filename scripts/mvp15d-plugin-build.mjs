@@ -880,7 +880,7 @@ function transcriptPathLabel(value) {
 }
 
 function redactTranscript(text, roots) {
-  let output = String(text ?? "");
+  let output = String(text ?? "").replaceAll("\uFFFD", "<<INVALID_UTF8_REPLACED>>");
   output = replaceTranscriptMatches(output, scanTranscriptCredentialEndpoints(output));
   output = replaceTranscriptMatches(
     output,

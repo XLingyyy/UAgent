@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Cursor, Read};
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::time::Duration;
@@ -33,6 +33,8 @@ pub struct McpObservationIntent {
     pub phase_generation: u64,
     pub connection_generation: u64,
     pub tool_search_mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_mutation_boundary: Option<Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -64,15 +66,138 @@ pub struct McpHttpRequestResult {
 }
 
 #[tauri::command]
-pub fn mcp_streamable_http_request(
+pub async fn mcp_streamable_http_request(
     input: McpHttpRequestInput,
 ) -> Result<McpHttpRequestResult, String> {
-    post_streamable_http(input)
+    run_mcp_streamable_http_request(input, post_streamable_http_started).await
+}
+
+async fn run_mcp_streamable_http_request<F>(
+    input: McpHttpRequestInput,
+    worker: F,
+) -> Result<McpHttpRequestResult, String>
+where
+    F: FnOnce(
+            McpHttpRequestInput,
+            Option<crate::mvp15d_runtime_bridge::NativeMcpTransportObservationGuard>,
+        ) -> Result<McpHttpRequestResult, String>
+        + Send
+        + 'static,
+{
+    run_mcp_streamable_http_request_with_begin(
+        input,
+        crate::mvp15d_runtime_bridge::begin_native_mcp_transport_observation,
+        worker,
+    )
+    .await
+}
+
+async fn run_mcp_streamable_http_request_with_begin<B, F>(
+    input: McpHttpRequestInput,
+    begin_observation: B,
+    worker: F,
+) -> Result<McpHttpRequestResult, String>
+where
+    B: FnOnce(
+        &McpHttpRequestInput,
+    ) -> Result<
+        Option<crate::mvp15d_runtime_bridge::NativeMcpTransportObservationGuard>,
+        String,
+    >,
+    F: FnOnce(
+            McpHttpRequestInput,
+            Option<crate::mvp15d_runtime_bridge::NativeMcpTransportObservationGuard>,
+        ) -> Result<McpHttpRequestResult, String>
+        + Send
+        + 'static,
+{
+    let failure_input = input.clone();
+    let pending_dispatch = prepare_native_mcp_transport(&input, begin_observation)?;
+    match tauri::async_runtime::spawn_blocking(move || worker(input, pending_dispatch)).await {
+        Ok(result) => result,
+        Err(_) => {
+            crate::mvp15d_runtime_bridge::record_native_mcp_transport_failure(
+                &failure_input,
+                "native_request_task_failed",
+            );
+            Err("native_request_task_failed".to_string())
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) async fn run_mcp_streamable_http_request_for_test<B, F>(
+    input: McpHttpRequestInput,
+    begin_observation: B,
+    worker: F,
+) -> Result<McpHttpRequestResult, String>
+where
+    B: FnOnce(
+        &McpHttpRequestInput,
+    ) -> Result<
+        Option<crate::mvp15d_runtime_bridge::NativeMcpTransportObservationGuard>,
+        String,
+    >,
+    F: FnOnce(
+            McpHttpRequestInput,
+            Option<crate::mvp15d_runtime_bridge::NativeMcpTransportObservationGuard>,
+        ) -> Result<McpHttpRequestResult, String>
+        + Send
+        + 'static,
+{
+    run_mcp_streamable_http_request_with_begin(input, begin_observation, worker).await
 }
 
 pub fn post_streamable_http(input: McpHttpRequestInput) -> Result<McpHttpRequestResult, String> {
-    validate_local_mcp_endpoint(&input.endpoint)?;
+    let pending_dispatch = prepare_native_mcp_transport(
+        &input,
+        crate::mvp15d_runtime_bridge::begin_native_mcp_transport_observation,
+    )?;
+    post_streamable_http_started(input, pending_dispatch)
+}
 
+fn prepare_native_mcp_transport<B>(
+    input: &McpHttpRequestInput,
+    begin_observation: B,
+) -> Result<Option<crate::mvp15d_runtime_bridge::NativeMcpTransportObservationGuard>, String>
+where
+    B: FnOnce(
+        &McpHttpRequestInput,
+    ) -> Result<
+        Option<crate::mvp15d_runtime_bridge::NativeMcpTransportObservationGuard>,
+        String,
+    >,
+{
+    if let Err(error) = validate_streamable_http_input(input) {
+        crate::mvp15d_runtime_bridge::record_native_mcp_transport_failure(input, &error);
+        return Err(error);
+    }
+    match begin_observation(input) {
+        Ok(pending_dispatch) => Ok(pending_dispatch),
+        Err(error) => {
+            crate::mvp15d_runtime_bridge::record_native_mcp_transport_failure(input, &error);
+            Err(error)
+        }
+    }
+}
+
+fn validate_streamable_http_input(input: &McpHttpRequestInput) -> Result<(), String> {
+    validate_local_mcp_endpoint(&input.endpoint)?;
+    if input.method == McpHttpMethod::Delete
+        && input.session_id.as_deref().map_or(true, str::is_empty)
+    {
+        return Err("session_id_required".to_string());
+    }
+    if input.method == McpHttpMethod::Delete && !input.body.is_empty() {
+        return Err("delete_body_not_allowed".to_string());
+    }
+    Ok(())
+}
+
+fn post_streamable_http_started(
+    input: McpHttpRequestInput,
+    pending_dispatch: Option<crate::mvp15d_runtime_bridge::NativeMcpTransportObservationGuard>,
+) -> Result<McpHttpRequestResult, String> {
     let protocol_version = input
         .protocol_version
         .as_deref()
@@ -82,15 +207,6 @@ pub fn post_streamable_http(input: McpHttpRequestInput) -> Result<McpHttpRequest
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_millis(timeout_ms))
         .build();
-
-    if input.method == McpHttpMethod::Delete
-        && input.session_id.as_deref().map_or(true, str::is_empty)
-    {
-        return Err("session_id_required".to_string());
-    }
-    if input.method == McpHttpMethod::Delete && !input.body.is_empty() {
-        return Err("delete_body_not_allowed".to_string());
-    }
 
     let mut request = match input.method {
         McpHttpMethod::Post => agent.post(&input.endpoint),
@@ -110,27 +226,94 @@ pub fn post_streamable_http(input: McpHttpRequestInput) -> Result<McpHttpRequest
         request = request.set("Mcp-Session-Id", session_id);
     }
 
-    let response = match input.method {
-        McpHttpMethod::Post => request.send_string(&input.body),
-        McpHttpMethod::Delete => request.call(),
+    let response = match (input.method, pending_dispatch.as_ref()) {
+        (McpHttpMethod::Post, Some(pending_dispatch)) => {
+            let content_length = input.body.len().to_string();
+            request = request.set("Content-Length", &content_length);
+            let dispatch_signal = match pending_dispatch.dispatch_signal(&input) {
+                Ok(dispatch_signal) => dispatch_signal,
+                Err(error) => {
+                    crate::mvp15d_runtime_bridge::record_native_mcp_transport_failure(
+                        &input, &error,
+                    );
+                    return Err(error);
+                }
+            };
+            request.send(NativeMcpObservedRequestBody::new(
+                input.body.as_bytes().to_vec(),
+                dispatch_signal,
+            ))
+        }
+        (McpHttpMethod::Post, None) => request.send_string(&input.body),
+        (McpHttpMethod::Delete, _) => request.call(),
     };
     let outcome = match response {
         Ok(response) => response_to_result(response, input.method),
         Err(ureq::Error::Status(_, response)) => response_to_result(response, input.method),
         Err(_) => Err(NATIVE_REQUEST_FAILED.to_string()),
     };
-    match outcome {
+    let result = match outcome {
         Ok(mut result) => {
-            crate::mvp15d_runtime_bridge::attach_native_mcp_transport_observation(
+            match crate::mvp15d_runtime_bridge::attach_native_mcp_transport_observation(
                 &input,
                 &mut result,
-            )?;
-            Ok(result)
+            ) {
+                Ok(()) => Ok(result),
+                Err(error) => {
+                    crate::mvp15d_runtime_bridge::record_native_mcp_transport_failure(
+                        &input, &error,
+                    );
+                    Err(error)
+                }
+            }
         }
         Err(error) => {
             crate::mvp15d_runtime_bridge::record_native_mcp_transport_failure(&input, &error);
             Err(error)
         }
+    };
+    result
+}
+
+#[cfg(test)]
+pub(crate) fn post_streamable_http_started_for_test(
+    input: McpHttpRequestInput,
+    pending_dispatch: crate::mvp15d_runtime_bridge::NativeMcpTransportObservationGuard,
+) -> Result<McpHttpRequestResult, String> {
+    post_streamable_http_started(input, Some(pending_dispatch))
+}
+
+struct NativeMcpObservedRequestBody {
+    body: Cursor<Vec<u8>>,
+    dispatch_signal: Option<crate::mvp15d_runtime_bridge::NativeMcpTransportDispatchSignal>,
+}
+
+impl NativeMcpObservedRequestBody {
+    fn new(
+        body: Vec<u8>,
+        dispatch_signal: crate::mvp15d_runtime_bridge::NativeMcpTransportDispatchSignal,
+    ) -> Self {
+        Self {
+            body: Cursor::new(body),
+            dispatch_signal: Some(dispatch_signal),
+        }
+    }
+}
+
+impl Read for NativeMcpObservedRequestBody {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.body.read(buffer)?;
+        if read == 0 && !buffer.is_empty() {
+            if let Some(dispatch_signal) = self.dispatch_signal.as_ref() {
+                // ureq reaches this EOF read only after its io::copy loop wrote the
+                // preceding body chunk, and before it starts reading the response.
+                dispatch_signal
+                    .mark_dispatched()
+                    .map_err(std::io::Error::other)?;
+                self.dispatch_signal = None;
+            }
+        }
+        Ok(read)
     }
 }
 

@@ -90,13 +90,58 @@ function Mvp15dNegativeAcceptanceControls() {
   };
   const runPartialUnknown = async () => {
     if (busy) return;
+    let lastPartialStep = "action_dispatched";
     setBusy(true);
     setStatus("running:partial-unknown");
     try {
-      await runMvp15dUiBridgeAction("partialUnknownDiagnostic");
+      setStatus("running:partial-unknown:action_dispatched");
+      await runMvp15dUiBridgeAction("partialUnknownDiagnostic", undefined, (step) => {
+        lastPartialStep = step;
+        setStatus(`running:partial-unknown:${step}`);
+      });
       setStatus("completed:partial-unknown");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "partial_unknown_control_failed");
+      const errorRecord = error && typeof error === "object"
+        ? error as Record<string, unknown>
+        : null;
+      const nestedStrings = errorRecord
+        ? Object.values(errorRecord).flatMap((value) =>
+            value && typeof value === "object"
+              ? Object.values(value as Record<string, unknown>)
+              : [value],
+          )
+        : [];
+      const diagnosticCandidates = [
+        error instanceof Error ? error.message : null,
+        typeof error === "string" ? error : null,
+        errorRecord?.code,
+        errorRecord?.message,
+        errorRecord?.error,
+        ...nestedStrings,
+        error == null ? null : String(error),
+      ].filter((candidate): candidate is string => typeof candidate === "string");
+      const reasonCode = diagnosticCandidates
+        .map(
+          (candidate) =>
+            /(?:^|[^A-Za-z0-9_])(mvp15d_[a-z0-9_]+|MVP15D_[A-Z0-9_]+)(?:$|[^A-Za-z0-9_])/
+              .exec(candidate)?.[1] ?? "",
+        )
+        .find((candidate) => candidate.length > 0 && candidate.length <= 128);
+      if (reasonCode) {
+        setStatus(reasonCode);
+      } else {
+        const diagnosticText = diagnosticCandidates.find(
+          (candidate) => candidate.length > 0 && candidate !== "[object Object]",
+        ) ?? JSON.stringify(error) ?? Object.prototype.toString.call(error);
+        const digest = await globalThis.crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(diagnosticText),
+        );
+        const shortHash = Array.from(new Uint8Array(digest).slice(0, 8), (byte) =>
+          byte.toString(16).padStart(2, "0")
+        ).join("");
+        setStatus(`mvp15d_partial_unknown_control_error_at_${lastPartialStep}_${shortHash}`);
+      }
     } finally {
       setBusy(false);
     }

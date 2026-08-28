@@ -130,8 +130,13 @@ function isMvp15SaveAllEvidenceSummary(rel, line) {
 
 function isMvp15DTextCatalogRegex(rel, line) {
   return (
-    rel === "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts" &&
-    line === "const match = /^\\s*-\\s+([^:\\r\\n]+?)(?:\\s*:\\s*.*)?$/.exec(line);"
+    (rel === "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts" &&
+      line === "const match = /^\\s*-\\s+([^:\\r\\n]+?)(?:\\s*:\\s*.*)?$/.exec(line);") ||
+    (rel === "apps/desktop/web/src/runtime/mvp15d-runtime-bridge.ts" &&
+      line ===
+        'const progress = /^running:partial-unknown:([a-z0-9_]+)$/.exec(lastStatus)?.[1] ?? "idle";') ||
+    (rel === "apps/desktop/web/src/settings/pages/ConfigSettings.tsx" &&
+      line === '.exec(candidate)?.[1] ?? "",')
   );
 }
 
@@ -140,10 +145,23 @@ function isMvp15NegativeAssetOperationVocabulary(rel, line, pattern) {
     rel === "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts" &&
     pattern.label === "filesystem mutation" &&
     (line === '"rename_asset",' ||
+      line === '"rename_duplicate",' ||
+      line === '"rename_back",' ||
       line ===
         'const nativeKinds = ["create_folder", "duplicate", "rename", "move", "save"] as const;' ||
       line ===
-        ': operationKind === "duplicate_asset" || operationKind === "rename_asset" || operationKind === "move_asset"')
+        ': operationKind === "duplicate_asset" || operationKind === "rename_asset" || operationKind === "move_asset"' ||
+      line ===
+        'const targetAssetPath = rollbackAction === "rename_back" || rollbackAction === "move_back"' ||
+      line === 'targetAssetPath: forwardOperation.rollbackAction === "rename_back"')
+  );
+}
+
+function isMvp15dExactBoundaryToolCallMatch(rel, line, pattern) {
+  return (
+    rel === "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts" &&
+    pattern.label === "'tools/call'" &&
+    line === 'body.method === "tools/call" &&'
   );
 }
 
@@ -192,6 +210,7 @@ const CATEGORIES = [
       (rel) => /packages\/(mcp-client|runtime)\/src\//.test(rel),
       (rel) => /docs\//.test(rel),
       (rel) => /\.test\./.test(rel),
+      isMvp15dExactBoundaryToolCallMatch,
     ],
     blockWhen: [(rel) => /apps\/desktop\/web\/src\//.test(rel)],
   },
@@ -2161,8 +2180,12 @@ function runScanSelfTests() {
   if (!mvp7Category) throw new Error("mvp7 capability scan category missing");
   for (const line of [
     '"rename_asset",',
+    '"rename_duplicate",',
+    '"rename_back",',
     'const nativeKinds = ["create_folder", "duplicate", "rename", "move", "save"] as const;',
     ': operationKind === "duplicate_asset" || operationKind === "rename_asset" || operationKind === "move_asset"',
+    'const targetAssetPath = rollbackAction === "rename_back" || rollbackAction === "move_back"',
+    'targetAssetPath: forwardOperation.rollbackAction === "rename_back"',
   ]) {
     const findings = scanContent("apps/desktop/web/src/runtime/desktop-runtime-adapter.ts", line, [
       mvp7Category,
@@ -2199,6 +2222,25 @@ function runScanSelfTests() {
   );
   if (!unsafeSettingsCall.some((finding) => finding.severity === "BLOCKED")) {
     throw new Error("mvp13 MCP self-test did not block a settings-layer tool call");
+  }
+
+  const mcpToolCallCategory = CATEGORIES.find((candidate) => candidate.id === "mcp-tool-calls");
+  if (!mcpToolCallCategory) throw new Error("MCP tool-call scan category missing");
+  const exactBoundaryMatch = scanContent(
+    "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts",
+    'body.method === "tools/call" &&',
+    [mcpToolCallCategory],
+  );
+  if (exactBoundaryMatch.some((finding) => finding.severity === "BLOCKED")) {
+    throw new Error("MCP tool-call self-test blocked the exact MVP15D boundary matcher");
+  }
+  const unsafeRuntimeToolCall = scanContent(
+    "apps/desktop/web/src/runtime/desktop-runtime-adapter.ts",
+    'if (body.method === "tools/call") await session.callTool(name, args);',
+    [mcpToolCallCategory],
+  );
+  if (!unsafeRuntimeToolCall.some((finding) => finding.severity === "BLOCKED")) {
+    throw new Error("MCP tool-call self-test did not block a runtime tool execution");
   }
 
   const observationCategory = AUTHORITY_CATEGORIES.find(

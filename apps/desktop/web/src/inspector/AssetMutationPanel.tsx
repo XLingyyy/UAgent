@@ -257,7 +257,15 @@ export function AssetMutationPanel() {
             Replay: recorded summaries only / {replay.recordedOnlyActions?.join(", ")} / 0 runtime side effects
           </li>
         )}
-        {mvp15?.lastError && <li className="ua-utility-placeholder__item">Last issue: {formatMvp15UiBlocker(mvp15.lastError)}</li>}
+        {mvp15?.lastError && (
+          <li
+            className="ua-utility-placeholder__item"
+            data-mvp15d-observation="asset-last-error"
+            data-mvp15d-value={formatMvp15UiBlocker(mvp15.lastError)}
+          >
+            Last issue: {formatMvp15UiBlocker(mvp15.lastError)}
+          </li>
+        )}
       </ul>
     </section>
   );

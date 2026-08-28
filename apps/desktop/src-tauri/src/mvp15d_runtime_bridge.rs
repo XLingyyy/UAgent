@@ -204,6 +204,12 @@ pub struct BridgeState {
     renderer_publish_authority: bool,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BridgeFailureInput {
+    pub reason_code: String,
+}
+
 #[derive(Debug, Clone)]
 struct RendererRestartHandoff {
     handoff_id: String,
@@ -259,6 +265,7 @@ struct ObservationReceiptContext {
     runtime_process_identity_sha256: String,
     nonce_sha256: String,
     marker: String,
+    endpoint: String,
     port: u16,
     evidence_root: PathBuf,
 }
@@ -294,10 +301,139 @@ struct ObservationReceiptLedger {
     records: HashMap<String, ObservationReceiptRecord>,
 }
 
+#[derive(Debug, Clone)]
+struct PendingNativeMcpTransport {
+    dispatch_id: String,
+    request: Value,
+    request_sha256: String,
+    registered_after_receipt_sequence: u64,
+    dispatched_after_receipt_sequence: Option<u64>,
+}
+
+#[derive(Debug, Default)]
+struct PendingNativeMcpTransportRegistry {
+    sequence: u64,
+    records: HashMap<String, PendingNativeMcpTransport>,
+}
+
+#[derive(Debug, Clone)]
+struct NativeMcpBoundaryIdentity {
+    task_id: String,
+    phase: BridgePhase,
+    session: String,
+    generation: u64,
+    endpoint: String,
+}
+
+pub(crate) struct NativeMcpTransportObservationGuard {
+    dispatch_id: String,
+}
+
+pub(crate) struct NativeMcpTransportDispatchSignal {
+    dispatch_id: String,
+    request_sha256: String,
+}
+
+impl NativeMcpTransportObservationGuard {
+    pub(crate) fn dispatch_signal(
+        &self,
+        input: &crate::mcp::McpHttpRequestInput,
+    ) -> Result<NativeMcpTransportDispatchSignal, String> {
+        let request = native_mcp_request_basis(input).map_err(|error| error.code().to_string())?;
+        let request_sha256 = sha256_bytes(canonical_json(&request).as_bytes());
+        let registry = pending_native_mcp_transport_registry()
+            .lock()
+            .map_err(|_| "MVP15D_MCP_PENDING_REGISTRY_UNAVAILABLE".to_string())?;
+        let pending = registry
+            .records
+            .get(&self.dispatch_id)
+            .ok_or_else(|| "MVP15D_MCP_PENDING_NOT_VISIBLE".to_string())?;
+        if pending.request != request || pending.request_sha256 != request_sha256 {
+            return Err("MVP15D_MCP_PENDING_REQUEST_INVALID".to_string());
+        }
+        Ok(NativeMcpTransportDispatchSignal {
+            dispatch_id: self.dispatch_id.clone(),
+            request_sha256,
+        })
+    }
+}
+
+impl NativeMcpTransportDispatchSignal {
+    pub(crate) fn mark_dispatched(&self) -> Result<(), String> {
+        let mut ledger = observation_receipt_ledger()
+            .lock()
+            .map_err(|_| "MVP15D_BRIDGE_RECEIPT_LEDGER_UNAVAILABLE".to_string())?;
+        let mut registry = pending_native_mcp_transport_registry()
+            .lock()
+            .map_err(|_| "MVP15D_MCP_PENDING_REGISTRY_UNAVAILABLE".to_string())?;
+        {
+            let pending = registry
+                .records
+                .get_mut(&self.dispatch_id)
+                .ok_or_else(|| "MVP15D_MCP_PENDING_NOT_VISIBLE".to_string())?;
+            if pending.request_sha256 != self.request_sha256 {
+                return Err("MVP15D_MCP_PENDING_REQUEST_INVALID".to_string());
+            }
+            if pending.dispatched_after_receipt_sequence.is_some() {
+                return Ok(());
+            }
+            pending.dispatched_after_receipt_sequence = Some(ledger.sequence);
+        }
+        let pending = registry
+            .records
+            .get(&self.dispatch_id)
+            .ok_or_else(|| "MVP15D_MCP_PENDING_NOT_VISIBLE".to_string())?;
+        let boundary_request = pending
+            .request
+            .pointer("/intent/assetMutationBoundary")
+            .cloned();
+        if let Some(boundary_request) = boundary_request {
+            let context = ledger
+                .context
+                .as_ref()
+                .ok_or_else(|| "MVP15D_PARTIAL_OBSERVATION_BOUNDARY_INVALID".to_string())?;
+            let identity = NativeMcpBoundaryIdentity {
+                task_id: context.task_id.clone(),
+                phase: context.phase,
+                session: context.session.clone(),
+                generation: context.generation,
+                endpoint: context.endpoint.clone(),
+            };
+            if let Err(error) = prepare_asset_mutation_response_pending_locked(
+                &identity,
+                boundary_request,
+                &mut ledger,
+                &registry,
+                false,
+            ) {
+                if let Some(pending) = registry.records.get_mut(&self.dispatch_id) {
+                    pending.dispatched_after_receipt_sequence = None;
+                }
+                return Err(error.code().to_string());
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for NativeMcpTransportObservationGuard {
+    fn drop(&mut self) {
+        if let Ok(mut registry) = pending_native_mcp_transport_registry().lock() {
+            registry.records.remove(&self.dispatch_id);
+        }
+    }
+}
+
 fn observation_receipt_ledger() -> &'static Mutex<ObservationReceiptLedger> {
     static LEDGER: std::sync::OnceLock<Mutex<ObservationReceiptLedger>> =
         std::sync::OnceLock::new();
     LEDGER.get_or_init(|| Mutex::new(ObservationReceiptLedger::default()))
+}
+
+fn pending_native_mcp_transport_registry() -> &'static Mutex<PendingNativeMcpTransportRegistry> {
+    static REGISTRY: std::sync::OnceLock<Mutex<PendingNativeMcpTransportRegistry>> =
+        std::sync::OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(PendingNativeMcpTransportRegistry::default()))
 }
 
 fn activate_observation_receipt_ledger(identity: &BridgeIdentity) -> Result<(), BridgeError> {
@@ -321,12 +457,19 @@ fn activate_observation_receipt_ledger(identity: &BridgeIdentity) -> Result<(), 
             ),
             nonce_sha256: identity.nonce_sha256.clone(),
             marker: identity.marker.clone(),
+            endpoint: identity.endpoint.clone(),
             port: identity.port,
             evidence_root: identity.evidence_root.clone(),
         }
     });
     ledger.sequence = 0;
     ledger.records.clear();
+    drop(ledger);
+    pending_native_mcp_transport_registry()
+        .lock()
+        .map_err(|_| BridgeError::new("MVP15D_BRIDGE_RECEIPT_LEDGER_UNAVAILABLE"))?
+        .records
+        .clear();
     Ok(())
 }
 
@@ -378,6 +521,25 @@ pub(crate) fn issue_native_observation_receipt(
     response: Value,
 ) -> Option<String> {
     let mut ledger = observation_receipt_ledger().lock().ok()?;
+    issue_native_observation_receipt_locked(&mut ledger, api, request, response)
+}
+
+fn issue_native_observation_receipt_locked(
+    ledger: &mut ObservationReceiptLedger,
+    api: &str,
+    request: Value,
+    response: Value,
+) -> Option<String> {
+    issue_native_observation_receipt_locked_with_claim(ledger, api, request, response, true)
+}
+
+fn issue_native_observation_receipt_locked_with_claim(
+    ledger: &mut ObservationReceiptLedger,
+    api: &str,
+    request: Value,
+    response: Value,
+    claimed: bool,
+) -> Option<String> {
     let context = ledger.context.clone()?;
     ledger.sequence = ledger.sequence.checked_add(1)?;
     let sequence = ledger.sequence;
@@ -391,10 +553,9 @@ pub(crate) fn issue_native_observation_receipt(
             api: api.to_string(),
             request,
             response,
-            // Native commands return this opaque ID as part of the result, so the
-            // record is already released to the fixed renderer.  The publisher
-            // still consumes it exactly once below.
-            claimed: true,
+            // Ordinary native commands release their opaque ID immediately. The
+            // MCP pending boundary uses `false` until the renderer claims it.
+            claimed,
             consumed: false,
         },
     );
@@ -533,6 +694,16 @@ fn native_mcp_request_basis(input: &crate::mcp::McpHttpRequestInput) -> Result<V
         .as_ref()
         .ok_or_else(|| BridgeError::new("MVP15D_MCP_OBSERVATION_CONTEXT_INVALID"))?;
     validate_mcp_observation_intent(intent)?;
+    native_mcp_request_basis_unchecked(input)
+}
+
+fn native_mcp_request_basis_unchecked(
+    input: &crate::mcp::McpHttpRequestInput,
+) -> Result<Value, BridgeError> {
+    let intent = input
+        .observation
+        .as_ref()
+        .ok_or_else(|| BridgeError::new("MVP15D_MCP_OBSERVATION_CONTEXT_INVALID"))?;
     let (http_method, body) = match input.method {
         crate::mcp::McpHttpMethod::Post => ("POST", parse_mcp_json_body(&input.body)?),
         crate::mcp::McpHttpMethod::Delete if input.body.is_empty() => ("DELETE", Value::Null),
@@ -550,6 +721,519 @@ fn native_mcp_request_basis(input: &crate::mcp::McpHttpRequestInput) -> Result<V
         "timeoutMs": input.timeout_ms.unwrap_or(5_000).clamp(500, 30_000),
         "intent": intent,
     }))
+}
+
+fn native_mcp_failure_request_basis(input: &crate::mcp::McpHttpRequestInput) -> Option<Value> {
+    if let Ok(request) = native_mcp_request_basis_unchecked(input) {
+        return Some(request);
+    }
+    let intent = input.observation.as_ref()?;
+    let http_method = match input.method {
+        crate::mcp::McpHttpMethod::Post => "POST",
+        crate::mcp::McpHttpMethod::Delete => "DELETE",
+    };
+    Some(json!({
+        "schemaVersion": "uagent.mvp15d.native-mcp-request.v2",
+        "httpMethod": http_method,
+        "endpoint": input.endpoint,
+        "body": Value::Null,
+        "malformedBodySha256": sha256_bytes(input.body.as_bytes()),
+        "malformedBodyByteLength": input.body.len(),
+        "protocolVersion": input.protocol_version.as_deref().unwrap_or("2025-06-18"),
+        "sessionId": input.session_id,
+        "timeoutMs": input.timeout_ms.unwrap_or(5_000).clamp(500, 30_000),
+        "intent": intent,
+    }))
+}
+
+pub(crate) fn begin_native_mcp_transport_observation(
+    input: &crate::mcp::McpHttpRequestInput,
+) -> Result<Option<NativeMcpTransportObservationGuard>, String> {
+    if input.observation.is_none() {
+        return Ok(None);
+    }
+    let request = native_mcp_request_basis(input).map_err(|error| error.code().to_string())?;
+    let request_sha256 = sha256_bytes(canonical_json(&request).as_bytes());
+    let receipt_ledger = observation_receipt_ledger()
+        .lock()
+        .map_err(|_| "MVP15D_BRIDGE_RECEIPT_LEDGER_UNAVAILABLE".to_string())?;
+    let registered_after_receipt_sequence = receipt_ledger.sequence;
+    let mut registry = pending_native_mcp_transport_registry()
+        .lock()
+        .map_err(|_| "MVP15D_MCP_PENDING_REGISTRY_UNAVAILABLE".to_string())?;
+    registry.sequence = registry
+        .sequence
+        .checked_add(1)
+        .ok_or_else(|| "MVP15D_MCP_PENDING_REGISTRY_UNAVAILABLE".to_string())?;
+    let dispatch_id = format!(
+        "mvp15d-mcp-dispatch:{}",
+        sha256_bytes(
+            canonical_json(&json!({
+                "sequence": registry.sequence,
+                "requestSha256": request_sha256,
+                "registeredAfterReceiptSequence": registered_after_receipt_sequence,
+            }))
+            .as_bytes(),
+        )
+    );
+    registry.records.insert(
+        dispatch_id.clone(),
+        PendingNativeMcpTransport {
+            dispatch_id: dispatch_id.clone(),
+            request,
+            request_sha256,
+            registered_after_receipt_sequence,
+            dispatched_after_receipt_sequence: None,
+        },
+    );
+    Ok(Some(NativeMcpTransportObservationGuard { dispatch_id }))
+}
+
+struct AssetMutationBoundaryRequest<'a> {
+    registration_id: &'a str,
+    change_set_id: &'a str,
+    run_id: &'a str,
+    phase: &'a str,
+    operation_id: &'a str,
+    operation_index: usize,
+    operation_count: usize,
+    tool_name: &'a str,
+    mcp_session_id: &'a str,
+    guard_receipt_id: &'a str,
+}
+
+fn parse_asset_mutation_boundary_request(
+    request: &Value,
+) -> Result<AssetMutationBoundaryRequest<'_>, BridgeError> {
+    const CODE: &str = "MVP15D_PARTIAL_OBSERVATION_BOUNDARY_INVALID";
+    const KEYS: [&str; 10] = [
+        "registrationId",
+        "changeSetId",
+        "runId",
+        "phase",
+        "operationId",
+        "operationIndex",
+        "operationCount",
+        "toolName",
+        "mcpSessionId",
+        "guardReceiptId",
+    ];
+    let object = request.as_object().ok_or_else(|| BridgeError::new(CODE))?;
+    if object.len() != KEYS.len() || KEYS.iter().any(|key| !object.contains_key(*key)) {
+        return Err(BridgeError::new(CODE));
+    }
+    let boundary = AssetMutationBoundaryRequest {
+        registration_id: string_field(request, "registrationId", CODE)?,
+        change_set_id: string_field(request, "changeSetId", CODE)?,
+        run_id: string_field(request, "runId", CODE)?,
+        phase: string_field(request, "phase", CODE)?,
+        operation_id: string_field(request, "operationId", CODE)?,
+        operation_index: usize::try_from(u64_field(request, "operationIndex", CODE)?)
+            .map_err(|_| BridgeError::new(CODE))?,
+        operation_count: usize::try_from(u64_field(request, "operationCount", CODE)?)
+            .map_err(|_| BridgeError::new(CODE))?,
+        tool_name: string_field(request, "toolName", CODE)?,
+        mcp_session_id: string_field(request, "mcpSessionId", CODE)?,
+        guard_receipt_id: string_field(request, "guardReceiptId", CODE)?,
+    };
+    if boundary.registration_id.is_empty()
+        || boundary.change_set_id.is_empty()
+        || boundary.run_id.is_empty()
+        || boundary.operation_id.is_empty()
+        || boundary.guard_receipt_id.is_empty()
+        || boundary.phase != "execute"
+        || boundary.tool_name != "ue.asset.move"
+        || boundary.mcp_session_id.is_empty()
+        || boundary.operation_index != 3
+        || boundary.operation_count != 5
+    {
+        return Err(BridgeError::new(CODE));
+    }
+    Ok(boundary)
+}
+
+fn prepare_asset_mutation_response_pending_locked(
+    identity: &NativeMcpBoundaryIdentity,
+    request: Value,
+    ledger: &mut ObservationReceiptLedger,
+    registry: &PendingNativeMcpTransportRegistry,
+    claim_receipt: bool,
+) -> Result<ObserveNativeStateResult, BridgeError> {
+    const CODE: &str = "MVP15D_PARTIAL_OBSERVATION_BOUNDARY_INVALID";
+    let AssetMutationBoundaryRequest {
+        registration_id,
+        change_set_id,
+        run_id,
+        phase,
+        operation_id,
+        operation_index,
+        operation_count,
+        tool_name,
+        mcp_session_id,
+        guard_receipt_id,
+    } = parse_asset_mutation_boundary_request(&request)?;
+
+    let candidates = registry
+        .records
+        .values()
+        .filter(|pending| {
+            if pending.dispatched_after_receipt_sequence.is_none()
+                || pending.request.pointer("/intent/assetMutationBoundary") != Some(&request)
+            {
+                return false;
+            }
+            let Some(arguments) = pending
+                .request
+                .pointer("/body/params/arguments")
+                .and_then(Value::as_object)
+            else {
+                return false;
+            };
+            pending
+                .request
+                .pointer("/body/method")
+                .and_then(Value::as_str)
+                == Some("tools/call")
+                && pending
+                    .request
+                    .pointer("/body/params/name")
+                    .and_then(Value::as_str)
+                    == Some(tool_name)
+                && arguments
+                    .get("nativeRegistrationId")
+                    .and_then(Value::as_str)
+                    == Some(registration_id)
+                && arguments.get("nativePhase").and_then(Value::as_str) == Some(phase)
+                && arguments.get("dryRun").and_then(Value::as_bool) == Some(false)
+                && arguments.get("execute").and_then(Value::as_bool) == Some(true)
+                && arguments.get("rollback").and_then(Value::as_bool) == Some(false)
+                && arguments
+                    .get("nativeOperationIndex")
+                    .and_then(Value::as_u64)
+                    == Some(operation_index as u64)
+                && arguments
+                    .get("nativeOperationCount")
+                    .and_then(Value::as_u64)
+                    == Some(operation_count as u64)
+                && arguments.get("operationId").and_then(Value::as_str) == Some(operation_id)
+                && arguments.get("changeSetId").and_then(Value::as_str) == Some(change_set_id)
+                && arguments.get("runId").and_then(Value::as_str) == Some(run_id)
+        })
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        if registry.records.values().any(|pending| {
+            pending.dispatched_after_receipt_sequence.is_some()
+                && pending.request.pointer("/intent/assetMutationBoundary") == Some(&request)
+        }) {
+            return Err(BridgeError::new(CODE));
+        }
+        let context = ledger
+            .context
+            .as_ref()
+            .ok_or_else(|| BridgeError::new(CODE))?;
+        let guard = ledger
+            .records
+            .get(guard_receipt_id)
+            .ok_or_else(|| BridgeError::new(CODE))?;
+        let guard_payload = receipt_response_payload(guard);
+        let matching_terminal_receipt = ledger.records.values().any(|record| {
+            ((record.api == "mcp_asset_tool_call" || record.api == "mcp_transport_failure")
+                && record
+                    .request
+                    .pointer("/body/params/arguments/nativeRegistrationId")
+                    .and_then(Value::as_str)
+                    == Some(registration_id)
+                && record
+                    .request
+                    .pointer("/body/params/arguments/operationId")
+                    .and_then(Value::as_str)
+                    == Some(operation_id))
+                || (record.api == "record_asset_mutation_outcome"
+                    && record.request.get("registrationId").and_then(Value::as_str)
+                        == Some(registration_id)
+                    && record.request.get("phase").and_then(Value::as_str) == Some(phase)
+                    && record.request.get("operationId").and_then(Value::as_str)
+                        == Some(operation_id))
+        });
+        if context.task_id != identity.task_id
+            || context.phase != identity.phase
+            || context.session != identity.session
+            || context.generation != identity.generation
+            || guard.api != "execute_asset_mutation"
+            || !guard.claimed
+            || guard.consumed
+            || guard.context.task_id != identity.task_id
+            || guard.context.phase != identity.phase
+            || guard.context.session != identity.session
+            || guard.context.generation != identity.generation
+            || guard_payload.get("status").and_then(Value::as_str)
+                != Some("accepted_by_native_guard")
+            || guard_payload.get("registrationId").and_then(Value::as_str) != Some(registration_id)
+            || guard_payload.get("phase").and_then(Value::as_str) != Some(phase)
+            || guard_payload.get("operationId").and_then(Value::as_str) != Some(operation_id)
+            || guard_payload.get("operationIndex").and_then(Value::as_u64)
+                != Some(operation_index as u64)
+            || guard_payload.get("operationCount").and_then(Value::as_u64)
+                != Some(operation_count as u64)
+            || matching_terminal_receipt
+            || !crate::asset_mutation::asset_mutation_in_flight_matches(
+                registration_id,
+                phase,
+                tool_name,
+                operation_id,
+                operation_index,
+                operation_count,
+                change_set_id,
+                run_id,
+            )
+        {
+            return Err(BridgeError::new(CODE));
+        }
+        return Err(BridgeError::new("MVP15D_MCP_PENDING_NOT_VISIBLE"));
+    }
+    if candidates.len() != 1 {
+        return Err(BridgeError::new(CODE));
+    }
+    let pending = candidates[0];
+    let context = ledger
+        .context
+        .as_ref()
+        .ok_or_else(|| BridgeError::new(CODE))?;
+    if context.task_id != identity.task_id
+        || context.phase != identity.phase
+        || context.session != identity.session
+        || context.generation != identity.generation
+        || pending
+            .request
+            .pointer("/intent/taskId")
+            .and_then(Value::as_str)
+            != Some(identity.task_id.as_str())
+        || pending
+            .request
+            .pointer("/intent/phase")
+            .and_then(Value::as_str)
+            != Some(identity.phase.as_str())
+        || pending
+            .request
+            .pointer("/intent/phaseSessionId")
+            .and_then(Value::as_str)
+            != Some(identity.session.as_str())
+        || pending
+            .request
+            .pointer("/intent/phaseGeneration")
+            .and_then(Value::as_u64)
+            != Some(identity.generation)
+        || pending.request.get("endpoint").and_then(Value::as_str)
+            != Some(identity.endpoint.as_str())
+        || pending.request.get("httpMethod").and_then(Value::as_str) != Some("POST")
+        || pending
+            .request
+            .pointer("/intent/toolSearchMode")
+            .and_then(Value::as_str)
+            != Some("ui")
+    {
+        return Err(BridgeError::new(CODE));
+    }
+    let guard = ledger
+        .records
+        .get(guard_receipt_id)
+        .ok_or_else(|| BridgeError::new(CODE))?;
+    let guard_payload = receipt_response_payload(guard);
+    let arguments = pending
+        .request
+        .pointer("/body/params/arguments")
+        .and_then(Value::as_object)
+        .ok_or_else(|| BridgeError::new(CODE))?;
+    if guard.api != "execute_asset_mutation"
+        || !guard.claimed
+        || guard.consumed
+        || guard.context.task_id != identity.task_id
+        || guard.context.phase != identity.phase
+        || guard.context.session != identity.session
+        || guard.context.generation != identity.generation
+        || guard_payload.get("status").and_then(Value::as_str) != Some("accepted_by_native_guard")
+        || guard_payload.get("registrationId").and_then(Value::as_str) != Some(registration_id)
+        || guard_payload.get("phase").and_then(Value::as_str) != Some(phase)
+        || guard_payload.get("operationId").and_then(Value::as_str) != Some(operation_id)
+        || guard_payload.get("operationIndex").and_then(Value::as_u64)
+            != Some(operation_index as u64)
+        || guard_payload.get("operationCount").and_then(Value::as_u64)
+            != Some(operation_count as u64)
+        || guard_payload
+            .get("acceptedPlanBinding")
+            .and_then(Value::as_str)
+            .is_none_or(|value| !is_lower_hex(value, 64))
+        || guard_payload
+            .get("nativeCreatedAt")
+            .and_then(Value::as_u64)
+            .is_none_or(|value| value == 0)
+        || guard_payload
+            .get("connectionGeneration")
+            .and_then(Value::as_u64)
+            .is_none_or(|value| value == 0)
+        || guard_payload
+            .get("sessionGeneration")
+            .and_then(Value::as_u64)
+            .is_none_or(|value| value == 0)
+        || [
+            "nativeSourceIdentity",
+            "nativeManifestIdentity",
+            "nativePluginIdentity",
+            "nativePackageIdentity",
+        ]
+        .iter()
+        .any(|key| {
+            guard_payload
+                .get(*key)
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+        })
+        || arguments.get("acceptedPlanBinding") != guard_payload.get("acceptedPlanBinding")
+        || arguments.get("nativeCreatedAt") != guard_payload.get("nativeCreatedAt")
+        || arguments.get("connectionGeneration") != guard_payload.get("connectionGeneration")
+        || arguments.get("sessionGeneration") != guard_payload.get("sessionGeneration")
+        || arguments.get("nativeSourceIdentity") != guard_payload.get("nativeSourceIdentity")
+        || arguments.get("nativeManifestIdentity") != guard_payload.get("nativeManifestIdentity")
+        || arguments.get("nativePluginIdentity") != guard_payload.get("nativePluginIdentity")
+        || arguments.get("nativePackageIdentity") != guard_payload.get("nativePackageIdentity")
+        || arguments.get("dryRun").and_then(Value::as_bool) != Some(false)
+        || arguments.get("execute").and_then(Value::as_bool) != Some(true)
+        || arguments.get("rollback").and_then(Value::as_bool) != Some(false)
+        || pending.request.pointer("/intent/connectionGeneration")
+            != arguments.get("connectionGeneration")
+        || pending
+            .request
+            .get("protocolVersion")
+            .and_then(Value::as_str)
+            != Some("2025-06-18")
+        || pending.request.get("sessionId").and_then(Value::as_str) != Some(mcp_session_id)
+        || pending.registered_after_receipt_sequence != guard.sequence
+        || pending.dispatched_after_receipt_sequence != Some(guard.sequence)
+        || !crate::asset_mutation::asset_mutation_in_flight_matches(
+            registration_id,
+            phase,
+            tool_name,
+            operation_id,
+            operation_index,
+            operation_count,
+            change_set_id,
+            run_id,
+        )
+    {
+        return Err(BridgeError::new(CODE));
+    }
+    let matching_transport_or_boundary_exists = ledger.records.values().any(|record| {
+        (matches!(
+            record.api.as_str(),
+            "mcp_asset_tool_call" | "mcp_transport_failure"
+        ) && sha256_bytes(canonical_json(&record.request).as_bytes()) == pending.request_sha256)
+            || (record.api == "asset_mutation_observation_boundary"
+                && record.response.get("requestSha256").and_then(Value::as_str)
+                    == Some(pending.request_sha256.as_str()))
+    });
+    let matching_outcome_exists = ledger.records.values().any(|record| {
+        record.api == "record_asset_mutation_outcome"
+            && record.request.get("registrationId").and_then(Value::as_str) == Some(registration_id)
+            && record.request.get("phase").and_then(Value::as_str) == Some(phase)
+            && record.request.get("operationId").and_then(Value::as_str) == Some(operation_id)
+    });
+    if matching_transport_or_boundary_exists || matching_outcome_exists {
+        return Err(BridgeError::new(CODE));
+    }
+    let json_rpc_request_id = pending
+        .request
+        .pointer("/body/id")
+        .filter(|value| value.is_string() || value.is_number())
+        .cloned()
+        .ok_or_else(|| BridgeError::new(CODE))?;
+    let observation = json!({
+        "status": "observed",
+        "reason": "operation_response_pending",
+        "blocked": false,
+        "phase": phase,
+        "toolName": tool_name,
+        "registrationId": registration_id,
+        "changeSetId": change_set_id,
+        "runId": run_id,
+        "operationId": operation_id,
+        "operationIndex": operation_index,
+        "operationCount": operation_count,
+        "sideEffectObserved": false,
+        "effectState": "unknown",
+        "rollbackAvailable": false,
+        "implementationStatus": "execution_capable",
+        "dispatchId": pending.dispatch_id,
+        "requestSha256": pending.request_sha256,
+        "jsonRpcRequestId": json_rpc_request_id,
+        "guardReceiptId": guard_receipt_id,
+        "guardReceiptSequence": guard.sequence,
+        "transportStartedAfterReceiptSequence": pending.dispatched_after_receipt_sequence,
+        "mcpSessionId": mcp_session_id,
+        "evidenceId": pending.dispatch_id,
+    });
+    let receipt_id = issue_native_observation_receipt_locked_with_claim(
+        ledger,
+        "asset_mutation_observation_boundary",
+        request.clone(),
+        observation.clone(),
+        claim_receipt,
+    )
+    .ok_or_else(|| BridgeError::new(CODE))?;
+    return Ok(ObserveNativeStateResult {
+        schema_version: "uagent.mvp15d.native-state-observation.v1",
+        receipt_id,
+        request,
+        observation,
+    });
+}
+
+fn observe_asset_mutation_response_pending(
+    identity: &BridgeIdentity,
+    request: Value,
+) -> Result<ObserveNativeStateResult, BridgeError> {
+    const CODE: &str = "MVP15D_PARTIAL_OBSERVATION_BOUNDARY_INVALID";
+    let _ = parse_asset_mutation_boundary_request(&request)?;
+
+    let mut ledger = observation_receipt_ledger()
+        .lock()
+        .map_err(|_| BridgeError::new(CODE))?;
+    let matching_receipt_ids = ledger
+        .records
+        .iter()
+        .filter_map(|(receipt_id, record)| {
+            (record.api == "asset_mutation_observation_boundary" && record.request == request)
+                .then(|| receipt_id.clone())
+        })
+        .collect::<Vec<_>>();
+    if matching_receipt_ids.is_empty() {
+        return Err(BridgeError::new("MVP15D_MCP_PENDING_NOT_VISIBLE"));
+    }
+    if matching_receipt_ids.len() != 1 {
+        return Err(BridgeError::new(CODE));
+    }
+    let receipt_id = matching_receipt_ids[0].clone();
+    let record = ledger
+        .records
+        .get_mut(&receipt_id)
+        .ok_or_else(|| BridgeError::new(CODE))?;
+    if record.claimed
+        || record.consumed
+        || record.context.task_id != identity.task_id
+        || record.context.phase != identity.phase
+        || record.context.session != identity.session
+        || record.context.generation != identity.generation
+        || record.context.runtime_pid != identity.pid
+        || record.context.endpoint != identity.endpoint
+    {
+        return Err(BridgeError::new(CODE));
+    }
+    record.claimed = true;
+    Ok(ObserveNativeStateResult {
+        schema_version: "uagent.mvp15d.native-state-observation.v1",
+        receipt_id,
+        request,
+        observation: record.response.clone(),
+    })
 }
 
 fn native_mcp_response_basis(
@@ -578,8 +1262,8 @@ fn native_mcp_response_basis(
             "runtimePid": std::process::id(),
         }));
     }
+    let request_body = parse_mcp_json_body(&input.body)?;
     let parsed_body = if result.body.trim().is_empty() {
-        let request_body = parse_mcp_json_body(&input.body)?;
         let accepted_notification = result.status == 202
             && request_body.get("jsonrpc").and_then(Value::as_str) == Some("2.0")
             && request_body
@@ -594,6 +1278,17 @@ fn native_mcp_response_basis(
     } else {
         parse_mcp_json_body(&result.body)?
     };
+    if let Some(request_id) = request_body.get("id") {
+        if parsed_body.get("id") != Some(request_id) {
+            return Err(BridgeError::new(
+                "MVP15D_MCP_OBSERVATION_RESPONSE_ID_INVALID",
+            ));
+        }
+    } else if parsed_body.get("id").is_some() {
+        return Err(BridgeError::new(
+            "MVP15D_MCP_OBSERVATION_RESPONSE_ID_INVALID",
+        ));
+    }
     Ok(json!({
         "status": result.status,
         "body": result.body,
@@ -668,7 +1363,7 @@ pub(crate) fn record_native_mcp_transport_failure(
     if input.observation.is_none() {
         return;
     }
-    let Ok(request) = native_mcp_request_basis(input) else {
+    let Some(request) = native_mcp_failure_request_basis(input) else {
         return;
     };
     let api = if input.method == crate::mcp::McpHttpMethod::Delete {
@@ -691,7 +1386,170 @@ pub(crate) fn record_native_mcp_transport_failure(
             "runtimePid": std::process::id(),
         })
     };
-    let _ = issue_native_observation_receipt(api, request, response);
+    let mut mutation_outcome = if api == "mcp_transport_failure" {
+        failed_asset_mutation_transport_identity(&request)
+    } else {
+        None
+    };
+    let malformed_asset_request = api == "mcp_transport_failure"
+        && mutation_outcome.is_none()
+        && parse_mcp_json_body(&input.body).is_err();
+    let receipt_id = {
+        let Ok(mut ledger) = observation_receipt_ledger().lock() else {
+            return;
+        };
+        if malformed_asset_request {
+            mutation_outcome = failed_asset_mutation_boundary_identity(input, &ledger);
+        }
+        let existing_receipt_id = ledger.records.iter().find_map(|(receipt_id, record)| {
+            (record.api == api && record.request == request).then(|| receipt_id.clone())
+        });
+        existing_receipt_id.or_else(|| {
+            issue_native_observation_receipt_locked(&mut ledger, api, request, response)
+        })
+    };
+    if let (Some(receipt_id), Some(mutation_outcome)) = (receipt_id, mutation_outcome) {
+        if !crate::asset_mutation::asset_mutation_in_flight_matches(
+            &mutation_outcome.registration_id,
+            &mutation_outcome.phase,
+            &mutation_outcome.tool_name,
+            &mutation_outcome.operation_id,
+            mutation_outcome.operation_index,
+            mutation_outcome.operation_count,
+            &mutation_outcome.change_set_id,
+            &mutation_outcome.run_id,
+        ) {
+            return;
+        }
+        let _ = crate::asset_mutation::record_asset_mutation_outcome(
+            crate::asset_mutation::RecordAssetMutationOutcomeInput {
+                registration_id: mutation_outcome.registration_id,
+                phase: mutation_outcome.phase,
+                operation_id: mutation_outcome.operation_id,
+                success: false,
+                side_effect_observed: false,
+                effect_state: "unknown".to_string(),
+                rollback_available: false,
+                evidence_id: Some(receipt_id),
+                reason_code: Some("mcp_transport_terminal_observation_unavailable".to_string()),
+            },
+        );
+    }
+}
+
+struct FailedAssetMutationTransportIdentity {
+    registration_id: String,
+    phase: String,
+    tool_name: String,
+    operation_id: String,
+    operation_index: usize,
+    operation_count: usize,
+    change_set_id: String,
+    run_id: String,
+}
+
+fn failed_asset_mutation_transport_identity(
+    request: &Value,
+) -> Option<FailedAssetMutationTransportIdentity> {
+    if request.pointer("/body/method")?.as_str()? != "tools/call"
+        || request.get("sessionId")?.as_str()?.is_empty()
+    {
+        return None;
+    }
+    let tool_name = request.pointer("/body/params/name")?.as_str()?;
+    if !matches!(
+        tool_name,
+        "ue.asset.create_folder"
+            | "ue.asset.duplicate"
+            | "ue.asset.rename"
+            | "ue.asset.move"
+            | "ue.asset.save"
+            | "ue.asset.delete"
+    ) {
+        return None;
+    }
+    let arguments = request.pointer("/body/params/arguments")?;
+    let phase = arguments.get("nativePhase")?.as_str()?;
+    if !matches!(phase, "execute" | "rollback") {
+        return None;
+    }
+    let execute = arguments.get("execute")?.as_bool()?;
+    let rollback = arguments.get("rollback")?.as_bool()?;
+    let dry_run = arguments.get("dryRun")?.as_bool()?;
+    if dry_run
+        || (phase == "execute" && (!execute || rollback))
+        || (phase == "rollback" && (execute || !rollback))
+    {
+        return None;
+    }
+    Some(FailedAssetMutationTransportIdentity {
+        registration_id: arguments.get("nativeRegistrationId")?.as_str()?.to_string(),
+        phase: phase.to_string(),
+        tool_name: tool_name.to_string(),
+        operation_id: arguments.get("operationId")?.as_str()?.to_string(),
+        operation_index: usize::try_from(arguments.get("nativeOperationIndex")?.as_u64()?).ok()?,
+        operation_count: usize::try_from(arguments.get("nativeOperationCount")?.as_u64()?).ok()?,
+        change_set_id: arguments.get("changeSetId")?.as_str()?.to_string(),
+        run_id: arguments.get("runId")?.as_str()?.to_string(),
+    })
+}
+
+fn failed_asset_mutation_boundary_identity(
+    input: &crate::mcp::McpHttpRequestInput,
+    ledger: &ObservationReceiptLedger,
+) -> Option<FailedAssetMutationTransportIdentity> {
+    if input.method != crate::mcp::McpHttpMethod::Post {
+        return None;
+    }
+    let intent = input.observation.as_ref()?;
+    let boundary_request = intent.asset_mutation_boundary.as_ref()?;
+    let boundary = parse_asset_mutation_boundary_request(boundary_request).ok()?;
+    if intent.schema_version != MCP_OBSERVATION_INTENT_SCHEMA
+        || intent.tool_search_mode != "ui"
+        || intent.connection_generation == 0
+        || input.session_id.as_deref() != Some(boundary.mcp_session_id)
+    {
+        return None;
+    }
+    let identity = FailedAssetMutationTransportIdentity {
+        registration_id: boundary.registration_id.to_string(),
+        phase: boundary.phase.to_string(),
+        tool_name: boundary.tool_name.to_string(),
+        operation_id: boundary.operation_id.to_string(),
+        operation_index: boundary.operation_index,
+        operation_count: boundary.operation_count,
+        change_set_id: boundary.change_set_id.to_string(),
+        run_id: boundary.run_id.to_string(),
+    };
+    let context = ledger.context.as_ref()?;
+    let guard = ledger.records.get(boundary.guard_receipt_id)?;
+    let guard_payload = receipt_response_payload(guard);
+    if context.task_id != intent.task_id
+        || context.phase.as_str() != intent.phase
+        || context.session != intent.phase_session_id
+        || context.generation != intent.phase_generation
+        || context.endpoint != input.endpoint
+        || guard.api != "execute_asset_mutation"
+        || !guard.claimed
+        || guard.consumed
+        || guard.context.task_id != intent.task_id
+        || guard.context.phase.as_str() != intent.phase
+        || guard.context.session != intent.phase_session_id
+        || guard.context.generation != intent.phase_generation
+        || guard.context.endpoint != input.endpoint
+        || guard_payload.get("status").and_then(Value::as_str) != Some("accepted_by_native_guard")
+        || guard_payload.get("registrationId").and_then(Value::as_str)
+            != Some(boundary.registration_id)
+        || guard_payload.get("phase").and_then(Value::as_str) != Some(boundary.phase)
+        || guard_payload.get("operationId").and_then(Value::as_str) != Some(boundary.operation_id)
+        || guard_payload.get("operationIndex").and_then(Value::as_u64)
+            != Some(boundary.operation_index as u64)
+        || guard_payload.get("operationCount").and_then(Value::as_u64)
+            != Some(boundary.operation_count as u64)
+    {
+        return None;
+    }
+    Some(identity)
 }
 
 fn consume_observation_receipt(
@@ -1189,6 +2047,7 @@ pub struct PartialUnknownInput {
     registration_id: String,
     session_begin: RawObservedCallInput,
     registration_call: RawObservedCallInput,
+    session_setup_calls: Vec<RawObservedCallInput>,
     operation_results: Vec<PartialOperationInput>,
     content_before: ContentManifestInput,
     content_after: ContentManifestInput,
@@ -1824,6 +2683,32 @@ fn u64_field(value: &Value, key: &str, code: &'static str) -> Result<u64, Bridge
         .ok_or_else(|| BridgeError::new(code))
 }
 
+fn response_evidence_id<'a>(
+    payload: &'a Value,
+    status: &str,
+    code: &'static str,
+) -> Result<Option<&'a str>, BridgeError> {
+    let evidence_value = payload.get("evidenceId");
+    let evidence_id = evidence_value.and_then(Value::as_str);
+    let valid = if status == "blocked" {
+        evidence_value.is_none_or(Value::is_null)
+    } else {
+        evidence_id.is_some_and(|value| value.len() >= 8)
+    };
+    valid
+        .then_some(evidence_id)
+        .ok_or_else(|| BridgeError::new(code))
+}
+
+fn response_reason<'a>(payload: &'a Value, code: &'static str) -> Result<&'a str, BridgeError> {
+    payload
+        .as_object()
+        .and_then(|object| object.get("reason").or_else(|| object.get("reasonCode")))
+        .and_then(Value::as_str)
+        .filter(|field| !field.is_empty())
+        .ok_or_else(|| BridgeError::new(code))
+}
+
 fn call_receipt(
     identity: &BridgeIdentity,
     input: &RawObservedCallInput,
@@ -1838,11 +2723,11 @@ fn call_receipt(
         consume_observation_receipt(identity, &input.receipt_id, api, &input.request, code)?;
     let payload = receipt_response_payload(&record);
     let status = string_field(payload, "status", code)?;
-    let reason = string_field(payload, "reason", code)?;
-    let evidence_id = string_field(payload, "evidenceId", code)?;
-    if status != expected_status || evidence_id.len() < 8 {
+    let reason = response_reason(payload, code)?;
+    if status != expected_status {
         return Err(BridgeError::new(code));
     }
+    let evidence_id = response_evidence_id(payload, status, code)?;
     Ok(json!({
         "api": api,
         "receiptId": input.receipt_id,
@@ -2406,6 +3291,70 @@ fn happy_path_native_token_valid(
         }
 }
 
+fn happy_path_correlated_id_valid(
+    index: usize,
+    operation_id: &str,
+    forward_operation_ids: &[String],
+) -> bool {
+    const FORWARD_COUNT: usize = 5;
+    const INVERSE_COUNT: usize = 4;
+    if operation_id.len() < 8 {
+        return false;
+    }
+    if index < FORWARD_COUNT {
+        return !forward_operation_ids
+            .iter()
+            .any(|observed| observed == operation_id);
+    }
+    let inverse_index = index - FORWARD_COUNT;
+    if inverse_index >= INVERSE_COUNT {
+        return false;
+    }
+    forward_operation_ids
+        .get(INVERSE_COUNT - 1 - inverse_index)
+        .is_some_and(|observed| observed == operation_id)
+}
+
+fn stable_content_observation_pair(before: &Value, after: &Value) -> bool {
+    before["sha256"] == after["sha256"]
+        && before["evidenceId"] == after["evidenceId"]
+        && before["receiptId"] != after["receiptId"]
+}
+
+fn retained_receipt_sequence(receipt: &Value) -> Option<u64> {
+    receipt
+        .get("receiptSequence")
+        .or_else(|| receipt.get("sequence"))
+        .and_then(Value::as_u64)
+}
+
+fn retain_negative_case_identities(
+    seen: &mut Vec<String>,
+    pre_registration: bool,
+    session_id: &str,
+    native_session_id: &str,
+    run_id: &str,
+    registration_id: &str,
+) -> bool {
+    let session_identities = [session_id, native_session_id, registration_id];
+    if run_id.len() < 8
+        || session_identities.iter().any(|value| value.len() < 8)
+        || session_identities
+            .iter()
+            .any(|value| seen.contains(&value.to_string()))
+        || (!pre_registration && seen.contains(&run_id.to_string()))
+    {
+        return false;
+    }
+    seen.extend(session_identities.iter().map(|value| value.to_string()));
+    // N1/N2 are rejected before a run authority exists, so their shared proposed
+    // plan run remains reusable while the rendered sessions and attempts stay unique.
+    if !pre_registration {
+        seen.push(run_id.to_string());
+    }
+    true
+}
+
 fn expected_negative_case_reason(case_id: &str) -> Option<&'static str> {
     match case_id {
         "N1" => Some("untrusted_root"),
@@ -2420,12 +3369,123 @@ fn expected_negative_case_reason(case_id: &str) -> Option<&'static str> {
     }
 }
 
+fn consume_partial_session_setup_receipts(
+    identity: &BridgeIdentity,
+    session_id: &str,
+    setup_calls: &[RawObservedCallInput],
+    code: &'static str,
+) -> Result<Vec<Value>, BridgeError> {
+    const DRY_RUN_TOOLS: [&str; 5] = [
+        "ue.asset.create_folder",
+        "ue.asset.duplicate",
+        "ue.asset.rename",
+        "ue.asset.move",
+        "ue.asset.save",
+    ];
+    let (attestation_setup, dry_run_setups) = match setup_calls {
+        setups if setups.len() == DRY_RUN_TOOLS.len() => (None, setups),
+        [attestation, dry_runs @ ..] if dry_runs.len() == DRY_RUN_TOOLS.len() => {
+            (Some(attestation), dry_runs)
+        }
+        _ => return Err(BridgeError::new(code)),
+    };
+    let mut receipts = Vec::with_capacity(setup_calls.len());
+    if let Some(setup) = attestation_setup {
+        let record = consume_observation_receipt(
+            identity,
+            &setup.receipt_id,
+            "attest_mvp15_companion",
+            &setup.request,
+            code,
+        )?;
+        let payload = receipt_response_payload(&record);
+        if string_field(payload, "status", code)? != "observed"
+            || response_reason(payload, code)? != "loaded_module_identity_verified"
+            || setup.request.get("editorSessionId").and_then(Value::as_str) != Some(session_id)
+            || !valid_loaded_companion_attestation(&record)
+        {
+            return Err(BridgeError::new(code));
+        }
+        receipts.push(json!({
+            "api": record.api,
+            "id": setup.receipt_id,
+            "sequence": record.sequence,
+            "status": payload.get("status"),
+            "reason": payload.get("reason"),
+            "editorSessionId": setup.request.get("editorSessionId"),
+        }));
+    }
+    for (setup, tool_name) in dry_run_setups.iter().zip(DRY_RUN_TOOLS) {
+        let record = consume_observation_receipt(
+            identity,
+            &setup.receipt_id,
+            "mcp_asset_tool_call",
+            &setup.request,
+            code,
+        )?;
+        let payload = receipt_response_payload(&record);
+        if string_field(payload, "status", code)? != "dry_run_completed"
+            || string_field(payload, "phase", code)? != "dry_run"
+            || string_field(payload, "toolName", code)? != tool_name
+            || payload.get("sideEffectObserved").and_then(Value::as_bool) != Some(false)
+            || payload.get("effectState").and_then(Value::as_str) != Some("known_none")
+        {
+            return Err(BridgeError::new(code));
+        }
+        receipts.push(json!({
+            "api": record.api,
+            "id": setup.receipt_id,
+            "sequence": record.sequence,
+            "status": payload.get("status"),
+            "phase": payload.get("phase"),
+            "toolName": payload.get("toolName"),
+        }));
+    }
+    if !receipts.windows(2).all(|pair| {
+        pair[0]["sequence"].as_u64().unwrap_or(u64::MAX) < pair[1]["sequence"].as_u64().unwrap_or(0)
+    }) {
+        return Err(BridgeError::new(code));
+    }
+    Ok(receipts)
+}
+
 fn publish_ui_authority_events(
     file: &mut File,
     identity: &BridgeIdentity,
     input: &UiStoreEvidenceInput,
 ) -> Result<(), BridgeError> {
     const CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_INVALID";
+    const REGISTRATION_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_REGISTRATION_INVALID";
+    const DRY_RUN_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_DRY_RUN_INVALID";
+    const OPERATION_SHAPE_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_OPERATION_SHAPE_INVALID";
+    const OPERATION_NATIVE_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_OPERATION_NATIVE_INVALID";
+    const OPERATION_MCP_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_OPERATION_MCP_INVALID";
+    const OPERATION_EVIDENCE_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_OPERATION_ID_INVALID";
+    const NEGATIVE_SHAPE_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_SHAPE_INVALID";
+    const NEGATIVE_CONTROL_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_CONTROL_INVALID";
+    const NEGATIVE_IDENTITY_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_IDENTITY_INVALID";
+    const NEGATIVE_COUNTER_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_COUNTER_INVALID";
+    const NEGATIVE_CLOSEOUT_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_CLOSEOUT_INVALID";
+    const NEGATIVE_SETUP_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_SETUP_INVALID";
+    const NEGATIVE_GUARD_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_GUARD_INVALID";
+    const NEGATIVE_CLEANUP_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_CLEANUP_INVALID";
+    const NEGATIVE_CONTENT_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_CONTENT_INVALID";
+    const PARTIAL_SHAPE_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SHAPE_INVALID";
+    const PARTIAL_COUNTER_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_COUNTER_INVALID";
+    const PARTIAL_IDENTITY_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_IDENTITY_INVALID";
+    const PARTIAL_CLOSEOUT_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_CLOSEOUT_INVALID";
+    const PARTIAL_SETUP_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SETUP_INVALID";
+    const PARTIAL_EVIDENCE_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_EVIDENCE_INVALID";
+    const PARTIAL_CONTENT_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_CONTENT_INVALID";
+    const PARTIAL_STATUS_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_STATUS_INVALID";
+    const PARTIAL_EFFECT_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_EFFECT_INVALID";
+    const PARTIAL_REASON_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_REASON_INVALID";
+    const REPLAY_RECEIPT_CONSUME_CODE: &str =
+        "MVP15D_BRIDGE_UI_EVIDENCE_REPLAY_RECEIPT_CONSUME_INVALID";
+    const REPLAY_RECEIPT_RESPONSE_CODE: &str =
+        "MVP15D_BRIDGE_UI_EVIDENCE_REPLAY_RECEIPT_RESPONSE_INVALID";
+    const REPLAY_COUNTER_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_REPLAY_COUNTER_INVALID";
+    const REPLAY_STATE_CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_REPLAY_STATE_INVALID";
     const FORWARD: [&str; 5] = [
         "create_run_root",
         "duplicate_test01",
@@ -2446,7 +3506,12 @@ fn publish_ui_authority_events(
     if input.change_set_state.as_deref() != Some("rolled_back")
         || input.forward_actions != FORWARD
         || input.inverse_actions != INVERSE
-        || ledger.dry_run_actions != 1
+    {
+        return Err(BridgeError::new(
+            "MVP15D_BRIDGE_UI_EVIDENCE_SUMMARY_STATE_INVALID",
+        ));
+    }
+    if ledger.dry_run_actions != 1
         || ledger.dry_run_calls != 5
         || ledger.native_registrations != 1
         || ledger.opaque_tokens_issued != 1
@@ -2457,23 +3522,49 @@ fn publish_ui_authority_events(
         || ledger.rollback_calls != 4
         || ledger.second_execute_calls != 0
         || ledger.second_rollback_calls != 0
-        || !(65_000..=90_000).contains(&input.cross_ttl_elapsed_milliseconds)
-        || ledger.content_observation_count != 4
+    {
+        return Err(BridgeError::new(
+            "MVP15D_BRIDGE_UI_EVIDENCE_SUMMARY_LEDGER_INVALID",
+        ));
+    }
+    if !(65_000..=90_000).contains(&input.cross_ttl_elapsed_milliseconds) {
+        return Err(BridgeError::new(
+            "MVP15D_BRIDGE_UI_EVIDENCE_SUMMARY_TTL_INVALID",
+        ));
+    }
+    if ledger.content_observation_count != 4
         || ledger.registration_id.as_deref().is_none_or(str::is_empty)
         || ledger.change_set_id.as_deref().is_none_or(str::is_empty)
         || ledger.run_id.as_deref().is_none_or(str::is_empty)
-        || baseline.is_none_or(|value| !is_lower_hex(value, 64))
+    {
+        return Err(BridgeError::new(
+            "MVP15D_BRIDGE_UI_EVIDENCE_SUMMARY_IDENTITY_INVALID",
+        ));
+    }
+    if baseline.is_none_or(|value| !is_lower_hex(value, 64))
         || ledger.latest_content_sha256.as_deref() != baseline
-        || input.final_verification.status != "passed"
+    {
+        return Err(BridgeError::new(
+            "MVP15D_BRIDGE_UI_EVIDENCE_SUMMARY_CONTENT_INVALID",
+        ));
+    }
+    if input.final_verification.status != "passed"
         || !input.final_verification.restored
         || input.final_verification.baseline_sha256.as_deref() != baseline
         || input.final_verification.observed_sha256.as_deref() != baseline
-        || input.operations.len() != FORWARD.len() + INVERSE.len()
+    {
+        return Err(BridgeError::new(
+            "MVP15D_BRIDGE_UI_EVIDENCE_SUMMARY_FINAL_INVALID",
+        ));
+    }
+    if input.operations.len() != FORWARD.len() + INVERSE.len()
         || input.content_manifests.len() != 2
         || input.negative_cases.len() != 8
-        || input.partial_unknown.operation_results.len() != 9
+        || input.partial_unknown.operation_results.len() != 10
     {
-        return Err(BridgeError::new(CODE));
+        return Err(BridgeError::new(
+            "MVP15D_BRIDGE_UI_EVIDENCE_SUMMARY_COVERAGE_INVALID",
+        ));
     }
 
     let (registration_observation, opaque_token) = consume_happy_path_registration(
@@ -2481,12 +3572,14 @@ fn publish_ui_authority_events(
         &input.registration_call,
         registration_id,
         run_id,
-        CODE,
+        REGISTRATION_CODE,
     )?;
-    let dry_run_observations = consume_happy_path_dry_runs(identity, &input.dry_run_calls, CODE)?;
+    let dry_run_observations =
+        consume_happy_path_dry_runs(identity, &input.dry_run_calls, DRY_RUN_CODE)?;
 
     let mut operation_ids = Vec::new();
-    let mut call_evidence_ids = Vec::new();
+    let mut native_evidence_ids = Vec::new();
+    let mut mcp_evidence_ids = Vec::new();
     for (index, operation) in input.operations.iter().enumerate() {
         let (direction, action) = if index < FORWARD.len() {
             ("forward", FORWARD[index])
@@ -2495,8 +3588,7 @@ fn publish_ui_authority_events(
         };
         if operation.direction != direction
             || operation.action != action
-            || operation.operation_id.len() < 8
-            || operation_ids.contains(&operation.operation_id)
+            || !happy_path_correlated_id_valid(index, &operation.operation_id, &operation_ids)
             || operation.registration_id.as_str() != ledger.registration_id.as_deref().unwrap_or("")
             || operation.run_id.as_str() != ledger.run_id.as_deref().unwrap_or("")
             || operation.side_effect_count != 1
@@ -2507,9 +3599,11 @@ fn publish_ui_authority_events(
                 &opaque_token,
             )
         {
-            return Err(BridgeError::new(CODE));
+            return Err(BridgeError::new(OPERATION_SHAPE_CODE));
         }
-        operation_ids.push(operation.operation_id.clone());
+        if index < FORWARD.len() {
+            operation_ids.push(operation.operation_id.clone());
+        }
         let native_call = call_receipt(
             identity,
             &operation.native_call,
@@ -2519,21 +3613,37 @@ fn publish_ui_authority_events(
                 "rollback_asset_mutation"
             },
             "accepted_by_native_guard",
-            CODE,
+            OPERATION_NATIVE_CODE,
         )?;
         let mcp_call = call_receipt(
             identity,
             &operation.mcp_call,
             "mcp_asset_tool_call",
-            "succeeded",
-            CODE,
+            if direction == "forward" {
+                "executed"
+            } else {
+                "rolled_back"
+            },
+            OPERATION_MCP_CODE,
         )?;
-        for evidence_id in [&native_call["evidenceId"], &mcp_call["evidenceId"]] {
-            let value = evidence_id.as_str().ok_or_else(|| BridgeError::new(CODE))?;
-            if call_evidence_ids.iter().any(|observed| observed == value) {
-                return Err(BridgeError::new(CODE));
-            }
-            call_evidence_ids.push(value.to_string());
+        let native_evidence_id = native_call["evidenceId"]
+            .as_str()
+            .ok_or_else(|| BridgeError::new(OPERATION_EVIDENCE_CODE))?;
+        if native_evidence_ids
+            .iter()
+            .any(|observed| observed == native_evidence_id)
+        {
+            return Err(BridgeError::new(OPERATION_EVIDENCE_CODE));
+        }
+        native_evidence_ids.push(native_evidence_id.to_string());
+        let mcp_evidence_id = mcp_call["evidenceId"]
+            .as_str()
+            .ok_or_else(|| BridgeError::new(OPERATION_EVIDENCE_CODE))?;
+        if !happy_path_correlated_id_valid(index, mcp_evidence_id, &mcp_evidence_ids) {
+            return Err(BridgeError::new(OPERATION_EVIDENCE_CODE));
+        }
+        if index < FORWARD.len() {
+            mcp_evidence_ids.push(mcp_evidence_id.to_string());
         }
         append_event(
             file,
@@ -2593,9 +3703,8 @@ fn publish_ui_authority_events(
         final_sandbox_directory_state(identity, run_id, CODE)?;
     if manifests[0]["stage"].as_str() != Some("before")
         || manifests[1]["stage"].as_str() != Some("after")
-        || manifests[0]["sha256"] != manifests[1]["sha256"]
+        || !stable_content_observation_pair(&manifests[0], &manifests[1])
         || manifests[0]["sha256"].as_str() != baseline
-        || manifests[0]["evidenceId"] == manifests[1]["evidenceId"]
         || manifests[0]["test01"] != manifests[1]["test01"]
         || manifests[0]["outsideRunAggregateSha256"] != manifests[1]["outsideRunAggregateSha256"]
         || manifests
@@ -2633,9 +3742,20 @@ fn publish_ui_authority_events(
         )?;
     }
 
+    const NEGATIVE_CODES: [&str; 8] = [
+        "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_N1_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_N2_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_N3_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_N4_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_N5_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_N6_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_N7_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_NEGATIVE_N8_INVALID",
+    ];
     let mut negative_identities = Vec::new();
     for (index, record) in input.negative_cases.iter().enumerate() {
         let case_id = format!("N{}", index + 1);
+        let negative_code = NEGATIVE_CODES[index];
         let expected_api = if matches!(case_id.as_str(), "N1" | "N2") {
             "register_asset_mutation_approval"
         } else if case_id == "N6" {
@@ -2645,21 +3765,18 @@ fn publish_ui_authority_events(
         } else {
             "execute_asset_mutation"
         };
-        let identities = [
-            record.session_id.as_str(),
-            record.native_session_id.as_str(),
-            record.run_id.as_str(),
-            record.registration_id.as_str(),
-        ];
         let pre_registration = matches!(case_id.as_str(), "N1" | "N2");
         if record.case_id != case_id
             || record.evidence_source != "rendered_product_control"
             || record.guard_api != expected_api
-            || record.run_id.len() < 8
-            || identities.iter().any(|value| value.len() < 8)
-            || identities
-                .iter()
-                .any(|value| negative_identities.contains(&value.to_string()))
+            || !retain_negative_case_identities(
+                &mut negative_identities,
+                pre_registration,
+                &record.session_id,
+                &record.native_session_id,
+                &record.run_id,
+                &record.registration_id,
+            )
             || record.counters_before.len() != 5
             || record.counters_after.len() != 5
             || record.content_before.stage != "before"
@@ -2676,14 +3793,13 @@ fn publish_ui_authority_events(
                     || record.mcp_mutation_count != 0
                     || record.manifest_ownership_count != 0))
         {
-            return Err(BridgeError::new(CODE));
+            return Err(BridgeError::new(NEGATIVE_SHAPE_CODE));
         }
-        negative_identities.extend(identities.iter().map(|value| value.to_string()));
         let rendered_control = consume_rendered_negative_control(
             identity,
             &record.rendered_control_call,
             &case_id,
-            CODE,
+            NEGATIVE_CONTROL_CODE,
         )?;
         let identity_receipts = if pre_registration {
             let api = if case_id == "N1" {
@@ -2696,7 +3812,7 @@ fn publish_ui_authority_events(
                 &record.registration_call,
                 api,
                 expected_negative_case_reason(&case_id).unwrap_or_default(),
-                CODE,
+                NEGATIVE_IDENTITY_CODE,
             )?;
             json!({
                 "renderedControl": rendered_control,
@@ -2712,7 +3828,7 @@ fn publish_ui_authority_events(
                     &record.session_id,
                     &record.run_id,
                     &record.registration_id,
-                    CODE,
+                    NEGATIVE_IDENTITY_CODE,
                 )?,
             })
         };
@@ -2720,13 +3836,13 @@ fn publish_ui_authority_events(
             identity,
             &record.counter_read_before,
             &record.counters_before,
-            CODE,
+            NEGATIVE_COUNTER_CODE,
         )?;
         let counter_after = consume_counter_receipt(
             identity,
             &record.counter_read_after,
             &record.counters_after,
-            CODE,
+            NEGATIVE_COUNTER_CODE,
         )?;
         let closeout_receipts = if pre_registration {
             consume_negative_pre_registration_closeout(
@@ -2734,7 +3850,7 @@ fn publish_ui_authority_events(
                 &record.observation_stop,
                 &record.mcp_disconnect,
                 &case_id,
-                CODE,
+                NEGATIVE_CLOSEOUT_CODE,
             )?
         } else {
             stopped_and_disconnected(
@@ -2743,7 +3859,7 @@ fn publish_ui_authority_events(
                 &record.mcp_disconnect,
                 &record.session_id,
                 &record.native_session_id,
-                CODE,
+                NEGATIVE_CLOSEOUT_CODE,
             )?
         };
         let mut setup_receipts = Vec::with_capacity(record.setup_calls.len());
@@ -2755,6 +3871,7 @@ fn publish_ui_authority_events(
                 &setup.request,
                 &[
                     "retract_mvp15_companion_approvals",
+                    "attest_mvp15_companion",
                     "stop_editor_observation_session",
                     "create_managed_editor_process",
                     "terminate_managed_editor_process",
@@ -2764,7 +3881,7 @@ fn publish_ui_authority_events(
                     "mcp_asset_tool_call",
                     "record_asset_mutation_outcome",
                 ],
-                CODE,
+                NEGATIVE_SETUP_CODE,
             )?;
             let payload = receipt_response_payload(&receipt);
             let status = payload
@@ -2873,6 +3990,24 @@ fn publish_ui_authority_events(
                             == Some(record.session_id.as_str())
                 }
                 "retract_mvp15_companion_approvals" => status == "retracted",
+                "attest_mvp15_companion" => {
+                    status == "observed"
+                        && reason == "loaded_module_identity_verified"
+                        && receipt
+                            .request
+                            .get("editorSessionId")
+                            .and_then(Value::as_str)
+                            == Some(record.session_id.as_str())
+                        && payload.get("manifest").is_some_and(Value::is_object)
+                        && payload
+                            .get("installedModules")
+                            .and_then(Value::as_array)
+                            .is_some_and(|modules| !modules.is_empty())
+                        && payload
+                            .get("loadedModules")
+                            .and_then(Value::as_array)
+                            .is_some_and(|modules| !modules.is_empty())
+                }
                 _ => false,
             };
             setup_receipts.push(json!({
@@ -2899,7 +4034,13 @@ fn publish_ui_authority_events(
         let guard_call = if pre_registration {
             identity_receipts["registrationAttempt"].clone()
         } else {
-            call_receipt(identity, &record.guard_call, expected_api, "blocked", CODE)?
+            call_receipt(
+                identity,
+                &record.guard_call,
+                expected_api,
+                "blocked",
+                NEGATIVE_GUARD_CODE,
+            )?
         };
         let mut cleanup_receipts = Vec::with_capacity(record.cleanup_calls.len());
         let mut cleanup_responses_valid = true;
@@ -2914,7 +4055,7 @@ fn publish_ui_authority_events(
                     "record_asset_mutation_outcome",
                     "approval_ownership_state",
                 ],
-                CODE,
+                NEGATIVE_CLEANUP_CODE,
             )?;
             let payload = receipt_response_payload(&receipt);
             cleanup_responses_valid &= match receipt.api.as_str() {
@@ -2995,12 +4136,18 @@ fn publish_ui_authority_events(
             .iter()
             .filter_map(|receipt| receipt["api"].as_str())
             .collect::<Vec<_>>();
+        let setup_contract_apis =
+            if !pre_registration && setup_apis.first() == Some(&"attest_mvp15_companion") {
+                &setup_apis[1..]
+            } else {
+                setup_apis.as_slice()
+            };
         const DRY_RUN: &str = "mcp_asset_tool_call";
         let setup_valid = match case_id.as_str() {
-            "N1" => setup_apis.is_empty(),
-            "N2" => setup_apis.is_empty(),
+            "N1" => setup_contract_apis.is_empty(),
+            "N2" => setup_contract_apis.is_empty(),
             "N3" => {
-                setup_apis
+                setup_contract_apis
                     == [
                         DRY_RUN,
                         DRY_RUN,
@@ -3011,7 +4158,7 @@ fn publish_ui_authority_events(
                     ]
             }
             "N4" => {
-                setup_apis
+                setup_contract_apis
                     == [
                         "create_managed_editor_process",
                         DRY_RUN,
@@ -3023,7 +4170,7 @@ fn publish_ui_authority_events(
                     ]
             }
             "N5" => {
-                setup_apis
+                setup_contract_apis
                     == [
                         DRY_RUN,
                         DRY_RUN,
@@ -3033,9 +4180,9 @@ fn publish_ui_authority_events(
                         "attach_editor_process",
                     ]
             }
-            "N6" => setup_apis == [DRY_RUN, DRY_RUN, DRY_RUN, DRY_RUN, DRY_RUN],
+            "N6" => setup_contract_apis == [DRY_RUN, DRY_RUN, DRY_RUN, DRY_RUN, DRY_RUN],
             "N7" => {
-                setup_apis
+                setup_contract_apis
                     == [
                         DRY_RUN,
                         DRY_RUN,
@@ -3048,7 +4195,7 @@ fn publish_ui_authority_events(
                     ]
             }
             "N8" => {
-                setup_apis
+                setup_contract_apis
                     == [
                         DRY_RUN,
                         DRY_RUN,
@@ -3076,7 +4223,10 @@ fn publish_ui_authority_events(
             "ue.asset.move",
             "ue.asset.save",
         ];
-        let dry_run_start = usize::from(case_id == "N4");
+        let dry_run_start = setup_apis
+            .iter()
+            .position(|api| *api == DRY_RUN)
+            .unwrap_or(setup_apis.len());
         let dry_run_receipts = if pre_registration {
             &setup_receipts[0..0]
         } else {
@@ -3140,10 +4290,10 @@ fn publish_ui_authority_events(
         });
         let setup_before_guard = setup_receipts.last().is_none_or(|receipt| {
             receipt["sequence"].as_u64().unwrap_or(u64::MAX)
-                < guard_call["receiptSequence"].as_u64().unwrap_or(0)
+                < retained_receipt_sequence(&guard_call).unwrap_or(0)
         });
         let guard_before_cleanup = cleanup_receipts.first().is_none_or(|receipt| {
-            guard_call["receiptSequence"].as_u64().unwrap_or(u64::MAX)
+            retained_receipt_sequence(&guard_call).unwrap_or(u64::MAX)
                 < receipt["sequence"].as_u64().unwrap_or(0)
         });
         let reason_valid = expected_negative_case_reason(&case_id) == Some(reason);
@@ -3164,14 +4314,22 @@ fn publish_ui_authority_events(
             || !setup_responses_valid
             || !setup_sequence_valid
             || !dry_run_contract_valid
-            || !identity_sequence_valid
-            || !cleanup_valid
-            || !cleanup_responses_valid
-            || !cleanup_sequence_valid
-            || !setup_before_guard
-            || !guard_before_cleanup
-            || !reason_valid
-            || !counter_delta_valid
+        {
+            return Err(BridgeError::new(NEGATIVE_SETUP_CODE));
+        }
+        if !identity_sequence_valid {
+            return Err(BridgeError::new(NEGATIVE_IDENTITY_CODE));
+        }
+        if !cleanup_valid || !cleanup_responses_valid || !cleanup_sequence_valid {
+            return Err(BridgeError::new(NEGATIVE_CLEANUP_CODE));
+        }
+        if !setup_before_guard || !guard_before_cleanup {
+            return Err(BridgeError::new(NEGATIVE_GUARD_CODE));
+        }
+        if !reason_valid {
+            return Err(BridgeError::new(negative_code));
+        }
+        if !counter_delta_valid
             || (matches!(case_id.as_str(), "N7" | "N8") && record.mcp_mutation_count != 2)
             || (!matches!(case_id.as_str(), "N7" | "N8") && record.mcp_mutation_count != 0)
             || (!pre_registration
@@ -3179,12 +4337,14 @@ fn publish_ui_authority_events(
                     || record.token_count != 1
                     || record.manifest_ownership_count != 1))
         {
-            return Err(BridgeError::new(CODE));
+            return Err(BridgeError::new(NEGATIVE_COUNTER_CODE));
         }
-        let before = manifest_observation_data(identity, &record.content_before, CODE)?;
-        let after = manifest_observation_data(identity, &record.content_after, CODE)?;
-        if before["sha256"] != after["sha256"] || before["evidenceId"] == after["evidenceId"] {
-            return Err(BridgeError::new(CODE));
+        let before =
+            manifest_observation_data(identity, &record.content_before, NEGATIVE_CONTENT_CODE)?;
+        let after =
+            manifest_observation_data(identity, &record.content_after, NEGATIVE_CONTENT_CODE)?;
+        if !stable_content_observation_pair(&before, &after) {
+            return Err(BridgeError::new(NEGATIVE_CONTENT_CODE));
         }
         append_event(
             file,
@@ -3231,16 +4391,41 @@ fn publish_ui_authority_events(
         )?;
     }
 
-    const PARTIAL_ACTIONS: [(&str, &str); 9] = [
+    const PARTIAL_ACTIONS: [(&str, &str); 10] = [
         ("forward", "create_run_root"),
         ("forward", "duplicate_test01"),
         ("forward", "rename_duplicate"),
         ("forward", "move_duplicate"),
+        ("inverse", "move_back"),
         ("inverse", "rename_back"),
         ("inverse", "delete_duplicate"),
         ("inverse", "cleanup_empty_folder"),
         ("control", "cross_ttl"),
         ("control", "second_rollback"),
+    ];
+    const PARTIAL_RESULT_CODES: [&str; 10] = [
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_RESULT_P1_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_RESULT_P2_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_RESULT_P3_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_RESULT_P4_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_RESULT_P5_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_RESULT_P6_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_RESULT_P7_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_RESULT_P8_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_RESULT_P9_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_RESULT_P10_INVALID",
+    ];
+    const PARTIAL_OPERATION_SETUP_CODES: [&str; 10] = [
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SETUP_P1_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SETUP_P2_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SETUP_P3_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SETUP_P4_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SETUP_P5_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SETUP_P6_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SETUP_P7_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SETUP_P8_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SETUP_P9_INVALID",
+        "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SETUP_P10_INVALID",
     ];
     let partial = &input.partial_unknown;
     if [
@@ -3266,13 +4451,13 @@ fn publish_ui_authority_events(
         || partial.content_before.stage != "before"
         || partial.content_after.stage != "after"
     {
-        return Err(BridgeError::new(CODE));
+        return Err(BridgeError::new(PARTIAL_SHAPE_CODE));
     }
     let partial_counter_before = consume_counter_receipt(
         identity,
         &partial.counter_read_before,
         &partial.counters_before,
-        CODE,
+        PARTIAL_COUNTER_CODE,
     )?;
     let partial_identity_receipts = consume_session_registration_receipts(
         identity,
@@ -3281,13 +4466,13 @@ fn publish_ui_authority_events(
         &partial.session_id,
         &partial.run_id,
         &partial.registration_id,
-        CODE,
+        PARTIAL_IDENTITY_CODE,
     )?;
     let partial_counter_after = consume_counter_receipt(
         identity,
         &partial.counter_read_after,
         &partial.counters_after,
-        CODE,
+        PARTIAL_COUNTER_CODE,
     )?;
     let partial_closeout_receipts = stopped_and_disconnected(
         identity,
@@ -3295,11 +4480,20 @@ fn publish_ui_authority_events(
         &partial.mcp_disconnect,
         &partial.session_id,
         &partial.native_session_id,
-        CODE,
+        PARTIAL_CLOSEOUT_CODE,
+    )?;
+    let partial_session_setup_receipts = consume_partial_session_setup_receipts(
+        identity,
+        &partial.session_id,
+        &partial.session_setup_calls,
+        PARTIAL_SETUP_CODE,
     )?;
     let mut partial_results = Vec::with_capacity(PARTIAL_ACTIONS.len());
+    let mut partial_successor_registration: Option<String> = None;
     for (index, operation) in partial.operation_results.iter().enumerate() {
         let (direction, action) = PARTIAL_ACTIONS[index];
+        let result_code = PARTIAL_RESULT_CODES[index];
+        let setup_code = PARTIAL_OPERATION_SETUP_CODES[index];
         let mut setup_receipts = Vec::with_capacity(operation.setup_calls.len());
         for setup in &operation.setup_calls {
             let setup_record = consume_allowed_observation_receipt(
@@ -3311,12 +4505,13 @@ fn publish_ui_authority_events(
                     "register_asset_mutation_approval",
                     "execute_asset_mutation",
                     "rollback_asset_mutation",
+                    "mcp_asset_tool_call",
                     "record_asset_mutation_outcome",
                 ],
-                CODE,
+                setup_code,
             )?;
             let setup_payload = receipt_response_payload(&setup_record);
-            setup_receipts.push(json!({
+            let mut setup_receipt = json!({
                 "api": setup_record.api,
                 "id": setup.receipt_id,
                 "sequence": setup_record.sequence,
@@ -3328,35 +4523,232 @@ fn publish_ui_authority_events(
                 "operationId": setup_payload.get("operationId"),
                 "requestSessionId": setup.request.get("editorSessionId"),
                 "requestRegistrationId": setup.request.get("registrationId"),
-            }));
+            });
+            if setup_record.api == "mcp_asset_tool_call" {
+                let summary = setup_receipt
+                    .as_object_mut()
+                    .ok_or_else(|| BridgeError::new(setup_code))?;
+                summary.insert(
+                    "requestSha256".to_string(),
+                    Value::String(sha256_bytes(canonical_json(&setup.request).as_bytes())),
+                );
+                summary.insert(
+                    "responseSha256".to_string(),
+                    Value::String(sha256_bytes(
+                        canonical_json(&setup_record.response).as_bytes(),
+                    )),
+                );
+                summary.insert(
+                    "reason".to_string(),
+                    setup_payload
+                        .get("reasonCode")
+                        .or_else(|| setup_payload.get("reason"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                );
+                summary.insert(
+                    "jsonRpcRequestId".to_string(),
+                    setup
+                        .request
+                        .pointer("/body/id")
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                );
+                summary.insert(
+                    "jsonRpcResponseId".to_string(),
+                    setup_record
+                        .response
+                        .pointer("/parsedBody/id")
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                );
+                summary.insert(
+                    "mcpSessionId".to_string(),
+                    setup
+                        .request
+                        .get("sessionId")
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                );
+                for key in [
+                    "toolName",
+                    "sideEffectObserved",
+                    "effectState",
+                    "rollbackAvailable",
+                    "evidenceId",
+                ] {
+                    summary.insert(
+                        key.to_string(),
+                        setup_payload.get(key).cloned().unwrap_or(Value::Null),
+                    );
+                }
+            } else if setup_record.api == "record_asset_mutation_outcome" {
+                let summary = setup_receipt
+                    .as_object_mut()
+                    .ok_or_else(|| BridgeError::new(setup_code))?;
+                for (summary_key, request_key) in [
+                    ("requestSuccess", "success"),
+                    ("requestSideEffectObserved", "sideEffectObserved"),
+                    ("requestEffectState", "effectState"),
+                    ("requestRollbackAvailable", "rollbackAvailable"),
+                    ("requestEvidenceId", "evidenceId"),
+                    ("requestReasonCode", "reasonCode"),
+                ] {
+                    summary.insert(
+                        summary_key.to_string(),
+                        setup
+                            .request
+                            .get(request_key)
+                            .cloned()
+                            .unwrap_or(Value::Null),
+                    );
+                }
+            }
+            setup_receipts.push(setup_receipt);
         }
         let receipt = consume_observation_receipt(
             identity,
             &operation.receipt_id,
             &operation.api,
             &operation.request,
-            CODE,
+            result_code,
         )?;
         let payload = receipt_response_payload(&receipt);
-        let status = string_field(payload, "status", CODE)?;
+        let status = string_field(payload, "status", result_code)?;
         let effect_state = payload
             .as_object()
             .and_then(|value| value.get("effectState"))
             .and_then(Value::as_str)
             .or_else(|| (status == "blocked").then_some("known_none"))
-            .ok_or_else(|| BridgeError::new(CODE))?;
-        let reason = string_field(payload, "reason", CODE)?;
+            .ok_or_else(|| BridgeError::new(result_code))?;
+        let reason = response_reason(payload, result_code)?;
+        let mcp_setup_valid = if index < 8 && setup_receipts.len() == if index == 3 { 3 } else { 2 }
+        {
+            let expected_phase = if direction == "forward" {
+                "execute"
+            } else {
+                "rollback"
+            };
+            let expected_guard_api = if direction == "forward" {
+                "execute_asset_mutation"
+            } else {
+                "rollback_asset_mutation"
+            };
+            let guard_operation = setup_receipts[0]["operationId"]
+                .as_str()
+                .unwrap_or_default();
+            let outcome_index = if index == 3 { 2 } else { 1 };
+            let outcome_receipt = &setup_receipts[outcome_index];
+            let common = setup_receipts[0]["api"] == expected_guard_api
+                && setup_receipts[0]["status"] == "accepted_by_native_guard"
+                && setup_receipts[0]["phase"] == expected_phase
+                && setup_receipts[0]["registrationId"] == partial.registration_id
+                && setup_receipts[0]["requestRegistrationId"] == partial.registration_id
+                && !guard_operation.is_empty()
+                && outcome_receipt["api"] == "record_asset_mutation_outcome"
+                && outcome_receipt["status"] == "recorded"
+                && outcome_receipt["phase"] == expected_phase
+                && outcome_receipt["registrationId"] == partial.registration_id
+                && outcome_receipt["requestRegistrationId"] == partial.registration_id
+                && outcome_receipt["operationId"] == guard_operation;
+            common
+                && (index != 3
+                    || (setup_receipts[1]["api"] == "mcp_asset_tool_call"
+                        && setup_receipts[1]["status"] == "executed"
+                        && setup_receipts[1]["phase"] == "execute"
+                        && setup_receipts[1]["operationId"] == guard_operation
+                        && setup_receipts[1]["toolName"] == "ue.asset.move"
+                        && setup_receipts[1]["reason"] == "none"
+                        && setup_receipts[1]["sideEffectObserved"] == true
+                        && setup_receipts[1]["effectState"] == "known_effect"
+                        && setup_receipts[1]["rollbackAvailable"] == true
+                        && setup_receipts[1]["evidenceId"]
+                            .as_str()
+                            .is_some_and(|value| value.len() >= 8)
+                        && setup_receipts[1]["jsonRpcRequestId"]
+                            == setup_receipts[1]["jsonRpcResponseId"]
+                        && setup_receipts[1]["mcpSessionId"] == partial.native_session_id
+                        && outcome_receipt["requestSuccess"] == true
+                        && outcome_receipt["requestSideEffectObserved"] == true
+                        && outcome_receipt["requestEffectState"] == "known_effect"
+                        && outcome_receipt["requestRollbackAvailable"] == true
+                        && outcome_receipt["requestReasonCode"] == "none"
+                        && outcome_receipt["requestEvidenceId"] == setup_receipts[1]["evidenceId"]
+                        && setup_receipts[0]["sequence"].as_u64().unwrap_or(u64::MAX)
+                            < receipt.sequence
+                        && receipt.sequence < setup_receipts[1]["sequence"].as_u64().unwrap_or(0)
+                        && setup_receipts[1]["sequence"].as_u64().unwrap_or(u64::MAX)
+                            < outcome_receipt["sequence"].as_u64().unwrap_or(0)
+                        && payload.get("requestSha256") == setup_receipts[1].get("requestSha256")))
+        } else {
+            index >= 8
+        };
         let result_valid = match action {
             "create_run_root"
             | "duplicate_test01"
             | "rename_duplicate"
+            | "move_back"
             | "rename_back"
             | "delete_duplicate"
             | "cleanup_empty_folder" => {
-                status == "succeeded" && effect_state == "known_effect" && reason == "none"
+                let expected_status = if direction == "forward" {
+                    "executed"
+                } else {
+                    "rolled_back"
+                };
+                if status != expected_status {
+                    return Err(BridgeError::new(PARTIAL_STATUS_CODE));
+                }
+                if effect_state != "known_effect" {
+                    return Err(BridgeError::new(PARTIAL_EFFECT_CODE));
+                }
+                if reason != "none" {
+                    return Err(BridgeError::new(PARTIAL_REASON_CODE));
+                }
+                mcp_setup_valid
             }
             "move_duplicate" => {
-                status == "failed" && effect_state == "unknown" && reason == "effect_unknown"
+                let guard_receipt = setup_receipts
+                    .first()
+                    .ok_or_else(|| BridgeError::new(PARTIAL_REASON_CODE))?;
+                if status != "observed" {
+                    return Err(BridgeError::new(PARTIAL_STATUS_CODE));
+                }
+                if effect_state != "unknown" {
+                    return Err(BridgeError::new(PARTIAL_EFFECT_CODE));
+                }
+                if reason != "operation_response_pending"
+                    || operation.api != "asset_mutation_observation_boundary"
+                    || payload.get("blocked").and_then(Value::as_bool) != Some(false)
+                    || payload.get("phase").and_then(Value::as_str) != Some("execute")
+                    || payload.get("toolName").and_then(Value::as_str) != Some("ue.asset.move")
+                    || payload.get("registrationId").and_then(Value::as_str)
+                        != Some(partial.registration_id.as_str())
+                    || payload.get("runId").and_then(Value::as_str) != Some(partial.run_id.as_str())
+                    || payload.get("operationId") != guard_receipt.get("operationId")
+                    || payload.get("operationIndex").and_then(Value::as_u64) != Some(3)
+                    || payload.get("operationCount").and_then(Value::as_u64) != Some(5)
+                    || payload.get("sideEffectObserved").and_then(Value::as_bool) != Some(false)
+                    || payload.get("rollbackAvailable").and_then(Value::as_bool) != Some(false)
+                    || payload.get("implementationStatus").and_then(Value::as_str)
+                        != Some("execution_capable")
+                    || payload
+                        .get("jsonRpcRequestId")
+                        .is_none_or(|value| !value.is_string() && !value.is_number())
+                    || payload.get("guardReceiptId").and_then(Value::as_str)
+                        != Some(guard_receipt["id"].as_str().unwrap_or_default())
+                    || payload.get("guardReceiptSequence").and_then(Value::as_u64)
+                        != guard_receipt["sequence"].as_u64()
+                    || payload.get("mcpSessionId").and_then(Value::as_str)
+                        != Some(partial.native_session_id.as_str())
+                    || payload
+                        .get("dispatchId")
+                        .and_then(Value::as_str)
+                        .is_none_or(|value| !value.starts_with("mvp15d-mcp-dispatch:"))
+                {
+                    return Err(BridgeError::new(PARTIAL_REASON_CODE));
+                }
+                mcp_setup_valid
             }
             "cross_ttl" => {
                 if setup_receipts.len() != 2 {
@@ -3404,7 +4796,7 @@ fn publish_ui_authority_events(
                     let rollback_outcome_operation = setup_receipts[5]["operationId"]
                         .as_str()
                         .unwrap_or_default();
-                    status == "blocked"
+                    let valid = status == "blocked"
                         && effect_state == "known_none"
                         && reason == "rollback_replay"
                         && setup_receipts
@@ -3446,7 +4838,11 @@ fn publish_ui_authority_events(
                         && !execute_operation.is_empty()
                         && execute_operation == execute_outcome_operation
                         && !rollback_operation.is_empty()
-                        && rollback_operation == rollback_outcome_operation
+                        && rollback_operation == rollback_outcome_operation;
+                    if valid {
+                        partial_successor_registration = Some(fresh_registration.to_string());
+                    }
+                    valid
                 }
             }
             _ => false,
@@ -3457,12 +4853,19 @@ fn publish_ui_authority_events(
             || !operation.request.is_object()
             || !result_valid
         {
-            return Err(BridgeError::new(CODE));
+            return Err(BridgeError::new(result_code));
         }
-        let evidence_id = string_field(payload, "evidenceId", CODE)?;
-        if evidence_id.len() < 8 {
-            return Err(BridgeError::new(CODE));
-        }
+        let evidence_id = response_evidence_id(payload, status, PARTIAL_EVIDENCE_CODE)?;
+        let normalized_status = if action == "move_duplicate" {
+            "failed"
+        } else {
+            status
+        };
+        let normalized_reason = if action == "move_duplicate" {
+            "operation_response_pending"
+        } else {
+            reason
+        };
         partial_results.push(json!({
             "sequence": index + 1,
             "direction": direction,
@@ -3471,20 +4874,50 @@ fn publish_ui_authority_events(
             "receiptId": operation.receipt_id,
             "receiptSequence": receipt.sequence,
             "requestSha256": sha256_bytes(canonical_json(&operation.request).as_bytes()),
+            "pendingRequestSha256": (action == "move_duplicate")
+                .then(|| payload.get("requestSha256").cloned())
+                .flatten(),
+            "jsonRpcRequestId": (action == "move_duplicate")
+                .then(|| payload.get("jsonRpcRequestId").cloned())
+                .flatten(),
             "responseSha256": sha256_bytes(canonical_json(&receipt.response).as_bytes()),
-            "status": status,
+            "status": normalized_status,
             "effectState": effect_state,
-            "reason": reason,
+            "reason": normalized_reason,
+            "sourceStatus": status,
+            "sourceReason": reason,
             "evidenceId": evidence_id,
             "setupReceipts": setup_receipts,
         }));
     }
-    let partial_before = manifest_observation_data(identity, &partial.content_before, CODE)?;
-    let partial_after = manifest_observation_data(identity, &partial.content_after, CODE)?;
-    if partial_before["sha256"] != partial_after["sha256"]
-        || partial_before["evidenceId"] == partial_after["evidenceId"]
+    let partial_successor_registration = partial_successor_registration
+        .as_deref()
+        .ok_or_else(|| BridgeError::new(PARTIAL_CONTENT_CODE))?;
+    if partial.content_before.registration_id != partial.registration_id
+        || partial.content_before.run_id != partial.run_id
+        || partial.content_after.registration_id != partial_successor_registration
+        || partial.content_after.run_id != partial.run_id
+        || partial
+            .content_before
+            .request
+            .get("registrationId")
+            .and_then(Value::as_str)
+            != Some(partial.registration_id.as_str())
+        || partial
+            .content_after
+            .request
+            .get("registrationId")
+            .and_then(Value::as_str)
+            != Some(partial_successor_registration)
     {
-        return Err(BridgeError::new(CODE));
+        return Err(BridgeError::new(PARTIAL_CONTENT_CODE));
+    }
+    let partial_before =
+        manifest_observation_data(identity, &partial.content_before, PARTIAL_CONTENT_CODE)?;
+    let partial_after =
+        manifest_observation_data(identity, &partial.content_after, PARTIAL_CONTENT_CODE)?;
+    if !stable_content_observation_pair(&partial_before, &partial_after) {
+        return Err(BridgeError::new(PARTIAL_CONTENT_CODE));
     }
     append_event(
         file,
@@ -3497,14 +4930,17 @@ fn publish_ui_authority_events(
             "runId": partial.run_id,
             "registrationId": partial.registration_id,
             "identityReceipts": partial_identity_receipts,
+            "sessionSetupReceipts": partial_session_setup_receipts,
             "operationResults": partial_results,
             "contentBefore": {
+                "registrationId": partial_before["registrationId"],
                 "evidenceId": partial_before["evidenceId"],
                 "sha256": partial_before["sha256"],
                 "receiptId": partial_before["receiptId"],
                 "receiptSequence": partial_before["receiptSequence"],
             },
             "contentAfter": {
+                "registrationId": partial_after["registrationId"],
                 "evidenceId": partial_after["evidenceId"],
                 "sha256": partial_after["sha256"],
                 "receiptId": partial_after["receiptId"],
@@ -3528,30 +4964,40 @@ fn publish_ui_authority_events(
         &replay.recorded_representation_receipt.receipt_id,
         "recorded_replay_read",
         &replay.recorded_representation_receipt.request,
-        CODE,
+        REPLAY_RECEIPT_CONSUME_CODE,
     )?;
-    if object_field(&replay_receipt.response, "recordedRepresentation", CODE)?
-        != &replay.recorded_representation
+    if object_field(
+        &replay_receipt.response,
+        "recordedRepresentation",
+        REPLAY_RECEIPT_RESPONSE_CODE,
+    )? != &replay.recorded_representation
     {
-        return Err(BridgeError::new(CODE));
+        return Err(BridgeError::new(REPLAY_RECEIPT_RESPONSE_CODE));
     }
     let replay_counter_before = consume_counter_receipt(
         identity,
         &replay.counter_read_before,
         &replay.counters_before,
-        CODE,
+        REPLAY_COUNTER_CODE,
     )?;
     let replay_counter_after = consume_counter_receipt(
         identity,
         &replay.counter_read_after,
         &replay.counters_after,
-        CODE,
+        REPLAY_COUNTER_CODE,
     )?;
-    let recorded_event_count = u64_field(&replay.recorded_representation, "eventCount", CODE)?;
-    let recorded_actions =
-        object_field(&replay.recorded_representation, "recordedOnlyActions", CODE)?
-            .as_array()
-            .ok_or_else(|| BridgeError::new(CODE))?;
+    let recorded_event_count = u64_field(
+        &replay.recorded_representation,
+        "eventCount",
+        REPLAY_STATE_CODE,
+    )?;
+    let recorded_actions = object_field(
+        &replay.recorded_representation,
+        "recordedOnlyActions",
+        REPLAY_STATE_CODE,
+    )?
+    .as_array()
+    .ok_or_else(|| BridgeError::new(REPLAY_STATE_CODE))?;
     let expected_replay_actions = [
         "dry-run", "preview", "approval", "execute", "verify", "rollback",
     ];
@@ -3565,7 +5011,7 @@ fn publish_ui_authority_events(
         || replay.counters_before.len() != 5
         || replay.counters_before != replay.counters_after
     {
-        return Err(BridgeError::new(CODE));
+        return Err(BridgeError::new(REPLAY_STATE_CODE));
     }
     append_event(
         file,
@@ -5006,6 +6452,9 @@ impl BridgeState {
         {
             return Err(BridgeError::new("MVP15D_BRIDGE_NATIVE_STATE_INVALID"));
         }
+        if input.kind == "asset_mutation_observation_boundary" {
+            return observe_asset_mutation_response_pending(&self.identity, input.request);
+        }
         let records = observation_receipt_ledger()
             .lock()
             .map_err(|_| BridgeError::new("MVP15D_BRIDGE_RECEIPT_LEDGER_UNAVAILABLE"))?
@@ -5186,6 +6635,7 @@ impl BridgeState {
                     json!({
                         "status": "recorded",
                         "recordedRepresentation": {
+                            "replayOnly": true,
                             "eventCount": event_count,
                             "recordedOnlyActions": ["dry-run", "preview", "approval", "execute", "verify", "rollback"],
                         },
@@ -6140,6 +7590,42 @@ impl BridgeState {
             &self.identity,
             "closeout",
             runtime_closeout_data(&self.identity),
+        )?;
+        self.file
+            .sync_all()
+            .map_err(|_| BridgeError::new("MVP15D_BRIDGE_EVENT_SYNC_FAILED"))?;
+        self.completed = true;
+        Ok(())
+    }
+
+    pub fn fail(&mut self, input: BridgeFailureInput) -> Result<(), BridgeError> {
+        const CODE: &str = "MVP15D_BRIDGE_FAILURE_INVALID";
+        let valid_suffix = input
+            .reason_code
+            .strip_prefix("mvp15d_")
+            .is_some_and(|suffix| {
+                !suffix.is_empty()
+                    && suffix.bytes().all(|byte| {
+                        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+                    })
+            })
+            || input
+                .reason_code
+                .strip_prefix("MVP15D_")
+                .is_some_and(|suffix| {
+                    !suffix.is_empty()
+                        && suffix.bytes().all(|byte| {
+                            byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_'
+                        })
+                });
+        if self.completed || input.reason_code.len() > 128 || !valid_suffix {
+            return Err(BridgeError::new(CODE));
+        }
+        append_event(
+            &mut self.file,
+            &self.identity,
+            "runtime_failure",
+            json!({ "reasonCode": input.reason_code }),
         )?;
         self.file
             .sync_all()
@@ -7660,6 +9146,46 @@ mod tests {
     }
 
     #[test]
+    fn renderer_failure_is_sanitized_persisted_and_terminal() {
+        let (_root, mut state) = rendered_state(BridgePhase::UiLifecycle);
+        let event_file = state.identity.event_file.clone();
+        state
+            .fail(BridgeFailureInput {
+                reason_code: "mvp15d_ui_negative_control_timeout".to_string(),
+            })
+            .unwrap();
+        let events = fs::read_to_string(event_file).unwrap();
+        let failure = events
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .find(|event| event["type"] == "runtime_failure")
+            .unwrap();
+        assert_eq!(
+            failure["data"]["reasonCode"],
+            "mvp15d_ui_negative_control_timeout"
+        );
+        assert_eq!(
+            state
+                .fail(BridgeFailureInput {
+                    reason_code: "mvp15d_second_failure".to_string(),
+                })
+                .unwrap_err()
+                .code(),
+            "MVP15D_BRIDGE_FAILURE_INVALID"
+        );
+        assert_eq!(
+            rendered_state(BridgePhase::UiLifecycle)
+                .1
+                .fail(BridgeFailureInput {
+                    reason_code: "invalid detail".to_string(),
+                })
+                .unwrap_err()
+                .code(),
+            "MVP15D_BRIDGE_FAILURE_INVALID"
+        );
+    }
+
+    #[test]
     fn native_receipts_are_context_bound_single_use_and_unknown_receipts_fail_closed() {
         let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
         let (_root, state) = rendered_state(BridgePhase::UiLifecycle);
@@ -7671,7 +9197,7 @@ mod tests {
             json!({
                 "status": "blocked",
                 "reason": "stale_generation",
-                "evidenceId": "native-evidence-actual-0001",
+                "evidenceId": null,
             }),
         )
         .unwrap();
@@ -7688,9 +9214,35 @@ mod tests {
         )
         .unwrap();
         assert_eq!(receipt["reason"], "stale_generation");
+        assert!(receipt["evidenceId"].is_null());
         assert_eq!(
             receipt["requestSha256"],
             sha256_bytes(canonical_json(&raw.request).as_bytes())
+        );
+        let unexpected_evidence_receipt_id = issue_native_observation_receipt(
+            "execute_asset_mutation",
+            raw.request.clone(),
+            json!({
+                "status": "blocked",
+                "reason": "stale_generation",
+                "evidenceId": "blocked-evidence-must-not-exist",
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            call_receipt(
+                &state.identity,
+                &RawObservedCallInput {
+                    receipt_id: unexpected_evidence_receipt_id,
+                    request: raw.request.clone(),
+                },
+                "execute_asset_mutation",
+                "blocked",
+                "MVP15D_BRIDGE_UI_EVIDENCE_INVALID",
+            )
+            .unwrap_err()
+            .code(),
+            "MVP15D_BRIDGE_UI_EVIDENCE_INVALID"
         );
         assert_eq!(
             call_receipt(
@@ -7711,7 +9263,7 @@ mod tests {
             json!({
                 "status": "blocked",
                 "reason": "stale_generation",
-                "evidenceId": "native-evidence-actual-0002",
+                "evidenceId": null,
             }),
         )
         .unwrap();
@@ -7755,6 +9307,279 @@ mod tests {
         assert!(closeout.get("processResidualCount").is_none());
         assert!(closeout.get("portResidualCount").is_none());
         drop(state);
+    }
+
+    #[test]
+    fn partial_session_setup_accepts_exact_dry_runs_with_a_bound_optional_attestation() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let (_root, state) = rendered_state(BridgePhase::UiLifecycle);
+        let session_id = "partial-editor-session-0001";
+        const CODE: &str = "MVP15D_BRIDGE_UI_EVIDENCE_PARTIAL_SETUP_INVALID";
+
+        let issue_attestation = |editor_session_id: &str| {
+            let request = json!({
+                "editorSessionId": editor_session_id,
+                "attestationGeneration": 12,
+            });
+            let receipt_id = issue_native_observation_receipt(
+                "attest_mvp15_companion",
+                request.clone(),
+                json!({
+                    "status": "observed",
+                    "reason": "loaded_module_identity_verified",
+                    "manifest": {
+                        "pluginId": "UAgentAssetTools",
+                        "manifestSelfSha256": "c".repeat(64),
+                        "sourceTreeSha256": "d".repeat(64),
+                        "moduleBuildId": "55116800",
+                        "artifacts": [{
+                            "name": "UnrealEditor-UAgentAssetTools.dll",
+                            "size": 4096,
+                            "sha256": "e".repeat(64),
+                        }],
+                        "modules": [{
+                            "path": "Binaries/Win64/UnrealEditor-UAgentAssetTools.dll",
+                            "size": 4096,
+                            "sha256": "e".repeat(64),
+                        }],
+                    },
+                    "installedModules": [{
+                        "name": "UnrealEditor-UAgentAssetTools.dll",
+                        "size": 4096,
+                        "sha256": "e".repeat(64),
+                    }],
+                    "loadedModules": [{
+                        "name": "UnrealEditor-UAgentAssetTools.dll",
+                        "size": 4096,
+                        "sha256": "e".repeat(64),
+                    }],
+                }),
+            )
+            .unwrap();
+            RawObservedCallInput {
+                receipt_id,
+                request,
+            }
+        };
+        let issue_dry_runs = || {
+            [
+                "ue.asset.create_folder",
+                "ue.asset.duplicate",
+                "ue.asset.rename",
+                "ue.asset.move",
+                "ue.asset.save",
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(index, tool_name)| {
+                let request = json!({ "toolName": tool_name, "operationIndex": index });
+                let receipt_id = issue_native_observation_receipt(
+                    "mcp_asset_tool_call",
+                    request.clone(),
+                    json!({
+                        "parsedBody": {
+                            "result": {
+                                "structuredContent": {
+                                    "status": "dry_run_completed",
+                                    "phase": "dry_run",
+                                    "toolName": tool_name,
+                                    "sideEffectObserved": false,
+                                    "effectState": "known_none",
+                                }
+                            }
+                        }
+                    }),
+                )
+                .unwrap();
+                RawObservedCallInput {
+                    receipt_id,
+                    request,
+                }
+            })
+            .collect::<Vec<_>>()
+        };
+
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let dry_runs_only = issue_dry_runs();
+        let retained = consume_partial_session_setup_receipts(
+            &state.identity,
+            session_id,
+            &dry_runs_only,
+            CODE,
+        )
+        .unwrap();
+        assert_eq!(retained.len(), 5);
+        assert_eq!(retained[0]["api"], "mcp_asset_tool_call");
+
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let mut with_attestation = vec![issue_attestation(session_id)];
+        with_attestation.extend(issue_dry_runs());
+        let retained = consume_partial_session_setup_receipts(
+            &state.identity,
+            session_id,
+            &with_attestation,
+            CODE,
+        )
+        .unwrap();
+        assert_eq!(retained.len(), 6);
+        assert_eq!(retained[0]["api"], "attest_mvp15_companion");
+        assert_eq!(retained[1]["api"], "mcp_asset_tool_call");
+
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let mut wrong_session = vec![issue_attestation("other-editor-session-0002")];
+        wrong_session.extend(issue_dry_runs());
+        assert_eq!(
+            consume_partial_session_setup_receipts(
+                &state.identity,
+                session_id,
+                &wrong_session,
+                CODE,
+            )
+            .unwrap_err()
+            .code(),
+            CODE
+        );
+    }
+
+    #[test]
+    fn mcp_receipts_preserve_execution_phase_status_and_reason_code() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let (_root, state) = rendered_state(BridgePhase::UiLifecycle);
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+
+        for (index, status) in ["executed", "rolled_back"].into_iter().enumerate() {
+            let request = json!({
+                "body": {
+                    "method": "tools/call",
+                    "params": { "name": "ue.asset.test" },
+                },
+                "operationIndex": index,
+            });
+            let receipt_id = issue_native_observation_receipt(
+                "mcp_asset_tool_call",
+                request.clone(),
+                json!({
+                    "parsedBody": {
+                        "result": {
+                            "structuredContent": {
+                                "status": status,
+                                "reasonCode": "none",
+                                "evidenceId": format!("mcp-evidence-{status}-0001"),
+                            },
+                        },
+                    },
+                }),
+            )
+            .unwrap();
+            let receipt = call_receipt(
+                &state.identity,
+                &RawObservedCallInput {
+                    receipt_id,
+                    request,
+                },
+                "mcp_asset_tool_call",
+                status,
+                "MVP15D_BRIDGE_UI_EVIDENCE_OPERATION_MCP_INVALID",
+            )
+            .unwrap();
+            assert_eq!(receipt["status"], status);
+            assert_eq!(receipt["reason"], "none");
+        }
+        drop(state);
+    }
+
+    #[test]
+    fn happy_path_correlated_ids_bind_inverse_actions_to_forward_operations() {
+        let mut forward = Vec::new();
+        for index in 0..5 {
+            let operation_id = format!("operation-forward-{index}");
+            assert!(happy_path_correlated_id_valid(
+                index,
+                &operation_id,
+                &forward
+            ));
+            forward.push(operation_id);
+        }
+        assert!(!happy_path_correlated_id_valid(4, &forward[0], &forward));
+        for (inverse_index, forward_index) in [3_usize, 2, 1, 0].into_iter().enumerate() {
+            assert!(happy_path_correlated_id_valid(
+                5 + inverse_index,
+                &forward[forward_index],
+                &forward,
+            ));
+        }
+        assert!(!happy_path_correlated_id_valid(5, &forward[0], &forward));
+        assert!(!happy_path_correlated_id_valid(9, &forward[0], &forward));
+        assert!(!happy_path_correlated_id_valid(0, "short", &forward));
+    }
+
+    #[test]
+    fn stable_content_identity_requires_distinct_observation_receipts() {
+        let before = json!({
+            "sha256": "a".repeat(64),
+            "evidenceId": "asset-content-manifest:stable",
+            "receiptId": "mvp15d-observation-receipt:before",
+        });
+        let after = json!({
+            "sha256": "a".repeat(64),
+            "evidenceId": "asset-content-manifest:stable",
+            "receiptId": "mvp15d-observation-receipt:after",
+        });
+        assert!(stable_content_observation_pair(&before, &after));
+        assert!(!stable_content_observation_pair(&before, &before));
+        assert!(!stable_content_observation_pair(
+            &before,
+            &json!({
+                "sha256": "b".repeat(64),
+                "evidenceId": "asset-content-manifest:changed",
+                "receiptId": "mvp15d-observation-receipt:changed",
+            }),
+        ));
+        assert_eq!(
+            retained_receipt_sequence(&json!({ "sequence": 7 })),
+            Some(7),
+        );
+        assert_eq!(
+            retained_receipt_sequence(&json!({ "receiptSequence": 11 })),
+            Some(11),
+        );
+    }
+
+    #[test]
+    fn pre_registration_negative_sessions_can_share_an_unaccepted_plan_run() {
+        let mut seen = Vec::new();
+        assert!(retain_negative_case_identities(
+            &mut seen,
+            true,
+            "negative-session-n1",
+            "negative-native-n1",
+            "shared-proposed-run",
+            "negative-attempt-n1",
+        ));
+        assert!(retain_negative_case_identities(
+            &mut seen,
+            true,
+            "negative-session-n2",
+            "negative-native-n2",
+            "shared-proposed-run",
+            "negative-attempt-n2",
+        ));
+        assert!(retain_negative_case_identities(
+            &mut seen,
+            false,
+            "negative-session-n3",
+            "negative-native-n3",
+            "shared-proposed-run",
+            "negative-attempt-n3",
+        ));
+        assert!(!retain_negative_case_identities(
+            &mut seen,
+            false,
+            "negative-session-n4",
+            "negative-native-n4",
+            "shared-proposed-run",
+            "negative-attempt-n4",
+        ));
     }
 
     #[test]
@@ -8727,6 +10552,43 @@ mod tests {
     }
 
     #[test]
+    fn recorded_replay_native_observation_is_replay_only() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let (_root, mut state) = rendered_state(BridgePhase::UiLifecycle);
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        for api in [
+            "register_asset_mutation_approval",
+            "execute_asset_mutation",
+            "rollback_asset_mutation",
+            "mcp_asset_tool_call",
+        ] {
+            issue_native_observation_receipt(
+                api,
+                json!({ "api": api }),
+                json!({ "status": "observed" }),
+            )
+            .unwrap();
+        }
+
+        let result = state
+            .observe_native_state(ObserveNativeStateInput {
+                schema_version: "uagent.mvp15d.native-state-observation.v1".to_string(),
+                kind: "recorded_replay".to_string(),
+                request: json!({ "scope": "ui-replay" }),
+            })
+            .unwrap();
+        assert_eq!(result.observation["status"], "recorded");
+        assert_eq!(
+            result.observation["recordedRepresentation"]["replayOnly"],
+            true
+        );
+        assert_eq!(
+            result.observation["recordedRepresentation"]["eventCount"],
+            4
+        );
+    }
+
+    #[test]
     fn native_mcp_boundary_owns_response_facts_and_rejects_renderer_substitution() {
         let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
         let (_root, state) = rendered_state(BridgePhase::ProductCapture);
@@ -8766,8 +10628,18 @@ mod tests {
                 phase_generation: state.identity.generation,
                 connection_generation: 17,
                 tool_search_mode: "off".to_string(),
+                asset_mutation_boundary: None,
             }),
         };
+        let matching_response_body = result.body.clone();
+        result.body = json!({ "jsonrpc": "2.0", "id": 2, "result": {} }).to_string();
+        assert_eq!(
+            native_mcp_response_basis(&input, &result)
+                .unwrap_err()
+                .code(),
+            "MVP15D_MCP_OBSERVATION_RESPONSE_ID_INVALID"
+        );
+        result.body = matching_response_body;
         attach_native_mcp_transport_observation(&input, &mut result).unwrap();
         let request = result.observation_request.clone().unwrap();
         let receipts = result.observation_receipts.clone().unwrap();
@@ -8825,6 +10697,939 @@ mod tests {
     }
 
     #[test]
+    fn native_mcp_pending_registry_tracks_one_real_request_until_its_same_response_completes() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let _registry_guard = crate::reset_shared_registries_for_test();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/mcp", listener.local_addr().unwrap());
+        let (_root, mut state) = rendered_state(BridgePhase::UiLifecycle);
+        state.identity.endpoint = endpoint.clone();
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let registration_id = "registration-real-pending";
+        let change_set_id = "change-real-pending";
+        let run_id = "run-real-pending";
+        let operation_id = "partial-operation-4-real-pending";
+        let operation_index = 3;
+        let operation_count = 5;
+        let mcp_session_id = "native-session-pending-0001";
+        let accepted_plan_binding = "a".repeat(64);
+        let native_source_identity = "native-source-pending";
+        let native_manifest_identity = "native-manifest-pending";
+        let native_plugin_identity = "native-plugin-pending";
+        let native_package_identity = "native-package-pending";
+        let _asset_scope = crate::asset_mutation::seed_asset_mutation_in_flight_for_bridge_test(
+            registration_id,
+            change_set_id,
+            run_id,
+            operation_id,
+            operation_index,
+            operation_count,
+        );
+        let guard_receipt_id = issue_native_observation_receipt(
+            "execute_asset_mutation",
+            json!({ "operationId": operation_id }),
+            json!({
+                "status": "accepted_by_native_guard",
+                "registrationId": registration_id,
+                "phase": "execute",
+                "operationId": operation_id,
+                "operationIndex": operation_index,
+                "operationCount": operation_count,
+                "acceptedPlanBinding": accepted_plan_binding,
+                "nativeCreatedAt": 1,
+                "connectionGeneration": 17,
+                "sessionGeneration": 23,
+                "nativeSourceIdentity": native_source_identity,
+                "nativeManifestIdentity": native_manifest_identity,
+                "nativePluginIdentity": native_plugin_identity,
+                "nativePackageIdentity": native_package_identity,
+            }),
+        )
+        .unwrap();
+        let boundary_request = json!({
+            "registrationId": registration_id,
+            "changeSetId": change_set_id,
+            "runId": run_id,
+            "phase": "execute",
+            "operationId": operation_id,
+            "operationIndex": operation_index,
+            "operationCount": operation_count,
+            "toolName": "ue.asset.move",
+            "mcpSessionId": mcp_session_id,
+            "guardReceiptId": guard_receipt_id,
+        });
+        assert_eq!(
+            state
+                .observe_native_state(ObserveNativeStateInput {
+                    schema_version: "uagent.mvp15d.native-state-observation.v1".to_string(),
+                    kind: "asset_mutation_observation_boundary".to_string(),
+                    request: boundary_request.clone(),
+                })
+                .unwrap_err()
+                .code(),
+            "MVP15D_MCP_PENDING_NOT_VISIBLE"
+        );
+        let (seen_tx, seen_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .unwrap();
+            let mut request_bytes = Vec::new();
+            let mut chunk = [0_u8; 4096];
+            loop {
+                let count = stream.read(&mut chunk).unwrap();
+                request_bytes.extend_from_slice(&chunk[..count]);
+                let Some(header_end) = request_bytes
+                    .windows(4)
+                    .position(|window| window == b"\r\n\r\n")
+                    .map(|index| index + 4)
+                else {
+                    continue;
+                };
+                let headers = String::from_utf8_lossy(&request_bytes[..header_end]);
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.strip_prefix("Content-Length: ")
+                            .or_else(|| line.strip_prefix("content-length: "))
+                    })
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+                    .unwrap();
+                if request_bytes.len() >= header_end + content_length {
+                    seen_tx
+                        .send(request_bytes[header_end..header_end + content_length].to_vec())
+                        .unwrap();
+                    break;
+                }
+            }
+            release_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap();
+            let body = json!({
+                "jsonrpc": "2.0",
+                "id": 41,
+                "result": {
+                    "structuredContent": {
+                        "status": "executed",
+                        "effectState": "known_effect"
+                    }
+                }
+            })
+            .to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nMcp-Session-Id: native-session-pending-0001\r\nMCP-Protocol-Version: 2025-06-18\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        let request_body = json!({
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "tools/call",
+            "params": {
+                "name": "ue.asset.move",
+                "arguments": {
+                    "nativeRegistrationId": registration_id,
+                    "nativePhase": "execute",
+                    "nativeOperationIndex": operation_index,
+                    "nativeOperationCount": operation_count,
+                    "dryRun": false,
+                    "execute": true,
+                    "rollback": false,
+                    "operationId": operation_id,
+                    "changeSetId": change_set_id,
+                    "runId": run_id,
+                    "acceptedPlanBinding": accepted_plan_binding,
+                    "nativeCreatedAt": 1,
+                    "connectionGeneration": 17,
+                    "sessionGeneration": 23,
+                    "nativeSourceIdentity": native_source_identity,
+                    "nativeManifestIdentity": native_manifest_identity,
+                    "nativePluginIdentity": native_plugin_identity,
+                    "nativePackageIdentity": native_package_identity
+                }
+            }
+        });
+        let expected_request_body = request_body.to_string();
+        let input = crate::mcp::McpHttpRequestInput {
+            endpoint,
+            method: crate::mcp::McpHttpMethod::Post,
+            body: expected_request_body.clone(),
+            protocol_version: Some("2025-06-18".to_string()),
+            session_id: Some(mcp_session_id.to_string()),
+            timeout_ms: Some(5_000),
+            observation: Some(crate::mcp::McpObservationIntent {
+                schema_version: MCP_OBSERVATION_INTENT_SCHEMA.to_string(),
+                task_id: state.identity.task_id.clone(),
+                phase: state.identity.phase.as_str().to_string(),
+                phase_session_id: state.identity.session.clone(),
+                phase_generation: state.identity.generation,
+                connection_generation: 17,
+                tool_search_mode: "ui".to_string(),
+                asset_mutation_boundary: Some(boundary_request.clone()),
+            }),
+        };
+        let mut invalid_boundary_input = input.clone();
+        invalid_boundary_input
+            .observation
+            .as_mut()
+            .unwrap()
+            .asset_mutation_boundary
+            .as_mut()
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .insert("unexpected".to_string(), Value::Bool(true));
+        let invalid_registration = begin_native_mcp_transport_observation(&invalid_boundary_input)
+            .unwrap()
+            .unwrap();
+        let invalid_signal = invalid_registration
+            .dispatch_signal(&invalid_boundary_input)
+            .unwrap();
+        assert_eq!(
+            invalid_signal.mark_dispatched().unwrap_err(),
+            "MVP15D_PARTIAL_OBSERVATION_BOUNDARY_INVALID"
+        );
+        assert_eq!(
+            pending_native_mcp_transport_registry()
+                .lock()
+                .unwrap()
+                .records
+                .get(&invalid_registration.dispatch_id)
+                .unwrap()
+                .dispatched_after_receipt_sequence,
+            None
+        );
+        assert!(!observation_receipt_ledger()
+            .lock()
+            .unwrap()
+            .records
+            .values()
+            .any(|record| record.api == "asset_mutation_observation_boundary"));
+        drop(invalid_registration);
+        for (argument, drifted_value) in [
+            ("dryRun", Value::Bool(true)),
+            ("execute", Value::Bool(false)),
+            ("nativeOperationIndex", Value::from(2)),
+        ] {
+            let mut drifted_input = input.clone();
+            let mut drifted_body: Value = serde_json::from_str(&drifted_input.body).unwrap();
+            drifted_body
+                .pointer_mut("/params/arguments")
+                .and_then(Value::as_object_mut)
+                .unwrap()
+                .insert(argument.to_string(), drifted_value);
+            drifted_input.body = drifted_body.to_string();
+            let drifted_registration = begin_native_mcp_transport_observation(&drifted_input)
+                .unwrap()
+                .unwrap();
+            let drifted_signal = drifted_registration
+                .dispatch_signal(&drifted_input)
+                .unwrap();
+            assert_eq!(
+                drifted_signal.mark_dispatched().unwrap_err(),
+                "MVP15D_PARTIAL_OBSERVATION_BOUNDARY_INVALID"
+            );
+            assert_eq!(
+                pending_native_mcp_transport_registry()
+                    .lock()
+                    .unwrap()
+                    .records
+                    .get(&drifted_registration.dispatch_id)
+                    .unwrap()
+                    .dispatched_after_receipt_sequence,
+                None
+            );
+            assert!(!observation_receipt_ledger()
+                .lock()
+                .unwrap()
+                .records
+                .values()
+                .any(|record| record.api == "asset_mutation_observation_boundary"));
+            drop(drifted_registration);
+        }
+        let registration_only = begin_native_mcp_transport_observation(&input)
+            .unwrap()
+            .expect("registration exists before the worker enters transport");
+        assert_eq!(
+            state
+                .observe_native_state(ObserveNativeStateInput {
+                    schema_version: "uagent.mvp15d.native-state-observation.v1".to_string(),
+                    kind: "asset_mutation_observation_boundary".to_string(),
+                    request: boundary_request.clone(),
+                })
+                .unwrap_err()
+                .code(),
+            "MVP15D_MCP_PENDING_NOT_VISIBLE"
+        );
+        drop(registration_only);
+        let worker = std::thread::spawn(move || crate::mcp::post_streamable_http(input));
+        let body_seen = seen_rx.recv_timeout(std::time::Duration::from_secs(2)).ok();
+        let mut prepared_boundary_receipt_id = None;
+        for _ in 0..100 {
+            let ledger = observation_receipt_ledger().lock().unwrap();
+            prepared_boundary_receipt_id =
+                ledger.records.iter().find_map(|(receipt_id, record)| {
+                    (record.api == "asset_mutation_observation_boundary"
+                        && record.request == boundary_request
+                        && !record.claimed)
+                        .then(|| receipt_id.clone())
+                });
+            drop(ledger);
+            if prepared_boundary_receipt_id.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let prepared_boundary_receipt_id = prepared_boundary_receipt_id
+            .expect("body-complete dispatch pre-signs the unclaimed pre-response boundary");
+        let pending_snapshot = pending_native_mcp_transport_registry()
+            .lock()
+            .ok()
+            .and_then(|registry| {
+                (registry.records.len() == 1)
+                    .then(|| registry.records.values().next().unwrap().clone())
+            });
+        let boundary = state
+            .observe_native_state(ObserveNativeStateInput {
+                schema_version: "uagent.mvp15d.native-state-observation.v1".to_string(),
+                kind: "asset_mutation_observation_boundary".to_string(),
+                request: boundary_request.clone(),
+            })
+            .unwrap();
+        assert_eq!(boundary.receipt_id, prepared_boundary_receipt_id);
+        assert_eq!(boundary.observation["status"], "observed");
+        assert_eq!(boundary.observation["reason"], "operation_response_pending");
+        assert_eq!(boundary.observation["effectState"], "unknown");
+        assert_eq!(boundary.observation["jsonRpcRequestId"], 41);
+        assert_eq!(boundary.observation["mcpSessionId"], mcp_session_id);
+        let _ = release_tx.send(());
+        let response = worker.join().unwrap();
+        server.join().unwrap();
+        assert!(pending_native_mcp_transport_registry()
+            .lock()
+            .unwrap()
+            .records
+            .is_empty());
+        assert_eq!(
+            state
+                .observe_native_state(ObserveNativeStateInput {
+                    schema_version: "uagent.mvp15d.native-state-observation.v1".to_string(),
+                    kind: "asset_mutation_observation_boundary".to_string(),
+                    request: boundary_request.clone(),
+                })
+                .unwrap_err()
+                .code(),
+            "MVP15D_PARTIAL_OBSERVATION_BOUNDARY_INVALID"
+        );
+
+        assert_eq!(body_seen.as_deref(), Some(expected_request_body.as_bytes()));
+        let pending =
+            pending_snapshot.expect("exact request remains pending while response is held");
+        assert_eq!(pending.registered_after_receipt_sequence, 1);
+        assert_eq!(pending.dispatched_after_receipt_sequence, Some(1));
+        assert_eq!(pending.request.pointer("/body/id"), Some(&Value::from(41)));
+        assert_eq!(
+            pending.request.pointer("/body/params/name"),
+            Some(&Value::String("ue.asset.move".to_string()))
+        );
+        assert_eq!(
+            pending.request_sha256,
+            sha256_bytes(canonical_json(&pending.request).as_bytes())
+        );
+        assert_eq!(
+            boundary.observation["requestSha256"],
+            pending.request_sha256
+        );
+        let response = response.unwrap();
+        assert!(response
+            .observation_receipts
+            .as_ref()
+            .is_some_and(|receipts| receipts.contains_key("mcp_asset_tool_call")));
+        let late_receipt_id = response
+            .observation_receipts
+            .as_ref()
+            .and_then(|receipts| receipts.get("mcp_asset_tool_call"))
+            .unwrap()
+            .clone();
+        let outcome = crate::asset_mutation::record_asset_mutation_outcome(
+            crate::asset_mutation::RecordAssetMutationOutcomeInput {
+                registration_id: registration_id.to_string(),
+                phase: "execute".to_string(),
+                operation_id: operation_id.to_string(),
+                success: true,
+                side_effect_observed: true,
+                effect_state: "known_effect".to_string(),
+                rollback_available: true,
+                evidence_id: Some("native-pending-move-executed".to_string()),
+                reason_code: Some("none".to_string()),
+            },
+        );
+        assert_eq!(outcome.status, "recorded");
+        let outcome_receipt_id = outcome.native_receipt_id.unwrap();
+        let ledger = observation_receipt_ledger().lock().unwrap();
+        let guard_sequence = ledger.records.get(&guard_receipt_id).unwrap().sequence;
+        let boundary_sequence = ledger.records.get(&boundary.receipt_id).unwrap().sequence;
+        let late_sequence = ledger.records.get(&late_receipt_id).unwrap().sequence;
+        let outcome_sequence = ledger.records.get(&outcome_receipt_id).unwrap().sequence;
+        assert!(guard_sequence < boundary_sequence);
+        assert!(boundary_sequence < late_sequence);
+        assert!(late_sequence < outcome_sequence);
+        drop(ledger);
+        assert!(pending_native_mcp_transport_registry()
+            .lock()
+            .unwrap()
+            .records
+            .is_empty());
+    }
+
+    #[test]
+    fn native_mcp_transport_failure_records_unknown_outcome_and_retires_asset_in_flight() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let _registry_guard = crate::reset_shared_registries_for_test();
+        let (_root, state) = rendered_state(BridgePhase::UiLifecycle);
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let registration_id = "registration-transport-failure";
+        let change_set_id = "change-transport-failure";
+        let run_id = "run-transport-failure";
+        let operation_id = "partial-operation-4-transport-failure";
+        let operation_index = 3;
+        let operation_count = 5;
+        let _asset_scope = crate::asset_mutation::seed_asset_mutation_in_flight_for_bridge_test(
+            registration_id,
+            change_set_id,
+            run_id,
+            operation_id,
+            operation_index,
+            operation_count,
+        );
+        let guard_receipt_id = issue_native_observation_receipt(
+            "execute_asset_mutation",
+            json!({ "operationId": operation_id }),
+            json!({
+                "status": "accepted_by_native_guard",
+                "registrationId": registration_id,
+                "phase": "execute",
+                "operationId": operation_id,
+                "operationIndex": operation_index,
+                "operationCount": operation_count,
+            }),
+        )
+        .unwrap();
+        let input = crate::mcp::McpHttpRequestInput {
+            endpoint: state.identity.endpoint.clone(),
+            method: crate::mcp::McpHttpMethod::Post,
+            body: json!({
+                "jsonrpc": "2.0",
+                "id": 42,
+                "method": "tools/call",
+                "params": {
+                    "name": "ue.asset.move",
+                    "arguments": {
+                        "nativeRegistrationId": registration_id,
+                        "nativePhase": "execute",
+                        "nativeOperationIndex": operation_index,
+                        "nativeOperationCount": operation_count,
+                        "dryRun": false,
+                        "execute": true,
+                        "rollback": false,
+                        "operationId": operation_id,
+                        "changeSetId": change_set_id,
+                        "runId": run_id,
+                    }
+                }
+            })
+            .to_string(),
+            protocol_version: Some("2025-06-18".to_string()),
+            session_id: Some("native-session-transport-failure".to_string()),
+            timeout_ms: Some(5_000),
+            observation: Some(crate::mcp::McpObservationIntent {
+                schema_version: MCP_OBSERVATION_INTENT_SCHEMA.to_string(),
+                task_id: state.identity.task_id.clone(),
+                phase: state.identity.phase.as_str().to_string(),
+                phase_session_id: state.identity.session.clone(),
+                phase_generation: state.identity.generation,
+                connection_generation: 17,
+                tool_search_mode: "ui".to_string(),
+                asset_mutation_boundary: None,
+            }),
+        };
+        let exact_request = native_mcp_request_basis(&input).unwrap();
+        for (flag, drifted_value) in [
+            ("dryRun", Value::Bool(true)),
+            ("execute", Value::Bool(false)),
+            ("rollback", Value::Bool(true)),
+        ] {
+            let mut drifted_input = input.clone();
+            let mut drifted_body: Value = serde_json::from_str(&drifted_input.body).unwrap();
+            drifted_body
+                .pointer_mut("/params/arguments")
+                .and_then(Value::as_object_mut)
+                .unwrap()
+                .insert(flag.to_string(), drifted_value);
+            drifted_input.body = drifted_body.to_string();
+            record_native_mcp_transport_failure(
+                &drifted_input,
+                "forced_transport_failure_with_flag_drift",
+            );
+            assert!(crate::asset_mutation::asset_mutation_in_flight_matches(
+                registration_id,
+                "execute",
+                "ue.asset.move",
+                operation_id,
+                operation_index,
+                operation_count,
+                change_set_id,
+                run_id,
+            ));
+        }
+        {
+            let ledger = observation_receipt_ledger().lock().unwrap();
+            assert_eq!(
+                ledger
+                    .records
+                    .values()
+                    .filter(|record| record.api == "mcp_transport_failure")
+                    .count(),
+                3
+            );
+            assert!(!ledger
+                .records
+                .values()
+                .any(|record| record.api == "record_asset_mutation_outcome"));
+        }
+        let preexisting_failure_receipt_id = issue_native_observation_receipt(
+            "mcp_transport_failure",
+            exact_request.clone(),
+            json!({
+                "status": "failed",
+                "reason": "native_request_task_failed",
+                "runtimePid": std::process::id(),
+            }),
+        )
+        .unwrap();
+        let join_result =
+            tauri::async_runtime::block_on(crate::mcp::run_mcp_streamable_http_request_for_test(
+                input.clone(),
+                begin_native_mcp_transport_observation,
+                |_, _| panic!("forced blocking worker panic after native guard acceptance"),
+            ));
+        assert_eq!(
+            join_result.unwrap_err(),
+            "native_request_task_failed".to_string()
+        );
+        record_native_mcp_transport_failure(&input, "native_request_task_failed");
+
+        assert!(!crate::asset_mutation::asset_mutation_in_flight_matches(
+            registration_id,
+            "execute",
+            "ue.asset.move",
+            operation_id,
+            operation_index,
+            operation_count,
+            change_set_id,
+            run_id,
+        ));
+        let ledger = observation_receipt_ledger().lock().unwrap();
+        let guard_sequence = ledger.records.get(&guard_receipt_id).unwrap().sequence;
+        assert_eq!(
+            ledger
+                .records
+                .values()
+                .filter(|record| record.api == "mcp_transport_failure"
+                    && record.request == exact_request)
+                .count(),
+            1
+        );
+        assert_eq!(
+            ledger
+                .records
+                .values()
+                .filter(|record| record.api == "record_asset_mutation_outcome")
+                .count(),
+            1
+        );
+        let (failure_receipt_id, failure) = ledger
+            .records
+            .iter()
+            .find(|(_, record)| {
+                record.api == "mcp_transport_failure" && record.request == exact_request
+            })
+            .unwrap();
+        assert_eq!(failure_receipt_id, &preexisting_failure_receipt_id);
+        let outcome = ledger
+            .records
+            .values()
+            .find(|record| record.api == "record_asset_mutation_outcome")
+            .unwrap();
+        assert!(guard_sequence < failure.sequence && failure.sequence < outcome.sequence);
+        assert_eq!(failure.response["status"], "failed");
+        assert_eq!(failure.response["reason"], "native_request_task_failed");
+        assert_eq!(outcome.request["registrationId"], registration_id);
+        assert_eq!(outcome.request["phase"], "execute");
+        assert_eq!(outcome.request["operationId"], operation_id);
+        assert_eq!(outcome.request["success"], false);
+        assert_eq!(outcome.request["sideEffectObserved"], false);
+        assert_eq!(outcome.request["effectState"], "unknown");
+        assert_eq!(outcome.request["rollbackAvailable"], false);
+        assert_eq!(outcome.request["evidenceId"], *failure_receipt_id);
+        assert_eq!(
+            outcome.request["reasonCode"],
+            "mcp_transport_terminal_observation_unavailable"
+        );
+        assert_eq!(outcome.response["status"], "recorded");
+        assert_eq!(outcome.response["reason"], "operation_effect_unknown");
+        drop(ledger);
+        assert!(pending_native_mcp_transport_registry()
+            .lock()
+            .unwrap()
+            .records
+            .is_empty());
+    }
+
+    #[test]
+    fn native_mcp_preflight_failures_close_exact_asset_in_flight() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let _registry_guard = crate::reset_shared_registries_for_test();
+        let (_root, state) = rendered_state(BridgePhase::UiLifecycle);
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let operation_index = 3;
+        let operation_count = 5;
+        let input_for = |registration_id: &str,
+                         change_set_id: &str,
+                         run_id: &str,
+                         operation_id: &str,
+                         request_id: u64| {
+            crate::mcp::McpHttpRequestInput {
+                endpoint: state.identity.endpoint.clone(),
+                method: crate::mcp::McpHttpMethod::Post,
+                body: json!({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "ue.asset.move",
+                        "arguments": {
+                            "nativeRegistrationId": registration_id,
+                            "nativePhase": "execute",
+                            "nativeOperationIndex": operation_index,
+                            "nativeOperationCount": operation_count,
+                            "dryRun": false,
+                            "execute": true,
+                            "rollback": false,
+                            "operationId": operation_id,
+                            "changeSetId": change_set_id,
+                            "runId": run_id,
+                        }
+                    }
+                })
+                .to_string(),
+                protocol_version: Some("2025-06-18".to_string()),
+                session_id: Some(format!("native-session-preflight-{request_id}")),
+                timeout_ms: Some(5_000),
+                observation: Some(crate::mcp::McpObservationIntent {
+                    schema_version: MCP_OBSERVATION_INTENT_SCHEMA.to_string(),
+                    task_id: state.identity.task_id.clone(),
+                    phase: state.identity.phase.as_str().to_string(),
+                    phase_session_id: state.identity.session.clone(),
+                    phase_generation: state.identity.generation,
+                    connection_generation: 17,
+                    tool_search_mode: "ui".to_string(),
+                    asset_mutation_boundary: None,
+                }),
+            }
+        };
+        let assert_closed = |input: &crate::mcp::McpHttpRequestInput,
+                             guard_receipt_id: &str,
+                             registration_id: &str,
+                             change_set_id: &str,
+                             run_id: &str,
+                             operation_id: &str,
+                             failure_reason: &str| {
+            assert!(!crate::asset_mutation::asset_mutation_in_flight_matches(
+                registration_id,
+                "execute",
+                "ue.asset.move",
+                operation_id,
+                operation_index,
+                operation_count,
+                change_set_id,
+                run_id,
+            ));
+            assert!(pending_native_mcp_transport_registry()
+                .lock()
+                .unwrap()
+                .records
+                .is_empty());
+            let exact_request = native_mcp_request_basis(input).unwrap();
+            let ledger = observation_receipt_ledger().lock().unwrap();
+            let guard_sequence = ledger.records.get(guard_receipt_id).unwrap().sequence;
+            let (failure_receipt_id, failure) = ledger
+                .records
+                .iter()
+                .find(|(_, record)| {
+                    record.api == "mcp_transport_failure" && record.request == exact_request
+                })
+                .unwrap();
+            let outcome = ledger
+                .records
+                .values()
+                .find(|record| {
+                    record.api == "record_asset_mutation_outcome"
+                        && record.request.get("registrationId").and_then(Value::as_str)
+                            == Some(registration_id)
+                })
+                .unwrap();
+            assert!(guard_sequence < failure.sequence && failure.sequence < outcome.sequence);
+            assert_eq!(failure.response["reason"], failure_reason);
+            assert_eq!(outcome.request["success"], false);
+            assert_eq!(outcome.request["sideEffectObserved"], false);
+            assert_eq!(outcome.request["effectState"], "unknown");
+            assert_eq!(outcome.request["rollbackAvailable"], false);
+            assert_eq!(outcome.request["evidenceId"], *failure_receipt_id);
+        };
+
+        let begin_registration_id = "registration-preflight-begin";
+        let begin_change_set_id = "change-preflight-begin";
+        let begin_run_id = "run-preflight-begin";
+        let begin_operation_id = "partial-operation-4-preflight-begin";
+        let begin_scope = crate::asset_mutation::seed_asset_mutation_in_flight_for_bridge_test(
+            begin_registration_id,
+            begin_change_set_id,
+            begin_run_id,
+            begin_operation_id,
+            operation_index,
+            operation_count,
+        );
+        let begin_guard_receipt_id = issue_native_observation_receipt(
+            "execute_asset_mutation",
+            json!({ "operationId": begin_operation_id }),
+            json!({
+                "status": "accepted_by_native_guard",
+                "registrationId": begin_registration_id,
+                "phase": "execute",
+                "operationId": begin_operation_id,
+                "operationIndex": operation_index,
+                "operationCount": operation_count,
+            }),
+        )
+        .unwrap();
+        let begin_input = input_for(
+            begin_registration_id,
+            begin_change_set_id,
+            begin_run_id,
+            begin_operation_id,
+            51,
+        );
+        let begin_result =
+            tauri::async_runtime::block_on(crate::mcp::run_mcp_streamable_http_request_for_test(
+                begin_input.clone(),
+                |_| Err("forced_native_mcp_observation_begin_failed".to_string()),
+                |_, _| panic!("worker must not start after observation begin failure"),
+            ));
+        assert_eq!(
+            begin_result.unwrap_err(),
+            "forced_native_mcp_observation_begin_failed"
+        );
+        assert_closed(
+            &begin_input,
+            &begin_guard_receipt_id,
+            begin_registration_id,
+            begin_change_set_id,
+            begin_run_id,
+            begin_operation_id,
+            "forced_native_mcp_observation_begin_failed",
+        );
+        drop(begin_scope);
+
+        let dispatch_registration_id = "registration-preflight-dispatch";
+        let dispatch_change_set_id = "change-preflight-dispatch";
+        let dispatch_run_id = "run-preflight-dispatch";
+        let dispatch_operation_id = "partial-operation-4-preflight-dispatch";
+        let _dispatch_scope = crate::asset_mutation::seed_asset_mutation_in_flight_for_bridge_test(
+            dispatch_registration_id,
+            dispatch_change_set_id,
+            dispatch_run_id,
+            dispatch_operation_id,
+            operation_index,
+            operation_count,
+        );
+        let dispatch_guard_receipt_id = issue_native_observation_receipt(
+            "execute_asset_mutation",
+            json!({ "operationId": dispatch_operation_id }),
+            json!({
+                "status": "accepted_by_native_guard",
+                "registrationId": dispatch_registration_id,
+                "phase": "execute",
+                "operationId": dispatch_operation_id,
+                "operationIndex": operation_index,
+                "operationCount": operation_count,
+            }),
+        )
+        .unwrap();
+        let dispatch_input = input_for(
+            dispatch_registration_id,
+            dispatch_change_set_id,
+            dispatch_run_id,
+            dispatch_operation_id,
+            52,
+        );
+        let pending_dispatch = begin_native_mcp_transport_observation(&dispatch_input)
+            .unwrap()
+            .unwrap();
+        let mut drifted_dispatch_input = dispatch_input;
+        drifted_dispatch_input.timeout_ms = Some(5_001);
+        assert_eq!(
+            crate::mcp::post_streamable_http_started_for_test(
+                drifted_dispatch_input.clone(),
+                pending_dispatch,
+            )
+            .unwrap_err(),
+            "MVP15D_MCP_PENDING_REQUEST_INVALID"
+        );
+        assert_closed(
+            &drifted_dispatch_input,
+            &dispatch_guard_receipt_id,
+            dispatch_registration_id,
+            dispatch_change_set_id,
+            dispatch_run_id,
+            dispatch_operation_id,
+            "MVP15D_MCP_PENDING_REQUEST_INVALID",
+        );
+    }
+
+    #[test]
+    fn native_mcp_malformed_body_after_guard_records_unknown_and_clears_in_flight() {
+        let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
+        let _registry_guard = crate::reset_shared_registries_for_test();
+        let (_root, state) = rendered_state(BridgePhase::UiLifecycle);
+        activate_observation_receipt_ledger(&state.identity).unwrap();
+        let registration_id = "registration-malformed-body";
+        let change_set_id = "change-malformed-body";
+        let run_id = "run-malformed-body";
+        let operation_id = "partial-operation-4-malformed-body";
+        let operation_index = 3;
+        let operation_count = 5;
+        let mcp_session_id = "native-session-malformed-body";
+        let _asset_scope = crate::asset_mutation::seed_asset_mutation_in_flight_for_bridge_test(
+            registration_id,
+            change_set_id,
+            run_id,
+            operation_id,
+            operation_index,
+            operation_count,
+        );
+        let guard_receipt_id = issue_native_observation_receipt(
+            "execute_asset_mutation",
+            json!({ "operationId": operation_id }),
+            json!({
+                "status": "accepted_by_native_guard",
+                "registrationId": registration_id,
+                "phase": "execute",
+                "operationId": operation_id,
+                "operationIndex": operation_index,
+                "operationCount": operation_count,
+            }),
+        )
+        .unwrap();
+        let boundary_request = json!({
+            "registrationId": registration_id,
+            "changeSetId": change_set_id,
+            "runId": run_id,
+            "phase": "execute",
+            "operationId": operation_id,
+            "operationIndex": operation_index,
+            "operationCount": operation_count,
+            "toolName": "ue.asset.move",
+            "mcpSessionId": mcp_session_id,
+            "guardReceiptId": guard_receipt_id,
+        });
+        let malformed_body = r#"{"jsonrpc":"2.0","id":53,"method":"tools/call""#.to_string();
+        let input = crate::mcp::McpHttpRequestInput {
+            endpoint: state.identity.endpoint.clone(),
+            method: crate::mcp::McpHttpMethod::Post,
+            body: malformed_body.clone(),
+            protocol_version: Some("2025-06-18".to_string()),
+            session_id: Some(mcp_session_id.to_string()),
+            timeout_ms: Some(5_000),
+            observation: Some(crate::mcp::McpObservationIntent {
+                schema_version: MCP_OBSERVATION_INTENT_SCHEMA.to_string(),
+                task_id: state.identity.task_id.clone(),
+                phase: state.identity.phase.as_str().to_string(),
+                phase_session_id: state.identity.session.clone(),
+                phase_generation: state.identity.generation,
+                connection_generation: 17,
+                tool_search_mode: "ui".to_string(),
+                asset_mutation_boundary: Some(boundary_request.clone()),
+            }),
+        };
+        assert_eq!(
+            crate::mcp::post_streamable_http(input).unwrap_err(),
+            "MVP15D_MCP_OBSERVATION_BODY_INVALID"
+        );
+        assert!(!crate::asset_mutation::asset_mutation_in_flight_matches(
+            registration_id,
+            "execute",
+            "ue.asset.move",
+            operation_id,
+            operation_index,
+            operation_count,
+            change_set_id,
+            run_id,
+        ));
+        assert!(pending_native_mcp_transport_registry()
+            .lock()
+            .unwrap()
+            .records
+            .is_empty());
+        let ledger = observation_receipt_ledger().lock().unwrap();
+        let guard_sequence = ledger.records.get(&guard_receipt_id).unwrap().sequence;
+        let (failure_receipt_id, failure) = ledger
+            .records
+            .iter()
+            .find(|(_, record)| record.api == "mcp_transport_failure")
+            .unwrap();
+        let outcome = ledger
+            .records
+            .values()
+            .find(|record| record.api == "record_asset_mutation_outcome")
+            .unwrap();
+        assert!(guard_sequence < failure.sequence && failure.sequence < outcome.sequence);
+        assert_eq!(failure.request["body"], Value::Null);
+        assert_eq!(
+            failure.request["malformedBodySha256"],
+            sha256_bytes(malformed_body.as_bytes())
+        );
+        assert_eq!(
+            failure.request["malformedBodyByteLength"],
+            malformed_body.len()
+        );
+        assert_eq!(
+            failure.request.pointer("/intent/assetMutationBoundary"),
+            Some(&boundary_request)
+        );
+        assert_eq!(failure.response["status"], "failed");
+        assert_eq!(
+            failure.response["reason"],
+            "MVP15D_MCP_OBSERVATION_BODY_INVALID"
+        );
+        assert_eq!(outcome.request["registrationId"], registration_id);
+        assert_eq!(outcome.request["operationId"], operation_id);
+        assert_eq!(outcome.request["success"], false);
+        assert_eq!(outcome.request["sideEffectObserved"], false);
+        assert_eq!(outcome.request["effectState"], "unknown");
+        assert_eq!(outcome.request["rollbackAvailable"], false);
+        assert_eq!(outcome.request["evidenceId"], *failure_receipt_id);
+        assert_eq!(outcome.response["status"], "recorded");
+        assert_eq!(outcome.response["reason"], "operation_effect_unknown");
+    }
+
+    #[test]
     fn native_mcp_boundary_accepts_empty_202_notification_and_delete_responses() {
         let _ledger_guard = LEDGER_TEST_LOCK.lock().unwrap();
         let (_root, state) = rendered_state(BridgePhase::ProductCapture);
@@ -8848,6 +11653,7 @@ mod tests {
                 phase_generation: state.identity.generation,
                 connection_generation: 17,
                 tool_search_mode: "off".to_string(),
+                asset_mutation_boundary: None,
             }),
         };
         let mut result = crate::mcp::McpHttpRequestResult {

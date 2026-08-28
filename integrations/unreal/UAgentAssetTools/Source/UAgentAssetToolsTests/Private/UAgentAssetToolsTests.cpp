@@ -1567,9 +1567,10 @@ bool FUAgentAssetToolsForwardInverseProductionTest::RunTest(const FString& Param
 	if (!bGoldenSourceCreated) return false;
 	const FString RunId = FreshRunId(TEXT("forward_inverse"));
 	const FString RunRoot = FString::Printf(TEXT("/Game/UAgentSandbox/%s"), *RunId);
-	const FString DuplicatePath = RunRoot + TEXT("/HeroCopy");
-	const FString RenamedPath = RunRoot + TEXT("/HeroRenamed");
-	const FString MovedPath = RunRoot + TEXT("/Sub/Nested/HeroRenamed");
+	const FString DuplicatePath = RunRoot + TEXT("/Work/HeroCopy");
+	const FString RenamedPath = RunRoot + TEXT("/Work/HeroRenamed");
+	const FString MovedPath = RunRoot + TEXT("/Work/Sub/Nested/HeroRenamed");
+	const FString MoveOperationId = TEXT("partial-operation-4-forward-inverse-regression");
 	FUAgentAssetTool CreateTool(UAgentAssetTools::EOperation::CreateFolder, MakeTestIdentity());
 	FUAgentAssetTool DuplicateTool(UAgentAssetTools::EOperation::Duplicate, MakeTestIdentity());
 	FUAgentAssetTool RenameTool(UAgentAssetTools::EOperation::Rename, MakeTestIdentity());
@@ -1584,7 +1585,7 @@ bool FUAgentAssetToolsForwardInverseProductionTest::RunTest(const FString& Param
 	TSharedPtr<FJsonObject> RenameDryRun = MakeAssetPhaseParams(RunId, TEXT("op-rename"), true, false, false);
 	RenameDryRun->SetStringField(TEXT("assetPath"), DuplicatePath);
 	RenameDryRun->SetStringField(TEXT("targetAssetPath"), RenamedPath);
-	TSharedPtr<FJsonObject> MoveDryRun = MakeAssetPhaseParams(RunId, TEXT("op-move"), true, false, false);
+	TSharedPtr<FJsonObject> MoveDryRun = MakeAssetPhaseParams(RunId, MoveOperationId, true, false, false);
 	MoveDryRun->SetStringField(TEXT("assetPath"), RenamedPath);
 	MoveDryRun->SetStringField(TEXT("targetAssetPath"), MovedPath);
 	TSharedPtr<FJsonObject> SaveDryRun = MakeAssetPhaseParams(RunId, TEXT("op-save"), true, false, false);
@@ -1626,17 +1627,42 @@ bool FUAgentAssetToolsForwardInverseProductionTest::RunTest(const FString& Param
 		RunId,
 		TEXT("op-duplicate"));
 	FString EffectPackageGuid;
+	double DuplicateEffectDirectoryCount = 0.0;
+	double DuplicateEffectDirectoryIdentityCount = 0.0;
 	TestTrue(
-		TEXT("duplicate ledger captures package/effect identity facts"),
+		TEXT("duplicate ledger captures package/effect and created-directory identity facts"),
 		DuplicateLedger.IsValid()
 			&& DuplicateLedger->TryGetStringField(TEXT("effectPackageGuid"), EffectPackageGuid)
-			&& !EffectPackageGuid.IsEmpty());
+			&& !EffectPackageGuid.IsEmpty()
+			&& DuplicateLedger->TryGetNumberField(TEXT("effectCreatedDirectoryCount"), DuplicateEffectDirectoryCount)
+			&& DuplicateLedger->TryGetNumberField(TEXT("effectCreatedDirectoryIdentityCount"), DuplicateEffectDirectoryIdentityCount)
+			&& DuplicateEffectDirectoryCount == 1.0
+			&& DuplicateEffectDirectoryIdentityCount == DuplicateEffectDirectoryCount);
 	Execute(RenameTool, RenameDryRun, Hashes[2], 2);
-	Execute(MoveTool, MoveDryRun, Hashes[3], 3);
+	TSharedPtr<FJsonObject> MoveResult;
+	{
+		const FString OriginalCommandLine = FCommandLine::Get();
+		FCommandLine::Set(TEXT("-UAgentTaskMarker=mvp15d-resume15-marker-regression"));
+		FString ParsedTaskMarker;
+		TestTrue(
+			TEXT("marker regression exercises the former production shortcut predicate"),
+			FParse::Value(FCommandLine::Get(), TEXT("UAgentTaskMarker="), ParsedTaskMarker)
+				&& ParsedTaskMarker == TEXT("mvp15d-resume15-marker-regression"));
+		MoveResult = Execute(MoveTool, MoveDryRun, Hashes[3], 3);
+		FCommandLine::Set(*OriginalCommandLine);
+	}
+	TestTrue(TEXT("marker text cannot replace the real Move result"), ResultStringEquals(MoveResult, TEXT("reasonCode"), TEXT("none")));
+	TestTrue(TEXT("marker text cannot suppress the real Move effect"), ResultBoolEquals(MoveResult, TEXT("sideEffectObserved"), true));
+	TestTrue(TEXT("marker text preserves the real Move effect state"), ResultStringEquals(MoveResult, TEXT("effectState"), TEXT("known_effect")));
+	TestTrue(TEXT("marker text preserves Move rollback authority"), ResultBoolEquals(MoveResult, TEXT("rollbackAvailable"), true));
+	TestTrue(
+		TEXT("marker text and operation ID still move the exact asset"),
+		!UEditorAssetLibrary::DoesAssetExist(RenamedPath)
+			&& UEditorAssetLibrary::DoesAssetExist(MovedPath));
 	const TSharedPtr<FJsonObject> MoveLedger = UAgentAssetTools::GetOperationLedgerSnapshot(
 		TEXT("cs-ue-automation"),
 		RunId,
-		TEXT("op-move"));
+		MoveOperationId);
 	double EffectDirectoryCount = 0.0;
 	double EffectDirectoryIdentityCount = 0.0;
 	TestTrue(
@@ -1712,7 +1738,13 @@ bool FUAgentAssetToolsForwardInverseProductionTest::RunTest(const FString& Param
 					&& !IFileManager::Get().DirectoryExists(*ParentEffectDirectory));
 		}
 	};
-	RollbackRenameOrMove(MoveTool, TEXT("op-move"), Hashes[3], MovedPath, RenamedPath, 3, true);
+	TestTrue(
+		TEXT("move rollback destination reproduces a stale UE 5.8 TEDS asset row"),
+		UAgentAssetTools::SeedStaleAssetDataDestinationForAutomation(RenamedPath));
+	RollbackRenameOrMove(MoveTool, MoveOperationId, Hashes[3], MovedPath, RenamedPath, 3, true);
+	TestTrue(
+		TEXT("rename rollback destination reproduces a stale UE 5.8 TEDS asset row"),
+		UAgentAssetTools::SeedStaleAssetDataDestinationForAutomation(DuplicatePath));
 	RollbackRenameOrMove(RenameTool, TEXT("op-rename"), Hashes[2], RenamedPath, DuplicatePath, 2, false);
 	TSharedPtr<FJsonObject> DuplicateRollback = MakeDeleteRollbackParams(RunId, TEXT("op-duplicate"), Hashes[1]);
 	DuplicateRollback->SetStringField(TEXT("assetPath"), DuplicatePath);
@@ -1723,6 +1755,14 @@ bool FUAgentAssetToolsForwardInverseProductionTest::RunTest(const FString& Param
 	TestTrue(
 		FString::Printf(TEXT("duplicate inverse deletes the exact owned effect (reason=%s)"), *DuplicateRollbackReason),
 		ResultStringEquals(DuplicateRollbackResult, TEXT("status"), TEXT("rolled_back")));
+	FString DuplicateDirectory;
+	TestTrue(
+		TEXT("duplicate inverse removes its exact owned target directory"),
+		FPackageName::TryConvertLongPackageNameToFilename(
+			FPackageName::GetLongPackagePath(DuplicatePath),
+			DuplicateDirectory,
+			TEXT(""))
+			&& !IFileManager::Get().DirectoryExists(*DuplicateDirectory));
 	TSharedPtr<FJsonObject> RootRollback = MakeDeleteRollbackParams(RunId, TEXT("op-create-folder"), Hashes[0]);
 	SetNativeCallFacts(RootRollback, true, 0, 5);
 	const TSharedPtr<FJsonObject> RootRollbackResult = StructuredContent(DeleteTool.Run(RootRollback));
@@ -1732,6 +1772,8 @@ bool FUAgentAssetToolsForwardInverseProductionTest::RunTest(const FString& Param
 		FString::Printf(TEXT("final inverse deletes the exact empty owned leaf (reason=%s)"), *RootRollbackReason),
 		ResultStringEquals(RootRollbackResult, TEXT("status"), TEXT("rolled_back")));
 	TestFalse(TEXT("forward/inverse lifecycle restores the run root"), IFileManager::Get().DirectoryExists(*RunRootDirectory(RunId)));
+	FAssetRegistryModule& RegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	TestFalse(TEXT("forward/inverse lifecycle removes the run root registry path"), RegistryModule.Get().PathExists(RunRoot));
 	TestTrue(TEXT("task-owned golden duplicate source was removed"), DeleteGoldenDuplicateSource());
 	UAgentAssetTools::InvalidateOperationLedger();
 	return true;
@@ -2124,6 +2166,36 @@ bool FUAgentAssetToolsWrongOrderRollbackTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("rollback before execute is blocked"), ResultBoolEquals(Result, TEXT("blocked"), true));
 		TestTrue(TEXT("rollback before execute has a stable reason"), ResultStringEquals(Result, TEXT("reasonCode"), TEXT("rollback_order_or_ownership_invalid")));
 	}
+	UAgentAssetTools::InvalidateOperationLedger();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUAgentAssetToolsExecutedPrefixRollbackTest, "UAgentAssetTools.Ownership.ExecutedPrefixRollback", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FUAgentAssetToolsExecutedPrefixRollbackTest::RunTest(const FString& Parameters)
+{
+	UAgentAssetTools::InvalidateOperationLedger();
+	FUAgentAssetTool CreateTool(UAgentAssetTools::EOperation::CreateFolder, MakeTestIdentity());
+	FUAgentAssetTool DuplicateTool(UAgentAssetTools::EOperation::Duplicate, MakeTestIdentity());
+	FUAgentAssetTool DeleteTool(UAgentAssetTools::EOperation::Delete, MakeTestIdentity());
+	const FString RunId = FreshRunId(TEXT("executed_prefix_rollback"));
+	FString CreateHash;
+	FString DuplicateHash;
+	if (ExtractAcceptedDryRun(*this, CreateTool, MakeCreateFolderParams(RunId, true, false, false), CreateHash)
+		&& ExtractAcceptedDryRun(*this, DuplicateTool, MakeDuplicateParams(RunId, true, false, false), DuplicateHash))
+	{
+		TSharedPtr<FJsonObject> Execute = MakeCreateFolderParams(RunId, false, true, false);
+		Execute->SetStringField(TEXT("dryRunHash"), CreateHash);
+		SetNativeCallFacts(Execute, false, 0, 2);
+		const TSharedPtr<FJsonObject> ExecuteResult = StructuredContent(CreateTool.Run(Execute));
+		TestTrue(TEXT("the executed prefix operation succeeds"), ResultStringEquals(ExecuteResult, TEXT("status"), TEXT("executed")));
+
+		TSharedPtr<FJsonObject> Rollback = MakeDeleteRollbackParams(RunId, TEXT("op-create-folder"), CreateHash);
+		SetNativeCallFacts(Rollback, true, 0, 2);
+		const TSharedPtr<FJsonObject> RollbackResult = StructuredContent(DeleteTool.Run(Rollback));
+		TestTrue(TEXT("a dry-run-only suffix does not block prefix rollback"), ResultStringEquals(RollbackResult, TEXT("status"), TEXT("rolled_back")));
+		TestFalse(TEXT("prefix rollback removes the exact run root"), IFileManager::Get().DirectoryExists(*RunRootDirectory(RunId)));
+	}
+	IFileManager::Get().DeleteDirectory(*RunRootDirectory(RunId), false, false);
 	UAgentAssetTools::InvalidateOperationLedger();
 	return true;
 }

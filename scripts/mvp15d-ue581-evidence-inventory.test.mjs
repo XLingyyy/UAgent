@@ -28,6 +28,7 @@ import {
   REQUIRED_DIRECTORIES,
   REQUIRED_LOGS,
   TASK_GENERATION,
+  assertSecretFree,
   bindPackageArtifacts,
   bundleHash,
   create,
@@ -882,6 +883,21 @@ test("credential-bearing endpoints are rejected", () => {
   } finally {
     cleanup(fixture);
   }
+});
+
+test("package modules allow compiler paths while retaining home-path rejection", () => {
+  assert.doesNotThrow(() =>
+    assertSecretFree(Buffer.from("MZ D:\\build\\obj\\module.pdb", "latin1"), undefined, true),
+  );
+  expectCode(
+    () =>
+      assertSecretFree(
+        Buffer.from("MZ C:\\Users\\retained-user\\module.pdb", "latin1"),
+        undefined,
+        true,
+      ),
+    "UE581_INVENTORY_SENSITIVE_CONTENT",
+  );
 });
 
 test("Saved, Intermediate, DDC, AutoSDK, user settings and cache entries are rejected", async (t) => {

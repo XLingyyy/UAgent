@@ -305,6 +305,7 @@ struct ApprovalRecord {
     aggregate_dry_run_hash: String,
     aggregate_args_hash: String,
     companion_binding: Option<CompanionApprovalBinding>,
+    companion_process_exit_only: bool,
     companion_retracted: bool,
     expires_at: u64,
     transaction_deadline: Option<u64>,
@@ -335,6 +336,12 @@ struct CompanionApprovalBinding {
     source_identity: String,
     plugin_identity: String,
     package_identity: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CompanionRegistrationAuthority {
+    binding: Option<CompanionApprovalBinding>,
+    process_exit_only: bool,
 }
 
 #[derive(Default)]
@@ -454,6 +461,161 @@ pub(crate) fn approval_ownership_counts() -> (usize, usize) {
         .filter(|record| !record.token_hash.is_empty())
         .count();
     (registrations, issued_tokens)
+}
+
+pub(crate) fn asset_mutation_in_flight_matches(
+    registration_id: &str,
+    phase: &str,
+    tool_name: &str,
+    operation_id: &str,
+    operation_index: usize,
+    operation_count: usize,
+    change_set_id: &str,
+    run_id: &str,
+) -> bool {
+    let Ok(registry) = approval_registry().lock() else {
+        return false;
+    };
+    let Some(record) = registry.records.get(registration_id) else {
+        return false;
+    };
+    record.change_set_id == change_set_id
+        && record.run_id == run_id
+        && record.operations.len() == operation_count
+        && record
+            .in_flight
+            .as_ref()
+            .is_some_and(|(observed_phase, observed_index)| {
+                observed_phase == phase
+                    && *observed_index == operation_index
+                    && record
+                        .operations
+                        .get(*observed_index)
+                        .is_some_and(|operation| {
+                            let tool_matches = if observed_phase == "execute" {
+                                operation.tool_name == tool_name
+                                    && matches!(
+                                        (operation.kind.as_str(), tool_name),
+                                        ("create_folder", "ue.asset.create_folder")
+                                            | ("duplicate", "ue.asset.duplicate")
+                                            | ("rename", "ue.asset.rename")
+                                            | ("move", "ue.asset.move")
+                                            | ("save", "ue.asset.save")
+                                    )
+                            } else if observed_phase == "rollback" {
+                                inverse_operation(operation)
+                                    .is_some_and(|inverse| inverse.tool_name == tool_name)
+                            } else {
+                                false
+                            };
+                            operation.operation_id == operation_id && tool_matches
+                        })
+            })
+}
+
+#[cfg(test)]
+pub(crate) struct AssetMutationInFlightTestScope {
+    registration_id: String,
+}
+
+#[cfg(test)]
+impl Drop for AssetMutationInFlightTestScope {
+    fn drop(&mut self) {
+        approval_registry()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .records
+            .remove(&self.registration_id);
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn seed_asset_mutation_in_flight_for_bridge_test(
+    registration_id: &str,
+    change_set_id: &str,
+    run_id: &str,
+    operation_id: &str,
+    operation_index: usize,
+    operation_count: usize,
+) -> AssetMutationInFlightTestScope {
+    let operations = (0..operation_count)
+        .map(|index| AssetMutationApprovalOperation {
+            operation_id: if index == operation_index {
+                operation_id.to_string()
+            } else {
+                format!("bridge-test-operation-{index}")
+            },
+            kind: if index == operation_index {
+                "move".to_string()
+            } else {
+                "create_folder".to_string()
+            },
+            tool_name: if index == operation_index {
+                "ue.asset.move".to_string()
+            } else {
+                "ue.asset.create_folder".to_string()
+            },
+            plugin_dry_run_hash: "a".repeat(40),
+            args_hash: "b".repeat(64),
+            source_asset_path: None,
+            asset_path: Some(format!("/Game/UAgentSandbox/{run_id}/asset-{index}")),
+            target_asset_path: (index == operation_index)
+                .then(|| format!("/Game/UAgentSandbox/{run_id}/moved-{index}")),
+            rollback_action: if index == operation_index {
+                "move_back".to_string()
+            } else {
+                "cleanup_empty_folder".to_string()
+            },
+            rollback_tool_name: Some(if index == operation_index {
+                "ue.asset.move".to_string()
+            } else {
+                "ue.asset.delete".to_string()
+            }),
+            save_all: false,
+            bulk: false,
+        })
+        .collect::<Vec<_>>();
+    let record = ApprovalRecord {
+        token_hash: "bridge-test-token".to_string(),
+        native_created_at: 1,
+        change_set_id: change_set_id.to_string(),
+        run_id: run_id.to_string(),
+        project_binding_id: "bridge-test-project".to_string(),
+        trusted_root_id: "bridge-test-root".to_string(),
+        normalized_root: "bridge-test-root".to_string(),
+        canonical_root: PathBuf::from("bridge-test-root"),
+        content_root: PathBuf::from("bridge-test-root/Content"),
+        editor_session_id: "bridge-test-editor-session".to_string(),
+        mcp_binding: "bridge-test-mcp-binding".to_string(),
+        process_id: "bridge-test-process".to_string(),
+        pid_hash: "bridge-test-pid-hash".to_string(),
+        aggregate_dry_run_hash: "c".repeat(64),
+        aggregate_args_hash: "d".repeat(64),
+        companion_binding: None,
+        companion_process_exit_only: false,
+        companion_retracted: false,
+        expires_at: u64::MAX,
+        transaction_deadline: Some(u64::MAX),
+        recovery_deadline: Some(u64::MAX),
+        operations,
+        token_consumed: true,
+        execute_started: true,
+        execute_halted: false,
+        next_execute: operation_index,
+        successful_execute: (0..operation_index).collect(),
+        rollback_started: false,
+        rolled_back: Vec::new(),
+        in_flight: Some(("execute".to_string(), operation_index)),
+    };
+    let previous = approval_registry()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .records
+        .insert(registration_id.to_string(), record);
+    assert!(previous.is_none());
+    AssetMutationInFlightTestScope {
+        registration_id: registration_id.to_string(),
+    }
 }
 
 #[tauri::command]
@@ -992,7 +1154,7 @@ fn companion_binding_for_registration(
     authority: &CompanionApprovalAuthority,
     trusted_root_id: &str,
     observation: &crate::ue_editor_process::AssetMutationObservationBinding,
-) -> Result<Option<CompanionApprovalBinding>, &'static str> {
+) -> Result<CompanionRegistrationAuthority, &'static str> {
     let Some(binding) = authority.binding.as_ref() else {
         if authority.companion_required {
             return Err("companion_attestation_required");
@@ -1000,17 +1162,43 @@ fn companion_binding_for_registration(
         // Legacy direct-native approvals predate the companion route.  They are
         // intentionally unbound; a companion-backed approval always binds when
         // a verified companion generation is current for this observation.
-        return Ok(None);
+        return Ok(CompanionRegistrationAuthority {
+            binding: None,
+            process_exit_only: false,
+        });
     };
-    if binding.trusted_root_id != trusted_root_id
-        || binding.editor_session_id != observation.session_id
-        || binding.process_id != observation.process_id
-        || binding.pid_hash != observation.pid_hash
-        || observation.process_start_time != Some(binding.process_start_time)
+    if binding.trusted_root_id != trusted_root_id {
+        return Err("companion_attestation_required");
+    }
+    // Observation sessions are replaceable leases. The native PID, creation time,
+    // and PID hash remain the companion security identity across a fresh session.
+    if binding.process_id == observation.process_id
+        && binding.pid_hash == observation.pid_hash
+        && observation.process_start_time == Some(binding.process_start_time)
+    {
+        return Ok(CompanionRegistrationAuthority {
+            binding: Some(binding.clone()),
+            process_exit_only: false,
+        });
+    }
+    if observation.process_source != "managed"
+        || observation.pid_hash.is_empty()
+        || observation.process_start_time.is_none()
     {
         return Err("companion_attestation_required");
     }
-    Ok(Some(binding.clone()))
+    if binding.process_id == observation.process_id
+        || binding.pid_hash == observation.pid_hash
+        || observation.process_start_time == Some(binding.process_start_time)
+    {
+        return Err("companion_attestation_required");
+    }
+    // A task-owned managed fixture can produce process-exit evidence without ever
+    // receiving mutation authority. The guard below rejects it while it is live.
+    Ok(CompanionRegistrationAuthority {
+        binding: Some(binding.clone()),
+        process_exit_only: true,
+    })
 }
 
 fn companion_record_has_forward_authority(
@@ -2097,7 +2285,7 @@ fn register_asset_mutation_approval_with_gate_at(
     {
         return blocked_registration("native_authority_unavailable");
     }
-    let companion_binding = match companion_binding_for_registration(
+    let companion_authority = match companion_binding_for_registration(
         &registry.companion_authority,
         &trusted_root_id,
         &final_observation,
@@ -2135,7 +2323,8 @@ fn register_asset_mutation_approval_with_gate_at(
             pid_hash: observation.pid_hash,
             aggregate_dry_run_hash: input.aggregate_dry_run_hash,
             aggregate_args_hash: input.aggregate_args_hash,
-            companion_binding,
+            companion_binding: companion_authority.binding,
+            companion_process_exit_only: companion_authority.process_exit_only,
             companion_retracted: false,
             expires_at,
             transaction_deadline: None,
@@ -2254,6 +2443,9 @@ fn authorize_asset_mutation_with_gate_at(
         Ok(binding) => binding,
         Err(reason) => return blocked_guard(&input, reason),
     };
+    if snapshot.companion_process_exit_only {
+        return blocked_guard(&input, "companion_attestation_required");
+    }
     if observation.process_id != snapshot.process_id
         || observation.pid_hash != snapshot.pid_hash
         || observation.canonical_root != snapshot.canonical_root
@@ -3612,6 +3804,113 @@ mod tests {
             companion_binding_from_attestation("root:binding", &restarted_observation, &result, 4)
                 .expect("restarted process identity should bind independently");
         assert_ne!(binding.fingerprint, restarted.fingerprint);
+    }
+
+    #[test]
+    fn companion_registration_reuses_process_identity_and_limits_managed_mismatches() {
+        let _test_guard = clear_registry();
+        let binding = CompanionApprovalBinding {
+            generation: 7,
+            attestation_generation: 7,
+            fingerprint: hex('f', 64),
+            trusted_root_id: "root:binding".to_string(),
+            editor_session_id: "session:attested".to_string(),
+            process_id: "process:attested".to_string(),
+            pid_hash: "pid:attested".to_string(),
+            process_start_time: 170,
+            manifest_sha256: hex('a', 64),
+            descriptor_identity: hex('b', 64),
+            source_identity: hex('c', 64),
+            plugin_identity: hex('d', 64),
+            package_identity: hex('e', 64),
+        };
+        let authority = CompanionApprovalAuthority {
+            generation: binding.generation,
+            minimum_attestation_generation: binding.attestation_generation,
+            binding: Some(binding.clone()),
+            companion_required: true,
+        };
+        let observation = crate::ue_editor_process::AssetMutationObservationBinding {
+            session_id: "session:fresh".to_string(),
+            process_id: binding.process_id.clone(),
+            project_id: "project:binding".to_string(),
+            root_id: binding.trusted_root_id.clone(),
+            canonical_root: PathBuf::from("binding-root"),
+            pid_hash: binding.pid_hash.clone(),
+            pid: Some(77),
+            process_start_time: Some(binding.process_start_time),
+            process_source: "native".to_string(),
+            observation_generation: 2,
+        };
+
+        let same_process =
+            companion_binding_for_registration(&authority, &binding.trusted_root_id, &observation)
+                .expect(
+                    "a fresh observation session for the attested process remains authoritative",
+                );
+        assert_eq!(same_process.binding, Some(binding.clone()));
+        assert!(!same_process.process_exit_only);
+
+        let managed_observation = crate::ue_editor_process::AssetMutationObservationBinding {
+            session_id: "session:managed-negative".to_string(),
+            process_id: "process:managed-negative".to_string(),
+            pid_hash: "pid:managed-negative".to_string(),
+            pid: Some(78),
+            process_start_time: Some(171),
+            process_source: "managed".to_string(),
+            observation_generation: 1,
+            ..observation.clone()
+        };
+        let managed = companion_binding_for_registration(
+            &authority,
+            &binding.trusted_root_id,
+            &managed_observation,
+        )
+        .expect("managed negative observations may register only for exit evidence");
+        assert_eq!(managed.binding, Some(binding));
+        assert!(managed.process_exit_only);
+
+        let native_mismatch = crate::ue_editor_process::AssetMutationObservationBinding {
+            process_source: "native".to_string(),
+            ..managed_observation
+        };
+        assert_eq!(
+            companion_binding_for_registration(&authority, "root:binding", &native_mismatch),
+            Err("companion_attestation_required")
+        );
+    }
+
+    #[test]
+    fn companion_process_exit_only_registration_cannot_authorize_a_live_process() {
+        let _test_guard = clear_registry();
+        let now = 45;
+        let input = registration("companion-process-exit-only", now);
+        let registered = register_asset_mutation_approval_at(input.clone(), now);
+        assert_eq!(registered.status, "registered");
+        approval_registry()
+            .lock()
+            .unwrap()
+            .records
+            .get_mut(&registered.registration_id)
+            .unwrap()
+            .companion_process_exit_only = true;
+
+        let guard = step(
+            &input,
+            &registered.registration_id,
+            "execute",
+            0,
+            registered.approval_token.as_deref(),
+        );
+        assert_eq!(
+            authorize_asset_mutation_at(guard.clone(), now + 1).reason,
+            "companion_attestation_required"
+        );
+        remove_asset_mutation_process_fixture(&input.editor_session_id);
+        assert_eq!(
+            authorize_asset_mutation_at(guard, now + 2).reason,
+            "process_exited"
+        );
     }
 
     #[test]
@@ -5584,6 +5883,126 @@ mod tests {
             .reason,
             "companion_attestation_retracted"
         );
+    }
+
+    #[test]
+    fn asset_in_flight_observation_binds_the_exact_real_move_and_clears_after_outcome() {
+        let _test_guard = clear_registry();
+        let now = 180;
+        let mut input = registration("move-observation-boundary", now);
+        input.operations[3].operation_id =
+            "partial-operation-4-native-boundary-regression".to_string();
+        let registered = register_asset_mutation_approval_at(input.clone(), now);
+        let issued_token = registered.approval_token.clone().unwrap();
+        for index in 0..3 {
+            let token = (index == 0).then_some(issued_token.as_str());
+            assert_eq!(
+                authorize_asset_mutation_at(
+                    step(&input, &registered.registration_id, "execute", index, token),
+                    now + index as u64 + 1,
+                )
+                .status,
+                "accepted_by_native_guard"
+            );
+            assert_eq!(
+                record_asset_mutation_outcome_at(
+                    outcome(
+                        &registered.registration_id,
+                        "execute",
+                        &input.operations[index].operation_id,
+                        true,
+                    ),
+                    now + index as u64 + 1,
+                )
+                .status,
+                "recorded"
+            );
+        }
+        let move_guard = authorize_asset_mutation_at(
+            step(&input, &registered.registration_id, "execute", 3, None),
+            now + 4,
+        );
+        assert_eq!(move_guard.status, "accepted_by_native_guard");
+        let exact = || {
+            asset_mutation_in_flight_matches(
+                &registered.registration_id,
+                "execute",
+                "ue.asset.move",
+                &input.operations[3].operation_id,
+                3,
+                input.operations.len(),
+                &input.change_set_id,
+                &input.run_id,
+            )
+        };
+        assert!(exact());
+        assert!(!asset_mutation_in_flight_matches(
+            &registered.registration_id,
+            "execute",
+            "ue.asset.move",
+            "partial-operation-4-substituted",
+            3,
+            input.operations.len(),
+            &input.change_set_id,
+            &input.run_id,
+        ));
+        assert!(!asset_mutation_in_flight_matches(
+            &registered.registration_id,
+            "execute",
+            "ue.asset.move",
+            &input.operations[3].operation_id,
+            2,
+            input.operations.len(),
+            &input.change_set_id,
+            &input.run_id,
+        ));
+        assert!(!asset_mutation_in_flight_matches(
+            &registered.registration_id,
+            "execute",
+            "ue.asset.rename",
+            &input.operations[3].operation_id,
+            3,
+            input.operations.len(),
+            &input.change_set_id,
+            &input.run_id,
+        ));
+        assert_eq!(
+            record_asset_mutation_outcome_at(
+                outcome(
+                    &registered.registration_id,
+                    "execute",
+                    &input.operations[3].operation_id,
+                    true,
+                ),
+                now + 5,
+            )
+            .status,
+            "recorded"
+        );
+        assert!(!exact());
+        for index in [3usize, 2, 1, 0] {
+            assert_eq!(
+                authorize_asset_mutation_at(
+                    step(&input, &registered.registration_id, "rollback", index, None),
+                    now + 6,
+                )
+                .status,
+                "accepted_by_native_guard"
+            );
+            assert_eq!(
+                record_asset_mutation_outcome_at(
+                    outcome(
+                        &registered.registration_id,
+                        "rollback",
+                        &input.operations[index].operation_id,
+                        true,
+                    ),
+                    now + 6,
+                )
+                .status,
+                "recorded"
+            );
+        }
     }
 
     #[test]

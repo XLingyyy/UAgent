@@ -66,6 +66,8 @@ namespace UAgentAssetTools
 
 	/** Task-only deterministic fault control; production builds contain no fault route. */
 	UAGENTASSETTOOLS_API void SetAutomationFault(EAutomationFault Fault);
+	/** Seeds the UE 5.8 stale destination mapping reproduced by the live rollback regression. */
+	UAGENTASSETTOOLS_API bool SeedStaleAssetDataDestinationForAutomation(const FString& AssetPath);
 	/** Read-only inspection of the actual operation ledger used by Automation assertions. */
 	UAGENTASSETTOOLS_API TSharedPtr<FJsonObject> GetOperationLedgerSnapshot(
 		const FString& ChangeSetId,

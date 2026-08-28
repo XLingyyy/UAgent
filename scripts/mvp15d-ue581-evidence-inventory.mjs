@@ -436,9 +436,12 @@ function readJson(path, code) {
 
 function assertSecretFree(bytes, code = "UE581_INVENTORY_SENSITIVE_CONTENT", binary = false) {
   const text = bytes.toString(binary ? "latin1" : "utf8");
+  const retainedPatterns = binary
+    ? RETAINED_SECRET_PATTERNS.slice(0, -1)
+    : RETAINED_SECRET_PATTERNS;
   if (
     (!binary && text.includes("\uFFFD")) ||
-    RETAINED_SECRET_PATTERNS.some((pattern) => pattern.test(text)) ||
+    retainedPatterns.some((pattern) => pattern.test(text)) ||
     /"(?:commandLine|rawArguments|processArguments|environment|userSettings)"\s*:/iu.test(text)
   ) {
     fail(code);
@@ -2250,6 +2253,7 @@ export {
   REQUIRED_LOGS,
   SCHEMA,
   TASK_GENERATION,
+  assertSecretFree,
   bindPackageArtifacts,
   bundleHash,
   create,

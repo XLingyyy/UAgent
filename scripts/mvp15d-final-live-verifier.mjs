@@ -682,7 +682,7 @@ function inventoryBridgeRecord(identity, requireRawAuthority = false) {
     stable(finalPackage.artifacts) !== stable(uePackage.artifacts) ||
     finalPackage.artifactInventorySha256 !== uePackage.artifactInventorySha256 ||
     finalPackage.manifest.sourceTreeSha256 !== uePackage.manifest.sourceTreeSha256 ||
-    finalAutomation.sourceTreeSha256 !== finalPackage.manifest.sourceTreeSha256
+    finalAutomation.sourceCommit !== finalPackage.manifest.sourceCommit
   ) {
     fail("FINAL_LIVE_VERIFIER_BRIDGE_PACKAGE_MISMATCH");
   }

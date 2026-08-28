@@ -1,6 +1,7 @@
 import {
   readMvp15dProductStoreEvidence,
   readMvp15dUiStoreEvidence,
+  readMvp15dUiStoreReadinessReason,
 } from "../stores/ui-store";
 import { getFixedAppRuntimeAdapter } from "./runtime-store";
 import type { DesktopRuntimeAdapter } from "./desktop-runtime-adapter";
@@ -37,6 +38,47 @@ function getNativeInvoke(): NativeInvoke | null {
     (globalThis as { __TAURI_INTERNALS__?: { invoke?: NativeInvoke } }).__TAURI_INTERNALS__
       ?.invoke ?? null
   );
+}
+
+function runtimeFailureCode(error: unknown): string {
+  const record = error && typeof error === "object" && !Array.isArray(error)
+    ? error as Record<string, unknown>
+    : null;
+  const objectMessage = [record?.message, record?.reason, record?.code, record?.error]
+    .find((value): value is string => typeof value === "string");
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === "string"
+      ? error
+      : objectMessage ?? "";
+  if (/^MVP15D_[A-Z0-9_]+$/.test(message) && message.length <= 128) return message;
+  const code = message
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 128)
+    .replace(/_+$/g, "");
+  if (/^mvp15d_[a-z0-9_]+$/.test(code)) {
+    return code;
+  }
+  return "mvp15d_runtime_bridge_failed";
+}
+
+function observedControlFailureCode(status: string): string | null {
+  const code = status.split(":", 1)[0] ?? "";
+  if (/^MVP15D_[A-Z0-9_]+$/.test(code) && code.length <= 128) return code;
+  return /^mvp15d_[a-z0-9_]+$/.test(code) && code.length <= 128
+    ? runtimeFailureCode(status)
+    : null;
+}
+
+function observedAssetFailureCode(status: string, stage: string): string | null {
+  const code = status.split(":", 1)[0] ?? "";
+  if (/^mvp15d_[a-z0-9_]+$/.test(code) && code.length <= 128) return code;
+  return /^[a-z][a-z0-9_]{0,95}$/.test(code)
+    ? `mvp15d_ui_${stage}_${code}`
+    : null;
 }
 
 async function waitForDriver(invoke: NativeInvoke, pollMilliseconds: number): Promise<string> {
@@ -435,10 +477,13 @@ async function activateProductControl(
   const button = findButton(accessibleName, findRegion("MVP15D product controls"));
   if (button.disabled) throw new Error("mvp15d_rendered_button_disabled");
   button.click();
+  let failureCode: string | null = null;
   await waitUntil(() => {
     const status = observationText("product-control-status");
-    return status === completedStatus || status === alternateStatus;
+    failureCode = observedControlFailureCode(status);
+    return status === completedStatus || status === alternateStatus || failureCode !== null;
   }, "mvp15d_product_control_timeout");
+  if (failureCode) throw new Error(failureCode);
   return observationText("product-control-status");
 }
 
@@ -447,21 +492,64 @@ async function activateNegativeControl(caseNumber: number): Promise<void> {
   const button = findButton(`Run N${caseNumber} rendered negative case`, region);
   if (button.disabled) throw new Error("mvp15d_rendered_button_disabled");
   button.click();
+  let failureCode: string | null = null;
   await waitUntil(
-    () => observationText("negative-control-status", region) === `completed:N${caseNumber}`,
+    () => {
+      const status = observationText("negative-control-status", region);
+      failureCode = observedControlFailureCode(status);
+      return status === `completed:N${caseNumber}` || failureCode !== null;
+    },
     `mvp15d_negative_n${caseNumber}_control_timeout`,
+  );
+  if (failureCode) throw new Error(failureCode);
+  await waitUntil(
+    () => !findButton("Run rendered partial and unknown matrix", region).disabled,
+    `mvp15d_negative_n${caseNumber}_control_settle_timeout`,
   );
 }
 
-async function activatePartialUnknownControl(): Promise<void> {
+async function activatePartialUnknownControl(
+  approvalTtlWaitMilliseconds: number,
+): Promise<void> {
   const region = findRegion("MVP15D negative acceptance controls");
+  await waitUntil(
+    () => !findButton("Run rendered partial and unknown matrix", region).disabled,
+    "mvp15d_partial_unknown_control_settle_timeout",
+  );
+  await new Promise((resolve) => globalThis.setTimeout(resolve, 100));
+  await waitUntil(
+    () => !findButton("Run rendered partial and unknown matrix", region).disabled,
+    "mvp15d_partial_unknown_control_settle_timeout",
+  );
   const button = findButton("Run rendered partial and unknown matrix", region);
-  if (button.disabled) throw new Error("mvp15d_rendered_button_disabled");
+  const statusBeforeClick = observationText("negative-control-status", region);
   button.click();
   await waitUntil(
-    () => observationText("negative-control-status", region) === "completed:partial-unknown",
-    "mvp15d_partial_unknown_control_timeout",
+    () => observationText("negative-control-status", region) !== statusBeforeClick,
+    "mvp15d_partial_unknown_control_start_timeout",
   );
+  let lastStatus = "";
+  let deadline = Date.now() + observationTimeoutMilliseconds;
+  while (true) {
+    const status = observationText("negative-control-status", region);
+    if (status === "completed:partial-unknown") return;
+    const failureCode = observedControlFailureCode(status);
+    if (failureCode) throw new Error(failureCode);
+    if (status !== lastStatus) {
+      lastStatus = status;
+      const isCrossTtlWait = status === "running:partial-unknown:operation_8_ttl_wait_start";
+      deadline = Date.now()
+        + observationTimeoutMilliseconds
+        + (isCrossTtlWait ? approvalTtlWaitMilliseconds : 0);
+    }
+    const remainingMilliseconds = deadline - Date.now();
+    if (remainingMilliseconds <= 0) break;
+    await new Promise((resolve) =>
+      globalThis.setTimeout(resolve, Math.min(50, remainingMilliseconds)),
+    );
+  }
+  const progress = /^running:partial-unknown:([a-z0-9_]+)$/.exec(lastStatus)?.[1] ?? "idle";
+  throw new Error(`mvp15d_partial_unknown_control_timeout_${progress}`);
 }
 
 async function restartEditorObservationThroughControls(): Promise<void> {
@@ -479,18 +567,13 @@ async function restartEditorObservationThroughControls(): Promise<void> {
     );
   }
   await activateTab("UE");
-  let editor = findRegion("Editor panel");
+  const editor = findRegion("Editor panel");
   findButtonByAccessibleName("Stop editor observation session", editor).click();
   await waitUntil(
     () => observationText("editor-session-state", findRegion("Editor panel")) === "stopped",
     "mvp15d_ui_observation_stop_timeout",
   );
-  editor = findRegion("Editor panel");
-  findButtonByAccessibleName("Discover editor processes", editor).click();
-  await waitUntil(
-    () => !findButtonByAccessibleName("Attach editor observation session", findRegion("Editor panel")).disabled,
-    "mvp15d_editor_discovery_timeout",
-  );
+  await discoverEditorObservationThroughControls();
   findButtonByAccessibleName("Attach editor observation session", findRegion("Editor panel")).click();
   await waitUntil(
     () => observationText("editor-session-state", findRegion("Editor panel")) === "attached",
@@ -522,13 +605,39 @@ async function activateTab(name: string): Promise<void> {
   );
 }
 
-async function waitUntil(predicate: () => boolean, code: string): Promise<void> {
-  const deadline = Date.now() + observationTimeoutMilliseconds;
+async function waitUntil(
+  predicate: () => boolean,
+  code: string,
+  timeoutMilliseconds = observationTimeoutMilliseconds,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMilliseconds;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await new Promise((resolve) => globalThis.setTimeout(resolve, 50));
   }
   throw new Error(code);
+}
+
+async function discoverEditorObservationThroughControls(): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const editor = findRegion("Editor panel");
+    findButtonByAccessibleName("Discover editor processes", editor).click();
+    try {
+      await waitUntil(
+        () => !findButtonByAccessibleName(
+          "Attach editor observation session",
+          findRegion("Editor panel"),
+        ).disabled,
+        "mvp15d_editor_discovery_timeout",
+      );
+      return;
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "mvp15d_editor_discovery_timeout" || attempt === 2) {
+        throw error;
+      }
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 250));
+    }
+  }
 }
 
 async function connectRenderedMcp(failureCode: string): Promise<void> {
@@ -597,12 +706,7 @@ async function prepareTrustedObservation(
     () => document.querySelector('[aria-label="Editor panel"]') !== null,
     "mvp15d_editor_panel_unavailable",
   );
-  const editor = findRegion("Editor panel");
-  findButtonByAccessibleName("Discover editor processes", editor).click();
-  await waitUntil(
-    () => !findButtonByAccessibleName("Attach editor observation session", findRegion("Editor panel")).disabled,
-    "mvp15d_editor_discovery_timeout",
-  );
+  await discoverEditorObservationThroughControls();
   if (recordRendererSteps) await recordStep(invoke, "observationDiscover");
   findButtonByAccessibleName("Attach editor observation session", findRegion("Editor panel")).click();
   await waitUntil(
@@ -685,10 +789,20 @@ async function runUiLifecycle(
   );
   await recordStep(invoke, "dryRun");
   await dispatchAssetAction("Approve sandbox asset mutation");
+  let registrationFailure: string | null = null;
   await waitUntil(
-    () => observationText("asset-registration", findRegion("Asset mutation panel")) === "registered",
+    () => {
+      const panel = findRegion("Asset mutation panel");
+      if (observationText("asset-registration", panel) === "registered") return true;
+      registrationFailure = observedAssetFailureCode(
+        observationText("asset-last-error", panel),
+        "registration",
+      );
+      return registrationFailure !== null;
+    },
     "mvp15d_ui_registration_timeout",
   );
+  if (registrationFailure) throw new Error(registrationFailure);
   await recordStep(invoke, "approve");
   await recordStep(invoke, "register");
   await dispatchAssetAction("Execute sandbox asset mutation");
@@ -729,7 +843,7 @@ async function runUiLifecycle(
   for (let caseNumber = 3; caseNumber <= 8; caseNumber += 1) {
     await activateNegativeControl(caseNumber);
   }
-  await activatePartialUnknownControl();
+  await activatePartialUnknownControl(configuration.approvalTtlWaitMilliseconds);
 
   findButtonByAccessibleName("Back to app").click();
   await waitUntil(() => document.querySelector('[role="tab"]') !== null, "mvp15d_app_return_timeout");
@@ -749,11 +863,25 @@ async function runUiLifecycle(
   );
   await recordStep(invoke, "mcpDisconnect");
   await observeManagedListenerAliveThroughUse(runtimeAdapter);
-  const uiEvidence = readMvp15dUiStoreEvidence();
-  if (!uiEvidence || uiEvidence.status !== "ready") {
-    throw new Error("mvp15d_ui_store_evidence_missing");
+  let uiEvidence: ReturnType<typeof readMvp15dUiStoreEvidence>;
+  try {
+    uiEvidence = readMvp15dUiStoreEvidence();
+  } catch {
+    throw new Error("mvp15d_ui_store_evidence_read_failed");
   }
-  await invoke("mvp15d_bridge_publish_ui_evidence", { input: uiEvidence });
+  if (!uiEvidence || uiEvidence.status !== "ready") {
+    throw new Error(readMvp15dUiStoreReadinessReason() ?? "mvp15d_ui_store_evidence_missing");
+  }
+  try {
+    await invoke("mvp15d_bridge_publish_ui_evidence", { input: uiEvidence });
+  } catch (error) {
+    const reason = runtimeFailureCode(error);
+    throw new Error(
+      reason === "mvp15d_runtime_bridge_failed"
+        ? "mvp15d_ui_store_evidence_publish_failed"
+        : reason,
+    );
+  }
 }
 
 async function runGateOffNegativeChild(invoke: NativeInvoke): Promise<void> {
@@ -852,5 +980,27 @@ export async function startMvp15dRuntimeBridge(
   } else {
     throw new Error("mvp15d_bridge_driver_command_rejected");
   }
-  await invoke("mvp15d_bridge_complete");
+  try {
+    await invoke("mvp15d_bridge_complete");
+  } catch (error) {
+    const reason = runtimeFailureCode(error);
+    throw new Error(
+      reason === "mvp15d_runtime_bridge_failed"
+        ? "mvp15d_bridge_complete_failed"
+        : reason,
+    );
+  }
+}
+
+export async function startMvp15dRuntimeBridgeFromApp(
+  invoke: NativeInvoke | null = getNativeInvoke(),
+): Promise<void> {
+  if (!invoke) return;
+  try {
+    await startMvp15dRuntimeBridge(invoke);
+  } catch (error) {
+    await invoke("mvp15d_bridge_fail", {
+      input: { reasonCode: runtimeFailureCode(error) },
+    }).catch(() => undefined);
+  }
 }

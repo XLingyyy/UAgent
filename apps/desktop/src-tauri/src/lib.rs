@@ -1614,6 +1614,7 @@ pub fn run() {
             mvp15d_bridge_publish_product_evidence,
             mvp15d_bridge_publish_ui_evidence,
             mvp15d_bridge_complete,
+            mvp15d_bridge_fail,
             validate_project_root,
             scan_project_index,
             preview_project_file,
@@ -2500,6 +2501,26 @@ fn mvp15d_bridge_complete(
     }
     app.exit(0);
     Ok(())
+}
+
+#[tauri::command]
+fn mvp15d_bridge_fail(
+    app: tauri::AppHandle,
+    input: mvp15d_runtime_bridge::BridgeFailureInput,
+    state: tauri::State<'_, mvp15d_runtime_bridge::ManagedBridgeState>,
+) -> Result<(), String> {
+    let result = state
+        .lock()
+        .map_err(|_| "MVP15D_BRIDGE_STATE_UNAVAILABLE".to_string())
+        .and_then(|mut guard| {
+            guard
+                .as_mut()
+                .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?
+                .fail(input)
+                .map_err(|error| error.code().to_string())
+        });
+    app.exit(2);
+    result
 }
 
 #[cfg(test)]

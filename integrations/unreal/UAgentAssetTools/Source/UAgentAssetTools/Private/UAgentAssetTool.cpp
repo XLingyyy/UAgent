@@ -2,11 +2,14 @@
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetToolsModule.h"
+#include "DataStorage/Features.h"
 #include "Dom/JsonValue.h"
 #include "Editor.h"
 #include "EditorAssetLibrary.h"
+#include "Elements/Interfaces/TypedElementDataStorageInterface.h"
 #include "FileHelpers.h"
 #include "HAL/FileManager.h"
+#include "HAL/PlatformProcess.h"
 #include "IAssetTools.h"
 #include "Misc/DateTime.h"
 #include "Misc/PackageName.h"
@@ -427,6 +430,47 @@ namespace
 		return Data.IsValid() ? Data.GetAsset() : nullptr;
 	}
 
+	FSoftObjectPath AssetObjectPath(const FString& AssetPath)
+	{
+		const FString ObjectPath = AssetPath.Contains(TEXT("."))
+			? AssetPath
+			: AssetPath + TEXT(".") + FPackageName::GetLongPackageAssetName(AssetPath);
+		return FSoftObjectPath(ObjectPath);
+	}
+
+	bool RemoveStaleAssetDataDestination(const FString& AssetPath, FString& OutReason)
+	{
+		FAssetRegistryModule& RegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+		const FSoftObjectPath ObjectPath = AssetObjectPath(AssetPath);
+		if (RegistryModule.Get().GetAssetByObjectPath(ObjectPath).IsValid())
+		{
+			OutReason = TEXT("rename_or_move_target_present");
+			return false;
+		}
+
+		using namespace UE::Editor::DataStorage;
+		ICoreProvider* DataStorage = GetMutableDataStorageFeature<ICoreProvider>(StorageFeatureName);
+		if (!DataStorage || !DataStorage->IsAvailable()) return true;
+		const FName AssetMappingDomain(TEXT("Asset"));
+		const FMapKey ObjectPathKey(ObjectPath);
+		const RowHandle ExistingRow = DataStorage->LookupMappedRow(AssetMappingDomain, ObjectPathKey);
+		if (!DataStorage->IsRowAssigned(ExistingRow)) return true;
+
+		// UE 5.8 can retain an intermediate asset row when duplicate/rename/move
+		// events settle across frames.  A reverse rename then remaps onto that
+		// ghost key and trips TEDS' duplicate-key assertion.  The Asset Registry
+		// absence check above is the authority that makes this targeted removal
+		// safe; live assets are never removed from Data Storage here.
+		DataStorage->RemoveRowMapping(AssetMappingDomain, ObjectPathKey);
+		const RowHandle RemainingRow = DataStorage->LookupMappedRow(AssetMappingDomain, ObjectPathKey);
+		if (DataStorage->IsRowAssigned(RemainingRow))
+		{
+			OutReason = TEXT("stale_asset_index_not_settled");
+			return false;
+		}
+		return true;
+	}
+
 	bool IsPlannedOutput(const FString& Scope, const FString& AssetPath)
 	{
 		const TArray<FString>* OrderedKeys = GRunLedgerOrder.Find(Scope);
@@ -434,7 +478,9 @@ namespace
 		for (const FString& Key : *OrderedKeys)
 		{
 			const FOperationLedgerEntry* Entry = GOperationLedger.Find(Key);
-			if (Entry && Entry->State != ELedgerState::RolledBack && Entry->AfterPath == AssetPath) return true;
+			if (Entry
+				&& Entry->State != ELedgerState::RolledBack
+				&& Entry->AfterPath == AssetPath) return true;
 		}
 		return false;
 	}
@@ -520,7 +566,9 @@ namespace
 			const FOperationLedgerEntry* Later = GOperationLedger.Find(Key);
 			if (!Later) return false;
 			if (Later->State == ELedgerState::PartialFailure) return false;
-			if (Later->bRollbackAvailable && Later->State != ELedgerState::RolledBack) return false;
+			if (Later->State != ELedgerState::DryRunAccepted
+				&& Later->bRollbackAvailable
+				&& Later->State != ELedgerState::RolledBack) return false;
 		}
 		return false;
 	}
@@ -1276,35 +1324,65 @@ namespace
 
 	bool CleanupOwnedEmptyRunRoot(const FOperationLedgerEntry& Entry, FString& OutReason)
 	{
-		FString Directory;
 #if PLATFORM_WINDOWS
-		FScopedDirectoryHandle DeletionHandle(INVALID_HANDLE_VALUE);
-		if (!IsOwnedRunRootPhysicallyEmpty(Entry, Directory, OutReason, &DeletionHandle)) return false;
-		FILE_DISPOSITION_INFO Disposition = { 1 };
-		if (!::SetFileInformationByHandle(
-			DeletionHandle.Get(),
-			FileDispositionInfo,
-			&Disposition,
-			sizeof(Disposition)))
+		constexpr int32 MaxCleanupAttempts = 50;
+		FAssetRegistryModule& RegistryModule =
+			FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+		IAssetRegistry& Registry = RegistryModule.Get();
+		const bool bRegistryPathWasPresent = Registry.PathExists(Entry.AfterPath);
+		bool bRegistryPathRemoved = false;
+		for (int32 Attempt = 0; Attempt < MaxCleanupAttempts; ++Attempt)
 		{
-			OutReason = TEXT("run_root_cleanup_failed");
-			return false;
+			FString Directory;
+			FScopedDirectoryHandle DeletionHandle(INVALID_HANDLE_VALUE);
+			if (!IsOwnedRunRootPhysicallyEmpty(Entry, Directory, OutReason, &DeletionHandle)) return false;
+			if (!bRegistryPathRemoved && bRegistryPathWasPresent)
+			{
+				if (!Registry.RemovePath(Entry.AfterPath))
+				{
+					OutReason = TEXT("run_root_registry_cleanup_failed");
+					return false;
+				}
+				bRegistryPathRemoved = true;
+			}
+			FILE_DISPOSITION_INFO Disposition = { 1 };
+			if (::SetFileInformationByHandle(
+				DeletionHandle.Get(),
+				FileDispositionInfo,
+				&Disposition,
+				sizeof(Disposition)))
+			{
+				// Closing completes the handle-targeted delete.  No path-recursive
+				// delete API is used, and the no-share-delete handle prevents a
+				// same-path replacement between identity comparison and disposition.
+				DeletionHandle = FScopedDirectoryHandle(INVALID_HANDLE_VALUE);
+				if (!IFileManager::Get().DirectoryExists(*Directory)) return true;
+				OutReason = TEXT("run_root_cleanup_not_observed");
+			}
+			else
+			{
+				OutReason = TEXT("run_root_cleanup_failed");
+			}
+			if (Attempt + 1 < MaxCleanupAttempts)
+			{
+				// Directory watchers can briefly retain a non-delete-sharing handle
+				// after the editor observes a new folder.  Re-open and revalidate the
+				// exact physical identity and emptiness on every bounded retry.
+				FPlatformProcess::SleepNoStats(0.01f);
+			}
 		}
-		// Closing completes the handle-targeted delete.  No path-recursive delete
-		// API is used, and the no-share-delete handle prevents same-path replacement
-		// between the identity comparison and disposition.
-		DeletionHandle = FScopedDirectoryHandle(INVALID_HANDLE_VALUE);
+		if (bRegistryPathRemoved && !Registry.PathExists(Entry.AfterPath)
+			&& !Registry.AddPath(Entry.AfterPath))
+		{
+			OutReason = TEXT("run_root_registry_restore_failed");
+		}
+		return false;
 #else
+		FString Directory;
 		if (!IsOwnedRunRootPhysicallyEmpty(Entry, Directory, OutReason)) return false;
 		OutReason = TEXT("run_root_physical_identity_unsupported");
 		return false;
 #endif
-		if (IFileManager::Get().DirectoryExists(*Directory))
-		{
-			OutReason = TEXT("run_root_cleanup_not_observed");
-			return false;
-		}
-		return true;
 	}
 
 	const FOperationLedgerEntry* FindExecutedRunRootEntry(const FOperationLedgerEntry& Entry)
@@ -1563,7 +1641,12 @@ namespace
 			return false;
 #endif
 		}
-		if (Entry.Operation != UAgentAssetTools::EOperation::Move) return true;
+		if (Entry.Operation != UAgentAssetTools::EOperation::Duplicate
+			&& Entry.Operation != UAgentAssetTools::EOperation::Rename
+			&& Entry.Operation != UAgentAssetTools::EOperation::Move)
+		{
+			return true;
+		}
 
 		const FString RunRoot = FString::Printf(TEXT("/Game/UAgentSandbox/%s"), *Entry.RunId);
 		const FString TargetDirectory = FPackageName::GetLongPackagePath(Entry.AfterPath);
@@ -1948,6 +2031,7 @@ namespace
 		FString PackagePath;
 		FString AssetName;
 		if (!Asset || !SplitAssetPath(TargetPath, PackagePath, AssetName)) { OutReason = TEXT("rename_or_move_precondition_failed"); return false; }
+		if (!RemoveStaleAssetDataDestination(TargetPath, OutReason)) return false;
 		TArray<FAssetRenameData> RenameData;
 		RenameData.Emplace(Asset, PackagePath, AssetName);
 		return AssetTools.RenameAssets(RenameData) ? true : (OutReason = TEXT("rename_or_move_failed"), false);
@@ -1963,6 +2047,7 @@ namespace
 		if (Entry.Operation == UAgentAssetTools::EOperation::Duplicate)
 		{
 			if (!VerifyOwnedAssetEffect(Entry, OutReason)) return false;
+			if (!VerifyOwnedEffectDirectoryIdentities(Entry, OutReason)) return false;
 			return UEditorAssetLibrary::DeleteAsset(Entry.AfterPath) ? true : (OutReason = TEXT("duplicate_rollback_delete_failed"), false);
 		}
 		if (Entry.Operation == UAgentAssetTools::EOperation::Rename || Entry.Operation == UAgentAssetTools::EOperation::Move)
@@ -1975,6 +2060,7 @@ namespace
 			if (!SplitAssetPath(Entry.BeforePath, PackagePath, AssetName)) { OutReason = TEXT("rollback_restore_path_invalid"); return false; }
 			UObject* Asset = FindAsset(Entry.AfterPath);
 			if (!Asset) { OutReason = TEXT("owned_effect_observation_mismatch"); return false; }
+			if (!RemoveStaleAssetDataDestination(Entry.BeforePath, OutReason)) return false;
 			FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
 			TArray<FAssetRenameData> RenameData;
 			RenameData.Emplace(Asset, PackagePath, AssetName);
@@ -2308,6 +2394,26 @@ void UAgentAssetTools::InvalidateOperationLedger()
 bool UAgentAssetTools::IsUsablePhysicalFileIdForAutomation(const TArray<uint8>& FileId)
 {
 	return HasUsablePhysicalFileId(FileId.GetData(), FileId.Num());
+}
+
+bool UAgentAssetTools::SeedStaleAssetDataDestinationForAutomation(const FString& AssetPath)
+{
+	FAssetRegistryModule& RegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	const FSoftObjectPath ObjectPath = AssetObjectPath(AssetPath);
+	if (RegistryModule.Get().GetAssetByObjectPath(ObjectPath).IsValid()) return false;
+
+	using namespace UE::Editor::DataStorage;
+	ICoreProvider* DataStorage = GetMutableDataStorageFeature<ICoreProvider>(StorageFeatureName);
+	if (!DataStorage || !DataStorage->IsAvailable()) return false;
+	const FName AssetMappingDomain(TEXT("Asset"));
+	const FMapKey ObjectPathKey(ObjectPath);
+	const RowHandle ExistingRow = DataStorage->LookupMappedRow(AssetMappingDomain, ObjectPathKey);
+	if (DataStorage->IsRowAssigned(ExistingRow)) return true;
+	const TableHandle AssetTable = DataStorage->FindTable(FName(TEXT("Editor_AssetRegistryAssetDataTable")));
+	if (AssetTable == InvalidTableHandle) return false;
+	const RowHandle StaleRow = DataStorage->AddRow(AssetTable);
+	DataStorage->MapRow(AssetMappingDomain, FMapKey(ObjectPath), StaleRow);
+	return DataStorage->LookupMappedRow(AssetMappingDomain, ObjectPathKey) == StaleRow;
 }
 
 void UAgentAssetTools::SetAutomationFault(EAutomationFault Fault)

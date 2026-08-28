@@ -64,6 +64,7 @@ import {
   collectMvp15dRenderedNegativeCase,
   collectMvp15dUiAuthority,
   createDesktopRuntimeAdapter,
+  toMvp15dNativeRegistrationObservationRequest,
   type DesktopRuntimeAdapter,
   type Mvp15dContentManifestRaw,
   type Mvp15dPartialUnknownRaw,
@@ -91,6 +92,14 @@ type CapturedObservationCall = {
   response: Record<string, unknown>;
   receiptId: string;
 };
+
+export function toMvp15dNativeGuardObservationRequest(
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const request = { ...input };
+  delete request.command;
+  return request;
+}
 import { createSliceStore, type SliceStore, useSliceStore } from "./store-utils";
 import { createInitialThreadState } from "./thread-store";
 
@@ -326,7 +335,7 @@ function createMvp15RealAssetMutationService(
         const result = await runtimeClient.guardMvp15AssetMutation(input);
         if (input.command === "guard") {
           observations.native(
-            { ...input } as Record<string, unknown>,
+            toMvp15dNativeGuardObservationRequest({ ...input } as Record<string, unknown>),
             {
               ...result,
               reason: result.reason ?? "native_guard_observed",
@@ -335,8 +344,12 @@ function createMvp15RealAssetMutationService(
           );
         }
         if (input.command === "register") {
-          observations.registration(
+          const nativeRequest = toMvp15dNativeRegistrationObservationRequest(
             { ...input } as Record<string, unknown>,
+          );
+          if (!nativeRequest) throw new Error("mvp15d_native_registration_observation_request_invalid");
+          observations.registration(
+            nativeRequest,
             { ...result } as Record<string, unknown>,
           );
         }
@@ -579,9 +592,11 @@ export interface Mvp15dUiStoreEvidence {
 interface Mvp15dRuntimeEvidenceSource {
   product: () => Mvp15dProductStoreEvidence;
   ui: () => Mvp15dUiStoreEvidence;
+  uiReadinessReason: () => string | null;
   action: (
     action: Mvp15dUiBridgeAction,
     sourceAssetPath?: string,
+    onPartialProgress?: (step: string) => void,
   ) => Promise<void>;
 }
 
@@ -624,12 +639,17 @@ export function readMvp15dUiStoreEvidence(): Mvp15dUiStoreEvidence | null {
   return activeMvp15dRuntimeEvidence?.ui() ?? null;
 }
 
+export function readMvp15dUiStoreReadinessReason(): string | null {
+  return activeMvp15dRuntimeEvidence?.uiReadinessReason() ?? "mvp15d_ui_evidence_source_unavailable";
+}
+
 export async function runMvp15dUiBridgeAction(
   action: Mvp15dUiBridgeAction,
   sourceAssetPath?: string,
+  onPartialProgress?: (step: string) => void,
 ): Promise<void> {
   if (!activeMvp15dRuntimeEvidence) throw new Error("mvp15d_ui_store_action_unavailable");
-  await activeMvp15dRuntimeEvidence.action(action, sourceAssetPath);
+  await activeMvp15dRuntimeEvidence.action(action, sourceAssetPath, onPartialProgress);
 }
 
 function createMvp15dNegativeRegistrationInput(
@@ -2494,10 +2514,11 @@ function createUIStateBundle(
               });
             },
             manifest: (request, response) => {
+              const receipt = runtimeClient.takeMvp15dContentManifestObservationReceipt?.() ?? null;
               mvp15dContentManifestCalls.push({
-                request,
+                request: receipt?.request ?? request,
                 response,
-                receiptId: typeof response.nativeReceiptId === "string" ? response.nativeReceiptId : "",
+                receiptId: receipt?.receiptId ?? "",
               });
             },
           },
@@ -2813,12 +2834,11 @@ function createUIStateBundle(
       let observation;
       try {
         observation = await runtimeClient.snapshotMvp15AssetContentManifest({ registrationId });
+        const receipt = runtimeClient.takeMvp15dContentManifestObservationReceipt?.() ?? null;
         mvp15dContentManifestCalls.push({
-          request: { registrationId },
+          request: receipt?.request ?? { registrationId },
           response: observation as unknown as Record<string, unknown>,
-          receiptId: typeof (observation as unknown as Record<string, unknown>).nativeReceiptId === "string"
-            ? String((observation as unknown as Record<string, unknown>).nativeReceiptId)
-            : "",
+          receiptId: receipt?.receiptId ?? "",
         });
       } catch {
         observation = null;
@@ -2974,8 +2994,101 @@ function createUIStateBundle(
       ),
   };
 
+  const mvp15dUiReadinessReason = (): string | null => {
+    const state = runtimeStore.getState().mvp15;
+    const changeSet = state.activeChangeSet;
+    if (state.executionMode !== "real") return "mvp15d_ui_evidence_execution_mode_invalid";
+    if (changeSet?.state !== "rolled_back") return "mvp15d_ui_evidence_change_set_state_invalid";
+    if (state.finalVerification.status !== "passed") return "mvp15d_ui_evidence_final_verification_missing";
+    if (state.replayInspection.status !== "recorded") return "mvp15d_ui_evidence_replay_state_missing";
+    if (mvp15dNativeOperationCalls.length !== 9) return "mvp15d_ui_evidence_native_call_count_invalid";
+    if (mvp15dNativeOperationCalls.some((call) => call.receiptId.length === 0)) {
+      return "mvp15d_ui_evidence_native_receipt_missing";
+    }
+    if (mvp15dDryRunCalls.length !== 5) return "mvp15d_ui_evidence_dry_run_count_invalid";
+    if (mvp15dDryRunCalls.some((call) => call.receiptId.length === 0)) {
+      return "mvp15d_ui_evidence_dry_run_receipt_missing";
+    }
+    if (mvp15dMcpOperationCalls.length !== 9) return "mvp15d_ui_evidence_mcp_call_count_invalid";
+    if (mvp15dMcpOperationCalls.some((call) => call.receiptId.length === 0)) {
+      return "mvp15d_ui_evidence_mcp_receipt_missing";
+    }
+    if (mvp15dContentManifestCalls.length < 2) return "mvp15d_ui_evidence_manifest_count_invalid";
+    if (mvp15dContentManifestCalls.some((call) => call.receiptId.length === 0)) {
+      return "mvp15d_ui_evidence_manifest_receipt_missing";
+    }
+    if (!(mvp15dRegistrationCall as CapturedObservationCall | null)?.receiptId) {
+      return "mvp15d_ui_evidence_registration_receipt_missing";
+    }
+    if (mvp15dUiAuthority?.negativeCases.length !== 8) {
+      return "mvp15d_ui_evidence_negative_case_count_invalid";
+    }
+    if (mvp15dUiAuthority.partialUnknown.operationResults.length !== 10) {
+      return "mvp15d_ui_evidence_partial_operation_count_invalid";
+    }
+    if (mvp15dReplayInspection === null) return "mvp15d_ui_evidence_replay_receipt_missing";
+    return null;
+  };
+
+  const refreshMvp15dNativeReplayInspection = async (): Promise<void> => {
+    if (!mvp15dReplayInspection || !runtimeClient.observeMvp15dNativeState) return;
+    try {
+      const recordedRequest = { scope: "ui-replay" };
+      const recordedReplay = await runtimeClient.observeMvp15dNativeState(
+        "recorded_replay",
+        recordedRequest,
+      );
+      const counterRequestBefore = { scope: "ui-replay", stage: "before" };
+      const counterRequestAfter = { scope: "ui-replay", stage: "after" };
+      const counterBefore = await runtimeClient.observeMvp15dNativeState(
+        "mutation_counters",
+        counterRequestBefore,
+      );
+      const counterAfter = await runtimeClient.observeMvp15dNativeState(
+        "mutation_counters",
+        counterRequestAfter,
+      );
+      const recordedRepresentation = recordedReplay.observation.recordedRepresentation;
+      const counterNames = counterBefore.observation.counterNames;
+      const countersBefore = counterBefore.observation.values;
+      const countersAfter = counterAfter.observation.values;
+      const nativeRecordedRepresentation =
+        recordedRepresentation && typeof recordedRepresentation === "object" && !Array.isArray(recordedRepresentation)
+          ? recordedRepresentation as Record<string, unknown>
+          : null;
+      if (
+        !nativeRecordedRepresentation ||
+        !isMvp15dRecordedReplayRepresentation(nativeRecordedRepresentation) ||
+        !Array.isArray(counterNames) ||
+        counterNames.join("\0") !== "native\0mcp\0provider\0verify\0rollback" ||
+        !Array.isArray(countersBefore) ||
+        countersBefore.length !== 5 ||
+        countersBefore.some((value) => !Number.isSafeInteger(value)) ||
+        !Array.isArray(countersAfter) ||
+        countersAfter.length !== 5 ||
+        countersAfter.some((value) => !Number.isSafeInteger(value))
+      ) {
+        throw new Error("mvp15d_ui_replay_native_observation_invalid");
+      }
+      mvp15dReplayInspection = {
+        ...mvp15dReplayInspection,
+        recordedRepresentation: structuredClone(nativeRecordedRepresentation),
+        recordedRepresentationReceipt: recordedReplay.call,
+        counterNames: ["native", "mcp", "provider", "verify", "rollback"],
+        countersBefore: [...countersBefore] as [number, number, number, number, number],
+        countersAfter: [...countersAfter] as [number, number, number, number, number],
+        counterReadBefore: counterBefore.call,
+        counterReadAfter: counterAfter.call,
+      };
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "mvp15d_fixed_observation_authority_unavailable") {
+        throw error;
+      }
+    }
+  };
+
   const mvp15dEvidence: Mvp15dRuntimeEvidenceSource = {
-    action: async (action, sourceAssetPath) => {
+    action: async (action, sourceAssetPath, onPartialProgress) => {
       if (action === "productAuthority") {
         const port = runtimeClient.getMvp15dProductObservationPort?.();
         if (!port) throw new Error("mvp15d_product_authority_port_unavailable");
@@ -3127,15 +3240,15 @@ function createUIStateBundle(
         );
         const inverseActions = (changeSet?.rollbackPlan.actions ?? [])
           .filter((rollback) => rollback.status === "completed")
+          .reverse()
           .map((rollback) => {
             const operation = operationById.get(rollback.operationId);
             if (operation?.kind === "move_asset") return "move_back";
             if (operation?.kind === "rename_asset") return "rename_back";
-            if (operation?.kind === "duplicate_asset") return "delete_duplicate";
-            return "cleanup_empty_folder";
-          })
-          .filter((partialAction) => partialAction !== "move_back");
-        if (forwardActions.length !== 4 || inverseActions.length !== 3) {
+             if (operation?.kind === "duplicate_asset") return "delete_duplicate";
+             return "cleanup_empty_folder";
+          });
+        if (forwardActions.length !== 4 || inverseActions.length !== 4) {
           throw new Error("mvp15d_partial_operation_source_unavailable");
         }
         const currentState = runtimeStore.getState();
@@ -3176,7 +3289,7 @@ function createUIStateBundle(
         };
         const partialMcpRequests = [
           ...mvp15dMcpOperationCalls.slice(0, 4),
-          ...mvp15dMcpOperationCalls.slice(-3),
+          ...mvp15dMcpOperationCalls.slice(-4),
         ];
         const partialOperations: Array<
           Pick<Mvp15dPartialOperationRaw, "direction" | "action" | "api" | "request">
@@ -3234,11 +3347,18 @@ function createUIStateBundle(
               ?? ({ operationResults: [] } as unknown as Mvp15dPartialUnknownRaw),
           };
         } else {
-          const partial = await collectMvp15dUiAuthority(port, partialOperations, authorityContext, false);
+          const partial = await collectMvp15dUiAuthority(
+            port,
+            partialOperations,
+            authorityContext,
+            false,
+            onPartialProgress,
+          );
           mvp15dUiAuthority = {
             negativeCases: mvp15dUiAuthority?.negativeCases ?? [],
             partialUnknown: partial.partialUnknown,
           };
+          await refreshMvp15dNativeReplayInspection();
         }
       }
       if (action === "dryRun") await runtimeActions.runMvp15AssetDryRun(sourceAssetPath);
@@ -3249,35 +3369,7 @@ function createUIStateBundle(
       if (action === "finalVerify") await runtimeActions.finalVerifyMvp15AssetChangeSet();
       if (action === "replay") {
         runtimeActions.inspectMvp15AssetReplay();
-        if (mvp15dReplayInspection && runtimeClient.observeMvp15dNativeState) {
-          try {
-            const recordedRequest = { scope: "ui-replay" };
-            const recordedRepresentationReceipt = await runtimeClient.observeMvp15dNativeState(
-              "recorded_replay",
-              recordedRequest,
-            );
-            const counterRequestBefore = { scope: "ui-replay", stage: "before" };
-            const counterRequestAfter = { scope: "ui-replay", stage: "after" };
-            const counterReadBefore = await runtimeClient.observeMvp15dNativeState(
-              "mutation_counters",
-              counterRequestBefore,
-            );
-            const counterReadAfter = await runtimeClient.observeMvp15dNativeState(
-              "mutation_counters",
-              counterRequestAfter,
-            );
-            mvp15dReplayInspection = {
-              ...mvp15dReplayInspection,
-              recordedRepresentationReceipt,
-              counterReadBefore,
-              counterReadAfter,
-            };
-          } catch (error) {
-            if (!(error instanceof Error) || error.message !== "mvp15d_fixed_observation_authority_unavailable") {
-              throw error;
-            }
-          }
-        }
+        await refreshMvp15dNativeReplayInspection();
       }
     },
     product: () => {
@@ -3308,6 +3400,7 @@ function createUIStateBundle(
       const operationById = new Map((changeSet?.operations ?? []).map((operation) => [operation.id, operation]));
       const inverseActions = (changeSet?.rollbackPlan.actions ?? [])
         .filter((action) => action.status === "completed")
+        .reverse()
         .map((action) => {
           const operation = operationById.get(action.operationId);
           if (operation?.kind === "move_asset") return "move_back";
@@ -3315,22 +3408,7 @@ function createUIStateBundle(
           if (operation?.kind === "duplicate_asset") return "delete_duplicate";
           return "cleanup_empty_folder";
         });
-      const ready = state.executionMode === "real"
-        && changeSet?.state === "rolled_back"
-        && state.finalVerification.status === "passed"
-        && state.replayInspection.status === "recorded"
-        && mvp15dNativeOperationCalls.length === 9
-        && mvp15dNativeOperationCalls.every((call) => call.receiptId.length > 0)
-        && mvp15dDryRunCalls.length === 5
-        && mvp15dDryRunCalls.every((call) => call.receiptId.length > 0)
-        && mvp15dMcpOperationCalls.length === 9
-        && mvp15dMcpOperationCalls.every((call) => call.receiptId.length > 0)
-        && mvp15dContentManifestCalls.length >= 2
-        && mvp15dContentManifestCalls.every((call) => call.receiptId.length > 0)
-        && Boolean((mvp15dRegistrationCall as CapturedObservationCall | null)?.receiptId)
-        && mvp15dUiAuthority?.negativeCases.length === 8
-        && mvp15dUiAuthority.partialUnknown.operationResults.length === 9
-        && mvp15dReplayInspection !== null;
+      const ready = mvp15dUiReadinessReason() === null;
       const actions = [
         ...forwardActions.map((action) => ({ direction: "forward" as const, action })),
         ...inverseActions.map((action) => ({ direction: "inverse" as const, action })),
@@ -3405,6 +3483,7 @@ function createUIStateBundle(
             },
       };
     },
+    uiReadinessReason: mvp15dUiReadinessReason,
   };
 
   return {

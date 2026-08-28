@@ -2042,13 +2042,13 @@ fn attach_editor_process_inner(
     );
     let record = ObservationSessionRecord {
         session_id: session_id.clone(),
-        process_id: process.process_id,
+        process_id: process.process_id.clone(),
         project_id: input.project_id,
         root_id,
         uproject_display_path,
-        pid_hash: process.pid_hash,
+        pid_hash: process.pid_hash.clone(),
         process_display_name: sanitize_display(&process.display_name),
-        source: process.source,
+        source: process.source.clone(),
         mode: input.mode,
         status: "attached".to_string(),
         generation,
@@ -2058,6 +2058,22 @@ fn attach_editor_process_inner(
         last_heartbeat_at: None,
     };
     let mut sessions = observation_registry().lock().unwrap();
+    let mut processes = process_registry().lock().unwrap();
+    let Some(current_process) = processes.get_mut(&record.process_id) else {
+        return Ok(blocked_session(
+            &record.project_id,
+            &record.mode,
+            "process_not_found",
+        ));
+    };
+    if current_process != &process || current_process.process_state != "running" {
+        return Ok(blocked_session(
+            &record.project_id,
+            &record.mode,
+            "native_authority_unavailable",
+        ));
+    }
+    current_process.expires_at = record.expires_at;
     for current in sessions.values_mut() {
         if current.status == "attached"
             && current.process_id == record.process_id
@@ -4068,6 +4084,45 @@ mod tests {
         .unwrap();
         assert_eq!(successor_status.status, "attached");
         assert_eq!(successor_status.reason, "heartbeat_ok");
+    }
+
+    #[test]
+    fn newer_attach_renews_the_process_lease_for_followup_observation() {
+        let _test_guard = reset();
+        let discovery = discover_editor_processes(config()).unwrap();
+        let process = discovery.processes.first().unwrap().clone();
+        let shortened_expiry = now_millis() + 60_000;
+        process_registry()
+            .lock()
+            .unwrap()
+            .get_mut(&process.id)
+            .unwrap()
+            .expires_at = shortened_expiry;
+
+        let attached = attach_editor_process(EditorAttachInput {
+            project_id: "project:test".to_string(),
+            root_ref: "fixture://lyra-starter".to_string(),
+            uproject_relative_path: "Game.uproject".to_string(),
+            process_id: process.id.clone(),
+            pid_hash: process.pid_hash,
+            process_display_name: process.display_name,
+            mode: "fixture".to_string(),
+        })
+        .unwrap();
+        let session_id = attached.session_id.unwrap();
+        let renewed_expiry = process_registry()
+            .lock()
+            .unwrap()
+            .get(&process.id)
+            .unwrap()
+            .expires_at;
+
+        assert!(renewed_expiry > shortened_expiry);
+        assert_eq!(renewed_expiry, attached.expires_at);
+        let status =
+            read_editor_process_status(EditorObservationSessionIdInput { session_id }).unwrap();
+        assert_eq!(status.status, "attached");
+        assert_eq!(status.reason, "heartbeat_ok");
     }
 
     #[test]

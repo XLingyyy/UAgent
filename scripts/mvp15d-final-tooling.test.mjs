@@ -33,11 +33,13 @@ import {
   executeOwnedLaunchReceiptFixture,
   inventoryCreate,
   inventoryVerify,
+  redactProducerStderr,
   runtimePidBindingFromRawEvents,
   run as runFinal,
   verifyUeProductionArtifactConsistency,
   validateProductCapture,
   validateUeAutomation,
+  validPartialObservationBoundary,
   validRetractionSessionTransition,
 } from "./mvp15d-final-runner.mjs";
 import {
@@ -98,6 +100,20 @@ test("real rendered phases retain a bounded budget for UE startup and the 15C TT
   assert.equal(LIVE_PROCESS_TIMEOUT_MILLISECONDS, 600_000);
 });
 
+test("producer stderr redacts Windows paths even when they directly follow ordinary text", () => {
+  const identity = {
+    root: "E:\\evidence",
+    repository: "E:\\repository",
+  };
+  const result = redactProducerStderr(
+    "prefixE:\\unrelated\\private\\file.txt retained",
+    identity,
+    { "ue-root": "G:\\UnrealEngine\\UE_5.8" },
+  );
+  assert.equal(result.sensitive, false);
+  assert.equal(result.text, "prefix<absolute-path> retained");
+});
+
 test("stale completion retracts within one session while advancing generation", () => {
   const staleCompletion = {
     reason: "stale_completion",
@@ -126,6 +142,93 @@ test("stale completion retracts within one session while advancing generation", 
     }),
     true,
   );
+});
+
+test("partial Move boundary binds the pending request between guard and real completion", () => {
+  const pendingRequestSha256 = "a".repeat(64);
+  const nativeSessionBindingSha256 = "d".repeat(64);
+  const registrationId = "partial-registration-0001";
+  const operationId = "partial-operation-4";
+  const valid = {
+    registrationId,
+    record: {
+      api: "asset_mutation_observation_boundary",
+      sourceStatus: "observed",
+      sourceReason: "operation_response_pending",
+      status: "failed",
+      effectState: "unknown",
+      reason: "operation_response_pending",
+      pendingRequestSha256,
+      jsonRpcRequestId: 41,
+      receiptSequence: 11,
+    },
+    guard: {
+      api: "execute_asset_mutation",
+      status: "accepted_by_native_guard",
+      phase: "execute",
+      registrationId,
+      requestRegistrationId: registrationId,
+      operationId,
+      sequence: 10,
+    },
+    lateMcp: {
+      api: "mcp_asset_tool_call",
+      status: "executed",
+      reason: "none",
+      phase: "execute",
+      registrationId: null,
+      requestRegistrationId: null,
+      operationId,
+      toolName: "ue.asset.move",
+      sideEffectObserved: true,
+      effectState: "known_effect",
+      rollbackAvailable: true,
+      evidenceId: "partial-move-executed",
+      requestSha256: pendingRequestSha256,
+      responseSha256: "b".repeat(64),
+      jsonRpcRequestId: 41,
+      jsonRpcResponseId: 41,
+      mcpSessionBindingSha256: nativeSessionBindingSha256,
+      sequence: 12,
+    },
+    outcome: {
+      api: "record_asset_mutation_outcome",
+      status: "recorded",
+      phase: "execute",
+      registrationId,
+      requestRegistrationId: registrationId,
+      operationId,
+      requestSuccess: true,
+      requestSideEffectObserved: true,
+      requestEffectState: "known_effect",
+      requestRollbackAvailable: true,
+      requestEvidenceId: "partial-move-executed",
+      requestReasonCode: "none",
+      sequence: 13,
+    },
+    nativeSessionBindingSha256,
+  };
+  assert.equal(validPartialObservationBoundary(valid), true);
+
+  for (const [name, mutate] of [
+    ["different pending request", (value) => { value.record.pendingRequestSha256 = "c".repeat(64); }],
+    ["boundary before guard", (value) => { value.record.receiptSequence = 10; }],
+    ["completion before boundary", (value) => { value.lateMcp.sequence = 11; }],
+    ["unexecuted Move", (value) => { value.lateMcp.status = "partial_failure"; }],
+    ["contradictory Move reason", (value) => { value.lateMcp.reason = "contradictory_reason"; }],
+    ["unknown late effect", (value) => { value.lateMcp.effectState = "unknown"; }],
+    ["different JSON-RPC response", (value) => { value.lateMcp.jsonRpcResponseId = 42; }],
+    ["different MCP session", (value) => { value.lateMcp.mcpSessionBindingSha256 = "e".repeat(64); }],
+    ["false recorded outcome", (value) => { value.outcome.requestSuccess = false; }],
+    ["different outcome evidence", (value) => { value.outcome.requestEvidenceId = "other-evidence"; }],
+    ["different tool", (value) => { value.lateMcp.toolName = "ue.asset.rename"; }],
+    ["different operation", (value) => { value.lateMcp.operationId = "partial-operation-other"; }],
+    ["manufactured boundary status", (value) => { value.record.sourceStatus = "partial_failure"; }],
+  ]) {
+    const invalid = structuredClone(valid);
+    mutate(invalid);
+    assert.equal(validPartialObservationBoundary(invalid), false, name);
+  }
 });
 
 test("structured runtime contracts reject mixed v1 evidence", () => {
@@ -635,7 +738,7 @@ function createInventoryBridgeFixture(options = {}) {
         taskGeneration: "final-d13-d16",
         taskId: fixture.taskId,
         sourceCommit: fixture.sourceCommit,
-        sourceTreeSha256: fixture.sourceTreeSha256,
+        sourceTreeSha256: options.packageSourceTreeSha256 ?? fixture.sourceTreeSha256,
         dirty: false,
         artifacts,
       },
@@ -779,6 +882,30 @@ test("two-product inventory bridge binds exact shared files, package artifacts a
         error instanceof FinalLiveVerifierError &&
         error.code === "FINAL_LIVE_VERIFIER_INVENTORY_INVALID",
     );
+  } finally {
+    rmSync(fixture.repository, { recursive: true, force: true });
+  }
+});
+
+test("inventory bridge binds one commit across distinct package and production source hash domains", () => {
+  const packageSourceTreeSha256 = "c".repeat(64);
+  const fixture = createInventoryBridgeFixture({ packageSourceTreeSha256 });
+  try {
+    const verified = verifyInventoryBridge(fixture.bridgeArgs);
+    assert.equal(verified.status, "inventory_bridge_verified");
+    const bridge = JSON.parse(
+      readFileSync(resolve(fixture.root, "metadata", "inventory-bridge.json"), "utf8"),
+    );
+    const automation = JSON.parse(
+      readFileSync(
+        resolve(fixture.root, "metadata", "automation-report-verification.json"),
+        "utf8",
+      ),
+    );
+    assert.equal(bridge.sourceCommit, fixture.sourceCommit);
+    assert.equal(bridge.sourceTreeSha256, packageSourceTreeSha256);
+    assert.equal(automation.sourceTreeSha256, fixture.sourceTreeSha256);
+    assert.notEqual(bridge.sourceTreeSha256, automation.sourceTreeSha256);
   } finally {
     rmSync(fixture.repository, { recursive: true, force: true });
   }
@@ -1163,11 +1290,14 @@ function liveUiAuthorityFixture() {
   ];
   for (const [index, action] of [...FORWARD_ORDER, ...INVERSE_ORDER].entries()) {
     const direction = index < FORWARD_ORDER.length ? "forward" : "inverse";
+    const correlatedForwardIndex = direction === "forward"
+      ? index
+      : INVERSE_ORDER.length - 1 - (index - FORWARD_ORDER.length);
     events.push(
       authorityEvent("lifecycle_operation_observation", "runtime_observed", {
         direction,
         action,
-        operationId: `operation-happy-${index + 1}`,
+        operationId: `operation-happy-${correlatedForwardIndex + 1}`,
         registrationId,
         runId,
         nativeCall: liveObservedCall(
@@ -1178,9 +1308,9 @@ function liveUiAuthorityFixture() {
         ),
         mcpCall: liveObservedCall(
           "mcp_asset_tool_call",
-          "succeeded",
+          direction === "forward" ? "executed" : "rolled_back",
           "completed",
-          `mcp-happy-evidence-${index + 1}`,
+          `mcp-happy-evidence-${correlatedForwardIndex + 1}`,
         ),
         sideEffectCount: 1,
       }),
@@ -1192,7 +1322,7 @@ function liveUiAuthorityFixture() {
         stage,
         registrationId,
         runId,
-        evidenceId: `manifest-happy-${stage}-0001`,
+        evidenceId: "manifest-happy-stable-0001",
         sha256: "d".repeat(64),
         runRootPresent: false,
       }),
@@ -1227,8 +1357,8 @@ function liveUiAuthorityFixture() {
           reason,
           `guard-${caseId}-evidence`,
         ),
-        contentBefore: { evidenceId: `content-${caseId}-before`, sha256: "e".repeat(64) },
-        contentAfter: { evidenceId: `content-${caseId}-after`, sha256: "e".repeat(64) },
+        contentBefore: { evidenceId: `content-${caseId}-stable`, sha256: "e".repeat(64) },
+        contentAfter: { evidenceId: `content-${caseId}-stable`, sha256: "e".repeat(64) },
         countersBefore: [index, 0, 0, 0, 0],
         countersAfter: [index + 1, 0, 0, 0, 0],
         observationStopped: true,
@@ -1237,13 +1367,14 @@ function liveUiAuthorityFixture() {
     );
   }
   const partialMatrix = [
-    ["forward", "create_run_root", "succeeded", "known_effect", "none"],
-    ["forward", "duplicate_test01", "succeeded", "known_effect", "none"],
-    ["forward", "rename_duplicate", "succeeded", "known_effect", "none"],
-    ["forward", "move_duplicate", "failed", "unknown", "effect_unknown"],
-    ["inverse", "rename_back", "succeeded", "known_effect", "none"],
-    ["inverse", "delete_duplicate", "succeeded", "known_effect", "none"],
-    ["inverse", "cleanup_empty_folder", "succeeded", "known_effect", "none"],
+    ["forward", "create_run_root", "executed", "known_effect", "none"],
+    ["forward", "duplicate_test01", "executed", "known_effect", "none"],
+    ["forward", "rename_duplicate", "executed", "known_effect", "none"],
+    ["forward", "move_duplicate", "failed", "unknown", "operation_response_pending"],
+    ["inverse", "move_back", "rolled_back", "known_effect", "none"],
+    ["inverse", "rename_back", "rolled_back", "known_effect", "none"],
+    ["inverse", "delete_duplicate", "rolled_back", "known_effect", "none"],
+    ["inverse", "cleanup_empty_folder", "rolled_back", "known_effect", "none"],
     ["control", "cross_ttl", "blocked", "known_none", "approval_expired"],
     ["control", "second_rollback", "blocked", "known_none", "rollback_replay"],
   ];
@@ -1259,23 +1390,29 @@ function liveUiAuthorityFixture() {
           direction,
           action,
           api:
-            index < 7
-              ? "mcp_asset_tool_call"
-              : index === 7
-                ? "execute_asset_mutation"
-                : "rollback_asset_mutation",
+            index === 3
+              ? "asset_mutation_observation_boundary"
+              : index < 8
+                ? "mcp_asset_tool_call"
+                : index === 8
+                  ? "execute_asset_mutation"
+                  : "rollback_asset_mutation",
           requestSha256: hashStableForTest({ index, direction: "request" }),
+          pendingRequestSha256:
+            index === 3 ? hashStableForTest({ index, direction: "pending-request" }) : null,
           responseSha256: hashStableForTest({ index, direction: "response" }),
           status,
+          sourceStatus: index === 3 ? "observed" : status,
           effectState,
           reason,
+          sourceReason: index === 3 ? "operation_response_pending" : reason,
           evidenceId: `partial-operation-evidence-${index + 1}`,
         }),
       ),
-      contentBefore: { evidenceId: "partial-content-before", sha256: "f".repeat(64) },
-      contentAfter: { evidenceId: "partial-content-after", sha256: "f".repeat(64) },
+      contentBefore: { evidenceId: "partial-content-stable", sha256: "f".repeat(64) },
+      contentAfter: { evidenceId: "partial-content-stable", sha256: "f".repeat(64) },
       countersBefore: [0, 0, 0, 0, 0],
-      countersAfter: [9, 9, 0, 0, 4],
+      countersAfter: [10, 10, 0, 0, 5],
       observationStopped: true,
       mcpDisconnected: true,
     }),
@@ -1284,8 +1421,8 @@ function liveUiAuthorityFixture() {
       recordedEventCount: 6,
       recordedActions: ["dry-run", "preview", "approval", "execute", "verify", "rollback"],
       counterNames: ["native", "mcp", "provider", "verify", "rollback"],
-      countersBefore: [9, 9, 0, 0, 4],
-      countersAfter: [9, 9, 0, 0, 4],
+      countersBefore: [10, 10, 0, 0, 5],
+      countersAfter: [10, 10, 0, 0, 5],
       sideEffectDelta: [0, 0, 0, 0, 0],
     }),
     authorityEvent("negative_matrix", "derived_only", {
@@ -1295,11 +1432,11 @@ function liveUiAuthorityFixture() {
     }),
     authorityEvent("partial_unknown_effect", "derived_only", {
       covered: true,
-      rawOperationCount: 9,
+      rawOperationCount: 10,
     }),
     authorityEvent("run_root_state", "derived_only", {
       removed: true,
-      contentEvidenceId: "manifest-happy-after-0001",
+      contentEvidenceId: "manifest-happy-stable-0001",
     }),
     authorityEvent("ownership_state", "derived_only", { parentCloseoutRequired: true }),
   );
@@ -1902,7 +2039,12 @@ function livePhaseFixtureOutput({
           registrationId: "partial-registration-1",
           effectState: "unknown",
           successfulForward: ["create_run_root", "duplicate_test01", "rename_duplicate"],
-          inverseRollbackOrder: ["rename_back", "delete_duplicate", "cleanup_empty_folder"],
+          inverseRollbackOrder: [
+            "move_back",
+            "rename_back",
+            "delete_duplicate",
+            "cleanup_empty_folder",
+          ],
           crossTtlRejected: true,
           secondRollbackBlocked: true,
           beforeContentSha256: "a".repeat(64),
@@ -2404,6 +2546,12 @@ test("transcript redaction collapses drive, UNC, user-home and secret bytes dete
       "fetch (https://alice:one@example.com/api), [https://example.com/api?token=two]; END_MARKER",
       "fetch (${REDACTED_ENDPOINT}), [${REDACTED_ENDPOINT}]; END_MARKER",
       { absolutePaths: 0, secrets: 3 },
+    ],
+    [
+      "invalid-utf8-replacement",
+      "compiler output \uFFFD retained",
+      "compiler output <<INVALID_UTF8_REPLACED>> retained",
+      { absolutePaths: 0, secrets: 0 },
     ],
   ];
   for (const [name, input, expected, rawLeaks] of cases) {
@@ -4805,6 +4953,47 @@ test(
         `${JSON.stringify(
           {
             status: "fixture_complete",
+            sourceArtifacts: [sourceRecord(root, "logs/raw.log")],
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const receiptIds = Array.from(
+        { length: 9 },
+        (_, index) =>
+          `mvp15d-observation-receipt:${String(index + 1)
+            .repeat(64)
+            .slice(0, 64)}`,
+      );
+      writeFileSync(
+        resolve(root, "summaries", "ui-lifecycle.json"),
+        `${JSON.stringify(
+          {
+            schemaVersion: "uagent.mvp15d.final.ui-lifecycle.v1",
+            evidenceMode: "live",
+            nativeLifecycleEvidence: {
+              n4ManagedProcessIdBindingSha256: "a".repeat(64),
+              n4OwnerTaskId: TASK_ID,
+              n4OwnerPhase: "ui-lifecycle",
+              n5SuccessorSessionBindingSha256: "b".repeat(64),
+              n5ObservationGeneration: null,
+              secondRollbackSetupApis: [
+                "attach_editor_process",
+                "register_asset_mutation_approval",
+                "execute_asset_mutation",
+                "record_asset_mutation_outcome",
+                "rollback_asset_mutation",
+                "record_asset_mutation_outcome",
+              ],
+              secondRollbackSetupReceiptIds: receiptIds.slice(0, 6),
+            },
+            mcpTermination: {
+              localCloseCount: 9,
+              acceptedCount: 7,
+              unsupportedCount: 0,
+              receiptIds,
+            },
             sourceArtifacts: [sourceRecord(root, "logs/raw.log")],
           },
           null,

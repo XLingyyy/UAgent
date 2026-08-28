@@ -314,6 +314,7 @@ export interface Mvp15dUiObservationPort {
   runPartialOperation(
     binding: Mvp15dUiSessionBinding,
     operation: Pick<Mvp15dPartialOperationRaw, "direction" | "action" | "api" | "request">,
+    onProgress?: (step: string) => void,
   ): Promise<Mvp15dPartialOperationRaw>;
   stopObservation(binding: Mvp15dUiSessionBinding): Promise<Mvp15dRawObservedCall>;
   disconnectMcp(binding: Mvp15dUiSessionBinding): Promise<Mvp15dRawObservedCall>;
@@ -361,7 +362,7 @@ export async function collectMvp15dRenderedNegativeCase(
   const contentBefore = await port.snapshotContent(binding, "before");
   const counterBefore = await port.readCounters(binding, "before");
   const countersBefore = [...counterBefore.values] as Mvp15dCounterVector;
-  const guard = await port.guard(Object.assign(binding, { caseId, api: guardApi }));
+  const guard = await port.guard({ ...binding, caseId, api: guardApi });
   if (caseId === "N1" || caseId === "N2") binding.registrationCall = guard.guardCall;
   const counterAfter = await port.readCounters(binding, "after");
   const countersAfter = [...counterAfter.values] as Mvp15dCounterVector;
@@ -369,7 +370,12 @@ export async function collectMvp15dRenderedNegativeCase(
   const observationStop = await port.stopObservation(binding);
   const mcpDisconnect = await port.disconnectMcp(binding);
   return {
-    ...binding,
+    sessionId: binding.sessionId,
+    nativeSessionId: binding.nativeSessionId,
+    runId: binding.runId,
+    registrationId: binding.registrationId,
+    sessionBegin: binding.sessionBegin,
+    registrationCall: binding.registrationCall,
     caseId,
     evidenceSource: "rendered_product_control",
     renderedControlCall: binding.renderedControlCall ?? binding.sessionBegin,
@@ -409,6 +415,7 @@ export async function collectMvp15dUiAuthority(
     };
   },
   includeNegativeCases = true,
+  onPartialProgress?: (step: string) => void,
 ): Promise<Mvp15dUiAuthorityInput> {
   const negativeCases: Mvp15dNegativeCaseRaw[] = [];
   if (includeNegativeCases) {
@@ -417,34 +424,76 @@ export async function collectMvp15dUiAuthority(
     }
   }
 
+  onPartialProgress?.("session_start");
   const partialBinding = await port.beginSession(context);
-  const partialBefore = await port.snapshotContent(partialBinding, "before");
-  const partialCounterBefore = await port.readCounters(partialBinding, "before");
-  const partialCountersBefore = [...partialCounterBefore.values] as Mvp15dCounterVector;
-  const operationResults: Mvp15dPartialOperationRaw[] = [];
-  for (const operation of partialOperations) {
-    operationResults.push(await port.runPartialOperation(partialBinding, operation));
+  onPartialProgress?.("session_ready");
+  let observationStopped = false;
+  let mcpDisconnected = false;
+  try {
+    const partialBefore = await port.snapshotContent(partialBinding, "before");
+    onPartialProgress?.("snapshot_before");
+    const partialCounterBefore = await port.readCounters(partialBinding, "before");
+    onPartialProgress?.("counters_before");
+    const partialCountersBefore = [...partialCounterBefore.values] as Mvp15dCounterVector;
+    const operationResults: Mvp15dPartialOperationRaw[] = [];
+    for (const [index, operation] of partialOperations.entries()) {
+      const operationNumber = index + 1;
+      onPartialProgress?.(`operation_${operationNumber}_start`);
+      operationResults.push(
+        await port.runPartialOperation(partialBinding, operation, (step) => {
+          onPartialProgress?.(`operation_${operationNumber}_${step}`);
+        }),
+      );
+      onPartialProgress?.(`operation_${operationNumber}_complete`);
+    }
+    const partialCounterAfter = await port.readCounters(partialBinding, "after");
+    onPartialProgress?.("counters_after");
+    const partialCountersAfter = [...partialCounterAfter.values] as Mvp15dCounterVector;
+    const partialAfter = await port.snapshotContent(partialBinding, "after");
+    onPartialProgress?.("snapshot_after");
+    const observationStop = await port.stopObservation(partialBinding);
+    observationStopped = true;
+    onPartialProgress?.("observation_stopped");
+    const mcpDisconnect = await port.disconnectMcp(partialBinding);
+    mcpDisconnected = true;
+    onPartialProgress?.("mcp_disconnected");
+    return {
+      negativeCases,
+      partialUnknown: {
+        sessionId: partialBinding.sessionId,
+        nativeSessionId: partialBinding.nativeSessionId,
+        runId: partialBinding.runId,
+        registrationId: partialBinding.registrationId,
+        sessionBegin: partialBinding.sessionBegin,
+        registrationCall: partialBinding.registrationCall,
+        sessionSetupCalls: partialBinding.sessionSetupCalls ?? [],
+        operationResults,
+        contentBefore: partialBefore,
+        contentAfter: partialAfter,
+        countersBefore: partialCountersBefore,
+        countersAfter: partialCountersAfter,
+        counterReadBefore: partialCounterBefore.receipt,
+        counterReadAfter: partialCounterAfter.receipt,
+        observationStop,
+        mcpDisconnect,
+      },
+    };
+  } finally {
+    if (!observationStopped) {
+      try {
+        await port.stopObservation(partialBinding);
+      } catch {
+        // Preserve the primary failure while still attempting MCP closeout.
+      }
+    }
+    if (!mcpDisconnected) {
+      try {
+        await port.disconnectMcp(partialBinding);
+      } catch {
+        // Preserve the primary failure; formal evidence cannot use this session.
+      }
+    }
   }
-  const partialCounterAfter = await port.readCounters(partialBinding, "after");
-  const partialCountersAfter = [...partialCounterAfter.values] as Mvp15dCounterVector;
-  const partialAfter = await port.snapshotContent(partialBinding, "after");
-  const observationStop = await port.stopObservation(partialBinding);
-  const mcpDisconnect = await port.disconnectMcp(partialBinding);
-  return {
-    negativeCases,
-    partialUnknown: {
-      ...partialBinding,
-      operationResults,
-      contentBefore: partialBefore,
-      contentAfter: partialAfter,
-      countersBefore: partialCountersBefore,
-      countersAfter: partialCountersAfter,
-      counterReadBefore: partialCounterBefore.receipt,
-      counterReadAfter: partialCounterAfter.receipt,
-      observationStop,
-      mcpDisconnect,
-    },
-  };
 }
 
 
@@ -480,9 +529,13 @@ export interface DesktopRuntimeAdapter {
       | "renderer_process"
       | "managed_listener_alive_through_use",
     request: Record<string, unknown>,
-  ): Promise<Mvp15dRawObservedCall>;
+  ): Promise<{
+    call: Mvp15dRawObservedCall;
+    observation: Record<string, unknown>;
+  }>;
   observeMvp15dManagedListenerAliveThroughUse?(): Promise<Mvp15dRawObservedCall>;
   takeMvp15dMcpObservationReceipt?(api: "mcp_asset_tool_call"): Mvp15dRawObservedCall | null;
+  takeMvp15dContentManifestObservationReceipt?(): Mvp15dRawObservedCall | null;
   runMvp15DProductRetractionOrchestration?(
     trustedRootId: string,
     editorSessionId: string,
@@ -534,6 +587,28 @@ export interface DesktopRuntimeAdapter {
   snapshotMvp15AssetContentManifest?: (
     input: AssetMutationExternalRegistrationBinding,
   ) => Promise<AssetContentManifestObservation>;
+}
+
+export async function connectMvp15dManagedEditorSuccessor(
+  connect: () => Promise<void>,
+  readState: () => { status: string; sessionId: string | null },
+  predecessorSessionId: string,
+  wait: (milliseconds: number) => Promise<void> = (milliseconds) =>
+    new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds)),
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await connect();
+    } catch {
+      // The observation listener can become ready shortly before the successor MCP endpoint.
+    }
+    const state = readState();
+    if (state.status === "connected" && state.sessionId && state.sessionId !== predecessorSessionId) {
+      return true;
+    }
+    if (attempt < 2) await wait(250);
+  }
+  return false;
 }
 
 export interface Mvp15DProductRetractionEvidence {
@@ -721,6 +796,8 @@ export function createDesktopRuntimeAdapter(
     api: string;
     call: Mvp15dRawObservedCall;
   }> = [];
+  let armedMvp15dAssetMutationBoundary: Record<string, unknown> | null = null;
+  const mvp15dContentManifestObservations: Mvp15dRawObservedCall[] = [];
   let lastMvp15dNativeAttestation: {
     request: Record<string, unknown>;
     response: Record<string, unknown>;
@@ -748,6 +825,39 @@ export function createDesktopRuntimeAdapter(
     if (!input || Object.prototype.hasOwnProperty.call(input, "observation")) {
       throw new Error("mvp15d_native_mcp_observation_input_invalid");
     }
+    let assetMutationBoundary: Record<string, unknown> | null = null;
+    if (
+      armedMvp15dAssetMutationBoundary &&
+      input.method === "POST" &&
+      typeof input.body === "string" &&
+      typeof input.sessionId === "string"
+    ) {
+      try {
+        const body = JSON.parse(input.body) as {
+          method?: string;
+          params?: { name?: string; arguments?: Record<string, unknown> };
+        };
+        const boundary = armedMvp15dAssetMutationBoundary;
+        const args = body.params?.arguments;
+        if (
+          body.method === "tools/call" &&
+          body.params?.name === boundary.toolName &&
+          args?.nativeRegistrationId === boundary.registrationId &&
+          args?.changeSetId === boundary.changeSetId &&
+          args?.runId === boundary.runId &&
+          args?.nativePhase === boundary.phase &&
+          args?.operationId === boundary.operationId &&
+          args?.nativeOperationIndex === boundary.operationIndex &&
+          args?.nativeOperationCount === boundary.operationCount &&
+          input.sessionId === boundary.mcpSessionId
+        ) {
+          assetMutationBoundary = structuredClone(boundary);
+          armedMvp15dAssetMutationBoundary = null;
+        }
+      } catch {
+        // The native bridge will validate the JSON body and fail the request.
+      }
+    }
     const observedInput = {
       ...structuredClone(input),
       observation: {
@@ -758,6 +868,7 @@ export function createDesktopRuntimeAdapter(
         phaseGeneration: fixedObservationAuthority.generation,
         connectionGeneration: Math.max(1, mcpDiscoveryGeneration),
         toolSearchMode: currentMvp15dToolSearchMode,
+        ...(assetMutationBoundary ? { assetMutationBoundary } : {}),
       },
     };
     const raw = await nativeInvoke<NativeMcpObservationResult>(command, { input: observedInput });
@@ -2016,12 +2127,15 @@ export function createDesktopRuntimeAdapter(
           latestEditorAttachInput = structuredClone(successorAttachInput);
           latestEditorSessionId = successorSessionId;
           latestEditorObservationGeneration = successorObservationGeneration;
-          await adapter.connectMcp();
-          if (
-            adapter.getMcpState().status !== "connected" ||
-            !currentMvp15dMcpSessionId ||
-            currentMvp15dMcpSessionId === before.sessionId
-          ) {
+          const successorConnected = await connectMvp15dManagedEditorSuccessor(
+            () => adapter.connectMcp(),
+            () => ({
+              status: adapter.getMcpState().status,
+              sessionId: currentMvp15dMcpSessionId,
+            }),
+            before.sessionId,
+          );
+          if (!successorConnected) {
             throw new Error("mvp15d_product_ue_restart_connect_failed");
           }
           await adapter.discoverMcp();
@@ -2120,6 +2234,7 @@ export function createDesktopRuntimeAdapter(
 
   const uiBindingState = new Map<string, {
     approvalToken: string | null;
+    contentRegistrationId: string;
     attachInput: Record<string, unknown>;
     registrationInput: Record<string, unknown>;
     guardRequests: {
@@ -2128,6 +2243,10 @@ export function createDesktopRuntimeAdapter(
       invalidPath: Record<string, unknown>;
       mcpExecute?: Record<string, unknown>;
       mcpRollback?: Record<string, unknown>;
+    };
+    mcpOperationRequests?: {
+      forward: Record<string, unknown>[];
+      rollback: Array<Record<string, unknown> | null>;
     };
     processId: string;
     observationGeneration: number;
@@ -2176,6 +2295,10 @@ export function createDesktopRuntimeAdapter(
       mcpRollback: Record<string, unknown>;
     };
     setupCalls: Mvp15dRawObservedCall[];
+    mcpOperationRequests: {
+      forward: Record<string, unknown>[];
+      rollback: Array<Record<string, unknown> | null>;
+    };
   }> => {
     if (!adapter.callMvp15AssetTool || !currentMvp15McpBinding) {
       throw new Error("mvp15d_negative_dry_run_bridge_unavailable");
@@ -2193,8 +2316,9 @@ export function createDesktopRuntimeAdapter(
     }
     const caseSlug = caseId.toLowerCase();
     const suffix = identitySuffix.replace(/[^A-Za-z0-9_-]/g, "");
-    const runId = `negative-${caseSlug}-${suffix}`;
-    const changeSetId = `negative-${caseSlug}-change-${suffix}`;
+    const identityPrefix = caseId === "partial" ? "partial" : `negative-${caseSlug}`;
+    const runId = `${identityPrefix}-${suffix}`;
+    const changeSetId = `${identityPrefix}-change-${suffix}`;
     const sourceRunRoot = `/Game/UAgentSandbox/${sourceRunId}`;
     const runRoot = `/Game/UAgentSandbox/${runId}`;
     const rewritePath = (value: unknown): string | null => {
@@ -2371,7 +2495,6 @@ export function createDesktopRuntimeAdapter(
         execute: true,
         rollback: false,
         dryRunHash,
-        approvalToken: null,
       },
     };
     const mcpRollback = {
@@ -2385,13 +2508,50 @@ export function createDesktopRuntimeAdapter(
         execute: false,
         rollback: true,
         dryRunHash,
-        approvalToken: null,
       },
     };
+    const forward = dryRunPayloads.map((payload, index) => ({
+      toolName: payload.toolName,
+      args: {
+        ...structuredClone(payload.args),
+        dryRun: false,
+        execute: true,
+        rollback: false,
+        dryRunHash: nativeOperations[index]!.pluginDryRunHash,
+      },
+    }));
+    const rollbackRequests = nativeOperations.map((nativeOperation) => {
+      const rollbackAction = String(nativeOperation.rollbackAction ?? "");
+      const rollbackToolName = typeof nativeOperation.rollbackToolName === "string"
+        ? nativeOperation.rollbackToolName
+        : "";
+      if (!isMvp15AssetToolName(rollbackToolName)) return null;
+      const assetPath = rollbackAction === "cleanup_empty_folder"
+        ? nativeOperation.assetPath
+        : nativeOperation.targetAssetPath;
+      const targetAssetPath = rollbackAction === "rename_back" || rollbackAction === "move_back"
+        ? nativeOperation.assetPath
+        : undefined;
+      return {
+        toolName: rollbackToolName,
+        args: {
+          changeSetId,
+          runId,
+          operationId: nativeOperation.operationId,
+          assetPath,
+          ...(targetAssetPath === undefined ? {} : { targetAssetPath }),
+          dryRun: false,
+          execute: false,
+          rollback: true,
+          dryRunHash: nativeOperation.pluginDryRunHash,
+        },
+      };
+    });
     return {
       registrationInput,
       guardRequests: { execute, rollback, invalidPath, mcpExecute, mcpRollback },
       setupCalls,
+      mcpOperationRequests: { forward, rollback: rollbackRequests },
     };
   };
   const callObservedMcpMutation = async (
@@ -2400,77 +2560,147 @@ export function createDesktopRuntimeAdapter(
     binding: Mvp15dUiSessionBinding,
     registrationInput: Record<string, unknown>,
     phase: "execute" | "rollback",
+    assetMutationBoundary?: Record<string, unknown>,
   ): Promise<{ call: Mvp15dRawObservedCall; outcome: Record<string, unknown> }> => {
-    if (!template || !adapter.callMvp15AssetTool) {
-      throw new Error("mvp15d_mcp_asset_bridge_unavailable");
+    const normalizedGuard = normalizeMvp15NativeGuardResult(guardResponse);
+    if (normalizedGuard.status !== "accepted_by_native_guard") {
+      throw new Error("mvp15d_negative_native_guard_result_invalid");
     }
-    const toolName = String(template.toolName ?? "") as Mvp15McpAssetToolName;
-    const templateArgs = template.args && typeof template.args === "object"
-      ? template.args as Record<string, unknown>
-      : null;
-    if (!isMvp15AssetToolName(toolName) || !templateArgs) {
-      throw new Error("mvp15d_negative_mcp_request_invalid");
-    }
-    const nativeFactKeys = [
-      "acceptedPlanBinding",
-      "nativeRegistrationId",
-      "nativePhase",
-      "nativeOperationIndex",
-      "nativeOperationCount",
-      "nativeCreatedAt",
-      "connectionGeneration",
-      "sessionGeneration",
-      "nativeSourceIdentity",
-      "nativeManifestIdentity",
-      "nativePluginIdentity",
-      "nativePackageIdentity",
-    ] as const;
-    const args: Record<string, unknown> = {
-      ...structuredClone(templateArgs),
-      changeSetId: registrationInput.changeSetId,
-      runId: binding.runId,
-      approvalToken: uiBindingState.get(binding.registrationId)?.approvalToken ?? null,
-    };
-    for (const key of nativeFactKeys) args[key] = guardResponse[key];
     const observationStart = mvp15dTransportObservations.length;
-    const raw = await adapter.callMvp15AssetTool(toolName, args);
-    const call = requireTransportObservation(
-      mvp15dTransportObservations.slice(observationStart),
-      "mcp_asset_tool_call",
-    );
-    const envelope = raw && typeof raw === "object" && !Array.isArray(raw)
-      ? raw as Record<string, unknown>
-      : null;
-    const nestedResult = envelope?.result && typeof envelope.result === "object" && !Array.isArray(envelope.result)
-      ? envelope.result as Record<string, unknown>
-      : null;
-    const outcome = envelope?.structuredContent && typeof envelope.structuredContent === "object"
-      && !Array.isArray(envelope.structuredContent)
-      ? envelope.structuredContent as Record<string, unknown>
-      : nestedResult?.structuredContent && typeof nestedResult.structuredContent === "object"
-        && !Array.isArray(nestedResult.structuredContent)
-        ? nestedResult.structuredContent as Record<string, unknown>
+    try {
+      if (!template || !adapter.callMvp15AssetTool) {
+        throw new Error("mvp15d_mcp_asset_bridge_unavailable");
+      }
+      const toolName = String(template.toolName ?? "") as Mvp15McpAssetToolName;
+      const templateArgs = template.args && typeof template.args === "object"
+        ? template.args as Record<string, unknown>
         : null;
-    const expectedStatus = phase === "execute" ? "executed" : "rolled_back";
-    if (
-      !outcome ||
-      outcome.blocked !== false ||
-      outcome.status !== expectedStatus ||
-      outcome.reasonCode !== "none" ||
-      outcome.phase !== phase ||
-      outcome.toolName !== toolName ||
-      outcome.changeSetId !== registrationInput.changeSetId ||
-      outcome.runId !== binding.runId ||
-      outcome.operationId !== guardResponse.operationId ||
-      outcome.sideEffectObserved !== true ||
-      outcome.effectState !== "known_effect" ||
-      outcome.implementationStatus !== "execution_capable" ||
-      typeof outcome.evidenceId !== "string" ||
-      !outcome.evidenceId
-    ) {
-      throw new Error(`mvp15d_negative_mcp_${phase}_outcome_invalid`);
+      if (!isMvp15AssetToolName(toolName) || !templateArgs) {
+        throw new Error("mvp15d_negative_mcp_request_invalid");
+      }
+      const nativeFactKeys = [
+        "acceptedPlanBinding",
+        "nativeRegistrationId",
+        "nativePhase",
+        "nativeOperationIndex",
+        "nativeOperationCount",
+        "nativeCreatedAt",
+        "connectionGeneration",
+        "sessionGeneration",
+        "nativeSourceIdentity",
+        "nativeManifestIdentity",
+        "nativePluginIdentity",
+        "nativePackageIdentity",
+      ] as const;
+      const args: Record<string, unknown> = {
+        ...structuredClone(templateArgs),
+        changeSetId: registrationInput.changeSetId,
+        runId: binding.runId,
+      };
+      for (const key of nativeFactKeys) args[key] = normalizedGuard[key];
+      if (assetMutationBoundary) {
+        if (armedMvp15dAssetMutationBoundary) {
+          throw new Error("mvp15d_asset_mutation_boundary_already_armed");
+        }
+        armedMvp15dAssetMutationBoundary = assetMutationBoundary;
+      }
+      let raw: unknown;
+      try {
+        raw = await adapter.callMvp15AssetTool(toolName, args);
+      } finally {
+        if (armedMvp15dAssetMutationBoundary === assetMutationBoundary) {
+          armedMvp15dAssetMutationBoundary = null;
+        }
+      }
+      const call = requireTransportObservation(
+        mvp15dTransportObservations.slice(observationStart),
+        "mcp_asset_tool_call",
+      );
+      const envelope = raw && typeof raw === "object" && !Array.isArray(raw)
+        ? raw as Record<string, unknown>
+        : null;
+      const nestedResult = envelope?.result && typeof envelope.result === "object" && !Array.isArray(envelope.result)
+        ? envelope.result as Record<string, unknown>
+        : null;
+      const outcome = envelope?.structuredContent && typeof envelope.structuredContent === "object"
+        && !Array.isArray(envelope.structuredContent)
+        ? envelope.structuredContent as Record<string, unknown>
+        : nestedResult?.structuredContent && typeof nestedResult.structuredContent === "object"
+          && !Array.isArray(nestedResult.structuredContent)
+          ? nestedResult.structuredContent as Record<string, unknown>
+          : null;
+      if (!outcome) {
+        throw new Error(`mvp15d_negative_mcp_${phase}_outcome_invalid:outcome`);
+      }
+      const effectChecks = [
+        [outcome.blocked !== false, "blocked"],
+        [outcome.status !== (phase === "execute" ? "executed" : "rolled_back"), "status"],
+        [outcome.reasonCode !== "none", "reasonCode"],
+        [outcome.sideEffectObserved !== true, "sideEffectObserved"],
+        [outcome.effectState !== "known_effect", "effectState"],
+      ] as const;
+      const mismatches = [
+        ...effectChecks,
+        [outcome.phase !== phase, "phase"],
+        [outcome.toolName !== toolName, "toolName"],
+        [outcome.changeSetId !== registrationInput.changeSetId, "changeSetId"],
+        [outcome.runId !== binding.runId, "runId"],
+        [outcome.operationId !== guardResponse.operationId, "operationId"],
+        [outcome.implementationStatus !== "execution_capable", "implementationStatus"],
+        [typeof outcome.evidenceId !== "string" || !outcome.evidenceId, "evidenceId"],
+      ].filter(([mismatch]) => mismatch).map(([, field]) => field);
+      if (mismatches.length > 0) {
+        const outcomeReason = typeof outcome.reasonCode === "string"
+          && /^[a-z0-9_]+$/.test(outcome.reasonCode)
+          ? outcome.reasonCode
+          : null;
+        throw new Error(
+          `mvp15d_negative_mcp_${phase}_outcome_invalid:${[
+            ...mismatches,
+            ...(outcomeReason ? [`outcome_${outcomeReason}`] : []),
+          ].join(",")}`,
+        );
+      }
+      return { call, outcome };
+    } catch (error) {
+      const terminalCall = mvp15dTransportObservations
+        .slice(observationStart)
+        .find(({ api }) => api === "mcp_asset_tool_call")
+        ?.call;
+      const guardReceiptId = typeof guardResponse.nativeReceiptId === "string"
+        && guardResponse.nativeReceiptId.startsWith("mvp15d-observation-receipt:")
+        ? guardResponse.nativeReceiptId
+        : null;
+      const evidenceId = terminalCall?.receiptId ?? guardReceiptId;
+      if (!evidenceId) {
+        throw new Error("mvp15d_mcp_terminal_failure_closeout_evidence_missing", { cause: error });
+      }
+      let closeout: { response: Record<string, unknown> };
+      try {
+        closeout = await invokeObservedNative("record_asset_mutation_outcome", {
+          registrationId: binding.registrationId,
+          phase,
+          operationId: guardResponse.operationId,
+          success: false,
+          sideEffectObserved: false,
+          effectState: "unknown",
+          rollbackAvailable: false,
+          evidenceId,
+          reasonCode: "mcp_terminal_outcome_validation_failed",
+        });
+      } catch (closeoutError) {
+        throw new Error("mvp15d_mcp_terminal_failure_closeout_failed", {
+          cause: closeoutError,
+        });
+      }
+      const recorded = closeout.response.status === "recorded";
+      const alreadyClosed = closeout.response.status === "blocked"
+        && closeout.response.reason === "operation_not_in_flight";
+      if (!recorded && !alreadyClosed) {
+        throw new Error("mvp15d_mcp_terminal_failure_closeout_rejected", { cause: error });
+      }
+      throw error;
     }
-    return { call, outcome };
   };
   const releaseManagedProcess = async (managedProcess: {
     taskId: string;
@@ -2536,6 +2766,7 @@ export function createDesktopRuntimeAdapter(
       };
       uiBindingState.set(attemptId, {
         approvalToken: null,
+        contentRegistrationId: attemptId,
         attachInput: structuredClone(context.attachInput),
         registrationInput,
         guardRequests: structuredClone(context.guardRequests),
@@ -2557,6 +2788,39 @@ export function createDesktopRuntimeAdapter(
       } else if (!currentMvp15dMcpSessionId || mcpState.status !== "connected") {
         await adapter.connectMcp();
         await adapter.discoverMcp();
+      }
+      if (caseId === "N4" && !mvp15DForwardAuthorityIsReady()) {
+        const authorityProcessId = String(attachInput.processId ?? "");
+        const authorityPidHash = String(attachInput.pidHash ?? "");
+        if (!authorityProcessId || !authorityPidHash) {
+          throw new Error("mvp15d_ui_attestation_context_missing");
+        }
+        // The managed N4 process is only a process-exit witness. Refresh the
+        // companion binding against the real editor before switching processes.
+        const authorityAttached = await invokeObservedNative("attach_editor_process", {
+          ...attachInput,
+          rootRef: resolveNativeEditorRootRef(attachInput.rootRef),
+        });
+        const authoritySessionId = String(authorityAttached.response.sessionId ?? "");
+        const authorityGeneration = Number(
+          authorityAttached.response.observationGeneration ?? 0,
+        );
+        if (
+          authorityAttached.response.status !== "attached" ||
+          !authoritySessionId ||
+          authorityAttached.response.processId !== authorityProcessId ||
+          authorityAttached.response.pidHash !== authorityPidHash ||
+          !Number.isSafeInteger(authorityGeneration) ||
+          authorityGeneration <= 0
+        ) {
+          throw new Error("mvp15d_ui_observation_session_begin_failed");
+        }
+        const attestation = lastMvp15dNativeAttestation?.request;
+        if (!attestation) throw new Error("mvp15d_ui_attestation_context_missing");
+        await refreshMvp15DCompanionAttestation(
+          String(attestation.trustedRootId ?? ""),
+          authoritySessionId,
+        );
       }
       if (!mvp15DForwardAuthorityIsReady()) {
         const attestation = lastMvp15dNativeAttestation?.request;
@@ -2658,6 +2922,18 @@ export function createDesktopRuntimeAdapter(
         ) {
           throw new Error("mvp15d_ui_observation_session_begin_failed");
         }
+        if (!mvp15DForwardAuthorityIsReady()) {
+          const attestation = lastMvp15dNativeAttestation?.request;
+          if (!attestation) throw new Error("mvp15d_ui_attestation_context_missing");
+          await refreshMvp15DCompanionAttestation(
+            String(attestation.trustedRootId ?? ""),
+            sessionId,
+          );
+          if (!mvp15DForwardAuthorityIsReady() || !lastMvp15dNativeAttestation) {
+            throw new Error("mvp15d_ui_attestation_refresh_failed");
+          }
+          sessionSetupCalls.push(nativeReceiptReference(lastMvp15dNativeAttestation));
+        }
         const identitySuffix = globalThis.crypto.randomUUID();
         let nextRegistrationInput: Record<string, unknown> = {
           ...structuredClone(registrationInput),
@@ -2667,6 +2943,10 @@ export function createDesktopRuntimeAdapter(
           mcpBinding: currentMvp15McpBinding?.identity ?? "",
         };
         let nextGuardRequests = structuredClone(guardRequests);
+        let nextMcpOperationRequests: {
+          forward: Record<string, unknown>[];
+          rollback: Array<Record<string, unknown> | null>;
+        } | undefined;
         if (caseId && renderedNegative) {
           const prepared = await prepareIndependentNegativeRegistration(
             caseId,
@@ -2678,10 +2958,26 @@ export function createDesktopRuntimeAdapter(
           nextRegistrationInput = prepared.registrationInput;
           nextGuardRequests = prepared.guardRequests;
           sessionSetupCalls.push(...prepared.setupCalls);
+        } else if (!caseId) {
+          const prepared = await prepareIndependentNegativeRegistration(
+            "partial",
+            { attachInput, registrationInput, guardRequests },
+            sessionId,
+            effectiveAttachInput,
+            identitySuffix,
+          );
+          nextRegistrationInput = prepared.registrationInput;
+          nextGuardRequests = prepared.guardRequests;
+          nextMcpOperationRequests = prepared.mcpOperationRequests;
+          sessionSetupCalls.push(...prepared.setupCalls);
+        }
+        const nativeRegistrationInput = toMvp15dNativeRegistrationObservationRequest(nextRegistrationInput);
+        if (!nativeRegistrationInput) {
+          throw new Error("mvp15d_ui_registration_root_unavailable");
         }
         const registered = await invokeObservedNative(
           "register_asset_mutation_approval",
-          nextRegistrationInput,
+          nativeRegistrationInput,
         );
         const registrationId = String(registered.response.registrationId ?? "");
         if (registered.response.status !== "registered" || !registrationId) {
@@ -2691,9 +2987,11 @@ export function createDesktopRuntimeAdapter(
           approvalToken: typeof registered.response.approvalToken === "string"
             ? registered.response.approvalToken
             : null,
+          contentRegistrationId: registrationId,
           attachInput: structuredClone(effectiveAttachInput),
           registrationInput: nextRegistrationInput,
           guardRequests: nextGuardRequests,
+          mcpOperationRequests: nextMcpOperationRequests,
           processId,
           observationGeneration,
           managedProcess,
@@ -2731,11 +3029,14 @@ export function createDesktopRuntimeAdapter(
           request: observation.call.request,
         };
       }
-      const request = { registrationId: binding.registrationId };
-      const observation = await invokeObservedNative("snapshot_mvp15_asset_content_manifest", request);
+      const registrationId = stage === "after"
+        ? state?.contentRegistrationId ?? binding.registrationId
+        : binding.registrationId;
+      const request = { registrationId };
+      const observation = await invokeObservedNative("snapshot_asset_content_manifest", request);
       return {
         stage,
-        registrationId: binding.registrationId,
+        registrationId,
         runId: binding.runId,
         receiptId: observation.reference.receiptId,
         request,
@@ -3063,39 +3364,242 @@ export function createDesktopRuntimeAdapter(
         mcpMutationCount: caseId === "N7" || caseId === "N8" ? 2 : 0,
       };
     },
-    runPartialOperation: async (binding, operation) => {
+    runPartialOperation: async (binding, operation, onProgress) => {
       const authority = fixedObservationAuthority;
       const state = uiBindingState.get(binding.registrationId);
       if (!authority || !state) throw new Error("mvp15d_partial_operation_source_unavailable");
-      const request: Record<string, unknown> = {
+      onProgress?.("state_ready");
+      let request: Record<string, unknown> = {
         ...structuredClone(operation.request),
         registrationId: binding.registrationId,
         approvalToken: state.approvalToken,
         changeSetId: state.registrationInput.changeSetId,
         runId: binding.runId,
-        editorSessionId: binding.sessionId,
         mcpBinding: state.registrationInput.mcpBinding,
       };
       let receipt: Mvp15dRawObservedCall;
+      let returnedApi = operation.api;
       const setupCalls: Mvp15dRawObservedCall[] = [];
       if (operation.api === "mcp_asset_tool_call") {
-        const toolName = String(request.toolName ?? "") as Mvp15McpAssetToolName;
-        const args = request.args && typeof request.args === "object"
+        const requestedArgs = request.args && typeof request.args === "object"
           ? request.args as Record<string, unknown>
           : {};
-        if (!adapter.callMvp15AssetTool) throw new Error("mvp15d_mcp_asset_bridge_unavailable");
-        const observationStart = mvp15dTransportObservations.length;
-        await adapter.callMvp15AssetTool(toolName, args);
-        receipt = requireTransportObservation(
-          mvp15dTransportObservations.slice(observationStart),
-          "mcp_asset_tool_call",
+        const requestedIndex = Number(requestedArgs.nativeOperationIndex);
+        const actionIndex = [
+          "create_run_root",
+          "duplicate_test01",
+          "rename_duplicate",
+          "move_duplicate",
+          "move_back",
+          "rename_back",
+          "delete_duplicate",
+          "cleanup_empty_folder",
+        ].indexOf(operation.action);
+        const operationIndex = Number.isSafeInteger(requestedIndex)
+          ? requestedIndex
+          : actionIndex < 4 ? actionIndex : 7 - actionIndex;
+        const registeredOperations = Array.isArray(state.registrationInput.operations)
+          ? state.registrationInput.operations
+          : [];
+        const registeredOperation = registeredOperations[operationIndex];
+        const phase = operation.direction === "inverse" ? "rollback" : "execute";
+        if (
+          !Number.isSafeInteger(operationIndex) ||
+          operationIndex < 0 ||
+          operationIndex >= registeredOperations.length ||
+          !registeredOperation ||
+          typeof registeredOperation !== "object" ||
+          Array.isArray(registeredOperation)
+        ) {
+          throw new Error("mvp15d_partial_operation_binding_invalid");
+        }
+        const mcpTemplate = phase === "execute"
+          ? state.mcpOperationRequests?.forward[operationIndex]
+          : state.mcpOperationRequests?.rollback[operationIndex];
+        if (!mcpTemplate) throw new Error("mvp15d_partial_mcp_operation_unavailable");
+        const toolName = String(mcpTemplate.toolName ?? "") as Mvp15McpAssetToolName;
+        const sourceArgs = mcpTemplate.args && typeof mcpTemplate.args === "object"
+          ? mcpTemplate.args as Record<string, unknown>
+          : {};
+        const forwardOperation = registeredOperation as Record<string, unknown>;
+        const guardOperation = phase === "execute"
+          ? structuredClone(forwardOperation)
+          : {
+              operationId: forwardOperation.operationId,
+              kind: forwardOperation.rollbackAction,
+              toolName: forwardOperation.rollbackToolName,
+              pluginDryRunHash: forwardOperation.pluginDryRunHash,
+              argsHash: forwardOperation.argsHash,
+              sourceAssetPath: null,
+              assetPath: forwardOperation.rollbackAction === "cleanup_empty_folder"
+                ? forwardOperation.assetPath
+                : forwardOperation.targetAssetPath,
+              targetAssetPath: forwardOperation.rollbackAction === "rename_back"
+                  || forwardOperation.rollbackAction === "move_back"
+                ? forwardOperation.assetPath
+                : null,
+              rollbackAction: "none",
+              rollbackToolName: null,
+              saveAll: false,
+              bulk: false,
+            };
+        const guardRequest = {
+          ...structuredClone(phase === "execute" ? state.guardRequests.execute : state.guardRequests.rollback),
+          registrationId: binding.registrationId,
+          approvalToken: phase === "execute" && operationIndex === 0 ? state.approvalToken : null,
+          changeSetId: state.registrationInput.changeSetId,
+          runId: binding.runId,
+          mcpBinding: state.registrationInput.mcpBinding,
+          phase,
+          operationIndex,
+          operationCount: registeredOperations.length,
+          operation: guardOperation,
+        };
+        const guard = await invokeObservedNative(
+          phase === "execute" ? "execute_asset_mutation" : "rollback_asset_mutation",
+          guardRequest,
         );
+        if (
+          guard.response.status !== "accepted_by_native_guard" ||
+          guard.response.registrationId !== binding.registrationId ||
+          guard.response.phase !== phase ||
+          guard.response.operationIndex !== operationIndex
+        ) {
+          throw new Error("mvp15d_partial_native_guard_rejected");
+        }
+        setupCalls.push(guard.reference);
+        const boundaryRequest = operation.action === "move_duplicate"
+          ? {
+              registrationId: binding.registrationId,
+              changeSetId: state.registrationInput.changeSetId,
+              runId: binding.runId,
+              phase,
+              operationId: guard.response.operationId,
+              operationIndex,
+              operationCount: registeredOperations.length,
+              toolName,
+              mcpSessionId: binding.nativeSessionId,
+              guardReceiptId: guard.reference.receiptId,
+            }
+          : null;
+        onProgress?.("mcp_call_start");
+        let observedSettled = false;
+        const observedPromise = callObservedMcpMutation(
+          { toolName, args: sourceArgs },
+          guard.response,
+          binding,
+          state.registrationInput,
+          phase,
+          boundaryRequest ?? undefined,
+        ).then(
+          (observed) => {
+            observedSettled = true;
+            return { status: "fulfilled" as const, observed };
+          },
+          (error: unknown) => {
+            observedSettled = true;
+            return { status: "rejected" as const, error };
+          },
+        );
+        let boundary: { call: Mvp15dRawObservedCall; observation: Record<string, unknown> } | null = null;
+        const claimBoundary = boundaryRequest
+          ? async () => {
+              const candidate = await observeNativeState(
+                "asset_mutation_observation_boundary",
+                boundaryRequest,
+              );
+              const observedBoundary = candidate.observation;
+              if (
+                observedBoundary.status !== "observed" ||
+                observedBoundary.reason !== "operation_response_pending" ||
+                observedBoundary.blocked !== false ||
+                observedBoundary.registrationId !== binding.registrationId ||
+                observedBoundary.changeSetId !== state.registrationInput.changeSetId ||
+                observedBoundary.runId !== binding.runId ||
+                observedBoundary.phase !== phase ||
+                observedBoundary.operationId !== guard.response.operationId ||
+                observedBoundary.operationIndex !== operationIndex ||
+                observedBoundary.operationCount !== registeredOperations.length ||
+                observedBoundary.toolName !== toolName ||
+                observedBoundary.mcpSessionId !== binding.nativeSessionId ||
+                observedBoundary.sideEffectObserved !== false ||
+                observedBoundary.effectState !== "unknown" ||
+                observedBoundary.rollbackAvailable !== false ||
+                typeof observedBoundary.requestSha256 !== "string" ||
+                !/^[0-9a-f]{64}$/.test(observedBoundary.requestSha256)
+              ) {
+                throw new Error("mvp15d_partial_observation_boundary_invalid");
+              }
+              return candidate;
+            }
+          : null;
+        if (claimBoundary) {
+          const boundaryDeadline = Date.now() + 5_000;
+          for (let attempt = 0; attempt < 500; attempt += 1) {
+            const settledBeforeAttempt = observedSettled;
+            try {
+              boundary = await claimBoundary();
+              break;
+            } catch (error) {
+              boundary = null;
+              const retryable = String(error).includes("MVP15D_MCP_PENDING_NOT_VISIBLE");
+              const remaining = boundaryDeadline - Date.now();
+              if (!retryable || settledBeforeAttempt || remaining <= 0 || attempt === 499) break;
+              if (!observedSettled) {
+                await Promise.race([
+                  observedPromise.then(() => undefined),
+                  new Promise<void>((resolve) =>
+                    globalThis.setTimeout(resolve, Math.min(10, remaining)),
+                  ),
+                ]);
+              }
+            }
+          }
+        }
+        const observedSettlement = await observedPromise;
+        if (observedSettlement.status === "rejected") throw observedSettlement.error;
+        if (!boundary && claimBoundary) {
+          try {
+            boundary = await claimBoundary();
+          } catch {
+            boundary = null;
+          }
+        }
+        const observed = observedSettlement.observed;
+        onProgress?.("mcp_call_complete");
+        receipt = boundary?.call ?? observed.call;
+        if (boundary) {
+          returnedApi = "asset_mutation_observation_boundary";
+          setupCalls.push(observed.call);
+        }
+        const outcome = await invokeObservedNative("record_asset_mutation_outcome", {
+          registrationId: binding.registrationId,
+          phase,
+          operationId: guard.response.operationId,
+          success: observed.outcome.effectState === "known_effect",
+          sideEffectObserved: observed.outcome.sideEffectObserved,
+          effectState: observed.outcome.effectState,
+          rollbackAvailable: observed.outcome.rollbackAvailable,
+          evidenceId: observed.outcome.evidenceId,
+          reasonCode: observed.outcome.reasonCode,
+        });
+        if (
+          outcome.response.status !== "recorded" ||
+          outcome.response.registrationId !== binding.registrationId ||
+          outcome.response.phase !== phase ||
+          outcome.response.operationId !== guard.response.operationId
+        ) {
+          throw new Error("mvp15d_partial_native_outcome_not_recorded");
+        }
+        setupCalls.push(outcome.reference);
       } else {
         if (operation.action === "cross_ttl" || operation.action === "second_rollback") {
+          onProgress?.("attach_start");
           const attached = await invokeObservedNative("attach_editor_process", {
             ...state.attachInput,
             rootRef: resolveNativeEditorRootRef(state.attachInput.rootRef),
           });
+          onProgress?.("attach_complete");
           setupCalls.push(attached.reference);
           const freshSessionId = String(attached.response.sessionId ?? "");
           const freshGeneration = Number(attached.response.observationGeneration ?? 0);
@@ -3117,10 +3621,16 @@ export function createDesktopRuntimeAdapter(
             editorSessionId: freshSessionId,
             mcpBinding: currentMvp15McpBinding?.identity ?? "",
           };
+          const nativeRegistrationInput = toMvp15dNativeRegistrationObservationRequest(freshRegistrationInput);
+          if (!nativeRegistrationInput) {
+            throw new Error("mvp15d_partial_control_registration_root_unavailable");
+          }
+          onProgress?.("registration_start");
           const registered = await invokeObservedNative(
             "register_asset_mutation_approval",
-            freshRegistrationInput,
+            nativeRegistrationInput,
           );
+          onProgress?.("registration_complete");
           setupCalls.push(registered.reference);
           const freshRegistrationId = String(registered.response.registrationId ?? "");
           const freshApprovalToken = typeof registered.response.approvalToken === "string"
@@ -3129,17 +3639,19 @@ export function createDesktopRuntimeAdapter(
           if (registered.response.status !== "registered" || !freshRegistrationId || !freshApprovalToken) {
             throw new Error("mvp15d_partial_control_registration_failed");
           }
+          state.contentRegistrationId = freshRegistrationId;
           request.registrationId = freshRegistrationId;
           request.approvalToken = freshApprovalToken;
           request.changeSetId = freshRegistrationInput.changeSetId;
           request.runId = freshRegistrationInput.runId;
-          request.editorSessionId = freshSessionId;
           request.mcpBinding = freshRegistrationInput.mcpBinding;
         }
         if (operation.action === "cross_ttl") {
           const wait = options?.mvp15dAdvanceClock
             ?? ((milliseconds: number) => new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds)));
+          onProgress?.("ttl_wait_start");
           await wait(70_000);
+          onProgress?.("ttl_wait_complete");
         }
         if (operation.action === "second_rollback") {
           const executeRequest: Record<string, unknown> = {
@@ -3148,7 +3660,6 @@ export function createDesktopRuntimeAdapter(
             approvalToken: request.approvalToken,
             changeSetId: request.changeSetId,
             runId: request.runId,
-            editorSessionId: request.editorSessionId,
             mcpBinding: request.mcpBinding,
           };
           const execute = await invokeObservedNative("execute_asset_mutation", executeRequest);
@@ -3186,7 +3697,14 @@ export function createDesktopRuntimeAdapter(
             throw new Error("mvp15d_partial_execute_outcome_not_recorded");
           }
           setupCalls.push(executeOutcome.reference);
-          request.approvalToken = null;
+          request = {
+            ...structuredClone(state.guardRequests.rollback),
+            registrationId: request.registrationId,
+            approvalToken: null,
+            changeSetId: request.changeSetId,
+            runId: request.runId,
+            mcpBinding: request.mcpBinding,
+          };
           const firstRollback = await invokeObservedNative(operation.api, request);
           if (
             firstRollback.response.status !== "accepted_by_native_guard" ||
@@ -3220,7 +3738,9 @@ export function createDesktopRuntimeAdapter(
           }
           setupCalls.push(rollbackOutcome.reference);
         }
+        onProgress?.("native_call_start");
         const observation = await invokeObservedNative(operation.api, request);
+        onProgress?.("native_call_complete");
         if (
           operation.action === "second_rollback" &&
           (observation.response.status !== "blocked" || observation.response.reason !== "rollback_replay")
@@ -3231,6 +3751,7 @@ export function createDesktopRuntimeAdapter(
       }
       return {
         ...operation,
+        api: returnedApi,
         receiptId: receipt.receiptId,
         request: structuredClone(receipt.request),
         setupCalls,
@@ -3519,7 +4040,7 @@ export function createDesktopRuntimeAdapter(
       if (!fixedObservationAuthority) {
         throw new Error("mvp15d_fixed_observation_authority_unavailable");
       }
-      return (await observeNativeState(kind, request)).call;
+      return observeNativeState(kind, request);
     },
     observeMvp15dManagedListenerAliveThroughUse: async () => {
       const authority = fixedObservationAuthority;
@@ -3572,6 +4093,8 @@ export function createDesktopRuntimeAdapter(
       if (index < 0) return null;
       return mvp15dTransportObservations.splice(index, 1)[0]!.call;
     },
+    takeMvp15dContentManifestObservationReceipt: () =>
+      mvp15dContentManifestObservations.pop() ?? null,
     runMvp15DProductRetractionOrchestration: async (
       trustedRootId,
       editorSessionId,
@@ -4076,7 +4599,20 @@ export function createDesktopRuntimeAdapter(
         return blockedMvp15ContentManifest("content_manifest_input_invalid");
       try {
         const raw = await nativeInvoke("snapshot_asset_content_manifest", { input });
-        return normalizeMvp15ContentManifest(raw);
+        const normalized = normalizeMvp15ContentManifest(raw);
+        const nativeReceiptId = raw && typeof raw === "object" && !Array.isArray(raw)
+          ? safeNativeIdentifier((raw as Record<string, unknown>).nativeReceiptId)
+          : null;
+        if (
+          normalized.status === "observed"
+          && nativeReceiptId?.startsWith("mvp15d-observation-receipt:")
+        ) {
+          mvp15dContentManifestObservations.push({
+            receiptId: nativeReceiptId,
+            request: { ...input },
+          });
+        }
+        return normalized;
       } catch {
         return blockedMvp15ContentManifest("native_content_manifest_failed", "failed");
       }
@@ -4558,10 +5094,19 @@ function toNativeMvp15AssetMutationInput(
   ) {
     const nativeInput = { ...input } as Record<string, unknown>;
     delete nativeInput.command;
+    if (input.command === "record_outcome") delete nativeInput.operationIndex;
     if (input.command === "cancel_registration") delete nativeInput.phase;
     return nativeInput;
   }
   return null;
+}
+
+export function toMvp15dNativeRegistrationObservationRequest(
+  input: Record<string, unknown>,
+): Record<string, unknown> | null {
+  return input.command === "register"
+    ? toNativeMvp15AssetMutationInput(input as Mvp15NativeAssetGuardInput)
+    : input;
 }
 
 function normalizeMvp15NativeGuardResult(raw: unknown): Mvp15NativeAssetGuardResult {
@@ -4710,7 +5255,9 @@ function normalizeMvp15ContentEvidence(
       "size",
       "sha256",
       "evidenceId",
-    ])
+      "nativeReceiptId",
+    ]) ||
+    !hasValidOptionalNativeReceiptId(result)
   ) {
     return blockedMvp15ContentEvidence(
       expectedAssetPath,
@@ -4775,7 +5322,15 @@ function normalizeMvp15ContentManifest(raw: unknown): AssetContentManifestObserv
     return blockedMvp15ContentManifest("native_content_manifest_invalid_result", "failed");
   const result = raw as Record<string, unknown>;
   if (
-    !hasOnlyNativeKeys(result, ["status", "reason", "entries", "aggregateSha256", "evidenceId"])
+    !hasOnlyNativeKeys(result, [
+      "status",
+      "reason",
+      "entries",
+      "aggregateSha256",
+      "evidenceId",
+      "nativeReceiptId",
+    ]) ||
+    !hasValidOptionalNativeReceiptId(result)
   ) {
     return blockedMvp15ContentManifest("native_content_manifest_invalid_result", "failed");
   }
@@ -4901,6 +5456,10 @@ function isSafeNativeEvidenceObject(value: unknown): value is Record<string, unk
 
 function hasOnlyNativeKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
   return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function hasValidOptionalNativeReceiptId(value: Record<string, unknown>): boolean {
+  return value.nativeReceiptId === undefined || safeNativeIdentifier(value.nativeReceiptId) !== null;
 }
 
 function containsSensitiveNativeEvidence(value: unknown): boolean {
