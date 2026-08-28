@@ -333,7 +333,7 @@ function structuredDryRunResult(
     sideEffectObserved: false,
     effectState: "known_none",
     rollbackAvailable,
-    rollbackStatus: rollbackAvailable ? "available" : "not_available",
+    rollbackStatus: rollbackAvailable ? "available" : "none",
     implementationStatus: "execution_capable",
     evidenceId: `mcp-evidence:dry-run:${operation}`,
   };

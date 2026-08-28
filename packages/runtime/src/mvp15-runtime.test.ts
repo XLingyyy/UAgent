@@ -265,7 +265,7 @@ function structuredDryRunResult(
     sideEffectObserved: false,
     effectState: "known_none",
     rollbackAvailable: rollback.available,
-    rollbackStatus: rollback.available ? "available" : "not_available",
+    rollbackStatus: rollback.available ? "available" : "none",
     implementationStatus: "execution_capable",
     evidenceId: `asset-evidence:dry-run:${operationId}`,
   };
@@ -3709,6 +3709,7 @@ describe("MVP15 asset ChangeSet service", () => {
     });
     changeSetRef.id = dryRun.changeSet.id;
     expect(dryRun.changeSet.id).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(dryRun.changeSet.operations.every((operation) => /^[A-Za-z0-9_-]+$/.test(operation.id))).toBe(true);
     expect(dryRun.changeSet.externalBindingStatus).toBe("external_pending");
 
     const bindingBeforePreview = service.preview(dryRun.changeSet.id);

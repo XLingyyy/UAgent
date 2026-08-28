@@ -1339,6 +1339,40 @@ fn canonical_directory(path: &Path, code: &'static str) -> Result<PathBuf, Bridg
     fs::canonicalize(path).map_err(|_| BridgeError::new(code))
 }
 
+#[cfg(windows)]
+fn normalized_task_owned_local_root(path: &Path) -> Option<String> {
+    if !path.is_absolute()
+        || path
+            .components()
+            .any(|part| matches!(part, Component::CurDir | Component::ParentDir))
+    {
+        return None;
+    }
+    let raw = path.to_str()?;
+    let local = raw.strip_prefix(r"\\?\").unwrap_or(raw);
+    if local.starts_with(r"UNC\") || local.starts_with(r"\\") {
+        return None;
+    }
+    let normalized = local.replace('/', r"\");
+    let bytes = normalized.as_bytes();
+    if bytes.len() < 3 || !bytes[0].is_ascii_alphabetic() || bytes[1] != b':' || bytes[2] != b'\\' {
+        return None;
+    }
+    Some(normalized.trim_end_matches('\\').to_ascii_lowercase())
+}
+
+#[cfg(windows)]
+fn same_task_owned_local_root(left: &Path, right: &Path) -> bool {
+    normalized_task_owned_local_root(left)
+        .zip(normalized_task_owned_local_root(right))
+        .is_some_and(|(left, right)| left == right)
+}
+
+#[cfg(not(windows))]
+fn same_task_owned_local_root(left: &Path, right: &Path) -> bool {
+    left == right
+}
+
 fn simple_root_name(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
         return false;
@@ -3767,6 +3801,31 @@ fn task_owned_process_exists(_pid: u32) -> bool {
     false
 }
 
+fn configure_gate_off_child_webview(command: &mut std::process::Command, user_data_root: &Path) {
+    command
+        .env("WEBVIEW2_USER_DATA_FOLDER", user_data_root)
+        .env_remove("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS");
+}
+
+fn remove_gate_off_child_webview_root(path: &Path) -> bool {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return false;
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if fs::remove_dir_all(path).is_ok() || !path.exists() {
+            return !path.exists();
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+}
+
 #[cfg(not(windows))]
 fn observe_renderer_process() -> Result<Value, BridgeError> {
     Err(BridgeError::new(
@@ -5509,7 +5568,10 @@ impl BridgeState {
             || !self.driver_claimed
             || self.structured_evidence_published
             || input.case_id != "N2"
-            || Path::new(&input.registration_input.trusted_project_root) != project_root
+            || !same_task_owned_local_root(
+                Path::new(&input.registration_input.trusted_project_root),
+                &project_root,
+            )
         {
             return Err(BridgeError::new(CODE));
         }
@@ -5519,15 +5581,20 @@ impl BridgeState {
             .parent()
             .ok_or_else(|| BridgeError::new(CODE))?;
         let unique = format!(
-            "gate-off-child-{}-{}.json",
+            "{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|_| BridgeError::new(CODE))?
                 .as_nanos()
         );
-        let result_path = result_parent.join(unique);
-        if result_path.exists() {
+        let result_path = result_parent.join(format!("gate-off-child-{unique}.json"));
+        let webview_data_root = self
+            .identity
+            .evidence_root
+            .join("metadata")
+            .join(format!("gate-off-child-webview-{unique}"));
+        if result_path.exists() || webview_data_root.exists() {
             return Err(BridgeError::new(CODE));
         }
         let input_json =
@@ -5546,34 +5613,51 @@ impl BridgeState {
         for name in UE_OWNER_ENV_NAMES {
             command.env_remove(name);
         }
-        let mut child = command.spawn().map_err(|_| BridgeError::new(CODE))?;
-        let child_pid = child.id();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
-        let exit_status = loop {
-            if let Some(status) = child.try_wait().map_err(|_| BridgeError::new(CODE))? {
-                break status;
-            }
-            if std::time::Instant::now() >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
+        configure_gate_off_child_webview(&mut command, &webview_data_root);
+        fs::create_dir(&webview_data_root).map_err(|_| BridgeError::new(CODE))?;
+        let child_result = (|| -> Result<(u32, GateOffChildResult), BridgeError> {
+            let mut child = command.spawn().map_err(|_| BridgeError::new(CODE))?;
+            let child_pid = child.id();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
+            let exit_status = loop {
+                if let Some(status) = child.try_wait().map_err(|_| BridgeError::new(CODE))? {
+                    break status;
+                }
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = fs::remove_file(&result_path);
+                    return Err(BridgeError::new("MVP15D_GATE_OFF_CHILD_TIMEOUT"));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            };
+            if !exit_status.success() {
                 let _ = fs::remove_file(&result_path);
-                return Err(BridgeError::new("MVP15D_GATE_OFF_CHILD_TIMEOUT"));
+                return Err(BridgeError::new(CODE));
             }
-            std::thread::sleep(std::time::Duration::from_millis(25));
-        };
-        if !exit_status.success() {
+            let metadata =
+                fs::symlink_metadata(&result_path).map_err(|_| BridgeError::new(CODE))?;
+            if !metadata.is_file()
+                || metadata.file_type().is_symlink()
+                || metadata.len() > 16 * 1024
+            {
+                let _ = fs::remove_file(&result_path);
+                return Err(BridgeError::new(CODE));
+            }
+            let bytes = fs::read(&result_path).map_err(|_| BridgeError::new(CODE))?;
+            fs::remove_file(&result_path).map_err(|_| BridgeError::new(CODE))?;
+            let result = serde_json::from_slice(&bytes).map_err(|_| BridgeError::new(CODE))?;
+            Ok((child_pid, result))
+        })();
+        let webview_cleanup_complete = remove_gate_off_child_webview_root(&webview_data_root);
+        if child_result.is_err() {
+            let _ = fs::remove_file(&result_path);
+        }
+        if !webview_cleanup_complete {
             let _ = fs::remove_file(&result_path);
             return Err(BridgeError::new(CODE));
         }
-        let metadata = fs::symlink_metadata(&result_path).map_err(|_| BridgeError::new(CODE))?;
-        if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 16 * 1024 {
-            let _ = fs::remove_file(&result_path);
-            return Err(BridgeError::new(CODE));
-        }
-        let bytes = fs::read(&result_path).map_err(|_| BridgeError::new(CODE))?;
-        fs::remove_file(&result_path).map_err(|_| BridgeError::new(CODE))?;
-        let mut result: GateOffChildResult =
-            serde_json::from_slice(&bytes).map_err(|_| BridgeError::new(CODE))?;
+        let (child_pid, mut result) = child_result?;
         if result.schema_version != "uagent.mvp15d.gate-off-child-result.v1"
             || !result.ui_gate_enabled
             || result.status != "blocked"
@@ -8220,6 +8304,91 @@ mod tests {
         .unwrap();
         assert_eq!(blocked.status, "blocked");
         assert_eq!(blocked.reason, "managed_phase_owner_gate_disabled");
+    }
+
+    #[test]
+    fn gate_off_child_uses_and_cleans_an_isolated_webview_data_root() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "uagent-mvp15d-gate-child-webview-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(root.join("EBWebView")).unwrap();
+        let state_path = root.join("EBWebView").join("state");
+        fs::write(&state_path, b"task-owned").unwrap();
+
+        let mut command = std::process::Command::new("gate-off-child-fixture");
+        command
+            .env("WEBVIEW2_USER_DATA_FOLDER", "inherited-parent-root")
+            .env(
+                "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                "--remote-debugging-port=41317",
+            );
+        configure_gate_off_child_webview(&mut command, &root);
+        let environment = command
+            .get_envs()
+            .map(|(key, value)| {
+                (
+                    key.to_string_lossy().to_string(),
+                    value.map(|entry| entry.to_string_lossy().to_string()),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        assert_eq!(
+            environment.get("WEBVIEW2_USER_DATA_FOLDER"),
+            Some(&Some(root.to_string_lossy().to_string()))
+        );
+        assert_eq!(
+            environment.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"),
+            Some(&None)
+        );
+        #[cfg(windows)]
+        let release_handle = {
+            use std::os::windows::fs::OpenOptionsExt;
+
+            let handle = OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(&state_path)
+                .unwrap();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                drop(handle);
+            })
+        };
+        assert!(remove_gate_off_child_webview_root(&root));
+        #[cfg(windows)]
+        release_handle.join().unwrap();
+        assert!(!root.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn gate_off_child_root_comparison_accepts_only_the_same_local_path() {
+        let canonical =
+            Path::new(r"\\?\E:\u15p\s\external\mvp15d-final-d13-d16-fixture\project\FinalHost");
+        assert!(same_task_owned_local_root(
+            Path::new(r"E:/u15p/s/external/mvp15d-final-d13-d16-fixture/project/FinalHost"),
+            canonical,
+        ));
+        assert!(!same_task_owned_local_root(
+            Path::new(r"E:\u15p\s\external\mvp15d-final-d13-d16-fixture\project\Alias"),
+            canonical,
+        ));
+        assert!(!same_task_owned_local_root(
+            Path::new(
+                r"E:\u15p\s\external\mvp15d-final-d13-d16-fixture\project\Other\..\FinalHost",
+            ),
+            canonical,
+        ));
+        assert!(!same_task_owned_local_root(
+            Path::new(r"\\server\share\FinalHost"),
+            canonical,
+        ));
     }
 
     #[test]

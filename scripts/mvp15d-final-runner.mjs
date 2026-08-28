@@ -5252,11 +5252,15 @@ function verifyPhaseSummary(kind, args) {
       ? issueLiveDerivationAuthority("persisted-consistency", kind, parsed, verificationContext)
       : null;
   let verifiedDerived;
+  let persistedAuthorityBinding = null;
   try {
     verifiedDerived = derivedFor(kind, parsed.events, parsed.closeout, isLive ? "live" : "fixture", {
       ...verificationContext,
       ownedDerivationAuthority: persistedAuthority,
     });
+    persistedAuthorityBinding = persistedAuthority
+      ? persistedOwnedLaunchBinding(persistedAuthority)
+      : null;
   } finally {
     LIVE_DERIVATION_AUTHORITIES.delete(persistedAuthority);
   }
@@ -5275,8 +5279,8 @@ function verifyPhaseSummary(kind, args) {
       ? {
           persistedOriginClaimConsistent: parsed.persistedOriginClaimConsistent,
           productionLaunchAuthorityVerified: false,
-          ...(persistedAuthority
-            ? { ownedLaunchBinding: persistedOwnedLaunchBinding(persistedAuthority) }
+          ...(persistedAuthorityBinding
+            ? { ownedLaunchBinding: persistedAuthorityBinding }
             : {}),
         }
       : {}),

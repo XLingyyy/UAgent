@@ -250,6 +250,27 @@ test("owned launch receipt fixture uses a private same-process brand without pro
   );
 });
 
+test("persisted live validation binds authority before retiring it", () => {
+  const source = readFileSync(
+    resolve(REPOSITORY, "scripts", "mvp15d-final-runner.mjs"),
+    "utf8",
+  );
+  const verificationStart = source.indexOf("function verifyPhaseSummary(kind, args)");
+  const verificationEnd = source.indexOf("function validateUeAutomation(args)", verificationStart);
+  assert.notEqual(verificationStart, -1);
+  assert.notEqual(verificationEnd, -1);
+  const verificationSource = source.slice(verificationStart, verificationEnd);
+  const bindingIndex = verificationSource.indexOf(
+    "persistedOwnedLaunchBinding(persistedAuthority)",
+  );
+  const retirementIndex = verificationSource.indexOf(
+    "LIVE_DERIVATION_AUTHORITIES.delete(persistedAuthority)",
+  );
+  assert.notEqual(bindingIndex, -1);
+  assert.notEqual(retirementIndex, -1);
+  assert.equal(bindingIndex < retirementIndex, true);
+});
+
 test(
   "actual release runtime owns all handshakes or is explicitly classified as the stale installed binary",
   { timeout: 180_000 },

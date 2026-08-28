@@ -323,9 +323,9 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
     return { status: "blocked", reason, dryRun, changeSet };
   }
 
-  function nextId(prefix: string): string {
+  function nextId(prefix: string, separator: ":" | "-" = ":"): string {
     counter += 1;
-    return `${prefix}:${counter}`;
+    return `${prefix}${separator}${counter}`;
   }
 
   async function cancelPreparedNativeRegistration(
@@ -587,7 +587,7 @@ function blocked(input: AssetMutationDryRunInput, reason: string, risk: AssetMut
         if ((draft.kind !== "duplicate_asset" || draft.assetPathAfter) && targetPath && !targetPath.startsWith("/Game/UAgentSandbox") && !targetPath.startsWith("/Content/UAgentSandbox")) {
           return blocked(input, "non_sandbox_path", "blocked_non_sandbox");
         }
-        const opId = nextId("asset-op");
+        const opId = nextId("asset-op", "-");
         operations.push({
           id: opId,
           kind: draft.kind,

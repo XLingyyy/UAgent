@@ -380,7 +380,7 @@ export function validatePluginDryRunResult(
     [result.sideEffectObserved === false, "sideEffectObserved"],
     [result.effectState === "known_none", "effectState"],
     [result.rollbackAvailable === expectedRollback.available, "rollbackAvailable"],
-    [result.rollbackStatus === (expectedRollback.available ? "available" : "not_available"), "rollbackStatus"],
+    [result.rollbackStatus === (expectedRollback.available ? "available" : "none"), "rollbackStatus"],
     [result.implementationStatus === "execution_capable", "implementationStatus"],
     [isSafeEvidenceId(result.evidenceId), "evidenceId"],
   ];
