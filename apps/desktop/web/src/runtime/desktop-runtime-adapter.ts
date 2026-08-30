@@ -797,6 +797,7 @@ export function createDesktopRuntimeAdapter(
     call: Mvp15dRawObservedCall;
   }> = [];
   let armedMvp15dAssetMutationBoundary: Record<string, unknown> | null = null;
+  let armedMvp15dNativeConnectionGeneration: number | null = null;
   const mvp15dContentManifestObservations: Mvp15dRawObservedCall[] = [];
   let lastMvp15dNativeAttestation: {
     request: Record<string, unknown>;
@@ -866,7 +867,8 @@ export function createDesktopRuntimeAdapter(
         phase: fixedObservationAuthority.phase,
         phaseSessionId: fixedObservationAuthority.session,
         phaseGeneration: fixedObservationAuthority.generation,
-        connectionGeneration: Math.max(1, mcpDiscoveryGeneration),
+        connectionGeneration:
+          armedMvp15dNativeConnectionGeneration ?? Math.max(1, mcpDiscoveryGeneration),
         toolSearchMode: currentMvp15dToolSearchMode,
         ...(assetMutationBoundary ? { assetMutationBoundary } : {}),
       },
@@ -2598,12 +2600,21 @@ export function createDesktopRuntimeAdapter(
         runId: binding.runId,
       };
       for (const key of nativeFactKeys) args[key] = normalizedGuard[key];
+      const nativeConnectionGeneration = normalizedGuard.connectionGeneration;
+      if (
+        typeof nativeConnectionGeneration !== "number" ||
+        !Number.isSafeInteger(nativeConnectionGeneration) ||
+        nativeConnectionGeneration < 1
+      ) {
+        throw new Error("mvp15d_negative_native_guard_connection_generation_invalid");
+      }
       if (assetMutationBoundary) {
         if (armedMvp15dAssetMutationBoundary) {
           throw new Error("mvp15d_asset_mutation_boundary_already_armed");
         }
         armedMvp15dAssetMutationBoundary = assetMutationBoundary;
       }
+      armedMvp15dNativeConnectionGeneration = nativeConnectionGeneration;
       let raw: unknown;
       try {
         raw = await adapter.callMvp15AssetTool(toolName, args);
@@ -2611,6 +2622,7 @@ export function createDesktopRuntimeAdapter(
         if (armedMvp15dAssetMutationBoundary === assetMutationBoundary) {
           armedMvp15dAssetMutationBoundary = null;
         }
+        armedMvp15dNativeConnectionGeneration = null;
       }
       const call = requireTransportObservation(
         mvp15dTransportObservations.slice(observationStart),

@@ -1205,6 +1205,17 @@ describe("MVP15D authoritative product observations", () => {
     });
     expect(partialMcpCalls.filter(({ assetMutationBoundary }) => assetMutationBoundary).length).toBe(1);
     expect(partialMcpCalls).toHaveLength(8);
+    const partialMcpNativeInputs = harness.nativeCommands
+      .map((command, index) => ({ command, input: harness.nativeInputs[index]! }))
+      .filter(({ command, input }) =>
+        command === "mcp_streamable_http_request" &&
+        typeof input.body === "string" &&
+        input.body.includes(authority.partialUnknown.registrationId),
+      );
+    expect(partialMcpNativeInputs).toHaveLength(8);
+    expect(partialMcpNativeInputs.every(({ input }) =>
+      (input.observation as Record<string, unknown> | undefined)?.connectionGeneration === 17,
+    )).toBe(true);
     for (const { args } of partialMcpCalls) {
       expect(args).toMatchObject({
         nativeRegistrationId: authority.partialUnknown.registrationId,
