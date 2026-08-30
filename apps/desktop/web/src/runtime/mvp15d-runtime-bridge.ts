@@ -537,7 +537,7 @@ async function activatePartialUnknownControl(
     if (failureCode) throw new Error(failureCode);
     if (status !== lastStatus) {
       lastStatus = status;
-      const isCrossTtlWait = status === "running:partial-unknown:operation_8_ttl_wait_start";
+      const isCrossTtlWait = status === "running:partial-unknown:operation_9_ttl_wait_start";
       deadline = Date.now()
         + observationTimeoutMilliseconds
         + (isCrossTtlWait ? approvalTtlWaitMilliseconds : 0);

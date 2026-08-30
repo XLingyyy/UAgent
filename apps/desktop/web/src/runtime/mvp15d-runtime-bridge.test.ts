@@ -335,7 +335,7 @@ function mountProductControls(
       negativeStatus.textContent = "completed:partial-unknown";
     };
     if (partialUnknownDelayMilliseconds > 0) {
-      negativeStatus.textContent = "running:partial-unknown:operation_8_ttl_wait_start";
+      negativeStatus.textContent = "running:partial-unknown:operation_9_ttl_wait_start";
       globalThis.setTimeout(complete, partialUnknownDelayMilliseconds);
     } else {
       complete();
