@@ -2,22 +2,18 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP15D - Final 15A-15C/D16 Live Acceptance
+## Current Stage: MVP15D - Complete
 
-The current accepted production implementation checkpoint is
-`4f0247ab8ac67bc55d50d2ae89b92077199cab2e`. Resume 15's twelfth interim
-checkpoint repairs persisted 15B authority lifetime, isolates N2 child WebView2
-state and canonical local-root comparison, emits companion-safe operation IDs,
-and aligns the dry-run rollback contract. The clean `f50b8361...` lineage passed
-release, ExactSix `1 / 1 / 0 / 0` and fixed 15A `3 / 3 / 0 / 0`; source-invalidated
-diagnostics then completed rendered 15B and reached rendered 15C
-`external_bound / dry_run_completed` before approval. All artifacts from that
-lineage retain causal value only. Fresh verification passed final tooling
-`34 / 34`, full tooling `275 / 275`, workspace tests `1685` with three existing
-skips, source identity `20 / 20`, Rust `200 / 200`, lint, typecheck and build.
-D13 / 15A is redispatched from `4f0247ab...`; final Task
-acceptance, real smoke and Stage Ready remain pending / `NO`. The checkpoint also
-includes Final Live Acceptance
+The accepted production implementation checkpoint is
+`2293cdf063b9ed914d125792f2aa62a2546696c5`. Resume 15's clean current-source
+lineage passed the Tauri release, sealed UE 5.8.1 BuildPlugin manifest, ExactSix
+`1 / 1 / 0 / 0`, fixed 15A `3 / 3 / 0 / 0`, rendered product 15B, authorized
+exact-sandbox 15C and D16 inventory/bridge closeout on the same SHA. The final
+15C ledger records five forward operations, four inverse rollbacks, the real
+cross-TTL wait, replay delta `0/0/0/0/0`, unchanged `/Game/Test01`, removed run
+root and zero owned process/port/cache residue. Final and UE581 inventories plus
+their 22-file/six-artifact bridge reverify independently. `PASS_REAL_SMOKE` and
+Stage Ready are `YES`. The checkpoint also includes Final Live Acceptance
 Resume 3 Rework 1's live-owner/restart repair, Resume 4's BuildPlugin descriptor
 verifier repair, Resume 5's official Automation-report UTF-8 BOM repair, and
 Resume 6's exact-once creation-FILETIME provenance repair. Resume 7 adds the
@@ -162,12 +158,10 @@ clone/evidence cleanup gate is `SATISFIED`: an independent zero-residual scan on
 No live gate advanced from cleanup alone.
 The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
 historical `COMPLETE / PASS` record at implementation commit
-`98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14 is `IMPLEMENTED`; current
-source-checkpoint G15 integrity is `COMPLETE`; G16 is
-`PARTIAL`. D13 / 15A is `DISPATCHED` from `4f0247ab...`; D14 / 15B waits on 15A and D15 / 15C
-waits on 15A/15B; D16 remains `IN_PROGRESS`; UE 5.8.1 compatibility and overall MVP15
-acceptance remain `PARTIAL`; Ready for the next stage is `NO`.
-Current `PASS_REAL_SMOKE` is `NO`.
+`98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14, G15 and G16 are complete.
+D13 / 15A, D14 / 15B, D15 / 15C and D16 are complete on `2293cdf...`; UE 5.8.1
+compatibility and overall MVP15 acceptance are complete. Ready for the next stage
+and current `PASS_REAL_SMOKE` are `YES`.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
 submissions without checkpoints. The reviewed Rework 9 implementation preserves Rework 8's two

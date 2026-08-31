@@ -1,6 +1,18 @@
 # MVP15 Native Authority Binding Rework Manual Smoke
 
-## Current MVP15D UE 5.8.1 Rework Manual-smoke Boundary
+## Accepted Current-source Real Smoke — 2026-08-31
+
+Implementation commit `2293cdf063b9ed914d125792f2aa62a2546696c5`
+passed the clean release, UE 5.8.1 BuildPlugin/manifest, ExactSix
+`1 / 1 / 0 / 0`, fixed 15A `3 / 3 / 0 / 0`, rendered product 15B, authorized
+exact-sandbox 15C and D16 closeout. The final UI ledger records five forward
+operations, four inverse rollbacks, the real cross-TTL wait, eight required
+negatives and replay delta `0/0/0/0/0`. Content was restored, the run root was
+removed and all owned process/port/cache residue closed. Current
+`PASS_REAL_SMOKE` and Stage Ready are `YES`; no additional manual rerun is
+required for this checkpoint.
+
+## Historical MVP15D UE 5.8.1 Rework Manual-smoke Boundary
 
 Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
@@ -108,7 +120,8 @@ source-checkpoint G15 integrity is `COMPLETE`; G16 is `PARTIAL`. D13 / 15A
 is `DISPATCHED`; D14 / 15B waits on 15A and
 D15 / 15C waits on 15A/15B; D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility
 and overall acceptance remain `PARTIAL`; Ready is `NO`.
-Current `PASS_REAL_SMOKE` is `NO`.
+Historical pre-final `PASS_REAL_SMOKE` at this boundary was `NO`; the accepted
+current-source result above is `YES`.
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
 submissions without checkpoints. Rework 9 controlled tests run actual
@@ -217,7 +230,7 @@ C14 is not the happy-path mutation lifecycle below. Its authorized boundary was 
 
 C14A is getter/adapter hardening, not another live attempt and not the R10 mutation lifecycle. Its automated tests require the first synchronous reconnect success/error notification and invalid-endpoint notification to expose null SHA, byte length, binding, discovery, and facade/tool inventory. Blocked publication may expose allowlisted duplicate names and stable counts only; URL, Windows-path, `token=`, `Bearer`, primitive, non-string, throwing/proxy-like, cyclic, and non-JSON adversarial inputs must never produce an accepted SHA or serialized canary. That historical task ended at the desktop adapter getter and did not define the current MVP15D UI surface; the current working-tree UI changes are recorded below.
 
-## Current MVP15D UI and Runner Checks
+## Historical MVP15D UI and Runner Checks
 
 - Each formal live phase uses a dedicated repository-owned adapter, fixed
   executable, validated ordered arguments, a native-generated runtime event

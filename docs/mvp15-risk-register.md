@@ -1,6 +1,16 @@
 # MVP15 Native Authority Binding Rework Risk Register
 
-## Current MVP15D UE 5.8.1 Compatibility Risks
+## Current MVP15D Final Risk Posture — 2026-08-31
+
+Final Live Acceptance Resume 15 is complete at implementation commit
+`2293cdf063b9ed914d125792f2aa62a2546696c5`. All D13-D16 gates passed,
+`PASS_REAL_SMOKE` and Stage Ready are `YES`, and there are no open blocking
+MVP15D risks. Retained non-blocking observations are the existing Rust `ureq`
+upgrade warning, fail-closed behavior if future callers overlap native MCP
+requests across connection generations, and the need to rebuild the deliberately
+deleted release executable before repeating post-cleanup aggregate tests.
+
+## Historical Pre-closeout MVP15D UE 5.8.1 Compatibility Risks
 
 Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
@@ -114,7 +124,8 @@ historical `COMPLETE / PASS` record at implementation commit
 source-checkpoint G15 integrity is `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1 compatibility and overall
 acceptance remain `PARTIAL`; D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A
 and D15 / 15C waits on 15A/15B; D16 is `IN_PROGRESS`; Ready is `NO`.
-Current `PASS_REAL_SMOKE` is `NO`.
+Historical pre-final `PASS_REAL_SMOKE` at this boundary was `NO`; the accepted
+current-source result is `YES`.
 
 Two D16 evidence-execution gates remain open for the dispatched clean run. The
 final-runner root and UE581 retained bundle enforce different root names and
@@ -219,7 +230,7 @@ MVP15D source-checkpoint risks above or supply current D0-D12 evidence.
 | Task-owned UE writes outside declared cache/evidence roots | A readiness-only launch changes copied business trees and invalidates containment                                                                                              | MITIGATED                   | Freeze the 163-file business aggregate, govern only 28 exact source-mapped `cpython-311` cache paths, reject every unknown ABI/path/source/link/reparse or unclassified file, and require truthful machine-readable header results                  | C13E preserved exact `191 = 163 + 28` through one launch. Supervisor-accepted C13E1 makes native inspection errors fail closed, makes every failed header branch report `valid: false`, passes 23/23 targeted tests, and reproduces the retained inventory read-only with zero cache size/SHA/mtime change. Fresh product evidence remains required; this risk is not `CLOSED`. |
 | Failed recovery leaves residue                             | Sandbox assets remain after a partial failure                                                                                                                                  | OPEN                        | Only bounded same-registration recovery rollback; no broad/manual cleanup                                                                                                                                                                           | Real failure residue must stop the run and be reported honestly.                                                                                                                                                                                                                                                                                                                |
 
-## Current Conclusion
+## Historical Pre-closeout Conclusion
 
 D13 / 15A is `DISPATCHED` from `4f0247ab8ac67bc55d50d2ae89b92077199cab2e`. Final Pre-live Source Closure Rework 7 is historical
 `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains

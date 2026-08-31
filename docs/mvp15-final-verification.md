@@ -1,5 +1,29 @@
 # MVP15 Final Verification
 
+## Final Resume 15 Current-source Verification — PASS — 2026-08-31
+
+Accepted implementation commit
+`2293cdf063b9ed914d125792f2aa62a2546696c5` passed one clean current-source
+release/live/closeout chain:
+
+- Tauri release and UE 5.8.1 BuildPlugin package/manifest passed; the manifest
+  binds six tools, two modules and six artifacts to the accepted source SHA.
+- ExactSix passed `1 / 1 / 0 / 0`; fixed 15A passed `3 / 3 / 0 / 0` with
+  installed == loaded == manifest identity, unchanged Content and zero residue.
+- Rendered real-product 15B captured 36 events and all six retractions without a
+  fixture or direct-dispatch bypass.
+- Authorized 15C passed five forward actions, four inverse rollbacks, a real
+  70,694 ms cross-TTL wait, eight negative cases and replay delta `0/0/0/0/0`;
+  `/Game/Test01` was restored and the task run root removed.
+- Supervisor-corrected D16 inventory is `83` files / `51` directories. UE581 is
+  `38` / `10`; the 22-file/six-artifact bridge and zero-residue closeout reverify.
+
+The pre-cleanup aggregate Node suite passed `283 / 283`. Its post-cleanup replay
+passes `281 / 283`; the two expected failures require the release `uagent.exe`
+that D16 deliberately removed and do not invalidate the already sealed release
+and live evidence. `Review Verdict: PASS`, `PASS_REAL_SMOKE: YES`, Stage Ready:
+`YES`.
+
 ## Resume 15 tenth accepted interim source checkpoint - 2026-08-27
 
 The clean `3331e220f53f528c7cc98e61efc927428d4eaeca` lineage passed release,
@@ -415,7 +439,7 @@ and a repeated full Cargo run adds no new matching `%TEMP%` fixture directory.
 No real UE live phase, asset mutation, package/release rebuild, 15A, 15B, 15C or
 D16 acceptance was run. `PASS_REAL_SMOKE` remains `NO`; Ready remains `NO`.
 
-## Current MVP15D Final 15A-15C/D16 Live Acceptance — 2026-08-14
+## Historical MVP15D Final 15A-15C/D16 Live Acceptance — 2026-08-14
 
 Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
 submissions without checkpoints. Rework 7 is historical
@@ -1554,7 +1578,7 @@ Separate negative ledgers must record:
 - stopped observation registration rejection and token/MCP/Content delta zero;
 - task-owned process exit rejection before MCP, or an honest `BLOCKED_BY_ENVIRONMENT` result when no task-owned UE process exists.
 
-## Current Progression
+## Historical Pre-closeout Progression
 
 This is not final MVP15 acceptance. Final Pre-live Source Closure Rework 7 is
 historical `PARTIAL / NEEDS_FIX` with no checkpoint; Rework 8 retains

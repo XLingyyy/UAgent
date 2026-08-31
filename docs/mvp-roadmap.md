@@ -1,6 +1,13 @@
 # UAgent MVP Roadmap
 
-## MVP15D - Final 15A-15C/D16 Live Acceptance
+## MVP15D - COMPLETE
+
+- Final Live Acceptance Resume 15 closed on reviewed implementation commit
+  `2293cdf063b9ed914d125792f2aa62a2546696c5`. One clean current-source lineage
+  passed the Tauri release, UE 5.8.1 BuildPlugin/manifest, ExactSix `1 / 1 / 0 /
+  0`, fixed 15A `3 / 3 / 0 / 0`, rendered 15B, authorized 15C and D16 sealing.
+  Final process/port/cache residue is zero; `PASS_REAL_SMOKE` and Stage Ready are
+  `YES`.
 
 - Final Pre-live Source Closure Rework 7: historical `PARTIAL / NEEDS_FIX`; no
   checkpoint was created.
@@ -124,32 +131,38 @@
   native connect-receipt generation. Eleventh checkpoint
   `f50b8361fc0dd2fd1543cb7a30161c8d5d3ebe02` accepts same-session advancing
   `stale_completion` while retaining fail-closed session replacement for the
-  connection and restart boundaries. Current twelfth checkpoint
+  connection and restart boundaries. Historical twelfth checkpoint
   `4f0247ab8ac67bc55d50d2ae89b92077199cab2e` repairs persisted authority
   lifetime, N2 child WebView/path cleanup, companion-safe operation IDs and the
-  canonical non-rollback dry-run status. The same task remains active.
+  canonical non-rollback dry-run status. These are now historical interim facts.
+- Final Resume 15 candidate `2293cdf063b9ed914d125792f2aa62a2546696c5`
+  adds exact native MCP connection-generation binding and aligns the rendered
+  cross-TTL wait with operation 9. The complete clean-SHA release/live/D16 chain
+  passed and received final `Review Verdict: PASS`.
 - The distinct Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 is a
   historical `COMPLETE / PASS` record at implementation commit
   `98c8b387e1124a519977849d48ab824e4e6bb9c5`.
-- G14 documentation consistency: `IMPLEMENTED` after the current evidence and
-  stale-state reconciliation.
-- G15 checkpoint integrity: `COMPLETE`; current implementation commit
-  `4f0247ab8ac67bc55d50d2ae89b92077199cab2e` is recorded by this documentation
-  closeout. Earlier accepted repairs retain their historical scopes.
-- G16 authority provenance and plugin baseline: `PARTIAL`.
+- G14 documentation consistency: `COMPLETE` after final evidence and stale-state
+  reconciliation.
+- G15 checkpoint integrity: `COMPLETE`; accepted implementation commit is
+  `2293cdf063b9ed914d125792f2aa62a2546696c5`. Earlier accepted repairs retain
+  their historical scopes.
+- G16 authority provenance and plugin baseline: `COMPLETE`.
 - UE identity: `5.8.1` / engine CL `56057345` / compatible CL `55116800` /
   module BuildId `55116800`.
 - Desktop bundling: `IMPLEMENTED`; icon preflight, MSI, and NSIS passed.
-- Real UE 5.8.1 compatibility: `PARTIAL`; the Rework 2 read-only attempt is
-  historical and the full clean-commit matrix remains deferred.
-- D13 / 15A live execution: `DISPATCHED` from a fresh clean checkout of
-  `4f0247ab8ac67bc55d50d2ae89b92077199cab2e`.
-- D14 / 15B: `WAITING_ON_15A`; not run.
-- D15 / 15C: `WAITING_ON_15A_15B`; no asset mutation was attempted.
-- D16: `IN_PROGRESS`.
-- Overall MVP15 final acceptance: `PARTIAL`.
-- Ready for the next MVP stage: `NO`.
-- Current `PASS_REAL_SMOKE`: `NO`.
+- Real UE 5.8.1 compatibility: `COMPLETE` on the sealed package and installed /
+  loaded module identity for `2293cdf...`.
+- D13 / 15A live execution: `COMPLETE`; ExactSix `1 / 1 / 0 / 0`, fixed matrix
+  `3 / 3 / 0 / 0`, unchanged Content and zero mutation/residue.
+- D14 / 15B: `COMPLETE`; real product adapter, independent Tool Search sessions,
+  exact-six equality and all six retractions passed.
+- D15 / 15C: `COMPLETE`; five forward actions, four inverse rollbacks, cross-TTL
+  recovery, adversarial matrix, content restoration and ownership closeout passed.
+- D16: `COMPLETE`; final/UE581 inventories and their bridge reverify.
+- Overall MVP15 final acceptance: `COMPLETE`.
+- Ready for the next MVP stage: `YES`.
+- Current `PASS_REAL_SMOKE`: `YES`.
 
 - Final Pre-live Source Closure Rework 1-4: historical `PARTIAL`, supervisor
   `NEEDS_FIX`, no checkpoint.
