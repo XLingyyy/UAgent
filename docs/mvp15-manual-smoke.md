@@ -1,16 +1,16 @@
 # MVP15 Native Authority Binding Rework Manual Smoke
 
-## Accepted Current-source Real Smoke — 2026-08-31
+## Current-source Real Smoke — COMPLETE — 2026-09-01
 
-Implementation commit `2293cdf063b9ed914d125792f2aa62a2546696c5`
-passed the clean release, UE 5.8.1 BuildPlugin/manifest, ExactSix
-`1 / 1 / 0 / 0`, fixed 15A `3 / 3 / 0 / 0`, rendered product 15B, authorized
-exact-sandbox 15C and D16 closeout. The final UI ledger records five forward
-operations, four inverse rollbacks, the real cross-TTL wait, eight required
-negatives and replay delta `0/0/0/0/0`. Content was restored, the run root was
-removed and all owned process/port/cache residue closed. Current
-`PASS_REAL_SMOKE` and Stage Ready are `YES`; no additional manual rerun is
-required for this checkpoint.
+Implementation commit `7dd31488554e1cfc1aa54cd8a15d3a891a536f5a`
+passed the detached-clean release, UE 5.8.1 BuildPlugin/manifest, ExactSix, fixed
+15A `3 / 3 / 0 / 0`, rendered product 15B, authorized exact-sandbox 15C and D16
+closeout. The product UI ledger records five dry-runs, one approval registration,
+five forward operations, zero verify mutations, four inverse rollbacks, the real
+70,779 ms cross-TTL wait, N1-N8 and replay delta `0/0/0/0/0`. Content was
+restored, the run root was removed and owned process/port/cache residue is zero.
+`PASS_REAL_SMOKE: YES`; Ready for MVP16: `YES`; no additional manual rerun is
+required for this source identity.
 
 ## Historical MVP15D UE 5.8.1 Rework Manual-smoke Boundary
 

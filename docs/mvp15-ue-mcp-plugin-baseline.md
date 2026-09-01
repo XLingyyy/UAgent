@@ -2,6 +2,17 @@
 
 ## Independent UAgent Companion Baseline — MVP15D
 
+Current implementation commit `7dd31488554e1cfc1aa54cd8a15d3a891a536f5a`
+passed the complete source-bound UE 5.8.1 chain. The independent companion uses
+the Direct registration route, seals six artifacts and two modules, and proves
+manifest == installed == loaded identity. ExactSix fingerprint
+`48ce6502ba9706ed6aa4c53926f18c7588689a5b34264be6766a3c4f7a46fe21`
+was accepted; Tool Search ON/OFF produced the same exact six and all six
+retractions. Official 15A, rendered 15B, authorized 15C and D16 are `COMPLETE`;
+blockers are `None`; `PASS_REAL_SMOKE: YES`; Ready for MVP16: `YES`.
+
+## Historical companion baseline record
+
 Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.

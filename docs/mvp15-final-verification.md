@@ -1,28 +1,47 @@
 # MVP15 Final Verification
 
-## Final Resume 15 Current-source Verification — PASS — 2026-08-31
+## Current F0-F16 Source-bound Verification — COMPLETE — 2026-09-01
 
-Accepted implementation commit
-`2293cdf063b9ed914d125792f2aa62a2546696c5` passed one clean current-source
-release/live/closeout chain:
+Implementation commit `7dd31488554e1cfc1aa54cd8a15d3a891a536f5a`
+passed one detached-clean release/live/closeout lineage:
 
-- Tauri release and UE 5.8.1 BuildPlugin package/manifest passed; the manifest
-  binds six tools, two modules and six artifacts to the accepted source SHA.
-- ExactSix passed `1 / 1 / 0 / 0`; fixed 15A passed `3 / 3 / 0 / 0` with
-  installed == loaded == manifest identity, unchanged Content and zero residue.
-- Rendered real-product 15B captured 36 events and all six retractions without a
-  fixture or direct-dispatch bypass.
-- Authorized 15C passed five forward actions, four inverse rollbacks, a real
-  70,694 ms cross-TTL wait, eight negative cases and replay delta `0/0/0/0/0`;
-  `/Game/Test01` was restored and the task run root removed.
-- Supervisor-corrected D16 inventory is `83` files / `51` directories. UE581 is
-  `38` / `10`; the 22-file/six-artifact bridge and zero-residue closeout reverify.
+- Production source identity is clean over 336 inventoried files with SHA-256
+  `a7a6bac2b905102eb4c01eb12a84721c853255f6a9284bd0880111ba257c78cf`.
+  The release `uagent.exe` is 13,687,808 bytes with SHA-256
+  `95370ee47cf79c8e5ee8e2550dd42dd8a57e8395961d2ba2aed5a66d61d8650d`.
+- UE 5.8.1 RunUAT BuildPlugin passed. Manifest file SHA-256 is
+  `a38bf02825c34b4c6bfca9d4e94c10c8357274756e33ca866d248ea23263d2b7`;
+  manifest self SHA-256 is
+  `96f0c6b1dc7ac9320e326ccfb94aeb8c9a346d2da30277b9dcf73bbd7e2b19f0`.
+  Its package-source boundary is
+  `360f59c9ebbc7a0d86bd9e967825aa2684dff027e848a9095a3cead0556621da`
+  and seals six artifacts plus two modules.
+- ExactSix fingerprint
+  `48ce6502ba9706ed6aa4c53926f18c7588689a5b34264be6766a3c4f7a46fe21`
+  was accepted. Manifest, installed and loaded module identities are equal; the
+  loaded-module ledger SHA-256 is
+  `2cc664143389aa1127974635c84a6343867fc08b5dd6aa9485c3ddaa6132cdb5`.
+- Official 15A passed `3 / 3 / 0 / 0`; report SHA-256 is
+  `ebedc638fb176b831fc020bbd44fb400221270428efb2118a40503e120e4d99a`.
+  Rendered product 15B emitted 36 events and observed all six retractions with
+  fixture, manual and direct-client bypass flags false.
+- Authorized rendered 15C emitted 87 events: five dry-runs, one registration,
+  five forward executes, zero verify mutations, four inverse rollbacks, eight
+  negative cases, a 70,779 ms cross-TTL wait and replay delta `0/0/0/0/0`.
+  `/Game/Test01` remained byte-identical, the run root was removed, and owned
+  process/port residue is zero.
+- D16 Final inventory is `48` files / `20` directories with bundle SHA-256
+  `6ffdda2ac20f45f5a5b45392297a40ba142b0c5ba967a214f748893ff7988931`.
+  UE581 is `38 / 10` with bundle SHA-256
+  `2f915aaf37be1254354125a50b3c4eaeb2bd46c6883372ddcfb6d81942f1538c`.
+  Bridge self SHA-256 is
+  `e226b0eb7124b24aa6dc8080f2387fa8f167f484cb412e4688d55edc29c277b6`;
+  all inventory, bridge and zero-residue closeout verifiers pass independently.
 
-The pre-cleanup aggregate Node suite passed `283 / 283`. Its post-cleanup replay
-passes `281 / 283`; the two expected failures require the release `uagent.exe`
-that D16 deliberately removed and do not invalidate the already sealed release
-and live evidence. `Review Verdict: PASS`, `PASS_REAL_SMOKE: YES`, Stage Ready:
-`YES`.
+Overall MVP15, D13-D16, G13 and G16 are `COMPLETE`; blockers are `None`;
+`PASS_REAL_SMOKE: YES`; Ready for MVP16: `YES`.
+
+## Historical verification record
 
 ## Resume 15 tenth accepted interim source checkpoint - 2026-08-27
 
@@ -308,7 +327,7 @@ The actual rebuilt product WebView reached native binding, validation, add and
 The sealed manifest contains six artifacts. Production expected only five
 because `Resources/mvp15d-native-binding-v2.json` was absent from its exact path
 set. The accepted repair adds that exact resource and makes the production-
-manifest test candidate copy it. Fresh supervisor UE 5.8.1 BuildPlugin compiled
+manifest test fixture copy it. Fresh supervisor UE 5.8.1 BuildPlugin compiled
 and linked both production and test modules in 16 actions with exit 0; bundle/
 source-identity checks and `git diff --check` also pass. No patched release,
 15A, 15B, 15C, final D16 closeout, real smoke or Stage Ready claim exists.
@@ -1560,16 +1579,16 @@ The five authority scan ids are `mvp15-native-trust-authority-boundary`, `mvp15-
 - The fresh C13E1 retained-copy command initially returned the expected `PATH_INSPECTION_FAILED` inside the restricted execution sandbox because native `realpath` of a restricted ancestor was denied. The identical read-only command was rerun in the approved host context and passed with `ok:true`, `classificationComplete:true`, exact full/business/cache `191 / 163 / 28`, and empty errors/unclassified. The 28-entry path/size/SHA/mtime comparison was identical before and after. UE/UAgent/Zen/product/MCP/native/mutation launches or actions were all zero.
 - Across C12-C13E there is still no current product UI action, Connect/Discover, MCP endpoint request, direct native request, registration/token, dry-run, execute, verify, rollback, replay, or asset mutation evidence. Launch readiness is not a product smoke.
 
-## Pending Product-UI Ledger
+## Historical Pending Product-UI Ledger (Superseded)
 
-The later separately authorized product-UI ledger must record a redacted
+The later separately authorized product-UI ledger was required to record a redacted
 implementation baseline, the plugin identity from
 [the plugin baseline](mvp15-ue-mcp-plugin-baseline.md), UE version, live contract
 fingerprint, authoritative root/observation provenance, native gate state, five
 forward guards/calls/results, four inverse guards/calls/results, source and
 Content evidence, cross-token-TTL rollback, replay five-channel delta, and
-process ownership. It is not part of the historical Source Checkpoint Rework 7
-evidence or the current Final Source/Tooling Rework 8 capability-only evidence.
+process ownership. It was not part of the historical Source Checkpoint Rework 7
+evidence or the historical Final Source/Tooling Rework 8 capability-only evidence.
 
 Separate negative ledgers must record:
 

@@ -1,26 +1,11 @@
 # MVP15 Prep - Real UE Sandbox Asset Mutation Pilot (Historical)
 
-> MVP15D current note: Final Source/Tooling Rework 7 is the historical/current
-> predecessor `PARTIAL`; its supervisor verdict was `NEEDS_FIX`, and no
-> checkpoint was created. Final Source/Tooling Rework 8 is `COMPLETE` with
-> supervisor `PASS` at implementation commit
-> `98c8b387e1124a519977849d48ab824e4e6bb9c5`; current implementation checkpoint
-> `33743bb8327b7ca8bdf5aff6469db46503c01c67` preserves G14 `IMPLEMENTED` and
-> G15 `COMPLETE`; G16 is `PARTIAL`. Real UE 5.8.1
-> compatibility and overall acceptance remain `PARTIAL`; D13 / 15A is
-> `DISPATCHED`; D14 / 15B waits on 15A and D15 / 15C waits on 15A/15B; D16 is `IN_PROGRESS`;
-> Ready is `NO`. The unsafe predecessor evidence root was
-> removed for `TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`. Full read-only
-> compatibility follows in a new clean-checkout task based on the current commit.
-> Actual release native/product/UI capability handshakes completed with
-> zero MCP/network/asset operations. Rework 7 adds sole owned production
-> a two-level verification model: persisted cross-binding reports
-> `productionLaunchAuthorityVerified: false`, while only the same-process fixed
-> producer launch can consume the private receipt and report owned launch
-> authority. It preserves the 336-file transitive source boundary with 357
-> watches, ancestor-reparse rejection, and fail-closed cleanup;
-> these are runtime/source facts, not live compatibility. Real UE, Tool Search,
-> and mutation are `SKIPPED_BY_TASK_BOUNDARY`; mutation remains prohibited.
+> MVP15D current note: implementation commit
+> `7dd31488554e1cfc1aa54cd8a15d3a891a536f5a` completed the detached-clean
+> F0-F16 source-bound chain. Overall MVP15, D13/15A, D14/15B, D15/15C, D16,
+> G13 and G16 are `COMPLETE`; blockers are `None`; `PASS_REAL_SMOKE: YES`; Ready
+> for MVP16: `YES`. The preparation posture below is a historical record and does
+> not limit the accepted final exact-sandbox lifecycle.
 
 > Historical preparation document. This file records the scope posture used before MVP15 implementation. MVP15C / 09Z later completed the former happy-path lifecycle. Current status, blockers, delivered source tooling, and remaining prohibitions are defined by the acceptance, verification, risk, plugin-baseline, and handoff documents.
 

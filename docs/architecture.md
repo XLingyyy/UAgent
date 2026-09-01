@@ -4,6 +4,19 @@
 
 ### Current Final 15A-15C/D16 Live Acceptance
 
+Implementation commit `7dd31488554e1cfc1aa54cd8a15d3a891a536f5a`
+completed the detached-clean source-to-runtime trust chain. Production source
+identity, release executable, BuildPlugin manifest, installed package and loaded
+modules are hash-bound; manifest == installed == loaded identity and ExactSix
+passed. Rendered 15B observed Tool Search ON/OFF equality and all retractions.
+Authorized 15C preserved native approval/provenance guards while completing five
+forward operations, four inverse rollbacks, N1-N8, cross-TTL and zero-delta
+replay. D16 inventories and their 22-file/six-artifact bridge reverify
+independently. Overall MVP15, D13-D16, G13 and G16 are `COMPLETE`; blockers are
+`None`; `PASS_REAL_SMOKE: YES`; Ready for MVP16: `YES`.
+
+### Historical MVP15D trust-chain record
+
 Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
@@ -414,7 +427,7 @@ Historical MVP15C-11/11A authority work moved asset-mutation authority into nati
 
 Historical C14 adds a read-only exact-six fingerprint at the same desktop publication boundary. Raw direct tools and reviewed facade candidates remain separate until a pure canonicalizer validates exact names/order, descriptor schema version, five required contracts, and facade ids when used. Recursive object-key sorting and array preservation produce a SHA-256 only for a complete JSON-safe contract. C14A makes the publication authority retract-before-notify: creating a new connection generation synchronously clears discovery, facade inventory, MCP binding, SHA, and canonical byte length before endpoint validation, `connecting`/`error`, or any listener callback; stale concurrent connection/discovery completions cannot restore them. The desktop publishes only schema version, hash/byte length, per-tool name/source/hash summaries, allowlisted duplicate names, stable issue flags/counts, and a redacted current-session/discovery-generation binding. Raw unexpected/duplicate names, endpoint, raw session id, path, PID, token, credential, and full schema never enter the publication. Primitive, non-string, throwing/proxy-like, cyclic, and non-JSON inputs fail closed without an accepted hash or uncontrolled error. This adds no mutation entry point and does not change MCP transport or native contracts.
 
-The first execute retains a maximum 60-second one-time token. Its first accepted guard creates absolute 15-minute forward and 20-minute rollback-recovery deadlines that are never extended by heartbeat or retry. Active evidence revalidates root authority and registration-bound paths. The short terminal evidence lease is path-bounded and read-only; it cannot recreate registration, token, operation, or mutation capability. The automated authority ledger is recorded; these contracts remain in acceptance rework until a clean fresh product-UI lifecycle and provenance ledger is recorded.
+The first execute retains a maximum 60-second one-time token. Its first accepted guard creates absolute 15-minute forward and 20-minute rollback-recovery deadlines that are never extended by heartbeat or retry. Active evidence revalidates root authority and registration-bound paths. The short terminal evidence lease is path-bounded and read-only; it cannot recreate registration, token, operation, or mutation capability. The automated authority ledger is recorded; the final source-bound product-UI lifecycle and provenance ledger on `7dd3148...` closes this acceptance condition without weakening the contract.
 
 ### `apps/desktop/web`
 

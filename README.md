@@ -4,16 +4,24 @@ AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent p
 
 ## Current Stage: MVP15D - Complete
 
-The accepted production implementation checkpoint is
-`2293cdf063b9ed914d125792f2aa62a2546696c5`. Resume 15's clean current-source
-lineage passed the Tauri release, sealed UE 5.8.1 BuildPlugin manifest, ExactSix
-`1 / 1 / 0 / 0`, fixed 15A `3 / 3 / 0 / 0`, rendered product 15B, authorized
-exact-sandbox 15C and D16 inventory/bridge closeout on the same SHA. The final
-15C ledger records five forward operations, four inverse rollbacks, the real
-cross-TTL wait, replay delta `0/0/0/0/0`, unchanged `/Game/Test01`, removed run
-root and zero owned process/port/cache residue. Final and UE581 inventories plus
-their 22-file/six-artifact bridge reverify independently. `PASS_REAL_SMOKE` and
-Stage Ready are `YES`. The checkpoint also includes Final Live Acceptance
+Current implementation commit
+`7dd31488554e1cfc1aa54cd8a15d3a891a536f5a` passed the complete detached-clean
+F0-F16 source-bound chain. The Tauri release binary SHA-256 is
+`95370ee47cf79c8e5ee8e2550dd42dd8a57e8395961d2ba2aed5a66d61d8650d`;
+UE 5.8.1 BuildPlugin sealed six artifacts and two modules, ExactSix passed, and
+fixed 15A passed `3 / 3 / 0 / 0`. Rendered product 15B captured all six tools in
+Tool Search ON/OFF sessions and all six retractions. Authorized 15C completed
+five forward operations, four inverse rollbacks, eight negative cases, the real
+cross-TTL wait and replay delta `0/0/0/0/0`; `/Game/Test01` was restored and
+owned process/port/cache residue is zero. D16 sealed independently verifiable
+Final `48 / 20` and UE581 `38 / 10` file/directory inventories with a matching
+22-file/six-artifact bridge. The desktop badge is `MVP15 Complete`; Overall MVP15,
+D13-D16, G13 and G16 are `COMPLETE`, blockers are `None`, `PASS_REAL_SMOKE: YES`,
+and Ready for MVP16 is `YES`.
+
+### Historical MVP15D closeout lineage
+
+The superseded Resume 15 checkpoint also includes Final Live Acceptance
 Resume 3 Rework 1's live-owner/restart repair, Resume 4's BuildPlugin descriptor
 verifier repair, Resume 5's official Automation-report UTF-8 BOM repair, and
 Resume 6's exact-once creation-FILETIME provenance repair. Resume 7 adds the

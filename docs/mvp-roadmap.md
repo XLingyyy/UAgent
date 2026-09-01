@@ -2,12 +2,16 @@
 
 ## MVP15D - COMPLETE
 
-- Final Live Acceptance Resume 15 closed on reviewed implementation commit
-  `2293cdf063b9ed914d125792f2aa62a2546696c5`. One clean current-source lineage
-  passed the Tauri release, UE 5.8.1 BuildPlugin/manifest, ExactSix `1 / 1 / 0 /
-  0`, fixed 15A `3 / 3 / 0 / 0`, rendered 15B, authorized 15C and D16 sealing.
-  Final process/port/cache residue is zero; `PASS_REAL_SMOKE` and Stage Ready are
-  `YES`.
+- Current implementation commit
+  `7dd31488554e1cfc1aa54cd8a15d3a891a536f5a` completed the detached-clean F0-F16
+  chain: release, UE 5.8.1 BuildPlugin, ExactSix, fixed 15A `3 / 3 / 0 / 0`,
+  rendered 15B, authorized 15C, D16 closeout and the full tracked-state gate.
+  Overall MVP15, D13/15A, D14/15B, D15/15C, D16, G13 and G16 are `COMPLETE`.
+  Blockers are `None`; `PASS_REAL_SMOKE: YES`; Ready for MVP16: `YES`.
+- D16 retained minimal Final `48 / 20` and UE581 `38 / 10` file/directory
+  inventories. Their bridge binds 22 shared files and six package artifacts.
+
+### Historical MVP15D work log
 
 - Final Pre-live Source Closure Rework 7: historical `PARTIAL / NEEDS_FIX`; no
   checkpoint was created.

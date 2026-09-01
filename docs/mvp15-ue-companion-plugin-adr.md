@@ -1,34 +1,21 @@
 # ADR: UAgentAssetTools Companion Registration Route
 
-- Status: `COMPLETE` — Direct remains selected; UE 5.8.1 Final Source/Tooling
-  Rework 8 changes no route
+- Status: `COMPLETE` — Direct remains selected; the final F0-F16 closeout changes
+  no registration route
 - Date: 2026-08-02
 - Scope: MVP15D registration-route decision under final source/tooling rework
 - Decision owner: implementation Agent; final acceptance remains with supervisor
 
-## Current Source/Tooling Rework Decision Status
+## Current Final Decision Status
 
-Task
-`TASK-MVP15D-UAGENT-UE-COMPANION-PLUGIN-FINAL-SOURCE-TOOLING-REWORK-8-AUTHORITATIVE-LAUNCH-BOUNDARY-AND-REPORT-CLOSURE`
-does not reopen the D0 route decision. Direct remains the selected production
-registration route; Toolset Registry remains closed and no fallback is
-permitted.
-
-Final Source/Tooling Rework 7 is the historical/current predecessor `PARTIAL`;
-its supervisor verdict was `NEEDS_FIX`, and no checkpoint was created. Final
-Source/Tooling Rework 8 is `COMPLETE` with supervisor `PASS` at implementation
-commit `98c8b387e1124a519977849d48ab824e4e6bb9c5`. Current source checkpoint
-`33743bb8327b7ca8bdf5aff6469db46503c01c67` preserves the Direct route, the
-official UE 5.8 BuildPlugin descriptor transform, BOM parsing and exact-once
-creation-FILETIME provenance. Its release-binary
-capability bridge and two-level persisted-consistency / owned-launch authority
-reaches the existing normal-product adapter without changing Direct or strict
-exact-six retraction; no live registration ran. G14 is `IMPLEMENTED`; G15 is
-`COMPLETE`; G16 is
-`PARTIAL`; D13 / 15A is `DISPATCHED`; D14 / 15B waits on 15A and D15 / 15C
-waits on 15A/15B;
-D16 is `IN_PROGRESS`; real UE 5.8.1 compatibility and overall acceptance
-remain `PARTIAL`; Ready is `NO`.
+Implementation commit `7dd31488554e1cfc1aa54cd8a15d3a891a536f5a`
+completed the detached-clean UE 5.8.1 BuildPlugin, ExactSix, 15A-15C and D16
+chain without reopening D0. Direct remains the only selected production
+registration route; Toolset Registry remains a closed evaluated alternative and
+no fallback is permitted. Tool Search ON/OFF published the same accepted exact
+six, and all six retraction conditions were observed through the real product
+adapter. Overall MVP15, D13-D16, G13 and G16 are `COMPLETE`; blockers are `None`;
+`PASS_REAL_SMOKE: YES`; Ready for MVP16: `YES`.
 
 ## Historical Source Checkpoint Rework 7 D0 Decision Matrix
 
@@ -145,6 +132,6 @@ Only then may this ADR select one production route and close the other.
 D0 selects Direct for the production registration route. Toolset Registry is
 not an implicit or automatic fallback, and no generic wrapper is permitted. The
 historical Rework 2 15A attempt failed independently of this route decision.
-The next permitted work is a separate clean-checkout read-only compatibility
-task based on the Rework 8 implementation commit; it is required before
-package execution resumes. Real mutation remains prohibited.
+The final source-bound chain on `7dd3148...` completed clean-checkout package,
+read-only compatibility and approval-bound exact-sandbox mutation verification.
+Arbitrary mutation, generic wrappers and non-sandbox writes remain prohibited.

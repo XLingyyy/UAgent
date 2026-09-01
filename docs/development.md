@@ -4,6 +4,18 @@
 
 `integrations/unreal/UAgentAssetTools` targets UE `5.8.1`: engine changelist
 `56057345`, compatible changelist `55116800`, and module BuildId `55116800`.
+
+Current implementation commit `7dd31488554e1cfc1aa54cd8a15d3a891a536f5a`
+passed frozen install, workspace typecheck/lint/tests, web and Tauri release
+builds, Cargo fmt/check/tests, official BuildPlugin and Automation, rendered
+15B/15C, and D16 inventory sealing. Production source identity covers 336 files;
+the package manifest seals six artifacts/two modules and binds exact installed and
+loaded identities. Final `48 / 20` and UE581 `38 / 10` inventories plus their
+bridge reverify independently. Overall MVP15, D13-D16, G13 and G16 are
+`COMPLETE`; blockers are `None`; `PASS_REAL_SMOKE: YES`; Ready for MVP16: `YES`.
+
+### Historical MVP15D tooling work log
+
 Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
 checkpoint was created. Rework 8 (actual bridge orchestration and exact window
 instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.

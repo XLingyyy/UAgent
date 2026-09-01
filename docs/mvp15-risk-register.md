@@ -1,14 +1,15 @@
 # MVP15 Native Authority Binding Rework Risk Register
 
-## Current MVP15D Final Risk Posture — 2026-08-31
+## Current MVP15D Final Risk Posture — 2026-09-01
 
-Final Live Acceptance Resume 15 is complete at implementation commit
-`2293cdf063b9ed914d125792f2aa62a2546696c5`. All D13-D16 gates passed,
-`PASS_REAL_SMOKE` and Stage Ready are `YES`, and there are no open blocking
-MVP15D risks. Retained non-blocking observations are the existing Rust `ureq`
-upgrade warning, fail-closed behavior if future callers overlap native MCP
-requests across connection generations, and the need to rebuild the deliberately
-deleted release executable before repeating post-cleanup aggregate tests.
+Implementation commit `7dd31488554e1cfc1aa54cd8a15d3a891a536f5a`
+passed all F0-F16 and D13-D16 gates. `PASS_REAL_SMOKE` and Ready for MVP16 are
+`YES`; there are no open blocking MVP15D risks. Retained non-blocking observations
+are the existing Rust `ureq` upgrade warning and fail-closed behavior if future
+callers overlap native MCP requests across connection generations. Task-generated
+release/build output is rebuildable and excluded from the retained formal
+evidence; rerunning executable-bound checks therefore starts with a fresh release
+build.
 
 ## Historical Pre-closeout MVP15D UE 5.8.1 Compatibility Risks
 
