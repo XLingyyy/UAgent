@@ -28,10 +28,10 @@ describe("TitleBar", () => {
       expect(screen.getByText("Custom")).toBeTruthy();
     });
 
-    it("renders the MVP15 sandbox capability badge without claiming completion", () => {
+    it("renders the MVP15 completion badge without the obsolete sandbox label", () => {
       renderTitleBar();
-      expect(screen.getByText("MVP15 Sandbox")).toBeTruthy();
-      expect(screen.queryByText("MVP15 Complete")).toBeNull();
+      expect(screen.getByText("MVP15 Complete")).toBeTruthy();
+      expect(screen.queryByText("MVP15 Sandbox")).toBeNull();
     });
 
     it("renders the Native FS OK badge", () => {
