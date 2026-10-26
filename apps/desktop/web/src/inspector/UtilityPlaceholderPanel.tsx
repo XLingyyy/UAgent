@@ -1,3 +1,6 @@
+import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
+import { safeDisplay } from "./safe-display";
+import { AssetLifecycleEvidence, hasAssetLifecycle } from "./AssetLifecycleEvidence";
 import type { AgentObservation, EvidenceRecord, TaskEvent } from "@uagent/shared";
 import {
   reviewSummary,
@@ -218,7 +221,7 @@ export function UtilityEvidencePanel() {
             : []),
         ]
       : [];
-  const fallbackEvidenceItems = [
+  const fallbackEvidenceItems = FIXTURES_ENABLED ? [
     ...reviewSummary.evidenceItems.map((item) => ({
       id: item.id,
       status: item.status,
@@ -227,43 +230,28 @@ export function UtilityEvidencePanel() {
     { id: "mvp11-ue-metadata", status: "ready", label: "UE metadata evidence" },
     { id: "mvp11-build-failure", status: "ready", label: "Build failure evidence" },
     { id: "mvp11-context-pack", status: "ready", label: "Context pack evidence" },
-  ];
+  ] : [];
+  if (hasAssetLifecycle(runtime?.mvp15)) return <AssetLifecycleEvidence state={runtime.mvp15} title="Evidence" />;
+  const recordedItems = [...mvp14EvidenceItems, ...mvp12EvidenceItems, ...mvp11EvidenceItems, ...evidenceItems];
 
   return (
-    <section className="ua-utility-placeholder" aria-label="Evidence placeholder">
+    <section className="ua-utility-placeholder" aria-label="Evidence panel">
       <div className="ua-utility-placeholder__header">
         <div className="ua-utility-placeholder__title-group">
           <span className="ua-utility-placeholder__eyebrow">{utilityEvidencePanel.badge}</span>
           <h3 className="ua-utility-placeholder__title">{utilityEvidencePanel.title}</h3>
         </div>
-        <span className="ua-utility-placeholder__state">{utilityEvidencePanel.state}</span>
+        <span className="ua-utility-placeholder__state">{recordedItems.length ? "Recorded" : "Not recorded"}</span>
       </div>
 
       <ul className="ua-utility-placeholder__list">
-        {[...mvp14EvidenceItems, ...mvp12EvidenceItems, ...mvp11EvidenceItems].length > 0
-          ? [...mvp14EvidenceItems, ...mvp12EvidenceItems, ...mvp11EvidenceItems].map((item) => (
-              <li key={item.id} className="ua-utility-placeholder__item">
-                <span className="ua-utility-placeholder__item-state">{item.status}</span>
-                <span>{item.summary}</span>
-                <span className="ua-utility-placeholder__item-state">{item.source}</span>
-                <span className="ua-utility-placeholder__item-state">{item.evidenceId}</span>
-              </li>
-            ))
-          : evidenceEvents.length > 0
-            ? evidenceItems.map((item, index) => (
-                <li key={`${item.id}-${index}`} className="ua-utility-placeholder__item">
-                  <span className="ua-utility-placeholder__item-state">{item.status}</span>
-                <span>{item.summary}</span>
-                <span className="ua-utility-placeholder__item-state">{item.source}</span>
-                <span className="ua-utility-placeholder__item-state">{item.evidenceId}</span>
-              </li>
-            ))
-          : fallbackEvidenceItems.map((item) => (
-              <li key={item.id} className="ua-utility-placeholder__item">
-                <span className="ua-utility-placeholder__item-state">{item.status}</span>
-                <span>{item.label}</span>
-              </li>
-            ))}
+        {recordedItems.map((item, index) => <li key={`${item.id}-${index}`} className="ua-utility-placeholder__item ua-evidence-row">
+          <dl><dt>Summary</dt><dd>{safeDisplay(item.summary)}</dd>
+          <dt>Status</dt><dd>{safeDisplay(item.status)}</dd>
+          <dt>Source</dt><dd>{safeDisplay(item.source)}</dd>
+          <dt>Reference</dt><dd>{safeDisplay(item.evidenceId)}</dd></dl>
+        </li>)}
+        {recordedItems.length === 0 && (fallbackEvidenceItems.length ? fallbackEvidenceItems.map((item) => <li key={item.id}>{safeDisplay(item.label)}</li>) : <li>No evidence recorded for the current project.</li>)}
       </ul>
 
       <button className="ua-utility-placeholder__action" type="button" disabled>

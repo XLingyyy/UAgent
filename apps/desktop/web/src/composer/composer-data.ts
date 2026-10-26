@@ -48,10 +48,10 @@ export const permissionOptions: ComposerPermissionOption[] = [
   {
     id: "full-access",
     label: "Full access",
-    description: "MVP6 mock only - no real permissions elevated",
+    description: "Unavailable: native approval and sandbox checks remain required.",
     tone: "warning",
-    enabled: true,
-    requiresConfirmation: true,
+    enabled: false,
+    requiresConfirmation: false,
   },
   {
     id: "custom",
@@ -73,6 +73,8 @@ export type ComposerModelId = string;
 
 export interface ComposerModelOption {
   id: ComposerModelId;
+  providerId?: string;
+  modelId?: string;
   label: string;
   provider: string;
   contextWindow: string;
@@ -114,7 +116,9 @@ export function createComposerModelOptions(providers: ProviderConfig[]): Compose
     }
     provider.models.forEach((model) => {
       options.push({
-        id: model.id,
+        id: JSON.stringify([provider.providerId, model.id]),
+        providerId: provider.providerId,
+        modelId: model.id,
         label: model.label,
         provider: provider.displayName,
         contextWindow: formatContextWindow(model.contextWindow),
@@ -166,7 +170,7 @@ export function getDefaultModelSelection(
     "not-configured";
 
   return {
-    modelId: defaultModel,
+    modelId: defaultModel === "not-configured" ? defaultModel : JSON.stringify([provider.providerId, defaultModel]),
     reasoningEffort: provider.defaultReasoningEffort ?? "medium",
   };
 }

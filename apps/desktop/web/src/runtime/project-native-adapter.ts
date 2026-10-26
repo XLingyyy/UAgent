@@ -1,3 +1,4 @@
+import { FIXTURES_ENABLED } from "./build-capabilities";
 import {
   createMvp8FixtureProjectRegistry,
   createMvp8ProjectIndexer,
@@ -42,7 +43,7 @@ export interface NativeProjectAdapter {
   ): Promise<SafeFilePreviewResult>;
   getCapabilityStatus(): { kind: string; mode: string; status: string }[];
   getPolicy(): ReadOnlyFilesystemPolicy;
-  readonly source: "native" | "fixture";
+  readonly source: "native" | "fixture" | "unknown";
 }
 
 type NativeValidationResult = ProjectRootValidationResult & {
@@ -236,6 +237,7 @@ export function createNativeProjectAdapter(
   if (invoke) {
     const projects = new Map<string, ProjectProfile>();
     const stableSnapshots = new Map<string, ProjectIndexSnapshot>();
+    const scanGenerations = new Map<string, number>();
     const rawPaths = new Map<string, string>();
 
     function resolveRawRoot(projectId: string, opaqueRef: string): string {
@@ -311,6 +313,8 @@ export function createNativeProjectAdapter(
         return next;
       },
       async scanProject(id) {
+        const generation = (scanGenerations.get(id) ?? 0) + 1;
+        scanGenerations.set(id, generation);
         const project = projects.get(id);
         if (!project) throw new Error(`Unknown project: ${id}`);
         const rawRoot = resolveRawRoot(id, project.rootRef);
@@ -324,14 +328,18 @@ export function createNativeProjectAdapter(
           },
         });
         const snapshot = emptySnapshot(project, raw, now());
+        if (scanGenerations.get(id) !== generation) throw new Error("scan_superseded");
         stableSnapshots.set(project.id, snapshot);
         this.updateIndexStatus(project.id, snapshot.status);
         return { snapshot, events: ["project_index_started", "project_index_completed"] };
       },
       async cancelScan(id) {
+        const generation = (scanGenerations.get(id) ?? 0) + 1;
+        scanGenerations.set(id, generation);
         const project = projects.get(id);
         if (!project) throw new Error(`Unknown project: ${id}`);
         await invoke("cancel_native_project_scan", { input: { scanId: id } });
+        if (scanGenerations.get(id) !== generation) throw new Error("scan_cancel_superseded");
         this.updateIndexStatus(id, "cancelled");
         const snapshot =
           stableSnapshots.get(id) ?? emptySnapshot({ ...project, indexStatus: "cancelled" }, { status: "cancelled" }, now());
@@ -358,6 +366,18 @@ export function createNativeProjectAdapter(
     };
   }
 
+  if (!FIXTURES_ENABLED) {
+    const unavailable = async (): Promise<never> => { throw new Error("native_filesystem_unavailable"); };
+    return {
+      source: "unknown", listProjects: () => [], getProject: () => null,
+      resolveRawRoot: () => { throw new Error("native_filesystem_unavailable"); },
+      validateRoot: unavailable, addProject: unavailable, confirmTrust: unavailable,
+      removeProject: () => undefined, updateIndexStatus: () => null,
+      scanProject: unavailable, cancelScan: unavailable, getStableSnapshot: () => null,
+      previewFile: unavailable, getPolicy: () => policy,
+      getCapabilityStatus: () => [{ kind: "Files", mode: "disabled", status: "blocked" }],
+    };
+  }
   const registry = createMvp8FixtureProjectRegistry();
   const indexer = createMvp8ProjectIndexer(registry);
   const previewer = createMvp8SafeFilePreviewer(registry);

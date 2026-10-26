@@ -1,7 +1,8 @@
+import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
 import type { ProjectStoreState, UIInitialState } from "../types/ui";
 
 export const DEFAULT_PROJECT_STATE: ProjectStoreState = {
-  activeProjectId: "lyra",
+  activeProjectId: FIXTURES_ENABLED ? "lyra" : null,
   validation: null,
   registeredProjects: [],
   activeProjectIndex: null,
@@ -11,7 +12,7 @@ export const DEFAULT_PROJECT_STATE: ProjectStoreState = {
   selectedAssetPath: null,
   preview: null,
   auditTrail: [],
-  nativeSource: "fixture",
+  nativeSource: "unknown",
   capabilityStatus: [],
   fsPolicy: null,
 };

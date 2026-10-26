@@ -1,3 +1,4 @@
+import { safeDisplay } from "./safe-display";
 import "./InspectorSummaryCard.css";
 
 export interface InspectorSummaryCardProps {
@@ -21,7 +22,7 @@ export function InspectorSummaryCard({
   return (
     <div className={`ua-summary-card ${TONE_CLASS[tone] ?? TONE_CLASS.default}`}>
       <span className="ua-summary-card__label">{label}</span>
-      <span className="ua-summary-card__value">{value}</span>
+      <span className="ua-summary-card__value">{safeDisplay(value)}</span>
     </div>
   );
 }

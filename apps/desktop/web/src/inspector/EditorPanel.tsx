@@ -95,7 +95,7 @@ export function EditorPanel() {
               type="button"
               aria-label="Read editor observation snapshot"
               title="Read editor observation snapshot"
-              disabled={!mvp14?.session}
+              disabled={!mvp14?.session || mvp14.session.status === "stopped"}
               onClick={() => {
                 actions?.readMvp14EditorStatus();
                 actions?.readMvp14EditorSnapshot();
@@ -108,7 +108,7 @@ export function EditorPanel() {
               type="button"
               aria-label="Stop editor observation session"
               title="Stop editor observation session"
-              disabled={!mvp14?.session}
+              disabled={!mvp14?.session || mvp14.session.status === "stopped"}
               onClick={() => actions?.stopMvp14ObservationSession()}
             >
               Stop

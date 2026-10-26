@@ -162,7 +162,7 @@ export function RuntimePanel() {
           Provider failures: {providerFailures}
         </li>
         <li className="ua-utility-placeholder__item">
-          {runtime?.mockOnlyWarning ?? "Mock runtime / no provider call"}
+          {runtime?.mockOnlyWarning ?? "Local planning / no provider call"}
         </li>
         <li className="ua-utility-placeholder__item">
           MCP: {runtime?.mcp.status ?? "disconnected"}

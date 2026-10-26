@@ -1,3 +1,5 @@
+import { createRequestGeneration } from "./request-generation";
+import { FIXTURES_ENABLED, ACCEPTANCE_ENABLED } from "../runtime/build-capabilities";
 import { createContext, createElement, useContext, useEffect, useMemo, type ReactNode } from "react";
 import {
   createContextPackV1,
@@ -51,6 +53,7 @@ import {
   analyzeRecordedBuildOutput,
   createEmptyMvp11State,
   createRuntimeStoreState,
+  getFixedAppRuntimeAdapter,
   isMvp15dRecordedReplayRepresentation,
   refreshMvp11DerivedState,
   refreshMvp12DerivedState,
@@ -284,7 +287,7 @@ function applyMvp15McpInventory(
   if (!inventory) {
     return {
       ...state,
-      executionMode: state.executionMode === "blocked_by_mcp_schema" ? "fixture" : state.executionMode,
+      executionMode: state.executionMode === "blocked_by_mcp_schema" ? (FIXTURES_ENABLED ? "fixture" : "unavailable") : state.executionMode,
       mcpInventory: null,
       lastError: state.lastError?.startsWith("blocked_by_mcp_schema") ? null : state.lastError,
     };
@@ -460,10 +463,10 @@ async function createMvp15ExternalBinder(
         const receiptId = typeof nativeResult.nativeReceiptId === "string"
           ? nativeResult.nativeReceiptId
           : "";
-        if (nativeResult.status !== "dry_run_ready" || !receiptId) {
+        if (nativeResult.status !== "dry_run_ready" || (ACCEPTANCE_ENABLED && !receiptId)) {
           throw new Error("native_asset_dry_run_observation_required");
         }
-        dryRunObservations.push({ request, response: nativeResult, receiptId });
+        if (ACCEPTANCE_ENABLED) dryRunObservations.push({ request, response: nativeResult, receiptId });
       }
       ledger.dryRunCalls += 1;
       return result;
@@ -713,6 +716,13 @@ function createUIStateBundle(
 ): UIStoreBundle {
   const providerState = createInitialProviderState(initialState);
   const projectAdapter = createNativeProjectAdapter();
+  const projectRequests = createRequestGeneration();
+  let submissionPending = false;
+  let assetOperationPending = false;
+  let assetOperationCurrent: (() => boolean) | null = null;
+  const isCurrentAssetOperation = () => assetOperationCurrent?.() ?? true;
+  let editorGeneration = 0;
+  const editorBusy = new Set<string>();
   const layoutStore = createSliceStore(createInitialLayoutState(initialState));
   const settingsStore = createSliceStore(createInitialSettingsState(initialState));
   const projectStore = createSliceStore(createInitialProjectState(initialState));
@@ -822,6 +832,7 @@ function createUIStateBundle(
     }));
   };
   const ensureMvp15RealServiceReady = async (): Promise<string | null> => {
+    const isCurrent = projectRequests.begin("asset-attestation");
     const before = runtimeStore.getState();
     if (before.mvp15.executionMode !== "real") return null;
     if (getMvp15RealServiceBlocker(before, runtimeClient) === null) return null;
@@ -835,9 +846,11 @@ function createUIStateBundle(
     try {
       await runtimeClient.refreshMvp15DCompanionAttestation(trustedRootId, editorSessionId);
     } catch {
+      if (!isCurrent()) return "project_context_changed";
       settleMvp15CompanionFailure();
       return "native_companion_attestation_failed";
     }
+    if (!isCurrent()) return "project_context_changed";
     const reason = getMvp15RealServiceBlocker(runtimeStore.getState(), runtimeClient);
     if (reason) {
       blockMvp15RealServiceAction(reason);
@@ -854,7 +867,7 @@ function createUIStateBundle(
       mockOnlyWarning:
         previousState.mcp.status === "connected"
           ? "MCP read-only runtime / no provider call"
-          : "Mock runtime / no provider call",
+          : FIXTURES_ENABLED ? "Fixture runtime / no provider call" : "Local planning / no provider call",
     }));
   });
   runtimeClient.subscribeMcp((mcp) => {
@@ -880,7 +893,7 @@ function createUIStateBundle(
       mockOnlyWarning:
         mcp.status === "connected"
           ? "MCP read-only runtime / no provider call"
-          : "Mock runtime / no provider call",
+          : FIXTURES_ENABLED ? "Fixture runtime / no provider call" : "Local planning / no provider call",
     }));
   });
   runtimeClient.subscribeMvp9((mvp9State) => {
@@ -913,7 +926,7 @@ function createUIStateBundle(
         nextProviderState.providers.some(
           (provider) =>
             provider.enabled &&
-            provider.models.some((model) => model.id === previousComposerState.selectedModelId),
+            provider.models.some((model) => JSON.stringify([provider.providerId, model.id]) === previousComposerState.selectedModelId),
         );
       const shouldSyncDefault =
         defaultChanged ||
@@ -944,7 +957,6 @@ function createUIStateBundle(
     const projectState = projectStore.getState();
     const activeProject =
       projectState.registeredProjects.find((project) => project.id === projectState.activeProjectId) ??
-      projectState.registeredProjects[0] ??
       null;
     const uprojectRelativePath =
       projectState.activeProjectIndex?.files.find((file) => file.extension === ".uproject")?.rootRelativePath ??
@@ -1048,15 +1060,32 @@ function createUIStateBundle(
   };
 
   const projectActions: ProjectStoreActions = {
-    setActiveProject: (projectId) =>
-      projectStore.setState((previousState) =>
-        previousState.activeProjectId === projectId
-          ? previousState
-          : { ...previousState, activeProjectId: projectId },
-      ),
+    setActiveProject: (projectId) => {
+      if (projectStore.getState().activeProjectId === projectId) return;
+      projectRequests.invalidate();
+      editorGeneration++;
+      threadStore.setState({ activeThreadId: null });
+      runningGeneration += 1;
+      clearAllMvp15ApprovalTokens();
+      mvp12ApprovalByChangeSetId.clear();
+      runtimeClient.invalidateProjectContext?.();
+      projectStore.setState((previous) => ({
+        ...previous, activeProjectId: projectId, activeProjectIndex: null,
+        scanStatus: "idle", validation: null, selectedAssetPath: null, preview: null,
+        assetFilter: "", lastError: null,
+      }));
+      runtimeStore.setState((previous) => ({
+        ...previous, mvp11: runtimeBaseState.mvp11, mvp12: runtimeBaseState.mvp12,
+        mvp13: runtimeBaseState.mvp13,
+        mvp14: { ...runtimeBaseState.mvp14, capability: previous.mvp14.capability },
+        mvp15: { ...runtimeBaseState.mvp15, gate: previous.mvp15.gate, companion: runtimeClient.getMvp15DCompanionStatus?.() ?? runtimeBaseState.mvp15.companion },
+      }));
+    },
     validateProjectRoot: async (rootRef) => {
+      const isCurrent = projectRequests.begin("validation");
       try {
         const validation = await projectAdapter.validateRoot(rootRef);
+        if (!isCurrent()) return false;
         if (!validation.ok) {
           projectStore.setState((previousState) => ({
             ...previousState,
@@ -1077,17 +1106,21 @@ function createUIStateBundle(
         }));
         return true;
       } catch (error) {
+        if (!isCurrent()) return false;
         projectStore.setState((previousState) => ({
           ...previousState,
-          lastError: error instanceof Error ? error.message : "project_validation_failed",
+          lastError: "project_validation_failed",
         }));
         return false;
       }
     },
     addProjectRoot: async (rootRef) => {
+      const isCurrent = projectRequests.begin("add");
       try {
-        const fixtureProject = projectAdapter.getProject("project-lyra-starter");
+        const fixtureProject = FIXTURES_ENABLED ? projectAdapter.getProject("project-lyra-starter") : null;
         const project = fixtureProject ?? (await projectAdapter.addProject(rootRef));
+        if (!isCurrent()) return null;
+        projectActions.setActiveProject(project.id);
         projectStore.setState((previousState) => ({
           ...previousState,
           registeredProjects: projectAdapter.listProjects(),
@@ -1101,16 +1134,21 @@ function createUIStateBundle(
         }));
         return project.id;
       } catch (error) {
+        if (!isCurrent()) return null;
         projectStore.setState((previousState) => ({
           ...previousState,
-          lastError: error instanceof Error ? error.message : "project_add_failed",
+          lastError: "project_add_failed",
         }));
         return null;
       }
     },
     trustProjectRoot: async (projectId) => {
+      if (projectStore.getState().activeProjectId !== projectId) return;
+      const isCurrent = projectRequests.begin("trust");
       try {
         const trusted = await projectAdapter.confirmTrust(projectId);
+        if (!isCurrent()) return;
+        projectActions.setActiveProject(trusted.id);
         projectStore.setState((previousState) => ({
           ...previousState,
           registeredProjects: projectAdapter.listProjects(),
@@ -1120,13 +1158,16 @@ function createUIStateBundle(
           auditTrail: [...previousState.auditTrail, "project_trusted"],
         }));
       } catch (error) {
+        if (!isCurrent()) return ;
         projectStore.setState((previousState) => ({
           ...previousState,
-          lastError: error instanceof Error ? error.message : "project_trust_failed",
+          lastError: "project_trust_failed",
         }));
       }
     },
     scanProjectIndex: async (projectId) => {
+      if (projectStore.getState().activeProjectId !== projectId) return;
+      const isCurrent = projectRequests.begin("scan");
       try {
         projectAdapter.updateIndexStatus(projectId, "scanning");
         projectStore.setState((previousState) => ({
@@ -1135,6 +1176,7 @@ function createUIStateBundle(
           registeredProjects: projectAdapter.listProjects(),
         }));
         const result = await projectAdapter.scanProject(projectId);
+        if (!isCurrent()) return;
         projectStore.setState((previousState) => ({
           ...previousState,
           activeProjectIndex: result.snapshot,
@@ -1144,16 +1186,20 @@ function createUIStateBundle(
           auditTrail: [...previousState.auditTrail, ...result.events],
         }));
       } catch (error) {
+        if (!isCurrent()) return ;
         projectStore.setState((previousState) => ({
           ...previousState,
           scanStatus: "failed",
-          lastError: error instanceof Error ? error.message : "project_scan_failed",
+          lastError: "project_scan_failed",
         }));
       }
     },
     cancelProjectScan: async (projectId) => {
+      if (projectStore.getState().activeProjectId !== projectId) return;
+      const isCurrent = projectRequests.begin("scan");
       try {
         const result = await projectAdapter.cancelScan(projectId);
+        if (!isCurrent()) return;
         projectStore.setState((previousState) => ({
           ...previousState,
           activeProjectIndex: result.snapshot,
@@ -1163,9 +1209,10 @@ function createUIStateBundle(
           auditTrail: [...previousState.auditTrail, ...result.events],
         }));
       } catch (error) {
+        if (!isCurrent()) return ;
         projectStore.setState((previousState) => ({
           ...previousState,
-          lastError: error instanceof Error ? error.message : "project_scan_cancel_failed",
+          lastError: "project_scan_cancel_failed",
         }));
       }
     },
@@ -1175,6 +1222,7 @@ function createUIStateBundle(
         assetFilter: filter,
       })),
     previewProjectFile: async (rootRelativePath) => {
+      const isCurrent = projectRequests.begin("preview");
       const state = projectStore.getState();
       const activeProject = state.registeredProjects.find(
         (project) => project.id === state.activeProjectId,
@@ -1191,6 +1239,7 @@ function createUIStateBundle(
           4096,
           80,
         );
+        if (!isCurrent()) return;
         projectStore.setState((previousState) => ({
           ...previousState,
           selectedAssetPath: rootRelativePath,
@@ -1201,9 +1250,10 @@ function createUIStateBundle(
           ],
         }));
       } catch (error) {
+        if (!isCurrent()) return ;
         projectStore.setState((previousState) => ({
           ...previousState,
-          lastError: error instanceof Error ? error.message : "file_preview_failed",
+          lastError: "file_preview_failed",
         }));
       }
     },
@@ -1256,14 +1306,26 @@ function createUIStateBundle(
           : { ...previousState, reasoningEffort },
       ),
     submitComposerTask: async (draft) => {
-      composerStore.setState((previousState) => ({ ...previousState, input: "" }));
-      const record = await runtimeClient.submitTask(draft);
-      threadStore.setState({ activeThreadId: record.id });
-      layoutStore.setState((previousState) => ({
-        ...previousState,
-        sidebar: { ...previousState.sidebar, activeNav: "workspace" },
-      }));
-      return record.id;
+      if (submissionPending) throw new Error("submission_in_progress");
+      submissionPending = true;
+      const originalInput = composerStore.getState().input;
+      const isCurrent = projectRequests.begin("submit");
+      composerStore.setState((previous) => ({ ...previous, submitting: true, submitError: null }));
+      try {
+        const record = await runtimeClient.submitTask(draft);
+        if (isCurrent()) {
+          composerStore.setState((previous) => ({ ...previous, input: previous.input === originalInput ? "" : previous.input }));
+          threadStore.setState({ activeThreadId: record.id });
+          layoutStore.setState((previous) => ({ ...previous, sidebar: { ...previous.sidebar, activeNav: "workspace" } }));
+        }
+        return record.id;
+      } catch {
+        if (isCurrent()) composerStore.setState((previous) => ({ ...previous, submitError: "Submission failed. Your input was kept; you can retry." }));
+        throw new Error("task_submission_failed");
+      } finally {
+        submissionPending = false;
+        composerStore.setState((previous) => ({ ...previous, submitting: false }));
+      }
     },
     cancelRuntimeTask: async (taskId) => {
       await runtimeClient.cancelTask(taskId);
@@ -1376,6 +1438,7 @@ function createUIStateBundle(
       runtimeStore.setState((previousState) => analyzeRecordedBuildOutput(previousState));
     },
     analyzeActiveProjectDiagnostics: async () => {
+      const isCurrent = projectRequests.begin("diagnostics");
       runtimeStore.setState((previousState) => ({
         ...previousState,
         mvp11: { ...previousState.mvp11, metadataStatus: "running", lastError: null },
@@ -1386,10 +1449,9 @@ function createUIStateBundle(
         const snapshot = project.activeProjectIndex;
         const activeProject =
           project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
-          project.registeredProjects.find((item) => item.id === snapshot?.projectId) ??
           null;
 
-        if (!snapshot || !activeProject) {
+        if (!snapshot || !activeProject || snapshot.projectId !== activeProject.id) {
           throw new Error("No active indexed project is available for MVP11 diagnostics.");
         }
 
@@ -1417,6 +1479,7 @@ function createUIStateBundle(
           ),
         );
 
+        if (!isCurrent()) return;
         const metadata = parseUEProjectMetadata({
           snapshot,
           previewFile: (rootRelativePath) => {
@@ -1449,6 +1512,7 @@ function createUIStateBundle(
           }),
         }));
       } catch (error) {
+        if (!isCurrent()) return;
         runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp11: {
@@ -1504,16 +1568,19 @@ function createUIStateBundle(
       }));
     },
     proposeRepairForDiagnostic: async (diagnosticId) => {
+      const isCurrent = projectRequests.begin("proposeRepairForDiagnostic");
+      try {
       const project = projectStore.getState();
       const snapshot = project.activeProjectIndex;
       const activeProject =
         project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
-        project.registeredProjects.find((item) => item.indexStatus === "ready");
+        null;
       const runtime = runtimeStore.getState();
       const diagnostic = [...runtime.mvp11.projectDiagnostics, ...(runtime.mvp11.buildAnalysis?.diagnostics ?? [])]
         .find((item) => item.id === diagnosticId);
       if (!snapshot || !activeProject || !diagnostic) {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: { ...previousState.mvp12, lastError: "mvp12_requires_active_project_index_and_diagnostic" },
         }));
@@ -1563,6 +1630,7 @@ function createUIStateBundle(
           };
         }
       }
+      if (!isCurrent()) return;
       runtimeStore.setState((previousState) => ({
         ...previousState,
         mvp12: refreshMvp12DerivedState({
@@ -1572,11 +1640,17 @@ function createUIStateBundle(
           lastError: proposals.some((proposal) => proposal.operations.length > 0) ? null : "no_concrete_repair_operations",
         }),
       }));
+      } catch {
+        if (isCurrent()) runtimeStore.setState((previous) => ({ ...previous, mvp12: { ...previous.mvp12, lastError: "text_change_operation_failed" } }));
+      }
     },
     previewChangeSet: async (proposalId) => {
+      const isCurrent = projectRequests.begin("previewChangeSet");
+      try {
       const adapter = runtimeClient.getTextMutationAdapter();
       if (!adapter) {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: refreshMvp12DerivedState({
             ...previousState.mvp12,
@@ -1591,10 +1665,11 @@ function createUIStateBundle(
       const project = projectStore.getState();
       const activeProject =
         project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
-        project.registeredProjects.find((item) => item.indexStatus === "ready");
+        null;
       const proposal = runtimeStore.getState().mvp12.proposals.find((item) => item.id === proposalId);
       if (!proposal || !activeProject) {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: { ...previousState.mvp12, lastError: proposal ? "unknown_project" : "unknown_proposal" },
         }));
@@ -1607,15 +1682,18 @@ function createUIStateBundle(
         afterContent: getMvp12OperationAfterContent(operation) ?? "",
       }));
       if (nativeOperations.some((operation) => !operation.afterContent)) {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: { ...previousState.mvp12, applyStatus: "blocked", lastError: "missing_internal_after_content" },
         }));
         return;
       }
       const capability = await adapter.capabilityStatus();
+      if (!isCurrent()) return;
       if (!capability.enabled) {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: refreshMvp12DerivedState({
             ...previousState.mvp12,
@@ -1634,7 +1712,8 @@ function createUIStateBundle(
         operations: nativeOperations,
       });
       if (preview.status !== "previewed") {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: refreshMvp12DerivedState({
             ...previousState.mvp12,
@@ -1660,6 +1739,7 @@ function createUIStateBundle(
       const previewBoundOperations = proposal.operations.map((operation) =>
         bindOperationToNativePreview(operation, previewByOperationId.get(operation.id)),
       );
+      if (!isCurrent()) return;
       runtimeStore.setState((previousState) => ({
         ...previousState,
         mvp12: refreshMvp12DerivedState({
@@ -1684,16 +1764,22 @@ function createUIStateBundle(
           lastError: null,
         }),
       }));
+      } catch {
+        if (isCurrent()) runtimeStore.setState((previous) => ({ ...previous, mvp12: { ...previous.mvp12, lastError: "text_change_operation_failed" } }));
+      }
     },
     approveChangeSet: async (changeSetId) => {
+      const isCurrent = projectRequests.begin("approveChangeSet");
+      try {
       const adapter = runtimeClient.getTextMutationAdapter();
       const changeSet = runtimeStore.getState().mvp12.activeChangeSet;
       const project = projectStore.getState();
       const activeProject =
         project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
-        project.registeredProjects.find((item) => item.indexStatus === "ready");
+        null;
       if (!adapter || !changeSet || changeSet.id !== changeSetId || !activeProject) {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: refreshMvp12DerivedState({
             ...previousState.mvp12,
@@ -1710,7 +1796,8 @@ function createUIStateBundle(
         reason: "Approved controlled MVP12 text repair from desktop action.",
       });
       if (result.status !== "approved" || !result.approval) {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: refreshMvp12DerivedState({
             ...previousState.mvp12,
@@ -1720,7 +1807,9 @@ function createUIStateBundle(
         }));
         return;
       }
+      if (!isCurrent()) return;
       mvp12ApprovalByChangeSetId.set(changeSetId, result.approval);
+      if (!isCurrent()) return;
       runtimeStore.setState((previousState) => {
         if (previousState.mvp12.activeChangeSet?.id !== changeSetId) return previousState;
         return {
@@ -1732,8 +1821,13 @@ function createUIStateBundle(
           }),
         };
       });
+      } catch {
+        if (isCurrent()) runtimeStore.setState((previous) => ({ ...previous, mvp12: { ...previous.mvp12, lastError: "text_change_operation_failed" } }));
+      }
     },
     applyChangeSet: async (changeSetId) => {
+      const isCurrent = projectRequests.begin("applyChangeSet");
+      try {
       const adapter = runtimeClient.getTextMutationAdapter();
       const state = runtimeStore.getState();
       const changeSet = state.mvp12.activeChangeSet;
@@ -1741,9 +1835,10 @@ function createUIStateBundle(
       const project = projectStore.getState();
       const activeProject =
         project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
-        project.registeredProjects.find((item) => item.indexStatus === "ready");
+        null;
       if (!adapter || !changeSet || changeSet.id !== changeSetId || !approval || !activeProject) {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: refreshMvp12DerivedState({
             ...previousState.mvp12,
@@ -1755,7 +1850,8 @@ function createUIStateBundle(
       }
       const operations = changeSet.operations.map(toNativeApplyOperation);
       if (operations.some((operation) => operation === null)) {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: { ...previousState.mvp12, applyStatus: "blocked", lastError: "missing_internal_after_content" },
         }));
@@ -1768,12 +1864,14 @@ function createUIStateBundle(
         operations: operations as NativeApplyTextMutationOperation[],
       });
       if (result.status !== "applied") {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: { ...previousState.mvp12, applyStatus: "blocked", lastError: result.reason },
         }));
         return;
       }
+      if (!isCurrent()) return;
       runtimeStore.setState((previousState) => {
         const currentChangeSet = previousState.mvp12.activeChangeSet;
         if (currentChangeSet?.id !== changeSetId) return previousState;
@@ -1813,6 +1911,9 @@ function createUIStateBundle(
           }),
         };
       });
+      } catch {
+        if (isCurrent()) runtimeStore.setState((previous) => ({ ...previous, mvp12: { ...previous.mvp12, lastError: "text_change_operation_failed" } }));
+      }
     },
     runVerification: (changeSetId) => {
       runtimeStore.setState((previousState) => {
@@ -1833,15 +1934,18 @@ function createUIStateBundle(
       });
     },
     rollbackChangeSet: async (changeSetId) => {
+      const isCurrent = projectRequests.begin("rollbackChangeSet");
+      try {
       const adapter = runtimeClient.getTextMutationAdapter();
       const state = runtimeStore.getState();
       const changeSet = state.mvp12.activeChangeSet;
       const project = projectStore.getState();
       const activeProject =
         project.registeredProjects.find((item) => item.id === project.activeProjectId) ??
-        project.registeredProjects.find((item) => item.indexStatus === "ready");
+        null;
       if (!adapter || !changeSet?.rollback?.id || changeSet.id !== changeSetId || !activeProject) {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: { ...previousState.mvp12, rollbackStatus: "blocked", lastError: "rollback_unavailable" },
         }));
@@ -1854,12 +1958,14 @@ function createUIStateBundle(
         expectedCurrentHashes: changeSet.rollback.appliedHashes,
       });
       if (result.status !== "rolled_back") {
-        runtimeStore.setState((previousState) => ({
+        if (!isCurrent()) return;
+      runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp12: { ...previousState.mvp12, rollbackStatus: "blocked", lastError: result.reason },
         }));
         return;
       }
+      if (!isCurrent()) return;
       runtimeStore.setState((previousState) => {
         const currentChangeSet = previousState.mvp12.activeChangeSet;
         if (currentChangeSet?.id !== changeSetId) return previousState;
@@ -1880,6 +1986,9 @@ function createUIStateBundle(
           }),
         };
       });
+      } catch {
+        if (isCurrent()) runtimeStore.setState((previous) => ({ ...previous, mvp12: { ...previous.mvp12, lastError: "text_change_operation_failed" } }));
+      }
     },
     discardChangeSet: (changeSetId) => {
       runtimeStore.setState((previousState) => {
@@ -2170,6 +2279,7 @@ function createUIStateBundle(
       }));
     },
     refreshMvp14ObservationCapability: async () => {
+      const isCurrent = projectRequests.begin("refreshMvp14ObservationCapability");
       if (!mvp14NativeAdapter) {
         runtimeStore.setState((previousState) => ({
           ...previousState,
@@ -2183,6 +2293,7 @@ function createUIStateBundle(
       }
       try {
         const capability = await mvp14NativeAdapter.refreshCapability();
+        if (!isCurrent()) return;
         runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp14: {
@@ -2191,18 +2302,20 @@ function createUIStateBundle(
             lastError: null,
           },
         }));
-      } catch (error) {
+      } catch {
+        if (!isCurrent()) return;
         runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp14: {
             ...previousState.mvp14,
             capability: unavailableMvp14Capability(),
-            lastError: error instanceof Error ? error.message : "native_adapter_unavailable",
+            lastError: "native_adapter_unavailable",
           },
         }));
       }
     },
     discoverMvp14EditorProcesses: async () => {
+      const isCurrent = projectRequests.begin("discoverMvp14EditorProcesses");
       if (!mvp14NativeAdapter) {
         runtimeStore.setState((previousState) => ({
           ...previousState,
@@ -2220,6 +2333,7 @@ function createUIStateBundle(
           mvp14NativeAdapter.refreshCapability(),
           mvp14NativeAdapter.discoverProcesses(getMvp14ProcessConfig()),
         ]);
+        if (!isCurrent()) return;
         runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp14: {
@@ -2229,18 +2343,20 @@ function createUIStateBundle(
             lastError: discovery.reason,
           },
         }));
-      } catch (error) {
+      } catch {
+        if (!isCurrent()) return;
         runtimeStore.setState((previousState) => ({
           ...previousState,
           mvp14: {
             ...previousState.mvp14,
             discovery: { status: "degraded", reason: "native_adapter_error", processes: [] },
-            lastError: error instanceof Error ? error.message : "native_adapter_error",
+            lastError: "native_adapter_error",
           },
         }));
       }
     },
     attachMvp14EditorProcess: async () => {
+      const isCurrent = projectRequests.begin("attachMvp14EditorProcess");
       const process = runtimeStore.getState().mvp14.discovery?.processes[0] ?? null;
       if (!process) {
         runtimeStore.setState((previousState) => ({
@@ -2256,6 +2372,8 @@ function createUIStateBundle(
         }));
         return;
       }
+      const generation = ++editorGeneration;
+      try {
       const session = await mvp14NativeAdapter.attachProcess({
         ...getMvp14ProcessConfig(),
         processId: process.id,
@@ -2263,6 +2381,7 @@ function createUIStateBundle(
         processDisplayName: process.displayName,
         mode: process.source === "fixture" ? "fixture" : "attached",
       });
+      if (!isCurrent() || generation !== editorGeneration) return;
       const editorSession = session ? mvp13SessionRegistry.bindObservationSession(session) : null;
       runtimeStore.setState((previousState) => ({
         ...previousState,
@@ -2286,9 +2405,14 @@ function createUIStateBundle(
             })
           : previousState.mvp13,
       }));
+      } catch {
+        if (isCurrent()) runtimeStore.setState((previous) => ({ ...previous, mvp14: { ...previous.mvp14, lastError: "editor_attach_failed" } }));
+      }
     },
     readMvp14EditorStatus: async () => {
-      const sessionId = runtimeStore.getState().mvp14.session?.sessionId;
+      const current = runtimeStore.getState().mvp14.session;
+      if (current?.status === "stopped" || editorBusy.has("readMvp14EditorStatus") || editorBusy.has("stopMvp14ObservationSession")) return;
+      const sessionId = current?.sessionId;
       if (!sessionId || !mvp14NativeAdapter) {
         runtimeStore.setState((previousState) => ({
           ...previousState,
@@ -2300,7 +2424,12 @@ function createUIStateBundle(
         }));
         return;
       }
+      const isCurrentProject = projectRequests.begin("readMvp14EditorStatus");
+      const generation = editorGeneration;
+      editorBusy.add("readMvp14EditorStatus");
+      try {
       const heartbeat = await mvp14NativeAdapter.readStatus(sessionId);
+      if (!isCurrentProject() || generation !== editorGeneration || runtimeStore.getState().mvp14.session?.sessionId !== sessionId) return;
       const status = {
         status: heartbeat ? (heartbeat.processAlive ? "ready" as const : "degraded" as const) : "blocked" as const,
         reason: heartbeat ? (heartbeat.processAlive ? null : heartbeat.statusReason) : "session_not_found",
@@ -2314,9 +2443,14 @@ function createUIStateBundle(
           lastError: status.reason,
         },
       }));
+      } catch {
+        if (isCurrentProject() && generation === editorGeneration) runtimeStore.setState((previous) => ({ ...previous, mvp14: { ...previous.mvp14, lastError: "editor_observation_failed_retry_available" } }));
+      } finally { editorBusy.delete("readMvp14EditorStatus"); }
     },
     readMvp14EditorSnapshot: async () => {
-      const sessionId = runtimeStore.getState().mvp14.session?.sessionId;
+      const current = runtimeStore.getState().mvp14.session;
+      if (current?.status === "stopped" || editorBusy.has("readMvp14EditorSnapshot") || editorBusy.has("stopMvp14ObservationSession")) return;
+      const sessionId = current?.sessionId;
       if (!sessionId || !mvp14NativeAdapter) {
         runtimeStore.setState((previousState) => ({
           ...previousState,
@@ -2329,7 +2463,12 @@ function createUIStateBundle(
         }));
         return;
       }
+      const isCurrentProject = projectRequests.begin("readMvp14EditorSnapshot");
+      const generation = editorGeneration;
+      editorBusy.add("readMvp14EditorSnapshot");
+      try {
       const snapshot = await mvp14NativeAdapter.readSnapshot(sessionId);
+      if (!isCurrentProject() || generation !== editorGeneration || runtimeStore.getState().mvp14.session?.sessionId !== sessionId) return;
       const snapshotResult = snapshot
         ? { status: "ready" as const, reason: null, snapshot }
         : { status: "blocked" as const, reason: "session_not_found", snapshot: null };
@@ -2348,9 +2487,14 @@ function createUIStateBundle(
           lastError: snapshotResult.reason,
         },
       }));
+      } catch {
+        if (isCurrentProject() && generation === editorGeneration) runtimeStore.setState((previous) => ({ ...previous, mvp14: { ...previous.mvp14, lastError: "editor_observation_failed_retry_available" } }));
+      } finally { editorBusy.delete("readMvp14EditorSnapshot"); }
     },
     stopMvp14ObservationSession: async () => {
-      const sessionId = runtimeStore.getState().mvp14.session?.sessionId;
+      const current = runtimeStore.getState().mvp14.session;
+      if (current?.status === "stopped" || editorBusy.has("stopMvp14ObservationSession") || editorBusy.has("stopMvp14ObservationSession")) return;
+      const sessionId = current?.sessionId;
       if (!sessionId || !mvp14NativeAdapter) {
         runtimeStore.setState((previousState) => ({
           ...previousState,
@@ -2361,17 +2505,27 @@ function createUIStateBundle(
         }));
         return;
       }
+      const isCurrentProject = projectRequests.begin("stopMvp14ObservationSession");
+      const generation = ++editorGeneration;
+      editorBusy.add("stopMvp14ObservationSession");
+      try {
       const session = await mvp14NativeAdapter.stopSession(sessionId);
+      if (!isCurrentProject() || generation !== editorGeneration || runtimeStore.getState().mvp14.session?.sessionId !== sessionId) return;
       const status = { status: "stopped" as const, reason: "local_observation_stopped", heartbeat: null };
       runtimeStore.setState((previousState) => ({
         ...previousState,
         mvp14: {
           ...previousState.mvp14,
           status,
+          snapshot: null,
+          replaySummary: null,
           session: session ?? (previousState.mvp14.session ? { ...previousState.mvp14.session, status: "stopped" } : null),
           lastError: status.reason,
         },
       }));
+      } catch {
+        if (isCurrentProject() && generation === editorGeneration) runtimeStore.setState((previous) => ({ ...previous, mvp14: { ...previous.mvp14, lastError: "editor_observation_failed_retry_available" } }));
+      } finally { editorBusy.delete("stopMvp14ObservationSession"); }
     },
     runMvp15AssetDryRun: async (sourceAssetPathInput) => {
       const sourceAssetPath = typeof sourceAssetPathInput === "string" ? sourceAssetPathInput.trim() : "";
@@ -2524,6 +2678,10 @@ function createUIStateBundle(
           },
         );
       } else {
+        if (!FIXTURES_ENABLED) {
+          runtimeStore.setState((previous) => ({ ...previous, mvp15: { ...previous.mvp15, lastError: "native_asset_context_required" } }));
+          return;
+        }
         mvp15dOperationLedger = createMvp15dOperationLedger();
         mvp15dOperationLedger.dryRunActions = 1;
         mvp15AssetMutationService = createMvp15FixtureAssetMutationService();
@@ -2657,7 +2815,7 @@ function createUIStateBundle(
       }
     },
     approveMvp15AssetChangeSet: async () => {
-      if (await ensureMvp15RealServiceReady()) return;
+      if (await ensureMvp15RealServiceReady() || !isCurrentAssetOperation()) return;
       const mvp15 = runtimeStore.getState().mvp15;
       const changeSet = mvp15.activeChangeSet;
       if (!changeSet) {
@@ -2718,7 +2876,7 @@ function createUIStateBundle(
       }
     },
     executeMvp15AssetChangeSet: async () => {
-      if (await ensureMvp15RealServiceReady()) return;
+      if (await ensureMvp15RealServiceReady() || !isCurrentAssetOperation()) return;
       const mvp15 = runtimeStore.getState().mvp15;
       const changeSet = mvp15.activeChangeSet;
       const token = changeSet ? mvp15ApprovalTokenByChangeSetId.get(changeSet.id) : null;
@@ -2737,6 +2895,7 @@ function createUIStateBundle(
         editorSessionId: changeSet.editorSessionId,
         pidHash: changeSet.pidHash,
       });
+      if (!isCurrentAssetOperation()) return;
       runtimeStore.setState((previousState) => ({
         ...previousState,
         mvp15: refreshMvp15DerivedState({
@@ -2750,7 +2909,7 @@ function createUIStateBundle(
       }));
     },
     verifyMvp15AssetChangeSet: async () => {
-      if (await ensureMvp15RealServiceReady()) return;
+      if (await ensureMvp15RealServiceReady() || !isCurrentAssetOperation()) return;
       const mvp15 = runtimeStore.getState().mvp15;
       const changeSet = mvp15.activeChangeSet;
       if (!changeSet) {
@@ -2761,6 +2920,7 @@ function createUIStateBundle(
         return;
       }
       const result = await mvp15AssetMutationService.verify(changeSet.id);
+      if (!isCurrentAssetOperation()) return;
       runtimeStore.setState((previousState) => ({
         ...previousState,
         mvp15: refreshMvp15DerivedState({
@@ -2774,7 +2934,7 @@ function createUIStateBundle(
       }));
     },
     rollbackMvp15AssetChangeSet: async () => {
-      if (await ensureMvp15RealServiceReady()) return;
+      if (await ensureMvp15RealServiceReady() || !isCurrentAssetOperation()) return;
       const mvp15 = runtimeStore.getState().mvp15;
       const changeSet = mvp15.activeChangeSet;
       if (!changeSet) {
@@ -2791,6 +2951,7 @@ function createUIStateBundle(
         );
       }
       const result = await mvp15AssetMutationService.rollback(changeSet.id);
+      if (!isCurrentAssetOperation()) return;
       runtimeStore.setState((previousState) => ({
         ...previousState,
         mvp15: refreshMvp15DerivedState({
@@ -2804,7 +2965,7 @@ function createUIStateBundle(
       }));
     },
     finalVerifyMvp15AssetChangeSet: async () => {
-      if (await ensureMvp15RealServiceReady()) return;
+      if (await ensureMvp15RealServiceReady() || !isCurrentAssetOperation()) return;
       const mvp15 = runtimeStore.getState().mvp15;
       const changeSet = mvp15.activeChangeSet;
       const registrationId = mvp15dOperationLedger.registrationId;
@@ -2834,6 +2995,7 @@ function createUIStateBundle(
       let observation;
       try {
         observation = await runtimeClient.snapshotMvp15AssetContentManifest({ registrationId });
+        if (!isCurrentAssetOperation()) return;
         const receipt = runtimeClient.takeMvp15dContentManifestObservationReceipt?.() ?? null;
         mvp15dContentManifestCalls.push({
           request: receipt?.request ?? { registrationId },
@@ -2843,6 +3005,7 @@ function createUIStateBundle(
       } catch {
         observation = null;
       }
+      if (!isCurrentAssetOperation()) return;
       const observedSha256 = observation?.status === "observed" ? observation.aggregateSha256 : null;
       const runRoot = `/Game/UAgentSandbox/${mvp15.runId ?? ""}`;
       const runRootRemoved = observation?.status === "observed"
@@ -2920,6 +3083,28 @@ function createUIStateBundle(
     },
   };
 
+  // One pending asset action owns the service until settlement, including across project changes.
+  // UI state is discarded when context/generation changes; this is not cancellation of remote work.
+  for (const name of ["runMvp15AssetDryRun", "approveMvp15AssetChangeSet", "executeMvp15AssetChangeSet", "verifyMvp15AssetChangeSet", "rollbackMvp15AssetChangeSet", "finalVerifyMvp15AssetChangeSet"] as const) {
+    const action = runtimeActions[name];
+    runtimeActions[name] = async (sourceAssetPath?: string) => {
+      if (assetOperationPending) return;
+      assetOperationPending = true;
+      const isCurrentProject = projectRequests.begin("asset-operation");
+      const generation = runningGeneration;
+      assetOperationCurrent = () => isCurrentProject() && (name === "runMvp15AssetDryRun" || runningGeneration === generation);
+      runtimeStore.setState((previous) => ({ ...previous, mvp15: { ...previous.mvp15, busy: true } }));
+      try { await action(sourceAssetPath); }
+      catch {
+        if (assetOperationCurrent()) runtimeStore.setState((previous) => ({ ...previous, mvp15: { ...previous.mvp15, lastError: "asset_operation_failed_observe_before_retry" } }));
+      } finally {
+        assetOperationCurrent = null;
+        assetOperationPending = false;
+        runtimeStore.setState((previous) => ({ ...previous, mvp15: { ...previous.mvp15, busy: false } }));
+      }
+    };
+  }
+
   const providerActions: ProviderStoreActions = {
     setSelectedProvider: (providerId) =>
       providerStore.setState((previousState) =>
@@ -2930,6 +3115,9 @@ function createUIStateBundle(
     saveProvider: (nextProviderConfig: ProviderConfig) => {
       const previousProviderState = providerStore.getState();
       const nextProvider = cloneProviderConfig(nextProviderConfig);
+      if (!nextProvider.providerId.trim() || new Set(nextProvider.models.map((model) => model.id)).size !== nextProvider.models.length) {
+        throw new Error("invalid_provider_model_identity");
+      }
       const existingIndex = previousProviderState.providers.findIndex(
         (provider) => provider.providerId === nextProvider.providerId,
       );
@@ -3525,13 +3713,22 @@ export function UIProvider({ children, initialState, runtimeClient }: UIProvider
     [initialState, runtimeClient],
   );
   useEffect(() => {
-    activeMvp15dRuntimeEvidence = storeBundle.mvp15dEvidence;
+    let mounted = true;
+    if (!FIXTURES_ENABLED) {
+      const adapter = runtimeClient ?? getFixedAppRuntimeAdapter();
+      void (adapter?.getAssetMutationCapability?.() ?? Promise.resolve(false)).then((enabled) => {
+        if (!mounted) return;
+        storeBundle.runtimeStore.setState((previous) => ({ ...previous, mvp15: { ...previous.mvp15, gate: { ...previous.mvp15.gate, mode: enabled ? "sandbox-enabled" : "disabled", reason: enabled ? "Native sandbox gate enabled; approvals still required" : "Native asset mutation gate disabled" } } }));
+      });
+    }
+    if (ACCEPTANCE_ENABLED) activeMvp15dRuntimeEvidence = storeBundle.mvp15dEvidence;
     return () => {
+      mounted = false;
       if (activeMvp15dRuntimeEvidence === storeBundle.mvp15dEvidence) {
         activeMvp15dRuntimeEvidence = null;
       }
     };
-  }, [storeBundle]);
+  }, [storeBundle, runtimeClient]);
   return createElement(UIStoreContext.Provider, { value: storeBundle }, children);
 }
 

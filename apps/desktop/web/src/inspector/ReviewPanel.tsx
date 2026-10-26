@@ -1,3 +1,5 @@
+import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
+import { AssetLifecycleEvidence, hasAssetLifecycle } from "./AssetLifecycleEvidence";
 import type { AgentReport, TaskEvent } from "@uagent/shared";
 import { InspectorSummaryCard } from "./InspectorSummaryCard";
 import { InspectorFinding, type ReviewFinding } from "./InspectorFinding";
@@ -91,6 +93,8 @@ export function ReviewPanel() {
   const mvp11 = runtime?.mvp11;
   const mvp13 = runtime?.mvp13;
   const mvp14 = runtime?.mvp14;
+
+  if (hasAssetLifecycle(runtime?.mvp15)) return <AssetLifecycleEvidence state={runtime.mvp15} title="Review" />;
 
   if (mvp14 && (mvp14.session || mvp14.snapshot || mvp14.discovery)) {
     return (
@@ -215,6 +219,8 @@ export function ReviewPanel() {
       </section>
     );
   }
+
+  if (!FIXTURES_ENABLED) return <section className="ua-review-panel" aria-label="Review panel"><p>No review recorded for the current project.</p></section>;
 
   return (
     <section className="ua-review-panel" aria-label="Review panel">

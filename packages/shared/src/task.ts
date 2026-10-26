@@ -135,11 +135,12 @@ export interface TaskDraft {
   input: string;
   projectId: string | null;
   permissionMode: PermissionMode;
+  providerId?: string | null;
   modelId: string;
   reasoningEffort: string;
   runMode: "local" | "sandbox";
-  branch: string;
-  contextPercent: number;
+  branch: string | null;
+  contextPercent: number | null;
   providerStatus?: "configured" | "not_configured";
   networkMode?: string;
   createdAt?: number;

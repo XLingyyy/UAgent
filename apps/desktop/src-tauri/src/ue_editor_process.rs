@@ -1296,47 +1296,80 @@ fn cleanup_phase_owner_create_failure(
     let _ = cleanup_task_owned_ddc(evidence_root, ddc_root, phase);
 }
 
+// Each retry revalidates the exact task-owned directory. Only Windows sharing
+// violations are transient; permission/identity errors are never retried.
 fn cleanup_task_owned_ddc(
     evidence_root: &Path,
     ddc_root: &Path,
     phase: &str,
 ) -> Result<(), String> {
+    for attempt in 0..9 {
+        match cleanup_task_owned_ddc_once(evidence_root, ddc_root, phase) {
+            Err(reason) if reason == "managed_process_ddc_sharing_violation" && attempt < 8 => {
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            result => return result,
+        }
+    }
+    unreachable!()
+}
+
+fn ddc_io_reason(error: std::io::Error) -> String {
+    if cfg!(windows) && error.raw_os_error() == Some(32) {
+        "managed_process_ddc_sharing_violation".to_string()
+    } else if error.kind() == std::io::ErrorKind::PermissionDenied {
+        "managed_process_ddc_permission_denied".to_string()
+    } else {
+        "managed_process_ddc_cleanup_failed".to_string()
+    }
+}
+
+fn cleanup_task_owned_ddc_once(
+    evidence_root: &Path,
+    ddc_root: &Path,
+    phase: &str,
+) -> Result<(), String> {
+    let identity_error = || "managed_process_ddc_identity_invalid".to_string();
     if !matches!(phase, "product-capture" | "ui-lifecycle") {
-        return Err("managed_process_ddc_identity_invalid".to_string());
+        return Err(identity_error());
     }
-    let evidence_root = std::fs::canonicalize(evidence_root)
-        .map_err(|_| "managed_process_ddc_identity_invalid".to_string())?;
-    let expected = evidence_root.join("managed-ue-ddc").join(phase);
-    if ddc_root.exists() {
-        let metadata = std::fs::symlink_metadata(ddc_root)
-            .map_err(|_| "managed_process_ddc_identity_invalid".to_string())?;
-        if metadata.file_type().is_symlink() || !metadata.is_dir() {
-            return Err("managed_process_ddc_identity_invalid".to_string());
-        }
-        let canonical_ddc = std::fs::canonicalize(ddc_root)
-            .map_err(|_| "managed_process_ddc_identity_invalid".to_string())?;
-        let canonical_expected = std::fs::canonicalize(&expected)
-            .map_err(|_| "managed_process_ddc_identity_invalid".to_string())?;
-        if canonical_ddc != canonical_expected || !canonical_ddc.starts_with(&evidence_root) {
-            return Err("managed_process_ddc_identity_invalid".to_string());
-        }
-        std::fs::remove_dir_all(&canonical_ddc)
-            .map_err(|_| "managed_process_ddc_cleanup_failed".to_string())?;
-    } else if ddc_root != expected {
-        return Err("managed_process_ddc_identity_invalid".to_string());
-    }
-    if ddc_root.exists() {
-        return Err("managed_process_ddc_cleanup_failed".to_string());
-    }
+    let evidence_root = std::fs::canonicalize(evidence_root).map_err(|_| identity_error())?;
     let parent = evidence_root.join("managed-ue-ddc");
+    let expected = parent.join(phase);
+    // Reject parent links too, including Windows junctions, before recursive removal.
+    for path in [&parent, ddc_root] {
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) => {
+                #[cfg(windows)]
+                {
+                    use std::os::windows::fs::MetadataExt;
+                    if metadata.file_attributes() & 0x400 != 0 { return Err(identity_error()); }
+                }
+                if metadata.file_type().is_symlink() || !metadata.is_dir() { return Err(identity_error()); }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(identity_error()),
+        }
+    }
+    match std::fs::canonicalize(ddc_root) {
+        Ok(canonical_ddc) => {
+            let canonical_expected = std::fs::canonicalize(&expected).map_err(|_| identity_error())?;
+            if canonical_ddc != canonical_expected || !canonical_ddc.starts_with(&evidence_root) {
+                return Err(identity_error());
+            }
+            std::fs::remove_dir_all(&canonical_ddc).map_err(ddc_io_reason)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && ddc_root == expected => {}
+        Err(_) => return Err(identity_error()),
+    }
+    match std::fs::symlink_metadata(ddc_root) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        _ => return Err("managed_process_ddc_cleanup_failed".to_string()),
+    }
     match std::fs::remove_dir(&parent) {
         Ok(()) => {}
-        Err(error)
-            if matches!(
-                error.kind(),
-                std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
-            ) => {}
-        Err(_) => return Err("managed_process_ddc_cleanup_failed".to_string()),
+        Err(error) if matches!(error.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty) => {}
+        Err(error) => return Err(ddc_io_reason(error)),
     }
     Ok(())
 }
@@ -1350,9 +1383,9 @@ struct TaskOwnedDdcCleanup {
 
 impl TaskOwnedDdcCleanup {
     fn cleanup(&mut self) -> Result<(), String> {
-        cleanup_task_owned_ddc(&self.evidence_root, &self.ddc_root, &self.phase)?;
+        // One explicit cleanup owns the complete budget; Drop must not repeat it on failure.
         self.active = false;
-        Ok(())
+        cleanup_task_owned_ddc(&self.evidence_root, &self.ddc_root, &self.phase)
     }
 }
 
@@ -3973,6 +4006,57 @@ mod tests {
         assert!(!ddc.exists());
         assert!(!evidence_root.join("managed-ue-ddc").exists());
         std::fs::remove_dir_all(evidence_root).unwrap();
+    }
+
+    #[test]
+    fn task_owned_ddc_cleanup_rejects_wrong_identity_without_removal() {
+        let _guard = reset();
+        let evidence_root = std::env::temp_dir().join(format!("uagent-ddc-identity-{}", now_millis()));
+        let _directory = TestDirectory(evidence_root.clone());
+        let wrong = evidence_root.join("unrelated");
+        std::fs::create_dir_all(&wrong).unwrap();
+        std::fs::write(wrong.join("keep.txt"), b"keep").unwrap();
+        assert_eq!(cleanup_task_owned_ddc(&evidence_root, &wrong, "ui-lifecycle").unwrap_err(), "managed_process_ddc_identity_invalid");
+        assert!(wrong.join("keep.txt").is_file());
+        assert_eq!(ddc_io_reason(std::io::Error::from(std::io::ErrorKind::PermissionDenied)), "managed_process_ddc_permission_denied");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn task_owned_ddc_cleanup_retries_a_released_windows_sharing_lock() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let _guard = reset();
+        let evidence_root = std::env::temp_dir().join(format!("uagent-ddc-retry-{}", now_millis()));
+        let _directory = TestDirectory(evidence_root.clone());
+        let ddc = evidence_root.join("managed-ue-ddc").join("ui-lifecycle");
+        std::fs::create_dir_all(&ddc).unwrap();
+        let file = std::fs::OpenOptions::new().create(true).write(true).share_mode(0).open(ddc.join("locked.bin")).unwrap();
+        let evidence_root = std::fs::canonicalize(evidence_root).unwrap();
+        let ddc = std::fs::canonicalize(ddc).unwrap();
+        assert_eq!(cleanup_task_owned_ddc_once(&evidence_root, &ddc, "ui-lifecycle").unwrap_err(), "managed_process_ddc_sharing_violation");
+        let unlock = std::thread::spawn(move || { std::thread::sleep(Duration::from_millis(400)); drop(file); });
+        let result = cleanup_task_owned_ddc(&evidence_root, &ddc, "ui-lifecycle");
+        unlock.join().unwrap();
+        result.unwrap();
+        assert!(!ddc.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn task_owned_ddc_cleanup_stops_after_one_budget_with_persistent_lock() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let _guard = reset();
+        let evidence_root = std::env::temp_dir().join(format!("uagent-ddc-budget-{}", now_millis()));
+        let _directory = TestDirectory(evidence_root.clone());
+        let ddc = evidence_root.join("managed-ue-ddc").join("ui-lifecycle");
+        std::fs::create_dir_all(&ddc).unwrap();
+        let file = std::fs::OpenOptions::new().create(true).write(true).share_mode(0).open(ddc.join("locked.bin")).unwrap();
+        let mut cleanup = TaskOwnedDdcCleanup { evidence_root: std::fs::canonicalize(evidence_root).unwrap(), ddc_root: std::fs::canonicalize(ddc).unwrap(), phase: "ui-lifecycle".to_string(), active: true };
+        assert_eq!(cleanup.cleanup().unwrap_err(), "managed_process_ddc_sharing_violation");
+        assert!(!cleanup.active);
+        assert!(cleanup.ddc_root.exists());
+        drop(cleanup);
+        drop(file);
     }
 
     #[cfg(windows)]

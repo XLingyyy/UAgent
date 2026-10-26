@@ -1,3 +1,4 @@
+import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
 import { ConversationMessage } from "./ConversationMessage";
 import { workspaceMessages, type WorkspaceMessage } from "./workspace-data";
 import {
@@ -10,14 +11,14 @@ import "./ConversationViewport.css";
 function mcpBadgeLabel(status: string, capabilities: unknown): string {
   if (status === "connected" && capabilities) return "MCP read-only";
   if (status === "connected") return "Discovery required";
-  return "Mock only";
+  return FIXTURES_ENABLED ? "Fixture" : "No live observation source";
 }
 
 export interface ConversationViewportProps {
   messages?: WorkspaceMessage[];
 }
 
-export function ConversationViewport({ messages = workspaceMessages }: ConversationViewportProps) {
+export function ConversationViewport({ messages = FIXTURES_ENABLED ? workspaceMessages : [] }: ConversationViewportProps) {
   const activeThreadId = useThreadStore((state) => state.activeThreadId);
   const runtimeEvents = useRuntimeStore((state) =>
     activeThreadId ? (state.eventsByTaskId[activeThreadId] ?? null) : null,

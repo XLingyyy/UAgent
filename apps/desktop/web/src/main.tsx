@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App, { initializeFixedAppRuntimeAdapter } from "./app/App";
-import { startMvp15dRuntimeBridgeFromApp } from "./runtime/mvp15d-runtime-bridge";
+import { ACCEPTANCE_ENABLED } from "./runtime/build-capabilities";
 import "./styles/tokens.css";
 import "./styles/theme.css";
 import "./styles/animations.css";
@@ -14,4 +14,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   </React.StrictMode>,
 );
 
-void startMvp15dRuntimeBridgeFromApp();
+if (ACCEPTANCE_ENABLED) {
+  void import("./runtime/mvp15d-runtime-bridge").then(({ startMvp15dRuntimeBridgeFromApp }) => startMvp15dRuntimeBridgeFromApp());
+}

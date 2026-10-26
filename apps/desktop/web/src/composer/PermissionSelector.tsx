@@ -1,3 +1,4 @@
+import { useAccessiblePopup } from "../hooks/useAccessiblePopup";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { ComingSoonGate } from "../components/ComingSoonGate";
@@ -45,6 +46,8 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
     setPosition(null);
   }, []);
 
+  useAccessiblePopup(isOpen && Boolean(position), triggerRef, ".ua-permission-selector__dropdown", close);
+
   useEffect(() => {
     if (!isOpen) return;
     const rect = triggerRef.current?.getBoundingClientRect();
@@ -56,7 +59,7 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") { close(); triggerRef.current?.focus(); }
     };
     document.addEventListener("keydown", handleKeyDown);
 
@@ -178,6 +181,7 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
                       option.id === value ? " ua-permission-selector__item--selected" : ""
                     }${!option.enabled ? " ua-permission-selector__item--disabled" : ""}`}
                     role="option"
+                tabIndex={-1}
                     aria-selected={option.id === value}
                     aria-disabled={!option.enabled || undefined}
                     onClick={() => handleSelect(option)}

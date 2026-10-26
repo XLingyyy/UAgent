@@ -1,6 +1,6 @@
+import { useAccessiblePopup } from "../hooks/useAccessiblePopup";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { ComingSoonGate } from "../components/ComingSoonGate";
 import type { MockProject } from "../types/ui";
 import "./ProjectSelector.css";
 
@@ -8,6 +8,7 @@ export interface ProjectSelectorProps {
   value: string | null;
   projects: MockProject[];
   onChange: (projectId: string | null) => void;
+  onManageProjects?: () => void;
 }
 
 interface DropdownPosition {
@@ -30,7 +31,7 @@ function getDropdownLeft(triggerLeft: number) {
   return Math.min(Math.max(DROPDOWN_VIEWPORT_MARGIN, triggerLeft), maxLeft);
 }
 
-export function ProjectSelector({ value, projects, onChange }: ProjectSelectorProps) {
+export function ProjectSelector({ value, projects, onChange, onManageProjects }: ProjectSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [position, setPosition] = useState<DropdownPosition | null>(null);
@@ -46,6 +47,8 @@ export function ProjectSelector({ value, projects, onChange }: ProjectSelectorPr
     setSearchText("");
     setPosition(null);
   }, []);
+
+  useAccessiblePopup(isOpen && Boolean(position), triggerRef, ".ua-project-selector__dropdown", close);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -63,7 +66,7 @@ export function ProjectSelector({ value, projects, onChange }: ProjectSelectorPr
     }, 0);
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") { close(); triggerRef.current?.focus(); }
     };
     document.addEventListener("keydown", handleKeyDown);
 
@@ -158,6 +161,7 @@ export function ProjectSelector({ value, projects, onChange }: ProjectSelectorPr
                   key={project.id}
                   className={`ua-project-selector__item${project.id === value ? " ua-project-selector__item--selected" : ""}`}
                   role="option"
+                tabIndex={-1}
                   aria-selected={project.id === value}
                   onClick={() => handleSelect(project.id)}
                 >
@@ -189,6 +193,7 @@ export function ProjectSelector({ value, projects, onChange }: ProjectSelectorPr
             <div
               className="ua-project-selector__item ua-project-selector__item--none"
               role="option"
+                tabIndex={-1}
               aria-selected={value === null}
               onClick={() => handleSelect(null)}
             >
@@ -203,29 +208,9 @@ export function ProjectSelector({ value, projects, onChange }: ProjectSelectorPr
 
             <div className="ua-project-selector__section-divider" />
 
-            <ComingSoonGate
-              blockChild
-              phase="MVP1"
-              reason="Add a new project from a local directory."
-            >
-              <div
-                className="ua-project-selector__item ua-project-selector__item--disabled"
-                role="option"
-                aria-disabled="true"
-              >
-                <span className="ua-project-selector__item-plus" aria-hidden="true">
-                  +
-                </span>
-                <span className="ua-project-selector__item-body">
-                  <span className="ua-project-selector__item-name ua-project-selector__item-name--muted">
-                    Add new project
-                  </span>
-                  <span className="ua-project-selector__item-desc">
-                    Directory picker coming in MVP1
-                  </span>
-                </span>
-              </div>
-            </ComingSoonGate>
+            <button type="button" className="ua-project-selector__item" onClick={() => { close(); onManageProjects?.(); }} disabled={!onManageProjects}>
+              Manage project roots
+            </button>
           </div>,
           document.body,
         )}

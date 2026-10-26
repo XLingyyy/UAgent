@@ -1,3 +1,4 @@
+import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
 import { PrimaryNav } from "./PrimaryNav";
 import { ProjectSection } from "./ProjectSection";
 import { ThreadSection } from "./ThreadSection";
@@ -86,7 +87,7 @@ export function LeftSidebar() {
   const { openSettings } = useSettingsActions();
 
   const registeredProject = projectState.registeredProjects.find((p) => p.id === activeProjectId) ?? null;
-  const mockProject = activeProjectId
+  const mockProject = FIXTURES_ENABLED && activeProjectId
     ? (MOCK_PROJECTS.find((p) => p.id === activeProjectId) ?? null)
     : null;
   const activeProject = registeredProject
@@ -100,7 +101,7 @@ export function LeftSidebar() {
     : mockProject;
   const assetTreeNodes = projectState.activeProjectIndex
     ? buildIndexedTree(projectState.activeProjectIndex.assets, projectState.assetFilter)
-    : activeProject
+    : FIXTURES_ENABLED && activeProject
       ? mockProjectTree
       : [];
   const diagnosticCounts = Object.fromEntries(
@@ -155,7 +156,7 @@ export function LeftSidebar() {
           <ProjectSection
             mode="projects"
             project={activeProject}
-            projects={MOCK_PROJECTS}
+            projects={projectState.registeredProjects.map((p) => ({ id: p.id, name: p.name, engineVersion: p.engine.label, connectionStatus: p.trustState, path: p.displayRoot }))}
             activeProjectId={activeProjectId}
             onProjectSelect={setActiveProject}
             treeNodes={assetTreeNodes}
@@ -175,19 +176,15 @@ export function LeftSidebar() {
           <>
             <ProjectSection mode="workspace" project={activeProject} treeNodes={[]} />
             <ThreadSection
-              threads={[...runtimeThreads, ...mockThreads]}
+              threads={[...runtimeThreads, ...(FIXTURES_ENABLED ? mockThreads : [])]}
               activeThreadId={activeThreadId}
               onThreadSelect={setActiveThread}
             />
           </>
         ) : (
           <>
-            <ProjectSection mode="workspace" project={activeProject} treeNodes={[]} />
-            <ThreadSection
-              threads={[...runtimeThreads, ...mockThreads]}
-              activeThreadId={activeThreadId}
-              onThreadSelect={setActiveThread}
-            />
+            <ProjectSection mode="workspace" project={activeProject} treeNodes={assetTreeNodes} onPreviewFile={previewProjectFile} />
+
           </>
         )}
       </div>

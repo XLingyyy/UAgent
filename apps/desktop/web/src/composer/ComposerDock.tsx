@@ -1,10 +1,8 @@
 import { ComingSoonGate } from "../components/ComingSoonGate";
-import { ContextRing } from "./ContextRing";
 import { ModelSelector } from "./ModelSelector";
 import { PermissionSelector } from "./PermissionSelector";
 import { ProjectSelector } from "./ProjectSelector";
 import { composerMock, createComposerModelOptions, reasoningOptions, toSharedPermissionMode } from "./composer-data";
-import { MOCK_PROJECTS } from "../project/project-data";
 import {
   useComposerActions,
   useComposerStore,
@@ -14,8 +12,9 @@ import {
   useRuntimeActions,
   useRuntimeStore,
   useSettingsActions,
+  useLayoutActions,
 } from "../stores/ui-store";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import "./ComposerDock.css";
 
 export interface ComposerDockProps {
@@ -30,7 +29,9 @@ interface CommandSuggestion {
 }
 
 function detectTerminalIntent(input: string): CommandSuggestion | null {
-  const trimmed = input.trim().toLowerCase();
+  const raw = input.trim();
+  if (!/^\/run(?:\s|$)/i.test(raw)) return null;
+  const trimmed = raw.replace(/^\/run\s*/i, "").toLowerCase();
   if (/[;&|`$()<>{}!^]/.test(trimmed)) {
     return { command: trimmed, label: trimmed, risk: "blocked", reason: "Shell metacharacters are not supported" };
   }
@@ -77,12 +78,15 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const { proposeMvp10TerminalCommand } = useRuntimeActions();
   const [suggestionCard, setSuggestionCard] = useState<CommandSuggestion | null>(null);
 
+  const { setInspectorOpen } = useLayoutActions();
+  const registeredProjects = useProjectStore((state) => state.registeredProjects);
+  const submitting = useRef(false);
   const providerModelOptions = createComposerModelOptions(provider.providers);
-  const { input, permission, selectedModelId, reasoningEffort, runMode, branch, context } =
+  const { input, permission, selectedModelId, reasoningEffort, runMode } =
     composer;
   const { placeholder, addButtonLabel, sendButtonLabel } = composerMock;
   const trimmedInput = input.trim();
-  const canSubmit = trimmedInput.length > 0;
+  const canSubmit = trimmedInput.length > 0 && !composer.submitting;
   const providerStatus = selectedModelId === "not-configured" ? "not_configured" : "configured";
   const nativeRoot = activeProject?.rootRef ?? null;
   const displayRoot = activeProject?.displayRoot ?? "[project-root]";
@@ -93,22 +97,25 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
     setSuggestionCard(suggestion);
   };
 
-  const handleSubmit = () => {
-    if (!canSubmit) {
+  const handleSubmit = async () => {
+    if (!canSubmit || submitting.current) return;
+    if (/(sandbox|沙盒)/i.test(trimmedInput) && /(asset|资产|复制|重命名|移动|保存|duplicate|rename|move|save)/i.test(trimmedInput)) {
+      setInspectorOpen(true);
+      window.dispatchEvent(new CustomEvent("uagent:open-asset-workflow"));
       return;
     }
+    submitting.current = true;
     setSuggestionCard(null);
-    void submitComposerTask({
-      input: trimmedInput,
-      projectId: activeProjectId,
-      permissionMode: toSharedPermissionMode(permission),
-      modelId: selectedModelId,
-      reasoningEffort,
-      runMode,
-      branch,
-      contextPercent: context.percent,
-      providerStatus,
-    });
+    const selected = providerModelOptions.find((option) => option.id === selectedModelId);
+    try {
+      await submitComposerTask({
+        input: trimmedInput, projectId: activeProjectId,
+        permissionMode: toSharedPermissionMode(permission),
+        modelId: selected?.modelId ?? "not-configured", providerId: selected?.providerId ?? null,
+        reasoningEffort, runMode, branch: null, contextPercent: null, providerStatus,
+      });
+    } catch { /* Store owns the safe, retryable error; keep the user's input. */ }
+    finally { submitting.current = false; }
   };
 
   return (
@@ -158,7 +165,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         </div>
 
         <div className="ua-composer__right-tools">
-          <ContextRing used={context.used} total={context.total} percent={context.percent} />
+          <span title="No measured token usage is available">Context: Unknown</span>
 
           <ModelSelector
             modelId={selectedModelId}
@@ -174,14 +181,15 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
             className="ua-composer__send-btn"
             type="button"
             disabled={!canSubmit}
-            aria-label={canSubmit ? "Send mock task" : "Send - disabled"}
-            onClick={handleSubmit}
+            aria-label={composer.submitting ? "Submitting task" : canSubmit ? "Send task" : "Send - disabled"}
+            onClick={() => void handleSubmit()}
           >
             {sendButtonLabel}
           </button>
         </div>
       </div>
 
+      {composer.submitError && <p role="alert">{composer.submitError}</p>}
       {suggestionCard && (
         <div
           className={`ua-composer__suggestion ${suggestionCard.risk === "blocked" ? "ua-composer__suggestion--blocked" : ""}`}
@@ -227,8 +235,9 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
 
       <div className="ua-composer__status-row">
         <ProjectSelector
+          onManageProjects={() => openSettings("config")}
           value={activeProjectId}
-          projects={MOCK_PROJECTS}
+          projects={registeredProjects.map((p) => ({ id: p.id, name: p.name, engineVersion: p.engine.label, connectionStatus: p.trustState, path: p.displayRoot }))}
           onChange={setActiveProject}
         />
 
@@ -237,7 +246,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         <span className="ua-composer__status-item">
           <span className="ua-composer__status-label">Runtime</span>
           <span className="ua-composer__status-value">
-            {mcpStatus === "connected" && mcpCapabilities ? "MCP read-only" : mcpStatus === "connected" ? "Discovery required" : "Mock only"}
+            {mcpStatus === "connected" && mcpCapabilities ? "MCP read-only" : mcpStatus === "connected" ? "Discovery required" : "Not connected"}
           </span>
         </span>
 
@@ -254,27 +263,27 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
           <span className="ua-composer__status-label">Safety</span>
           <span className="ua-composer__status-value">
             {permission === "request-approval"
-              ? "Approval required / fixture ready"
-              : "Fixture sandbox / no real writes"}
+              ? "Approval required"
+              : "Native policy still enforced"}
           </span>
         </span>
 
         <span className="ua-composer__status-item">
           <span className="ua-composer__status-label">Branch</span>
-          <span className="ua-composer__status-value ua-text-mono">{branch}</span>
+          <span className="ua-composer__status-value ua-text-mono">Unknown</span>
         </span>
 
         {providerStatus === "not_configured" ? (
           <span className="ua-composer__status-item ua-composer__status-item--warning">
             <span className="ua-composer__status-label">Model</span>
-            <span className="ua-composer__status-value">Mock runtime / no provider call</span>
+            <span className="ua-composer__status-value">Not configured / no provider call</span>
           </span>
         ) : (
           <span className="ua-composer__status-item">
             <span className="ua-composer__status-label">Provider</span>
             <span className="ua-composer__status-value">
               {selectedModelId !== "not-configured"
-                ? `Fixture / no network`
+                ? "Connectivity unverified"
                 : "Not configured"}
             </span>
           </span>

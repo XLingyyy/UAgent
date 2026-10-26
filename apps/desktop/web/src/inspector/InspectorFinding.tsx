@@ -1,3 +1,4 @@
+import { safeDisplay } from "./safe-display";
 import type { ReviewFinding } from "./inspector-data";
 import "./InspectorFinding.css";
 
@@ -25,16 +26,16 @@ export function InspectorFinding({
   return (
     <article
       className={`ua-finding ${SEVERITY_CLASS[severity] ?? ""}`}
-      aria-label={`Finding: ${title}`}
+      aria-label={`Finding: ${safeDisplay(title)}`}
     >
       <div className="ua-finding__header">
         <span className="ua-finding__severity">{SEVERITY_LABEL[severity] ?? severity}</span>
-        <h4 className="ua-finding__title">{title}</h4>
+        <h4 className="ua-finding__title">{safeDisplay(title)}</h4>
       </div>
-      <p className="ua-finding__description">{description}</p>
+      <p className="ua-finding__description">{safeDisplay(description)}</p>
       <div className="ua-finding__meta">
-        <span className="ua-finding__scope">{scope}</span>
-        <span className="ua-finding__evidence">{evidenceRef}</span>
+        <span className="ua-finding__scope">{safeDisplay(scope)}</span>
+        <span className="ua-finding__evidence">{safeDisplay(evidenceRef)}</span>
       </div>
     </article>
   );

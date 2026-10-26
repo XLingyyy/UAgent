@@ -1,5 +1,7 @@
+import { FIXTURES_ENABLED, ACCEPTANCE_ENABLED } from "./build-capabilities";
 import {
   createAgentLoopRuntime,
+  selectAction,
   createMvp15ExactToolFacade,
   createMvp15FacadeWrapperCall,
   attestMvp15DCompanion,
@@ -542,6 +544,7 @@ export interface DesktopRuntimeAdapter {
     endpoint: string,
   ): Promise<void>;
   /** Refreshes native, trusted-root-bound package/loaded-module evidence. */
+  invalidateProjectContext?(): void;
   refreshMvp15DCompanionAttestation?(
     trustedRootId: string,
     editorSessionId?: string,
@@ -570,6 +573,7 @@ export interface DesktopRuntimeAdapter {
   guardMvp15AssetMutation?: (
     input: Mvp15NativeAssetGuardInput,
   ) => Promise<Mvp15NativeAssetGuardResult>;
+  getAssetMutationCapability?(): Promise<boolean>;
   dryRunMvp15AssetMutation?: (
     input: Record<string, unknown>,
   ) => Promise<Record<string, unknown>>;
@@ -689,6 +693,12 @@ export function createDesktopRuntimeAdapter(
     runtimeMode: "mock",
     discovery: null,
     clockStart: 1_000,
+    actionSelector: (step, context) => {
+      const action = selectAction(step, context);
+      return !FIXTURES_ENABLED && action.type === "mock_observation"
+        ? { type: "blocked", stepId: step.id, reason: "No real observation source is available.", riskLevel: "blocked" }
+        : action;
+    },
   });
   const terminalAdapter = createDesktopTerminalAdapterFromEnvironment(nativeInvoke);
   const watcherAdapter = createDesktopWatcherAdapterFromEnvironment(nativeInvoke);
@@ -3846,6 +3856,10 @@ export function createDesktopRuntimeAdapter(
   const adapter: DesktopRuntimeAdapter = {
     getSnapshot: () => router.getSnapshot(),
     getMcpState: () => mcpState,
+    getAssetMutationCapability: async () => {
+      if (!nativeInvoke) return false;
+      try { return await nativeInvoke("get_asset_mutation_capability") === true; } catch { return false; }
+    },
     getMcpDiscovery: () => currentDiscovery,
     getMvp15AssetTools: () => getMvp15AssetTools(currentDiscovery, currentMvp15FacadeTools),
     getMvp15LiveAssetToolsetFingerprint: () => currentMvp15Fingerprint,
@@ -3863,6 +3877,7 @@ export function createDesktopRuntimeAdapter(
         : (options?.mvp15dFixtureUiObservationPort ?? null),
     activateMvp15dFixedObservationAuthority: async (input) => {
       if (
+        !ACCEPTANCE_ENABLED ||
         !input.receiptLedgerEnabled ||
         !nativeInvoke ||
         !input.taskId ||
@@ -4165,6 +4180,11 @@ export function createDesktopRuntimeAdapter(
         throw new Error("mvp15d_product_retraction_orchestration_invalid");
       }
     },
+    invalidateProjectContext() {
+      const pending = retractMvp15DCompanionAttestation("installed_unverified", "BLOCKED_BY_PLUGIN_PROVENANCE", "project_context_changed", mcpDiscoveryGeneration, true);
+      syncMcp();
+      void pending?.catch(() => undefined);
+    },
     refreshMvp15DCompanionAttestation,
     captureMvp15McpBinding: () => currentMvp15McpBinding?.identity ?? null,
     isMvp15McpBindingCurrent: (binding) =>
@@ -4191,6 +4211,9 @@ export function createDesktopRuntimeAdapter(
     },
 
     submitTask: async (draft) => {
+      if (!FIXTURES_ENABLED && !currentDiscovery) {
+        throw new Error("Connect and discover a read-only MCP session before submitting a task.");
+      }
       const record = await router.submitTask(draft);
       syncSnapshot();
       return record;

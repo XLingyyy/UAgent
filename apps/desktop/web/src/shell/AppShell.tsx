@@ -1,3 +1,5 @@
+import { ACCEPTANCE_ENABLED } from "../runtime/build-capabilities";
+import { useNarrowViewport } from "./useNarrowViewport";
 import { useEffect } from "react";
 import { useLayoutStore, useSettingsActions, useSettingsStore } from "../stores/ui-store";
 import { TitleBar } from "./TitleBar";
@@ -25,6 +27,8 @@ const MVP15D_CAPABILITY_OPEN_SETTINGS_EVENT = "uagent:mvp15d-open-capability-set
  */
 export function AppShell() {
   const settingsOpen = useSettingsStore((state) => state.open);
+  const inspectorOpen = useLayoutStore((state) => state.inspector.open);
+  const modal = useNarrowViewport() && inspectorOpen && !settingsOpen;
   const theme = useLayoutStore((state) => state.theme);
   const { openSettings } = useSettingsActions();
   const shellMode = settingsOpen ? "settings" : "app";
@@ -35,6 +39,7 @@ export function AppShell() {
   }, [theme]);
 
   useEffect(() => {
+    if (!ACCEPTANCE_ENABLED) return;
     const onCapabilityOpen = () => openSettings("config");
     globalThis.window.addEventListener(MVP15D_CAPABILITY_OPEN_SETTINGS_EVENT, onCapabilityOpen);
     return () =>
@@ -43,7 +48,7 @@ export function AppShell() {
 
   return (
     <div className="ua-app" data-shell-mode={shellMode} data-theme={theme}>
-      <TitleBar />
+      <div {...(modal ? { inert: "" } : {})} aria-hidden={modal || undefined}><TitleBar /></div>
       <div className="ua-app__body">
         <div key={motionKey} className="ua-motion-page" data-motion="page">
           {settingsOpen ? <SettingsShell /> : <MainLayout />}

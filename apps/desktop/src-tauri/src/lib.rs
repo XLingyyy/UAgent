@@ -1666,6 +1666,7 @@ pub fn run() {
             ue_editor_process::stop_editor_observation_session,
             ue_editor_process::terminate_managed_editor_process,
             ue_editor_process::release_managed_editor_process,
+            asset_mutation::get_asset_mutation_capability,
             asset_mutation::dry_run_asset_mutation,
             asset_mutation::register_asset_mutation_approval,
             asset_mutation::cancel_asset_mutation_approval,

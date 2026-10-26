@@ -58,7 +58,7 @@ export function AssetMutationPanel() {
   const stateLabel = changeSet?.state ?? (realReady ? "real-ready" : (mvp15?.gate.mode ?? "disabled"));
   const bindingLabel = realMode
     ? bindingStatus
-    : "local_fixture";
+    : runtimeMode === "fixture" ? "local_fixture" : "not_bound";
   const aggregatePrefix = changeSet?.aggregateDryRunHash ? String(changeSet.aggregateDryRunHash).slice(0, 12) : null;
   const mcpInventory = mvp15?.mcpInventory ?? null;
   const readyMcpInventory =
@@ -101,6 +101,7 @@ export function AssetMutationPanel() {
               className="ua-utility-placeholder__button"
               type="button"
               aria-label="Dry-run sandbox asset mutation"
+              disabled={mvp15?.busy}
               onClick={() => {
                 void actions?.runMvp15AssetDryRun(sourceAssetPath);
               }}
@@ -111,7 +112,7 @@ export function AssetMutationPanel() {
               className="ua-utility-placeholder__button"
               type="button"
               aria-label="Approve sandbox asset mutation"
-              disabled={!canApprove}
+              disabled={mvp15?.busy || !canApprove}
               onClick={() => {
                 void actions?.approveMvp15AssetChangeSet();
               }}
@@ -122,7 +123,7 @@ export function AssetMutationPanel() {
               className="ua-utility-placeholder__button"
               type="button"
               aria-label="Execute sandbox asset mutation"
-              disabled={!canExecute}
+              disabled={mvp15?.busy || !canExecute}
               onClick={() => {
                 void actions?.executeMvp15AssetChangeSet();
               }}
@@ -133,7 +134,7 @@ export function AssetMutationPanel() {
               className="ua-utility-placeholder__button"
               type="button"
               aria-label="Verify sandbox asset mutation"
-              disabled={!canVerify}
+              disabled={mvp15?.busy || !canVerify}
               onClick={() => {
                 void actions?.verifyMvp15AssetChangeSet();
               }}
@@ -144,7 +145,7 @@ export function AssetMutationPanel() {
               className="ua-utility-placeholder__button"
               type="button"
               aria-label="Rollback sandbox asset mutation"
-              disabled={!canRollback}
+              disabled={mvp15?.busy || !canRollback}
               onClick={() => {
                 void actions?.rollbackMvp15AssetChangeSet();
               }}
@@ -155,7 +156,7 @@ export function AssetMutationPanel() {
               className="ua-utility-placeholder__button"
               type="button"
               aria-label="Final verify restored Content"
-              disabled={!canFinalVerify}
+              disabled={mvp15?.busy || !canFinalVerify}
               onClick={() => {
                 void actions?.finalVerifyMvp15AssetChangeSet();
               }}
@@ -166,7 +167,7 @@ export function AssetMutationPanel() {
               className="ua-utility-placeholder__button"
               type="button"
               aria-label="Inspect recorded asset replay"
-              disabled={!canInspectReplay}
+              disabled={mvp15?.busy || !canInspectReplay}
               onClick={() => {
                 actions?.inspectMvp15AssetReplay();
               }}

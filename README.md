@@ -2,9 +2,23 @@
 
 AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
 
-## Current Stage: MVP15D - Complete
+## Current status: frontend stabilization reconstruction
 
-Current implementation commit
+The October 2026 reconstruction restores project-switch isolation, Composer
+submission guards, explicit production/fixture boundaries, provider/model identity,
+keyboard interactions, evidence presentation, and bounded DDC cleanup retries.
+See [the reconstruction and scoped validation record](docs/rebuild-mvp15-20261026.md)
+for the 19 frontend tests, 4 native cleanup tests, 12 browser checks, typecheck,
+and Web build results. These are focused checks, not a full regression run.
+
+Native Windows Snap, real UE lifecycle acceptance on the rebuilt source, live
+Provider integration, and the four historical cache cleanup outcomes remain
+unverified. Some product entry points and persistent configuration are still
+incomplete. This branch does not establish readiness for MVP16 or a new release.
+
+## Historical MVP15D acceptance (7dd3148)
+
+The historical implementation commit
 `7dd31488554e1cfc1aa54cd8a15d3a891a536f5a` passed the complete detached-clean
 F0-F16 source-bound chain. The Tauri release binary SHA-256 is
 `95370ee47cf79c8e5ee8e2550dd42dd8a57e8395961d2ba2aed5a66d61d8650d`;

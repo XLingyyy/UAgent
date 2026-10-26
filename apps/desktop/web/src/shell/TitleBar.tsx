@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { useLayoutActions, useLayoutStore, useProjectStore, useRuntimeStore } from "../stores/ui-store";
+import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { useLayoutActions, useLayoutStore, useSettingsStore, useProjectStore, useRuntimeStore } from "../stores/ui-store";
 import "./TitleBar.css";
 
 export interface TitleBarProps {
@@ -60,14 +61,14 @@ async function closeWindow(): Promise<void> {
 }
 
 /** Query whether the main window is maximized. Returns false outside the shell. */
-async function isWindowMaximized(): Promise<boolean> {
+async function isWindowMaximized(): Promise<boolean | null> {
   const internals = getTauriWindowInternals();
-  if (!internals) return false;
+  if (!internals) return null;
   try {
     const result = await internals.invoke("plugin:window|is_maximized", { label: MAIN_WINDOW_LABEL });
-    return Boolean(result);
+    return typeof result === "boolean" ? result : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -76,6 +77,7 @@ async function toggleMaximizeWindow(): Promise<void> {
   const internals = getTauriWindowInternals();
   if (!internals) return;
   const maximized = await isWindowMaximized();
+  if (maximized === null) return;
   await invokeWindow(internals, maximized ? "unmaximize" : "maximize");
 }
 
@@ -87,6 +89,7 @@ async function toggleMaximizeWindow(): Promise<void> {
  * it renders a static bar so the layout is visible.
  */
 export function TitleBar({ title = "UAgent" }: TitleBarProps) {
+  const settingsOpen = useSettingsStore((state) => state.open);
   const inspectorOpen = useLayoutStore((state) => state.inspector.open);
   const mcpStatus = useRuntimeStore((state) => state.mcp.status);
   const editorStatus = useRuntimeStore((state) => state.mvp14.session?.status ?? state.mvp14.capability.reason);
@@ -111,27 +114,36 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
   // browser/Vitest preview this stays false (no IPC), so the button reads as
   // "Maximize window". Re-checked after a maximize/restore click so the label
   // reflects the new state in the real desktop shell.
-  const [isMaximized, setIsMaximized] = useState(false);
-  useEffect(() => {
-    let active = true;
-    void isWindowMaximized().then((value) => {
-      if (active) setIsMaximized(value);
-    });
-    return () => {
-      active = false;
-    };
+  const [isMaximized, setIsMaximized] = useState<boolean | null>(null);
+  const [windowBusy, setWindowBusy] = useState(false);
+  const windowGeneration = useRef(0);
+  const mounted = useRef(false);
+  const busy = useRef(false);
+  const refreshWindow = useCallback(async () => {
+    const request = ++windowGeneration.current;
+    const value = await isWindowMaximized();
+    if (mounted.current && request === windowGeneration.current) setIsMaximized(value);
   }, []);
-
-  const maximizeAriaLabel = isMaximized ? "Restore window" : "Maximize window";
-
-  const handleMinimize = () => {
-    void minimizeWindow();
-  };
-
-  const handleToggleMaximize = () => {
-    void toggleMaximizeWindow().then(() => {
-      void isWindowMaximized().then((value) => setIsMaximized(value));
-    });
+  useEffect(() => {
+    mounted.current = true;
+    void refreshWindow();
+    window.addEventListener("resize", refreshWindow);
+    window.addEventListener("focus", refreshWindow);
+    return () => {
+      mounted.current = false;
+      windowGeneration.current++;
+      window.removeEventListener("resize", refreshWindow);
+      window.removeEventListener("focus", refreshWindow);
+    };
+  }, [refreshWindow]);
+  const maximizeAriaLabel = isMaximized === null ? "Window state unavailable" : isMaximized ? "Restore window" : "Maximize window";
+  const handleMinimize = () => { void minimizeWindow(); };
+  const handleToggleMaximize = async () => {
+    if (busy.current) return;
+    busy.current = true;
+    setWindowBusy(true);
+    try { await toggleMaximizeWindow(); await refreshWindow(); }
+    finally { busy.current = false; if (mounted.current) setWindowBusy(false); }
   };
 
   const handleClose = () => {
@@ -149,30 +161,30 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
         </span>
       </div>
       <div className="ua-titlebar__center" data-tauri-drag-region>
-        <span className="ua-titlebar__drag-hint">Local-first agent workspace</span>
+        <span className="ua-titlebar__drag-hint" data-tauri-drag-region>Local-first agent workspace</span>
       </div>
       <div className="ua-titlebar__right">
         <div className="ua-titlebar__status" aria-label="Connection summary">
-          <span className="ua-titlebar__status-pill ua-titlebar__status-pill--key" title="Mock runtime / no live provider call">
-            Mock
+          <span className="ua-titlebar__status-pill ua-titlebar__status-pill--key" title="Deterministic planning; provider analysis does not authorize execution">
+            {FIXTURES_ENABLED ? "Fixture" : "Local planner"}
           </span>
           <span
             className="ua-titlebar__status-pill ua-titlebar__status-pill--key"
             title={`MCP ${mcpStatus}: read-only tools only; tile-mutating MCP calls are blocked.`}
           >
-            MCP: RO
+            MCP: {mcpStatus}
           </span>
           <span
             className="ua-titlebar__status-pill ua-titlebar__status-pill--p4"
-            title="Provider: fixture (no live provider network by default)."
+            title="No provider connectivity has been verified by this interface."
           >
             Provider: off
           </span>
           <span
             className="ua-titlebar__status-pill ua-titlebar__status-pill--p4"
-            title="No network access by default."
+            title="Network access depends on the explicitly connected MCP endpoint."
           >
-            No net
+            Explicit connections
           </span>
           <span
             className={`ua-titlebar__status-pill ua-titlebar__status-pill--p3`}
@@ -188,7 +200,7 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
           </span>
         </div>
         <div className="ua-titlebar__controls">
-          <button
+          {!settingsOpen && <button
             className="ua-titlebar__btn"
             onClick={toggleInspector}
             aria-label={toolsLabel}
@@ -196,9 +208,9 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
             type="button"
           >
             <span aria-hidden>Tools</span>
-          </button>
-          <span className="ua-titlebar__badge">MVP15 Complete</span>
-          <span className="ua-titlebar__badge ua-titlebar__badge--subtle">Native FS OK</span>
+          </button>}
+          <span className="ua-titlebar__badge">MVP15 workspace</span>
+          <span className="ua-titlebar__badge ua-titlebar__badge--subtle">{nativeSource === "native" ? "Native bridge" : "Web preview"}</span>
         </div>
         <div
           className="ua-titlebar__window-controls"
@@ -208,6 +220,7 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
             className="ua-titlebar__window-btn"
             type="button"
             aria-label="Minimize window"
+            disabled={!getTauriWindowInternals()}
             onClick={handleMinimize}
           >
             <span className="ua-titlebar__win-icon ua-titlebar__win-icon--minimize" aria-hidden="true" />
@@ -216,6 +229,7 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
             className="ua-titlebar__window-btn"
             type="button"
             aria-label={maximizeAriaLabel}
+            disabled={isMaximized === null || windowBusy}
             onClick={handleToggleMaximize}
           >
             <span
@@ -229,6 +243,7 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
             className="ua-titlebar__window-btn ua-titlebar__window-btn--close"
             type="button"
             aria-label="Close window"
+            disabled={!getTauriWindowInternals()}
             onClick={handleClose}
           >
             <span className="ua-titlebar__win-icon ua-titlebar__win-icon--close" aria-hidden="true" />

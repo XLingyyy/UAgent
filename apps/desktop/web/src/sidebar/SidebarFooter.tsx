@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useAccessiblePopup } from "../hooks/useAccessiblePopup";
+import { useState, useRef, useCallback } from "react";
 import { useSettingsActions } from "../stores/ui-store";
 import "./SidebarFooter.css";
 
@@ -6,20 +7,9 @@ export function SidebarFooter() {
   const { openSettings } = useSettingsActions();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 
-  useEffect(() => {
-    if (!accountMenuOpen) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setAccountMenuOpen(false);
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [accountMenuOpen]);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(() => setAccountMenuOpen(false), []);
+  useAccessiblePopup(accountMenuOpen, triggerRef, ".ua-sidebar-footer__menu", closeMenu);
 
   function openSettingsPage(pageId: "general" | "profile") {
     setAccountMenuOpen(false);
@@ -45,6 +35,7 @@ export function SidebarFooter() {
             type="button"
             className="ua-sidebar-footer__btn"
             onClick={() => setAccountMenuOpen((open) => !open)}
+            ref={triggerRef}
             aria-label="Open profile menu"
             aria-haspopup="menu"
             aria-expanded={accountMenuOpen}
@@ -77,7 +68,7 @@ export function SidebarFooter() {
         </div>
       </div>
       <div className="ua-sidebar-footer__meta">
-        <span className="ua-sidebar-footer__version">UAgent MVP6</span>
+        <span className="ua-sidebar-footer__version">UAgent MVP15</span>
         <span className="ua-sidebar-footer__status">Local / No UE writes</span>
       </div>
     </div>

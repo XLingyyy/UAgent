@@ -20,7 +20,7 @@
  * Closed: slides off-screen to the right with full width preserved
  * for the slide-in transition.
  */
-@media (max-width: 899px) {
+@media (max-width: 1120px) {
   .ua-main-layout,
   .ua-main-layout[data-inspector-state="closed"] {
     display: flex;
@@ -46,3 +46,7 @@
     transform: translateX(calc(100% + var(--ua-space-3)));
   }
 }
+
+.ua-main-layout__background { display: contents; }
+.ua-drawer-backdrop { position:absolute; inset:0; border:0; background:#0008; z-index:20; }
+@media(max-width:1120px) { .ua-main-layout .ua-inspector { z-index:21; } .ua-main-layout__background > .ua-workspace { flex:1; min-width:0; } }

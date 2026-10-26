@@ -1,3 +1,4 @@
+import { ACCEPTANCE_ENABLED } from "../../runtime/build-capabilities";
 import { useState } from "react";
 import { SettingsPageLayout, SettingsSection } from "../SettingsPageLayout";
 import { configPageData } from "../settings-page-data";
@@ -27,8 +28,8 @@ export function ConfigSettings() {
         </SettingsSection>
       ))}
       <CompanionPluginStatusDisplay />
-      <Mvp15dProductControls />
-      <Mvp15dNegativeAcceptanceControls />
+      {ACCEPTANCE_ENABLED && <Mvp15dProductControls />}
+      {ACCEPTANCE_ENABLED && <Mvp15dNegativeAcceptanceControls />}
       <div className="ua-settings-page__note">
         Connection and project-root changes apply to this local session only.
       </div>

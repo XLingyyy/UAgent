@@ -124,7 +124,7 @@ export const DEFAULT_PROVIDER_STATE: ProviderState = {
 export function createProviderDraft(nextIndex: number): ProviderConfig {
   const models = createModelsForWireApi("openai_compatible");
   return {
-    providerId: `local-provider-${nextIndex}`,
+    providerId: `provider-${globalThis.crypto.randomUUID()}`,
     displayName: `Local Provider ${nextIndex}`,
     baseUrl: "http://127.0.0.1:11434/v1",
     wireApi: "openai_compatible",

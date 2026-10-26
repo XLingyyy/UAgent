@@ -790,6 +790,12 @@ pub fn rollback_asset_mutation(input: AssetMutationGuardInput) -> AssetMutationG
     result
 }
 
+/// Read-only projection of the same fail-closed gate enforced by every mutation command.
+#[tauri::command]
+pub fn get_asset_mutation_capability() -> bool {
+    native_asset_mutation_enabled()
+}
+
 fn native_asset_mutation_enabled() -> bool {
     std::env::var("UAGENT_ENABLE_ASSET_MUTATION")
         .map(|value| value == "1")

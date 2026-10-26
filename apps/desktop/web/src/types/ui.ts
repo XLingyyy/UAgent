@@ -120,6 +120,8 @@ export interface ThreadStoreState {
 /** Composer dock local-only UI state. */
 export interface ComposerStoreState {
   input: string;
+  submitting?: boolean;
+  submitError?: string | null;
   attachMenuOpen: boolean;
   permission: ComposerPermission;
   selectedModelId: ComposerModelId;

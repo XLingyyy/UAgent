@@ -1,3 +1,4 @@
+import { FIXTURES_ENABLED } from "../../runtime/build-capabilities";
 import { ComingSoonGate, getComingSoonPhase } from "../../components/ComingSoonGate";
 import { SettingsPageLayout, SettingsSection } from "../SettingsPageLayout";
 import { archivedChatsPageData } from "../settings-page-data";
@@ -14,13 +15,13 @@ export function ArchivedChatsSettings() {
         </SettingsSection>
       ))}
       <div className="ua-settings-page__note">
-        This is a UI-only mock. No real chat data is accessed.
+        Archive integration is not available. No real chat data is accessed.
       </div>
     </SettingsPageLayout>
   );
 }
 
-const mockArchivedChats = [
+const mockArchivedChats = FIXTURES_ENABLED ? [
   {
     id: "arch-1",
     title: "Fix Material Compilation Errors",
@@ -39,7 +40,7 @@ const mockArchivedChats = [
     project: "CitySample_Sandbox",
     date: "2026-06-15",
   },
-];
+] : [];
 
 function FiltersControls() {
   const filtersSection = archivedChatsPageData.sections.find(

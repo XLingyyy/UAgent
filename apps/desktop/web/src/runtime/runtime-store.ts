@@ -1,3 +1,4 @@
+import { FIXTURES_ENABLED } from "./build-capabilities";
 import {
   createMockRuntime,
   createAssetChangeSetService,
@@ -184,12 +185,13 @@ export type Mvp15GateMode = "disabled" | "dry-run-only" | "sandbox-enabled" | "s
 export type Mvp15AssetMarker = "sandbox_created" | "sandbox_modified" | "sandbox_deleted" | "rollback_available";
 
 export interface Mvp15RuntimeState {
+  busy?: boolean;
   gate: {
     mode: Mvp15GateMode;
     sandboxRoot: "/Game/UAgentSandbox";
     reason: string;
   };
-  executionMode: "fixture" | "real" | "blocked_by_mcp_schema";
+  executionMode: "unavailable" | "fixture" | "real" | "blocked_by_mcp_schema";
   sourceAssetPath: string | null;
   runId: string | null;
   mcpInventory: Mvp15McpAssetToolInventory | null;
@@ -257,7 +259,7 @@ export interface RuntimeStoreActions {
   resetMvp11Diagnostics: () => void;
   proposeRepairForDiagnostic: (diagnosticId: string) => Promise<void>;
   previewChangeSet: (proposalId: string) => Promise<void>;
-  approveChangeSet: (changeSetId: string) => void;
+  approveChangeSet: (changeSetId: string) => Promise<void>;
   applyChangeSet: (changeSetId: string) => Promise<void>;
   runVerification: (changeSetId: string) => void;
   rollbackChangeSet: (changeSetId: string) => Promise<void>;
@@ -285,12 +287,12 @@ export interface RuntimeStoreActions {
   executeMvp13EditorOperation: () => void;
   cancelMvp13EditorOperation: () => void;
   runMvp13McpMutationDryRun: () => void;
-  refreshMvp14ObservationCapability: () => void;
-  discoverMvp14EditorProcesses: () => void;
-  attachMvp14EditorProcess: () => void;
-  readMvp14EditorStatus: () => void;
-  readMvp14EditorSnapshot: () => void;
-  stopMvp14ObservationSession: () => void;
+  refreshMvp14ObservationCapability: () => Promise<void>;
+  discoverMvp14EditorProcesses: () => Promise<void>;
+  attachMvp14EditorProcess: () => Promise<void>;
+  readMvp14EditorStatus: () => Promise<void>;
+  readMvp14EditorSnapshot: () => Promise<void>;
+  stopMvp14ObservationSession: () => Promise<void>;
   runMvp15AssetDryRun: (sourceAssetPath?: string) => void;
   approveMvp15AssetChangeSet: () => Promise<void>;
   executeMvp15AssetChangeSet: () => Promise<void>;
@@ -415,11 +417,11 @@ export function createEmptyMvp14State(): Mvp14RuntimeState {
 export function createEmptyMvp15State(): Mvp15RuntimeState {
   return {
     gate: {
-      mode: "sandbox-enabled",
+      mode: FIXTURES_ENABLED ? "sandbox-enabled" : "disabled",
       sandboxRoot: "/Game/UAgentSandbox",
-      reason: "fixture sandbox asset mutation requires dry-run, approval, execute, verify, and rollback",
+      reason: FIXTURES_ENABLED ? "Fixture sandbox; no real assets" : "Native asset capability has not been verified",
     },
-    executionMode: "fixture",
+    executionMode: FIXTURES_ENABLED ? "fixture" : "unavailable",
     sourceAssetPath: null,
     runId: null,
     mcpInventory: null,

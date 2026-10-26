@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { createProviderHttpTransport } from "@uagent/runtime";
+import { FIXTURES_ENABLED } from "../../runtime/build-capabilities";
+import { useEffect, useMemo, useState, useRef } from "react";
 import {
   createModelsForWireApi,
   createProviderDraft,
@@ -85,7 +87,12 @@ export function ProviderSettings() {
   const selectedModel =
     draft?.models.find((model) => model.id === draft.defaultModel) ?? draft?.models[0] ?? null;
 
+  const testGeneration = useRef(0);
+  const [testBusy, setTestBusy] = useState(false);
+  useEffect(() => { testGeneration.current++; setTestBusy(false); setProviderTestStatus("idle"); return () => { testGeneration.current++; }; }, [draft, selectedProviderId, setProviderTestStatus]);
+
   function handleProviderSelect(providerId: string) {
+    testGeneration.current++;
     setSelectedProvider(providerId);
     setEditorMode("view");
   }
@@ -110,6 +117,7 @@ export function ProviderSettings() {
   }
 
   function handleDeleteProvider() {
+    testGeneration.current++;
     if (!selectedProvider) {
       return;
     }
@@ -118,6 +126,8 @@ export function ProviderSettings() {
   }
 
   function updateDraft(updater: (current: ProviderDraft) => ProviderDraft) {
+    testGeneration.current++;
+    setProviderTestStatus("idle");
     setDraft((current) => (current ? updater(current) : current));
   }
 
@@ -167,7 +177,7 @@ export function ProviderSettings() {
       return;
     }
     const nextProvider = cloneDraft(draft);
-    saveProvider(nextProvider);
+    try { saveProvider(nextProvider); } catch { setProviderTestStatus("failure"); return; }
     setDefaultProvider(
       draft.isDefault
         ? nextProvider.providerId
@@ -178,12 +188,19 @@ export function ProviderSettings() {
     setEditorMode("view");
   }
 
-  function handleTestConnection() {
-    if (!draft || draft.networkMode === "disabled" || !draft.enabled) {
-      setProviderTestStatus("failure");
-      return;
+  async function handleTestConnection() {
+    const generation = ++testGeneration.current;
+    if (!FIXTURES_ENABLED || !draft?.enabled || draft.networkMode !== "fixture") {
+      setProviderTestStatus("failure"); return;
     }
-    setProviderTestStatus("success");
+    setTestBusy(true);
+    try {
+      const response = await createProviderHttpTransport({ networkMode: "fixture" }).sendJson({
+        url: "https://fixture.invalid/check", method: "POST", headers: {}, body: { model: draft.defaultModel },
+      });
+      if (generation === testGeneration.current) setProviderTestStatus(response.status === 200 && JSON.parse(response.body).id === "fixture-response" ? "success" : "failure");
+    } catch { if (generation === testGeneration.current) setProviderTestStatus("failure"); }
+    finally { if (generation === testGeneration.current) setTestBusy(false); }
   }
 
   return (
@@ -193,8 +210,8 @@ export function ProviderSettings() {
         aria-label="Provider page safeguards"
       >
         <span className="ua-settings-page__provider-status-pill">Secret-safe</span>
-        <span className="ua-settings-page__provider-status-pill">Fixture first</span>
-        <span className="ua-settings-page__provider-status-pill">Live opt-in</span>
+        <span className="ua-settings-page__provider-status-pill">Live test unavailable</span>
+        <span className="ua-settings-page__provider-status-pill">No network probe</span>
       </div>
 
       <section className="ua-settings-section" aria-labelledby="section-provider-list">
@@ -203,7 +220,7 @@ export function ProviderSettings() {
             Available providers
           </h3>
           <p className="ua-settings-section__description">
-            Local mock provider entries available for model selection.
+            Local provider configuration; saving does not enable live requests.
           </p>
         </div>
         <div className="ua-settings-section__body">
@@ -572,9 +589,9 @@ export function ProviderSettings() {
               type="button"
               className="ua-settings-page__action-btn ua-settings-page__action-btn--primary"
               onClick={handleTestConnection}
-              disabled={!draft}
+              disabled={!draft || testBusy}
             >
-              Test connection (fixture)
+              Check connection availability
             </button>
           </div>
           {testStatus !== "idle" && (
@@ -585,17 +602,17 @@ export function ProviderSettings() {
             >
               {testStatus === "success"
                 ? "Fixture connection passed. No live network request was sent."
-                : "Provider is disabled; fixture connection was not run."}
+                : "Connection test unavailable: no provider test transport is connected. No network request was sent."}
             </div>
           )}
           <div className="ua-settings-page__action-note">
-            Network mode controls whether requests use fixture data or live transport.
+            Saved network mode is configuration only; this page does not verify connectivity.
           </div>
         </div>
       </section>
 
       <div className="ua-settings-page__note">
-        Provider config is secret-safe: no raw API keys stored. Network mode controls transport behavior. Default: disabled/fixture.
+        Provider config is secret-safe: no raw API keys stored. Live connectivity is unverified.
       </div>
     </SettingsPageLayout>
   );

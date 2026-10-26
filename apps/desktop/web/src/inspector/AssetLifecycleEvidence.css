@@ -1,0 +1,11 @@
+.ua-asset-evidence { padding: 16px; min-width: 0; font-size: 12px; line-height: 1.55; }
+.ua-asset-evidence h3 { font-size: 14px; margin: 0 0 8px; }
+.ua-asset-evidence p { opacity: .75; margin: 0 0 16px; }
+.ua-asset-evidence dl { margin: 0; }
+.ua-asset-evidence dl > div { display: grid; grid-template-columns: minmax(80px, .8fr) minmax(0, 1.5fr); gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--ua-border, #333); }
+.ua-asset-evidence dt { opacity: .7; }
+.ua-asset-evidence dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.ua-evidence-row { display: block !important; padding: 12px 0; }
+.ua-evidence-row dl { margin: 0; display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 6px 10px; }
+.ua-evidence-row dt { opacity: .7; }
+.ua-evidence-row dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }

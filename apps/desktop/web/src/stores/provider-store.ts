@@ -1,3 +1,4 @@
+import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
 import {
   cloneProviderConfig,
   cloneProviderState,
@@ -8,10 +9,10 @@ import type { UIInitialState } from "../types/ui";
 
 export function createInitialProviderState(initialState?: UIInitialState): ProviderState {
   return {
-    ...cloneProviderState(DEFAULT_PROVIDER_STATE),
+    ...cloneProviderState(FIXTURES_ENABLED ? DEFAULT_PROVIDER_STATE : { providers: [], selectedProviderId: null, defaultProviderId: null, testStatus: "idle" }),
     ...initialState?.provider,
     providers: initialState?.provider?.providers
       ? initialState.provider.providers.map(cloneProviderConfig)
-      : DEFAULT_PROVIDER_STATE.providers.map(cloneProviderConfig),
+      : FIXTURES_ENABLED ? DEFAULT_PROVIDER_STATE.providers.map(cloneProviderConfig) : [],
   };
 }

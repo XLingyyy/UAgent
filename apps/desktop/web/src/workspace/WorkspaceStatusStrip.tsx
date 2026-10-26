@@ -1,12 +1,15 @@
+import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
 import { workspaceStatusItems, type WorkspaceStatusItem } from "./workspace-data";
-import { useProjectStore } from "../stores/ui-store";
+import { useProjectStore, useRuntimeStore } from "../stores/ui-store";
 import "./WorkspaceStatusStrip.css";
 
 export interface WorkspaceStatusStripProps {
   items?: WorkspaceStatusItem[];
 }
 
-export function WorkspaceStatusStrip({ items = workspaceStatusItems }: WorkspaceStatusStripProps) {
+export function WorkspaceStatusStrip({ items = FIXTURES_ENABLED ? workspaceStatusItems : [] }: WorkspaceStatusStripProps) {
+  const mcpStatus = useRuntimeStore((state) => state.mcp.status);
+  const editorStatus = useRuntimeStore((state) => state.mvp14.session?.status ?? "not connected");
   const project = useProjectStore((state) => state);
   const activeProject = project.registeredProjects.find((item) => item.id === project.activeProjectId);
   const nativeRootStatus =
@@ -14,11 +17,13 @@ export function WorkspaceStatusStrip({ items = workspaceStatusItems }: Workspace
       ? "Root trusted"
       : activeProject?.indexStatus === "ready"
         ? "Scan ready"
-        : "Read-only";
+        : "Not trusted";
   const projectItems: WorkspaceStatusItem[] = [
+    { label: "MCP", value: mcpStatus },
+    { label: "Editor", value: editorStatus },
     {
       label: "Project index",
-      value: project.activeProjectIndex ? "ready" : "fixture/local-only",
+      value: project.activeProjectIndex?.status ?? "not indexed",
       tone: project.activeProjectIndex ? "accent" : "default",
     },
     {
@@ -35,7 +40,7 @@ export function WorkspaceStatusStrip({ items = workspaceStatusItems }: Workspace
       label: "Capability mode",
       value: project.capabilityStatus.length > 0
         ? project.capabilityStatus.map((c) => `${c.kind}:${c.mode}`).join(" ")
-        : "disabled/fixture read-only",
+        : "not verified",
       tone: "warning",
     },
     {

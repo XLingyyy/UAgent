@@ -1,3 +1,4 @@
+import { useAccessiblePopup } from "../hooks/useAccessiblePopup";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -64,6 +65,8 @@ export function ModelSelector({
     setPosition(null);
   }, []);
 
+  useAccessiblePopup(isOpen && Boolean(position), triggerRef, ".ua-model-selector__dropdown", close);
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -76,7 +79,7 @@ export function ModelSelector({
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") { close(); triggerRef.current?.focus(); }
     };
     document.addEventListener("keydown", handleKeyDown);
 
@@ -173,6 +176,7 @@ export function ModelSelector({
                   option.id === reasoningEffort ? " ua-model-selector__item--selected" : ""
                 }`}
                 role="option"
+                tabIndex={-1}
                 aria-selected={option.id === reasoningEffort}
                 onClick={() => handleReasoningSelect(option)}
               >
@@ -196,6 +200,7 @@ export function ModelSelector({
                   option.id === modelId ? " ua-model-selector__item--selected" : ""
                 }${!option.enabled ? " ua-model-selector__item--disabled" : ""}`}
                 role="option"
+                tabIndex={-1}
                 aria-selected={option.id === modelId}
                 aria-disabled={!option.enabled || undefined}
                 onClick={() => handleModelSelect(option)}
@@ -223,7 +228,8 @@ export function ModelSelector({
 
             <div className="ua-model-selector__section-divider" />
 
-            <div className="ua-model-selector__item" role="option" onClick={handleManageProviders}>
+            <div className="ua-model-selector__item" role="option"
+                tabIndex={-1} onClick={handleManageProviders}>
               <span className="ua-model-selector__item-body">
                 <span className="ua-model-selector__item-label">Manage providers</span>
                 <span className="ua-model-selector__item-desc">Open provider settings</span>
