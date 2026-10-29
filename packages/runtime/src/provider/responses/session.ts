@@ -50,6 +50,8 @@ export interface ResponsesSessionOptions {
     context: Readonly<ResponsesProjectContext>,
   ) => ResponsesNativeReplay | undefined;
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  /** Text-only conversations send selected plain history, never native output items. */
+  disableNativeReplay?: boolean;
 }
 export interface ResponsesStreamChunk extends ProviderStreamChunk {
   usageStatus?: "reported" | "unknown";
@@ -65,6 +67,7 @@ interface ReplayEntry {
 
 /** No credential/config persistence, hidden model substitution, fallback or retries. */
 export function createResponsesSession(options: ResponsesSessionOptions) {
+  const nativeReplayEnabled=options.disableNativeReplay!==true;
   const providerId = options.providerId ?? "openai-responses",
     modelId = options.modelId;
   const endpoint = options.endpoint ?? OPENAI_RESPONSES_ENDPOINT,
@@ -293,6 +296,7 @@ export function createResponsesSession(options: ResponsesSessionOptions) {
       request,
       stream,
       (message, index) => {
+        if(!nativeReplayEnabled)return undefined;
         const matches = (entry: ReplayEntry) =>
           entry.messages === messagesSignature(request.messages.slice(0, index)) &&
           entry.assistant === messageSignature(message);
@@ -347,7 +351,7 @@ export function createResponsesSession(options: ResponsesSessionOptions) {
     key: string,
   ) {
     rejectResultCredentialEcho(result, key);
-    if (!nativeScope) return;
+    if (!nativeScope||!nativeReplayEnabled) return;
     const assistant = {
       role: "assistant",
       content: result.text,

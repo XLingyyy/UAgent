@@ -649,6 +649,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
         };
         const session = createProviderRuntimeSession({
           wireApi: "responses",
+          disableNativeReplay:chat,
           providerId,
           modelId,
           endpoint: ENDPOINT,

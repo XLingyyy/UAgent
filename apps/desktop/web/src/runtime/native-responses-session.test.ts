@@ -255,6 +255,9 @@ describe("Responses no-tool conversation native binding (synthetic IPC)",()=>{
     await vi.waitFor(()=>expect(h.gate.getPending()).not.toBeNull());
     expect(h.count("dispatch_native_responses_request")).toBe(1);
     const review=h.gate.getPending()!.envelope;expect(review.body).toContain("blue-whale-42");expect(review.body).toContain(result.text);
+    const assistant=JSON.parse(review.body).input.find((item:{role?:string})=>item.role==="assistant");
+    expect(assistant).toEqual({type:"message",role:"assistant",content:result.text});
+    expect(review.body).not.toContain("msg_fixture");
     h.gate.approve(h.gate.getPending()!.id);await second;
     expect(h.count("bind_native_responses_conversation")).toBe(1);expect(h.count("bind_native_responses_run")).toBe(0);
     expect(h.records).toHaveLength(2);expect(h.records.every(r=>r.owner.projectId==="chat:project:"+owner.projectId)).toBe(true);
