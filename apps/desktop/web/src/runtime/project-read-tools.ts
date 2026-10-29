@@ -183,7 +183,7 @@ export function createProjectReadToolRegistry(
           indexVersion: snapshot.id,
           indexedAt: snapshot.summary.scannedAt,
         } as RunJsonValue,
-        sources: files.map((file) =>
+        sources: [source(context.projectId,prefix,indexVersion??snapshot.id+":"+snapshot.summary.scannedAt,"index_query"),...files.map((file) =>
           source(
             context.projectId,
             file.path,
@@ -191,7 +191,7 @@ export function createProjectReadToolRegistry(
             "project_index",
             inspected ? checkedFreshness(inspected, file.path) : undefined,
           ),
-        ),
+        )],
         truncated: matches.length > files.length,
       };
     },

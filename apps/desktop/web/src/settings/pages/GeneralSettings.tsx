@@ -19,8 +19,6 @@ export function GeneralSettings(){
    <section className="ua-settings-section"><h3 className="ua-settings-section__title">{uiText("Your workspace defaults")}</h3>
      <div className="ua-default-row"><span>{uiText("Execution")}</span><strong>{uiText("Approval required")}</strong></div>
      <div className="ua-default-row"><span>{uiText("Model session")}</span><strong>{uiText("Memory only")}</strong></div>
-     <div className="ua-default-row"><span>{uiText("Model budget")}</span><strong>{uiText("CNY 10 cumulative limit")}</strong></div>
-     <p>{uiText("Changing language never changes authorization, sends a request or resets the budget.")}</p>
    </section>
    <section className="ua-settings-section"><h3 className="ua-settings-section__title">{uiText("Local configuration and history")}</h3>
      <p>{uiText("Save project selection and redacted conversation copies explicitly in Connections & safety.")}</p>

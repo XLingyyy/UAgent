@@ -1,3 +1,4 @@
+pub(crate) mod app_profile;
 pub(crate) mod local_workspace;
 #[cfg(windows)]
 pub(crate) mod local_run_store;
@@ -1558,6 +1559,9 @@ fn redact_preview_content(content: &str) -> RedactedContent {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Err(error)=app_profile::initialize_from_env(){eprintln!("{error}");return;}
+    let mut context=tauri::generate_context!();
+    if let Err(error)=app_profile::configure_isolated_windows(&mut context){eprintln!("{error}");return;}
     use mvp15d_runtime_bridge::{ManagedBridgeState, Startup};
     use tauri::Manager;
 
@@ -1577,7 +1581,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(ManagedBridgeState::new(bridge_state))
-        .setup(|_app| Ok(()))
+        .setup(|app| app_profile::setup_isolated_windows(app))
         .invoke_handler(tauri::generate_handler![
             mvp15d_bridge_configuration,
             mvp15d_bridge_request_renderer_restart,
@@ -1592,6 +1596,9 @@ pub fn run() {
             mvp15d_bridge_publish_ui_evidence,
             mvp15d_bridge_complete,
             mvp15d_bridge_fail,
+            app_profile::get_application_profile,
+            #[cfg(windows)]
+            run_store_commands::list_native_run_history,
             #[cfg(windows)]
             run_store_commands::commit_native_run_store,
             #[cfg(windows)]
@@ -1667,7 +1674,7 @@ pub fn run() {
             asset_mutation::retract_mvp15_companion_approvals,
             mcp::mcp_streamable_http_request,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app, event| {
             if let tauri::RunEvent::ExitRequested {

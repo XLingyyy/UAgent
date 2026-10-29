@@ -58,7 +58,8 @@ the native investigation storage adapter preserves this plan separately from the
 
 Sources bind project ID, kind, relative path and version to descriptive read/share
 bounds. Native metadata freshness stamps are checked before preparing a request
-and again after approval, before fetch. A rescan invalidates older index revisions.
+and again after approval, before fetch. Every index query, including zero results, carries an independent index revision.
+A rescan or process restart invalidates older index revisions.
 A changed, missing, revoked or unverifiable source pauses sending. Saved strings
 or descriptions cannot recreate a RunScopeLease or authorize recovery.
 
@@ -77,8 +78,21 @@ transition persists intent before scheduling and observed results before feedbac
 A result retained across a rejected transaction is consumed without re-reading;
 an uncertain native acknowledgement instead requires reconciliation. Full records,
 selection plans and source freshness are stored together. There is no automatic
-credential, approval or scheduling restoration, and SQLite history/recovery UI
-remains a separate product step.
+credential, approval or scheduling restoration. The local task-history drawer
+reads complete saved conversation bodies, tool records, context plans and events.
+Continuation creates a linked new run, with sharing initially unchecked. It drops
+old instructions and index queries, rechecks selected file sources, and requires
+fresh project trust, scope, credentials and exact outbound approvals.
+
+## Isolated native validation mode
+
+Start the desktop executable with `--profile-dir <absolute-local-directory>` to
+isolate SQLite, local configuration and WebView storage. This explicit mode
+rejects unsupported arguments, unsafe paths and reparse components rather than
+falling back to the ordinary profile. `--offline-demo` additionally selects a
+local synthetic SSE transport, only with an isolated profile. Its visible banner
+and manual session button distinguish it from a live provider. It never forwards
+to network fetch and never restores a credential or approval after restart.
 
 ## Focused checks
 

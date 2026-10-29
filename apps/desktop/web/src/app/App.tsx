@@ -1,3 +1,4 @@
+import {NativeHistoryAccess} from "../workspace/NativeHistoryAccess";
 import {InvestigationScopeReview} from "../settings/pages/InvestigationScopeReview";
 import {ProviderSessionLifetime} from "../runtime/ProviderSessionLifetime";
 import {safeProviderSession} from "../runtime/safe-provider-session";
@@ -31,6 +32,7 @@ export default function App() {
       <ProviderSessionLifetime />
       <LocalWorkspaceBootstrap />
       <AppShell />
+      <NativeHistoryAccess/>
       <InvestigationScopeReview />
       <OutboundRequestReview />
     </UIProvider>

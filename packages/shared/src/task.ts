@@ -131,7 +131,14 @@ export type TaskEventType =
 
 export type TaskEventLevel = "info" | "success" | "warning" | "error";
 
+export interface SavedRunContinuation {
+  parentRunId:string; projectId:string; conversationId:string;
+  includeCompletedContext:boolean; completed:boolean; hasUnresolvedEffects:boolean;
+  messages:import("./provider-runtime.js").ProviderRuntimeMessage[];
+}
 export interface TaskDraft {
+  /** Explicit saved data selection; never restored execution authority. */
+  savedRun?:SavedRunContinuation;
   /** Investigation is opt-in and resolves an in-memory lease, never a persisted grant. */
   taskMode?: "discussion" | "investigation";
   investigationScopeId?: string;

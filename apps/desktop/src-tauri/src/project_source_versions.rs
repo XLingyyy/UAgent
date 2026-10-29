@@ -47,6 +47,9 @@ pub struct NativeProjectSourceVersion {
 #[serde(rename_all = "camelCase")]
 pub struct InspectNativeProjectSourcesResult {
     pub project_id: String,
+    /// Native trust and root identity remained valid across this inspection,
+    /// including when sources is empty. This never grants content permissions.
+    pub root_current: bool,
     pub sources: Vec<NativeProjectSourceVersion>,
 }
 
@@ -378,6 +381,7 @@ fn inspect_sources_using<A: PartialEq>(
         Err(()) => {
             return Ok(InspectNativeProjectSourcesResult {
                 project_id: input.project_id,
+                root_current: false,
                 sources: blocked(),
             });
         }
@@ -393,11 +397,13 @@ fn inspect_sources_using<A: PartialEq>(
         Err(()) => blocked(),
     };
     let root_unchanged = resolve(&input.project_id).is_ok_and(|after| after == root);
-    if !root_unchanged || !lease.as_ref().is_ok_and(|lease| lease.verify()) {
+    let root_current = root_unchanged && lease.as_ref().is_ok_and(|lease| lease.verify());
+    if !root_current {
         sources = blocked();
     }
     Ok(InspectNativeProjectSourcesResult {
         project_id: input.project_id,
+        root_current,
         sources,
     })
 }
@@ -820,6 +826,57 @@ mod tests {
             ));
         }
         fs::remove_dir_all(path)
+    }
+
+    #[test]
+    fn empty_inspection_reports_native_root_current_even_without_source_entries() {
+        let fixture = Fixture::new();
+        let valid = fixture.inspect(&[]);
+        assert!(valid.root_current);
+        assert!(valid.sources.is_empty());
+        let json = serde_json::to_value(&valid).unwrap();
+        assert_eq!(json["rootCurrent"], true);
+        assert!(json.get("root_current").is_none());
+
+        let revoked = inspect_sources_using::<()>(fixture.input(&[]), |_| Err(())).unwrap();
+        assert!(!revoked.root_current);
+        assert!(revoked.sources.is_empty());
+
+        let mut calls = 0;
+        let revoked_after = inspect_sources_using(fixture.input(&[]), |_| {
+            calls += 1;
+            if calls == 1 {
+                Ok(fixture.binding())
+            } else {
+                Err(())
+            }
+        })
+        .unwrap();
+        assert_eq!(calls, 2);
+        assert!(!revoked_after.root_current);
+        assert!(revoked_after.sources.is_empty());
+
+        let mut calls = 0;
+        let replaced = inspect_sources_using(fixture.input(&[]), |_| {
+            calls += 1;
+            let mut binding = fixture.binding();
+            if calls > 1 {
+                binding.authority.0 = Some((0, 0));
+            }
+            Ok(binding)
+        })
+        .unwrap();
+        assert!(!replaced.root_current);
+        assert!(replaced.sources.is_empty());
+
+        let invalid = inspect_sources_using(fixture.input(&[]), |_| {
+            let mut binding = fixture.binding();
+            binding.original = fixture.0.join("NonexistentRoot");
+            Ok(binding)
+        })
+        .unwrap();
+        assert!(!invalid.root_current);
+        assert!(invalid.sources.is_empty());
     }
 
     #[test]

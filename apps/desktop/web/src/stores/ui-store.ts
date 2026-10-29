@@ -1298,12 +1298,15 @@ function createUIStateBundle(
       const selected=threadId?runtimeStore.getState().tasksById[threadId]:null;
       if(selected&&selected.draft.projectId!==projectStore.getState().activeProjectId)return;
       investigationScopeGate.invalidate();
+      composerStore.setState(previous=>({...previous,savedRun:undefined}));
       if(submissionPending){projectRequests.invalidate();const id=runtimeStore.getState().activeTaskId;if(id)void runtimeClient.cancelTask(id).catch(()=>undefined);}
       threadStore.setState({activeThreadId:threadId});
     },
   };
 
   const composerActions: ComposerStoreActions = {
+    setComposerTaskMode:taskMode=>composerStore.setState(previous=>({...previous,taskMode,...(taskMode==="discussion"?{savedRun:undefined}:{})})),
+    setSavedRun:savedRun=>composerStore.setState(previous=>({...previous,savedRun,taskMode:savedRun?"investigation":previous.taskMode})),
     setComposerInput: (input) =>
       composerStore.setState((previousState) =>
         previousState.input === input ? previousState : { ...previousState, input },
@@ -1341,7 +1344,8 @@ function createUIStateBundle(
         const snapshot=runtimeStore.getState();
         const previous=conversationTasks(snapshot.tasksById,threadStore.getState().activeThreadId,draft.projectId);
         const history=completedConversationHistory(previous.filter(task=>task.draft.providerId===draft.providerId&&task.draft.modelId===draft.modelId),snapshot.eventsByTaskId);
-        const conversationId=previous.length?conversationKey(previous[0]):crypto.randomUUID();
+        const conversationId=draft.savedRun?.conversationId??(previous.length?conversationKey(previous[0]):crypto.randomUUID());
+        if(draft.savedRun&&draft.savedRun.projectId!==draft.projectId)throw Error("scope_review_stale");
         let investigationScopeId:string|undefined;
         if(draft.taskMode==="investigation"){
           const project=draft.projectId?projectAdapter.getProject(draft.projectId):null;
@@ -1359,7 +1363,7 @@ function createUIStateBundle(
         if(!isCurrent())throw Error("scope_review_stale");
         const record = await runtimeClient.submitTask({...draft,conversationId,conversationHistory:history,historyEligible:draft.taskMode!=="investigation"&&attachmentStore.selected(draft.projectId).length===0,...(investigationScopeId?{investigationScopeId}:{})});
         if (isCurrent()) {
-          composerStore.setState((previous) => ({ ...previous, input: record.state === "completed" && previous.input === originalInput ? "" : previous.input }));
+          composerStore.setState((previous) => ({ ...previous, ...(record.state === "completed" ? { taskMode: "discussion" as const, savedRun: undefined } : {}), input: record.state === "completed" && previous.input === originalInput ? "" : previous.input }));
           threadStore.setState({ activeThreadId: record.id });
           layoutStore.setState((previous) => ({ ...previous, sidebar: { ...previous.sidebar, activeNav: "workspace" } }));
         }

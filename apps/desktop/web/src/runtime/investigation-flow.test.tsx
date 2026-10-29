@@ -117,6 +117,7 @@ function nativeFixture(options: { storageFailure?: boolean } = {}) {
       } as T;
     if (command === "inspect_native_project_sources")
       return {
+        rootCurrent:true,
         projectId: input.projectId,
         sources: (input.paths as string[]).map((path) => ({
           path,
@@ -248,6 +249,17 @@ describe("read tools behind the native project adapter", () => {
     expect(new TextEncoder().encode(JSON.stringify(result)).length).toBeLessThanOrEqual(
       h.scope.limits.maxToolResultBytes,
     );
+  });
+
+
+  it("retains an independent index-query version for empty results and invalidates it after rescan",async()=>{
+    const h=await registryFixture(),context={runId:"r",projectId:h.scope.projectId,scope:{...h.scope,sharePrefixes:[""]},signal:new AbortController().signal,isCurrent:()=>true};
+    const empty=await h.registry.execute({id:"empty",name:"project_find_files",arguments:'{"prefix":"Source","query":"not-present"}'},context);
+    expect(empty.status).toBe("completed");expect(empty.sources).toHaveLength(1);expect(empty.sources[0]).toMatchObject({kind:"index_query",path:"Source"});
+    const {createProjectContextSources}=await import("./project-context-sources"),port=createProjectContextSources(h.adapter);
+    expect(await port.validate(empty.sources,context.scope,context.signal)).toBe(true);
+    await h.adapter.scanProject(h.scope.projectId);
+    expect(await port.validate(empty.sources,context.scope,context.signal)).toBe(false);
   });
 
   it("blocks native-less and revoked project access before reading", async () => {
@@ -585,5 +597,6 @@ describe("desktop investigation vertical slice without real API", () => {
     expect(h.sent).toHaveLength(1);
     expect(h.previews).toHaveLength(1);
     expect(h.input().value).toContain("Investigate");
+    expect(screen.getByRole("button", { name: "Task mode" }).textContent).toBe("Investigate project");
   });
 });

@@ -1,3 +1,4 @@
+import {selectSavedRunContext} from "./run-continuation.js";
 import type { ProviderAdapter } from "../provider/provider-adapter.js";
 import type {
   ProviderRuntimeEvent,
@@ -75,6 +76,7 @@ export class RunCoordinator {
   private active = false;
   private text = "";
   private goalMessageIndex = 2;
+  private historicalCallIds=new Set<string>();
   private contextPlan: RunContextPlan | null = null;
   private releaseSignal: (() => void) | null = null;
 
@@ -145,6 +147,9 @@ export class RunCoordinator {
       createdAt: now,
       updatedAt: now,
     };
+    const saved=draft.savedRun?selectSavedRunContext(draft.savedRun,scope):null;
+    if(draft.savedRun)this.runState.parentRunId=draft.savedRun.parentRunId;
+    this.historicalCallIds=new Set(saved?.callIds??[]);
     this.messages = [
       {
         role: "system",
@@ -162,10 +167,11 @@ export class RunCoordinator {
             maxToolCalls: scope.limits.maxToolCalls,
           }),
       },
-      ...boundConversationHistory(draft.conversationHistory ?? []),
+      ...boundConversationHistory(saved?.history??draft.conversationHistory ?? []),
       { role: "user", content: redactString(draft.input) },
     ];
     this.goalMessageIndex = this.messages.length - 1;
+    if(saved)this.messages.push(...saved.groups);
     const abort = () => this.cancel();
     this.options.signal?.addEventListener("abort", abort, { once: true });
     this.releaseSignal = () => this.options.signal?.removeEventListener("abort", abort);
@@ -450,6 +456,7 @@ export class RunCoordinator {
           this.releaseSignal?.();
           return this.outcome();
         }
+        if(response.toolCalls?.some(call=>this.historicalCallIds.has(call.id)))throw new StopRun("failed","duplicate_historical_call");
         this.pending = response.toolCalls ?? [];
         this.pendingIndex = 0;
         this.messages.push({

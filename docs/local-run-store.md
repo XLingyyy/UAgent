@@ -194,8 +194,9 @@ to continue in a new native session, with a new run and fresh authorization.
 The desktop investigation path installs one native RunStorePort per runtime
 adapter. Its root is resolved internally as app-data/run-store-v2; the renderer
 cannot supply a storage directory. Commands commit_native_run_store and
-snapshot_native_run_store keep SQLite connections inside blocking workers and
-require a current native trusted project ID.
+snapshot_native_run_store keep SQLite connections inside blocking workers.
+Commits require a current native trusted project ID. Snapshot/history reads are
+limited to this app's archive and do not grant access to the external project.
 
 Full provider-message envelopes preserve developer roles, tool-call IDs/arguments
 and tool results. Stable run/index message IDs append only new suffixes. State,
@@ -204,11 +205,14 @@ the deterministic next-request plan stays separate from the full archive.
 A failed or uncertain acknowledgement poisons that run cursor and stops further
 scheduling until reconciliation; it cannot silently replay a tool.
 
-This connection covers new investigation runs. Ordinary conversation still uses
-the existing conversation persistence. New SQLite history/recovery screens,
-automatic scheduling recovery, backup/export UI and other write tools are not
-implemented by this connection. Snapshot data is descriptive and requires fresh
-authorization before any future execution.
+This connection covers investigation runs. Ordinary conversation still uses
+the existing conversation persistence. The desktop task-history drawer lists runs
+and reads complete provider-message bodies, tools, source plans and events, with
+explicit incomplete-archive and unresolved-effect states. Continuing creates a
+linked new run; optional completed context is initially unchecked and cannot
+restore old instructions, index queries, credentials, approvals or dispatches.
+Automatic scheduling recovery, backup/export UI and other write tools remain
+outside this connection.
 
 ## Focused verification
 
@@ -229,10 +233,11 @@ capacity/integrity; complete online backup (including a controlled single-connec
 WAL fixture); and project-only export. This is native SQLite validation, not a real
 Provider, UE, Tauri UI or cross-restart runtime acceptance test.
 The quota test triggers SQLite's configured page limit, not a physically full
-disk. Reopen tests do not force-kill a process. The desktop command adapter now checks current native project trust for commits
-and snapshots. Runtime leases remain in memory; no recovery path reconstructs
-approvals or automatically resumes a run. Live Tauri IPC/UI recovery acceptance
-has not been performed.
+disk. Reopen tests do not force-kill a process. The desktop command adapter checks current native project trust for commits.
+Runtime leases remain in memory; no recovery path reconstructs approvals or
+automatically resumes a run. Focused native desktop checks use an isolated profile
+and local synthetic model transport. They do not establish real paid-provider
+acceptance.
 
 Path-prefix tests classify supplied input/canonical path strings only. No shared
 folder or mapped network drive was configured. Real mapped-drive, 8.3 and SUBST

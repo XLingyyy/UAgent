@@ -24,22 +24,22 @@ export function createProjectContextSources(adapter: NativeProjectAdapter): RunC
       for (const source of sources) {
         if (
           source.projectId !== scope.projectId ||
-          !source.freshness ||
+          (source.kind!=="index_query"&&!source.freshness) ||
           !isRunPathAllowed(source.path, scope.readPrefixes) ||
           !isRunPathAllowed(source.path, scope.sharePrefixes)
         )
           return false;
         if (
-          source.kind === "project_index" &&
+          ["project_index","index_query"].includes(source.kind) &&
           source.version !== projectIndexVersion(adapter, scope.projectId)
         )
           return false;
-        if (!["project_index", "file_preview"].includes(source.kind)) return false;
+        if (!["project_index", "index_query", "file_preview"].includes(source.kind)) return false;
       }
-      const paths = [...new Set(sources.map((source) => source.path))];
+      const paths = [...new Set(sources.filter(source=>source.kind!=="index_query").map((source) => source.path))];
       if (paths.length > 64) return false;
       const inspected = await adapter.inspectSources(scope.projectId, paths);
-      if (signal.aborted || !current() || inspected.projectId !== scope.projectId) return false;
+      if (signal.aborted || !current() || !inspected.rootCurrent || inspected.projectId !== scope.projectId) return false;
       const versions = new Map(
         inspected.sources.map((source) => [
           source.path,
@@ -48,7 +48,7 @@ export function createProjectContextSources(adapter: NativeProjectAdapter): RunC
       );
       return sources.every(
         (source) =>
-          versions.get(source.path) === source.freshness &&
+          source.kind==="index_query"?source.version===projectIndexVersion(adapter,scope.projectId):versions.get(source.path) === source.freshness &&
           (source.kind !== "project_index" ||
             source.version === projectIndexVersion(adapter, scope.projectId)),
       );

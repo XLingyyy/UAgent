@@ -2,13 +2,12 @@
 #![cfg(windows)]
 
 use crate::local_run_store::{
-    ActionStatus, CheckpointBatch, NewRun, Origin, Project, RunSnapshot, RunStore, Session,
-    StoreError,
+    ActionStatus, CheckpointBatch, NewMessage, NewRun, Origin, Project, RunEvent, RunHistoryEntry,
+    RunSnapshot, RunStore, Session, StoreError,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::HashSet, path::Path};
-use tauri::Manager;
 
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
@@ -45,8 +44,37 @@ pub struct SnapshotInput {
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotResult {
     schema_version: u32,
+    descriptor: RunHistoryEntry,
     snapshot: RunSnapshot,
     coordinator_state: Option<Value>,
+    messages: Vec<NewMessage>,
+    events: Vec<RunEvent>,
+    completeness: ArchiveCompleteness,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveCompleteness {
+    complete: bool,
+    loaded_message_count: usize,
+    stored_message_count: Option<usize>,
+    reason: Option<String>,
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HistoryInput {
+    schema_version: u32,
+    project_id: Option<String>,
+    offset: usize,
+    limit: usize,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryResult {
+    schema_version: u32,
+    runs: Vec<RunHistoryEntry>,
+    offset: usize,
+    limit: usize,
+    has_more: bool,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -185,7 +213,7 @@ fn source(value: &Value, project: &str) -> Result<(), StoreError> {
         &["projectId", "path", "version", "kind", "freshness"],
     )?;
     if value["projectId"].as_str() != Some(project)
-        || !["project_index", "file_preview", "tool"]
+        || !["project_index", "file_preview", "tool", "index_query"]
             .contains(&value["kind"].as_str().ok_or_else(invalid)?)
         || value["path"].as_str().is_none()
         || value["version"]
@@ -918,9 +946,7 @@ fn apply_commit(
     })
 }
 fn app_root(app: &tauri::AppHandle) -> Result<std::path::PathBuf, StoreError> {
-    Ok(app
-        .path()
-        .app_data_dir()
+    Ok(crate::app_profile::resolve_app_data_dir(app)
         .map_err(|_| error("unavailable", "native app data directory is unavailable"))?
         .join("run-store-v2"))
 }
@@ -931,6 +957,175 @@ fn trusted_project(project_id: &str) -> Result<crate::TrustedRootBinding, StoreE
             "current native trusted project identity is required",
         )
     })
+}
+fn list_history(store: &RunStore, input: &HistoryInput) -> Result<HistoryResult, StoreError> {
+    if input.schema_version != 1
+        || input.limit == 0
+        || input.limit > 100
+        || input.offset > 1_000_000
+    {
+        return Err(invalid());
+    }
+    if let Some(project) = &input.project_id {
+        record_id(project)?;
+    }
+    let mut runs = store.history_runs(
+        input.project_id.as_deref(),
+        None,
+        input.limit + 1,
+        input.offset,
+    )?;
+    let has_more = runs.len() > input.limit;
+    runs.truncate(input.limit);
+    Ok(HistoryResult {
+        schema_version: 1,
+        runs,
+        offset: input.offset,
+        limit: input.limit,
+        has_more,
+    })
+}
+
+const MAX_ARCHIVE_MESSAGES: usize = 10_000;
+const MAX_ARCHIVE_BODY_BYTES: usize = 16 * 1024 * 1024;
+const MAX_ARCHIVE_REVISIONS: i64 = 10_000;
+const MAX_ARCHIVE_EVENTS: usize = 10_000;
+
+fn read_archive(store: &RunStore, input: &SnapshotInput) -> Result<SnapshotResult, StoreError> {
+    if input.schema_version != 1 {
+        return Err(invalid());
+    }
+    record_id(&input.project_id)?;
+    record_id(&input.run_id)?;
+    let snapshot = store.snapshot(&input.project_id, &input.run_id)?;
+    let mut descriptor = store
+        .history_runs(Some(&input.project_id), Some(&input.run_id), 1, 0)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| error("notFound", "run does not exist in this project"))?;
+    // Descriptor rows may be newer if another process wrote after the snapshot.
+    // The archived conversation and displayed status remain pinned to its revision.
+    descriptor.status = snapshot.run.status;
+    descriptor.updated_at = snapshot.run.updated_at;
+    descriptor.has_unresolved_effects |= snapshot.has_unknown_external_effects
+        || snapshot
+            .steps
+            .iter()
+            .any(|step| matches!(step.status, ActionStatus::InFlight | ActionStatus::Unknown))
+        || snapshot.changesets.iter().any(|change| {
+            matches!(
+                change.status,
+                ActionStatus::InFlight | ActionStatus::Unknown
+            )
+        });
+    let batch = store.checkpoint_batch(&input.project_id, &input.run_id, snapshot.run.revision)?;
+    let coordinator_state = batch.and_then(|batch| {
+        batch
+            .events
+            .into_iter()
+            .find(|event| event.kind == "coordinator_state_v1")
+            .map(|event| event.data)
+    });
+    if let Some(state) = &coordinator_state {
+        safe_value(state, 0)?;
+    }
+    let stored_message_count = coordinator_state
+        .as_ref()
+        .and_then(|state| state["messageCount"].as_u64())
+        .and_then(|count| usize::try_from(count).ok());
+    let mut messages = Vec::new();
+    let mut events = Vec::new();
+    let mut body_bytes = 0usize;
+    let mut event_bytes = 0usize;
+    let mut reason = None;
+    'revisions: for revision in 1..=snapshot.run.revision {
+        if revision > MAX_ARCHIVE_REVISIONS {
+            reason = Some("revisionLimit".into());
+            break;
+        }
+        let Some(batch) = store.checkpoint_batch(&input.project_id, &input.run_id, revision)?
+        else {
+            reason = Some("missingCheckpoint".into());
+            break;
+        };
+        for message in batch.messages {
+            if messages.len() >= MAX_ARCHIVE_MESSAGES
+                || body_bytes.saturating_add(message.body.len()) > MAX_ARCHIVE_BODY_BYTES
+            {
+                reason = Some("displayLimit".into());
+                break 'revisions;
+            }
+            // Bodies belong to this run's immutable batches, never all messages in
+            // the session (which could also contain other runs).
+            if message.id != format!("{}:message:{}", input.run_id, messages.len() + 1) {
+                reason = Some("messageSequenceMismatch".into());
+                break 'revisions;
+            }
+            provider_body(&message.body, message.role)?;
+            body_bytes += message.body.len();
+            messages.push(message);
+        }
+        for event in batch.events {
+            let bytes = serde_json::to_vec(&event).map_err(|_| invalid())?.len();
+            if events.len() >= MAX_ARCHIVE_EVENTS
+                || event_bytes.saturating_add(bytes) > MAX_ARCHIVE_BODY_BYTES
+            {
+                reason = Some("eventDisplayLimit".into());
+                break 'revisions;
+            }
+            safe_value(&event.data, 0)?;
+            event_bytes += bytes;
+            events.push(event);
+        }
+    }
+    if reason.is_none() && stored_message_count != Some(messages.len()) {
+        // A run with no checkpoint genuinely has no saved conversation yet.
+        if snapshot.run.revision != 0 {
+            reason = Some("messageCountMismatch".into());
+        }
+    }
+    let stored_message_count = if snapshot.run.revision == 0 {
+        Some(0)
+    } else {
+        stored_message_count
+    };
+    let completeness = ArchiveCompleteness {
+        complete: reason.is_none(),
+        loaded_message_count: messages.len(),
+        stored_message_count,
+        reason,
+    };
+    Ok(SnapshotResult {
+        schema_version: 1,
+        descriptor,
+        snapshot,
+        coordinator_state,
+        messages,
+        events,
+        completeness,
+    })
+}
+
+/// Reads descriptors only from the managed app archive; no project trust is inferred.
+#[tauri::command]
+pub async fn list_native_run_history(
+    app: tauri::AppHandle,
+    input: HistoryInput,
+) -> Result<HistoryResult, StoreError> {
+    if input.schema_version != 1
+        || input.limit == 0
+        || input.limit > 100
+        || input.offset > 1_000_000
+    {
+        return Err(invalid());
+    }
+    if let Some(project) = &input.project_id {
+        record_id(project)?;
+    }
+    let root = app_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || list_history(&RunStore::open(root)?, &input))
+        .await
+        .map_err(|_| error("unavailable", "native record worker did not complete"))?
 }
 #[tauri::command]
 pub async fn commit_native_run_store(
@@ -959,27 +1154,13 @@ pub async fn snapshot_native_run_store(
     }
     record_id(&input.project_id)?;
     record_id(&input.run_id)?;
-    trusted_project(&input.project_id)?;
     let root = app_root(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        trusted_project(&input.project_id)?;
+        // Reading this app's own archive requires no current project authority.
+        // The project/run pair still scopes every database read; the descriptor
+        // cannot be used as authority to read the external project filesystem.
         let store = RunStore::open(root)?;
-        let snapshot = store.snapshot(&input.project_id, &input.run_id)?;
-        // The immutable batch is requested by the coherent snapshot's exact revision.
-        let batch =
-            store.checkpoint_batch(&input.project_id, &input.run_id, snapshot.run.revision)?;
-        let coordinator_state = batch.and_then(|batch| {
-            batch
-                .events
-                .into_iter()
-                .find(|event| event.kind == "coordinator_state_v1")
-                .map(|event| event.data)
-        });
-        Ok(SnapshotResult {
-            schema_version: 1,
-            snapshot,
-            coordinator_state,
-        })
+        read_archive(&store, &input)
     })
     .await
     .map_err(|_| error("unavailable", "native record worker did not complete"))?
@@ -1326,5 +1507,139 @@ mod tests {
     fn native_run_store_bridge_requires_current_native_project_authority() {
         let rejected = trusted_project("__unregistered_run_store_bridge_test__").unwrap_err();
         assert_eq!(rejected.kind, "untrustedProject");
+    }
+    #[test]
+    fn native_run_history_catalog_and_exact_archive_survive_restart_without_project_trust() {
+        let fixture = BridgeFixture::new();
+        let store = fixture.store();
+        apply_commit(&store, &input(first_commit()), &fixture.project_root()).unwrap();
+        apply_commit(&store, &input(observed_commit()), &fixture.project_root()).unwrap();
+        // A second run in the same session must never appear in the first run's bodies.
+        store
+            .start_run(
+                "A",
+                &NewRun {
+                    id: "other-run".into(),
+                    session_id: "chat".into(),
+                    goal: "Unrelated run".into(),
+                    created_at: 102,
+                },
+            )
+            .unwrap();
+        store
+            .append_messages(
+                "A",
+                "chat",
+                &[NewMessage {
+                    id: "other-run:message:1".into(),
+                    role: Role::User,
+                    body: "UNRELATED SESSION BODY".into(),
+                    created_at: 102,
+                }],
+            )
+            .unwrap();
+        drop(store);
+        // Archive reads must not inspect or require this external project path.
+        std::fs::remove_dir(fixture.project_root()).unwrap();
+        let store = fixture.store();
+        assert!(trusted_project("A").is_err());
+        let page = list_history(
+            &store,
+            &HistoryInput {
+                schema_version: 1,
+                project_id: None,
+                offset: 0,
+                limit: 1,
+            },
+        )
+        .unwrap();
+        assert_eq!(page.runs.len(), 1);
+        assert!(page.has_more);
+        assert_eq!(page.runs[0].project_id, "A");
+        assert_eq!(page.runs[0].session_id, "chat");
+        assert!(page.runs[0].project_root.contains("project"));
+        let saved = read_archive(
+            &store,
+            &SnapshotInput {
+                schema_version: 1,
+                project_id: "A".into(),
+                run_id: "run".into(),
+            },
+        )
+        .unwrap();
+        assert!(saved.completeness.complete);
+        assert_eq!(saved.messages.len(), 5);
+        assert_eq!(saved.completeness.stored_message_count, Some(5));
+        assert_eq!(saved.events.len(), 6);
+        assert!(!saved
+            .messages
+            .iter()
+            .any(|message| message.body.contains("UNRELATED SESSION BODY")));
+        assert!(saved.snapshot.requires_fresh_authorization);
+        assert!(!saved.descriptor.has_unresolved_effects);
+        assert_eq!(
+            read_archive(
+                &store,
+                &SnapshotInput {
+                    schema_version: 1,
+                    project_id: "B".into(),
+                    run_id: "run".into()
+                }
+            )
+            .unwrap_err()
+            .kind,
+            "notFound"
+        );
+        assert!(list_history(
+            &store,
+            &HistoryInput {
+                schema_version: 1,
+                project_id: Some("B".into()),
+                offset: 0,
+                limit: 30
+            }
+        )
+        .unwrap()
+        .runs
+        .is_empty());
+        assert!(list_history(
+            &store,
+            &HistoryInput {
+                schema_version: 1,
+                project_id: None,
+                offset: 0,
+                limit: 101
+            }
+        )
+        .is_err());
+    }
+    #[test]
+    fn native_run_history_unknown_effects_and_oversized_archive_are_explicit() {
+        let fixture = BridgeFixture::new();
+        let store = fixture.store();
+        let mut commit = first_commit();
+        let envelope = serde_json::json!({"format":"uagent.provider-message.v1","message":{"role":"user","content":"x".repeat(MAX_ARCHIVE_BODY_BYTES)}}).to_string();
+        commit["batch"]["messages"][2]["body"] = envelope.into();
+        apply_commit(&store, &input(commit), &fixture.project_root()).unwrap();
+        let saved = read_archive(
+            &store,
+            &SnapshotInput {
+                schema_version: 1,
+                project_id: "A".into(),
+                run_id: "run".into(),
+            },
+        )
+        .unwrap();
+        assert!(saved.descriptor.has_unresolved_effects);
+        assert!(!saved.completeness.complete);
+        assert_eq!(saved.completeness.reason.as_deref(), Some("displayLimit"));
+        assert_eq!(saved.completeness.loaded_message_count, 2);
+        assert_eq!(saved.completeness.stored_message_count, Some(4));
+    }
+    #[test]
+    fn native_run_history_accepts_descriptive_index_query_sources_without_file_freshness() {
+        let value = serde_json::json!({"projectId":"A","path":"Source","version":"index-revision-2","kind":"index_query"});
+        source(&value, "A").unwrap();
+        assert!(source(&value, "B").is_err());
     }
 }

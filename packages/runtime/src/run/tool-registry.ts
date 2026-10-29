@@ -320,7 +320,7 @@ export class ToolRegistry {
           typeof source.path !== "string" ||
           typeof source.version !== "string" || !source.version ||
           (source.freshness!==undefined&&(typeof source.freshness!=="string"||!source.freshness||source.freshness.length>256)) ||
-          !["project_index", "file_preview", "tool"].includes(String(source.kind))
+          !["project_index", "index_query", "file_preview", "tool"].includes(String(source.kind))
         ) {
           return failed("invalid_tool_sources");
         }

@@ -23,6 +23,7 @@ export interface NativeProjectAdapterOptions {
 }
 
 export interface NativeSourceInspection {
+  rootCurrent:boolean;
   projectId:string;
   sources:Array<{path:string;status:"ready"|"missing"|"blocked";version:string|null}>;
 }
@@ -253,6 +254,7 @@ export function createNativeProjectAdapter(
     const projects = new Map<string, ProjectProfile>();
     const stableSnapshots = new Map<string, ProjectIndexSnapshot>();
     const scanGenerations = new Map<string, number>();
+    const indexEpoch=crypto.randomUUID();
     const rawPaths = new Map<string, string>();
 
     function resolveRawRoot(projectId: string, opaqueRef: string): string {
@@ -363,12 +365,12 @@ export function createNativeProjectAdapter(
       getStableSnapshot(id) {
         return stableSnapshots.get(id) ?? null;
       },
-      getIndexRevision(id) {const snapshot=stableSnapshots.get(id);return snapshot?snapshot.id+":"+(scanGenerations.get(id)??0):null;},
+      getIndexRevision(id) {const snapshot=stableSnapshots.get(id);return snapshot?indexEpoch+":"+snapshot.id+":"+(scanGenerations.get(id)??0):null;},
       async inspectSources(projectId,paths) {
         const p=projects.get(projectId);
         if(!p||p.trustState!=="trusted"||paths.length>64)throw Error("source_inspection_unavailable");
         const result=await invoke<NativeSourceInspection>("inspect_native_project_sources",{input:{projectId,paths}});
-        if(projects.get(projectId)!==p||!result||result.projectId!==projectId||!Array.isArray(result.sources)||result.sources.length!==paths.length||result.sources.some((entry,index)=>entry.path!==paths[index]||!["ready","missing","blocked"].includes(entry.status)||(entry.status==="ready"?(typeof entry.version!=="string"||entry.version.length===0||entry.version.length>256):entry.version!==null)))throw Error("source_inspection_invalid");
+        if(projects.get(projectId)!==p||!result||typeof result.rootCurrent!=="boolean"||result.projectId!==projectId||!Array.isArray(result.sources)||result.sources.length!==paths.length||result.sources.some((entry,index)=>entry.path!==paths[index]||!["ready","missing","blocked"].includes(entry.status)||(entry.status==="ready"?(typeof entry.version!=="string"||entry.version.length===0||entry.version.length>256):entry.version!==null)))throw Error("source_inspection_invalid");
         return result;
       },
       async previewFile(projectId, rootRef, rootRelativePath, byteLimit = 4096, lineLimit = 80) {

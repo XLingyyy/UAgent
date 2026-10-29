@@ -134,6 +134,19 @@ record!(Run {
     created_at: i64,
     updated_at: i64
 });
+// Descriptive catalog data from this app's archive, never project authority.
+record!(RunHistoryEntry {
+    project_id: String,
+    project_label: String,
+    project_root: String,
+    session_id: String,
+    session_title: String,
+    run_id: String,
+    goal: String,
+    status: RunStatus,
+    updated_at: i64,
+    has_unresolved_effects: bool
+});
 record!(Step { id: String, title: String, status: ActionStatus, depends_on: Vec<String> });
 record!(ToolCall { id: String, step_id: String, tool_name: String, arguments: serde_json::Value, result: Option<serde_json::Value>, status: ActionStatus });
 record!(RunEvent {
@@ -662,6 +675,40 @@ impl RunStore {
     ) -> Result<Vec<Run>> {
         let (limit, offset) = page(limit, offset)?;
         self.db.query("SELECT id,session_id,goal,status,revision,created_at,updated_at FROM runs WHERE project_id=? AND session_id=? ORDER BY created_at,id LIMIT ? OFFSET ?", &[project.into(),session.into(),limit.into(),offset.into()])?.iter().map(|r| run_row(project,r)).collect()
+    }
+    /// A bounded, read-only catalog across the app's own saved projects. Root strings
+    /// are returned verbatim as descriptors; this query never opens a project path.
+    pub fn history_runs(
+        &self,
+        project: Option<&str>,
+        run: Option<&str>,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<RunHistoryEntry>> {
+        if let Some(project) = project { id(project)?; }
+        if let Some(run) = run { id(run)?; }
+        if limit == 0 || limit > 101 || offset > 1_000_000 {
+            return Err(StoreError::invalid("history page is out of range"));
+        }
+        let filter = project.map(Value::from).unwrap_or(Value::Null);
+        let run_filter = run.map(Value::from).unwrap_or(Value::Null);
+        self.db.query(
+            "SELECT p.id,p.label,p.root,s.id,s.title,r.id,r.goal,r.status,r.updated_at,
+             (r.status='needsReconciliation' OR
+              EXISTS(SELECT 1 FROM tool_calls t WHERE t.project_id=r.project_id AND t.run_id=r.id AND json_extract(t.payload,'$.status') IN ('inFlight','unknown')) OR
+              EXISTS(SELECT 1 FROM steps t WHERE t.project_id=r.project_id AND t.run_id=r.id AND json_extract(t.payload,'$.status') IN ('inFlight','unknown')) OR
+              EXISTS(SELECT 1 FROM changesets t WHERE t.project_id=r.project_id AND t.run_id=r.id AND json_extract(t.payload,'$.status') IN ('inFlight','unknown')))
+             FROM runs r JOIN projects p ON p.id=r.project_id
+             JOIN sessions s ON s.project_id=r.project_id AND s.id=r.session_id
+             WHERE (? IS NULL OR r.project_id=?) AND (? IS NULL OR r.id=?)
+             ORDER BY r.updated_at DESC,r.project_id,r.id LIMIT ? OFFSET ?",
+            &[filter.clone(), filter, run_filter.clone(), run_filter, (limit as i64).into(), (offset as i64).into()],
+        )?.into_iter().map(|row| Ok(RunHistoryEntry {
+            project_id: row[0].text()?, project_label: row[1].text()?, project_root: row[2].text()?,
+            session_id: row[3].text()?, session_title: row[4].text()?, run_id: row[5].text()?,
+            goal: row[6].text()?, status: RunStatus::parse(&row[7].text()?)?, updated_at: row[8].int()?,
+            has_unresolved_effects: row[9].int()? != 0,
+        })).collect()
     }
     /// The run revision, messages, results, events, artifacts and checkpoint commit
     /// together. Write intent BEFORE external execution; persist observed result AFTER.

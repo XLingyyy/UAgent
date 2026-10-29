@@ -59,7 +59,7 @@ function checkedResult(message: ProviderRuntimeMessage, scope: TaskRunScope): Ru
       s.projectId !== scope.projectId ||
       typeof s.version !== "string" ||
       !s.version ||
-      !["project_index", "file_preview", "tool"].includes(s.kind) ||
+      !["project_index", "index_query", "file_preview", "tool"].includes(s.kind) ||
       !isRunPathAllowed(s.path, scope.readPrefixes) ||
       !isRunPathAllowed(s.path, scope.sharePrefixes) ||
       (s.freshness !== undefined && (typeof s.freshness !== "string" || !s.freshness))
@@ -135,7 +135,7 @@ function groups(
       messages: copy(records.slice(start, i)),
       sources,
       category:
-        sources.length && sources.every((s) => s.kind === "project_index")
+        sources.length && sources.every((s) => s.kind === "project_index" || s.kind === "index_query")
           ? "project_fact"
           : "tool_result",
       score: keywords.filter((w) => paths.includes(w)).length * 100 + start,

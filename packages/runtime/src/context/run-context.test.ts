@@ -3,6 +3,7 @@ import type {
   ProviderRuntimeMessage,
   ProviderRuntimeRequest,
   RunStoreCommit,
+  RunJsonValue,
   TaskDraft,
   TaskRun,
   TaskRunScope,
@@ -369,7 +370,7 @@ describe("context selection at actual coordinator/provider boundaries, synthetic
     ).toBe(true);
     expect(requests.at(-1)!.messages.filter((m) => m.role === "tool").length).toBeLessThan(5);
   });
-  it("rechecks source version after a real exact-body approval and prevents the stale second fetch", async () => {
+  it.each(["file_preview", "index_query"] as const)("rechecks %s after exact-body approval and prevents the stale second fetch", async (sourceKind) => {
     const s = scope();
     s.providerId = "deepseek";
     s.modelId = DEEPSEEK_MODEL;
@@ -422,14 +423,14 @@ describe("context selection at actual coordinator/provider boundaries, synthetic
         execute: async () => ({
           status: "completed",
           effectState: "not_started",
-          output: { text: "value 7" },
+          output: (sourceKind === "index_query" ? { files: [], total: 0 } : { text: "value 7" }) as RunJsonValue,
           sources: [
             {
               projectId: "A",
               path: "Source/Main.cpp",
               version: "hash1",
-              kind: "file_preview",
-              freshness: "stamp1",
+              kind: sourceKind,
+              ...(sourceKind === "file_preview" ? { freshness: "stamp1" } : {}),
             },
           ],
           truncated: false,
@@ -447,7 +448,12 @@ describe("context selection at actual coordinator/provider boundaries, synthetic
     await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
     await vi.waitFor(() => expect(gate.getPending()).not.toBeNull());
     const approved = gate.getPending()!.envelope.body;
-    expect(approved).toContain("stamp1");
+    expect(approved).toContain(sourceKind === "file_preview" ? "stamp1" : "index_query");
+    if (sourceKind === "index_query") {
+      const envelope = JSON.parse(approved);
+      const result = envelope.messages.find((message: { role: string }) => message.role === "tool");
+      expect(JSON.parse(result.content).output).toEqual({ files: [], total: 0 });
+    }
     current = false;
     gate.approve(gate.getPending()!.id);
     const result = await promise;

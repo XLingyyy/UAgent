@@ -7,6 +7,7 @@ function fixture() {
     revision = "index:1",
     stamp = "stamp1";
   const inspect = vi.fn(async (projectId: string, paths: string[]) => ({
+    rootCurrent:true,
     projectId,
     sources: paths.map((path) => ({ path, status: "ready" as const, version: stamp })),
   }));
@@ -97,6 +98,7 @@ describe("live native context source validation", () => {
     f.inspect.mockImplementation(async (projectId, paths) => {
       f.revoke();
       return {
+        rootCurrent:true,
         projectId,
         sources: paths.map((path) => ({ path, status: "ready" as const, version: "stamp1" })),
       };

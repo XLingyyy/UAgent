@@ -2,7 +2,6 @@
 use serde::{Serialize,Deserialize};
 use sha2::{Digest,Sha256};
 use std::{fs,io::{Read,Write},path::{Path,PathBuf}};
-use tauri::Manager;
 use crate::provider_budget::{lock,open_file};
 const MAX_BYTES:u64=2_097_152;
 #[derive(Debug,Clone,Serialize,Deserialize,PartialEq)]
@@ -73,7 +72,7 @@ fn save(root:&Path,input:SaveInput)->Result<VersionedWorkspace,String>{
     if file.metadata().map_err(|_|err())?.len()+bytes.len()as u64>MAX_BYTES{return Err("local_workspace_capacity_reached".into());}
     file.write_all(&bytes).and_then(|_|file.sync_all()).map_err(|_|err())?;Ok(data)
 }
-fn app_root(app:&tauri::AppHandle)->Result<PathBuf,String>{Ok(app.path().app_data_dir().map_err(|_|err())?.join("workspace-v1"))}
+fn app_root(app:&tauri::AppHandle)->Result<PathBuf,String>{Ok(crate::app_profile::resolve_app_data_dir(app).map_err(|_|err())?.join("workspace-v1"))}
 #[tauri::command]
 pub fn read_local_workspace(app:tauri::AppHandle)->Result<Option<VersionedWorkspace>,String>{read(&app_root(&app)?)}
 #[tauri::command]

@@ -3,7 +3,6 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, fs::{self, File, OpenOptions}, io::{Read, Write}, path::{Path, PathBuf}};
-use tauri::Manager;
 
 const CAMPAIGN: &str = "uagent-flash-validation-20261026";
 const LIMIT: u64 = 10_000_000;
@@ -135,7 +134,7 @@ fn usage(root: &Path, id: &str, input: u64, output: u64) -> Result<(),String> {
     append(root, journal.entries, &journal.last_hash, Event::Usage { id: id.into(), input, output }, false)
 }
 fn app_root(app: &tauri::AppHandle) -> Result<PathBuf,String> {
-    Ok(app.path().app_data_dir().map_err(|_| error("app_data_unavailable"))?.join("flash-budget-v1"))
+    Ok(crate::app_profile::resolve_app_data_dir(app).map_err(|_| error("app_data_unavailable"))?.join("flash-budget-v1"))
 }
 #[derive(Deserialize)]
 #[serde(rename_all="camelCase", deny_unknown_fields)]

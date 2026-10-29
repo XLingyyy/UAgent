@@ -147,7 +147,7 @@ function sourceRef(source: RunToolResult["sources"][number], projectId: string):
   knownKeys(source, ["projectId", "path", "version", "kind", "freshness"]);
   if (
     source.projectId !== projectId ||
-    !["project_index", "file_preview", "tool"].includes(source.kind)
+    !["project_index", "index_query", "file_preview", "tool"].includes(source.kind)
   )
     fail("source_scope");
   if (!source.version) fail("source_version");

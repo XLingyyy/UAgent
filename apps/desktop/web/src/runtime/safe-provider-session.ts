@@ -1,4 +1,6 @@
 import {createDeepSeekAccountSession,createDeepSeekSession,createProviderRuntimeError,DEEPSEEK_MODEL,DEEPSEEK_ENDPOINT,DEEPSEEK_CAMPAIGN,type DeepSeekConsent,type DeepSeekBudgetStore,type ProviderAdapter,type ProviderCallOptions,type OutboundConsentGate} from "@uagent/runtime";
+import {getApplicationProfile} from "./application-profile";
+import {createOfflineDemoFetcher} from "./offline-demo-transport";
 import {outboundReviewGate} from "./outbound-review-store";
 import {attachmentStore, type createAttachmentStore} from "./attachment-store";
 
@@ -88,4 +90,5 @@ export function createSafeProviderSession(options:{mode:"offline"|"live";liveAut
 export type SafeProviderSession=ReturnType<typeof createSafeProviderSession>;
 // Local setup is available; no session exists until the user explicitly opens one.
 // Never load a chat secret, environment key, saved credential or automatic transport.
-export const safeProviderSession=createSafeProviderSession({mode:"live",liveAuthorized:true});
+const localProfile=getApplicationProfile();
+export const safeProviderSession=createSafeProviderSession(localProfile.offlineDemo?{mode:"offline",fetcher:createOfflineDemoFetcher()}:{mode:"live",liveAuthorized:true});

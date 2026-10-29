@@ -1,0 +1,88 @@
+export const historyRunMessages = {
+  "historyRun.continueHint":["已选择历史记录。请重新信任项目、开启会话并确认本次范围；旧索引会重新查询。","Saved context selected. Trust the project, open a new session and review scope; old index queries run again."],
+  "historyRun.events": ["当时保存的任务事件", "Saved task events"],
+  "historyRun.partialStream": [
+    "以下是中断前保存的部分助手回复，不代表完整答案。",
+    "The following is a partial assistant response saved before interruption. It is not a completed answer.",
+  ],
+  "historyRun.open": ["历史任务", "Task history"],
+  "historyRun.title": ["本地任务历史", "Local task history"],
+  "historyRun.close": ["关闭历史", "Close history"],
+  "historyRun.localOnly": [
+    "这些记录来自本机归档。查看记录不会读取项目文件或发送请求。",
+    "These records come from this device's archive. Viewing them does not read project files or send requests.",
+  ],
+  "historyRun.allProjects": ["所有已记录项目", "All recorded projects"],
+  "historyRun.currentProject": ["当前项目", "Current project"],
+  "historyRun.filter": ["历史范围", "History filter"],
+  "historyRun.refresh": ["刷新", "Refresh"],
+  "historyRun.loading": ["正在读取本地历史…", "Reading local history…"],
+  "historyRun.empty": ["此范围内没有已保存的任务。", "No saved tasks in this scope."],
+  "historyRun.unavailable": [
+    "无法读取本地历史。请重试。",
+    "Local history could not be read. Try again.",
+  ],
+  "historyRun.select": [
+    "选择一条记录查看完整对话。",
+    "Select a record to view its full conversation.",
+  ],
+  "historyRun.previous": ["上一页", "Previous page"],
+  "historyRun.next": ["下一页", "Next page"],
+  "historyRun.page": ["第 {page} 页", "Page {page}"],
+  "historyRun.session": ["会话：{title}", "Session: {title}"],
+  "historyRun.run": ["任务：{id}", "Run: {id}"],
+  "historyRun.updated": ["保存时间：{time}", "Saved: {time}"],
+  "historyRun.archivedRoot": [
+    "归档的项目位置（需要重新确认信任）：{root}",
+    "Archived project location (requires renewed trust): {root}",
+  ],
+  "historyRun.complete": [
+    "已显示此任务保存的全部 {count} 条消息正文。",
+    "Showing all {count} message bodies saved for this run.",
+  ],
+  "historyRun.incomplete": [
+    "此归档不完整或超出显示限制，不能据此继续任务。已显示 {count} 条消息。",
+    "This archive is incomplete or exceeds the display limit. It cannot be used to continue. Showing {count} messages.",
+  ],
+  "historyRun.noMessages": [
+    "此任务尚未保存对话正文。",
+    "No conversation bodies were saved for this run.",
+  ],
+  "historyRun.user": ["你", "You"],
+  "historyRun.assistant": ["助手", "Assistant"],
+  "historyRun.toolRecords": [
+    "工具记录（完整参数与结果）",
+    "Tool records (full arguments and results)",
+  ],
+  "historyRun.contextPlan": ["当时的上下文计划与来源", "Saved context plan and sources"],
+  "historyRun.systemRecords": ["当时的系统与开发者消息", "Saved system and developer messages"],
+  "historyRun.continue": ["以此记录开始新任务…", "Start a new task from this record…"],
+  "historyRun.freshAuthorization": [
+    "将建立关联的新任务；需重新确认项目、只读范围、凭证及实际发送正文。旧授权不会恢复。",
+    "This creates a linked new task. Review the project, read-only scope, credentials and actual outbound body again. Previous approvals are not restored.",
+  ],
+  "historyRun.shareCompleted": [
+    "允许为新任务选择已完成的只读工具记录作为上下文（发送前仍需核对当前路径、来源并确认正文）",
+    "Allow completed read-only tool records to be selected as context for the new task (current paths, sources and the outbound body still require review)",
+  ],
+  "historyRun.reconciliation": [
+    "存在结果未知或尚在执行中的操作。需先核对实际结果，不能从此记录开始新任务。",
+    "An operation has an unknown outcome or was in flight. Reconcile its actual outcome before starting a new task from this record.",
+  ],
+  "historyRun.noCoordinator": [
+    "此记录没有可核对的协调器状态，仅可查看。",
+    "This record has no verifiable coordinator state and is available for viewing only.",
+  ],
+  "historyRun.preparing": ["正在准备新的授权检查…", "Preparing fresh authorization review…"],
+  "historyRun.continueFailed": [
+    "无法准备新任务；请检查项目并重试。",
+    "The new task could not be prepared. Check the project and try again.",
+  ],
+  "historyRun.status.created": ["已创建", "Created"],
+  "historyRun.status.running": ["运行时保存", "Saved while running"],
+  "historyRun.status.paused": ["已暂停", "Paused"],
+  "historyRun.status.succeeded": ["已完成", "Completed"],
+  "historyRun.status.failed": ["已失败", "Failed"],
+  "historyRun.status.cancelled": ["已取消", "Cancelled"],
+  "historyRun.status.needsReconciliation": ["需核对结果", "Needs reconciliation"],
+} as const;

@@ -119,6 +119,8 @@ export interface ThreadStoreState {
 
 /** Composer dock local-only UI state. */
 export interface ComposerStoreState {
+  taskMode?: "discussion"|"investigation";
+  savedRun?:import("@uagent/shared").SavedRunContinuation;
   input: string;
   submitting?: boolean;
   submitError?: string | null;
@@ -226,6 +228,8 @@ export interface ThreadStoreActions {
 }
 
 export interface ComposerStoreActions {
+  setComposerTaskMode:(mode:"discussion"|"investigation")=>void;
+  setSavedRun:(saved:import("@uagent/shared").SavedRunContinuation|undefined)=>void;
   pauseTaskRun?:RuntimeStoreActions["pauseTaskRun"];
   resumeTaskRun?:RuntimeStoreActions["resumeTaskRun"];
   setComposerInput: SetComposerInput;

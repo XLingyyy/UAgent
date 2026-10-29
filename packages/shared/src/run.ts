@@ -53,7 +53,7 @@ export interface RunSourceRef {
   projectId: string;
   path: string;
   version: string;
-  kind: "project_index" | "file_preview" | "tool";
+  kind: "project_index" | "index_query" | "file_preview" | "tool";
   /** Native metadata freshness stamp; descriptive, never authorization. */
   freshness?: string;
 }

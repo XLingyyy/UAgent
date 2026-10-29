@@ -65,7 +65,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const activeTask=useRuntimeStore(state=>state.activeTaskId?state.tasksById[state.activeTaskId]:null);
   const canStop=Boolean(activeTask&&!(["completed","failed","cancelled"] as string[]).includes(activeTask.state));
   const [stopError,setStopError]=useState<string|null>(null);
-  const [investigation,setInvestigation]=useState(false);
+  const investigation=composer.taskMode==="investigation";
   const pauseReason=useRuntimeStore(state=>{const id=state.activeTaskId;if(!id)return null;const event=(state.eventsByTaskId[id]??[]).filter(e=>e.type==="approval_required").at(-1);return (event?.payload as {run?:{stopReason?:string}}|undefined)?.run?.stopReason??null;});
   const session = useSyncExternalStore(safeProviderSession.subscribe, safeProviderSession.getSnapshot, safeProviderSession.getSnapshot);
   const provider = useProviderStore((state) => state);
@@ -76,6 +76,8 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const { setActiveProject } = useProjectActions();
   const { openSettings } = useSettingsActions();
   const {
+    setComposerTaskMode,
+    setSavedRun,
     setComposerInput,
     setComposerAttachMenuOpen,
     setComposerPermission,
@@ -123,13 +125,13 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
     const selected = providerModelOptions.find((option) => option.id === selectedModelId);
     try {
       await submitComposerTask({
-        input: trimmedInput, projectId: activeProjectId, taskMode:investigation?"investigation":"discussion",
+        input: trimmedInput, projectId: activeProjectId, taskMode:investigation?"investigation":"discussion", ...(investigation&&composer.savedRun?{savedRun:composer.savedRun}:{}),
         permissionMode: toSharedPermissionMode(permission),
         modelId: selected?.modelId ?? "not-configured", providerId: selected?.providerId ?? null,
         reasoningEffort, runMode, branch: null, contextPercent: null, providerStatus,
       });
     } catch { /* Store owns the safe, retryable error; keep the user's input. */ }
-    finally { submitting.current = false; setInvestigation(false); }
+    finally { submitting.current = false; }
   };
 
   return (
@@ -165,7 +167,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
           </div>
 
           <PermissionSelector value={permission} onChange={setComposerPermission} />
-          <button type="button" className="ua-composer__mode-btn" aria-label={t("run.modeLabel")} aria-pressed={investigation} disabled={composer.submitting||canStop} onClick={()=>setInvestigation(value=>!value)}>{t(investigation?"run.investigate":"run.discussion")}</button>
+          <button type="button" className="ua-composer__mode-btn" aria-label={t("run.modeLabel")} aria-pressed={investigation} disabled={composer.submitting||canStop} onClick={()=>setComposerTaskMode(investigation?"discussion":"investigation")}>{t(investigation?"run.investigate":"run.discussion")}</button>
         </div>
 
         <div className="ua-composer__input-zone">
@@ -207,6 +209,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         </div>
       </div>
 
+      {composer.savedRun&&<p role="status">{t("historyRun.continueHint")} <button type="button" className="ua-btn" onClick={()=>setSavedRun(undefined)}>{t("common.cancel")}</button></p>}
       {stopError&&<p role="alert">{uiText(stopError)}</p>}
       {composer.submitError && <p role="alert">{composer.submitError==="run.scopeCancelled"?t("run.scopeCancelled"):composer.submitError==="run.scopeNeedsProject"?t("run.scopeNeedsProject"):composer.submitError==="run.scopeExpired"?t("run.scopeExpired"):uiText(composer.submitError)}</p>}
       {suggestionCard && (
