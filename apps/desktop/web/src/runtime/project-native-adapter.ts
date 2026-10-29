@@ -22,6 +22,10 @@ export interface NativeProjectAdapterOptions {
   now?: () => number;
 }
 
+export interface NativeSourceInspection {
+  projectId:string;
+  sources:Array<{path:string;status:"ready"|"missing"|"blocked";version:string|null}>;
+}
 export interface NativeProjectAdapter {
   listProjects(): ProjectProfile[];
   getProject(id: string): ProjectProfile | null;
@@ -34,6 +38,8 @@ export interface NativeProjectAdapter {
   scanProject(id: string): Promise<{ snapshot: ProjectIndexSnapshot; events: string[] }>;
   cancelScan(id: string): Promise<{ snapshot: ProjectIndexSnapshot; events: string[] }>;
   getStableSnapshot(id: string): ProjectIndexSnapshot | null;
+  getIndexRevision?(id:string):string|null;
+  inspectSources?(projectId:string,paths:string[]):Promise<NativeSourceInspection>;
   previewFile(
     projectId: string,
     rootRef: string,
@@ -74,6 +80,8 @@ type NativeScanResult = Partial<ProjectIndexSnapshot> & {
 
 type NativePreviewResult = Partial<SafeFilePreviewResult> & {
   truncated?: boolean;
+  lineCountComplete?: boolean;
+  observedLines?: number;
   originalBytes?: number;
   originalLines?: number;
   replacedSecrets?: number;
@@ -221,6 +229,8 @@ function normalizePreview(
         lineLimit,
         originalBytes: raw.originalBytes ?? raw.original_bytes ?? 0,
         originalLines: raw.originalLines ?? raw.original_lines ?? 0,
+        ...(raw.lineCountComplete===undefined?{}:{lineCountComplete:raw.lineCountComplete}),
+        ...(raw.observedLines===undefined?{}:{observedLines:raw.observedLines}),
       },
     redaction:
       raw.redaction ?? {
@@ -352,6 +362,14 @@ export function createNativeProjectAdapter(
       },
       getStableSnapshot(id) {
         return stableSnapshots.get(id) ?? null;
+      },
+      getIndexRevision(id) {const snapshot=stableSnapshots.get(id);return snapshot?snapshot.id+":"+(scanGenerations.get(id)??0):null;},
+      async inspectSources(projectId,paths) {
+        const p=projects.get(projectId);
+        if(!p||p.trustState!=="trusted"||paths.length>64)throw Error("source_inspection_unavailable");
+        const result=await invoke<NativeSourceInspection>("inspect_native_project_sources",{input:{projectId,paths}});
+        if(projects.get(projectId)!==p||!result||result.projectId!==projectId||!Array.isArray(result.sources)||result.sources.length!==paths.length||result.sources.some((entry,index)=>entry.path!==paths[index]||!["ready","missing","blocked"].includes(entry.status)||(entry.status==="ready"?(typeof entry.version!=="string"||entry.version.length===0||entry.version.length>256):entry.version!==null)))throw Error("source_inspection_invalid");
+        return result;
       },
       async previewFile(projectId, rootRef, rootRelativePath, byteLimit = 4096, lineLimit = 80) {
         const rawRoot = resolveRawRoot(projectId, rootRef);

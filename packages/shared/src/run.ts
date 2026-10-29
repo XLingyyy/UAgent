@@ -54,6 +54,8 @@ export interface RunSourceRef {
   path: string;
   version: string;
   kind: "project_index" | "file_preview" | "tool";
+  /** Native metadata freshness stamp; descriptive, never authorization. */
+  freshness?: string;
 }
 
 export interface RunToolCall {
@@ -144,11 +146,35 @@ export interface RunCheckpoint {
 
 /** One local transaction for state, ordered events, messages and checkpoint. */
 export interface RunStoreCommit {
+  contextPlan?: RunContextPlan;
   run: TaskRun;
   events: RunEvent[];
   messages: ProviderRuntimeMessage[];
   checkpoint?: RunCheckpoint;
 }
+
+export interface RunContextSegment {
+  category: "goal" | "constraints" | "history" | "project_fact" | "tool_result";
+  originalMessageIndexes: number[];
+  selection: "exact" | "deterministic_excerpt";
+  sources: RunSourceRef[];
+  excerpts?: Array<{ messageIndex: number; start: number; end: number; unit: "utf16" }>;
+}
+export interface RunContextPlan {
+  schemaVersion: 1;
+  planId: string;
+  runId: string;
+  projectId: string;
+  conversationId: string;
+  method: "deterministic-selection-v1";
+  maxBytes: number;
+  usedBytes: number;
+  fullRecordMessageCount: number;
+  scopeDescription: { mode: "read_only"; readPrefixes: string[]; sharePrefixes: string[] };
+  segments: RunContextSegment[];
+  omitted: Array<{ originalMessageIndexes: number[]; reason: "budget" | "superseded" }>;
+}
+
 export interface RunStorePort {
   commit(update: RunStoreCommit): Promise<void>;
 }

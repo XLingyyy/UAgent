@@ -1,4 +1,5 @@
 pub(crate) mod local_workspace;
+pub(crate) mod project_source_versions;
 pub(crate) mod provider_budget;
 pub(crate) mod asset_mutation;
 pub(crate) mod browser;
@@ -674,10 +675,12 @@ pub struct PreviewProjectFileResult {
     pub reason: String,
     pub content: String,
     pub truncated: bool,
-    pub original_bytes: u32,
+    pub original_bytes: u64,
     pub original_lines: u32,
     pub replaced_secrets: u32,
     pub replaced_paths: u32,
+    pub observed_lines: u32,
+    pub line_count_complete: bool,
 }
 
 #[tauri::command]
@@ -746,10 +749,12 @@ fn preview_native_project_file(
                     },
                     content: redacted.content,
                     truncated,
-                    original_bytes: fc.bytes,
+                    original_bytes: u64::from(fc.bytes),
                     original_lines: lines.len() as u32,
                     replaced_secrets: redacted.secrets,
                     replaced_paths: redacted.paths,
+                    observed_lines: truncated_slice.lines().count() as u32,
+                    line_count_complete: true,
                 })
             }
             None => Ok(PreviewProjectFileResult {
@@ -761,68 +766,32 @@ fn preview_native_project_file(
                 original_lines: 0,
                 replaced_secrets: 0,
                 replaced_paths: 0,
+        observed_lines: 0,
+        line_count_complete: false,
             }),
         }
     } else {
         if !is_text_extension(&input.root_relative_path) {
             return Ok(blocked_preview("binary_or_extension_blocked"));
         }
-        let root =
-            resolve_canonical_path(&normalized_root).map_err(|_| "invalid_root".to_string())?;
-        let candidate = root.join(&input.root_relative_path);
-        let canonical_candidate = candidate
-            .canonicalize()
-            .map_err(|_| "read_error".to_string())?;
-        if !canonical_candidate.starts_with(&root) {
-            return Ok(blocked_preview("root_escape"));
-        }
-        match fs::read(&canonical_candidate) {
-            Ok(bytes) if bytes.iter().take(2048).any(|byte| *byte == 0) => {
-                Ok(blocked_preview("binary_or_extension_blocked"))
+        match project_source_versions::read_scoped_project_file(
+            &input.project_id, &input.root_relative_path, input.byte_limit.min(16_384), input.line_limit,
+        ) {
+            Ok(prefix) => {
+                let redacted = redact_preview_content(&prefix.content);
+                Ok(PreviewProjectFileResult {
+                    status: if prefix.truncated { "truncated".into() } else { "ready".into() },
+                    reason: if prefix.truncated { "bounded_prefix".into() } else { "allowed_text_preview".into() },
+                    content: redacted.content,
+                    truncated: prefix.truncated,
+                    original_bytes: prefix.original_bytes,
+                    original_lines: prefix.original_lines,
+                    replaced_secrets: redacted.secrets,
+                    replaced_paths: redacted.paths, observed_lines: prefix.observed_lines,
+                    line_count_complete: prefix.line_count_complete,
+                })
             }
-            Ok(bytes) => match String::from_utf8(bytes) {
-                Ok(content) => {
-                    let bytes = content.len() as u32;
-                    let lines: Vec<&str> = content.lines().collect();
-                    let line_limit = input.line_limit as usize;
-                    let byte_limit = input.byte_limit as usize;
-                    let sliced_lines: Vec<&str> = lines.iter().take(line_limit).copied().collect();
-                    let sliced = sliced_lines.join("\n");
-                    let truncated_slice: String = sliced.chars().take(byte_limit).collect();
-                    let redacted = redact_preview_content(&truncated_slice);
-                    let truncated =
-                        truncated_slice.len() < content.len() || lines.len() > line_limit;
-                    Ok(PreviewProjectFileResult {
-                        status: if truncated {
-                            "truncated".to_string()
-                        } else {
-                            "ready".to_string()
-                        },
-                        reason: if truncated {
-                            "line_or_byte_limit".to_string()
-                        } else {
-                            "allowed_text_preview".to_string()
-                        },
-                        content: redacted.content,
-                        truncated,
-                        original_bytes: bytes,
-                        original_lines: lines.len() as u32,
-                        replaced_secrets: redacted.secrets,
-                        replaced_paths: redacted.paths,
-                    })
-                }
-                Err(_) => Ok(blocked_preview("binary_or_extension_blocked")),
-            },
-            Err(_) => Ok(PreviewProjectFileResult {
-                status: "blocked".to_string(),
-                reason: "read_error".to_string(),
-                content: String::new(),
-                truncated: false,
-                original_bytes: 0,
-                original_lines: 0,
-                replaced_secrets: 0,
-                replaced_paths: 0,
-            }),
+            Err(reason) => Ok(blocked_preview(&reason)),
         }
     }
 }
@@ -868,6 +837,8 @@ fn blocked_preview(reason: &str) -> PreviewProjectFileResult {
         original_lines: 0,
         replaced_secrets: 0,
         replaced_paths: 0,
+        observed_lines: 0,
+        line_count_complete: false,
     }
 }
 
@@ -1617,6 +1588,7 @@ pub fn run() {
             mvp15d_bridge_publish_ui_evidence,
             mvp15d_bridge_complete,
             mvp15d_bridge_fail,
+            project_source_versions::inspect_native_project_sources,
             validate_project_root,
             scan_project_index,
             preview_project_file,

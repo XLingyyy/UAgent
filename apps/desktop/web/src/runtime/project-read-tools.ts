@@ -8,6 +8,7 @@ import {
 } from "@uagent/runtime";
 import { redactPathsInString } from "@uagent/runtime";
 import type { NativeProjectAdapter } from "./project-native-adapter";
+import { checkedFreshness, projectIndexVersion } from "./project-context-sources";
 
 export const PROJECT_READ_TOOL_IDS = [
   "project.list_files",
@@ -90,8 +91,9 @@ function source(
   path: string,
   version: string,
   kind: RunSourceRef["kind"],
+  freshness?: string,
 ): RunSourceRef {
-  return { projectId, path, version, kind };
+  return { projectId, path, version, kind, ...(freshness ? { freshness } : {}) };
 }
 export function createProjectReadToolRegistry(
   adapter: NativeProjectAdapter,
@@ -154,13 +156,25 @@ export function createProjectReadToolRegistry(
           isRunPathAllowed(file.rootRelativePath, context.scope.readPrefixes) &&
           file.rootRelativePath.toLowerCase().includes(query),
       );
-      const files = matches
-        .slice(0, Number(args.limit ?? 20))
-        .map((file) => ({
-          path: file.rootRelativePath,
-          bytes: file.byteSize,
-          extension: file.extension,
-        }));
+      const files = matches.slice(0, Number(args.limit ?? 20)).map((file) => ({
+        path: file.rootRelativePath,
+        bytes: file.byteSize,
+        extension: file.extension,
+      }));
+      const indexVersion = projectIndexVersion(adapter, context.projectId);
+      const inspected = adapter.inspectSources
+        ? await adapter.inspectSources(
+            context.projectId,
+            files.map((file) => file.path),
+          )
+        : null;
+      if (
+        adapter.source === "native" &&
+        (!inspected ||
+          !indexVersion ||
+          indexVersion !== projectIndexVersion(adapter, context.projectId))
+      )
+        throw Error("source_unavailable");
       return {
         status: "completed",
         effectState: "not_started",
@@ -173,8 +187,9 @@ export function createProjectReadToolRegistry(
           source(
             context.projectId,
             file.path,
-            snapshot.id + ":" + snapshot.summary.scannedAt,
+            indexVersion ?? snapshot.id + ":" + snapshot.summary.scannedAt,
             "project_index",
+            inspected ? checkedFreshness(inspected, file.path) : undefined,
           ),
         ),
         truncated: matches.length > files.length,
@@ -202,13 +217,36 @@ export function createProjectReadToolRegistry(
     execute: async (args, context): Promise<Omit<RunToolResult, "callId" | "toolId">> => {
       const p = project(context),
         path = normalizeRunPath(args.path as string);
-      const preview = await adapter.previewFile(
-        p.id,
-        p.rootRef,
-        path,
-        Math.min(4096, Math.floor(context.scope.limits.maxToolResultBytes / 3)),
-        80,
+      const before = adapter.inspectSources ? await adapter.inspectSources(p.id, [path]) : null;
+      if (adapter.source === "native" && !before) throw Error("source_unavailable");
+      const beforeVersion = before ? checkedFreshness(before, path) : null;
+      const overhead =
+        new TextEncoder().encode(
+          JSON.stringify({
+            path,
+            readAt: Number.MAX_SAFE_INTEGER,
+            redacted: true,
+            originalBytes: Number.MAX_SAFE_INTEGER,
+            originalLines: null,
+            observedLines: 80,
+            lineCountComplete: false,
+            sources: [
+              source(
+                p.id,
+                path,
+                "preview-sha256:" + "0".repeat(64),
+                "file_preview",
+                beforeVersion ?? "0".repeat(256),
+              ),
+            ],
+          }),
+        ).length + 512;
+      const contentLimit = Math.min(
+        2048,
+        Math.floor((context.scope.limits.maxToolResultBytes - overhead) / 6),
       );
+      if (contentLimit < 32) throw Error("tool_result_budget");
+      const preview = await adapter.previewFile(p.id, p.rootRef, path, contentLimit, 80);
       if (
         preview.projectId !== p.id ||
         preview.rootRelativePath !== path ||
@@ -222,6 +260,10 @@ export function createProjectReadToolRegistry(
           truncated: false,
           diagnosticCode: preview.status === "missing" ? "file_missing" : "preview_blocked",
         };
+      const after = adapter.inspectSources ? await adapter.inspectSources(p.id, [path]) : null;
+      const freshness = after ? checkedFreshness(after, path) : undefined;
+      if (adapter.source === "native" && (!freshness || freshness !== beforeVersion))
+        throw Error("source_changed_during_read");
       const safe = redactFile(preview.content),
         digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(safe.text));
       const version =
@@ -236,9 +278,18 @@ export function createProjectReadToolRegistry(
           readAt: preview.createdAt,
           redacted: safe.redacted || preview.redaction.redacted,
           originalBytes: preview.truncation.originalBytes,
-          originalLines: preview.truncation.originalLines,
+          originalLines:
+            preview.truncation.lineCountComplete === false
+              ? null
+              : preview.truncation.originalLines,
+          ...(preview.truncation.lineCountComplete === undefined
+            ? {}
+            : { lineCountComplete: preview.truncation.lineCountComplete }),
+          ...(preview.truncation.observedLines === undefined
+            ? {}
+            : { observedLines: preview.truncation.observedLines }),
         },
-        sources: [source(p.id, path, version, "file_preview")],
+        sources: [source(p.id, path, version, "file_preview", freshness)],
         truncated: preview.status === "truncated" || preview.truncation.truncated,
       };
     },

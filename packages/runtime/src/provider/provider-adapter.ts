@@ -5,7 +5,11 @@ import type {
   ProviderStreamChunk,
 } from "@uagent/shared";
 
-export interface ProviderCallOptions { signal?: AbortSignal; }
+export interface ProviderCallOptions {
+  signal?: AbortSignal;
+  /** Revalidate live context after exact-body approval, immediately before transport. Never changes the approved body. */
+  beforeSend?: () => Promise<void>;
+}
 
 export interface ProviderAdapter {
   readonly id: string;

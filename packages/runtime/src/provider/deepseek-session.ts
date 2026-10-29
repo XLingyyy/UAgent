@@ -135,6 +135,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
       if (request.metadata?.projectId !== undefined && request.metadata.projectId !== scope.projectId) throw fail("cancelled", "Project changed before outbound review.");
       const envelope: OutboundEnvelope={endpoint:DEEPSEEK_ENDPOINT,model:DEEPSEEK_MODEL,...scope,body:prepared.serialized,...(consent?{maximumCostMicros:prepared.inputBound*consent.inputMicrosPerToken+prepared.body.max_tokens*consent.outputMicrosPerToken}:{})};
       const grant=options.outboundGate ? await Promise.race([options.outboundGate.review(envelope,controller.signal).catch(()=>{throw fail("cancelled", "Outbound confirmation was withdrawn.");}),interrupted]) : null;
+      if(call.beforeSend)await Promise.race([call.beforeSend(),interrupted]);
       const reservationId=await Promise.race([reserve(prepared.inputBound, prepared.body.max_tokens), interrupted]);
       const current=options.getProjectContext?.()??scope;
       if (JSON.stringify(current)!==JSON.stringify(scope) || (grant && !grant.consume({...envelope,...current}))) throw fail("cancelled", "Outbound confirmation no longer matches the current context.");
@@ -247,7 +248,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
   }
   const adapter: ProviderAdapter = {
     id: "deepseek", stream,
-    getCapabilities: () => ({ providerId: "deepseek", modelIds: [DEEPSEEK_MODEL], supportsStreaming: true, supportsTools: !validation, isMock: options.mode === "offline" }),
+    getCapabilities: () => ({ providerId: "deepseek", modelIds: [DEEPSEEK_MODEL], supportsStreaming: true, supportsTools: !validation, supportsPreSendValidation:true, isMock: options.mode === "offline" }),
     async complete(request, call): Promise<ProviderRuntimeResponse> {
       let text = "", usage: ProviderUsage | undefined, finishReason: Exclude<ProviderFinishReason,"error"> = "stop";
       let completedCalls:ProviderRuntimeResponse["toolCalls"];

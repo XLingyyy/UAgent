@@ -166,6 +166,8 @@ export interface ProviderCapability {
   modelIds: string[];
   supportsStreaming: boolean;
   supportsTools: boolean;
+  /** Runs ProviderCallOptions.beforeSend after approval and before network dispatch. */
+  supportsPreSendValidation?: boolean;
   isMock: boolean;
 }
 

@@ -391,6 +391,82 @@ describe("bounded run coordinator using synthetic models and actual isolated fil
     expect(result.run).toMatchObject({ status: "paused", stopReason: "persistence_failed" });
     expect(f.reads).toHaveLength(0);
   });
+
+  it("retains an executed read when result persistence fails and resumes without duplicate dispatch", async () => {
+    const f = fixture(),
+      s = scope();
+    let rejecting = true;
+    const complete = vi.fn(
+      async (r: ProviderRuntimeRequest): Promise<ProviderRuntimeResponse> =>
+        complete.mock.calls.length === 1
+          ? answer(r, "", {
+              id: "call_once",
+              name: "project_read_file",
+              arguments: '{"path":"manifest.json"}',
+            })
+          : answer(r, "Read evidence consumed once."),
+    );
+    const store: RunStorePort = {
+      commit: async (update) => {
+        if (rejecting && update.run.steps.some((step) => step.result?.status === "completed"))
+          throw Error("synthetic result transaction rejected before commit");
+      },
+    };
+    const coordinator = new RunCoordinator({
+      adapter: adapter(complete),
+      registry: f.registry,
+      lease: { scope: s, isCurrent: () => true },
+      store,
+    });
+    const paused = await coordinator.start("task-1", draft(s));
+    expect(paused.run).toMatchObject({
+      status: "paused",
+      stopReason: "persistence_failed",
+      toolCalls: 1,
+    });
+    expect(paused.run.steps[0]!.result?.status).toBe("completed");
+    expect(f.reads).toEqual(["manifest.json"]);
+    expect(complete).toHaveBeenCalledTimes(1);
+    rejecting = false;
+    const resumed = await coordinator.resume();
+    expect(resumed.run.status).toBe("completed");
+    expect(f.reads).toEqual(["manifest.json"]);
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(resumed.messages.filter((message) => message.role === "tool")).toHaveLength(1);
+  });
+  it("counts equivalent failed JSON arguments despite whitespace and key order changes", async () => {
+    const s = scope(),
+      reads = vi.fn(async () => {
+        throw Error("synthetic read failure");
+      });
+    const registry = new ToolRegistry([
+      {
+        id: "project.read",
+        definition: { name: "read", description: "read", parameters: { type: "object" } },
+        validate: () => undefined,
+        paths: () => [],
+        execute: reads,
+      },
+    ]);
+    const args = ['{"a":1,"b":2}', '{ "b":2, "a":1 }', '{"a":1,"b":2}'];
+    const complete = vi.fn(
+      async (r: ProviderRuntimeRequest): Promise<ProviderRuntimeResponse> =>
+        answer(r, "", {
+          id: "call" + complete.mock.calls.length,
+          name: "read",
+          arguments: args[complete.mock.calls.length - 1]!,
+        }),
+    );
+    const outcome = await new RunCoordinator({
+      adapter: adapter(complete),
+      registry,
+      lease: { scope: s, isCurrent: () => true },
+    }).start("task-1", draft(s));
+    expect(outcome.run).toMatchObject({ status: "paused", stopReason: "failure_limit" });
+    expect(reads).toHaveBeenCalledTimes(2);
+    expect(complete).toHaveBeenCalledTimes(3);
+  });
+
   it("rejects a mismatched project and scope before any model request", async () => {
     const f = fixture(),
       s = scope(),

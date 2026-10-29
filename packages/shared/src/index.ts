@@ -1,4 +1,4 @@
-export type { RunStatus, RunEffectState, RunJsonValue, TaskRunLimits, TaskRunScope, RunSourceRef, RunToolCall, RunToolResult, RunStep, TaskRun, RunEvent, RunCheckpoint, RunStoreCommit, RunStorePort } from "./run.js";
+export type { RunStatus, RunEffectState, RunJsonValue, TaskRunLimits, TaskRunScope, RunSourceRef, RunToolCall, RunToolResult, RunStep, TaskRun, RunEvent, RunCheckpoint, RunContextPlan, RunContextSegment, RunStoreCommit, RunStorePort } from "./run.js";
 
 export interface ChatMessage {
   id: string;

@@ -64,6 +64,18 @@ export const runMessages = {
     "Waiting for the current read or model response to finish.",
   ],
   "run.reviewDetails": ["请查看任务详情。", "Review task details."],
+  "run.reasonSourceChanged": [
+    "项目来源已变化，本次发送已停止。请停止任务并重新调查。",
+    "A project source changed. Sending stopped; stop this task and investigate again.",
+  ],
+  "run.reasonSourceUnavailable": [
+    "无法核对当前项目来源，已暂停发送。请检查项目访问后重新调查。",
+    "Current project sources could not be verified. Sending is paused; check project access and investigate again.",
+  ],
+  "run.reasonSourceInvalid": [
+    "上下文来源或工具记录不匹配，已暂停发送。请展开详情查看。",
+    "Context sources or tool records do not match. Sending is paused; expand details.",
+  ],
   "run.reasonPaused": [
     "已暂停。继续时会重新确认下一次实际请求。",
     "Paused. Continuing requires confirmation of the next actual request.",
@@ -95,6 +107,9 @@ export const runMessages = {
 } as const satisfies Record<string, readonly [string, string]>;
 
 export function runStopReasonKey(reason: string) {
+  if (reason === "context_stale") return "run.reasonSourceChanged";
+  if (reason === "context_unavailable") return "run.reasonSourceUnavailable";
+  if (reason === "context_scope" || reason === "context_protocol") return "run.reasonSourceInvalid";
   if (reason === "user_paused") return "run.reasonPaused";
   if (reason === "sharing_scope") return "run.reasonSharing";
   if (reason === "scope_expired") return "run.reasonExpired";

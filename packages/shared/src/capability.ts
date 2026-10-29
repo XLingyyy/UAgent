@@ -75,6 +75,9 @@ export interface PreviewTruncation {
   lineLimit: number;
   originalBytes: number;
   originalLines: number;
+  /** False when a bounded native read did not scan the entire file. */
+  lineCountComplete?: boolean;
+  observedLines?: number;
 }
 
 export interface ContentRedactionSummary {

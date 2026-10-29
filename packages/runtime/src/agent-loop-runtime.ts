@@ -24,6 +24,7 @@ import {
   type ToolRiskLevel,
 } from "@uagent/shared";
 import { RunCoordinator, type RunScopeLease } from "./run/run-coordinator.js";
+import type { RunContextSources } from "./context/run-context.js";
 import type { ToolRegistry } from "./run/tool-registry.js";
 import type { RunStorePort, TaskRun } from "@uagent/shared";
 import { selectAction, type AgentAction, type AgentActionSelectorContext } from "./agent-action-selector.js";
@@ -46,6 +47,7 @@ export interface InvestigationRuntimeOptions {
   registry: ToolRegistry;
   resolveScope: (scopeId:string,draft:TaskDraft)=>RunScopeLease|null;
   store?: RunStorePort;
+  contextSources?: RunContextSources;
 }
 
 export interface AgentLoopOptions {
@@ -625,7 +627,7 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
           emit(taskId,"task_failed","Investigation unavailable","run_scope_unavailable","error");return snapshot.tasksById[taskId]??record;
         }
         const controller=new AbortController();providerControllers.set(taskId,controller);
-        const coordinator=new RunCoordinator({adapter,registry:config.registry,lease,signal:controller.signal,store:config.store,
+        const coordinator=new RunCoordinator({adapter,registry:config.registry,lease,signal:controller.signal,store:config.store,contextSources:config.contextSources,
           onProviderEvent:event=>{if(!controller.signal.aborted&&!isStopped(taskId))applyProviderEvent(taskId,event);},
           onEvent:(event,run)=>{
             if(controller.signal.aborted||isStopped(taskId))return;

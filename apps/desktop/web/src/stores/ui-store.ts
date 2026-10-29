@@ -1,3 +1,4 @@
+import {createProjectContextSources} from "../runtime/project-context-sources";
 import {investigationScopeGate} from "../runtime/investigation-scope-gate";
 import {createProjectReadToolRegistry} from "../runtime/project-read-tools";
 import {DEEPSEEK_ENDPOINT} from "@uagent/runtime";
@@ -726,7 +727,7 @@ function createUIStateBundle(
   const providerState = createInitialProviderState(initialState);
   const projectAdapter = createNativeProjectAdapter();
   const projectRequests = createRequestGeneration();
-  runtimeClient.configureInvestigation?.({registry:createProjectReadToolRegistry(projectAdapter),resolveScope:id=>investigationScopeGate.claim(id)});
+  runtimeClient.configureInvestigation?.({registry:createProjectReadToolRegistry(projectAdapter),contextSources:createProjectContextSources(projectAdapter),resolveScope:id=>investigationScopeGate.claim(id)});
   let submissionPending = false;
   let submissionRoutingCurrent: (() => boolean) | null = null;
   let assetOperationPending = false;

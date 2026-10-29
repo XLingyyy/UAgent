@@ -81,6 +81,15 @@ function nativeFixture() {
           redactedRoot: "[project-root]/Synthetic",
         },
       } as T;
+    if (command === "inspect_native_project_sources")
+      return {
+        projectId: input.projectId,
+        sources: (input.paths as string[]).map((path) => ({
+          path,
+          status: "ready",
+          version: "synthetic-version:" + path,
+        })),
+      } as T;
     if (command === "preview_native_project_file") {
       const path = String(input.rootRelativePath);
       previews.push(path);
@@ -162,6 +171,51 @@ describe("read tools behind the native project adapter", () => {
     );
     expect(h.previews).toEqual(["Source/Main.cpp"]);
   });
+
+  it("reserves wrapper space for bounded Chinese text and marks incomplete line counts", async () => {
+    vi.stubGlobal("crypto", webcrypto);
+    const h = await registryFixture(),
+      base = await h.adapter.previewFile(h.scope.projectId, h.scope.rootRef, "Source/Main.cpp");
+    vi.spyOn(h.adapter, "previewFile").mockImplementation(
+      async (_project, _root, _path, byteLimit) => {
+        expect(byteLimit).toBeLessThanOrEqual(2048);
+        return {
+          ...base,
+          content: "中".repeat(Math.floor(byteLimit! / 3)),
+          status: "truncated",
+          truncation: {
+            ...base.truncation,
+            originalBytes: 1048576,
+            originalLines: 0,
+            observedLines: 1,
+            lineCountComplete: false,
+            truncated: true,
+          },
+        };
+      },
+    );
+    const result = await h.registry.execute(
+      { id: "unicode", name: "project_read_file", arguments: '{"path":"Source/Main.cpp"}' },
+      {
+        runId: "r",
+        projectId: h.scope.projectId,
+        scope: h.scope,
+        signal: new AbortController().signal,
+        isCurrent: () => true,
+      },
+    );
+    expect(result.status).toBe("completed");
+    expect(result.truncated).toBe(true);
+    expect(result.output).toMatchObject({
+      originalLines: null,
+      observedLines: 1,
+      lineCountComplete: false,
+    });
+    expect(new TextEncoder().encode(JSON.stringify(result)).length).toBeLessThanOrEqual(
+      h.scope.limits.maxToolResultBytes,
+    );
+  });
+
   it("blocks native-less and revoked project access before reading", async () => {
     const h = await registryFixture(),
       controller = new AbortController(),
@@ -291,21 +345,19 @@ async function mount() {
   }
   async function frame(delta: Record<string, unknown>, finish?: string) {
     await act(async () => {
-      streams
-        .at(-1)!
-        .enqueue(
-          new TextEncoder().encode(
-            "data: " +
-              JSON.stringify({
-                model: DEEPSEEK_MODEL,
-                choices: [{ delta, ...(finish ? { finish_reason: finish } : {}) }],
-                ...(finish
-                  ? { usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 } }
-                  : {}),
-              }) +
-              "\n\n",
-          ),
-        );
+      streams.at(-1)!.enqueue(
+        new TextEncoder().encode(
+          "data: " +
+            JSON.stringify({
+              model: DEEPSEEK_MODEL,
+              choices: [{ delta, ...(finish ? { finish_reason: finish } : {}) }],
+              ...(finish
+                ? { usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 } }
+                : {}),
+            }) +
+            "\n\n",
+        ),
+      );
       if (finish) {
         streams.at(-1)!.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
         streams.at(-1)!.close();

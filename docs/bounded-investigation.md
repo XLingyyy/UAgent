@@ -40,6 +40,36 @@ independent tool permission and existing sandbox boundaries remain in force.
 - Recovery from durable records must require fresh credentials and a fresh
   lease. Saved scope descriptions are never executable authorization.
 
+## Context selection and freshness
+
+Complete run records and the next request are different data sets. Each request
+pins the exact goal and safety constraints, selects complete history pairs, and
+keeps assistant tool calls with all matching results. Older project facts and
+results compete for the remaining UTF-8 byte budget. History has a separate
+quarter-budget ceiling (at most 4 KiB); older index facts have a third-budget
+ceiling. The latest tool group must fit, otherwise the task pauses.
+
+Selection is deterministic. An oversized selected result may become a clearly
+marked excerpt with original message indexes and UTF-16 ranges; source references,
+status and truncation remain explicit. No extra model call performs compression.
+The original messages remain unchanged in RunStoreCommit.messages.
+RunStoreCommit.contextPlan and model_started.contextPlan describe selection;
+storage adapters must preserve this plan separately from the full archive.
+
+Sources bind project ID, kind, relative path and version to descriptive read/share
+bounds. Native metadata freshness stamps are checked before preparing a request
+and again after approval, before fetch. A rescan invalidates older index revisions.
+A changed, missing, revoked or unverifiable source pauses sending. Saved strings
+or descriptions cannot recreate a RunScopeLease or authorize recovery.
+
+Windows file previews reject every reparse component, including links to another
+directory inside the same project. The same validated, pinned handle performs
+bounded byte reads; complete UTF-8 and result-envelope space are preserved.
+Unscanned line totals are unknown, with observed lines reported separately.
+Metadata stamps detect normal changes but do not prove content integrity against
+restored timestamps or eliminate changes after the final check. Non-Windows
+content reads fail closed pending an equivalent safe handle implementation.
+
 ## Focused checks
 
 Run the changed runtime protocol/registry/coordinator/scope tests and

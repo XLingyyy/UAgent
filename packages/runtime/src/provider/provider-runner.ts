@@ -14,6 +14,7 @@ import { createProviderRuntimeError, normalizeProviderError } from "./provider-e
 export interface ProviderExecutionOptions {
   signal?: AbortSignal;
   timeoutTicks?: number;
+  beforeSend?: () => Promise<void>;
   onEvent?: (event: ProviderRuntimeEvent) => void;
 }
 
@@ -48,7 +49,7 @@ export async function runProviderComplete(
   }
 
   try {
-    const response = await adapter.complete(request, { signal: options.signal });
+    const response = await adapter.complete(request, { signal: options.signal, beforeSend: options.beforeSend });
     if (options.signal?.aborted) { publish(cancelledEvent(request)); return { response: emptyCancelledResponse(request), events }; }
     validateToolResponse(request, response.toolCalls ?? [], response.finishReason);
     for (const call of response.toolCalls ?? []) publish({type:"provider_tool_call_completed",requestId:request.id,providerId:request.providerId,call});
@@ -91,7 +92,7 @@ export async function runProviderStream(
   const toolCalls = new ToolCallAccumulator();
 
   try {
-    for await (const chunk of adapter.stream(request, { signal: options.signal })) {
+    for await (const chunk of adapter.stream(request, { signal: options.signal, beforeSend: options.beforeSend })) {
       if (options.signal?.aborted) {
         publish(cancelledEvent(request));
         return { text, chunks, events };

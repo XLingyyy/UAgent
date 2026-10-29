@@ -314,11 +314,12 @@ export class ToolRegistry {
         if (
           !isRecord(source) ||
           Object.keys(source).some(
-            (key) => !["projectId", "path", "version", "kind"].includes(key),
+            (key) => !["projectId", "path", "version", "kind", "freshness"].includes(key),
           ) ||
           source.projectId !== invocation.projectId ||
           typeof source.path !== "string" ||
-          typeof source.version !== "string" ||
+          typeof source.version !== "string" || !source.version ||
+          (source.freshness!==undefined&&(typeof source.freshness!=="string"||!source.freshness||source.freshness.length>256)) ||
           !["project_index", "file_preview", "tool"].includes(String(source.kind))
         ) {
           return failed("invalid_tool_sources");

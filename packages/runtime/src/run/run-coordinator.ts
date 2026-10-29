@@ -5,6 +5,7 @@ import type {
   ProviderRuntimeRequest,
   ProviderRuntimeResponse,
   RunCheckpoint,
+  RunContextPlan,
   RunEvent,
   RunSourceRef,
   RunStorePort,
@@ -13,6 +14,11 @@ import type {
   TaskRun,
   TaskRunScope,
 } from "@uagent/shared";
+import {
+  prepareRunContext,
+  RunContextError,
+  type RunContextSources,
+} from "../context/run-context.js";
 import { boundConversationHistory } from "../provider/conversation-history.js";
 import { runProviderComplete, runProviderStream } from "../provider/provider-runner.js";
 import { redactString } from "../secrets/redaction.js";
@@ -29,6 +35,7 @@ export interface RunCoordinatorOptions {
   lease: RunScopeLease;
   signal?: AbortSignal;
   store?: RunStorePort;
+  contextSources?: RunContextSources;
   now?: () => number;
   onEvent?: (event: RunEvent, run: TaskRun) => void;
   onProviderEvent?: (event: ProviderRuntimeEvent) => void;
@@ -61,10 +68,14 @@ export class RunCoordinator {
   private pending: NonNullable<ProviderRuntimeResponse["toolCalls"]> = [];
   private pendingIndex = 0;
   private pendingResult: RunToolResult | null = null;
+  private pendingResultPersisted = false;
+  private pendingResultClassified = false;
   private sources: RunSourceRef[] = [];
   private failures = new Map<string, number>();
   private active = false;
   private text = "";
+  private goalMessageIndex = 2;
+  private contextPlan: RunContextPlan | null = null;
   private releaseSignal: (() => void) | null = null;
 
   constructor(private options: RunCoordinatorOptions) {
@@ -154,6 +165,7 @@ export class RunCoordinator {
       ...boundConversationHistory(draft.conversationHistory ?? []),
       { role: "user", content: redactString(draft.input) },
     ];
+    this.goalMessageIndex = this.messages.length - 1;
     const abort = () => this.cancel();
     this.options.signal?.addEventListener("abort", abort, { once: true });
     this.releaseSignal = () => this.options.signal?.removeEventListener("abort", abort);
@@ -212,6 +224,7 @@ export class RunCoordinator {
         run: this.clone(this.runState!),
         events: this.clone(batch),
         messages: this.clone(this.messages),
+        ...(this.contextPlan ? { contextPlan: this.clone(this.contextPlan) } : {}),
         ...(checkpoint ? { checkpoint: this.clone(checkpoint) } : {}),
       });
       this.events.splice(0, batch.length);
@@ -266,6 +279,19 @@ export class RunCoordinator {
         if (this.pendingIndex < this.pending.length) {
           const call = this.pending[this.pendingIndex]!;
           if (this.pendingResult) {
+            if (!this.pendingResultPersisted) {
+              await this.persist();
+              this.pendingResultPersisted = true;
+            }
+            const result = this.pendingResult;
+            if (result.status === "blocked")
+              throw new StopRun("failed", result.diagnosticCode ?? "tool_blocked");
+            if (result.status === "cancelled") throw new StopRun("cancelled", "cancelled");
+            if (result.status === "failed" && !this.pendingResultClassified) {
+              const key = this.failureKey(call.name, call.arguments);
+              this.failures.set(key, (this.failures.get(key) ?? 0) + 1);
+            }
+            this.pendingResultClassified = true;
             this.assertShareable(this.pendingResult);
             this.sources.push(...this.pendingResult.sources);
             this.messages.push({
@@ -278,7 +304,7 @@ export class RunCoordinator {
             continue;
           }
           if (run.toolCalls >= run.limits.maxToolCalls) throw new StopRun("paused", "tool_limit");
-          const failureKey = call.name + ":" + call.arguments;
+          const failureKey = this.failureKey(call.name, call.arguments);
           if ((this.failures.get(failureKey) ?? 0) >= run.limits.maxAttemptsPerFailure)
             throw new StopRun("paused", "failure_limit");
           const stepId = `${run.runId}:step:${run.steps.length + 1}`;
@@ -326,29 +352,29 @@ export class RunCoordinator {
                     : "failed",
             result,
           });
+          this.pendingResult = result;
+          this.pendingResultPersisted = false;
+          this.pendingResultClassified = false;
           this.publish(
             result.status === "completed" ? "tool_completed" : "tool_failed",
             { result },
             stepId,
           );
           await this.persist();
+          this.pendingResultPersisted = true;
           this.check(false);
-          if (result.status === "blocked")
-            throw new StopRun("failed", result.diagnosticCode ?? "tool_blocked");
-          if (result.status === "cancelled") throw new StopRun("cancelled", "cancelled");
-          if (result.status === "failed")
-            this.failures.set(failureKey, (this.failures.get(failureKey) ?? 0) + 1);
-          this.pendingResult = result;
           continue;
         }
         if (run.modelRequests >= run.limits.maxModelRequests)
           throw new StopRun("paused", "model_limit");
-        if (
-          new TextEncoder().encode(JSON.stringify(this.messages)).length >
-            run.limits.maxContextBytes ||
-          this.messages.length > 30
-        )
-          throw new StopRun("paused", "context_limit");
+        const context = prepareRunContext({
+          run,
+          records: this.messages,
+          goalMessageIndex: this.goalMessageIndex,
+        });
+        this.contextPlan = context.plan;
+        const selectedSources = context.plan.segments.flatMap((segment) => segment.sources);
+        await this.validateContextSources(selectedSources);
         const definitions = this.options.registry.definitions(run.scope);
         if (!definitions.length || !this.options.adapter.getCapabilities().supportsTools)
           throw new StopRun("failed", "tools_unavailable");
@@ -356,7 +382,7 @@ export class RunCoordinator {
           id: `${run.runId}:model:${++run.modelRequests}`,
           providerId: run.scope.providerId,
           modelId: run.scope.modelId,
-          messages: this.clone(this.messages),
+          messages: this.clone(context.messages),
           tools: definitions,
           toolChoice: "auto",
           temperature: 0,
@@ -369,7 +395,7 @@ export class RunCoordinator {
             scopeRef: run.scope.id,
           },
         };
-        this.publish("model_started", { requestId: request.id });
+        this.publish("model_started", { requestId: request.id, contextPlan: this.contextPlan });
         await this.persist();
         this.check();
         const onEvent = (event: ProviderRuntimeEvent) => {
@@ -378,16 +404,28 @@ export class RunCoordinator {
           if (event.type === "provider_stream_delta" && event.chunk.delta)
             this.publish("model_text_delta", { text: event.chunk.delta });
         };
+        let preSendFailure: string | undefined;
+        const beforeSend = async () => {
+          try {
+            await this.validateContextSources(selectedSources);
+          } catch (error) {
+            preSendFailure = error instanceof StopRun ? error.code : "context_unavailable";
+            throw error;
+          }
+        };
         const result =
           this.options.adapter.stream && this.options.adapter.getCapabilities().supportsStreaming
             ? await runProviderStream(this.options.adapter, request, {
                 signal: this.controller.signal,
                 onEvent,
+                beforeSend,
               })
             : await runProviderComplete(this.options.adapter, request, {
                 signal: this.controller.signal,
                 onEvent,
+                beforeSend,
               });
+        if (preSendFailure) throw new StopRun("paused", preSendFailure);
         this.check(false);
         const completed = result.events.find(
           (event) => event.type === "provider_request_completed",
@@ -421,7 +459,12 @@ export class RunCoordinator {
         });
       }
     } catch (error) {
-      const stop = error instanceof StopRun ? error : new StopRun("failed", "run_failed");
+      const stop =
+        error instanceof StopRun
+          ? error
+          : error instanceof RunContextError
+            ? new StopRun("paused", error.code)
+            : new StopRun("failed", "run_failed");
       this.setStatus(stop.status, stop.code);
       const checkpoint = this.checkpoint(stop.code);
       this.publish("checkpoint_created", { checkpoint });
@@ -436,6 +479,47 @@ export class RunCoordinator {
     } finally {
       this.active = false;
     }
+  }
+  private failureKey(name: string, argumentsText: string): string {
+    try {
+      return (
+        name +
+        ":" +
+        JSON.stringify(JSON.parse(argumentsText), (_key, value: unknown) =>
+          value && typeof value === "object" && !Array.isArray(value)
+            ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+            : value,
+        )
+      );
+    } catch {
+      return name + ":" + argumentsText;
+    }
+  }
+  private async validateContextSources(sources: RunSourceRef[]): Promise<void> {
+    this.check();
+    if (
+      !this.options.adapter.getCapabilities().isMock &&
+      !this.options.adapter.getCapabilities().supportsPreSendValidation
+    )
+      throw new StopRun("paused", "context_unavailable");
+    if (!sources.length) return;
+    if (!this.options.contextSources) {
+      if (!this.options.adapter.getCapabilities().isMock)
+        throw new StopRun("paused", "context_unavailable");
+      return;
+    }
+    let current: boolean;
+    try {
+      current = await this.options.contextSources.validate(
+        this.clone(sources),
+        this.clone(this.runState!.scope),
+        this.controller.signal,
+      );
+    } catch {
+      throw new StopRun("paused", "context_unavailable");
+    }
+    this.check();
+    if (!current) throw new StopRun("paused", "context_stale");
   }
   private outcome(): RunOutcome {
     return {
