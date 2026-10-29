@@ -19,6 +19,7 @@ import { ComposerDock } from "../composer/ComposerDock";
 import { ConversationViewport } from "../workspace/ConversationViewport";
 import { InvestigationScopeReview } from "../settings/pages/InvestigationScopeReview";
 import { OutboundRequestReview } from "../settings/pages/OutboundRequestReview";
+import type { NativeRunCommitInput } from "./native-run-store";
 import type { TaskRunScope } from "@uagent/shared";
 
 const managers: ReturnType<typeof createSafeProviderSession>[] = [];
@@ -30,7 +31,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-function nativeFixture() {
+function nativeFixture(options: { storageFailure?: boolean } = {}) {
+  const savedRuns = new Map<
+    string,
+    { revision: number; bodies: string[]; status: string; state: unknown }
+  >();
   const previews: string[] = [],
     files = [
       "Source/Entry.cpp",
@@ -41,6 +46,35 @@ function nativeFixture() {
     ];
   const invoke: NativeInvoke = async <T,>(command: string, payload?: unknown): Promise<T> => {
     const input = (payload as { input: Record<string, unknown> })?.input;
+    if (command === "commit_native_run_store") {
+      if (options.storageFailure) throw Error("synthetic native storage unavailable");
+      const update = input as unknown as NativeRunCommitInput,
+        previous = savedRuns.get(update.runId) ?? {
+          revision: 0,
+          bodies: [],
+          status: "",
+          state: null,
+        };
+      if (
+        previous.revision !== update.expectedRevision ||
+        previous.bodies.length !== update.expectedMessageCount
+      )
+        throw Error("synthetic revision conflict");
+      const bodies = [...previous.bodies, ...update.batch.messages.map((message) => message.body)];
+      savedRuns.set(update.runId, {
+        revision: previous.revision + 1,
+        bodies,
+        status: update.batch.status,
+        state: update.batch.events.find((event) => event.kind === "coordinator_state_v1")?.data,
+      });
+      return {
+        schemaVersion: 1,
+        projectId: update.projectId,
+        runId: update.runId,
+        revision: previous.revision + 1,
+        messageCount: bodies.length,
+      } as T;
+    }
     if (command === "validate_native_project_root")
       return {
         ok: true,
@@ -107,7 +141,7 @@ function nativeFixture() {
     }
     throw Error("Unexpected synthetic native command");
   };
-  return { invoke, previews };
+  return { invoke, previews, savedRuns };
 }
 async function registryFixture() {
   const f = nativeFixture(),
@@ -235,7 +269,7 @@ describe("read tools behind the native project adapter", () => {
     expect(h.previews).toEqual([]);
   });
 });
-async function mount() {
+async function mount(options: { storageFailure?: boolean } = {}) {
   vi.stubGlobal("crypto", webcrypto);
   vi.stubGlobal(
     "fetch",
@@ -243,7 +277,7 @@ async function mount() {
       throw Error("REAL NETWORK FORBIDDEN");
     }),
   );
-  const native = nativeFixture();
+  const native = nativeFixture(options);
   vi.stubGlobal("__TAURI_INTERNALS__", { invoke: native.invoke });
   const streams: ReadableStreamDefaultController<Uint8Array>[] = [],
     sent: string[] = [];
@@ -268,7 +302,7 @@ async function mount() {
     });
   managers.push(manager);
   const runtime = createDesktopRuntimeAdapter({
-      nativeInvoke: null,
+      nativeInvoke: native.invoke,
       providerAdapter: manager.adapter,
       providerEnabled: true,
     }),
@@ -276,18 +310,28 @@ async function mount() {
   function Setup() {
     const actions = useProjectActions();
     return (
-      <button
-        onClick={() => {
-          void (async () => {
-            const id = await actions.addProjectRoot("G:/SyntheticReadFixture");
-            if (!id) throw Error("fixture setup");
-            await actions.trustProjectRoot(id);
-            await actions.scanProjectIndex("trusted-root:synthetic");
-          })();
-        }}
-      >
-        Load fixture
-      </button>
+      <>
+        <button
+          type="button"
+          onClick={() => {
+            void actions.trustProjectRoot("trusted-root:synthetic");
+          }}
+        >
+          Renew fixture trust
+        </button>
+        <button
+          onClick={() => {
+            void (async () => {
+              const id = await actions.addProjectRoot("G:/SyntheticReadFixture");
+              if (!id) throw Error("fixture setup");
+              await actions.trustProjectRoot(id);
+              await actions.scanProjectIndex("trusted-root:synthetic");
+            })();
+          }}
+        >
+          Load fixture
+        </button>
+      </>
     );
   }
   render(
@@ -432,6 +476,16 @@ describe("desktop investigation vertical slice without real API", () => {
     expect(document.querySelector(".ua-chat-details")?.hasAttribute("open")).toBe(false);
     expect(h.previews).toEqual(["Source/Main.cpp"]);
     expect(h.sent).toHaveLength(4);
+    const saved = [...h.savedRuns.values()][0]!;
+    expect(saved.status).toBe("succeeded");
+    expect(
+      saved.bodies
+        .map((body) => JSON.parse(body).message)
+        .filter((message) => message.role === "tool"),
+    ).toHaveLength(3);
+    expect((saved.state as { contextPlan: { method: string } }).contextPlan.method).toBe(
+      "deterministic-selection-v1",
+    );
     expect(fetch).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
     expect(document.querySelectorAll(".ua-chat-message")).toHaveLength(0);
@@ -452,6 +506,22 @@ describe("desktop investigation vertical slice without real API", () => {
       "false",
     );
   });
+
+  it("stops before any model or file operation when default native persistence is unavailable", async () => {
+    const h = await mount({ storageFailure: true });
+    await h.send();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Allow tool results/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Allow this read-only investigation" }));
+    await waitFor(() =>
+      expect(document.querySelector(".ua-chat-issue")?.textContent).toContain("could not be saved"),
+    );
+    expect(h.fetcher).not.toHaveBeenCalled();
+    expect(h.gate.getPending()).toBeNull();
+    expect(h.previews).toEqual([]);
+    expect(h.savedRuns.size).toBe(0);
+    expect(h.input().value).toContain("Investigate");
+  });
+
   it("language switching preserves unchecked sharing and cancelling scope sends nothing", async () => {
     const h = await mount();
     await h.send();
@@ -483,6 +553,25 @@ describe("desktop investigation vertical slice without real API", () => {
     await waitFor(() => expect(h.input().value).toBe(""));
     expect(h.previews).toHaveLength(1);
     expect(h.sent).toHaveLength(2);
+  });
+  it("revokes a running scope when the same project is trusted again", async () => {
+    const h = await mount();
+    await h.send();
+    await h.scope();
+    await h.approve();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Renew fixture trust" }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await h.tool("call_retrust", "project_read_file", '{"path":"Source/Main.cpp"}');
+    await waitFor(() =>
+      expect(document.querySelector(".ua-chat-issue")?.textContent).toContain(
+        "authorization expired",
+      ),
+    );
+    expect(h.previews).toEqual([]);
+    expect(h.sent).toHaveLength(1);
+    expect(h.gate.getPending()).toBeNull();
   });
   it("cancelling a feedback approval prevents further transmission and successful history", async () => {
     const h = await mount();

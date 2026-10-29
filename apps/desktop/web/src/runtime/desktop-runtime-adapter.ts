@@ -1,3 +1,5 @@
+import {createNativeRunStore} from "./native-run-store";
+import type {RunStorePort} from "@uagent/shared";
 import { createProviderProposals, type ProviderProposalController, type ProposalScope } from "@uagent/runtime";
 import type { ProviderAdapter } from "@uagent/runtime";
 import { FIXTURES_ENABLED, ACCEPTANCE_ENABLED } from "./build-capabilities";
@@ -648,6 +650,8 @@ export interface DesktopRuntimeAdapterOptions {
   providerEnabled?: boolean;
   createTransport?: (endpoint: string, transportKind: string) => McpTransportClient;
   nativeInvoke?: NativeInvoke | null;
+  /** Explicit source-test storage seam; production uses the native application-data store. */
+  runStore?:RunStorePort;
   /** Explicit source-only fixtures. These are never promoted to fixed live authority. */
   mvp15dFixtureProductObservationPort?: Mvp15dProductObservationPort;
   mvp15dFixtureUiObservationPort?: Mvp15dUiObservationPort;
@@ -700,6 +704,7 @@ export function createDesktopRuntimeAdapter(
   const nativeInvoke = Object.prototype.hasOwnProperty.call(options ?? {}, "nativeInvoke")
     ? (options?.nativeInvoke ?? null)
     : getGlobalInvoke();
+  const runStore=options?.runStore??createNativeRunStore(nativeInvoke);
   const router: AgentLoopRuntimeClient = createAgentLoopRuntime({
     onProviderAnalysis: (taskId,text)=>providerProposals.stage(text,taskId),
     runtimeMode: "mock",
@@ -4240,7 +4245,7 @@ export function createDesktopRuntimeAdapter(
       };
     },
 
-    configureInvestigation: config=>router.updateContext({investigation:config}),
+    configureInvestigation: config=>router.updateContext({investigation:{...config,store:config.store??runStore}}),
     getTaskRun: taskId=>router.getTaskRun(taskId),
     pauseTaskRun: taskId=>router.pauseTaskRun(taskId),
     resumeTaskRun: taskId=>router.resumeTaskRun(taskId),

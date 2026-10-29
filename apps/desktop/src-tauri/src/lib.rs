@@ -1,4 +1,8 @@
 pub(crate) mod local_workspace;
+#[cfg(windows)]
+pub(crate) mod local_run_store;
+#[cfg(windows)]
+pub(crate) mod run_store_commands;
 pub(crate) mod project_source_versions;
 pub(crate) mod provider_budget;
 pub(crate) mod asset_mutation;
@@ -1588,6 +1592,10 @@ pub fn run() {
             mvp15d_bridge_publish_ui_evidence,
             mvp15d_bridge_complete,
             mvp15d_bridge_fail,
+            #[cfg(windows)]
+            run_store_commands::commit_native_run_store,
+            #[cfg(windows)]
+            run_store_commands::snapshot_native_run_store,
             project_source_versions::inspect_native_project_sources,
             validate_project_root,
             scan_project_index,

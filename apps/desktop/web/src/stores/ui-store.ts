@@ -1352,7 +1352,7 @@ function createUIStateBundle(
           const lease=await investigationScopeGate.review({projectId:project.id,projectName:project.name,rootRef:project.rootRef,conversationId,runId:"run-"+crypto.randomUUID(),
             providerId:draft.providerId,modelId:draft.modelId,endpoint:DEEPSEEK_ENDPOINT,goal:draft.input,sessionExpiresAt:session.expiresAt},()=>isCurrent()&&
             projectStore.getState().activeProjectId===project.id&&projectAdapter.getProject(project.id)?.trustState==="trusted"&&
-            projectAdapter.getProject(project.id)?.rootRef===project.rootRef&&composerStore.getState().selectedModelId===modelKey&&
+            projectAdapter.getProject(project.id)===project&&projectAdapter.getProject(project.id)?.rootRef===project.rootRef&&composerStore.getState().selectedModelId===modelKey&&
             safeProviderSession.getSnapshot().ready&&safeProviderSession.getSessionGeneration()===credentialGeneration);
           investigationScopeId=lease.scope.id;
         }

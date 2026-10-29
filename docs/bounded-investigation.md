@@ -54,7 +54,7 @@ marked excerpt with original message indexes and UTF-16 ranges; source reference
 status and truncation remain explicit. No extra model call performs compression.
 The original messages remain unchanged in RunStoreCommit.messages.
 RunStoreCommit.contextPlan and model_started.contextPlan describe selection;
-storage adapters must preserve this plan separately from the full archive.
+the native investigation storage adapter preserves this plan separately from the full archive.
 
 Sources bind project ID, kind, relative path and version to descriptive read/share
 bounds. Native metadata freshness stamps are checked before preparing a request
@@ -69,6 +69,16 @@ Unscanned line totals are unknown, with observed lines reported separately.
 Metadata stamps detect normal changes but do not prove content integrity against
 restored timestamps or eliminate changes after the final check. Non-Windows
 content reads fail closed pending an equivalent safe handle implementation.
+
+## Durable investigation records
+
+The desktop installs the native RunStorePort for investigation tasks. Every state
+transition persists intent before scheduling and observed results before feedback.
+A result retained across a rejected transaction is consumed without re-reading;
+an uncertain native acknowledgement instead requires reconciliation. Full records,
+selection plans and source freshness are stored together. There is no automatic
+credential, approval or scheduling restoration, and SQLite history/recovery UI
+remains a separate product step.
 
 ## Focused checks
 

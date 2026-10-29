@@ -87,18 +87,18 @@ exactly; the store is not a general secret detector or encrypted vault.
 
 ## Public operations
 
-| API | Purpose |
-| --- | --- |
-| `open`, `open_with_options`, `schema_version` | Open/migrate a trusted app-data directory |
-| `create_project`, `projects` | Stable project records |
-| `create_session`, `sessions`, `update_session` | Native conversations, rename, archive |
-| `append_messages`, `messages`, `search_messages` | Full body records; ordinal pagination and literal search |
-| `branch_session` | Copy a chosen message prefix to a new native conversation; preserve message origin |
-| `start_run`, `run`, `runs` | Task identity, state and revision |
-| `commit_checkpoint`, `checkpoint_batch`, `snapshot`, `events` | Transactional transitions, immutable history and recovery display |
-| `put_artifact`, `read_artifact` | Project-scoped immutable bytes, SHA-256 integrity and reference-based reads |
-| `usage`, `backup`, `export_project_jsonl` | Capacity inspection, complete backups and project-only text export |
-| `import_legacy_jsonl`, `import_provenance` | Explicit historical-copy import and truncation provenance |
+| API                                                           | Purpose                                                                            |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `open`, `open_with_options`, `schema_version`                 | Open/migrate a trusted app-data directory                                          |
+| `create_project`, `projects`                                  | Stable project records                                                             |
+| `create_session`, `sessions`, `update_session`                | Native conversations, rename, archive                                              |
+| `append_messages`, `messages`, `search_messages`              | Full body records; ordinal pagination and literal search                           |
+| `branch_session`                                              | Copy a chosen message prefix to a new native conversation; preserve message origin |
+| `start_run`, `run`, `runs`                                    | Task identity, state and revision                                                  |
+| `commit_checkpoint`, `checkpoint_batch`, `snapshot`, `events` | Transactional transitions, immutable history and recovery display                  |
+| `put_artifact`, `read_artifact`                               | Project-scoped immutable bytes, SHA-256 integrity and reference-based reads        |
+| `usage`, `backup`, `export_project_jsonl`                     | Capacity inspection, complete backups and project-only text export                 |
+| `import_legacy_jsonl`, `import_provenance`                    | Explicit historical-copy import and truncation provenance                          |
 
 Page limits are 1–500 records. Message/event cursors are ordinals/sequences;
 session/run/search lists accept an offset. Bodies are not clipped to page limits.
@@ -189,6 +189,27 @@ The UI must show this fact, not label a historical copy as a complete run. These
 sessions cannot be renamed, appended to or started as runs; use `branch_session`
 to continue in a new native session, with a new run and fresh authorization.
 
+## Desktop investigation connection
+
+The desktop investigation path installs one native RunStorePort per runtime
+adapter. Its root is resolved internally as app-data/run-store-v2; the renderer
+cannot supply a storage directory. Commands commit_native_run_store and
+snapshot_native_run_store keep SQLite connections inside blocking workers and
+require a current native trusted project ID.
+
+Full provider-message envelopes preserve developer roles, tool-call IDs/arguments
+and tool results. Stable run/index message IDs append only new suffixes. State,
+ordered events, checkpoints, contextPlan and source freshness commit together;
+the deterministic next-request plan stays separate from the full archive.
+A failed or uncertain acknowledgement poisons that run cursor and stops further
+scheduling until reconciliation; it cannot silently replay a tool.
+
+This connection covers new investigation runs. Ordinary conversation still uses
+the existing conversation persistence. New SQLite history/recovery screens,
+automatic scheduling recovery, backup/export UI and other write tools are not
+implemented by this connection. Snapshot data is descriptive and requires fresh
+authorization before any future execution.
+
 ## Focused verification
 
 Run only this module, without the Tauri build or a Provider/UE connection:
@@ -208,8 +229,10 @@ capacity/integrity; complete online backup (including a controlled single-connec
 WAL fixture); and project-only export. This is native SQLite validation, not a real
 Provider, UE, Tauri UI or cross-restart runtime acceptance test.
 The quota test triggers SQLite's configured page limit, not a physically full
-disk. Reopen tests do not force-kill a process. The fresh-authorization flag is a
-storage contract; enforcement has not been connected to Tauri command adapters.
+disk. Reopen tests do not force-kill a process. The desktop command adapter now checks current native project trust for commits
+and snapshots. Runtime leases remain in memory; no recovery path reconstructs
+approvals or automatically resumes a run. Live Tauri IPC/UI recovery acceptance
+has not been performed.
 
 Path-prefix tests classify supplied input/canonical path strings only. No shared
 folder or mapped network drive was configured. Real mapped-drive, 8.3 and SUBST
