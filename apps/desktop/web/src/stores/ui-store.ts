@@ -1,4 +1,5 @@
 import {nativeProductSettings,restoredProvider} from "../runtime/native-product-settings";
+import {defaultLocaleStore} from "../i18n/locale-store";
 import {createProjectContextSources} from "../runtime/project-context-sources";
 import {investigationScopeGate} from "../runtime/investigation-scope-gate";
 import {createProjectReadToolRegistry} from "../runtime/project-read-tools";
@@ -535,6 +536,10 @@ async function callMvp15ToolSafely(
   return call(payload.toolName as Parameters<typeof call>[0], payload.args);
 }
 
+interface ProviderSettingsActions extends ProviderStoreActions {
+  /** Read and display one coherent config/version pair; never writes a provider. */
+  reviewExistingProvider: (providerId: string) => Promise<void>;
+}
 interface UIStoreBundle {
   startNativeSettings:()=>void;
   providerProposals: ReturnType<NonNullable<DesktopRuntimeAdapter["getProviderProposals"]>> | undefined;
@@ -551,7 +556,7 @@ interface UIStoreBundle {
   projectActions: ProjectStoreActions;
   threadActions: ThreadStoreActions;
   composerActions: ComposerStoreActions;
-  providerActions: ProviderStoreActions;
+  providerActions: ProviderSettingsActions;
   runtimeActions: RuntimeStoreActions;
   mvp15dEvidence: Mvp15dRuntimeEvidenceSource;
 }
@@ -722,12 +727,39 @@ function createMvp15dNegativeRegistrationInput(
 
 const UIStoreContext = createContext<UIStoreBundle | null>(null);
 
+type EffectiveReasoning = ComposerStoreState["reasoningEffort"];
+/** Pure, shared by boot/project hydration, model/reasoning edits and provider refresh.
+ * Preserve a valid choice; otherwise use this model's compatible provider/default choice.
+ * It never turns an effective display value into a persisted project override.
+ */
+function resolveEffectiveReasoning(
+  providers: readonly ProviderConfig[],
+  modelKey: string,
+  preferred?: EffectiveReasoning | null,
+): EffectiveReasoning {
+  const provider=providers.find(p=>p.models.some(m=>JSON.stringify([p.providerId,m.id])===modelKey));
+  const model=provider?.models.find(m=>JSON.stringify([provider.providerId,m.id])===modelKey);
+  if(!model)return preferred??"medium";
+  const allowed:readonly EffectiveReasoning[]=model.supportsReasoning
+    ?model.reasoningEfforts??["low","medium","high","xhigh"]:["medium"];
+  return [preferred,provider?.defaultReasoningEffort,"medium" as const,...allowed]
+    .find((effort):effort is EffectiveReasoning=>effort!=null&&allowed.includes(effort))??"medium";
+}
+
 function createUIStateBundle(
   initialState?: UIInitialState,
   runtimeClient: DesktopRuntimeAdapter = createDesktopRuntimeAdapter(),
 ): UIStoreBundle {
+  // Read-only provider hydration must not become a provider/model preference edit.
+  let settingsHydrationDepth=0;
+  const hydrateSettings=(apply:()=>void)=>{
+    settingsHydrationDepth++;
+    try{apply();}finally{settingsHydrationDepth--;}
+  };
   const nativeSaved=initialState?null:nativeProductSettings.getBootstrap();
-  const providerState = nativeSaved ? createInitialProviderState({provider:{providers:nativeSaved.providers.map(p=>restoredProvider(p.config)),providerVersions:nativeProductSettings.providerVersions(),selectedProviderId:nativeSaved.preferences.preferences.selectedProviderId,defaultProviderId:nativeSaved.preferences.preferences.defaultProviderId,testStatus:"idle"}}) : createInitialProviderState(initialState);
+  // A bootstrap config must retain its own token even if a later write advanced the client cache.
+  const nativeVersions=nativeSaved?Object.fromEntries(nativeSaved.providers.map(p=>[p.config.providerId,{providerId:p.config.providerId,generation:p.generation,revision:p.revision,exists:true}])):{};
+  const providerState = nativeSaved ? createInitialProviderState({provider:{providers:nativeSaved.providers.map(p=>restoredProvider(p.config)),providerVersions:nativeVersions,selectedProviderId:nativeSaved.preferences.preferences.selectedProviderId,defaultProviderId:nativeSaved.preferences.preferences.defaultProviderId,testStatus:"idle"}}) : createInitialProviderState(initialState);
   const projectAdapter = createNativeProjectAdapter();
   const projectRequests = createRequestGeneration();
   runtimeClient.configureInvestigation?.({registry:createProjectReadToolRegistry(projectAdapter),contextSources:createProjectContextSources(projectAdapter),resolveScope:id=>investigationScopeGate.claim(id)});
@@ -747,7 +779,8 @@ function createUIStateBundle(
   };
   projectStore.subscribe(syncProviderProject);syncProviderProject();
   const threadStore = createSliceStore(createInitialThreadState(initialState));
-  const composerStore = createSliceStore(createInitialComposerState(initialState, providerState));
+  const initialComposer=createInitialComposerState(initialState,providerState);
+  const composerStore = createSliceStore({...initialComposer,reasoningEffort:resolveEffectiveReasoning(providerState.providers,initialComposer.selectedModelId,initialComposer.reasoningEffort)});
   const providerStore = createSliceStore(providerState);
   const runtimeBaseState = createRuntimeStoreState(runtimeClient.getSnapshot());
   const initialMvp15Inventory = getMvp15McpAssetInventory(runtimeClient);
@@ -944,7 +977,8 @@ function createUIStateBundle(
       previousDefault.modelId !== nextDefault.modelId ||
       previousDefault.reasoningEffort !== nextDefault.reasoningEffort;
 
-    composerStore.setState((previousComposerState) => {
+    // Capability/default reconciliation is hydration, even after a provider edit.
+    hydrateSettings(()=>composerStore.setState((previousComposerState) => {
       const currentModelExists =
         previousComposerState.selectedModelId === "not-configured" ||
         nextProviderState.providers.some(
@@ -958,23 +992,13 @@ function createUIStateBundle(
         (previousComposerState.selectedModelId === "not-configured" &&
           nextDefault.modelId !== "not-configured");
 
-      if (!shouldSyncDefault) {
+      const selectedModelId=shouldSyncDefault?nextDefault.modelId:previousComposerState.selectedModelId;
+      const reasoningEffort=resolveEffectiveReasoning(nextProviderState.providers,selectedModelId,
+        shouldSyncDefault?nextDefault.reasoningEffort:previousComposerState.reasoningEffort);
+      if(previousComposerState.selectedModelId===selectedModelId&&previousComposerState.reasoningEffort===reasoningEffort)
         return previousComposerState;
-      }
-
-      if (
-        previousComposerState.selectedModelId === nextDefault.modelId &&
-        previousComposerState.reasoningEffort === nextDefault.reasoningEffort
-      ) {
-        return previousComposerState;
-      }
-
-      return {
-        ...previousComposerState,
-        selectedModelId: nextDefault.modelId,
-        reasoningEffort: nextDefault.reasoningEffort,
-      };
-    });
+      return {...previousComposerState,selectedModelId,reasoningEffort};
+    }));
   };
 
   const getMvp14ProcessConfig = () => {
@@ -1325,17 +1349,16 @@ function createUIStateBundle(
         previousState.permission === permission ? previousState : { ...previousState, permission },
       ),
     setComposerModel: (selectedModelId) =>
-      composerStore.setState((previousState) =>
-        previousState.selectedModelId === selectedModelId
-          ? previousState
-          : { ...previousState, selectedModelId },
-      ),
-    setComposerReasoning: (reasoningEffort) =>
-      composerStore.setState((previousState) =>
-        previousState.reasoningEffort === reasoningEffort
-          ? previousState
-          : { ...previousState, reasoningEffort },
-      ),
+      composerStore.setState((previousState) => {
+        const reasoningEffort=resolveEffectiveReasoning(providerStore.getState().providers,selectedModelId,previousState.reasoningEffort);
+        return previousState.selectedModelId===selectedModelId&&previousState.reasoningEffort===reasoningEffort
+          ?previousState:{...previousState,selectedModelId,reasoningEffort};
+      }),
+    setComposerReasoning: (requested) =>
+      composerStore.setState((previousState) => {
+        const reasoningEffort=resolveEffectiveReasoning(providerStore.getState().providers,previousState.selectedModelId,requested);
+        return previousState.reasoningEffort===reasoningEffort?previousState:{...previousState,reasoningEffort};
+      }),
     submitComposerTask: async (draft) => {
       if (submissionPending) throw new Error("submission_in_progress");
       submissionPending = true;
@@ -3198,7 +3221,18 @@ function createUIStateBundle(
       syncComposerSelection(previousProviderState, nextProviderState);
 
   }
-  const providerActions: ProviderStoreActions = {
+  const providerActions: ProviderSettingsActions = {
+    reviewExistingProvider:async(providerId)=>{
+      if(!nativeProductSettings.enabled())throw Error("settings_unavailable");
+      // On an already initialized store this existing API only reads current settings.
+      // Refresh the client's bootstrap/revision cache after queued edits, without replaying writes.
+      await nativeProductSettings.whenIdle();
+      await nativeProductSettings.initialize(defaultLocaleStore.getSnapshot());
+      const snapshot=nativeProductSettings.getBootstrap();
+      const current=snapshot?.providers.find(p=>p.config.providerId===providerId);
+      if(!current)throw Error("provider_changed_reload_required");
+      hydrateSettings(()=>applySavedProvider(restoredProvider(current.config),{providerId,generation:current.generation,revision:current.revision,exists:true}));
+    },
     setSelectedProvider:(providerId)=>providerStore.setState(previous=>({...previous,selectedProviderId:providerId,testStatus:"idle"})),
     saveProvider:(config,capturedVersion)=>{
       const next=cloneProviderConfig(config);
@@ -3757,18 +3791,27 @@ function createUIStateBundle(
         const id=restored.some(p=>p.id===saved.preferences.preferences.activeProjectId)?saved.preferences.preferences.activeProjectId:null;
         projectStore.setState(previous=>({...previous,registeredProjects:restored,activeProjectId:id}));
       }
+      let applyingProjectSelection=false,modelSelection="";
       const selectForProject=(id:string|null)=>{
+        applyingProjectSelection=true;
+        try{
         const selection=id?nativeProductSettings.projectPreferences(id)?.preferences:null;
         const provider=providerStore.getState().providers.find(p=>p.providerId===(id?selection?.providerId:providerStore.getState().selectedProviderId));
         const model=provider?.models.find(m=>m.id===(id?selection?.modelId:provider.defaultModel));
-        composerStore.setState(previous=>({...previous,selectedModelId:provider&&model?JSON.stringify([provider.providerId,model.id]):"not-configured",...(selection?.reasoningEffort?{reasoningEffort:selection.reasoningEffort}:{}),savedRun:undefined}));
+        // Null is this project's lack of an override, never the previous project's effort.
+        const selectedModelId=provider&&model?JSON.stringify([provider.providerId,model.id]):"not-configured";
+        const reasoningEffort=resolveEffectiveReasoning(providerStore.getState().providers,selectedModelId,selection?.reasoningEffort);
+        composerStore.setState(previous=>({...previous,selectedModelId,reasoningEffort,savedRun:undefined}));
+        }finally{
+          modelSelection=JSON.stringify([composerStore.getState().selectedModelId,composerStore.getState().reasoningEffort]);
+          applyingProjectSelection=false;
+        }
       };
       let projectId=projectStore.getState().activeProjectId;selectForProject(projectId);
       let theme=layoutStore.getState().theme,providerSelection=JSON.stringify([providerStore.getState().selectedProviderId,providerStore.getState().defaultProviderId]);
-      let modelSelection=JSON.stringify([composerStore.getState().selectedModelId,composerStore.getState().reasoningEffort]);
       const persistModel=()=>{
         const c=composerStore.getState(),next=JSON.stringify([c.selectedModelId,c.reasoningEffort]);if(next===modelSelection)return;modelSelection=next;
-        if(!projectId)return;let providerId:string|null=null,modelId:string|null=null;
+        if(settingsHydrationDepth||applyingProjectSelection||!projectId)return;let providerId:string|null=null,modelId:string|null=null;
         try{const value=JSON.parse(c.selectedModelId);if(Array.isArray(value)&&value.length===2){providerId=value[0];modelId=value[1];}}catch{/* Explicitly unselected. */}
         const model=providerStore.getState().providers.find(p=>p.providerId===providerId)?.models.find(m=>m.id===modelId);
         const effort=model?.supportsReasoning&&(!model.reasoningEfforts||model.reasoningEfforts.includes(c.reasoningEffort))?c.reasoningEffort:null;
@@ -3776,7 +3819,7 @@ function createUIStateBundle(
       };
       projectStore.subscribe(()=>{const next=projectStore.getState().activeProjectId;if(next===projectId)return;projectId=next;selectForProject(next);modelSelection=JSON.stringify([composerStore.getState().selectedModelId,composerStore.getState().reasoningEffort]);void nativeProductSettings.savePreferences({activeProjectId:next}).catch(()=>undefined);});
       layoutStore.subscribe(()=>{const next=layoutStore.getState().theme;if(next===theme)return;theme=next;void nativeProductSettings.savePreferences({theme:next}).catch(()=>undefined);});
-      providerStore.subscribe(()=>{const p=providerStore.getState(),next=JSON.stringify([p.selectedProviderId,p.defaultProviderId]);if(next===providerSelection)return;providerSelection=next;void nativeProductSettings.savePreferences({selectedProviderId:p.selectedProviderId,defaultProviderId:p.defaultProviderId}).catch(()=>undefined);});
+      providerStore.subscribe(()=>{const p=providerStore.getState(),next=JSON.stringify([p.selectedProviderId,p.defaultProviderId]);if(next===providerSelection)return;providerSelection=next;if(settingsHydrationDepth)return;void nativeProductSettings.savePreferences({selectedProviderId:p.selectedProviderId,defaultProviderId:p.defaultProviderId}).catch(()=>undefined);});
       composerStore.subscribe(persistModel);
     })().catch(()=>undefined);
   };
@@ -3922,7 +3965,7 @@ export function useComposerActions(): ComposerStoreActions {
   return useUIStoreBundle().composerActions;
 }
 
-export function useProviderActions(): ProviderStoreActions {
+export function useProviderActions(): ProviderSettingsActions {
   return useUIStoreBundle().providerActions;
 }
 
