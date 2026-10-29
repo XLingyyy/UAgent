@@ -62,6 +62,9 @@ export class ProviderRuntimeBridge {
       ],
       temperature: 0,
       maxOutputTokens: 1024,
+      ...(["none", "minimal", "low", "medium", "high", "xhigh"].includes(draft.reasoningEffort)
+        ? { reasoningEffort: draft.reasoningEffort as ProviderRuntimeRequest["reasoningEffort"] }
+        : {}),
       metadata: { taskId, planId, projectId: draft.projectId, conversationId:draft.conversationId },
     };
 

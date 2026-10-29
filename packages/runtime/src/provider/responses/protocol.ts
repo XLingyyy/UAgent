@@ -128,6 +128,10 @@ export function responsesBody(
   reasoningEffort?: string,
 ) {
   const fail = (message: string) => responsesError(request.providerId, message);
+  // A cached session supplies a default only; each approved request owns its selection.
+  const effort = request.reasoningEffort === undefined ? reasoningEffort : request.reasoningEffort;
+  if (effort !== undefined && !["none", "minimal", "low", "medium", "high", "xhigh"].includes(effort))
+    throw fail("Unsupported reasoning effort.");
   if (
     request.toolChoice !== undefined &&
     request.toolChoice !== "auto" &&
@@ -175,7 +179,7 @@ export function responsesBody(
       : { max_output_tokens: request.maxOutputTokens }),
     ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
     ...(tools?.length ? { tools, tool_choice: request.toolChoice ?? "auto" } : {}),
-    ...(reasoningEffort === undefined ? {} : { reasoning: { effort: reasoningEffort } }),
+    ...(effort === undefined ? {} : { reasoning: { effort } }),
   };
 }
 

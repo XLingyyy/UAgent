@@ -36,6 +36,8 @@ export interface ProviderRuntimeRequest {
   toolChoice?: "auto" | "none";
   temperature?: number;
   maxOutputTokens?: number;
+  /** Effective selection for this request; never an execution or connection grant. */
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
   metadata?: {
     taskId?: string;
     planId?: string;

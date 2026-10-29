@@ -15,6 +15,7 @@ import {
   type SafeProviderSession,
 } from "./safe-provider-session";
 import { createAttachmentStore } from "./attachment-store";
+import { ProviderRuntimeBridge } from "../../../../../packages/runtime/src/provider/provider-runtime-bridge";
 import type { NativeInvoke } from "./project-native-adapter";
 
 const providerId = "configured-responses",
@@ -226,6 +227,68 @@ const request = (): ProviderRuntimeRequest => ({
 });
 
 describe("safe Responses fixture controller (synthetic invoke only)", () => {
+  it("uses each draft's reasoning selection through a cached ordinary bridge and exact native approval", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => { throw Error("No browser fetch"); }));
+    const h = setup({ autoApprove: false });
+    await h.open();
+    // This fixture returns JSON; exercise the real bridge/controller via complete.
+    const bridge = new ProviderRuntimeBridge({
+      adapter: {
+        id: providerId,
+        getCapabilities: () => h.manager.adapter.getCapabilities(),
+        complete: (request, options) => h.manager.adapter.complete(request, options),
+      },
+      enabled: true,
+    });
+    const input = {
+      system: "You are a concise assistant.",
+      developer: "Discuss only; no tools.",
+      context: [], constraints: [], toolPolicy: [],
+      user: "A synthetic ordinary question.",
+      metadata: { providerId, providerModelId: modelId },
+    };
+    const reviews: string[] = [];
+    for (const [index, selectedEffort] of ["low", "xhigh", "none", "auto"].entries()) {
+      const draft = {
+        taskMode: "discussion", projectId, providerId, modelId,
+        conversationId: "conversation-fixture", reasoningEffort: selectedEffort,
+      } as TaskDraft;
+      const pending = bridge.execute(input, draft, "effort-task-" + index, "effort-plan-" + index);
+      await vi.waitFor(() => expect(h.gate.getPending()).not.toBeNull());
+      expect(h.count("dispatch_native_responses_request")).toBe(index);
+      const review = h.gate.getPending()!;
+      const body = JSON.parse(review.envelope.body);
+      expect(body.reasoning).toEqual(selectedEffort === "auto" ? undefined : { effort: selectedEffort });
+      expect(body.tools).toBeUndefined();
+      expect(review.envelope.body).toBe(h.prepared());
+      reviews.push(review.envelope.body);
+      h.gate.approve(review.id);
+      await pending;
+      expect(h.count("dispatch_native_responses_request")).toBe(index + 1);
+    }
+    expect(h.calls.filter(c => c.command === "prepare_native_responses_request").map(c => c.input.body)).toEqual(reviews);
+    expect(h.count("bind_native_responses_conversation")).toBe(1);
+    expect(h.count("open_native_responses_profile")).toBe(1);
+    expect(h.records).toHaveLength(4);
+    expect(h.fetcher).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unsupported per-request reasoning value before native preparation or approval", async () => {
+    const h = setup({ autoApprove: false });
+    await h.open();
+    const input = {
+      ...request(),
+      metadata: { projectId, conversationId: "conversation-fixture" },
+      reasoningEffort: "unsupported-effort",
+    } as unknown as ProviderRuntimeRequest;
+    await expect(h.manager.adapter.complete(input)).rejects.toMatchObject({ code: "malformed_response" });
+    expect(h.count("prepare_native_responses_request")).toBe(0);
+    expect(h.count("approve_native_responses_request")).toBe(0);
+    expect(h.count("dispatch_native_responses_request")).toBe(0);
+    expect(h.gate.getPending()).toBeNull();
+  });
+
   it("routes ordinary requests through native chat and discards native ownership on conversation change",async()=>{
     vi.stubGlobal("fetch",vi.fn(()=>{throw Error("No browser fetch");}));
     const h=setup();await h.open();

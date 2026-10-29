@@ -1707,6 +1707,7 @@ pub fn run() {
             native_responses_commands::close_native_responses_profile,
             #[cfg(windows)]
             native_responses_commands::bind_native_responses_run,
+            #[cfg(windows)]
             native_responses_commands::bind_native_responses_conversation,
             #[cfg(windows)]
             native_responses_commands::prepare_native_responses_request,
