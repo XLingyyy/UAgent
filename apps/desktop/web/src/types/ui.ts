@@ -246,7 +246,7 @@ export interface ProviderStoreActions {
   setSelectedProvider: (providerId: string | null) => void;
   saveProvider: (provider: ProviderConfig, version?: import("./provider").ProviderVersion) => void | Promise<void>;
   deleteProvider: (providerId: string, version?: import("./provider").ProviderVersion) => void | Promise<void>;
-  setDefaultProvider: (providerId: string | null) => void;
+  setDefaultProvider: (providerId: string | null) => void | Promise<void>;
   setProviderTestStatus: (status: ProviderTestStatus) => void;
 }
 

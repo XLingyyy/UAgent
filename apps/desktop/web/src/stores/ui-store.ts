@@ -959,10 +959,11 @@ function createUIStateBundle(
     }));
   });
 
-  const syncComposerSelection = (
+  const deriveComposerSelection = (
     previousProviderState: ProviderState,
     nextProviderState: ProviderState,
-  ) => {
+    previousComposerState: ComposerStoreState,
+  ): ComposerStoreState => {
     const previousDefault = getDefaultModelSelection(
       previousProviderState.providers,
       previousProviderState.defaultProviderId,
@@ -976,8 +977,7 @@ function createUIStateBundle(
       previousDefault.modelId !== nextDefault.modelId ||
       previousDefault.reasoningEffort !== nextDefault.reasoningEffort;
 
-    // Capability/default reconciliation is hydration, even after a provider edit.
-    hydrateSettings(()=>composerStore.setState((previousComposerState) => {
+    // Derive before publishing either the provider default or its effective model.
       const currentModelExists =
         previousComposerState.selectedModelId === "not-configured" ||
         nextProviderState.providers.some(
@@ -997,7 +997,29 @@ function createUIStateBundle(
       if(previousComposerState.selectedModelId===selectedModelId&&previousComposerState.reasoningEffort===reasoningEffort)
         return previousComposerState;
       return {...previousComposerState,selectedModelId,reasoningEffort};
-    }));
+  };
+  const withModelSelectionBarrier = (selectedModelId:string,publish:()=>void):void|Promise<void> => {
+    const version=++modelSelectionVersion;
+    const commit=()=>{if(version!==modelSelectionVersion)throw Error("model_selection_changed");publish();};
+    const session=safeProviderSession.getSnapshot();
+    if(composerStore.getState().selectedModelId!==selectedModelId&&(session.wireApi==="responses"||session.nativeClosing||session.nativeCloseFailed)){
+      return safeProviderSession.closeAsync("project_changed").then(commit).catch(error=>{
+        if(version===modelSelectionVersion)composerStore.setState(previous=>({...previous,submitError:"responses.switchFailed"}));
+        throw error;
+      });
+    }
+    commit();
+  };
+  const syncComposerSelection = (previous:ProviderState,next:ProviderState,hydrating=false):void|Promise<void> => {
+    const selected=deriveComposerSelection(previous,next,composerStore.getState()).selectedModelId;
+    return withModelSelectionBarrier(selected,()=>{
+      if(providerStore.getState()!==previous)throw Error("provider_changed_reload_required");
+      const publish=()=>{
+        providerStore.setState(next);
+        hydrateSettings(()=>composerStore.setState(current=>deriveComposerSelection(previous,next,current)));
+      };
+      if(hydrating)hydrateSettings(publish);else publish();
+    });
   };
 
   const getMvp14ProcessConfig = () => {
@@ -1362,19 +1384,14 @@ function createUIStateBundle(
         previousState.permission === permission ? previousState : { ...previousState, permission },
       ),
     setComposerModel: (selectedModelId) => {
-      const version=++modelSelectionVersion;
-      const publish=()=>{if(version!==modelSelectionVersion)return;
+      const publish=()=>{
       composerStore.setState((previousState) => {
         const reasoningEffort=resolveEffectiveReasoning(providerStore.getState().providers,selectedModelId,previousState.reasoningEffort);
         return previousState.selectedModelId===selectedModelId&&previousState.reasoningEffort===reasoningEffort
           ?previousState:{...previousState,selectedModelId,reasoningEffort};
       });};
-      if(composerStore.getState().selectedModelId!==selectedModelId&&(safeProviderSession.getSnapshot().wireApi==="responses"||safeProviderSession.getSnapshot().nativeClosing)){
-        return safeProviderSession.closeAsync("project_changed").then(publish).catch(()=>{
-          if(version===modelSelectionVersion)composerStore.setState(previous=>({...previous,submitError:"responses.switchFailed"}));
-        });
-      }
-      publish();
+      const result=withModelSelectionBarrier(selectedModelId,publish);
+      return result?.catch(()=>undefined);
     },
     setComposerReasoning: (requested) =>
       composerStore.setState((previousState) => {
@@ -3212,7 +3229,7 @@ function createUIStateBundle(
     };
   }
 
-  function applySavedProvider(nextProvider: ProviderConfig,providerVersion?:import("../types/provider").ProviderVersion){
+  function applySavedProvider(nextProvider: ProviderConfig,providerVersion?:import("../types/provider").ProviderVersion,hydrating=false):void|Promise<void>{
       const previousProviderState = providerStore.getState();
       if (!nextProvider.providerId.trim() || new Set(nextProvider.models.map((model) => model.id)).size !== nextProvider.models.length) {
         throw new Error("invalid_provider_model_identity");
@@ -3240,8 +3257,7 @@ function createUIStateBundle(
         ...(providerVersion ? {providerVersions:{...previousProviderState.providerVersions,[nextProvider.providerId]:providerVersion}} : {}),
       };
 
-      providerStore.setState(nextProviderState);
-      syncComposerSelection(previousProviderState, nextProviderState);
+      return syncComposerSelection(previousProviderState, nextProviderState,hydrating);
 
   }
   const providerActions: ProviderSettingsActions = {
@@ -3254,7 +3270,7 @@ function createUIStateBundle(
       const snapshot=nativeProductSettings.getBootstrap();
       const current=snapshot?.providers.find(p=>p.config.providerId===providerId);
       if(!current)throw Error("provider_changed_reload_required");
-      hydrateSettings(()=>applySavedProvider(restoredProvider(current.config),{providerId,generation:current.generation,revision:current.revision,exists:true}));
+      await applySavedProvider(restoredProvider(current.config),{providerId,generation:current.generation,revision:current.revision,exists:true},true);
     },
     setSelectedProvider:(providerId)=>providerStore.setState(previous=>({...previous,selectedProviderId:providerId,testStatus:"idle"})),
     saveProvider:(config,capturedVersion)=>{
@@ -3267,14 +3283,14 @@ function createUIStateBundle(
         if(next.providerId==="deepseek")safeProviderSession.close("revoked");
         return nativeProductSettings.saveProvider(next,token).then(apply);
       }
-      applySavedProvider(next);
+      return applySavedProvider(next);
     },
     deleteProvider:(providerId,capturedVersion)=>{
       const apply=()=>{
         if(providerId==="deepseek"||safeProviderSession.getSnapshot().providerId===providerId)safeProviderSession.disable();
         const previous=providerStore.getState(),providers=previous.providers.filter(p=>p.providerId!==providerId);
         const next={...previous,providers,selectedProviderId:previous.selectedProviderId===providerId?providers[0]?.providerId??null:previous.selectedProviderId,defaultProviderId:previous.defaultProviderId===providerId?null:previous.defaultProviderId,testStatus:"idle" as const};
-        providerStore.setState(next);syncComposerSelection(previous,next);
+        return syncComposerSelection(previous,next);
       };
       if(nativeProductSettings.enabled()){
         const token=capturedVersion??providerStore.getState().providerVersions?.[providerId];if(!token)throw Error("settings_version_required");
@@ -3282,9 +3298,9 @@ function createUIStateBundle(
         if(providerId==="deepseek")safeProviderSession.close("revoked");
         return nativeProductSettings.deleteProvider(token).then(apply);
       }
-      apply();
+      return apply();
     },
-    setDefaultProvider:(providerId)=>{const previous=providerStore.getState(),next={...previous,defaultProviderId:providerId};providerStore.setState(next);syncComposerSelection(previous,next);},
+    setDefaultProvider:(providerId)=>{const previous=providerStore.getState(),next={...previous,defaultProviderId:providerId};return syncComposerSelection(previous,next);},
     setProviderTestStatus:(testStatus)=>providerStore.setState(previous=>({...previous,testStatus})),
   };
 
@@ -3794,17 +3810,21 @@ function createUIStateBundle(
       return {schemaVersion:1,theme:layoutStore.getState().theme,projectRoots:roots.map(p=>p.root),selectedProjectRoot:roots.find(p=>p.id===project.activeProjectId)?.root??null,deepseekConfigured:providerStore.getState().providers.some(p=>p.providerId==="deepseek")};
     },
     async restore(config: WorkspaceConfig, active:()=>boolean=()=>true) {
+      await safeProviderSession.closeAsync("project_changed");
+      if(!active())return;
       const current=projectRequests.begin("local-workspace-restore");
       const initialProject=projectStore.getState(),initialComposer=composerStore.getState();
       const restored:Array<{root:string;project:ProjectProfile}>=[];
       for(const root of config.projectRoots){const project=await projectAdapter.addProject(root);if(!active()||!current())return;restored.push({root,project:{...project,trustState:"untrusted" as const}});}
       if(!active()||!current()||projectStore.getState()!==initialProject||composerStore.getState()!==initialComposer)return;
       const selected=restored.find(p=>p.root===config.selectedProjectRoot)?.project.id??null;
-      projectActions.setActiveProject(null);
-      projectActions.setActiveProject(selected);
+      await projectActions.setActiveProject(null);
+      if(!active()||projectStore.getState().activeProjectId!==null)throw Error("workspace_restore_revocation_unconfirmed");
+      await projectActions.setActiveProject(selected);
+      if(!active()||projectStore.getState().activeProjectId!==selected)throw Error("workspace_restore_revocation_unconfirmed");
       projectStore.setState(previous=>({...previous,registeredProjects:restored.map(p=>p.project),activeProjectId:selected}));
       layoutActions.setTheme(config.theme);
-      if(config.deepseekConfigured) providerActions.saveProvider({providerId:"deepseek",displayName:"DeepSeek",baseUrl:"https://api.deepseek.com",wireApi:"openai_compatible",authMode:"env_key",models:[{id:"deepseek-flash",label:"DeepSeek Flash",contextWindow:1000000,supportsReasoning:false}],defaultModel:"deepseek-flash",enabled:true,networkMode:"disabled"});
+      if(config.deepseekConfigured) await providerActions.saveProvider({providerId:"deepseek",displayName:"DeepSeek",baseUrl:"https://api.deepseek.com",wireApi:"openai_compatible",authMode:"env_key",models:[{id:"deepseek-flash",label:"DeepSeek Flash",contextWindow:1000000,supportsReasoning:false}],defaultModel:"deepseek-flash",enabled:true,networkMode:"disabled"});
     },
   };
   let nativeStarted=false;
@@ -3827,7 +3847,9 @@ function createUIStateBundle(
         // Null is this project's lack of an override, never the previous project's effort.
         const selectedModelId=provider&&model?JSON.stringify([provider.providerId,model.id]):"not-configured";
         const reasoningEffort=resolveEffectiveReasoning(providerStore.getState().providers,selectedModelId,selection?.reasoningEffort);
-        composerStore.setState(previous=>({...previous,selectedModelId,reasoningEffort,savedRun:undefined}));
+        const apply=()=>{if(projectStore.getState().activeProjectId!==id)throw Error("project_selection_changed");hydrateSettings(()=>composerStore.setState(previous=>({...previous,selectedModelId,reasoningEffort,savedRun:undefined})));};
+        const pending=withModelSelectionBarrier(selectedModelId,apply);
+        if(pending)void pending.catch(()=>undefined);
         }finally{
           modelSelection=JSON.stringify([composerStore.getState().selectedModelId,composerStore.getState().reasoningEffort]);
           applyingProjectSelection=false;
