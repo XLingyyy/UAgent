@@ -10,6 +10,7 @@
 //  - missing, escaped, or non-file inventoried sources reject the identity.
 
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -688,6 +689,113 @@ test("R7.3 an unclassified file under the final-tooling root rejects identity", 
     expectCode(() => computeSourceIdentity(fixture.repo), "SOURCE_IDENTITY_UNCLASSIFIED_FILE");
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+
+function removeUEIdentityFixture(fixture) {
+  // Only this test's mkdtemp child may be recursively removed.
+  assert.equal(resolve(fixture.base, ".."), resolve(tmpdir()));
+  rmSync(fixture.base, { recursive: true, force: true });
+}
+
+test("UE identity production imports are hashed and watched", () => {
+  const fixture = createDisposableRepository();
+  try {
+    const paths = [
+      "scripts/export-ue-scene-batch-schemas.mjs",
+      "apps/desktop/src-tauri/src/ue_build_profile.rs",
+      "packages/runtime/src/ue-scene-batch-v2.ts",
+      "integrations/unreal/UAgentAssetToolsV2/UAgentAssetToolsV2.uplugin",
+      "integrations/unreal/UAgentAssetToolsV2/Resources/scene-batch-v2-schemas.json",
+      "integrations/unreal/UAgentAssetToolsV2/Build/package-input.txt",
+      "integrations/unreal/UAgentAssetToolsV2/Config/plugin.ini",
+      "integrations/unreal/UAgentAssetToolsV2/Source/UAgentSceneBatchToolsV2/Private/tools.cpp",
+      "integrations/unreal/UAgentAssetToolsV2/Source/UAgentSemanticToolsV2Tests/Private/tests/loaded.cpp",
+      "integrations/unreal/UAgentAssetToolsV2/Source/UAgentPickupToolsV2Tests/Private/loaded.test.cpp",
+    ];
+    for (const logical of paths) {
+      const destination = resolve(fixture.repo, logical);
+      mkdirSync(resolve(destination, ".."), { recursive: true });
+      writeFileSync(destination, "known runtime input\n");
+    }
+    assert.equal(gitIn(fixture.repo, ["add", "--", ...paths]).status, 0);
+    assert.equal(gitIn(fixture.repo, ["commit", "-q", "-m", "UE production inputs"]).status, 0);
+    const before = computeSourceIdentity(fixture.repo);
+    assert.equal(before.sourceDirty, false);
+    for (const logical of paths) {
+      assert.equal(before.inventoriedFiles.some(({ path }) => path === logical), true, logical);
+      const target = resolve(fixture.repo, logical), original = readFileSync(target);
+      assert.equal(before.buildWatchSet.includes(target), true, logical);
+      writeFileSync(target, Buffer.concat([original, Buffer.from("changed input\n")]));
+      const after = computeSourceIdentity(fixture.repo);
+      assert.notEqual(after.sourceTreeSha256, before.sourceTreeSha256, logical);
+      assert.equal(after.sourceDirty, true, logical);
+      writeFileSync(target, original);
+    }
+    assert.equal(computeSourceIdentity(fixture.repo).sourceTreeSha256, before.sourceTreeSha256);
+  } finally {
+    removeUEIdentityFixture(fixture);
+  }
+});
+
+test("UE identity exact standalone tests and fixture data stay outside the hash", () => {
+  const fixture = createDisposableRepository();
+  try {
+    const before = computeSourceIdentity(fixture.repo);
+    const testPaths = [
+      "scripts/test-trusted-root-native.ps1",
+      "scripts/test-ue-build-native.ps1",
+      "scripts/test-ue-build-repair-native.ps1",
+      "scripts/test-ue-build-repair.mjs",
+      "scripts/test-ue-build-runtime.mjs",
+      "scripts/test-ue-pickup-template-native.ps1",
+      "scripts/test-ue-pickup-template.mjs",
+      "scripts/test-ue-scene-batch-native.ps1",
+      "scripts/test-ue-scene-batch.mjs",
+      "scripts/test-ue-semantic-v2-native.ps1",
+      "scripts/test-ue-semantic-v2.mjs",
+      "apps/desktop/src-tauri/src/ue_build_repair_tests.rs",
+    ];
+    const fixtureData = "packages/runtime/src/__fixtures__/ue-pickup-template-v2-discovery.json";
+    const documentation = "packages/runtime/src/ue-identity-notes.md";
+    for (const logical of [...testPaths, fixtureData, documentation]) {
+      const destination = resolve(fixture.repo, logical);
+      mkdirSync(resolve(destination, ".."), { recursive: true });
+      writeFileSync(destination, "standalone test/documentation input\n");
+    }
+    const after = computeSourceIdentity(fixture.repo);
+    assert.equal(after.sourceTreeSha256, before.sourceTreeSha256);
+    assert.equal(after.sourceDirty, false);
+    const excluded = new Map(after.productionBoundary.excludedEntries.map(e => [e.path, e.ruleId]));
+    for (const logical of testPaths) {
+      assert.equal(excluded.get(logical), "test_sources", logical);
+      assert.equal(after.inventoriedFiles.some(({ path }) => path === logical), false, logical);
+    }
+    assert.equal(excluded.get(fixtureData), "test_fixture_data");
+    assert.equal(excluded.get(documentation), "documentation");
+  } finally {
+    removeUEIdentityFixture(fixture);
+  }
+});
+
+test("UE identity rejects unknown and near-name tooling instead of widening exclusions", () => {
+  const fixture = createDisposableRepository();
+  try {
+    for (const logical of [
+      "scripts/new-ue-runtime.mjs",
+      "scripts/test-ue-build-native-extra.ps1",
+      "scripts/export-ue-scene-batch-schemas-extra.mjs",
+      "scripts/nested/test-ue-build-native.ps1",
+    ]) {
+      const target = resolve(fixture.repo, logical);
+      mkdirSync(resolve(target, ".."), { recursive: true });
+      writeFileSync(target, "unclassified source input\n");
+      expectCode(() => computeSourceIdentity(fixture.repo), "SOURCE_IDENTITY_UNCLASSIFIED_FILE");
+      rmSync(target);
+    }
+  } finally {
+    removeUEIdentityFixture(fixture);
   }
 });
 

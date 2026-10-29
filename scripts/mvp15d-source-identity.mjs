@@ -26,7 +26,30 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const PRODUCTION_SOURCE_BOUNDARY_VERSION = "uagent.mvp15d.production-source-boundary.v2";
+const PRODUCTION_SOURCE_BOUNDARY_VERSION = "uagent.mvp15d.production-source-boundary.v3";
+
+const EXACT_STANDALONE_TEST_RUNNERS = Object.freeze([
+  "scripts/test-trusted-root-native.ps1",
+  "scripts/test-ue-build-native.ps1",
+  "scripts/test-ue-build-repair-native.ps1",
+  "scripts/test-ue-build-repair.mjs",
+  "scripts/test-ue-build-runtime.mjs",
+  "scripts/test-ue-pickup-template-native.ps1",
+  "scripts/test-ue-pickup-template.mjs",
+  "scripts/test-ue-scene-batch-native.ps1",
+  "scripts/test-ue-scene-batch.mjs",
+  "scripts/test-ue-semantic-v2-native.ps1",
+  "scripts/test-ue-semantic-v2.mjs",
+]);
+const EXACT_TEST_ONLY_SOURCES = Object.freeze([
+  "apps/desktop/src-tauri/src/ue_build_repair_tests.rs",
+]);
+const EXACT_TEST_FIXTURE_DATA = Object.freeze([
+  "packages/runtime/src/__fixtures__/ue-pickup-template-v2-discovery.json",
+]);
+const EXACT_PRODUCTION_TOOLING = Object.freeze([
+  "scripts/export-ue-scene-batch-schemas.mjs",
+]);
 
 // Exact files outside recursively walked production roots. These inputs control
 // workspace/package resolution, compiler/bundler behavior, the Tauri release,
@@ -48,6 +71,7 @@ const PRODUCTION_SOURCE_REQUIRED_FILES = Object.freeze(
     "apps/desktop/web/vite.config.ts",
     "eslint.config.mjs",
     "integrations/unreal/UAgentAssetTools/UAgentAssetTools.uplugin",
+    "integrations/unreal/UAgentAssetToolsV2/UAgentAssetToolsV2.uplugin",
     "package.json",
     "packages/mcp-client/package.json",
     "packages/mcp-client/tsconfig.json",
@@ -95,6 +119,10 @@ const PRODUCTION_SOURCE_ROOTS = Object.freeze(
       required: true,
       class: "companion-source",
     },
+    { path: "integrations/unreal/UAgentAssetToolsV2/Build", required: false, class: "companion-build" },
+    { path: "integrations/unreal/UAgentAssetToolsV2/Config", required: false, class: "companion-config" },
+    { path: "integrations/unreal/UAgentAssetToolsV2/Resources", required: true, class: "companion-resources" },
+    { path: "integrations/unreal/UAgentAssetToolsV2/Source", required: true, class: "companion-source" },
     { path: "packages/mcp-client/src", required: true, class: "mcp-client" },
     { path: "packages/runtime/src", required: true, class: "runtime" },
     { path: "packages/shared/src", required: true, class: "shared" },
@@ -111,7 +139,9 @@ const SOURCE_EXCLUSION_RULES = Object.freeze([
   Object.freeze({
     id: "test_sources",
     matches:
-      "*.test.*, *.spec.*, test(s)/**, __tests__/**, __snapshots__/**; excludes no UAgentAssetToolsTests module input",
+      "*.test.*, *.spec.*, test(s)/**, __tests__/**, __snapshots__/**; exact standalone runners: " +
+      EXACT_STANDALONE_TEST_RUNNERS.join(", ") + "; exact cfg(test) sources: " +
+      EXACT_TEST_ONLY_SOURCES.join(", ") + "; excludes no descriptor-loaded companion test module input",
     reason:
       "Automated test sources and snapshots do not ship; the descriptor-loaded companion Editor test module remains production input.",
   }),
@@ -119,6 +149,11 @@ const SOURCE_EXCLUSION_RULES = Object.freeze([
     id: "test_fixture_projects",
     matches: "packages/runtime/src/fixtures/{mvp11-ue-fixture,mvp12-repair-fixture}/**",
     reason: "Synthetic UE fixture project bytes are test data and are never bundled into UAgent.",
+  }),
+  Object.freeze({
+    id: "test_fixture_data",
+    matches: EXACT_TEST_FIXTURE_DATA.join(", "),
+    reason: "Exact synthetic discovery data is read only by runtime tests, never by the product.",
   }),
   Object.freeze({
     id: "generated_output",
@@ -216,9 +251,11 @@ function exclusionRuleId(logical, isDirectory) {
   const lower = logical.toLowerCase();
   const segments = pathSegments(logical);
   const basename = segments.at(-1) ?? "";
-  const isCompanionLoadedTestModule = lower.startsWith(
+  const isCompanionLoadedTestModule = [
     "integrations/unreal/uagentassettools/source/uagentassettoolstests/",
-  );
+    "integrations/unreal/uagentassettoolsv2/source/uagentsemantictoolsv2tests/",
+    "integrations/unreal/uagentassettoolsv2/source/uagentpickuptoolsv2tests/",
+  ].some((prefix) => lower.startsWith(prefix));
 
   if (
     !isCompanionLoadedTestModule &&
@@ -287,8 +324,10 @@ function exclusionRuleId(logical, isDirectory) {
     return "secret_material";
   }
 
-  // Exact standalone test harness; it is never invoked by the product build.
-  if (lower === "scripts/test-trusted-root-native.ps1") return "test_sources";
+  // Exact standalone harnesses/cfg(test) files; never a broad test-ue-* exclusion.
+  if (EXACT_STANDALONE_TEST_RUNNERS.includes(lower) || EXACT_TEST_ONLY_SOURCES.includes(lower))
+    return "test_sources";
+  if (EXACT_TEST_FIXTURE_DATA.includes(lower)) return "test_fixture_data";
 
   if (lower === "scripts/side-effect-scan.mjs" || lower.startsWith("scripts/mvp15-python-cache-")) {
     return "unrelated_validation_tooling";
@@ -299,7 +338,7 @@ function exclusionRuleId(logical, isDirectory) {
 
 function isScriptProductionFile(logical) {
   const basename = logical.split("/").at(-1) ?? "";
-  return /^mvp15d-[a-z0-9._-]+\.(?:mjs|ps1|json)$/i.test(basename);
+  return EXACT_PRODUCTION_TOOLING.includes(logical) || /^mvp15d-[a-z0-9._-]+\.(?:mjs|ps1|json)$/i.test(basename);
 }
 
 function validateScriptProductionFile(logical) {

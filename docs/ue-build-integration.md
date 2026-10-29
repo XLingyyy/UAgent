@@ -38,6 +38,16 @@ IPC/MCP handlers, exact operation grants, global resource ownership and durable
 effects. Neither the legacy `UAgentAssetTools` plugin nor its exact-six v1
 allowlist grants access to v2 tools. Read discovery cannot authorize writes.
 
+### Build identity
+
+Production-source boundary v3 includes the imported native/runtime modules, the
+v2 plugin descriptor, Source and Resources, optional Build/Config roots, and the
+exact scene-schema generator. Descriptor-loaded editor test modules remain
+hashed inputs. Only the listed standalone test runners, the cfg(test) repair
+source and the synthetic discovery fixture receive exact test exclusions;
+documentation uses the existing documentation rule. Unclassified tooling still
+rejects a build. This inventory coverage does not register or authorize UE tools.
+
 ### Required trusted host boundary
 
 These are integration requirements, not capabilities already supplied by importing the modules:
