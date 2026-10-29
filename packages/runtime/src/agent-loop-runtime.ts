@@ -23,6 +23,9 @@ import {
   type TaskRecord,
   type ToolRiskLevel,
 } from "@uagent/shared";
+import { RunCoordinator, type RunScopeLease } from "./run/run-coordinator.js";
+import type { ToolRegistry } from "./run/tool-registry.js";
+import type { RunStorePort, TaskRun } from "@uagent/shared";
 import { selectAction, type AgentAction, type AgentActionSelectorContext } from "./agent-action-selector.js";
 import { createEvidenceFromObservation, normalizeObservation, summarizePayload } from "./agent-observation.js";
 import { DeterministicPlanner, type Planner } from "./agent-planner.js";
@@ -39,7 +42,14 @@ import { mapProviderRuntimeEvent } from "./provider/provider-event-bridge.js";
 import type { ProviderAdapter } from "./provider/provider-adapter.js";
 import { redactString } from "./secrets/redaction.js";
 
+export interface InvestigationRuntimeOptions {
+  registry: ToolRegistry;
+  resolveScope: (scopeId:string,draft:TaskDraft)=>RunScopeLease|null;
+  store?: RunStorePort;
+}
+
 export interface AgentLoopOptions {
+  investigation?: InvestigationRuntimeOptions;
   onProviderAnalysis?: (taskId:string,text:string)=>boolean;
   planner?: Planner;
   actionSelector?: (step: AgentPlanStep, context: AgentActionSelectorContext) => AgentAction;
@@ -63,6 +73,7 @@ export interface AgentLoopOptions {
 }
 
 export interface AgentLoopContextUpdate {
+  investigation?: InvestigationRuntimeOptions;
   runtimeMode?: "mock" | "mcp-readonly";
   discovery?: McpDiscoverySnapshot | null;
   readResource?: ((uri: string) => Promise<unknown>) | undefined;
@@ -76,6 +87,9 @@ export interface AgentLoopContextUpdate {
 
 export interface AgentLoopRuntimeClient extends RuntimeClient {
   updateContext(update: AgentLoopContextUpdate): void;
+  getTaskRun(taskId:string):TaskRun|null;
+  pauseTaskRun(taskId:string):void;
+  resumeTaskRun(taskId:string):Promise<TaskRecord>;
   recordProviderResultAnalysis(taskId:string,summary:string):void;
   providerProposalFeedback(taskId:string,stage:"started"|"completed"|"rejected"|"cancelled"|"failed",summary:string): void;
 }
@@ -115,6 +129,7 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
   const sandboxPolicy = options.sandboxPolicy ?? createDefaultSandboxPolicy();
   const pendingContinuations = new Map<string, PendingStepContinuation>();
   const providerControllers = new Map<string, AbortController>();
+  const taskRuns = new Map<string,RunCoordinator>();
   let providerBridge: ProviderRuntimeBridge | null = null;
   if (options.providerAdapter) {
     providerBridge = new ProviderRuntimeBridge({
@@ -547,7 +562,29 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
     return { observation, evidence };
   }
 
+  function applyProviderEvent(taskId:string,event:Parameters<typeof mapProviderRuntimeEvent>[0]):void {
+    eventSequence+=1;
+    for(const next of mapProviderRuntimeEvent(event,taskId,eventSequence).taskEvents){
+      snapshot=applyTaskEvent(snapshot,next);emitAuditFromTaskEvent(next);notify();
+    }
+  }
+  function finishInvestigation(taskId:string,outcome:Awaited<ReturnType<RunCoordinator["start"]>>):TaskRecord {
+    if(!isStopped(taskId)){
+      if(outcome.run.status==="completed")emit(taskId,"task_completed","Investigation completed","Read-only investigation completed.","success",{run:outcome.run});
+      else if(outcome.run.status==="paused")emit(taskId,"approval_required","Investigation paused",outcome.run.stopReason??"paused","warning",{run:outcome.run,checkpoint:outcome.checkpoint});
+      else if(outcome.run.status==="cancelled")emit(taskId,"task_cancelled","Investigation cancelled","cancelled","warning",{run:outcome.run});
+      else emit(taskId,"task_failed","Investigation stopped",outcome.run.stopReason??"run_failed","error",{run:outcome.run});
+    }
+    return snapshot.tasksById[taskId]!;
+  }
   return {
+    getTaskRun(taskId){return taskRuns.get(taskId)?.getSnapshot()??null;},
+    pauseTaskRun(taskId){taskRuns.get(taskId)?.requestPause();},
+    async resumeTaskRun(taskId){
+      const coordinator=taskRuns.get(taskId);
+      if(!coordinator)throw Error("run_not_found");
+      return finishInvestigation(taskId,await coordinator.resume());
+    },
     async submitTask(draft: TaskDraft): Promise<TaskRecord> {
       taskSequence += 1;
       eventSequence = 0;
@@ -581,6 +618,27 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
       const discovery = options.discovery ?? null;
       const runtimeMode = options.runtimeMode ?? (discovery ? "mcp-readonly" : "mock");
       emit(taskId, "task_submitted", "User request", redactedDraft.input, "info", { draft: redactedDraft });
+      if(draft.taskMode==="investigation"){
+        const config=options.investigation,adapter=options.providerAdapter;
+        const lease=draft.investigationScopeId?config?.resolveScope(draft.investigationScopeId,draft):null;
+        if(!config||!lease||!adapter||!providerBridge?.isEnabled()){
+          emit(taskId,"task_failed","Investigation unavailable","run_scope_unavailable","error");return snapshot.tasksById[taskId]??record;
+        }
+        const controller=new AbortController();providerControllers.set(taskId,controller);
+        const coordinator=new RunCoordinator({adapter,registry:config.registry,lease,signal:controller.signal,store:config.store,
+          onProviderEvent:event=>{if(!controller.signal.aborted&&!isStopped(taskId))applyProviderEvent(taskId,event);},
+          onEvent:(event,run)=>{
+            if(controller.signal.aborted||isStopped(taskId))return;
+            if(event.type==="tool_started")emit(taskId,"tool_started","Project read started","Read-only project tool.","info",{runEvent:event});
+            else if(event.type==="tool_completed")emit(taskId,"tool_completed","Project read completed","Read-only result recorded.","success",{runEvent:event});
+            else if(event.type==="tool_failed")emit(taskId,"agent_step_failed","Project read stopped","Review task details.","warning",{runEvent:event});
+            else if(event.type==="status_changed"&&(event.payload as {pauseRequested?:boolean})?.pauseRequested)emit(taskId,"agent_step_started","Pausing investigation","Waiting for the current read or model response to finish.","info",{runEvent:event,run});
+          }});
+        taskRuns.set(taskId,coordinator);
+        try{return finishInvestigation(taskId,await coordinator.start(taskId,redactedDraft));}
+        catch{if(!isStopped(taskId))emit(taskId,"task_failed","Investigation unavailable","run_scope_unavailable","error");return snapshot.tasksById[taskId]??record;}
+        finally{providerControllers.delete(taskId);}
+      }
       if (!discovery && !options.providerAnalysisOnly) {
         emit(
           taskId,
@@ -665,6 +723,7 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
         return;
       }
       providerControllers.get(taskId)?.abort();
+      taskRuns.get(taskId)?.cancel();
       for (const key of pendingContinuations.keys()) { if (key.startsWith(`${taskId}:`)) pendingContinuations.delete(key); }
       emit(taskId, "task_cancelled", "Task cancelled", "Agent task cancellation requested.", "warning");
       sessionEngine.recordTaskCompletion(taskId, "cancelled", task.title, options.providerEnabled ? "provider" : "fixture");
@@ -715,7 +774,8 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
       else emit(taskId,"task_cancelled","Model proposal revoked",safe,"warning");
     },
     updateContext(update: AgentLoopContextUpdate): void {
-      if ("providerAdapter" in update || "providerEnabled" in update) {
+      if ("providerAdapter" in update || "providerEnabled" in update || "investigation" in update) {
+        for(const coordinator of taskRuns.values())coordinator.cancel();
         for (const [taskId, controller] of providerControllers) {
           controller.abort();
           if (!isStopped(taskId)) emit(taskId, "task_cancelled", "Provider context changed", "Pending provider request was revoked.", "warning");

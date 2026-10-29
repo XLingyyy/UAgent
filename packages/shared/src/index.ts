@@ -1,3 +1,5 @@
+export type { RunStatus, RunEffectState, RunJsonValue, TaskRunLimits, TaskRunScope, RunSourceRef, RunToolCall, RunToolResult, RunStep, TaskRun, RunEvent, RunCheckpoint, RunStoreCommit, RunStorePort } from "./run.js";
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
@@ -318,6 +320,10 @@ export type {
   ProviderRuntimeEvent,
   ProviderRuntimeError,
   ProviderRuntimeMessage,
+  ProviderToolDefinition,
+  ProviderToolCall,
+  ProviderToolCallDelta,
+  ProviderFinishReason,
   ProviderRuntimeRequest,
   ProviderRuntimeResponse,
   ProviderStreamChunk,

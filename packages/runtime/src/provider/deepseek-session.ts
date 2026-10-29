@@ -1,8 +1,9 @@
+import { chatToolDefinitions, chatToolMessages } from "./chat-tool-messages.js";
+import { ToolCallAccumulator } from "./tool-call-stream.js";
 import type { OutboundConsentGate, OutboundEnvelope } from "./outbound-consent.js";
-import type { ProviderRuntimeRequest, ProviderRuntimeResponse, ProviderStreamChunk, ProviderUsage } from "@uagent/shared";
+import type { ProviderRuntimeRequest, ProviderRuntimeResponse, ProviderStreamChunk, ProviderUsage, ProviderToolCallDelta, ProviderFinishReason } from "@uagent/shared";
 import type { ProviderAdapter, ProviderCallOptions } from "./provider-adapter.js";
 import { createProviderRuntimeError } from "./provider-error.js";
-import { redactString } from "../secrets/redaction.js";
 
 export const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
 export const DEEPSEEK_MODEL = "deepseek-flash";
@@ -48,7 +49,7 @@ export interface DeepSeekSessionOptions {
   getProjectContext?: () => { projectId: string | null; epoch: number; revision: string };
 }
 
-const fail = (code: "auth_missing" | "provider_unavailable" | "malformed_response" | "cancelled" | "timeout" | "network_error", message: string) =>
+const fail = (code: "auth_missing" | "provider_unavailable" | "malformed_response" | "cancelled" | "timeout" | "network_error" | "rate_limited", message: string) =>
   createProviderRuntimeError("deepseek", code, message);
 const bytes = (text: string) => new TextEncoder().encode(text).length;
 const validInt = (n: number) => Number.isSafeInteger(n) && n >= 0;
@@ -76,13 +77,13 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
   function prepare(request: ProviderRuntimeRequest) {
     if (request.providerId !== "deepseek" || request.modelId !== DEEPSEEK_MODEL) throw fail("provider_unavailable", "Only deepseek / deepseek-flash is allowed.");
     if (!request.messages.length || request.messages.length > 32) throw fail("provider_unavailable", "Message count exceeds the request bound.");
-    const messages = request.messages.map(message => {
-      if (!["system", "developer", "user", "assistant"].includes(message.role)) throw fail("provider_unavailable", "Tool messages require a separately approved workflow.");
-      return { role: message.role === "developer" ? "system" : message.role, content: redactString(message.content.split(credential || "\u0000").join("[REDACTED]")) };
-    });
+    const toolMode = !validation && request.metadata?.purpose === "investigation" && Boolean(request.metadata.runId && request.metadata.scopeRef);
+    if ((request.tools?.length || request.messages.some(message=>message.role==="tool" || message.toolCalls)) && !toolMode) throw fail("provider_unavailable","Tool messages require a separately approved workflow.");
+    const tools = request.tools?.length ? chatToolDefinitions(request.tools) : undefined;
+    const messages = chatToolMessages(request.messages, toolMode && Boolean(tools), credential);
     const maxTokens = request.maxOutputTokens ?? 1024;
     if (!Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 1024) throw fail("provider_unavailable", "Output limit must be between 1 and 1024 tokens.");
-    const body = { model: DEEPSEEK_MODEL, messages, max_tokens: maxTokens, stream: true, stream_options: { include_usage: true }, thinking: { type: "disabled" }, temperature: 0 };
+    const body = { model: DEEPSEEK_MODEL, messages, max_tokens: maxTokens, stream: true, stream_options: { include_usage: true }, thinking: { type: "disabled" }, temperature: 0, ...(tools ? {tools, tool_choice:request.toolChoice ?? "auto"} : {}) };
     const serialized = JSON.stringify(body);
     if (bytes(serialized) > 32_768) throw fail("provider_unavailable", "Request exceeds 32 KiB. Select less context.");
     // Byte upper bound plus deliberately generous per-message template overhead.
@@ -145,13 +146,15 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
         body: prepared.serialized, signal: controller.signal,
       };
       const response = await Promise.race([(options.fetcher ?? fetch)(DEEPSEEK_ENDPOINT, init), interrupted]);
-      if (!response.ok) throw fail("network_error", `Provider returned HTTP ${response.status}. No automatic retry was sent.`);
+      if (!response.ok) throw fail(response.status===401 || response.status===403 ? "auth_missing" : response.status===429 ? "rate_limited" : "network_error", `Provider returned HTTP ${response.status}. No automatic retry was sent.`);
       if (!response.headers.get("content-type")?.includes("text/event-stream") || !response.body) throw fail("malformed_response", "Expected a bounded SSE response.");
       reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8", { fatal: true });
       let buffer = "", held = "", seen = 0, index = 0, outputBytes = 0;
       let finished = false, completionSeen = false, usage: ProviderUsage | undefined;
-      let finishReason: "stop" | "length" = "stop";
+      let finishReason: Exclude<ProviderFinishReason,"error"> = "stop";
+      const toolCalls = new ToolCallAccumulator();
+      const toolHeld = new Map<number,string>();
       while (!finished) {
         const item = await Promise.race([reader.read(), interrupted]);
         if (item.done) throw fail("malformed_response", "Provider stream ended without DONE.");
@@ -166,14 +169,31 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
           if (data === "[DONE]") { finished = true; break; }
           if (!data) continue;
           if (++index > 2048) throw fail("malformed_response", "Provider event limit exceeded.");
-          if (completionSeen) throw fail("malformed_response", "Unexpected event after completion.");
           const event = JSON.parse(data);
+          if (completionSeen && !(event.usage && Array.isArray(event.choices) && event.choices.length===0)) throw fail("malformed_response","Unexpected event after completion.");
           if (event.error || (event.model && event.model !== DEEPSEEK_MODEL)) throw fail("malformed_response", "Unexpected provider response identity or error.");
           const choice = event.choices?.[0];
           if (choice?.delta?.reasoning_content) throw fail("malformed_response", "Unexpected thinking output in the non-thinking session.");
-          if (choice?.delta?.tool_calls || choice?.delta?.function_call) throw fail("malformed_response", "Unapproved tool output rejected.");
+          if (choice?.delta?.function_call) throw fail("malformed_response","Legacy function output rejected.");
+          if (choice?.delta?.tool_calls !== undefined) {
+            if (!prepared.body.tools || !Array.isArray(choice.delta.tool_calls)) throw fail("malformed_response","Unapproved tool output rejected.");
+            for (const raw of choice.delta.tool_calls) {
+              if (!raw || typeof raw!=="object" || (raw.type!==undefined && raw.type!=="function")) throw fail("malformed_response","Invalid tool delta.");
+              const delta:ProviderToolCallDelta={index:raw.index, ...(raw.id!==undefined?{id:raw.id}:{}), ...(raw.function?.name!==undefined?{name:raw.function.name}:{}),argumentsDelta:raw.function?.arguments??""};
+              if ((typeof delta.id==="string" && delta.id.includes(key)) || (typeof delta.name==="string" && delta.name.includes(key))) throw fail("malformed_response","Credential echo in tool identity.");
+              toolCalls.push(delta);
+              let pendingText=(toolHeld.get(delta.index)??"")+delta.argumentsDelta;
+              if (pendingText.includes(key)) throw fail("malformed_response","Credential echo in tool arguments.");
+              let heldLength=Math.min(key.length-1,pendingText.length);
+              while(heldLength>0&&!pendingText.endsWith(key.slice(0,heldLength)))heldLength--;
+              const safe=pendingText.slice(0,pendingText.length-heldLength);
+              pendingText=pendingText.slice(pendingText.length-heldLength);
+              toolHeld.set(delta.index,pendingText);
+              yield {id:`${request.id}-tool-${index}-${delta.index}`,requestId:request.id,providerId:"deepseek",modelId:DEEPSEEK_MODEL,index,delta:"",done:false,toolCallDelta:{...delta,argumentsDelta:safe}};
+            }
+          }
           if (choice?.finish_reason != null) {
-            if (!["stop", "length"].includes(choice.finish_reason)) throw fail("malformed_response", "Unsupported provider completion reason.");
+            if (!["stop", "length", "tool_calls"].includes(choice.finish_reason)) throw fail("malformed_response", "Unsupported provider completion reason.");
             finishReason = choice.finish_reason;
             completionSeen = true;
           }
@@ -202,9 +222,12 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
         }
       }
       if (!usage || !completionSeen) throw fail("malformed_response", "Provider usage or completion marker missing. No automatic retry.");
+      const completedCalls=toolCalls.finish(finishReason);
+      if(completedCalls.some(call=>!prepared.body.tools?.some(tool=>tool.function.name===call.name)))throw fail("malformed_response","Unadvertised tool call rejected.");
+      for (const [toolIndex,tail] of toolHeld) if(tail) yield {id:`${request.id}-tool-tail-${toolIndex}`,requestId:request.id,providerId:"deepseek",modelId:DEEPSEEK_MODEL,index:++index,delta:"",done:false,toolCallDelta:{index:toolIndex,argumentsDelta:tail}};
       if (validation) await validation.ledger.recordUsage(usage, typeof reservationId === "string" ? reservationId : undefined);
       if (controller.signal.aborted) throw fail("cancelled", "Provider request cancelled.");
-      yield { id: `${request.id}-done`, requestId: request.id, providerId: "deepseek", modelId: DEEPSEEK_MODEL, index: index + 1, delta: held.split(key).join("[REDACTED]"), done: true, usage, finishReason };
+      yield { id: `${request.id}-done`, requestId: request.id, providerId: "deepseek", modelId: DEEPSEEK_MODEL, index: index + 1, delta: held.split(key).join("[REDACTED]"), done: true, usage, finishReason, ...(completedCalls.length?{toolCalls:completedCalls}:{}) };
     } catch (error) {
       if (controller.signal.aborted) throw fail(timedOut ? "timeout" : "cancelled", timedOut ? "Provider timed out." : "Provider request cancelled.");
       // No raw transport errors, HTTP bodies, headers or request values enter logs.
@@ -224,12 +247,13 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
   }
   const adapter: ProviderAdapter = {
     id: "deepseek", stream,
-    getCapabilities: () => ({ providerId: "deepseek", modelIds: [DEEPSEEK_MODEL], supportsStreaming: true, supportsTools: false, isMock: options.mode === "offline" }),
+    getCapabilities: () => ({ providerId: "deepseek", modelIds: [DEEPSEEK_MODEL], supportsStreaming: true, supportsTools: !validation, isMock: options.mode === "offline" }),
     async complete(request, call): Promise<ProviderRuntimeResponse> {
-      let text = "", usage: ProviderUsage | undefined, finishReason: "stop" | "length" = "stop";
-      for await (const chunk of stream(request, call)) { text += chunk.delta; if (chunk.usage) usage = chunk.usage; if (chunk.finishReason) finishReason = chunk.finishReason; }
+      let text = "", usage: ProviderUsage | undefined, finishReason: Exclude<ProviderFinishReason,"error"> = "stop";
+      let completedCalls:ProviderRuntimeResponse["toolCalls"];
+      for await (const chunk of stream(request, call)) { text += chunk.delta; if (chunk.usage) usage = chunk.usage; if (chunk.finishReason) finishReason = chunk.finishReason; if(chunk.toolCalls)completedCalls=chunk.toolCalls; }
       if (!usage) throw fail("malformed_response", "Missing measured usage.");
-      return { id: `${request.id}-response`, requestId: request.id, providerId: "deepseek", modelId: DEEPSEEK_MODEL, text, usage, finishReason, createdAt: Date.now() };
+      return { id: `${request.id}-response`, requestId: request.id, providerId: "deepseek", modelId: DEEPSEEK_MODEL, text, usage, finishReason, createdAt: Date.now(), ...(completedCalls?.length?{toolCalls:completedCalls}:{}) };
     },
   };
   return {

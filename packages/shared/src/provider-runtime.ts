@@ -1,9 +1,30 @@
 export type ProviderMessageRole = "system" | "developer" | "user" | "assistant" | "tool";
 
+export interface ProviderToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+export interface ProviderToolCall {
+  id: string;
+  name: string;
+  /** Exact, complete JSON text. Validate before dispatch; never execute partial deltas. */
+  arguments: string;
+}
+export interface ProviderToolCallDelta {
+  index: number;
+  id?: string;
+  name?: string;
+  argumentsDelta: string;
+}
+export type ProviderFinishReason = "stop" | "length" | "tool_calls" | "error";
+
 export interface ProviderRuntimeMessage {
   role: ProviderMessageRole;
   content: string;
   name?: string;
+  toolCallId?: string;
+  toolCalls?: ProviderToolCall[];
 }
 
 export interface ProviderRuntimeRequest {
@@ -11,6 +32,8 @@ export interface ProviderRuntimeRequest {
   providerId: string;
   modelId: string;
   messages: ProviderRuntimeMessage[];
+  tools?: ProviderToolDefinition[];
+  toolChoice?: "auto" | "none";
   temperature?: number;
   maxOutputTokens?: number;
   metadata?: {
@@ -21,7 +44,9 @@ export interface ProviderRuntimeRequest {
     projectId?: string | null;
     projectEpoch?: number;
     /** Internal scoped result analysis; never implicitly append selected attachments. */
-    purpose?: "tool_feedback";
+    purpose?: "tool_feedback" | "investigation";
+    runId?: string;
+    scopeRef?: string;
   };
 }
 
@@ -46,7 +71,8 @@ export interface ProviderRuntimeResponse {
   providerId: string;
   modelId: string;
   text: string;
-  finishReason: "stop" | "length" | "error";
+  finishReason: ProviderFinishReason;
+  toolCalls?: ProviderToolCall[];
   usage: ProviderUsage;
   createdAt: number;
 }
@@ -60,7 +86,9 @@ export interface ProviderStreamChunk {
   delta: string;
   done: boolean;
   usage?: ProviderUsage;
-  finishReason?: "stop" | "length";
+  finishReason?: Exclude<ProviderFinishReason, "error">;
+  toolCallDelta?: ProviderToolCallDelta;
+  toolCalls?: ProviderToolCall[];
 }
 
 export interface ProviderRuntimeError {
@@ -73,6 +101,18 @@ export interface ProviderRuntimeError {
 }
 
 export type ProviderRuntimeEvent =
+  | {
+      type: "provider_tool_call_started";
+      requestId: string; providerId: string; index: number; callId: string; name: string;
+    }
+  | {
+      type: "provider_tool_call_arguments_delta";
+      requestId: string; providerId: string; index: number; callId: string; delta: string;
+    }
+  | {
+      type: "provider_tool_call_completed";
+      requestId: string; providerId: string; call: ProviderToolCall;
+    }
   | {
       type: "provider_request_started";
       requestId: string;

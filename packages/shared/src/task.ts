@@ -132,6 +132,9 @@ export type TaskEventType =
 export type TaskEventLevel = "info" | "success" | "warning" | "error";
 
 export interface TaskDraft {
+  /** Investigation is opt-in and resolves an in-memory lease, never a persisted grant. */
+  taskMode?: "discussion" | "investigation";
+  investigationScopeId?: string;
   /** Text-only, completed turns from this conversation, shown in exact outbound review. */
   conversationId?: string;
   conversationHistory?: Array<{role:"user"|"assistant";content:string}>;

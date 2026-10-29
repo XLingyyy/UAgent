@@ -1,9 +1,12 @@
+import { ToolCallAccumulator } from "./tool-call-stream.js";
 import type {
   ProviderRuntimeEvent,
   ProviderRuntimeRequest,
   ProviderRuntimeResponse,
   ProviderStreamChunk,
   ProviderUsage,
+  ProviderToolCall,
+  ProviderFinishReason,
 } from "@uagent/shared";
 import type { ProviderAdapter } from "./provider-adapter.js";
 import { createProviderRuntimeError, normalizeProviderError } from "./provider-error.js";
@@ -24,6 +27,7 @@ export interface ProviderStreamResult {
   chunks: ProviderStreamChunk[];
   events: ProviderRuntimeEvent[];
   usage?: ProviderUsage;
+  response?: ProviderRuntimeResponse;
 }
 
 export async function runProviderComplete(
@@ -46,6 +50,8 @@ export async function runProviderComplete(
   try {
     const response = await adapter.complete(request, { signal: options.signal });
     if (options.signal?.aborted) { publish(cancelledEvent(request)); return { response: emptyCancelledResponse(request), events }; }
+    validateToolResponse(request, response.toolCalls ?? [], response.finishReason);
+    for (const call of response.toolCalls ?? []) publish({type:"provider_tool_call_completed",requestId:request.id,providerId:request.providerId,call});
     publish(usageEvent(request, response.usage));
     publish({ type: "provider_request_completed", requestId: request.id, providerId: request.providerId, response });
     return { response, events };
@@ -81,7 +87,8 @@ export async function runProviderStream(
   let started = false;
   let chunkCount = 0;
   let measuredUsage: ProviderUsage | undefined;
-  let finishReason: "stop" | "length" = "stop";
+  let finishReason: ProviderFinishReason = "stop";
+  const toolCalls = new ToolCallAccumulator();
 
   try {
     for await (const chunk of adapter.stream(request, { signal: options.signal })) {
@@ -97,6 +104,12 @@ export async function runProviderStream(
         publish({ type: "provider_stream_started", requestId: request.id, providerId: request.providerId });
         started = true;
       }
+      if (chunk.toolCallDelta) {
+        const delta = chunk.toolCallDelta;
+        const added = toolCalls.push(delta);
+        if (added.started) publish({type:"provider_tool_call_started",requestId:request.id,providerId:request.providerId,index:delta.index,callId:added.call.id,name:added.call.name});
+        if (delta.argumentsDelta) publish({type:"provider_tool_call_arguments_delta",requestId:request.id,providerId:request.providerId,index:delta.index,callId:added.call.id,delta:delta.argumentsDelta});
+      }
       if (chunk.usage) measuredUsage = chunk.usage;
       if (chunk.finishReason) finishReason = chunk.finishReason;
       chunks.push(chunk);
@@ -110,13 +123,12 @@ export async function runProviderStream(
     if (options.signal?.aborted) { publish(cancelledEvent(request)); return { text, chunks, events }; }
     const usage = measuredUsage ?? (adapter.getCapabilities().isMock ? usageFromText(request, text) : undefined);
     if (!usage) throw createProviderRuntimeError(adapter.id, "malformed_response", "Measured provider usage is required.");
+    const completedCalls = toolCalls.finish(finishReason);
+    validateToolResponse(request, completedCalls, finishReason);
+    for (const call of completedCalls) publish({type:"provider_tool_call_completed",requestId:request.id,providerId:request.providerId,call});
     publish({ type: "provider_stream_completed", requestId: request.id, providerId: request.providerId, text });
     publish(usageEvent(request, usage));
-    publish({
-      type: "provider_request_completed",
-      requestId: request.id,
-      providerId: request.providerId,
-      response: {
+    const response: ProviderRuntimeResponse = {
         id: `${request.providerId}-stream-response-${request.id}`,
         requestId: request.id,
         providerId: request.providerId,
@@ -125,12 +137,23 @@ export async function runProviderStream(
         finishReason,
         usage,
         createdAt: 1_000,
-      },
-    });
-    return { text, chunks, usage, events };
+        ...(completedCalls.length ? {toolCalls:completedCalls} : {}),
+    };
+    publish({type:"provider_request_completed",requestId:request.id,providerId:request.providerId,response});
+    return { text, chunks, usage, events, response };
   } catch (error) {
     publish(options.signal?.aborted ? cancelledEvent(request) : failedEvent(request, adapter.id, error));
     return { text, chunks, events };
+  }
+}
+
+function validateToolResponse(request: ProviderRuntimeRequest, calls: ProviderToolCall[], reason: ProviderFinishReason): void {
+  if ((reason === "tool_calls") !== (calls.length > 0)) throw createProviderRuntimeError(request.providerId,"malformed_response","Tool completion reason does not match calls.");
+  const allowed = new Set(request.tools?.map(tool=>tool.name) ?? []);
+  const ids = new Set<string>();
+  for (const call of calls) {
+    if (!allowed.has(call.name) || ids.has(call.id)) throw createProviderRuntimeError(request.providerId,"malformed_response","Unadvertised or duplicate tool call.");
+    ids.add(call.id);
   }
 }
 
