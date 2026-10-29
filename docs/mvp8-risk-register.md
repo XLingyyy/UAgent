@@ -1,7 +1,7 @@
 # MVP8 Risk Register
 
 | ID | Risk | Likelihood | Impact | Mitigation |
-|----|------|-----------|--------|------------|
+| --- | --- | --- | --- | --- |
 | R01 | Raw absolute path leaked to UI/DOM | Medium | High | Path redaction at bridge boundary; no raw paths in displayPath |
 | R02 | Symlink escape reads files outside root | Low | High | Canonicalize all paths; block if outside root |
 | R03 | Binary file content exposed as text | Low | Medium | NUL byte detection; extension allowlist; content redaction |

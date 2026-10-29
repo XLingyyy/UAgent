@@ -38,4 +38,4 @@ without a build manifest therefore remains unverified by design.
 
 Build and provenance verification are documented in
 `docs/mvp15-ue-companion-plugin-build-manifest.md` and are intentionally run
-from a clean supervisor-provided source commit before final packaging.
+from an immutable clean source commit before final packaging.

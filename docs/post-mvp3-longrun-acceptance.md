@@ -1,8 +1,8 @@
-# POST-MVP3 Longrun Acceptance
+# Agent Trace and Provider Fixture Requirements
 
-POST-MVP3-LONGRUN-001 stabilizes the accepted MVP3 Agent Core without starting MVP4 real provider work.
+These requirements cover the deterministic trace and fixture-only provider layer. Current live transport availability is described in [README](../README.md).
 
-## Completed Scope
+## Scope
 
 - Agent Run Trace shared contract for trace events, step snapshots, run summaries, terminal status, observations, evidence references, report summary, and blocked actions.
 - Runtime recorder/replay modules that derive `AgentRunTrace` from `TaskEvent` streams and produce deterministic replay summaries.
@@ -23,8 +23,6 @@ POST-MVP3-LONGRUN-001 stabilizes the accepted MVP3 Agent Core without starting M
 
 ## Required Verification
 
-The final implementation report must record exit codes for:
-
 - `pnpm typecheck`
 - `pnpm lint`
 - `pnpm test`
@@ -37,8 +35,6 @@ The final implementation report must record exit codes for:
 
 ## Side-Effect Scan
 
-The final implementation report must explain matches for:
-
 - Provider/API key terms: `provider`, `OpenAI`, `Anthropic`, `apiKey`, `Authorization`, `process.env`, `secret`, `credential`
 - MCP method terms: `tools/call`, `resources/read`
 - Write/execute terms: `save`, `compile`, `apply`, `write`, `delete`, `run`, `launch`, `mutate`
@@ -48,12 +44,6 @@ The final implementation report must explain matches for:
 
 Allowed matches are contracts, docs, tests, mock-only adapters, existing MCP read-only paths, and CSS token files. Any real provider call, credential read, UE write, mutating MCP call, or product shell/browser/filesystem path is a blocker.
 
-## MVP4 Readiness
+## Provider fixture lifecycle
 
-After this acceptance passes, the recommended next stage is MVP4 Provider Adapter implementation. MVP4 should start with explicit secret handling design, real adapter boundaries, streaming UI semantics, cancellation/error mapping, and provider-specific tests. It must not reuse POST-MVP3 mock providers as real network adapters.
-
-## POST-MVP3-LONGRUN-002+003 Addendum
-
-The follow-up LONGRUN-002+003 checkpoint adds a test-only MCP fixture engine and in-process transport harnesses for Streamable HTTP and legacy HTTP+SSE. The fixture matrix covers initialize, initialized notification logging, session id propagation, discovery pagination, capability absence, `resources/read`, policy-gated `tools/call`, blocked and unknown tool request-log invariants, malformed protocol responses, timeout injection, legacy endpoint errors, disconnect-style errors, and non-localhost guard behavior.
-
-Provider runtime readiness is extended to v0.2 mock-only semantics: deterministic request building from `PromptEnvelope`, provider runtime lifecycle events, scripted mock streaming, cancellation, usage accounting, error taxonomy, and trace/view-model projection. This is still not MVP4 real provider integration.
+Provider runtime readiness is extended to v0.2 mock-only semantics: deterministic request building from `PromptEnvelope`, provider runtime lifecycle events, scripted mock streaming, cancellation, usage accounting, error taxonomy, and trace/view-model projection. These mock contracts do not establish live provider availability.

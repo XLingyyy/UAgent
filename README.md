@@ -65,8 +65,6 @@ pnpm --dir apps/desktop exec vitest run web/src/runtime/conversation-flow.test.t
 
 用户反馈过一次基础真实模型请求能够返回；后续上下文、流式和标题栏修复使用离线合成传输验证，没有重新调用付费 API，也没有读取现有密钥。
 
-最近完成 57 项必要局部检查，以及最终调试 exe 的两次原生启动、合成 SSE 多轮、审批正文一致、取消/失败/重试、语言切换与重启偏好、最大化/还原和正常退出。原测试账本保持不变。没有运行全量回归。
-
 尚未完成或不能据此宣称通过的项目：
 
 - 当前源码的真实 API 多轮质量、鉴权异常和计费回归。
@@ -75,4 +73,4 @@ pnpm --dir apps/desktop exec vitest run web/src/runtime/conversation-flow.test.t
 - 其他服务商/模型的真实后端、完整自定义配置持久化和可继续请求的聊天存档恢复。
 - 发布签名、安装包和全产品验收。
 
-实现与局部验证说明见 [桌面 Provider 与对话说明](docs/desktop-provider-and-conversation.md)。旧 MVP15D 与重建阶段的验收记录保留在 [历史 README](docs/history/mvp15-readme-20261026.md) 和 [重建记录](docs/rebuild-mvp15-20261026.md)，不能代替当前源码的新验收。
+模块边界与行为约定见 [桌面 Provider 与对话说明](docs/desktop-provider-and-conversation.md)，开发与构建见 [开发指南](docs/development.md)。

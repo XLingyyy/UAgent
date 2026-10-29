@@ -72,7 +72,3 @@ Open the Vite URL printed by the command. The smoke path uses browser preview on
 11. Side-effect scan
     - Run `node scripts/side-effect-scan.mjs`.
     - Expected: 0 blocked findings.
-
-## Evidence Summary
-
-Automated DOM coverage is in `apps/desktop/web/src/mvp6-scenarios.test.tsx`. The scenario test covers the required named MVP6 matrix and can be used as repeatable smoke evidence when screenshots are not collected.

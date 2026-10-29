@@ -1,7 +1,5 @@
 # Desktop UI localization
 
-Owned directory: `apps/desktop/web/src/i18n/`. No existing component, style, package, runtime policy, or configuration is modified by this module.
-
 Stable API:
 
 ```tsx
@@ -28,7 +26,6 @@ function LanguageSetting() {
 
 // Typed parameters (missing parameters are a TypeScript error):
 t("workspace.welcomeProject", { project: project.name });
-t("budget.maximumReservation", { amount: "0.001024" });
 
 // Incremental integration of existing application-authored static copy:
 const { text } = useI18n();
@@ -43,6 +40,6 @@ Locales are `"zh-CN" | "en"`; default is Chinese, independent of browser languag
 
 Use explicit keys for dynamic sentences, aria labels, titles, and placeholders. Do not send model replies, user input, logs, errors received from external tools, paths, model IDs, commands, saved conversations, or secret values through `text()`. Display those values verbatim inside translated labels. This module performs no model requests, network calls, filesystem changes, approval changes, or budget operations.
 
-Safety copy preserves Flash-only usage, the cumulative CNY 10 cap, worst-case reservation retained after failure/cancellation, current-price verification, expiring memory-only credentials, separate exact-request confirmation, tool approval, trusted roots, screenshot consent, and manual redaction review. The dated price paragraph is a translation of an existing reference, not a fresh price verification.
+UI labels describe the active capability and approval boundary. Translation never changes transport availability, credentials, tool permissions, or request consent.
 
-Integration remains the UI owner's task. Coverage includes navigation, task composer, projects, every settings category, provider configuration, session setup, fees, outbound review, attachments, command proposals, optional feedback, local persistence/history, indexed asset search, and utility panels. See `INTEGRATION.md` for the exact static-inventory coverage, intentionally preserved identifiers, and dynamic-copy keys with their required parameters.
+The catalogs cover navigation, composer, projects, settings, provider sessions, outbound review, attachments, tool proposals, local history, and utility panels. Use typed translation templates for dynamic copy and preserve raw technical identifiers.

@@ -25,26 +25,3 @@ UE-like fixture files are under `packages/runtime/src/fixtures/mvp11-ue-fixture/
 10. Create Context Pack v1 from runtime data and confirm all six sections plus redaction summary.
 11. Replay the session and confirm it shows recorded diagnostic/context pack summaries only.
 12. Run `node scripts/side-effect-scan.mjs` and confirm 0 blocked findings.
-
-## S1-S12 Results
-
-Rework update: S1/S3 remain supervisor-local native UI steps because this implementation
-session did not launch the native desktop app. The same data path is now covered by
-automated UI/store tests: active project index + read-only previews -> metadata/project
-diagnostics, recorded terminal output -> build diagnostics -> Context Pack v1, and
-Project/Asset browser affected-file markers.
-
-| Smoke | Result | Notes |
-|-------|--------|-------|
-| S1 | SUPERVISOR LOCAL | Implementation environment did not launch the native desktop app; `Mvp11Store.test.tsx`, `Mvp11DiagnosticsPanel.test.tsx`, and `ContextPack.test.tsx` cover the real UI/store data path. |
-| S2 | PASS AUTOMATED | `Mvp11DiagnosticsPanel.test.tsx` covers Config status. |
-| S3 | SUPERVISOR LOCAL | Fixture path is documented; native register/trust/scan remains a local UI action, while `Mvp11Store.test.tsx` covers active project index + read-only preview analysis. |
-| S4 | PASS AUTOMATED | Runtime parser tests cover metadata summaries. |
-| S5 | PASS AUTOMATED | Runtime diagnostics tests cover malformed descriptor warnings. |
-| S6 | PASS AUTOMATED | Store/action tests cover user-triggered recorded terminal analysis; parser tests cover build output. |
-| S7 | PASS AUTOMATED | Build parser tests cover Windows/macOS/Linux home path redaction. |
-| S8 | PASS AUTOMATED | DiagnosticsPanel test covers real MVP11 state counts, kind grouping, affected paths, build status, Context Pack status, and redaction. |
-| S9 | PASS AUTOMATED | Evidence panel test covers real UE metadata, build failure, and Context Pack summaries from runtime state. |
-| S10 | PASS AUTOMATED | Context Pack runtime and desktop tests cover v1 creation, sections, evidence, and redaction. |
-| S11 | PASS AUTOMATED | Session-history test covers replay-only diagnostic summaries. |
-| S12 | PASS AUTOMATED | `node scripts/side-effect-scan.mjs` passed with 0 blocked findings. |

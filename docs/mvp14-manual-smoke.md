@@ -11,12 +11,6 @@
 7. MCP dry-run maps text-backed changes to ChangeSet v2 intent and asset-risk tools to blocked asset plans.
 8. Replay shows recorded summaries only and does not call native, MCP, ChangeSet apply, or rollback paths.
 
-## Real UE Supervisor-Local Smoke
-
-Status for the 2026-06-30 supervisor-local smoke: `PASS`
-
-Observed result: a trusted native project root with a running `UnrealEditor.exe` completed discovery, attach, heartbeat, snapshot, and stop observation. Stop observation did not close the real UE Editor window.
-
 Required local reproduction steps:
 
 1. Open a real Unreal Editor project whose `.uproject` is inside a UAgent trusted root.

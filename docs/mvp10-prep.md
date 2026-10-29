@@ -2,12 +2,12 @@
 
 MVP10 moves MVP9's fixture-gated capabilities into controlled real local execution. Current status: **partial implementation**.
 
-1. **Real Terminal Execution** (COMPLETE): Default disabled, allowlisted commands only (typecheck, lint, test, build, git status/diff), approval-bound, cwd-contained, output redacted. No-shell wrapper with args array to prevent injection.
-2. **Build Loop** (COMPLETE): Verification command templates (typecheck, lint, test, web:build, cargo test, git status/diff/diff --check) with risk classification and one-time approval tokens.
-3. **Terminal Classifier Hardening** (COMPLETE): No-shell parser, exact allowlist + denylist with dangerous pattern detection, env sanitization, mutation detection, shell metachar blocking.
-4. **Native Real Terminal Adapter** (COMPLETE): Rust `Command` with timeout, cancel, redaction, feature-gated behind `TERMINAL_REAL_ENABLED`. Approval token is bound to specific command + cwd (not raw token minting).
-5. **Real Incremental Watcher** (COMPLETE): Real `notify`-based FS watcher with start/stop/read-diff/get-session Tauri commands, debounce, backpressure (10K max queue), overflow detection, redacted display paths, trusted root enforcement. Web native adapter routes through Tauri invoke. WatcherPanel shows active/blocked/stopped/idle states with redacted root, dirty indicator, diff summary, and overflow warning. No auto-rescan or file write/apply in product path.
-6. **Local Browser Preview** (BLOCKED): Native skeleton with URL classifier (localhost/127.0.0.1/file:// only), feature gate. Real browser iframe/preview requires separate implementation task.
+1. **Real Terminal Execution**: Default disabled, allowlisted commands only (typecheck, lint, test, build, git status/diff), approval-bound, cwd-contained, output redacted. No-shell wrapper with args array to prevent injection.
+2. **Build Loop**: Verification command templates (typecheck, lint, test, web:build, cargo test, git status/diff/diff --check) with risk classification and one-time approval tokens.
+3. **Terminal Classifier Hardening**: No-shell parser, exact allowlist + denylist with dangerous pattern detection, env sanitization, mutation detection, shell metachar blocking.
+4. **Native Real Terminal Adapter**: Rust `Command` with timeout, cancel, redaction, feature-gated behind `TERMINAL_REAL_ENABLED`. Approval token is bound to specific command + cwd (not raw token minting).
+5. **Real Incremental Watcher**: Real `notify`-based FS watcher with start/stop/read-diff/get-session Tauri commands, debounce, backpressure (10K max queue), overflow detection, redacted display paths, trusted root enforcement. Web native adapter routes through Tauri invoke. WatcherPanel shows active/blocked/stopped/idle states with redacted root, dirty indicator, diff summary, and overflow warning. No auto-rescan or file write/apply in product path.
+6. **Local Browser Preview**: Native skeleton with URL classifier (localhost/127.0.0.1/file:// only), feature gate. Real browser iframe/preview requires separate implementation task.
 7. **Runtime Integration** (PARTIAL): Terminal policy, build templates, approval token lifecycle exist. Full runtime/store/audit integration pending.
 8. **UI Integration** (PARTIAL): TerminalPanel with proposal/approval UI exists via runtime store. Composer command suggestions and Settings feature gate toggles not wired.
 

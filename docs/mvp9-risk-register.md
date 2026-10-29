@@ -2,17 +2,17 @@
 
 ## Risk Table
 
-| ID | Risk | Probability | Impact | Mitigation | Status |
-|----|------|-------------|--------|------------|--------|
-| R01 | Terminal command execution bypasses approval gate | Low | Critical | Three-phase flow (propose -> approve -> execute); classifier blocks dangerous commands; approval token required; audit trail | Mitigated |
-| R02 | Terminal output contains raw secrets or home paths | Medium | High | Output redaction applied to stdout/stderr; test fixtures inject secrets to verify redaction | Mitigated |
-| R03 | Browser preview navigates to external/malicious URL | Low | High | Default policy blocks all external URLs; local-only patterns required; user must approve external URLs | Mitigated |
-| R04 | Screenshot capture triggered without user consent | Low | High | Capture requires explicit user approval; no background capture; permission prompt mandatory | Mitigated |
-| R05 | File watcher consumes excessive resources | Medium | Low | Debounce window (500ms default); max queue size; overflow warning; stop/cancel available | Mitigated |
-| R06 | File watcher auto-triggers rescan or side effects | Low | Critical | Watcher produces dirty state + diff only; apply/rescan is user-initiated; audit trail for all actions | Mitigated |
-| R07 | Session replay re-executes terminal/browser/screenshot/watcher | Low | Critical | Replay only replays recorded events; adapters not invoked during replay | Mitigated |
-| R08 | React UI directly invokes native commands | Low | High | Side-effect scan blocks direct terminal/browser/screenshot/watcher native calls; adapter/store layer required | Mitigated |
-| R09 | Raw absolute paths leak into watcher diff or terminal output | Medium | High | All paths are root-relative/redacted; displayPath prefix `[project-root]/`; side-effect scan checks raw paths | Mitigated |
+| ID | Risk | Probability | Impact | Mitigation |
+| --- | --- | --- | --- | --- |
+| R01 | Terminal command execution bypasses approval gate | Low | Critical | Three-phase flow (propose -> approve -> execute); classifier blocks dangerous commands; approval token required; audit trail |
+| R02 | Terminal output contains raw secrets or home paths | Medium | High | Output redaction applied to stdout/stderr; test fixtures inject secrets to verify redaction |
+| R03 | Browser preview navigates to external/malicious URL | Low | High | Default policy blocks all external URLs; local-only patterns required; user must approve external URLs |
+| R04 | Screenshot capture triggered without user consent | Low | High | Capture requires explicit user approval; no background capture; permission prompt mandatory |
+| R05 | File watcher consumes excessive resources | Medium | Low | Debounce window (500ms default); max queue size; overflow warning; stop/cancel available |
+| R06 | File watcher auto-triggers rescan or side effects | Low | Critical | Watcher produces dirty state + diff only; apply/rescan is user-initiated; audit trail for all actions |
+| R07 | Session replay re-executes terminal/browser/screenshot/watcher | Low | Critical | Replay only replays recorded events; adapters not invoked during replay |
+| R08 | React UI directly invokes native commands | Low | High | Side-effect scan blocks direct terminal/browser/screenshot/watcher native calls; adapter/store layer required |
+| R09 | Raw absolute paths leak into watcher diff or terminal output | Medium | High | All paths are root-relative/redacted; displayPath prefix `[project-root]/`; side-effect scan checks raw paths |
 
 ## Testing Coverage
 

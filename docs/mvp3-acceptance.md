@@ -49,4 +49,4 @@ Allowed findings must be explained. Provider matches may only be settings metada
 - Blocked, unknown, and mutating actions do not reach `tools/call`.
 - React components consume runtime store events/snapshots and do not call MCP sessions directly.
 - No real LLM/provider request, API key read, UE write, shell/browser/filesystem product path, approval write flow, new state framework, new router, or new design system is introduced.
-- Required commands pass or failures are fully recorded with root cause and rework recommendation.
+- Required commands pass or failures are fully recorded with root cause and remediation recommendation.

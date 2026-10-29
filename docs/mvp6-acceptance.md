@@ -1,63 +1,8 @@
 # MVP6 Acceptance
 
-## Stage: UI Productization & Project Workspace Shell
+## Scope: UI Productization & Project Workspace Shell
 
 MVP6 productizes the existing Tauri + React desktop UI into a usable project workspace shell. It preserves MVP5 approval, sandbox, ChangeSet, audit, session, provider, and raw-secret redaction boundaries.
-
-## Gate Status
-
-| Gate | Status |
-|------|--------|
-| G0 - Stage switch and baseline freeze | [X] COMPLETE |
-| G1 - UI state and staged entry foundations | [X] COMPLETE |
-| G2 - TitleBar and tool drawer entry | [X] COMPLETE |
-| G3 - LeftSidebar project, conversation, asset modes | [X] COMPLETE |
-| G4 - Welcome workspace and compact Composer | [X] COMPLETE |
-| G5 - Utility Drawer productization | [X] COMPLETE |
-| G6 - Settings Center six-page information architecture | [X] COMPLETE |
-| G7 - Provider-Composer loop and safety regression | [X] COMPLETE |
-| G8 - A11y, motion, visual, docs, and scan acceptance | [X] COMPLETE |
-
-## Task Card Status
-
-| Task | Gate | Status | Primary files | Verification |
-|------|------|--------|---------------|--------------|
-| MVP6-00 | G0 | [X] COMPLETE | `README.md`, `docs/mvp-roadmap.md`, this file, `docs/mvp6-ui-productization-plan.md` | docs review, typecheck, lint, test |
-| MVP6-01 | G0 | [X] COMPLETE | `docs/mvp6-baseline-freeze.md` | docs review |
-| MVP6-02 | G0 | [X] COMPLETE | this file | scenario matrix and report format documented |
-| MVP6-10 | G1 | [X] COMPLETE | `apps/desktop/web/src/types/ui.ts`, `stores/*` | `ui-store.test.tsx`, `mvp6-scenarios.test.tsx` |
-| MVP6-11 | G1 | [X] COMPLETE | `components/ComingSoonGate.tsx` | `ComingSoonGate.test.tsx`, MVP6 scenario tooltip test |
-| MVP6-12 | G1 | [X] COMPLETE | `styles/*`, component CSS | lint, build, reduced-motion docs |
-| MVP6-20 | G2 | [X] COMPLETE | `shell/TitleBar.tsx` | `TitleBar.test.tsx`, MVP6 scenario test |
-| MVP6-21 | G2 | [X] COMPLETE | `shell/TitleBar.tsx`, runtime store reads only | MVP6 scenario no-network status assertions |
-| MVP6-30 | G3 | [X] COMPLETE | `sidebar/LeftSidebar.tsx` | `LeftSidebar.test.tsx`, MVP6 scenario test |
-| MVP6-31 | G3 | [X] COMPLETE | `sidebar/project-tree-data.ts`, `ProjectTree.tsx` | `ProjectTree.test.tsx`, MVP6 scenario test |
-| MVP6-32 | G3 | [X] COMPLETE | `ProjectTree.tsx`, tests | `ProjectTree.test.tsx` |
-| MVP6-33 | G3 | [X] COMPLETE | `SidebarFooter.tsx` | `SidebarFooter.test.tsx`, AppShell settings tests |
-| MVP6-40 | G4 | [X] COMPLETE | `workspace/Workspace.tsx`, `WelcomeHero.tsx`, `ComposerDock.tsx` | `Workspace.test.tsx`, MVP6 scenario test |
-| MVP6-41 | G4 | [X] COMPLETE | `composer/ComposerDock.tsx` | `ComposerDock.test.tsx`, no voice tests |
-| MVP6-42 | G4 | [X] COMPLETE | `composer/ModelSelector.tsx`, provider store sync | `ModelSelector.test.tsx`, `ProviderSettings.test.tsx` |
-| MVP6-43 | G4 | [X] COMPLETE | `composer/ProjectSelector.tsx`, project store sync | `ProjectSelector.test.tsx`, `AppShell.test.tsx` |
-| MVP6-44 | G4 | [X] COMPLETE | `composer/ComposerDock.tsx`, `ComingSoonGate.tsx` | MVP6 attach menu scenario |
-| MVP6-50 | G5 | [X] COMPLETE | `shell/MainLayout.tsx`, `inspector/InspectorPane.tsx` | `MainLayout.test.tsx`, `InspectorPane.test.tsx` |
-| MVP6-51 | G5 | [X] COMPLETE | `inspector/*` | `InspectorPane.test.tsx` |
-| MVP6-52 | G5 | [X] COMPLETE | `inspector/inspector-data.ts`, `InspectorPane.tsx` | future tool disabled scenario |
-| MVP6-60 | G6 | [X] COMPLETE | `settings/SettingsShell.tsx`, `settings-pages.ts` | `SettingsShell.test.tsx` |
-| MVP6-61 | G6 | [X] COMPLETE | `settings/pages/GeneralSettings.tsx` | `SettingsShell.test.tsx` |
-| MVP6-62 | G6 | [X] COMPLETE | `settings/pages/ProfileSettings.tsx` | `SettingsShell.test.tsx` |
-| MVP6-63 | G6 | [X] COMPLETE | `settings/pages/AppearanceSettings.tsx` | dark-only staged light assertions |
-| MVP6-64 | G6 | [X] COMPLETE | `settings/pages/ConfigSettings.tsx` | `SettingsShell.test.tsx` |
-| MVP6-65 | G6 | [X] COMPLETE | `settings/pages/PersonalizationSettings.tsx` | `SettingsShell.test.tsx` |
-| MVP6-66 | G6 | [X] COMPLETE | `settings/pages/ProviderSettings.tsx` | `ProviderSettings.test.tsx` |
-| MVP6-70 | G7 | [X] COMPLETE | provider store, composer model selector | provider-composer sync tests |
-| MVP6-71 | G7 | [X] COMPLETE | runtime UI projections, safety/audit/changes panels | runtime and desktop tests |
-| MVP6-72 | G7 | [X] COMPLETE | project store, sidebar, composer project chip | `AppShell.test.tsx`, MVP6 scenario test |
-| MVP6-80 | G8 | [X] COMPLETE | `mvp6-scenarios.test.tsx` | 30 named scenarios, 60+ behavior assertions |
-| MVP6-81 | G8 | [X] COMPLETE | CSS motion tokens and drawer layout | build, CSS review, manual smoke |
-| MVP6-82 | G8 | [X] COMPLETE | tabs, menus, tree, tooltips, staged controls | Testing Library a11y assertions |
-| MVP6-83 | G8 | [X] COMPLETE | `scripts/side-effect-scan.mjs`, redaction tests | side-effect scan, runtime/desktop tests |
-| MVP6-84 | G8 | [X] COMPLETE | `docs/mvp6-manual-smoke.md` | manual smoke checklist |
-| MVP6-85 | G8 | [X] COMPLETE | README, roadmap, acceptance docs | full verification suite |
 
 ## MVP6 Scenario Matrix
 
@@ -122,7 +67,3 @@ git diff --check
 - No real terminal/browser/filesystem/screenshot product capability.
 - No new state-management library, router, or design system.
 - Light/System theme controls are staged disabled; only dark is usable.
-
-## MVP7 Suggested Scope
-
-MVP7 should handle real project scanning, filesystem access, terminal/browser/screenshot capability, UE asset index, and live provider transport as separate tasks with deeper sandbox and approval controls.

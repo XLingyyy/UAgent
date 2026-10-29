@@ -7,7 +7,7 @@
 ### Behavior
 
 | `timeoutTicks` value | Complete mode | Stream mode |
-|---|---|---|
+| --- | --- | --- |
 | `undefined` | Normal execution | Normal execution |
 | `<= 0` | Immediate `provider_request_failed` with `code: "timeout"`, `retryable: true` | Immediate `provider_request_failed` with `code: "timeout"`, `retryable: true` |
 | `> 0` | Not enforced (passes through to adapter) | Chunk budget: after `timeoutTicks` chunks are yielded, produces `provider_request_failed` with `code: "timeout"`, `retryable: true`, and returns accumulated partial text/chunks |
@@ -28,7 +28,7 @@
 ### Behavior
 
 | Operation | Result |
-|---|---|
+| --- | --- |
 | `register(new MockTextProvider())` | Succeeds |
 | Second `register(new MockTextProvider())` | Throws `Provider adapter is already registered: mock-text` |
 | `get("missing")` | Throws `Provider adapter is not registered: missing` |

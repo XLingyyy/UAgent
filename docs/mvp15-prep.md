@@ -1,19 +1,10 @@
-# MVP15 Prep - Real UE Sandbox Asset Mutation Pilot (Historical)
+# UE Asset Mutation Scope
 
-> MVP15D current note: implementation commit
-> `7dd31488554e1cfc1aa54cd8a15d3a891a536f5a` completed the detached-clean
-> F0-F16 source-bound chain. Overall MVP15, D13/15A, D14/15B, D15/15C, D16,
-> G13 and G16 are `COMPLETE`; blockers are `None`; `PASS_REAL_SMOKE: YES`; Ready
-> for MVP16: `YES`. The preparation posture below is a historical record and does
-> not limit the accepted final exact-sandbox lifecycle.
+## Objective
 
-> Historical preparation document. This file records the scope posture used before MVP15 implementation. MVP15C / 09Z later completed the former happy-path lifecycle. Current status, blockers, delivered source tooling, and remaining prohibitions are defined by the acceptance, verification, risk, plugin-baseline, and handoff documents.
+The asset lifecycle prepares, executes, verifies, and rolls back only within the registered run below `/Game/UAgentSandbox/` and its mapped Content root. The native gate, trusted-root registry, plugin identity and one-time approval remain independent requirements.
 
-## Historical Objective
-
-The preparation objective was to validate the first controlled UE asset mutation path under a sandbox-only boundary. The planned pilot could prepare, execute, verify, and roll back asset changes only under `/Game/UAgentSandbox/**` and mapped `/Content/UAgentSandbox/**`.
-
-## Historical Planned Scope
+## Scope
 
 - Shared contracts for sandbox asset mutation plans, ChangeSets, approval tokens, execution, verification, rollback, evidence, audit, and replay summaries.
 - Runtime policy and service for dry-run, approve, execute, verify, rollback, manifest tracking, and replay summary generation.
@@ -30,11 +21,9 @@ The preparation objective was to validate the first controlled UE asset mutation
 - Replay records summaries only and must never re-execute asset operations.
 - Evidence and audit payloads must not store raw secrets, approval tokens, provider credentials, or broad local paths.
 
-## Historical Out of Scope at Preparation Time
+## Excluded operations
 
 - Non-sandbox asset writes.
 - Save All or project-wide package saves.
-- Delete, move, rename, bulk asset operations, or Blueprint compile execution were excluded from the initial preparation posture. A later historical pilot design discussed only exact approval-bound move/rename steps and inverse cleanup inside a registered `/Game/UAgentSandbox/<run-id>` lifecycle; broad/bulk operations, arbitrary deletes, and Blueprint compile remain prohibited. That history does not accept the current MVP15D source checkpoint.
 - Generic mutating MCP `tools/call`.
 - Provider-output auto-apply or default live provider access.
-- Git commit, push, PR, dependency install, or CI workflow edits.

@@ -51,8 +51,6 @@ POST-MVP3 stabilizes the Agent Core so future provider work has traceable contra
 - Provider adapters are mock-only and cannot read credentials or call provider HTTP APIs.
 - MCP reads remain limited to `resources/read` and locally classified read-only `tools/call`.
 
-MVP4 should begin only after this layer passes typecheck, lint, tests, build, replay fixtures, and side-effect scans.
-
 ## Boundaries
 
 MVP3 must not:

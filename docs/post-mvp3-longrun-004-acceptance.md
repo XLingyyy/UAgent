@@ -9,7 +9,7 @@ LONGRUN-004 extends the POST-MVP3 fixture/runtime boundary with executable MCP m
 The desktop runtime fixture matrix covers:
 
 | Scenario | Expected boundary |
-|---|---|
+| --- | --- |
 | Streamable `resources/read` success | Sends one `resources/read`, emits MCP read/Agent report events, completes |
 | Streamable read-only `tools/call` success | Sends `tools/call` only after discovery and local read-only classification |
 | Streamable `resources/read` JSON-RPC error | Emits failure path, does not produce false task success |
