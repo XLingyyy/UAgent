@@ -11,6 +11,14 @@ pub(crate) mod provider_endpoint_policy;
 #[cfg(windows)]
 pub(crate) mod native_provider_transport;
 #[cfg(windows)]
+pub(crate) mod native_responses_http;
+#[cfg(windows)]
+pub(crate) mod native_responses_sources;
+#[cfg(windows)]
+pub(crate) mod provider_continuation_store;
+#[cfg(windows)]
+pub(crate) mod native_responses_commands;
+#[cfg(windows)]
 pub(crate) mod product_settings_commands;
 pub(crate) mod project_source_versions;
 pub(crate) mod provider_budget;
@@ -461,6 +469,8 @@ fn trust_native_project_root(input: TrustRootInput) -> Result<TrustRootResult, S
     let normalized = normalize_project_path(&input.root_ref);
     let display = redact_path_for_ui(&normalized);
     let root_id = hash_path(&normalized);
+    #[cfg(windows)]
+    native_responses_commands::revoke_project(&root_id);
     let canonical_root = canonical_root_for_binding(&normalized)
         .map_err(|reason| format!("Cannot trust root: {reason}"))?;
     let object_identity = root_object_identity(&normalized, &canonical_root)
@@ -791,6 +801,8 @@ fn preview_native_project_file(
             &input.project_id, &input.root_relative_path, input.byte_limit.min(16_384), input.line_limit,
         ) {
             Ok(prefix) => {
+                #[cfg(windows)]
+                native_responses_commands::observe_preview(&input.project_id,&input.root_relative_path,input.byte_limit.min(16_384),input.line_limit,&prefix);
                 let redacted = redact_preview_content(&prefix.content);
                 Ok(PreviewProjectFileResult {
                     status: if prefix.truncated { "truncated".into() } else { "ready".into() },
@@ -1590,6 +1602,17 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ManagedBridgeState::new(bridge_state))
         .setup(|app| app_profile::setup_isolated_windows(app))
+        .on_page_load(|webview,_| {
+            #[cfg(windows)]
+            native_responses_commands::register_window(webview.window().label());
+        })
+        .on_window_event(|window,event| {
+            #[cfg(windows)]
+            if matches!(event,tauri::WindowEvent::CloseRequested{..}|tauri::WindowEvent::Destroyed) {
+                if matches!(event,tauri::WindowEvent::Destroyed) {native_responses_commands::destroy_window(window.label());}
+                else {native_responses_commands::revoke_window(window.label());}
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             mvp15d_bridge_configuration,
             mvp15d_bridge_request_renderer_restart,
@@ -1629,6 +1652,28 @@ pub fn run() {
             run_store_commands::commit_native_run_store,
             #[cfg(windows)]
             run_store_commands::snapshot_native_run_store,
+            #[cfg(windows)]
+            native_responses_commands::open_native_responses_profile,
+            #[cfg(windows)]
+            native_responses_commands::close_native_responses_profile,
+            #[cfg(windows)]
+            native_responses_commands::bind_native_responses_run,
+            #[cfg(windows)]
+            native_responses_commands::prepare_native_responses_request,
+            #[cfg(windows)]
+            native_responses_commands::approve_native_responses_request,
+            #[cfg(windows)]
+            native_responses_commands::dispatch_native_responses_request,
+            #[cfg(windows)]
+            native_responses_commands::poll_native_responses_request,
+            #[cfg(windows)]
+            native_responses_commands::cancel_native_responses_request,
+            #[cfg(windows)]
+            native_responses_commands::release_native_responses_request,
+            #[cfg(windows)]
+            native_responses_commands::load_native_provider_continuations,
+            #[cfg(windows)]
+            native_responses_commands::save_native_provider_continuation,
             project_source_versions::inspect_native_project_sources,
             validate_project_root,
             scan_project_index,

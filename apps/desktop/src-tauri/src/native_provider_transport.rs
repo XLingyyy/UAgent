@@ -228,6 +228,17 @@ struct LeaseToken {
 #[derive(Clone)]
 pub(crate) struct Lease(Arc<LeaseToken>);
 impl Lease {
+    /// Currentness of this exact native lease; never creates or refreshes authority.
+    pub(crate) fn is_current(&self) -> bool {
+        let session = NativeSession {
+            shared: self.0.shared.clone(),
+        };
+        let current = match session.shared.state.lock() {
+            Ok(state) => session.validate(&state, self).is_ok(),
+            Err(_) => false,
+        };
+        current
+    }
     pub(crate) fn revoke(&self) -> Result<()> {
         let _guard = self
             .0
@@ -693,7 +704,7 @@ impl PreparedRequest {
             body: &self.body,
         }
     }
-    fn status(&self) -> DispatchStatus {
+    pub(crate) fn status(&self) -> DispatchStatus {
         match self.progress.load(Ordering::Acquire) {
             0 => DispatchStatus::NotDispatched,
             2 => DispatchStatus::Sent,

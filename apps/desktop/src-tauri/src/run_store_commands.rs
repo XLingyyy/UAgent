@@ -689,7 +689,16 @@ fn validate(input: &CommitInput) -> Result<(), StoreError> {
                 }
             }
             "model_text_delta" => keys(payload, &["text"])?,
-            "model_completed" => keys(payload, &["requestId", "finishReason", "usage"])?,
+            "model_completed" => {
+                keys(payload, &["requestId", "finishReason", "usage", "usageStatus"])?;
+                if let Some(status)=payload.get("usageStatus") {
+                    let status=status.as_str().ok_or_else(invalid)?;
+                    if !matches!(status,"reported"|"unknown") ||
+                        (status=="reported")!=payload.get("usage").is_some() {
+                        return Err(invalid());
+                    }
+                }
+            },
             "tool_requested" => {
                 keys(payload, &["callId", "name", "arguments"])?;
                 let arguments: Value =
@@ -1303,6 +1312,26 @@ mod tests {
                 assert!(resolved.starts_with(&temporary) && resolved != temporary);
                 std::fs::remove_dir_all(&self.0).unwrap();
             }
+        }
+    }
+    #[test]
+    fn native_run_store_usage_status_keeps_unknown_and_rejects_contradictions() {
+        for (payload,valid) in [
+            (serde_json::json!({"requestId":"request","usageStatus":"unknown"}),true),
+            (serde_json::json!({"requestId":"request","usageStatus":"reported","usage":{"inputTokens":11,"outputTokens":7,"totalTokens":18}}),true),
+            (serde_json::json!({"requestId":"request"}),true),
+            (serde_json::json!({"requestId":"request","usageStatus":"reported"}),false),
+            (serde_json::json!({"requestId":"request","usageStatus":"unknown","usage":{"inputTokens":1}}),false),
+            (serde_json::json!({"requestId":"request","usageStatus":"estimated"}),false),
+        ] {
+            let mut raw=first_commit();
+            raw["batch"]["events"].as_array_mut().unwrap().insert(1,serde_json::json!({
+                "id":"run:2","kind":"model_completed","createdAt":100,
+                "data":{"schemaVersion":1,"eventId":"run:2","runId":"run","sequence":2,
+                "agentId":"coordinator","createdAt":100,"type":"model_completed","payload":payload}
+            }));
+            let input:CommitInput=serde_json::from_value(raw).unwrap();
+            assert_eq!(validate(&input).is_ok(),valid);
         }
     }
     fn first_commit() -> Value {
