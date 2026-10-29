@@ -328,6 +328,10 @@ export type {
   ProviderRuntimeResponse,
   ProviderStreamChunk,
   ProviderUsage,
+  ProviderUsageStatus,
+  ProviderContinuationOwner,
+  ProviderNativeContinuation,
+  ProviderContinuationStorePort,
   ProviderWireApi,
 } from "./provider-runtime.js";
 export { createDefaultProviderConfig, redactProviderConfig } from "./provider-runtime.js";

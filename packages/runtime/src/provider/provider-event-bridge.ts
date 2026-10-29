@@ -26,46 +26,135 @@ export function mapProviderRuntimeEvent(
 
   switch (event.type) {
     case "provider_request_started": {
-      const taskEvent = createTaskEvent(base, taskId, eventSequence, "provider_request_started", "Provider request started", `Provider ${event.providerId} request ${event.requestId} started.`, "info", { providerId: event.providerId, modelId: event.modelId });
+      const taskEvent = createTaskEvent(
+        base,
+        taskId,
+        eventSequence,
+        "provider_request_started",
+        "Provider request started",
+        `Provider ${event.providerId} request ${event.requestId} started.`,
+        "info",
+        { providerId: event.providerId, modelId: event.modelId },
+      );
       taskEvents.push(taskEvent);
       break;
     }
 
     case "provider_stream_started": {
-      const taskEvent = createTaskEvent(base, taskId, eventSequence, "provider_stream_started", "Provider stream started", `Provider ${event.providerId} stream started.`, "info", { providerId: event.providerId, requestId: event.requestId });
+      const taskEvent = createTaskEvent(
+        base,
+        taskId,
+        eventSequence,
+        "provider_stream_started",
+        "Provider stream started",
+        `Provider ${event.providerId} stream started.`,
+        "info",
+        { providerId: event.providerId, requestId: event.requestId },
+      );
       taskEvents.push(taskEvent);
       break;
     }
 
     case "provider_stream_delta": {
-      const taskEvent = createTaskEvent(base, taskId, eventSequence, "provider_stream_delta", "Provider stream delta", event.chunk.delta, "info", { chunk: event.chunk });
+      const taskEvent = createTaskEvent(
+        base,
+        taskId,
+        eventSequence,
+        "provider_stream_delta",
+        "Provider stream delta",
+        event.chunk.delta,
+        "info",
+        {
+          chunk: {
+            id: event.chunk.id,
+            requestId: event.chunk.requestId,
+            providerId: event.chunk.providerId,
+            modelId: event.chunk.modelId,
+            index: event.chunk.index,
+            delta: event.chunk.delta,
+            done: event.chunk.done,
+            usage: event.chunk.usage,
+            usageStatus: event.chunk.usageStatus,
+            finishReason: event.chunk.finishReason,
+            toolCallDelta: event.chunk.toolCallDelta,
+          },
+        },
+      );
       taskEvents.push(taskEvent);
       evidence.push(taskEvent);
       break;
     }
 
     case "provider_stream_completed": {
-      const taskEvent = createTaskEvent(base, taskId, eventSequence, "provider_stream_completed", "Provider stream completed", `Provider ${event.providerId} stream completed.`, "success", { providerId: event.providerId, requestId: event.requestId });
+      const taskEvent = createTaskEvent(
+        base,
+        taskId,
+        eventSequence,
+        "provider_stream_completed",
+        "Provider stream completed",
+        `Provider ${event.providerId} stream completed.`,
+        "success",
+        { providerId: event.providerId, requestId: event.requestId },
+      );
       taskEvents.push(taskEvent);
       break;
     }
 
     case "provider_request_completed": {
-      const taskEvent = createTaskEvent(base, taskId, eventSequence, "provider_request_completed", "Provider request completed", `Provider ${event.providerId} request ${event.requestId} completed.`, "success", { providerId: event.providerId, usage: event.response.usage, responseText:event.response.text });
+      const taskEvent = createTaskEvent(
+        base,
+        taskId,
+        eventSequence,
+        "provider_request_completed",
+        "Provider request completed",
+        "Provider " +
+          event.providerId +
+          " request " +
+          event.requestId +
+          " completed." +
+          (event.response.usage ? "" : " Token usage is unknown."),
+        "success",
+        {
+          providerId: event.providerId,
+          requestId: event.requestId,
+          usage: event.response.usage,
+          usageStatus:
+            event.response.usageStatus ?? (event.response.usage ? "reported" : "unknown"),
+          responseText: event.response.text,
+        },
+      );
       taskEvents.push(taskEvent);
       break;
     }
 
     case "provider_request_failed": {
       const message = redactErrorMessage(event.error.message);
-      const taskEvent = createTaskEvent(base, taskId, eventSequence, "provider_request_failed", "Provider request failed", message, "error", { providerId: event.providerId, code: event.error.code });
+      const taskEvent = createTaskEvent(
+        base,
+        taskId,
+        eventSequence,
+        "provider_request_failed",
+        "Provider request failed",
+        message,
+        "error",
+        { providerId: event.providerId, code: event.error.code },
+      );
       taskEvents.push(taskEvent);
       diagnostics.push(taskEvent);
       break;
     }
 
     case "provider_request_cancelled": {
-      const taskEvent = createTaskEvent(base, taskId, eventSequence, "provider_request_cancelled", "Provider request cancelled", event.reason, "warning", { providerId: event.providerId, requestId: event.requestId });
+      const taskEvent = createTaskEvent(
+        base,
+        taskId,
+        eventSequence,
+        "provider_request_cancelled",
+        "Provider request cancelled",
+        event.reason,
+        "warning",
+        { providerId: event.providerId, requestId: event.requestId },
+      );
       taskEvents.push(taskEvent);
       diagnostics.push(taskEvent);
       break;
@@ -73,7 +162,16 @@ export function mapProviderRuntimeEvent(
 
     case "provider_usage_recorded": {
       const usageText = `${event.usage.inputTokens} in / ${event.usage.outputTokens} out / ${event.usage.totalTokens} total`;
-      const taskEvent = createTaskEvent(base, taskId, eventSequence, "provider_usage_recorded", "Provider usage recorded", usageText, "info", { usage: event.usage });
+      const taskEvent = createTaskEvent(
+        base,
+        taskId,
+        eventSequence,
+        "provider_usage_recorded",
+        "Provider usage recorded",
+        usageText,
+        "info",
+        { usage: event.usage },
+      );
       taskEvents.push(taskEvent);
       evidence.push(taskEvent);
       break;

@@ -129,7 +129,7 @@ export async function runFixtureCompleteScenario(): Promise<Mvp4ScenarioResult> 
     result.providerEvents = events;
     makeAssertion(result, response.text.length > 0, "response should have text");
     makeAssertion(result, response.finishReason === "stop", "finish reason should be stop");
-    makeAssertion(result, response.usage.totalTokens > 0, "usage should be tracked");
+    makeAssertion(result, (response.usage?.totalTokens ?? 0) > 0, "usage should be tracked");
     makeAssertion(result, events.some((e) => e.type === "provider_request_completed"), "should have completed event");
     makeAssertion(result, events.some((e) => e.type === "provider_usage_recorded"), "should have usage event");
     markRedactionChecked(result);
@@ -339,7 +339,7 @@ function deriveProviderEvents(taskEvents: TaskEvent[]): ProviderRuntimeEvent[] {
     const requestId = typeof payload.requestId === "string" ? payload.requestId : "provider-request";
     const usage = isProviderUsage(payload.usage)
       ? payload.usage
-      : { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+      : undefined;
     switch (event.type) {
       case "provider_request_started":
         return [{
@@ -349,6 +349,7 @@ function deriveProviderEvents(taskEvents: TaskEvent[]): ProviderRuntimeEvent[] {
           modelId: typeof payload.modelId === "string" ? payload.modelId : "provider-model",
         }];
       case "provider_usage_recorded":
+        if (!usage) return [];
         return [{
           type: "provider_usage_recorded",
           requestId,

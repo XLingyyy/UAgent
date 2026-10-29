@@ -391,7 +391,6 @@ export class RunCoordinator {
           messages: this.clone(context.messages),
           tools: definitions,
           toolChoice: "auto",
-          temperature: 0,
           maxOutputTokens: 1024,
           metadata: {
             taskId: run.taskId,
@@ -443,6 +442,7 @@ export class RunCoordinator {
           requestId: request.id,
           finishReason: response.finishReason,
           usage: response.usage,
+          usageStatus: response.usageStatus ?? (response.usage ? "reported" : "unknown"),
         });
         if (response.finishReason === "length") throw new StopRun("paused", "output_limit");
         if (response.finishReason === "error") throw new StopRun("failed", "provider_failed");

@@ -157,7 +157,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
   private parseChatResponse(body: Record<string, unknown>, request: ProviderRuntimeRequest): ProviderRuntimeResponse {
     const choice = (body.choices as Array<Record<string, unknown>> | undefined)?.[0];
     const text = ((choice?.message as Record<string, unknown> | undefined)?.content as string | undefined) ?? (choice?.text as string | undefined) ?? "";
-    const usage = body.usage as Record<string, number> | undefined;
+    const usage = this.parseUsage(body.usage as Record<string, number> | undefined);
 
     return {
       id: (body.id as string) ?? `${this.id}-response-${request.id}`,
@@ -166,7 +166,8 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       modelId: request.modelId,
       text,
       finishReason: this.parseFinishReason(choice?.finish_reason),
-      usage: this.parseUsage(usage, text, request),
+      usage,
+      usageStatus: usage ? "reported" : "unknown",
       createdAt: Date.now(),
     };
   }
@@ -177,17 +178,16 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
     return "stop";
   }
 
-  private parseUsage(usage: Record<string, number> | undefined, text: string, request: ProviderRuntimeRequest): ProviderUsage {
-    if (usage) {
-      return {
-        inputTokens: usage.prompt_tokens ?? 0,
-        outputTokens: usage.completion_tokens ?? 0,
-        totalTokens: usage.total_tokens ?? 0,
-      };
-    }
-    const inputTokens = this.countTokens(request.messages.map((m) => m.content).join(" "));
-    const outputTokens = this.countTokens(text);
-    return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
+  private parseUsage(usage: Record<string, number> | undefined): ProviderUsage | undefined {
+    if (!usage) return undefined;
+    const inputTokens = usage.prompt_tokens,
+      outputTokens = usage.completion_tokens;
+    if (![inputTokens, outputTokens].every((n) => Number.isSafeInteger(n) && n >= 0))
+      return undefined;
+    const totalTokens = usage.total_tokens;
+    if (!Number.isSafeInteger(totalTokens) || totalTokens !== inputTokens + outputTokens)
+      return undefined;
+    return { inputTokens, outputTokens, totalTokens };
   }
 
   private handleErrorResponse(status: number, bodyText: string): ProviderRuntimeError {
@@ -203,8 +203,4 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
     return createProviderRuntimeError(this.id, "malformed_response", `OpenAI-compatible provider returned ${status}: ${bodyText.slice(0, 200)}`);
   }
 
-  private countTokens(text: string): number {
-    const trimmed = text.trim();
-    return trimmed ? trimmed.split(/\s+/).length : 0;
-  }
 }

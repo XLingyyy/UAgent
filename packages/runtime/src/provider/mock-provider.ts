@@ -25,7 +25,8 @@ export class MockTextProvider implements ProviderAdapter {
         inputTokens: countTokens(request.messages.map((message) => message.content).join(" ")),
         outputTokens: countTokens(text),
         totalTokens:
-          countTokens(request.messages.map((message) => message.content).join(" ")) + countTokens(text),
+          countTokens(request.messages.map((message) => message.content).join(" ")) +
+          countTokens(text),
       },
       createdAt: MOCK_CREATED_AT,
     };
@@ -56,7 +57,11 @@ export class MockStreamingProvider extends MockTextProvider {
   async *stream(request: ProviderRuntimeRequest): AsyncIterable<ProviderStreamChunk> {
     for (let index = 0; index < this.chunks.length; index += 1) {
       if (this.failAtChunk === index + 1) {
-        throw createProviderRuntimeError(this.id, "provider_unavailable", `Mock stream failed at chunk ${index + 1}.`);
+        throw createProviderRuntimeError(
+          this.id,
+          "provider_unavailable",
+          `Mock stream failed at chunk ${index + 1}.`,
+        );
       }
       yield {
         id: `${this.id}-chunk-${request.id}-${index + 1}`,
@@ -66,6 +71,13 @@ export class MockStreamingProvider extends MockTextProvider {
         index,
         delta: this.chunks[index] ?? "",
         done: index === this.chunks.length - 1,
+        // Authored synthetic fixture accounting, never inferred by the live runner.
+        ...(index === this.chunks.length - 1
+          ? {
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              usageStatus: "reported" as const,
+            }
+          : {}),
       };
     }
   }
@@ -86,7 +98,11 @@ export class FailingProvider implements ProviderAdapter {
 
   async complete(request: ProviderRuntimeRequest): Promise<ProviderRuntimeResponse> {
     void request;
-    throw createProviderRuntimeError(this.id, "malformed_response", "Deterministic provider failure.");
+    throw createProviderRuntimeError(
+      this.id,
+      "malformed_response",
+      "Deterministic provider failure.",
+    );
   }
 
   getCapabilities(): ProviderCapability {

@@ -191,7 +191,7 @@ export class AnthropicCompatibleAdapter implements ProviderAdapter {
       .map((block) => block.text as string)
       .join("") ?? this.parseOpenAiFixtureText(body);
 
-    const usage = body.usage as Record<string, number> | undefined;
+    const usage = this.parseUsage(body.usage as Record<string, number> | undefined);
 
     return {
       id: (body.id as string) ?? `${this.id}-response-${request.id}`,
@@ -200,22 +200,22 @@ export class AnthropicCompatibleAdapter implements ProviderAdapter {
       modelId: request.modelId,
       text,
       finishReason: (body.stop_reason as string) === "end_turn" ? "stop" : "stop",
-      usage: this.parseUsage(usage, text, request),
+      usage,
+      usageStatus: usage ? "reported" : "unknown",
       createdAt: Date.now(),
     };
   }
 
-  private parseUsage(usage: Record<string, number> | undefined, text: string, request: ProviderRuntimeRequest): ProviderUsage {
-    if (usage) {
-      return {
-        inputTokens: usage.input_tokens ?? 0,
-        outputTokens: usage.output_tokens ?? 0,
-        totalTokens: (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0),
-      };
-    }
-    const inputTokens = this.countTokens(request.messages.map((m) => m.content).join(" "));
-    const outputTokens = this.countTokens(text);
-    return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
+  private parseUsage(usage: Record<string, number> | undefined): ProviderUsage | undefined {
+    if (!usage) return undefined;
+    const inputTokens = usage.input_tokens,
+      outputTokens = usage.output_tokens;
+    if (![inputTokens, outputTokens].every((n) => Number.isSafeInteger(n) && n >= 0))
+      return undefined;
+    const totalTokens = inputTokens + outputTokens;
+    if (!Number.isSafeInteger(totalTokens) || totalTokens !== inputTokens + outputTokens)
+      return undefined;
+    return { inputTokens, outputTokens, totalTokens };
   }
 
   private parseOpenAiFixtureText(body: Record<string, unknown>): string {
@@ -236,8 +236,4 @@ export class AnthropicCompatibleAdapter implements ProviderAdapter {
     return createProviderRuntimeError(this.id, "malformed_response", `Anthropic-compatible provider returned ${status}: ${bodyText.slice(0, 200)}`);
   }
 
-  private countTokens(text: string): number {
-    const trimmed = text.trim();
-    return trimmed ? trimmed.split(/\s+/).length : 0;
-  }
 }

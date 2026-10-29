@@ -65,6 +65,37 @@ export interface ProviderUsage {
   totalTokens: number;
 }
 
+export type ProviderUsageStatus = "reported" | "unknown";
+
+/** Native response data only. Never contains a credential, approval or scheduling lease. */
+export interface ProviderContinuationOwner {
+  providerId: string;
+  modelId: string;
+  projectId: string;
+  projectEpoch: number;
+  runId: string;
+  conversationId: string;
+}
+export interface ProviderNativeContinuation {
+  schemaVersion: 1;
+  wireApi: "responses";
+  owner: ProviderContinuationOwner;
+  requestId: string;
+  responseId: string;
+  createdAt: number;
+  assistant: { content: string; toolCalls?: ProviderToolCall[] };
+  output: Array<Record<string, unknown> & { type: string }>;
+}
+/** Persistence implementations must retain exact data/ownership and reject conflicting writes.
+ * Loading these descriptions never restores permission or an open provider session. */
+export interface ProviderContinuationStorePort {
+  load(
+    owner: Readonly<ProviderContinuationOwner>,
+    signal?: AbortSignal,
+  ): Promise<readonly ProviderNativeContinuation[]>;
+  save(record: Readonly<ProviderNativeContinuation>, signal?: AbortSignal): Promise<void>;
+}
+
 export interface ProviderRuntimeResponse {
   id: string;
   requestId: string;
@@ -73,7 +104,10 @@ export interface ProviderRuntimeResponse {
   text: string;
   finishReason: ProviderFinishReason;
   toolCalls?: ProviderToolCall[];
-  usage: ProviderUsage;
+  /** Absent means unknown; never replace with zero or a local token estimate. */
+  usage?: ProviderUsage;
+  usageStatus?: ProviderUsageStatus;
+  nativeContinuation?: ProviderNativeContinuation;
   createdAt: number;
 }
 
@@ -86,6 +120,8 @@ export interface ProviderStreamChunk {
   delta: string;
   done: boolean;
   usage?: ProviderUsage;
+  usageStatus?: ProviderUsageStatus;
+  nativeContinuation?: ProviderNativeContinuation;
   finishReason?: Exclude<ProviderFinishReason, "error">;
   toolCallDelta?: ProviderToolCallDelta;
   toolCalls?: ProviderToolCall[];
@@ -103,15 +139,25 @@ export interface ProviderRuntimeError {
 export type ProviderRuntimeEvent =
   | {
       type: "provider_tool_call_started";
-      requestId: string; providerId: string; index: number; callId: string; name: string;
+      requestId: string;
+      providerId: string;
+      index: number;
+      callId: string;
+      name: string;
     }
   | {
       type: "provider_tool_call_arguments_delta";
-      requestId: string; providerId: string; index: number; callId: string; delta: string;
+      requestId: string;
+      providerId: string;
+      index: number;
+      callId: string;
+      delta: string;
     }
   | {
       type: "provider_tool_call_completed";
-      requestId: string; providerId: string; call: ProviderToolCall;
+      requestId: string;
+      providerId: string;
+      call: ProviderToolCall;
     }
   | {
       type: "provider_request_started";
@@ -162,6 +208,10 @@ export type ProviderRuntimeEvent =
     };
 
 export interface ProviderCapability {
+  /** Bound transport target, not a connectivity assertion. */
+  endpoint?: string;
+  wireApi?: ProviderWireApi;
+  credentialStorage?: "session-only" | "secret-reference";
   providerId: string;
   modelIds: string[];
   supportsStreaming: boolean;
@@ -173,7 +223,12 @@ export interface ProviderCapability {
 
 export type ProviderNetworkMode = "disabled" | "fixture" | "live";
 
-export type ProviderWireApi = "openai-compatible" | "anthropic-compatible" | "local-openai-compatible" | "mock";
+export type ProviderWireApi =
+  | "responses"
+  | "openai-compatible"
+  | "anthropic-compatible"
+  | "local-openai-compatible"
+  | "mock";
 
 export interface ProviderConfig {
   providerId: string;

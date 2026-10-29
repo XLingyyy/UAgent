@@ -27,7 +27,7 @@ describe("bounded DeepSeek session (synthetic transport only)", () => {
     const { session, fetcher, store } = setup();
     const result = await session.adapter.complete(request);
     expect(result.text).toBe("Synthetic analysis.");
-    expect(result.usage.totalTokens).toBe(20);
+    expect(result.usage?.totalTokens).toBe(20);
     expect(store.read()).toMatchObject({ requests: 1, inputTokens: 12, outputTokens: 8, uncertainRequests: 0 });
     expect((await store.read()).reservedMicros).toBeGreaterThan(0);
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
@@ -59,7 +59,7 @@ describe("bounded DeepSeek session (synthetic transport only)", () => {
     const store = ledger(); store.reserve(DEEPSEEK_BUDGET_MICROS - 60_000);
     const failed = vi.fn(async () => { throw Error(syntheticKey); });
     const first = setup(failed, store);
-    await expect(first.session.adapter.complete(request)).rejects.toMatchObject({ message: "Provider request failed. Reservation retained; no automatic retry." });
+    await expect(first.session.adapter.complete(request)).rejects.toMatchObject({ message: "Provider request failed. No automatic retry." });
     expect(failed).toHaveBeenCalledTimes(1);
     const second = setup(vi.fn(async () => sse()), store);
     await expect(second.session.adapter.complete(request)).rejects.toMatchObject({ code: "provider_unavailable" });

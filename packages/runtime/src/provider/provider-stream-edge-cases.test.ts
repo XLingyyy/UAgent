@@ -146,7 +146,7 @@ describe("Streaming edge cases", () => {
       expect(
         result.events.some((e) => e.type === "provider_usage_recorded"),
       ).toBe(true);
-      expect(result.response.usage.totalTokens).toBeGreaterThan(0);
+      expect(result.response.usage?.totalTokens).toBeGreaterThan(0);
     });
 
     it("maps usage on stream completion", async () => {
@@ -158,7 +158,7 @@ describe("Streaming edge cases", () => {
         result.events.some((e) => e.type === "provider_usage_recorded"),
       ).toBe(true);
       if (result.usage) {
-        expect(result.usage.totalTokens).toBeGreaterThan(0);
+        expect(result.usage?.totalTokens).toBeGreaterThan(0);
       }
     });
   });
