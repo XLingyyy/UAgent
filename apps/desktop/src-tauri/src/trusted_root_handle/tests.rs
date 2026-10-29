@@ -217,6 +217,97 @@ fn scoped_read_rejects_sibling_and_case_expansion() {
         .read_bounded(10)
         .unwrap();
 }
+
+#[test]
+fn prefix_large_file_reads_only_requested_bytes_and_preserves_full_read_rejection() {
+    let f = Fixture::new("prefix-large");
+    let initial: Vec<u8> = (0..8192).map(|index| (index % 251) as u8).collect();
+    f.file("Source/large.cpp", &initial);
+    let actual_len = MAX_READ_BYTES as u64 + 8192;
+    OpenOptions::new()
+        .write(true)
+        .open(f.root.join("Source/large.cpp"))
+        .unwrap()
+        .set_len(actual_len)
+        .unwrap();
+    let root = f.lease();
+    let scope = f.source(&root);
+    let mut file = scope.open_file("Source/large.cpp").unwrap();
+    code(file.read_bounded(2048), "file_exceeds_read_limit");
+    code(file.read_bounded(MAX_READ_BYTES), "file_exceeds_read_limit");
+    let file = std::sync::Arc::new(file);
+    assert_eq!(file.byte_len().unwrap(), actual_len);
+    let observed = file.read_prefix_bounded(2048).unwrap();
+    assert_eq!(observed.bytes.len(), 2048);
+    assert_eq!(observed.bytes, initial[..2048]);
+    assert_eq!(observed.root_identity, root.identity());
+    assert_eq!(observed.file_identity, file.identity());
+    assert_eq!(observed.relative_path, "Source/large.cpp");
+    // The caller can request its own four-byte UTF-8 lookahead without a full read.
+    assert_eq!(
+        file.read_prefix_bounded(2052).unwrap().bytes,
+        initial[..2052]
+    );
+    assert_eq!(file.byte_len().unwrap(), actual_len);
+    assert!(fs::write(f.root.join("Source/large.cpp"), b"replacement").is_err());
+}
+#[test]
+fn prefix_shared_handle_reads_start_at_zero_and_enforce_limits_with_empty_file_support() {
+    let f = Fixture::new("prefix-shared");
+    let bytes: Vec<u8> = (0..6000).map(|index| (index % 251) as u8).collect();
+    f.file("Source/shared.cpp", &bytes);
+    f.file("Source/empty.cpp", b"");
+    let root = f.lease();
+    let scope = f.source(&root);
+    let file = std::sync::Arc::new(scope.open_file("Source/shared.cpp").unwrap());
+    code(file.read_prefix_bounded(0), "invalid_read_limit");
+    code(
+        file.read_prefix_bounded(MAX_READ_BYTES + 1),
+        "invalid_read_limit",
+    );
+    assert_eq!(file.byte_len().unwrap(), bytes.len() as u64);
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+    let mut workers = Vec::new();
+    for limit in [17, 4099] {
+        let file = file.clone();
+        let barrier = barrier.clone();
+        let expected = bytes[..limit].to_vec();
+        workers.push(std::thread::spawn(move || {
+            barrier.wait();
+            for _ in 0..4 {
+                assert_eq!(file.read_prefix_bounded(limit).unwrap().bytes, expected);
+                assert_eq!(file.byte_len().unwrap(), 6000);
+            }
+        }));
+    }
+    barrier.wait();
+    for worker in workers {
+        worker.join().unwrap();
+    }
+    assert_eq!(file.read_prefix_bounded(8192).unwrap().bytes, bytes);
+    let empty = scope.open_file("Source/empty.cpp").unwrap();
+    assert_eq!(empty.byte_len().unwrap(), 0);
+    assert!(empty.read_prefix_bounded(1).unwrap().bytes.is_empty());
+}
+#[test]
+fn prefix_revocation_after_actual_read_discards_bytes_and_invalidates_length_observations() {
+    let f = Fixture::new("prefix-revoke");
+    f.file(
+        "Source/data.cpp",
+        b"prefix bytes must not escape after revocation",
+    );
+    let root = f.lease();
+    let scope = f.source(&root);
+    let file = std::sync::Arc::new(scope.open_file("Source/data.cpp").unwrap());
+    assert!(file.byte_len().unwrap() > 8);
+    code(
+        file.read_prefix_and_revoke_at_final_gate(8, &root),
+        "root_lease_revoked",
+    );
+    code(file.byte_len(), "root_lease_revoked");
+    code(file.read_prefix_bounded(8), "root_lease_revoked");
+}
+
 #[test]
 fn read_limits_are_hard_and_empty_file_is_valid() {
     let f = Fixture::new("limit");

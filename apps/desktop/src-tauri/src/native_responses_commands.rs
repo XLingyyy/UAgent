@@ -376,6 +376,47 @@ pub(crate) fn revoke_provider(id: &str) {
         let _ = close_profile(&id, &window);
     }
 }
+pub(crate) fn has_live_run_for_project(id: &str) -> bool {
+    lock(broker())
+        .map(|state| {
+            state
+                .runs
+                .values()
+                .any(|run| run.scope.owner.project_id == id && run.alive.load(Ordering::Acquire))
+        })
+        .unwrap_or(false)
+}
+pub(crate) fn observe_preview_guarded(
+    project: &str,
+    path: &str,
+    bytes: u32,
+    lines: u32,
+    preview: &crate::project_source_versions::ScopedPreview,
+    guard: Arc<crate::trusted_root_handle::BoundReadFile>,
+) -> Result<()> {
+    let runs = lock(broker())?
+        .runs
+        .values()
+        .filter(|run| run.scope.owner.project_id == project && run.alive.load(Ordering::Acquire))
+        .cloned()
+        .collect::<Vec<_>>();
+    for run in runs {
+        let evidence = run
+            .monitor
+            .capture_preview_guarded(path, bytes, lines, preview, guard.clone())
+            .map_err(|error| {
+                run.revoke();
+                failure(error)
+            })?;
+        let mut selected = run.monitor.selected_sources().map_err(failure)?;
+        selected.push(evidence);
+        run.monitor.set_sources(&selected).map_err(|error| {
+            run.revoke();
+            failure(error)
+        })?;
+    }
+    Ok(())
+}
 pub(crate) fn revoke_project(id: &str) {
     let runs = match lock(broker()) {
         Ok(state) => state
@@ -392,6 +433,7 @@ pub(crate) fn revoke_project(id: &str) {
 }
 /// The read tool calls this with its actual native prefix, before redaction.
 /// It creates freshness evidence, never a new sharing permission.
+#[cfg(test)]
 pub(crate) fn observe_preview(
     project: &str,
     path: &str,

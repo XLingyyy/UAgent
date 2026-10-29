@@ -3,13 +3,13 @@ use std::ffi::c_void;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 use std::mem::size_of;
-use std::os::windows::fs::OpenOptionsExt;
+use std::os::windows::fs::{FileExt, OpenOptionsExt};
 use std::os::windows::io::{AsRawHandle, FromRawHandle, RawHandle};
 use std::path::PathBuf;
 use std::ptr::null_mut;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 
 type Handle = *mut c_void;
@@ -482,6 +482,7 @@ impl ScopedReader {
         Ok(BoundReadFile {
             path: self.open(relative, NodeKind::File)?,
             scope: self.clone(),
+            read_lock: Mutex::new(()),
         })
     }
     pub fn pin_directory(&self, relative: &str) -> Result<PinnedDirectory> {
@@ -511,6 +512,7 @@ impl PinnedDirectory {
 pub struct BoundReadFile {
     path: BoundPath,
     scope: ScopedReader,
+    read_lock: Mutex<()>,
 }
 impl BoundReadFile {
     pub fn identity(&self) -> ObjectIdentity {
@@ -521,6 +523,76 @@ impl BoundReadFile {
     }
     pub fn check_current(&self) -> Result<()> {
         self.path.check_current(&self.scope.inner.root)
+    }
+    /// The actual file length observed through this held handle, never a path read.
+    pub fn byte_len(&self) -> Result<u64> {
+        let _guard = self
+            .read_lock
+            .lock()
+            .map_err(|_| RootError::new("bound_read_lock_poisoned"))?;
+        self.check_current()?;
+        let before = metadata(&self.path.target().file, NodeKind::File)?;
+        let after = metadata(&self.path.target().file, NodeKind::File)?;
+        if before != after {
+            return Err(RootError::new("bound_file_changed_during_read"));
+        }
+        self.check_current()?;
+        Ok(before.size)
+    }
+    /// Reads at most limit bytes from offset zero of the same held file.
+    /// This does not decode UTF-8 or imply the whole file was read. Compare with
+    /// byte_len() for truncation; callers may explicitly request UTF-8 lookahead.
+    pub fn read_prefix_bounded(&self, limit: usize) -> Result<ReadObservation> {
+        self.read_prefix_with_final_hook(limit, || {})
+    }
+    fn read_prefix_with_final_hook(
+        &self,
+        limit: usize,
+        before_final_check: impl FnOnce(),
+    ) -> Result<ReadObservation> {
+        if limit == 0 || limit > MAX_READ_BYTES {
+            return Err(RootError::new("invalid_read_limit"));
+        }
+        // A shared Arc may issue several prefix observations. Serialize those
+        // reads and use explicit offsets on the original File, with no reopen.
+        let _guard = self
+            .read_lock
+            .lock()
+            .map_err(|_| RootError::new("bound_read_lock_poisoned"))?;
+        self.check_current()?;
+        let target = self.path.target();
+        let before = metadata(&target.file, NodeKind::File)?;
+        let length = before.size.min(limit as u64) as usize;
+        let mut bytes = vec![0u8; length];
+        let mut offset = 0;
+        while offset < length {
+            match target.file.seek_read(&mut bytes[offset..], offset as u64) {
+                Ok(0) => return Err(RootError::new("bound_file_changed_during_read")),
+                Ok(count) => offset += count,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(io_error("bound_read_failed", error)),
+            }
+        }
+        let after = metadata(&target.file, NodeKind::File)?;
+        if before != after {
+            return Err(RootError::new("bound_file_changed_during_read"));
+        }
+        before_final_check();
+        self.check_current()?;
+        Ok(ReadObservation {
+            root_identity: self.scope.inner.root.root().identity,
+            file_identity: before.identity,
+            relative_path: self.path.components.join("/"),
+            bytes,
+        })
+    }
+    #[cfg(test)]
+    pub(super) fn read_prefix_and_revoke_at_final_gate(
+        &self,
+        limit: usize,
+        root: &TrustedRootHandle,
+    ) -> Result<ReadObservation> {
+        self.read_prefix_with_final_hook(limit, || root.revoke())
     }
     pub fn read_bounded(&mut self, limit: usize) -> Result<ReadObservation> {
         self.read_with_final_hook(limit, || {})

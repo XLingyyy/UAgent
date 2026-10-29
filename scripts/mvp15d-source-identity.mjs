@@ -287,6 +287,9 @@ function exclusionRuleId(logical, isDirectory) {
     return "secret_material";
   }
 
+  // Exact standalone test harness; it is never invoked by the product build.
+  if (lower === "scripts/test-trusted-root-native.ps1") return "test_sources";
+
   if (lower === "scripts/side-effect-scan.mjs" || lower.startsWith("scripts/mvp15-python-cache-")) {
     return "unrelated_validation_tooling";
   }

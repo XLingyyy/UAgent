@@ -4,7 +4,7 @@ The Windows implementation is split into a protocol adapter, a native request
 broker and a fixed-target WinHTTP engine. Configuration and declared capability
 do not establish connectivity. The desktop selector exposes Responses only in an explicitly isolated offline
 demo profile, labelled as a local synthetic fixture. Ordinary mode remains
-blocked until the full native root-identity boundary is integrated. Opening a
+blocked while production transport acceptance remains incomplete. Opening a
 fixture session never establishes a real model connection.
 
 ## Request boundary
@@ -71,9 +71,14 @@ investigation adapter factory is the integration point after scope resolution.
 Missing usage stays `unknown`; reported usage is kept separately and a
 contradictory accounting record is rejected before persistence.
 
-The active source monitor pins Windows objects, but the pre-existing native trust
-registry still has its legacy root-identity representation. Integrating the
-separate full Windows root-identity module is required before production enablement.
+The native trust registry retains live host-selected root handles with full
+volume/FileID observations. Project IDs remain lookup data. Replacing trust first
+revokes the same Responses authority, then retires the previous root generation.
+Responses file previews use exact-file guards and bounded reads from those same
+handles, retaining guards through the dispatch source checks. Busy or unsupported
+objects fail closed. Conservative sharing can block writes/renames: independent
+write workflows must revoke and release all relevant guards before obtaining new
+observations. This integration does not make every namespace operation atomic.
 
 The existing session/composer controls now select the exact open profile and
 wait for native revocation acknowledgement before publishing project/model changes.

@@ -101,6 +101,118 @@ pub(crate) fn read_scoped_project_file(
     })
 }
 
+/// A native-only scoped read retaining the same file/root lease used for every
+/// subsequent freshness check. The caller supplies the separately approved exact
+/// tool path; this function grants no broader read scope.
+#[cfg(windows)]
+pub(crate) fn read_bound_preview(
+    project_id: &str,
+    path: &str,
+    byte_limit: u32,
+    line_limit: u32,
+) -> Result<
+    (
+        ScopedPreview,
+        std::sync::Arc<crate::trusted_root_handle::BoundReadFile>,
+    ),
+    String,
+> {
+    use crate::trusted_root_handle::ReadRule;
+    use std::sync::Arc;
+    if !valid_project_id(project_id)
+        || !canonical_relative_path(path)
+        || byte_limit == 0
+        || byte_limit > 16_384
+        || line_limit == 0
+        || line_limit > 2048
+    {
+        return Err("invalid_source_request".into());
+    }
+    if blocked_source_path(path) {
+        return Err("source_path_blocked".into());
+    }
+    let root = crate::resolve_trusted_root_handle_by_id(project_id)
+        .map_err(|_| "trust_revoked".to_string())?;
+    // All parameter/path checks above are pure. The exact native guard must
+    // accept the object before any file contents are read.
+    root.check_current()
+        .map_err(|_| "trust_revoked".to_string())?;
+    let rule = ReadRule::exact_file(path).map_err(|_| "source_path_blocked".to_string())?;
+    let reader = root
+        .scope_from_verified_host(vec![rule])
+        .map_err(|_| "source_path_blocked".to_string())?;
+    let file = Arc::new(
+        reader
+            .open_file(path)
+            .map_err(|_| "source_path_blocked".to_string())?,
+    );
+    let preview = preview_from_bound_file(&file, path, root.identity(), byte_limit, line_limit)?;
+    root.check_current()
+        .map_err(|_| "trust_revoked".to_string())?;
+    let current = crate::resolve_trusted_root_handle_by_id(project_id)
+        .map_err(|_| "trust_revoked".to_string())?;
+    if !Arc::ptr_eq(&root, &current) {
+        return Err("trust_revoked".into());
+    }
+    Ok((preview, file))
+}
+
+/// Re-read only through the retained guard. At most byte_limit + four bytes
+/// are fetched, including UTF-8 lookahead; no whole-file allocation or path-based
+/// content open occurs here. ReadObservation identities are cross-checked with
+/// the actual held native objects, never treated as independent authority.
+#[cfg(windows)]
+pub(crate) fn preview_from_bound_file(
+    file: &crate::trusted_root_handle::BoundReadFile,
+    path: &str,
+    root_identity: crate::trusted_root_handle::ObjectIdentity,
+    byte_limit: u32,
+    line_limit: u32,
+) -> Result<ScopedPreview, String> {
+    if !canonical_relative_path(path)
+        || blocked_source_path(path)
+        || byte_limit == 0
+        || byte_limit > 16_384
+        || line_limit == 0
+        || line_limit > 2048
+    {
+        return Err("invalid_source_request".into());
+    }
+    file.check_current()
+        .map_err(|_| "source_changed".to_string())?;
+    let original_bytes = file.byte_len().map_err(|_| "source_changed".to_string())?;
+    let limit = byte_limit as usize + 4;
+    let observation = file
+        .read_prefix_bounded(limit)
+        .map_err(|_| "source_changed".to_string())?;
+    if observation.root_identity != root_identity
+        || observation.file_identity != file.identity()
+        || observation.relative_path != path
+        || observation.bytes.len() as u64 != original_bytes.min(limit as u64)
+    {
+        return Err("source_changed".into());
+    }
+    let fetched = observation.bytes.len() as u64;
+    let mut cursor = std::io::Cursor::new(observation.bytes);
+    let prefix = bounded_utf8_prefix(&mut cursor, byte_limit, line_limit)?;
+    // A bounded buffer cannot prove EOF for the remainder of a larger file.
+    if !prefix.truncated && fetched < original_bytes {
+        return Err("source_changed".into());
+    }
+    if file.byte_len().map_err(|_| "source_changed".to_string())? != original_bytes {
+        return Err("source_changed".into());
+    }
+    file.check_current()
+        .map_err(|_| "source_changed".to_string())?;
+    Ok(ScopedPreview {
+        content: prefix.content,
+        truncated: prefix.truncated,
+        original_bytes,
+        observed_lines: prefix.observed_lines,
+        line_count_complete: prefix.line_count_complete,
+        original_lines: prefix.original_lines,
+    })
+}
 fn read_scoped_using<A: PartialEq>(
     project_id: &str,
     path: &str,

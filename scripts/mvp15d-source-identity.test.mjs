@@ -660,6 +660,26 @@ test("R7.3 absent optional roots watch their exact path and closest existing par
   }
 });
 
+test("R7.3 the exact trusted root test harness is classified without changing production identity", () => {
+  const fixture = createDisposableRepository();
+  try {
+    const before = computeSourceIdentity(fixture.repo);
+    writeFileSync(
+      resolve(fixture.repo, "scripts", "test-trusted-root-native.ps1"),
+      "# standalone local tests only\n",
+      "utf8",
+    );
+    const after = computeSourceIdentity(fixture.repo);
+    assert.equal(after.sourceTreeSha256, before.sourceTreeSha256);
+    assert.equal(
+      after.inventoriedFiles.some(({ path }) => path === "scripts/test-trusted-root-native.ps1"),
+      false,
+    );
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
 test("R7.3 an unclassified file under the final-tooling root rejects identity", () => {
   const fixture = createDisposableRepository();
   try {

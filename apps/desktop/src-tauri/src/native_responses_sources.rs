@@ -9,7 +9,10 @@
 use crate::native_provider_transport::{
     SourceAuthority, SourceCheckFailure, SourceChecker, SourcePhase, SourceSnapshot,
 };
-use crate::project_source_versions::{read_scoped_project_file, ScopedPreview};
+#[cfg(test)]
+use crate::project_source_versions::read_scoped_project_file;
+use crate::project_source_versions::{preview_from_bound_file, ScopedPreview};
+use crate::trusted_root_handle::{BoundReadFile, TrustedRootHandle};
 use crate::{resolve_trusted_root_binding_by_id, TrustedRootBinding};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use sha2::{Digest, Sha256};
@@ -29,10 +32,17 @@ const INDEX_TIME_LIMIT: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 enum Observation {
+    #[cfg(test)]
     Preview {
         path: String,
         bytes: u32,
         lines: u32,
+    },
+    GuardedPreview {
+        path: String,
+        bytes: u32,
+        lines: u32,
+        file: Arc<BoundReadFile>,
     },
     Index,
 }
@@ -84,6 +94,7 @@ impl WatchedState {
 }
 pub(crate) struct NativeSourceChecker {
     binding: TrustedRootBinding,
+    held_root: Arc<TrustedRootHandle>,
     guard: RootGuard,
     shared: Arc<WatchedState>,
     selected: Mutex<Vec<SourceEvidence>>,
@@ -99,6 +110,11 @@ impl NativeSourceMonitor {
         if binding.normalized_root.starts_with("fixture:") {
             return Err("native_source_root_invalid");
         }
+        let held_root = crate::resolve_trusted_root_handle_by_id(project_id)
+            .map_err(|_| "native_source_root_invalid")?;
+        held_root
+            .check_current()
+            .map_err(|_| "native_source_root_invalid")?;
         let guard = RootGuard::acquire(&binding)?;
         let shared = Arc::new(WatchedState {
             authority,
@@ -124,6 +140,7 @@ impl NativeSourceMonitor {
             .map_err(|_| "native_source_watcher_unavailable")?;
         let checker = Arc::new(NativeSourceChecker {
             binding,
+            held_root,
             guard,
             shared,
             selected: Mutex::new(Vec::new()),
@@ -150,6 +167,7 @@ impl NativeSourceMonitor {
     /// approved scoped-read operation, before its result is exposed to the model.
     /// Re-reading verifies the original result has not gone stale; it never
     /// blesses a renderer-supplied digest/path as original native evidence.
+    #[cfg(test)]
     pub(crate) fn capture_preview(
         &self,
         path: &str,
@@ -165,6 +183,29 @@ impl NativeSourceMonitor {
                 path: path.into(),
                 bytes: byte_limit,
                 lines: line_limit,
+            },
+            Some(preview_digest(actual)),
+        )
+    }
+    /// Production evidence retains the exact live file guard returned by the
+    /// separately approved native tool, through every check and final dispatch.
+    pub(crate) fn capture_preview_guarded(
+        &self,
+        path: &str,
+        byte_limit: u32,
+        line_limit: u32,
+        actual: &ScopedPreview,
+        file: Arc<BoundReadFile>,
+    ) -> Result<SourceEvidence> {
+        if byte_limit == 0 || byte_limit > 16_384 || line_limit == 0 || line_limit > 2048 {
+            return Err("native_source_request_invalid");
+        }
+        self.checker.capture(
+            Observation::GuardedPreview {
+                path: path.into(),
+                bytes: byte_limit,
+                lines: line_limit,
+                file,
             },
             Some(preview_digest(actual)),
         )
@@ -243,8 +284,14 @@ impl NativeSourceMonitor {
             .map_err(|_| "native_source_unavailable")
     }
     pub(crate) fn revoke(&self) {
-        self.checker.shared.active.store(false, Ordering::Release);
+        // Revoke under the same SourceAuthority/final-dispatch mutex BEFORE
+        // releasing this monitor's file guards. External evidence owners must
+        // likewise discard their own clones when the broker revokes the run.
         self.checker.shared.invalidate(true);
+        self.checker.shared.active.store(false, Ordering::Release);
+        if let Ok(mut selected) = self.checker.selected.lock() {
+            selected.clear();
+        }
     }
 }
 impl Drop for NativeSourceMonitor {
@@ -257,7 +304,13 @@ impl Drop for NativeSourceMonitor {
 impl NativeSourceChecker {
     fn verify_root(&self) -> Result<()> {
         self.shared.revision()?;
-        if !self.guard.verify()
+        self.held_root
+            .check_current()
+            .map_err(|_| "native_source_root_invalid")?;
+        let current = crate::resolve_trusted_root_handle_by_id(&self.binding.root_id)
+            .map_err(|_| "native_source_root_invalid")?;
+        if !Arc::ptr_eq(&current, &self.held_root)
+            || !self.guard.verify()
             || resolve_trusted_root_binding_by_id(&self.binding.root_id)
                 .map_err(|_| "native_source_root_invalid")?
                 != self.binding
@@ -274,9 +327,21 @@ impl NativeSourceChecker {
     }
     fn observe(&self, observation: &Observation) -> Result<[u8; 32]> {
         match observation {
+            #[cfg(test)]
             Observation::Preview { path, bytes, lines } => {
                 let prefix = read_scoped_project_file(&self.binding.root_id, path, *bytes, *lines)
                     .map_err(|_| "native_source_changed")?;
+                Ok(preview_digest(&prefix))
+            }
+            Observation::GuardedPreview {
+                path,
+                bytes,
+                lines,
+                file,
+            } => {
+                let prefix =
+                    preview_from_bound_file(file, path, self.held_root.identity(), *bytes, *lines)
+                        .map_err(|_| "native_source_changed")?;
                 Ok(preview_digest(&prefix))
             }
             Observation::Index => index_digest(&self.binding.canonical_root),
@@ -367,6 +432,20 @@ fn selected_digest(revision: u64, sources: &[SourceEvidence]) -> [u8; 32] {
     for evidence in sources {
         match &evidence.observation {
             Observation::Index => hash.update(b"index"),
+            Observation::GuardedPreview {
+                path,
+                bytes,
+                lines,
+                file,
+            } => {
+                hash.update(b"guarded-preview");
+                hash.update((path.len() as u64).to_le_bytes());
+                hash.update(path.as_bytes());
+                hash.update(bytes.to_le_bytes());
+                hash.update(lines.to_le_bytes());
+                hash.update(file.identity().observation_key().as_bytes());
+            }
+            #[cfg(test)]
             Observation::Preview { path, bytes, lines } => {
                 hash.update(b"preview");
                 hash.update((path.len() as u64).to_le_bytes());
@@ -675,6 +754,7 @@ mod tests {
     }
     impl Drop for Fixture {
         fn drop(&mut self) {
+            crate::trusted_roots().lock().unwrap().remove(&self.project);
             // Only this unique, locally constructed fixture directly under TEMP.
             // Leave files if identity/containment is not provable.
             if self.path.parent() == Some(std::env::temp_dir().as_path())
@@ -711,6 +791,125 @@ mod tests {
                 write: WriteStatus::Complete,
             })
         }
+    }
+    #[test]
+    fn guarded_large_unicode_preview_is_bounded_and_preserves_original_size() {
+        use crate::project_source_versions::read_bound_preview;
+        let fixture = Fixture::new();
+        let content = "\u{7532}\u{4e59}\u{4e19}".repeat(120_000);
+        fs::write(fixture.path.join("Source/Main.cpp"), content.as_bytes()).unwrap();
+        let (preview, file) =
+            read_bound_preview(&fixture.project, "Source/Main.cpp", 7, 8).unwrap();
+        let legacy = read_scoped_project_file(&fixture.project, "Source/Main.cpp", 7, 8).unwrap();
+        assert_eq!(
+            (
+                &preview.content,
+                preview.truncated,
+                preview.original_bytes,
+                preview.observed_lines,
+                preview.line_count_complete,
+                preview.original_lines
+            ),
+            (
+                &legacy.content,
+                legacy.truncated,
+                legacy.original_bytes,
+                legacy.observed_lines,
+                legacy.line_count_complete,
+                legacy.original_lines
+            )
+        );
+
+        assert_eq!(preview.content, "\u{7532}\u{4e59}");
+        assert_eq!(preview.original_bytes, content.len() as u64);
+        assert!(preview.truncated);
+        assert!(!preview.line_count_complete);
+        assert_eq!(preview.original_lines, 0);
+        assert_eq!(file.read_prefix_bounded(11).unwrap().bytes.len(), 11);
+        assert_eq!(file.byte_len().unwrap(), content.len() as u64);
+        assert!(read_bound_preview(&fixture.project, "../escape.cpp", 7, 8).is_err());
+        assert!(read_bound_preview(&fixture.project, ".env", 7, 8).is_err());
+    }
+    #[test]
+    fn guarded_evidence_holds_exact_file_until_revoke_and_rejects_foreign_guards() {
+        use crate::project_source_versions::read_bound_preview;
+        let fixture = Fixture::new();
+        let other = Fixture::new();
+        let session = fixture.session();
+        let monitor = fixture.monitor(&session);
+        let (actual, file) =
+            read_bound_preview(&fixture.project, "Source/Main.cpp", 128, 8).unwrap();
+        let (foreign, foreign_file) =
+            read_bound_preview(&other.project, "Source/Main.cpp", 128, 8).unwrap();
+        assert!(monitor
+            .capture_preview_guarded("Source/Main.cpp", 128, 8, &foreign, foreign_file)
+            .is_err());
+        assert!(monitor
+            .capture_preview_guarded("Source/Other.cpp", 128, 8, &actual, file.clone())
+            .is_err());
+        let evidence = monitor
+            .capture_preview_guarded("Source/Main.cpp", 128, 8, &actual, file.clone())
+            .unwrap();
+        let snapshot = monitor.set_sources(&[evidence]).unwrap();
+        drop(file);
+        for phase in [
+            SourcePhase::Prepare,
+            SourcePhase::Approval,
+            SourcePhase::BeforeDispatch,
+        ] {
+            assert!(monitor.checker().check(&snapshot, phase).is_ok());
+        }
+        let write_error =
+            fs::write(fixture.path.join("Source/Main.cpp"), "blocked replacement").unwrap_err();
+        assert_eq!(
+            write_error.raw_os_error(),
+            Some(32),
+            "held file must keep write sharing denied"
+        );
+        monitor.revoke();
+        assert!(monitor.selected_sources().unwrap().is_empty());
+        fs::write(
+            fixture.path.join("Source/Main.cpp"),
+            "write after guard release",
+        )
+        .unwrap();
+    }
+    #[test]
+    fn guarded_same_path_retrust_rejects_old_registry_arc_and_never_dispatches() {
+        use crate::project_source_versions::read_bound_preview;
+        let fixture = Fixture::new();
+        let session = fixture.session();
+        let monitor = fixture.monitor(&session);
+        let old_root = crate::resolve_trusted_root_handle_by_id(&fixture.project).unwrap();
+        let (actual, file) =
+            read_bound_preview(&fixture.project, "Source/Main.cpp", 128, 8).unwrap();
+        let evidence = monitor
+            .capture_preview_guarded("Source/Main.cpp", 128, 8, &actual, file)
+            .unwrap();
+        monitor.set_sources(&[evidence]).unwrap();
+        let checker = monitor.checker();
+        let lease = session.capture_lease(60_000).unwrap();
+        let request = session
+            .prepare(
+                &lease,
+                "https://api.openai.com/v1",
+                br#"{"model":"fixture-model"}"#.to_vec(),
+                checker.as_ref(),
+            )
+            .unwrap();
+        let grant = session.approve(&request, &lease, checker.as_ref()).unwrap();
+        crate::trust_native_project_root(crate::TrustRootInput {
+            root_ref: fixture.path.to_string_lossy().into_owned(),
+        })
+        .unwrap();
+        let new_root = crate::resolve_trusted_root_handle_by_id(&fixture.project).unwrap();
+        assert!(!Arc::ptr_eq(&old_root, &new_root));
+        let count = Arc::new(AtomicUsize::new(0));
+        let mut sink = Sink(count.clone());
+        let outcome = session.dispatch(&request, &lease, &grant, checker.as_ref(), &mut sink);
+        assert_eq!(outcome.status, DispatchStatus::NotDispatched);
+        assert!(outcome.error.is_some());
+        assert_eq!(count.load(Ordering::Relaxed), 0);
     }
     #[test]
     fn stable_native_preview_checks_all_phases_and_allows_synthetic_dispatch() {

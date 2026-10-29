@@ -23,6 +23,8 @@ pub(crate) mod native_responses_fixture;
 #[cfg(windows)]
 pub(crate) mod native_responses_fixture_setup;
 #[cfg(windows)]
+pub(crate) mod trusted_root_handle;
+#[cfg(windows)]
 pub(crate) mod product_settings_commands;
 pub(crate) mod project_source_versions;
 pub(crate) mod provider_budget;
@@ -59,7 +61,7 @@ enum TrustedRootObjectIdentity {
     Fixture(String),
     #[cfg(windows)]
     Windows {
-        creation_time: u64,
+        identity: trusted_root_handle::ObjectIdentity,
     },
     #[cfg(unix)]
     Unix {
@@ -71,6 +73,8 @@ enum TrustedRootObjectIdentity {
 #[derive(Default)]
 pub(crate) struct TrustedRootRegistry {
     bindings: HashMap<String, TrustedRootBinding>,
+    #[cfg(windows)]
+    live_roots: HashMap<String,std::sync::Arc<trusted_root_handle::TrustedRootHandle>>,
     #[cfg(test)]
     legacy_test_root_ids: HashSet<String>,
 }
@@ -97,11 +101,15 @@ impl TrustedRootRegistry {
     #[cfg(test)]
     pub(crate) fn clear(&mut self) {
         self.bindings.clear();
+        #[cfg(windows)]
+        {for root in self.live_roots.values(){root.revoke();} self.live_roots.clear();}
         self.legacy_test_root_ids.clear();
     }
 
     #[cfg(test)]
     pub(crate) fn remove(&mut self, root_id: &str) -> bool {
+        #[cfg(windows)]
+        if let Some(root)=self.live_roots.remove(root_id){root.revoke();}
         self.bindings.remove(root_id).is_some() || self.legacy_test_root_ids.remove(root_id)
     }
 }
@@ -180,12 +188,9 @@ fn root_object_identity(
     }
     #[cfg(windows)]
     {
-        use std::os::windows::fs::MetadataExt;
-        let creation_time = metadata.creation_time();
-        if creation_time == 0 {
-            return Err("native_authority_unavailable");
-        }
-        return Ok(TrustedRootObjectIdentity::Windows { creation_time });
+        let held=trusted_root_handle::TrustedRootHandle::open_from_host_selection(Path::new(normalized))
+            .map_err(|_|"native_root_object_busy_or_unavailable")?;
+        return Ok(TrustedRootObjectIdentity::Windows { identity:held.identity() });
     }
     #[cfg(unix)]
     {
@@ -219,6 +224,8 @@ pub(crate) fn resolve_trusted_root_binding(raw: &str) -> Result<TrustedRootBindi
     if canonical != binding.canonical_root || object_identity != binding.object_identity {
         return Err("trusted_root_binding_mismatch");
     }
+    #[cfg(windows)]
+    if !normalized.starts_with("fixture://") {resolve_trusted_root_handle_by_id(&root_id)?;}
     Ok(binding)
 }
 
@@ -239,7 +246,22 @@ pub(crate) fn resolve_trusted_root_binding_by_id(
     {
         return Err("trusted_root_binding_mismatch");
     }
+    #[cfg(windows)]
+    if !binding.normalized_root.starts_with("fixture://") {resolve_trusted_root_handle_by_id(root_id)?;}
     Ok(binding)
+}
+
+/// Resolves only a live host-selected object. Diagnostic IDs never reopen or renew it.
+#[cfg(windows)]
+pub(crate) fn resolve_trusted_root_handle_by_id(root_id:&str)->Result<std::sync::Arc<trusted_root_handle::TrustedRootHandle>, &'static str>{
+    let (binding,held)={let registry=trusted_roots().lock().map_err(|_|"native_authority_unavailable")?;
+        (registry.bindings.get(root_id).cloned().ok_or("trust_revoked")?,
+         registry.live_roots.get(root_id).cloned().ok_or("trust_revoked")?)};
+    held.check_current().map_err(|_|"trusted_root_object_changed_or_busy")?;
+    if binding.object_identity!=(TrustedRootObjectIdentity::Windows{identity:held.identity()}) {
+        return Err("trusted_root_binding_mismatch");
+    }
+    Ok(held)
 }
 
 fn mark_cancelled(scan_id: &str) {
@@ -479,10 +501,21 @@ fn trust_native_project_root(input: TrustRootInput) -> Result<TrustRootResult, S
         .map_err(|reason| format!("Cannot trust root: {reason}"))?;
     let object_identity = root_object_identity(&normalized, &canonical_root)
         .map_err(|reason| format!("Cannot trust root: {reason}"))?;
-    trusted_roots()
-        .lock()
-        .map_err(|_| "native_authority_unavailable".to_string())?
-        .insert_binding(TrustedRootBinding {
+    #[cfg(windows)]
+    let held=if normalized.starts_with("fixture://"){None}else{
+        Some(std::sync::Arc::new(trusted_root_handle::TrustedRootHandle::open_from_host_selection(Path::new(&normalized))
+            .map_err(|_|"native_root_object_busy_or_unavailable".to_string())?))
+    };
+    let mut registry=trusted_roots().lock().map_err(|_|"native_authority_unavailable".to_string())?;
+    #[cfg(windows)]
+    {
+        if let Some(previous)=registry.live_roots.remove(&root_id){previous.revoke();}
+        if let Some(held)=held {
+            if object_identity!=(TrustedRootObjectIdentity::Windows{identity:held.identity()}) {return Err("trusted_root_binding_mismatch".into());}
+            registry.live_roots.insert(root_id.clone(),held);
+        }
+    }
+    registry.insert_binding(TrustedRootBinding {
             root_id: root_id.clone(),
             normalized_root: normalized,
             canonical_root,
@@ -801,12 +834,18 @@ fn preview_native_project_file(
         if !is_text_extension(&input.root_relative_path) {
             return Ok(blocked_preview("binary_or_extension_blocked"));
         }
-        match project_source_versions::read_scoped_project_file(
-            &input.project_id, &input.root_relative_path, input.byte_limit.min(16_384), input.line_limit,
-        ) {
+        #[cfg(windows)]
+        let observed=if native_responses_commands::has_live_run_for_project(&input.project_id) {
+            project_source_versions::read_bound_preview(&input.project_id,&input.root_relative_path,input.byte_limit.min(16_384),input.line_limit)
+                .and_then(|(preview,guard)| {
+                    native_responses_commands::observe_preview_guarded(&input.project_id,&input.root_relative_path,input.byte_limit.min(16_384),input.line_limit,&preview,guard)?;
+                    Ok(preview)
+                })
+        }else{project_source_versions::read_scoped_project_file(&input.project_id,&input.root_relative_path,input.byte_limit.min(16_384),input.line_limit)};
+        #[cfg(not(windows))]
+        let observed=project_source_versions::read_scoped_project_file(&input.project_id,&input.root_relative_path,input.byte_limit.min(16_384),input.line_limit);
+        match observed {
             Ok(prefix) => {
-                #[cfg(windows)]
-                native_responses_commands::observe_preview(&input.project_id,&input.root_relative_path,input.byte_limit.min(16_384),input.line_limit,&prefix);
                 let redacted = redact_preview_content(&prefix.content);
                 Ok(PreviewProjectFileResult {
                     status: if prefix.truncated { "truncated".into() } else { "ready".into() },
@@ -2606,7 +2645,11 @@ mod tests {
 
     impl Drop for RealProjectValidationTestRoot {
         fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.path);
+            if let (Ok(target),Ok(temporary))=(fs::canonicalize(&self.path),fs::canonicalize(std::env::temp_dir())) {
+                if target.starts_with(&temporary)&&target!=temporary&&target.file_name().is_some_and(|name|name.to_string_lossy().starts_with("uagent-real-project-validation-")) {
+                    let _ = fs::remove_dir_all(&target);
+                }
+            }
         }
     }
 
@@ -2784,21 +2827,30 @@ mod tests {
             trusted.root_id
         );
 
-        let displaced = root.path.with_extension("trusted-root-displaced");
-        let _ = fs::remove_dir_all(&displaced);
-        fs::rename(&root.path, &displaced).unwrap();
-        fs::create_dir_all(&root.path).unwrap();
-        fs::write(root.path.join("SampleNativeProject.uproject"), "{}").unwrap();
-
-        assert_eq!(
-            resolve_trusted_root_binding(&root_ref).unwrap_err(),
-            "trusted_root_binding_mismatch"
-        );
-        assert_eq!(
-            resolve_trusted_root_binding_by_id(&trusted.root_id).unwrap_err(),
-            "trusted_root_binding_mismatch"
-        );
-        let _ = fs::remove_dir_all(displaced);
+        #[cfg(windows)]
+        {
+            let first=resolve_trusted_root_handle_by_id(&trusted.root_id).unwrap();
+            let displaced=root.path.with_extension("trusted-root-displaced");
+            assert!(!displaced.exists());
+            assert!(fs::rename(&root.path,&displaced).is_err(),"a trusted live root must remain pinned");
+            assert_eq!(resolve_trusted_root_binding_by_id(&trusted.root_id).unwrap().object_identity,
+                TrustedRootObjectIdentity::Windows{identity:first.identity()});
+            let replacement=trust_native_project_root(TrustRootInput{root_ref:root_ref.clone()}).unwrap();
+            let second=resolve_trusted_root_handle_by_id(&replacement.root_id).unwrap();
+            assert!(!std::sync::Arc::ptr_eq(&first,&second));
+            assert!(first.check_current().is_err(),"retrust must retire the previous native generation");
+            assert!(second.check_current().is_ok());
+            trusted_roots().lock().unwrap().clear();
+        }
+        #[cfg(not(windows))]
+        {
+            let displaced = root.path.with_extension("trusted-root-displaced");
+            fs::rename(&root.path, &displaced).unwrap();
+            fs::create_dir_all(&root.path).unwrap();
+            fs::write(root.path.join("SampleNativeProject.uproject"), "{}").unwrap();
+            assert_eq!(resolve_trusted_root_binding(&root_ref).unwrap_err(),"trusted_root_binding_mismatch");
+            assert_eq!(resolve_trusted_root_binding_by_id(&trusted.root_id).unwrap_err(),"trusted_root_binding_mismatch");
+        }
     }
 
     #[test]
