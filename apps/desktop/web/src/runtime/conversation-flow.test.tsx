@@ -33,6 +33,16 @@ async function mount(){
  return{...view,manager,runtime,gate,fetcher,sent,streams,input,send,approve,delta,done,reject,locale};
 }
 describe("multi-turn conversation and incremental text without real API",()=>{
+ it("does not publish a transient empty conversation while routing a follow-up task",async()=>{
+  const h=await mount();await h.send("First question");await h.approve();await h.delta("First answer");await h.done();
+  const snapshot=h.runtime.getSnapshot(),active=snapshot.tasksById[snapshot.activeTaskId!],conversation=active.draft.conversationId;
+  expect(conversation).toBeTruthy();
+  const observed:Array<string|undefined>=[],original=safeProviderSession.updateContext;
+  vi.spyOn(safeProviderSession,"updateContext").mockImplementation((project,input,model,conversationId)=>{observed.push(conversationId);original(project,input,model,conversationId);});
+  await h.send("Follow-up");
+  expect(observed.length).toBeGreaterThan(0);expect(observed.every(id=>id===conversation)).toBe(true);await h.reject();
+ });
+
  it("sends exact ordered history and keeps incremental content in one assistant node",async()=>{
   const h=await mount();await h.send("Remember synthetic blue.");expect(h.fetcher).not.toHaveBeenCalled();await h.approve();await h.delta("Synthetic ");await waitFor(()=>expect(document.querySelector(".ua-chat-message--assistant")?.textContent).toContain("Synthetic "));
   const node=document.querySelector(".ua-chat-message--assistant");expect(document.querySelectorAll(".ua-chat-message--assistant")).toHaveLength(1);expect(document.querySelector(".ua-chat-details")?.hasAttribute("open")).toBe(false);

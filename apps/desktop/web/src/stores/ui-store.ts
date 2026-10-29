@@ -914,9 +914,7 @@ function createUIStateBundle(
   let runningGeneration = 0;
   runtimeClient.subscribe((snapshot) => {
     const active = snapshot.activeTaskId ? snapshot.tasksById[snapshot.activeTaskId] : null;
-    if (submissionRoutingCurrent?.() && active && active.draft.projectId === projectStore.getState().activeProjectId) {
-      threadStore.setState({ activeThreadId: active.id });
-    }
+    const routeActive=submissionRoutingCurrent?.() && active && active.draft.projectId === projectStore.getState().activeProjectId;
     runtimeStore.setState((previousState) => ({
       ...previousState,
       ...snapshot,
@@ -925,6 +923,9 @@ function createUIStateBundle(
           ? "MCP read-only runtime / no provider call"
           : FIXTURES_ENABLED ? "Fixture runtime / no provider call" : "Local planning / no provider call",
     }));
+    // A thread ID must never be published before its owning task is observable.
+    // Otherwise native context observers see a transient empty conversation.
+    if(routeActive&&active)threadStore.setState({activeThreadId:active.id});
   });
   runtimeClient.subscribeMcp((mcp) => {
     const mvp15Inventory = getMvp15McpAssetInventory(runtimeClient);
