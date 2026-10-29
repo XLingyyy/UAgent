@@ -34,4 +34,18 @@ describe("T08 provider editor version ownership",()=>{
   await act(async()=>resolve({generation:v1.generation,revision:2,config,transportSupported:true,connectionVerified:false,requiresNewSession:true}));
   expect(screen.queryByRole("button",{name:"Save provider"})).toBeNull();
  });
+ it("locks the form until a template's edit token has arrived",async()=>{
+  vi.spyOn(nativeProductSettings,"enabled").mockReturnValue(true);
+  let resolve!:(value:typeof v1)=>void;
+  vi.spyOn(nativeProductSettings,"captureVersion").mockResolvedValueOnce(undefined).mockImplementationOnce(()=>new Promise(r=>{resolve=r;}));
+  render(<I18nProvider store={createLocaleStore({initialLocale:"en",storage:null,eventTarget:null})}><UIProvider initialState={{provider:{providers:[],selectedProviderId:null,defaultProviderId:null,testStatus:"idle"}}}><ProviderSettings/></UIProvider></I18nProvider>);
+  fireEvent.click(screen.getByRole("button",{name:"Add provider"}));
+  const template=await screen.findByRole("combobox",{name:"Provider type"});
+  fireEvent.change(template,{target:{value:"deepseek"}});
+  expect(document.querySelector("fieldset")!.disabled).toBe(true);
+  await act(async()=>resolve(v1));
+  expect(document.querySelector("fieldset")!.disabled).toBe(false);
+  fireEvent.change(screen.getByRole("textbox",{name:"Display name"}),{target:{value:"My preserved name"}});
+  expect((screen.getByRole("textbox",{name:"Display name"}) as HTMLInputElement).value).toBe("My preserved name");
+ });
 });
