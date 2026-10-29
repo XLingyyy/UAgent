@@ -4,6 +4,8 @@
 
 Local desktop workspace for model conversations and explicitly approved Unreal Engine workflows. The current live model transport implements **DeepSeek / `deepseek-flash` only**; other provider configurations are saved as configuration, not advertised as runnable integrations.
 
+Read-only structured project investigation is available as an explicit task mode; see the [capability and scope contract](docs/bounded-investigation.md) for its current limits and validation boundaries.
+
 ## 当前能力
 
 - 桌面界面默认中文，设置 → 通用可即时切换 English，重启保留语言偏好。

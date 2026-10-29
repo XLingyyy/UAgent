@@ -73,6 +73,11 @@ type NativeScanResult = Partial<ProjectIndexSnapshot> & {
 };
 
 type NativePreviewResult = Partial<SafeFilePreviewResult> & {
+  truncated?: boolean;
+  originalBytes?: number;
+  originalLines?: number;
+  replacedSecrets?: number;
+  replacedPaths?: number;
   original_bytes?: number;
   original_lines?: number;
   replaced_secrets?: number;
@@ -164,7 +169,7 @@ function emptySnapshot(project: ProjectProfile, raw: NativeScanResult, now: numb
   const files = raw.files ?? [];
   const assets = raw.assets ?? [];
 
-  if (status === "ready" && (!raw.summary || directories.length === 0 || files.length === 0 || assets.length === 0)) {
+  if (status === "ready" && (!raw.summary || !Array.isArray(raw.directories) || !Array.isArray(raw.files) || !Array.isArray(raw.assets))) {
     throw new Error("Native scan did not return project index entries");
   }
 
@@ -206,22 +211,22 @@ function normalizePreview(
     projectId: raw.projectId ?? projectId,
     rootRelativePath: raw.rootRelativePath ?? rootRelativePath,
     displayPath: raw.displayPath ?? `[project-root]/${rootRelativePath}`,
-    status: raw.status ?? "blocked",
+    status: raw.truncated && raw.status==="ready" ? "truncated" : raw.status ?? "blocked",
     reason: raw.reason ?? "native_preview",
     content: raw.content ?? "",
     truncation:
-      raw.truncation ?? {
-        truncated: false,
+      raw.truncation ? {...raw.truncation,truncated:raw.truncation.truncated||raw.truncated===true} : {
+        truncated: raw.truncated===true,
         byteLimit,
         lineLimit,
-        originalBytes: raw.original_bytes ?? 0,
-        originalLines: raw.original_lines ?? 0,
+        originalBytes: raw.originalBytes ?? raw.original_bytes ?? 0,
+        originalLines: raw.originalLines ?? raw.original_lines ?? 0,
       },
     redaction:
       raw.redaction ?? {
-        replacedSecrets: raw.replaced_secrets ?? 0,
-        replacedPaths: raw.replaced_paths ?? 0,
-        redacted: (raw.replaced_secrets ?? 0) + (raw.replaced_paths ?? 0) > 0,
+        replacedSecrets: raw.replacedSecrets ?? raw.replaced_secrets ?? 0,
+        replacedPaths: raw.replacedPaths ?? raw.replaced_paths ?? 0,
+        redacted: (raw.replacedSecrets ?? raw.replaced_secrets ?? 0) + (raw.replacedPaths ?? raw.replaced_paths ?? 0) > 0,
       },
     createdAt: raw.createdAt ?? now,
   };

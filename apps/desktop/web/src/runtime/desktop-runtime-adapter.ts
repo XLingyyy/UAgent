@@ -502,6 +502,10 @@ export async function collectMvp15dUiAuthority(
 
 
 export interface DesktopRuntimeAdapter {
+  configureInvestigation?(options:import("@uagent/runtime").InvestigationRuntimeOptions):void;
+  getTaskRun?(taskId:string):import("@uagent/shared").TaskRun|null;
+  pauseTaskRun?(taskId:string):void;
+  resumeTaskRun?(taskId:string):Promise<TaskRecord>;
   getProviderProposals?(): ProviderProposalController;
   setProviderProjectContext?(context: Omit<ProposalScope,"epoch">): void;
   getSnapshot(): RuntimeSnapshot;
@@ -4236,6 +4240,10 @@ export function createDesktopRuntimeAdapter(
       };
     },
 
+    configureInvestigation: config=>router.updateContext({investigation:config}),
+    getTaskRun: taskId=>router.getTaskRun(taskId),
+    pauseTaskRun: taskId=>router.pauseTaskRun(taskId),
+    resumeTaskRun: taskId=>router.resumeTaskRun(taskId),
     submitTask: async (draft) => {
       if (!FIXTURES_ENABLED && !currentDiscovery && !(options?.providerAdapter && options.providerEnabled)) {
         throw new Error("Connect and discover a read-only MCP session before submitting a task.");

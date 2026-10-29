@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
     "import.meta.env.VITE_UAGENT_ENABLE_FIXTURES": JSON.stringify(env.VITE_UAGENT_ENABLE_FIXTURES === "1" ? "1" : "0"),
     "import.meta.env.VITE_UAGENT_ACCEPTANCE_UI": JSON.stringify(env.VITE_UAGENT_ACCEPTANCE_UI === "1" ? "1" : "0"),
   },
+  cacheDir: process.env.VITE_CACHE_DIR ?? resolve(__dirname, "node_modules/.vite"),
   plugins: [react()],
   root: resolve(__dirname),
   clearScreen: false,

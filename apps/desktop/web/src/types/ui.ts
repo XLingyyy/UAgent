@@ -226,6 +226,8 @@ export interface ThreadStoreActions {
 }
 
 export interface ComposerStoreActions {
+  pauseTaskRun?:RuntimeStoreActions["pauseTaskRun"];
+  resumeTaskRun?:RuntimeStoreActions["resumeTaskRun"];
   setComposerInput: SetComposerInput;
   setComposerAttachMenuOpen: SetComposerAttachMenuOpen;
   setComposerPermission: SetComposerPermission;

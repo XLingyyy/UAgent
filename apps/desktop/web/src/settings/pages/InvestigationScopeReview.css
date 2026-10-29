@@ -1,0 +1,50 @@
+.ua-investigation-review label {
+  color: var(--ua-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ua-investigation-review .ua-scope-field {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+}
+.ua-scope-field input {
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--ua-border-strong);
+  border-radius: 6px;
+  background: var(--ua-bg-input);
+  color: var(--ua-text-primary);
+  font: inherit;
+}
+.ua-scope-field input[type="text"] {
+  flex: 1;
+}
+.ua-scope-field input[type="number"] {
+  width: 80px;
+}
+.ua-investigation-review .ua-scope-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+}
+.ua-scope-option input {
+  flex: 0 0 auto;
+  margin: 4px 0 0;
+  accent-color: var(--ua-accent);
+}
+.ua-investigation-review input:focus-visible {
+  outline: 2px solid var(--ua-accent);
+  outline-offset: 3px;
+}
+@media (max-width: 700px) {
+  .ua-investigation-review .ua-scope-field {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ua-scope-field input[type="text"] {
+    flex-basis: 100%;
+  }
+}

@@ -229,6 +229,8 @@ export interface RuntimeStoreState extends RuntimeSnapshot {
 }
 
 export interface RuntimeStoreActions {
+  pauseTaskRun?:(taskId:string)=>void;
+  resumeTaskRun?:(taskId:string)=>Promise<void>;
   submitComposerTask: (draft: TaskDraft) => Promise<string>;
   cancelRuntimeTask: (taskId: string) => Promise<void>;
   submitApprovalDecision: (taskId: string, stepId: string | null, decision: ApprovalDecisionValue, actor: string, reason: string) => Promise<void>;

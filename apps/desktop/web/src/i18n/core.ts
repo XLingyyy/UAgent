@@ -1,3 +1,4 @@
+import {runMessages} from "./run-messages";
 import {chatMessages} from "./chat-messages";
 import {productUiMessages} from "./product-ui-messages";
 import {productMessages} from "./product-messages";
@@ -25,6 +26,7 @@ export const messageCatalog = {
   ...productMessages,
   ...chatMessages,
   ...productUiMessages,
+  ...runMessages,
 } as const;
 export type TranslationKey = keyof typeof messageCatalog;
 

@@ -1,3 +1,4 @@
+import {InvestigationScopeReview} from "../settings/pages/InvestigationScopeReview";
 import {ProviderSessionLifetime} from "../runtime/ProviderSessionLifetime";
 import {safeProviderSession} from "../runtime/safe-provider-session";
 import {OutboundRequestReview} from "../settings/pages/OutboundRequestReview";
@@ -30,6 +31,7 @@ export default function App() {
       <ProviderSessionLifetime />
       <LocalWorkspaceBootstrap />
       <AppShell />
+      <InvestigationScopeReview />
       <OutboundRequestReview />
     </UIProvider>
   );

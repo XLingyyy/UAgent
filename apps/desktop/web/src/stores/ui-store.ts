@@ -1,3 +1,6 @@
+import {investigationScopeGate} from "../runtime/investigation-scope-gate";
+import {createProjectReadToolRegistry} from "../runtime/project-read-tools";
+import {DEEPSEEK_ENDPOINT} from "@uagent/runtime";
 import {attachmentStore} from "../runtime/attachment-store";
 import {conversationTasks,completedConversationHistory,conversationKey} from "../runtime/conversation-context";
 import {safeProviderSession} from "../runtime/safe-provider-session";
@@ -723,6 +726,7 @@ function createUIStateBundle(
   const providerState = createInitialProviderState(initialState);
   const projectAdapter = createNativeProjectAdapter();
   const projectRequests = createRequestGeneration();
+  runtimeClient.configureInvestigation?.({registry:createProjectReadToolRegistry(projectAdapter),resolveScope:id=>investigationScopeGate.claim(id)});
   let submissionPending = false;
   let submissionRoutingCurrent: (() => boolean) | null = null;
   let assetOperationPending = false;
@@ -1292,6 +1296,7 @@ function createUIStateBundle(
       if(threadStore.getState().activeThreadId===threadId)return;
       const selected=threadId?runtimeStore.getState().tasksById[threadId]:null;
       if(selected&&selected.draft.projectId!==projectStore.getState().activeProjectId)return;
+      investigationScopeGate.invalidate();
       if(submissionPending){projectRequests.invalidate();const id=runtimeStore.getState().activeTaskId;if(id)void runtimeClient.cancelTask(id).catch(()=>undefined);}
       threadStore.setState({activeThreadId:threadId});
     },
@@ -1335,21 +1340,43 @@ function createUIStateBundle(
         const snapshot=runtimeStore.getState();
         const previous=conversationTasks(snapshot.tasksById,threadStore.getState().activeThreadId,draft.projectId);
         const history=completedConversationHistory(previous.filter(task=>task.draft.providerId===draft.providerId&&task.draft.modelId===draft.modelId),snapshot.eventsByTaskId);
-        const record = await runtimeClient.submitTask({...draft,conversationId:previous.length?conversationKey(previous[0]):crypto.randomUUID(),conversationHistory:history,historyEligible:attachmentStore.selected(draft.projectId).length===0});
+        const conversationId=previous.length?conversationKey(previous[0]):crypto.randomUUID();
+        let investigationScopeId:string|undefined;
+        if(draft.taskMode==="investigation"){
+          const project=draft.projectId?projectAdapter.getProject(draft.projectId):null;
+          if(projectAdapter.source!=="native"||!project||project.trustState!=="trusted"||projectAdapter.getStableSnapshot(project.id)?.status!=="ready"||!runtimeClient.configureInvestigation)throw Error("scope_project_required");
+          const credentialGeneration=safeProviderSession.getSessionGeneration(),modelKey=composerStore.getState().selectedModelId;
+          const session=safeProviderSession.getSnapshot();
+          if(!session.ready||session.expiresAt===null||draft.providerId!=="deepseek")throw Error("scope_review_stale");
+          const lease=await investigationScopeGate.review({projectId:project.id,projectName:project.name,rootRef:project.rootRef,conversationId,runId:"run-"+crypto.randomUUID(),
+            providerId:draft.providerId,modelId:draft.modelId,endpoint:DEEPSEEK_ENDPOINT,goal:draft.input,sessionExpiresAt:session.expiresAt},()=>isCurrent()&&
+            projectStore.getState().activeProjectId===project.id&&projectAdapter.getProject(project.id)?.trustState==="trusted"&&
+            projectAdapter.getProject(project.id)?.rootRef===project.rootRef&&composerStore.getState().selectedModelId===modelKey&&
+            safeProviderSession.getSnapshot().ready&&safeProviderSession.getSessionGeneration()===credentialGeneration);
+          investigationScopeId=lease.scope.id;
+        }
+        if(!isCurrent())throw Error("scope_review_stale");
+        const record = await runtimeClient.submitTask({...draft,conversationId,conversationHistory:history,historyEligible:draft.taskMode!=="investigation"&&attachmentStore.selected(draft.projectId).length===0,...(investigationScopeId?{investigationScopeId}:{})});
         if (isCurrent()) {
-          composerStore.setState((previous) => ({ ...previous, input: record.state !== "cancelled" && previous.input === originalInput ? "" : previous.input }));
+          composerStore.setState((previous) => ({ ...previous, input: record.state === "completed" && previous.input === originalInput ? "" : previous.input }));
           threadStore.setState({ activeThreadId: record.id });
           layoutStore.setState((previous) => ({ ...previous, sidebar: { ...previous.sidebar, activeNav: "workspace" } }));
         }
         return record.id;
-      } catch {
-        if (isCurrent()) composerStore.setState((previous) => ({ ...previous, submitError: "Submission failed. Your input was kept; you can retry." }));
+      } catch(error) {
+        const code=error instanceof Error?error.message:"";
+        if (isCurrent()) composerStore.setState((previous) => ({ ...previous, submitError: code==="scope_review_cancelled"?"run.scopeCancelled":code==="scope_project_required"?"run.scopeNeedsProject":code==="scope_review_stale"?"run.scopeExpired":"Submission failed. Your input was kept; you can retry." }));
         throw new Error("task_submission_failed");
       } finally {
         submissionPending = false;
         submissionRoutingCurrent = null;
         composerStore.setState((previous) => ({ ...previous, submitting: false }));
       }
+    },
+    pauseTaskRun:(taskId)=>runtimeClient.pauseTaskRun?.(taskId),
+    resumeTaskRun:async(taskId)=>{
+      try{const record=await runtimeClient.resumeTaskRun?.(taskId);if(record?.state==="completed")composerStore.setState(previous=>({...previous,input:previous.input===record.draft.input?"":previous.input}));}
+      catch{composerStore.setState(previous=>({...previous,submitError:"run.scopeExpired"}));}
     },
     cancelRuntimeTask: async (taskId) => {
       await runtimeClient.cancelTask(taskId);
@@ -1362,6 +1389,8 @@ function createUIStateBundle(
   const runtimeActions: RuntimeStoreActions = {
     submitComposerTask: composerActions.submitComposerTask,
     cancelRuntimeTask: composerActions.cancelRuntimeTask,
+    pauseTaskRun:composerActions.pauseTaskRun,
+    resumeTaskRun:composerActions.resumeTaskRun,
     submitApprovalDecision: async (taskId, stepId, decision, actor, reason) => {
       await runtimeClient.submitApprovalDecision(taskId, stepId, decision, actor, reason);
     },

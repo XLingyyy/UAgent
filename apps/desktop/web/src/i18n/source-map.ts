@@ -8,6 +8,18 @@ import {
 
 /** Exact aliases for existing static UI copy whose English wording was shortened. */
 export const sourceAliases = {
+"Investigation completed":"run.completed",
+"Investigation paused":"run.paused",
+"Investigation stopped":"run.stopped",
+"Project read started":"run.readStarted",
+"Project read completed":"run.readCompleted",
+"Project read stopped":"run.readStopped",
+"Read-only project tool.":"run.readTool",
+"Read-only result recorded.":"run.readRecorded",
+"Read-only investigation completed.":"run.finishedBody",
+"Pausing investigation":"run.pausing",
+"Waiting for the current read or model response to finish.":"run.finishing",
+"Review task details.":"run.reviewDetails",
   "Project Workspace Shell": "shell.title",
   "Local-first agent workspace": "shell.subtitle",
   "What would you like to investigate?": "workspace.welcome",

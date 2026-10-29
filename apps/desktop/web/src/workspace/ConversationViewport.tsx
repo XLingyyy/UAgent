@@ -1,5 +1,6 @@
 import {useEffect,useRef} from "react";
 import {useI18n} from "../i18n";
+import {runStopReasonKey} from "../i18n/run-messages";
 import {ProviderProposalPanel} from "./ProviderProposalPanel";
 import {ConversationMessage} from "./ConversationMessage";
 import {ConversationMarkdown} from "./ConversationMarkdown";
@@ -22,10 +23,13 @@ export function ConversationViewport({messages=[]}:ConversationViewportProps){
   <header className="ua-chat-header"><strong>{t("chat.conversation")}</strong><button type="button" onClick={()=>setActiveThread(null)}>{t("chat.new")}</button></header>
   <div ref={list} className="ua-conversation-viewport__list ua-chat-list" onScroll={()=>{const n=list.current;if(n)follow.current=n.scrollHeight-n.scrollTop-n.clientHeight<90;}}>
    {tasks.map(task=>{const events=runtime.eventsByTaskId[task.id]??[],answer=assistantText(events),pending=!["completed","failed","cancelled"].includes(task.state),failed=task.state==="failed",cancelled=task.state==="cancelled";
+    const pauseEvent=events.filter(event=>event.type==="approval_required").at(-1),pauseReason=(pauseEvent?.payload as {run?:{stopReason?:string}}|undefined)?.run?.stopReason;
+    const paused=pending&&task.state==="awaiting_approval"&&Boolean(pauseReason);
     return <div className="ua-chat-turn" key={task.id} data-task-id={task.id}>
      <article className="ua-chat-message ua-chat-message--user" aria-label={t("chat.user")}><span className="ua-chat-role">{t("chat.user")}</span><p>{task.draft.input}</p></article>
-     <article className="ua-chat-message ua-chat-message--assistant" aria-label={t("chat.assistant")} aria-busy={pending} data-streaming={pending}>
-      <span className="ua-chat-role">{t("chat.assistant")}</span>{answer?<ConversationMarkdown text={answer}/>:pending?<p className="ua-chat-pending" role="status">{t("chat.replying")}</p>:null}
+     <article className="ua-chat-message ua-chat-message--assistant" aria-label={t("chat.assistant")} aria-busy={pending&&!paused} data-streaming={pending&&!paused}>
+      <span className="ua-chat-role">{t("chat.assistant")}</span>{answer?<ConversationMarkdown text={answer}/>:pending&&!paused?<p className="ua-chat-pending" role="status">{t("chat.replying")}</p>:null}
+      {paused&&<p className="ua-chat-issue" role="status">{t(runStopReasonKey(pauseReason!))}</p>}
       {(failed||cancelled)&&<p className="ua-chat-issue" role="status">{t(cancelled?"chat.stopped":"chat.failed")}</p>}
      </article>
      <details className="ua-chat-details"><summary>{t("chat.details")}</summary>{events.map(event=><ConversationMessage key={event.id} message={mapTaskEventToWorkspaceMessage(event)}/>)}</details>
