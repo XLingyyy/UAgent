@@ -10,6 +10,7 @@ use std::path::{Component, Prefix};
 struct Fixture {
     root: PathBuf,
     profiles: Vec<(String, String)>,
+    windows: Vec<String>,
     provider_ids: Vec<String>,
 }
 impl Fixture {
@@ -23,6 +24,7 @@ impl Fixture {
         Self {
             root,
             profiles: Vec::new(),
+            windows: Vec::new(),
             provider_ids: Vec::new(),
         }
     }
@@ -73,21 +75,26 @@ impl Fixture {
         let profile = Arc::new(Profile {
             id: id.clone(),
             window: window.into(),
+            window_generation: 0,
             root: self.root.clone(),
             snapshot: snapshot.clone(),
             model_id: "fixture-model".into(),
+            fixture_root: None,
             endpoint: "https://api.openai.com/v1/responses".into(),
             key: Secret(b"synthetic-broker-fixture-only".to_vec()),
             clock: Arc::new(MonotonicClock::new()),
             expires_at: if expired { 0 } else { PROFILE_TTL },
             alive: AtomicBool::new(true),
         });
-        let previous = lock(broker())
-            .unwrap()
-            .profiles
-            .insert(id.clone(), profile.clone());
+        let mut state = lock(broker()).unwrap();
+        state.windows.insert(window.into(), (0, false));
+        let previous = state.profiles.insert(id.clone(), profile.clone());
         assert!(previous.is_none());
+        drop(state);
         self.profiles.push((id, window.into()));
+        if !self.windows.iter().any(|owned| owned == window) {
+            self.windows.push(window.into());
+        }
         profile
     }
 }
@@ -99,6 +106,9 @@ impl Drop for Fixture {
             let _ = close_profile(id, window);
         }
         if let Ok(mut state) = lock(broker()) {
+            for window in &self.windows {
+                state.windows.remove(window);
+            }
             for id in &self.provider_ids {
                 state.updating.remove(id);
             }
@@ -143,6 +153,121 @@ fn continuation_record() -> Value {
         "output":[{"id":"msg_fixture","type":"message","role":"assistant",
             "content":[{"type":"output_text","text":"Synthetic text","annotations":[]}]}]
     })
+}
+
+#[test]
+fn destroyed_window_rejects_delayed_open_captured_before_destruction_without_registry_leaks() {
+    let _test_guard = crate::reset_shared_registries_for_test();
+    use std::{sync::mpsc, thread, time::Duration};
+    let mut fixture = Fixture::new();
+    let config = fixture.config();
+    let snapshot = fixture.save(&config);
+    let window = format!("fixture-destroy-pending-{}", token().unwrap());
+    let id = token().unwrap();
+    fixture.windows.push(window.clone());
+    fixture.profiles.push((id.clone(), window.clone()));
+    assert!(lock(broker())
+        .unwrap()
+        .windows
+        .insert(window.clone(), (0, false))
+        .is_none());
+    let worker_window = window.clone();
+    let worker_id = id.clone();
+    let worker_root = fixture.root.clone();
+    let (captured_tx, captured_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let opener = thread::spawn(move || {
+        // This is the production open's captured generation, not a helper that
+        // recreates/reopens the window after destruction.
+        let generation = lock(broker()).unwrap().windows[&worker_window].0;
+        let pending = Arc::new(Profile {
+            id: worker_id,
+            window: worker_window,
+            window_generation: generation,
+            root: worker_root,
+            snapshot,
+            model_id: "fixture-model".into(),
+            endpoint: "https://api.openai.com/v1/responses".into(),
+            fixture_root: None,
+            key: Secret(b"synthetic-destroy-race-fixture-only".to_vec()),
+            clock: Arc::new(MonotonicClock::new()),
+            expires_at: PROFILE_TTL,
+            alive: AtomicBool::new(true),
+        });
+        captured_tx.send(pending.clone()).unwrap();
+        release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let result = register_profile(&mut lock(broker()).unwrap(), pending.clone());
+        (pending, result)
+    });
+    let captured = captured_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    destroy_window(&window);
+    release_tx.send(()).unwrap();
+    let (pending, result) = opener.join().unwrap();
+    assert_eq!(captured.window_generation, 0);
+    assert!(Arc::ptr_eq(&captured, &pending));
+    assert_eq!(result.unwrap_err(), "native_responses_window_unavailable");
+    let state = lock(broker()).unwrap();
+    assert_eq!(state.windows.get(&window), Some(&(1, true)));
+    assert!(!state.profiles.contains_key(&id));
+    assert!(!state.runs.values().any(|run| run.profile.window == window));
+    assert!(!state
+        .requests
+        .values()
+        .any(|request| request.window == window));
+}
+#[test]
+fn destroyed_window_tombstone_rejects_current_generation_and_alive_injected_profile() {
+    let _test_guard = crate::reset_shared_registries_for_test();
+    let mut fixture = Fixture::new();
+    let config = fixture.config();
+    let snapshot = fixture.save(&config);
+    let window = format!("fixture-destroy-current-{}", token().unwrap());
+    let id = token().unwrap();
+    fixture.windows.push(window.clone());
+    fixture.profiles.push((id.clone(), window.clone()));
+    assert!(lock(broker())
+        .unwrap()
+        .windows
+        .insert(window.clone(), (0, false))
+        .is_none());
+    destroy_window(&window);
+    // Reproduces an opener seeing the new generation: the closed bit must still
+    // prevent registration, even though its generation comparison would match.
+    let (generation, closed) = lock(broker()).unwrap().windows[&window];
+    assert_eq!((generation, closed), (1, true));
+    let pending = Arc::new(Profile {
+        id: id.clone(),
+        window: window.clone(),
+        window_generation: generation,
+        root: fixture.root.clone(),
+        snapshot,
+        model_id: "fixture-model".into(),
+        endpoint: "https://api.openai.com/v1/responses".into(),
+        fixture_root: None,
+        key: Secret(b"synthetic-tombstone-fixture-only".to_vec()),
+        clock: Arc::new(MonotonicClock::new()),
+        expires_at: PROFILE_TTL,
+        alive: AtomicBool::new(true),
+    });
+    {
+        let mut state = lock(broker()).unwrap();
+        assert_eq!(
+            register_profile(&mut state, pending.clone()).unwrap_err(),
+            "native_responses_window_unavailable"
+        );
+        assert!(!state.profiles.contains_key(&id));
+        // Only the test bypasses registration to exercise profile_owned's own
+        // tombstone check; this does not grant a lease or perform a dispatch.
+        assert!(state.profiles.insert(id.clone(), pending.clone()).is_none());
+    }
+    assert!(pending.alive.load(Ordering::Acquire));
+    assert_eq!(
+        profile_owned(&id, &window).err().unwrap(),
+        "native_responses_session_closed"
+    );
+    close_profile(&id, &window).unwrap();
+    assert!(!pending.alive.load(Ordering::Acquire));
+    assert!(!lock(broker()).unwrap().profiles.contains_key(&id));
 }
 
 #[test]

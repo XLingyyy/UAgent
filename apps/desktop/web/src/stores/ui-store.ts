@@ -3,7 +3,6 @@ import {defaultLocaleStore} from "../i18n/locale-store";
 import {createProjectContextSources} from "../runtime/project-context-sources";
 import {investigationScopeGate} from "../runtime/investigation-scope-gate";
 import {createProjectReadToolRegistry} from "../runtime/project-read-tools";
-import {DEEPSEEK_ENDPOINT} from "@uagent/runtime";
 import {attachmentStore} from "../runtime/attachment-store";
 import {conversationTasks,completedConversationHistory,conversationKey} from "../runtime/conversation-context";
 import {safeProviderSession} from "../runtime/safe-provider-session";
@@ -762,7 +761,7 @@ function createUIStateBundle(
   const providerState = nativeSaved ? createInitialProviderState({provider:{providers:nativeSaved.providers.map(p=>restoredProvider(p.config)),providerVersions:nativeVersions,selectedProviderId:nativeSaved.preferences.preferences.selectedProviderId,defaultProviderId:nativeSaved.preferences.preferences.defaultProviderId,testStatus:"idle"}}) : createInitialProviderState(initialState);
   const projectAdapter = createNativeProjectAdapter();
   const projectRequests = createRequestGeneration();
-  runtimeClient.configureInvestigation?.({registry:createProjectReadToolRegistry(projectAdapter),contextSources:createProjectContextSources(projectAdapter),resolveScope:id=>investigationScopeGate.claim(id)});
+  runtimeClient.configureInvestigation?.({registry:createProjectReadToolRegistry(projectAdapter),contextSources:createProjectContextSources(projectAdapter),resolveScope:id=>investigationScopeGate.claim(id),createAdapter:(lease,draft)=>safeProviderSession.createRunAdapter(lease,draft)});
   let submissionPending = false;
   let submissionRoutingCurrent: (() => boolean) | null = null;
   let assetOperationPending = false;
@@ -1107,9 +1106,13 @@ function createUIStateBundle(
       ),
   };
 
+  let projectSelectionVersion=0,modelSelectionVersion=0;
   const projectActions: ProjectStoreActions = {
     setActiveProject: (projectId) => {
+      const version=++projectSelectionVersion;
       if (projectStore.getState().activeProjectId === projectId) return;
+      const publish=()=>{
+      if(version!==projectSelectionVersion)return;
       projectRequests.invalidate();
       editorGeneration++;
       threadStore.setState({ activeThreadId: null });
@@ -1128,6 +1131,14 @@ function createUIStateBundle(
         mvp14: { ...runtimeBaseState.mvp14, capability: previous.mvp14.capability },
         mvp15: { ...runtimeBaseState.mvp15, gate: previous.mvp15.gate, companion: runtimeClient.getMvp15DCompanionStatus?.() ?? runtimeBaseState.mvp15.companion },
       }));
+      };
+      if(safeProviderSession.getSnapshot().wireApi==="responses"||safeProviderSession.getSnapshot().nativeClosing){
+        projectRequests.invalidate();
+        return safeProviderSession.closeAsync("project_changed").then(publish).catch(()=>{
+          if(version===projectSelectionVersion)projectStore.setState(previous=>({...previous,lastError:"responses.switchFailed"}));
+        });
+      }
+      publish();
     },
     validateProjectRoot: async (rootRef) => {
       const isCurrent = projectRequests.begin("validation");
@@ -1168,7 +1179,8 @@ function createUIStateBundle(
         const fixtureProject = FIXTURES_ENABLED ? projectAdapter.getProject("project-lyra-starter") : null;
         const project = fixtureProject ?? (await projectAdapter.addProject(rootRef));
         if (!isCurrent()) return null;
-        projectActions.setActiveProject(project.id);
+        await projectActions.setActiveProject(project.id);
+        if(projectStore.getState().activeProjectId!==project.id)return null;
         projectStore.setState((previousState) => ({
           ...previousState,
           registeredProjects: projectAdapter.listProjects(),
@@ -1196,7 +1208,8 @@ function createUIStateBundle(
       try {
         const trusted = await projectAdapter.confirmTrust(projectId);
         if (!isCurrent()) return;
-        projectActions.setActiveProject(trusted.id);
+        await projectActions.setActiveProject(trusted.id);
+        if(projectStore.getState().activeProjectId!==trusted.id)return;
         projectStore.setState((previousState) => ({
           ...previousState,
           registeredProjects: projectAdapter.listProjects(),
@@ -1348,12 +1361,21 @@ function createUIStateBundle(
       composerStore.setState((previousState) =>
         previousState.permission === permission ? previousState : { ...previousState, permission },
       ),
-    setComposerModel: (selectedModelId) =>
+    setComposerModel: (selectedModelId) => {
+      const version=++modelSelectionVersion;
+      const publish=()=>{if(version!==modelSelectionVersion)return;
       composerStore.setState((previousState) => {
         const reasoningEffort=resolveEffectiveReasoning(providerStore.getState().providers,selectedModelId,previousState.reasoningEffort);
         return previousState.selectedModelId===selectedModelId&&previousState.reasoningEffort===reasoningEffort
           ?previousState:{...previousState,selectedModelId,reasoningEffort};
-      }),
+      });};
+      if(composerStore.getState().selectedModelId!==selectedModelId&&(safeProviderSession.getSnapshot().wireApi==="responses"||safeProviderSession.getSnapshot().nativeClosing)){
+        return safeProviderSession.closeAsync("project_changed").then(publish).catch(()=>{
+          if(version===modelSelectionVersion)composerStore.setState(previous=>({...previous,submitError:"responses.switchFailed"}));
+        });
+      }
+      publish();
+    },
     setComposerReasoning: (requested) =>
       composerStore.setState((previousState) => {
         const reasoningEffort=resolveEffectiveReasoning(providerStore.getState().providers,previousState.selectedModelId,requested);
@@ -1367,6 +1389,7 @@ function createUIStateBundle(
       submissionRoutingCurrent = isCurrent;
       composerStore.setState((previous) => ({ ...previous, submitting: true, submitError: null }));
       try {
+        await safeProviderSession.whenSettled();
         const snapshot=runtimeStore.getState();
         const previous=conversationTasks(snapshot.tasksById,threadStore.getState().activeThreadId,draft.projectId);
         const history=completedConversationHistory(previous.filter(task=>task.draft.providerId===draft.providerId&&task.draft.modelId===draft.modelId),snapshot.eventsByTaskId);
@@ -1378,9 +1401,9 @@ function createUIStateBundle(
           if(projectAdapter.source!=="native"||!project||project.trustState!=="trusted"||projectAdapter.getStableSnapshot(project.id)?.status!=="ready"||!runtimeClient.configureInvestigation)throw Error("scope_project_required");
           const credentialGeneration=safeProviderSession.getSessionGeneration(),modelKey=composerStore.getState().selectedModelId;
           const session=safeProviderSession.getSnapshot();
-          if(!session.ready||session.expiresAt===null||draft.providerId!=="deepseek")throw Error("scope_review_stale");
+          if(!draft.providerId||!session.ready||session.expiresAt===null||session.providerId!==draft.providerId||session.modelId!==draft.modelId||!session.endpoint)throw Error("scope_review_stale");
           const lease=await investigationScopeGate.review({projectId:project.id,projectName:project.name,rootRef:project.rootRef,conversationId,runId:"run-"+crypto.randomUUID(),
-            providerId:draft.providerId,modelId:draft.modelId,endpoint:DEEPSEEK_ENDPOINT,goal:draft.input,sessionExpiresAt:session.expiresAt},()=>isCurrent()&&
+            providerId:draft.providerId,modelId:draft.modelId,endpoint:session.endpoint,goal:draft.input,sessionExpiresAt:session.expiresAt},()=>isCurrent()&&
             projectStore.getState().activeProjectId===project.id&&projectAdapter.getProject(project.id)?.trustState==="trusted"&&
             projectAdapter.getProject(project.id)===project&&projectAdapter.getProject(project.id)?.rootRef===project.rootRef&&composerStore.getState().selectedModelId===modelKey&&
             safeProviderSession.getSnapshot().ready&&safeProviderSession.getSessionGeneration()===credentialGeneration);
@@ -1389,7 +1412,7 @@ function createUIStateBundle(
         if(!isCurrent())throw Error("scope_review_stale");
         const record = await runtimeClient.submitTask({...draft,conversationId,conversationHistory:history,historyEligible:draft.taskMode!=="investigation"&&attachmentStore.selected(draft.projectId).length===0,...(investigationScopeId?{investigationScopeId}:{})});
         if (isCurrent()) {
-          composerStore.setState((previous) => ({ ...previous, ...(record.state === "completed" ? { taskMode: "discussion" as const, savedRun: undefined } : {}), input: record.state === "completed" && previous.input === originalInput ? "" : previous.input }));
+          composerStore.setState((previous) => ({ ...previous, ...(record.state === "completed" ? { taskMode: safeProviderSession.getSnapshot().wireApi==="responses"?"investigation" as const:"discussion" as const, savedRun: undefined } : {}), input: record.state === "completed" && previous.input === originalInput ? "" : previous.input }));
           threadStore.setState({ activeThreadId: record.id });
           layoutStore.setState((previous) => ({ ...previous, sidebar: { ...previous.sidebar, activeNav: "workspace" } }));
         }
@@ -3239,20 +3262,23 @@ function createUIStateBundle(
       if(nativeProductSettings.enabled()){
         const token=capturedVersion??providerStore.getState().providerVersions?.[next.providerId];
         if(!token)throw Error("settings_version_required");
+        const apply=(saved:Awaited<ReturnType<typeof nativeProductSettings.saveProvider>>)=>applySavedProvider({...restoredProvider(saved.config),networkMode:next.networkMode??"disabled"},{providerId:saved.config.providerId,generation:saved.generation,revision:saved.revision,exists:true});
+        if(safeProviderSession.getSnapshot().wireApi==="responses"&&safeProviderSession.getSnapshot().providerId===next.providerId)return safeProviderSession.closeAsync("revoked").then(()=>nativeProductSettings.saveProvider(next,token)).then(apply);
         if(next.providerId==="deepseek")safeProviderSession.close("revoked");
-        return nativeProductSettings.saveProvider(next,token).then(saved=>applySavedProvider({...restoredProvider(saved.config),networkMode:next.networkMode??"disabled"},{providerId:saved.config.providerId,generation:saved.generation,revision:saved.revision,exists:true}));
+        return nativeProductSettings.saveProvider(next,token).then(apply);
       }
       applySavedProvider(next);
     },
     deleteProvider:(providerId,capturedVersion)=>{
       const apply=()=>{
-        if(providerId==="deepseek")safeProviderSession.disable();
+        if(providerId==="deepseek"||safeProviderSession.getSnapshot().providerId===providerId)safeProviderSession.disable();
         const previous=providerStore.getState(),providers=previous.providers.filter(p=>p.providerId!==providerId);
         const next={...previous,providers,selectedProviderId:previous.selectedProviderId===providerId?providers[0]?.providerId??null:previous.selectedProviderId,defaultProviderId:previous.defaultProviderId===providerId?null:previous.defaultProviderId,testStatus:"idle" as const};
         providerStore.setState(next);syncComposerSelection(previous,next);
       };
       if(nativeProductSettings.enabled()){
         const token=capturedVersion??providerStore.getState().providerVersions?.[providerId];if(!token)throw Error("settings_version_required");
+        if(safeProviderSession.getSnapshot().wireApi==="responses"&&safeProviderSession.getSnapshot().providerId===providerId)return safeProviderSession.closeAsync("revoked").then(()=>nativeProductSettings.deleteProvider(token)).then(apply);
         if(providerId==="deepseek")safeProviderSession.close("revoked");
         return nativeProductSettings.deleteProvider(token).then(apply);
       }

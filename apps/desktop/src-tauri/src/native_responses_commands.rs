@@ -4,8 +4,9 @@
 #![cfg(windows)]
 use crate::native_provider_transport::{
     ApprovalGrant, Clock, ConfigVersion, DispatchStatus, Lease, MonotonicClock, NativeSession,
-    Owner, PreparedRequest,
+    Owner, PreparedRequest, Transport,
 };
+use crate::native_responses_fixture::{FixtureResponsesTransport, FixtureSequence};
 use crate::native_responses_http::WinHttpResponsesTransport;
 use crate::native_responses_sources::NativeSourceMonitor;
 use crate::product_settings_store::{AuthMode, ProductSettingsStore, ProviderSnapshot, WireApi};
@@ -67,10 +68,12 @@ impl Drop for Secret {
 struct Profile {
     id: String,
     window: String,
+    window_generation: u64,
     root: PathBuf,
     snapshot: ProviderSnapshot,
     model_id: String,
     endpoint: String,
+    fixture_root: Option<PathBuf>,
     key: Secret,
     clock: Arc<MonotonicClock>,
     expires_at: u64,
@@ -82,6 +85,7 @@ struct Run {
     session: NativeSession,
     monitor: NativeSourceMonitor,
     deadline: u64,
+    fixture_sequence: Option<Arc<FixtureSequence>>,
     alive: AtomicBool,
 }
 impl Run {
@@ -184,12 +188,14 @@ fn fingerprint(snapshot: &ProviderSnapshot, model: &str) -> Result<String> {
         .ok_or_else(|| failure("native_responses_configuration_unavailable"))
 }
 fn profile_owned(id: &str, window: &str) -> Result<Arc<Profile>> {
-    let found = lock(broker())?
+    let state = lock(broker())?;
+    let found = state
         .profiles
         .get(id)
         .cloned()
         .ok_or_else(|| failure("native_responses_session_closed"))?;
-    if found.window != window
+    if state.windows.get(&found.window) != Some(&(found.window_generation, false))
+        || found.window != window
         || !found.alive.load(Ordering::Acquire)
         || found.clock.now_ms() >= found.expires_at
     {
@@ -259,35 +265,83 @@ fn close_profile(id: &str, window: &str) -> Result<()> {
     }
     Ok(())
 }
-pub(crate) fn revoke_window(window: &str) {
-    let ids = match lock(broker()) {
-        Ok(mut state) => {
-            let version = state.windows.entry(window.into()).or_insert((0, false));
-            version.0 = version.0.saturating_add(1);
-            state
-                .profiles
-                .values()
-                .filter(|p| p.window == window)
-                .map(|p| p.id.clone())
-                .collect::<Vec<_>>()
+fn invalidate_window(window: &str, destroyed: bool) {
+    let (profiles, runs, requests) = {
+        let mut state = match lock(broker()) {
+            Ok(state) => state,
+            Err(_) => return,
+        };
+        let version = state.windows.entry(window.into()).or_insert((0, false));
+        version.0 = version.0.saturating_add(1);
+        version.1 |= destroyed;
+        // Window tombstone, generation and complete ownership removal are one
+        // transaction. No opener can observe a new generation still marked live.
+        let profiles = state
+            .profiles
+            .values()
+            .filter(|p| p.window == window)
+            .cloned()
+            .collect::<Vec<_>>();
+        for profile in &profiles {
+            profile.alive.store(false, Ordering::Release);
         }
-        Err(_) => return,
+        let runs = state
+            .runs
+            .values()
+            .filter(|r| r.profile.window == window)
+            .cloned()
+            .collect::<Vec<_>>();
+        let requests = state
+            .requests
+            .values()
+            .filter(|r| r.window == window)
+            .cloned()
+            .collect::<Vec<_>>();
+        state.profiles.retain(|_, p| p.window != window);
+        state.runs.retain(|_, r| r.profile.window != window);
+        state.requests.retain(|_, r| r.window != window);
+        (profiles, runs, requests)
     };
-    for id in ids {
-        let _ = close_profile(&id, window);
+    for request in requests {
+        let _ = request.prepared.cancel();
     }
+    for run in runs {
+        run.revoke();
+    }
+    drop(profiles);
+}
+pub(crate) fn revoke_window(window: &str) {
+    invalidate_window(window, false);
 }
 pub(crate) fn register_window(window: &str) {
-    revoke_window(window);
+    invalidate_window(window, true);
     if let Ok(mut state) = lock(broker()) {
-        state.windows.entry(window.into()).or_insert((0, false)).1 = false;
+        state.windows.entry(window.into()).or_insert((0, true)).1 = false;
     }
 }
 pub(crate) fn destroy_window(window: &str) {
-    revoke_window(window);
-    if let Ok(mut state) = lock(broker()) {
-        state.windows.entry(window.into()).or_insert((0, true)).1 = true;
+    invalidate_window(window, true);
+}
+fn register_profile(state: &mut Broker, profile: Arc<Profile>) -> Result<()> {
+    if state.windows.get(&profile.window) != Some(&(profile.window_generation, false))
+        || !profile.alive.load(Ordering::Acquire)
+    {
+        return Err(failure("native_responses_window_unavailable"));
     }
+    if state
+        .updating
+        .contains(&profile.snapshot.config.provider_id)
+    {
+        return Err(failure("native_responses_configuration_changed"));
+    }
+    if state.profiles.len() >= MAX_PROFILES {
+        return Err(failure("native_responses_profile_limit"));
+    }
+    if state.profiles.contains_key(&profile.id) {
+        return Err(failure("native_responses_profile_conflict"));
+    }
+    state.profiles.insert(profile.id.clone(), profile);
+    Ok(())
 }
 pub(crate) struct ProviderUpdateGuard(String);
 impl Drop for ProviderUpdateGuard {
@@ -419,6 +473,7 @@ pub(crate) struct OpenResult {
     model_id: String,
     endpoint: String,
     expires_at: u64,
+    fixture: bool,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -452,6 +507,11 @@ pub(crate) async fn open_native_responses_profile(
     input: OpenInput,
 ) -> Result<OpenResult> {
     let root = root(&app)?;
+    // Production Responses stays unavailable until full native root identity is integrated.
+    let fixture_root = crate::app_profile::responses_fixture_root()?;
+    if input.credential != "offline-responses-fixture-only" {
+        return Err(failure("responses_fixture_credential_required"));
+    }
     window
         .inner_size()
         .map_err(|_| failure("native_responses_window_unavailable"))?;
@@ -497,10 +557,12 @@ pub(crate) async fn open_native_responses_profile(
         let profile = Arc::new(Profile {
             id: id.clone(),
             window,
+            window_generation,
             root,
             snapshot,
             model_id: input.model_id.clone(),
             endpoint: endpoint.clone(),
+            fixture_root: Some(fixture_root),
             key,
             clock,
             expires_at: PROFILE_TTL,
@@ -516,7 +578,7 @@ pub(crate) async fn open_native_responses_profile(
         if state.profiles.len() >= MAX_PROFILES {
             return Err(failure("native_responses_profile_limit"));
         }
-        state.profiles.insert(id.clone(), profile.clone());
+        register_profile(&mut state, profile.clone())?;
         let expiry = Arc::downgrade(&profile);
         std::thread::Builder::new()
             .name("responses-expiry".into())
@@ -549,6 +611,7 @@ pub(crate) async fn open_native_responses_profile(
             model_id: input.model_id,
             endpoint,
             expires_at: wall + PROFILE_TTL,
+            fixture: true,
         })
     })
     .await
@@ -589,6 +652,11 @@ pub(crate) async fn bind_native_responses_run(
         }
         let binding = crate::resolve_trusted_root_binding_by_id(&input.project_id)
             .map_err(|_| failure("native_responses_project_changed"))?;
+        if let Some(fixture) = &profile.fixture_root {
+            if std::fs::canonicalize(fixture).ok().as_ref() != Some(&binding.canonical_root) {
+                return Err(failure("responses_fixture_project_required"));
+            }
+        }
         let store = crate::local_run_store::RunStore::open(&profile.root)
             .map_err(|_| failure("native_responses_run_unavailable"))?;
         let snapshot = store
@@ -698,6 +766,10 @@ pub(crate) async fn bind_native_responses_run(
             session,
             monitor,
             deadline,
+            fixture_sequence: profile
+                .fixture_root
+                .as_ref()
+                .map(|_| Arc::new(FixtureSequence::new())),
             alive: AtomicBool::new(true),
         });
         run.current()?;
@@ -871,8 +943,8 @@ pub(crate) async fn dispatch_native_responses_request(
             let output = request.response.clone();
             let output_head = output.clone();
             let output_chunk = output.clone();
-            let mut transport =
-                WinHttpResponsesTransport::with_chunk_sink(Arc::new(move |bytes| {
+            let chunk_sink: Arc<dyn Fn(&[u8]) -> std::result::Result<(), ()> + Send + Sync> =
+                Arc::new(move |bytes| {
                     let mut state = output_chunk.lock().map_err(|_| ())?;
                     if bytes.len() > 65_536
                         || state.chunks.len() >= MAX_CHUNKS
@@ -886,8 +958,9 @@ pub(crate) async fn dispatch_native_responses_request(
                     state.bytes += bytes.len();
                     state.chunks.push(bytes.to_vec());
                     Ok(())
-                }))
-                .with_head_sink(Arc::new(move |status, content_type| {
+                });
+            let head_sink: Arc<dyn Fn(u16, &str) -> std::result::Result<(), ()> + Send + Sync> =
+                Arc::new(move |status, content_type| {
                     let mut state = output_head.lock().map_err(|_| ())?;
                     if state.head.is_some() {
                         return Err(());
@@ -898,13 +971,26 @@ pub(crate) async fn dispatch_native_responses_request(
                         content_type: content_type.to_string(),
                     });
                     Ok(())
-                }));
+                });
+            let mut transport: Box<dyn Transport> =
+                if let Some(sequence) = &request.run.fixture_sequence {
+                    Box::new(
+                        FixtureResponsesTransport::with_chunk_sink(chunk_sink)
+                            .with_head_sink(head_sink)
+                            .with_sequence(sequence.clone()),
+                    )
+                } else {
+                    Box::new(
+                        WinHttpResponsesTransport::with_chunk_sink(chunk_sink)
+                            .with_head_sink(head_sink),
+                    )
+                };
             let outcome = request.run.session.dispatch(
                 &request.prepared,
                 &request.lease,
                 &grant,
                 request.run.monitor.checker().as_ref(),
-                &mut transport,
+                transport.as_mut(),
             );
             if let Ok(mut state) = output.lock() {
                 state.dispatch_status = match outcome.status {

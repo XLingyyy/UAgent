@@ -19,6 +19,10 @@ pub(crate) mod provider_continuation_store;
 #[cfg(windows)]
 pub(crate) mod native_responses_commands;
 #[cfg(windows)]
+pub(crate) mod native_responses_fixture;
+#[cfg(windows)]
+pub(crate) mod native_responses_fixture_setup;
+#[cfg(windows)]
 pub(crate) mod product_settings_commands;
 pub(crate) mod project_source_versions;
 pub(crate) mod provider_budget;
@@ -1654,6 +1658,8 @@ pub fn run() {
             run_store_commands::snapshot_native_run_store,
             #[cfg(windows)]
             native_responses_commands::open_native_responses_profile,
+            #[cfg(windows)]
+            native_responses_fixture_setup::prepare_native_responses_fixture,
             #[cfg(windows)]
             native_responses_commands::close_native_responses_profile,
             #[cfg(windows)]

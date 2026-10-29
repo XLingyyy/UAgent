@@ -84,6 +84,7 @@ export interface ComposerModelOption {
   hasSecret?: boolean;
   isFixture?: boolean;
   runtimeSupported?: boolean;
+  wireApi?: ProviderConfig["wireApi"];
   reasoningSupported?: boolean;
 }
 
@@ -118,19 +119,22 @@ export function createComposerModelOptions(providers: ProviderConfig[]): Compose
       return;
     }
     provider.models.forEach((model) => {
+      const runtimeSupported=supportsProviderModel(provider,model.id);
+      const responsesFixture=provider.wireApi==="responses"&&runtimeSupported;
       options.push({
         id: JSON.stringify([provider.providerId, model.id]),
         providerId: provider.providerId,
         modelId: model.id,
-        runtimeSupported: supportsProviderModel(provider,model.id),
+        runtimeSupported,
+        wireApi: provider.wireApi,
         reasoningSupported: model.supportsReasoning,
         label: model.label,
         provider: provider.displayName,
         contextWindow: formatContextWindow(model.contextWindow),
         enabled: true,
-        networkMode: provider.networkMode ?? "disabled",
+        networkMode: responsesFixture?"fixture":provider.networkMode ?? "disabled",
         hasSecret: provider.networkMode === "live" ? (provider.secretRef ? true : false) : false,
-        isFixture: provider.networkMode !== "live",
+        isFixture: responsesFixture||provider.networkMode !== "live",
       });
     });
   });

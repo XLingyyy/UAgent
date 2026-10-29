@@ -152,7 +152,7 @@ export interface UIShellState {
 }
 
 /** Set the active project id (or null for no project). */
-export type SetActiveProject = (projectId: string | null) => void;
+export type SetActiveProject = (projectId: string | null) => void | Promise<void>;
 
 /** Toggle the inspector open/closed. */
 export type ToggleInspector = () => void;
@@ -191,7 +191,7 @@ export type SetComposerAttachMenuOpen = (open: boolean) => void;
 
 export type SetComposerPermission = (permission: ComposerPermission) => void;
 
-export type SetComposerModel = (modelId: ComposerModelId) => void;
+export type SetComposerModel = (modelId: ComposerModelId) => void | Promise<void>;
 
 export type SetComposerReasoning = (effort: ComposerReasoningEffort) => void;
 

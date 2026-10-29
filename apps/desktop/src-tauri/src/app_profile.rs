@@ -138,6 +138,15 @@ pub(crate) fn get_application_profile() -> Result<ApplicationProfile, String> {
     Ok(profile.description())
 }
 
+/// Native-only fixture authority; never selected through IPC or a renderer flag.
+pub(crate) fn responses_fixture_root() -> Result<PathBuf,String> {
+    let profile=selected()?;
+    let isolated=profile.isolated.as_ref().filter(|_|profile.offline_demo)
+        .ok_or_else(||"responses_native_root_identity_unavailable".to_string())?;
+    isolated.verify()?;
+    Ok(isolated.root.join("fixture-project"))
+}
+
 impl Profile {
     fn description(&self) -> ApplicationProfile {
         ApplicationProfile {

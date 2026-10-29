@@ -89,7 +89,7 @@ function mount(children:React.ReactNode,runtimeClient?:DesktopRuntimeAdapter){
 }
 function refreshReasoningState():ProductSettingsSnapshot{
  const state=snapshot();
- const config:ProviderConfig={providerId:"synthetic",displayName:"Synthetic",baseUrl:"https://configured.invalid/v1",wireApi:"responses",
+ const config:ProviderConfig={providerId:"synthetic",displayName:"Synthetic",baseUrl:"https://configured.invalid/v1",wireApi:"chat_completions",
   authMode:"none",enabled:true,defaultModel:"wide",defaultReasoningEffort:"xhigh",models:[
    {id:"wide",label:"Wide",contextWindow:32768,supportsReasoning:true,reasoningEfforts:["xhigh"]},
    {id:"narrow",label:"Narrow",contextWindow:32768,supportsReasoning:true,reasoningEfforts:["low","high","xhigh"]}]};
@@ -100,7 +100,9 @@ function refreshReasoningState():ProductSettingsSnapshot{
  return state;
 }
 function submissionCapture(){
+ // These tests isolate preference hydration; native Responses investigation readiness is tested separately.
  vi.spyOn(availability,"supportsProviderModel").mockReturnValue(true);
+ vi.spyOn(availability,"sessionMatchesProviderModel").mockReturnValue(true);
  const ready={...safeProviderSession.getSnapshot(),ready:true};
  vi.spyOn(safeProviderSession,"getSnapshot").mockReturnValue(ready);
  const runtime=createDesktopRuntimeAdapter();
@@ -169,7 +171,7 @@ describe("T08 P2 real settings-client subscription regressions",()=>{
  });
  it("derives B's null default from its actual model and keeps selector, state and submitted task aligned",async()=>{
   vi.stubGlobal("fetch",vi.fn(()=>{throw Error("No network");}));
-  const config:ProviderConfig={providerId:"synthetic",displayName:"Synthetic",baseUrl:"https://configured.invalid/v1",wireApi:"responses",
+  const config:ProviderConfig={providerId:"synthetic",displayName:"Synthetic",baseUrl:"https://configured.invalid/v1",wireApi:"chat_completions",
    authMode:"none",enabled:true,defaultModel:"wide",defaultReasoningEffort:"xhigh",models:[
     {id:"wide",label:"Wide",contextWindow:32768,supportsReasoning:true,reasoningEfforts:["xhigh"]},
     {id:"narrow",label:"Narrow",contextWindow:32768,supportsReasoning:true,reasoningEfforts:["low"]}]};
@@ -181,7 +183,9 @@ describe("T08 P2 real settings-client subscription regressions",()=>{
   mockProjects(["A","B"]);
   const h=nativeHarness(state);await h.install();
   // UI-only readiness doubles: no credential is opened and submitTask cannot send.
-  vi.spyOn(availability,"supportsProviderModel").mockReturnValue(true);
+  // These tests isolate preference hydration; native Responses investigation readiness is tested separately.
+ vi.spyOn(availability,"supportsProviderModel").mockReturnValue(true);
+ vi.spyOn(availability,"sessionMatchesProviderModel").mockReturnValue(true);
   const ready={...safeProviderSession.getSnapshot(),ready:true};
   vi.spyOn(safeProviderSession,"getSnapshot").mockReturnValue(ready);
   const runtime=createDesktopRuntimeAdapter();

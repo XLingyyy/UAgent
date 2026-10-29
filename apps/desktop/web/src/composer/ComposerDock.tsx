@@ -1,5 +1,6 @@
 import {useI18n} from "../i18n";
 import {safeProviderSession} from "../runtime/safe-provider-session";
+import {sessionMatchesProviderModel} from "../provider/runtime-availability";
 import {AttachmentPanel} from "./AttachmentPanel";
 import { ComingSoonGate } from "../components/ComingSoonGate";
 import { ModelSelector } from "./ModelSelector";
@@ -100,7 +101,12 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const { addButtonLabel } = composerMock;
   const trimmedInput = input.trim();
   const selectedOption=providerModelOptions.find(option=>option.id===selectedModelId);
-  const modelUnavailable=selectedModelId!=="not-configured"&&(selectedOption?.runtimeSupported!==true||!session.ready);
+  const selectedProvider=provider.providers.find(item=>item.providerId===selectedOption?.providerId);
+  const responses=selectedProvider?.wireApi==="responses";
+  const sessionReady=sessionMatchesProviderModel(session,selectedProvider,selectedOption?.modelId);
+  const responseProjectReady=Boolean(activeProject&&activeProject.trustState==="trusted"&&activeProject.indexStatus==="ready");
+  const responseModeUnavailable=responses&&(!investigation||!responseProjectReady);
+  const modelUnavailable=selectedModelId!=="not-configured"&&(selectedOption?.runtimeSupported!==true||!sessionReady||responseModeUnavailable);
   const canSubmit = trimmedInput.length > 0 && !composer.submitting && !canStop && !modelUnavailable;
   const providerStatus = selectedModelId === "not-configured" ? "not_configured" : "configured";
   const nativeRoot = activeProject?.rootRef ?? null;
@@ -209,6 +215,9 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         </div>
       </div>
 
+      {responses&&selectedOption?.runtimeSupported!==true&&<p role="status">{t("responses.nativeUnavailable")}</p>}
+      {responses&&selectedOption?.runtimeSupported===true&&!investigation&&<p role="status">{t("responses.discussionUnavailable")}</p>}
+      {responses&&selectedOption?.runtimeSupported===true&&investigation&&!responseProjectReady&&<p role="status">{t("run.scopeNeedsProject")}</p>}
       {composer.savedRun&&<p role="status">{t("historyRun.continueHint")} <button type="button" className="ua-btn" onClick={()=>setSavedRun(undefined)}>{t("common.cancel")}</button></p>}
       {stopError&&<p role="alert">{uiText(stopError)}</p>}
       {composer.submitError && <p role="alert">{composer.submitError==="run.scopeCancelled"?t("run.scopeCancelled"):composer.submitError==="run.scopeNeedsProject"?t("run.scopeNeedsProject"):composer.submitError==="run.scopeExpired"?t("run.scopeExpired"):uiText(composer.submitError)}</p>}
@@ -258,7 +267,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         <ProjectSelector onManageProjects={()=>openSettings("config")} value={activeProjectId} projects={registeredProjects.map(p=>({id:p.id,name:p.name,engineVersion:p.engine.label,connectionStatus:p.trustState,path:p.displayRoot}))} onChange={setActiveProject}/>
         <span className="ua-composer__status-item"><span className="ua-composer__status-value">{permission==="request-approval"?uiText("Execution needs approval"):uiText("Native approval policy enforced")}</span></span>
         <button type="button" className="ua-composer__session-link" onClick={()=>openSettings("provider")}>
-          {selectedModelId==="not-configured"?t("productUi.local"):providerModelOptions.find(m=>m.id===selectedModelId)?.runtimeSupported!==true?t("productUi.unavailable"):session.ready?uiText("Session open · connection unverified"):t("product.sessionClosed")}
+          {selectedModelId==="not-configured"?t("productUi.local"):providerModelOptions.find(m=>m.id===selectedModelId)?.runtimeSupported!==true?t("productUi.unavailable"):sessionReady?t(responses?"demo.sessionReady":"product.sessionReady"):t("product.sessionClosed")}
         </button>
       </div>
     </footer>

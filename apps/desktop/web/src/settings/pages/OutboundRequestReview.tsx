@@ -1,3 +1,4 @@
+import {getApplicationProfile} from "../../runtime/application-profile";
 import {useI18n} from "../../i18n";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { OutboundConsentGate } from "@uagent/runtime";
@@ -20,6 +21,7 @@ export function OutboundRequestReview({gate=outboundReviewGate}:{gate?:OutboundC
   },[pending?.id,gate]);
   if(!pending) return null;
   return <section ref={panel} role="dialog" aria-modal="true" aria-label={uiText("Exact outbound request review")} className="ua-outbound-review">
+    {getApplicationProfile().offlineDemo&&<p role="status">{t("demo.banner")}</p>}
     <span className="ua-eyebrow">{uiText("Review before sending")}</span><h2>{uiText("Confirm this exact outbound request")}</h2>
     <p>{t("outbound.projectGeneration",{project:pending.envelope.projectId??uiText("None"),generation:pending.envelope.epoch})}</p>
     <dl className="ua-outbound-identifiers"><div><dt>{uiText("Endpoint")}</dt><dd>{pending.envelope.endpoint}</dd></div><div><dt>{uiText("Model")}</dt><dd>{pending.envelope.model}</dd></div></dl>

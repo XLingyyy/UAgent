@@ -2,9 +2,10 @@
 
 The Windows implementation is split into a protocol adapter, a native request
 broker and a fixed-target WinHTTP engine. Configuration and declared capability
-do not establish connectivity. The existing desktop session selector still opens
-DeepSeek; Responses must not be advertised as ready until that selector and its
-native-window acceptance are connected.
+do not establish connectivity. The desktop selector exposes Responses only in an explicitly isolated offline
+demo profile, labelled as a local synthetic fixture. Ordinary mode remains
+blocked until the full native root-identity boundary is integrated. Opening a
+fixture session never establishes a real model connection.
 
 ## Request boundary
 
@@ -74,7 +75,9 @@ The active source monitor pins Windows objects, but the pre-existing native trus
 registry still has its legacy root-identity representation. Integrating the
 separate full Windows root-identity module is required before production enablement.
 
-Remaining acceptance includes connecting the existing session/composer controls,
-explicit project/profile revocation ordering, the isolated native fixture mode,
-and a real-window three-tool/cancel/restart flow. Ordinary projectless chat and
+The existing session/composer controls now select the exact open profile and
+wait for native revocation acknowledgement before publishing project/model changes.
+A fixed local fixture performs list/find/read through the normal native tools;
+only its model responses are synthesized. A real-window three-tool/cancel/restart
+acceptance remains required. Ordinary projectless chat and
 cross-run native-reasoning migration are not enabled by these APIs.

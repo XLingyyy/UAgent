@@ -106,12 +106,12 @@ function harness(autoApprove = true) {
   let activeNativeRequest = 0;
   let nativeCancelled = false;
   let nativeStatus = "notDispatched";
-  let failCommand: string | null = null;
+  const failingCommands = new Set<string>();
   const invoke: NativeInvoke = async <T>(command: string, payload?: unknown) => {
     const input = (payload as { input: Record<string, unknown> }).input;
     calls.push({ command, input });
     hook?.(command);
-    if (command === failCommand) throw Error("untrusted native detail " + key);
+    if (failingCommands.has(command)) throw Error("untrusted native detail " + key);
     let result: unknown;
     if (command === "open_native_responses_profile")
       result = {
@@ -120,6 +120,7 @@ function harness(autoApprove = true) {
         modelId: owner.modelId,
         endpoint,
         expiresAt: Date.now() + 60000,
+        fixture: false,
       };
     else if (command === "bind_native_responses_run")
       result = { runHandle: "native-run-handle", owner: nativeOwner };
@@ -144,7 +145,8 @@ function harness(autoApprove = true) {
       nativeCancelled = true;
       result = null;
     } else if (command === "poll_native_responses_request") {
-      if (nativeCancelled)
+      if (pollOverride) result = await pollOverride(input.cursor as number);
+      else if (nativeCancelled)
         result = {
           cursor: input.cursor,
           nextCursor: input.cursor,
@@ -154,7 +156,6 @@ function harness(autoApprove = true) {
           error: "native_request_cancelled",
           dispatchStatus: nativeStatus,
         };
-      else if (pollOverride) result = await pollOverride(input.cursor as number);
       else {
         const value = body();
         const stream = JSON.parse(preparedBody).stream === true;
@@ -215,7 +216,7 @@ function harness(autoApprove = true) {
       hook = value;
     },
     fail(command: string) {
-      failCommand = command;
+      failingCommands.add(command);
     },
     async open() {
       const profile = await createNativeResponsesProfile({
@@ -428,7 +429,8 @@ describe("Responses desktop native IPC bridge (synthetic invoke only)", () => {
     await expect(adapter.complete(request())).rejects.toMatchObject({
       code: "network_error",
     });
-    expect(polls).toBe(2);
+    // Two response polls plus the final cancellation status query.
+    expect(polls).toBe(3);
     expect(h.records).toHaveLength(0);
     expect(h.count("cancel_native_responses_request")).toBe(1);
   });
@@ -576,6 +578,62 @@ describe("Responses desktop native IPC bridge (synthetic invoke only)", () => {
       expect(h.count("cancel_native_responses_request")).toBe(1);
     },
   );
+
+  it.each([false, true])(
+    "keeps possible transmission when dispatch acknowledgement is lost, cancelFails=%s and no terminal proof exists",
+    async (cancelFails) => {
+      const h = harness(),
+        { adapter, profile } = await h.open();
+      h.fail("dispatch_native_responses_request");
+      if (cancelFails) h.fail("cancel_native_responses_request");
+      h.fail("release_native_responses_request");
+      h.setPoll((cursor) => ({
+        cursor,
+        nextCursor: cursor,
+        chunks: [],
+        head: null,
+        done: false,
+        error: null,
+        dispatchStatus: "notDispatched",
+      }));
+      const error = await adapter.complete(request()).catch((value) => value);
+      expect(error).toMatchObject({ code: "network_error", dispatchStatus: "mayHaveBeenSent" });
+      expect(profile.getSnapshot().lastDispatchStatus).toBe("mayHaveBeenSent");
+      expect(h.count("dispatch_native_responses_request")).toBe(1);
+      expect(h.count("release_native_responses_request")).toBe(1);
+      expect(h.records).toHaveLength(0);
+    },
+  );
+
+  it("accepts an unsent fact only after a native terminal error closes the send gate", async () => {
+    const h = harness(),
+      { adapter, profile } = await h.open();
+    h.fail("dispatch_native_responses_request");
+    h.fail("cancel_native_responses_request");
+    h.setPoll((cursor) => ({
+      cursor,
+      nextCursor: cursor,
+      chunks: [],
+      head: null,
+      done: true,
+      error: "native_request_cancelled",
+      dispatchStatus: "notDispatched",
+    }));
+    const error = await adapter.complete(request()).catch((value) => value);
+    expect(error).toMatchObject({ code: "network_error", dispatchStatus: "notDispatched" });
+    expect(profile.getSnapshot().lastDispatchStatus).toBe("notDispatched");
+    expect(h.records).toHaveLength(0);
+  });
+
+  it("explicit close acknowledgement rejects a native failure while best-effort close remains handled", async () => {
+    const h = harness(),
+      { profile } = await h.open();
+    h.fail("close_native_responses_profile");
+    await expect(profile.closeAcknowledged()).rejects.toThrow("native_responses_unavailable");
+    await expect(profile.close()).resolves.toBeUndefined();
+    expect(profile.getSnapshot().ready).toBe(false);
+    expect(h.count("close_native_responses_profile")).toBe(1);
+  });
 
   it("native exceptions containing fixture credentials become static errors without any browser fallback", async () => {
     const h = harness(),

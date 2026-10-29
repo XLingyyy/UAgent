@@ -28,6 +28,7 @@ interface ProfileReceipt {
   modelId: string;
   endpoint: string;
   expiresAt: number;
+  fixture: boolean;
 }
 interface RunReceipt {
   runHandle: string;
@@ -68,6 +69,20 @@ export interface NativeResponsesRunOptions {
   /** Existing trusted project owner callback; native assigns the data epoch. */
   getProjectContext: () => { projectId: string | null; revision: string };
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+}
+function terminalUnsentProof(value: PollReceipt | null, cursor: number): boolean {
+  return (
+    !!value &&
+    value.cursor === cursor &&
+    value.nextCursor === cursor &&
+    value.done === true &&
+    value.dispatchStatus === "notDispatched" &&
+    typeof value.error === "string" &&
+    value.error.length > 0 &&
+    value.head === null &&
+    Array.isArray(value.chunks) &&
+    value.chunks.length === 0
+  );
 }
 function failure(): Error {
   // Native/transport exceptions are deliberately never copied into renderer errors.
@@ -162,6 +177,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
     profile.providerId === providerId &&
     profile.modelId === modelId &&
     profile.endpoint === ENDPOINT &&
+    typeof profile.fixture === "boolean" &&
     Number.isSafeInteger(profile.expiresAt) &&
     profile.expiresAt > now() &&
     profile.expiresAt - now() <= 3_600_000 &&
@@ -180,6 +196,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
   const sessions = new Set<ReturnType<typeof createProviderRuntimeSession>>();
   const cancelRuns = new Set<() => void>();
   let closing: Promise<void> | null = null;
+  let closeAcknowledgement: Promise<void> | null = null;
   const expiry = setTimeout(
     () => {
       void close();
@@ -201,10 +218,12 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
     for (const session of sessions) session.dispose();
     sessions.clear();
     cancelRuns.clear();
-    closing = call("close_native_responses_profile", { profileId: profile.profileId }).then(
-      () => undefined,
-      () => undefined,
-    );
+    closeAcknowledgement = call("close_native_responses_profile", {
+      profileId: profile.profileId,
+    }).then(() => undefined);
+    // Expiry/unload callers keep a handled best-effort close, while explicit
+    // transition barriers observe the original acknowledgement failure.
+    closing = closeAcknowledgement.catch(() => undefined);
     return closing;
   }
   return {
@@ -217,9 +236,14 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
         endpoint: ENDPOINT,
         expiresAt: profile.expiresAt,
         connectionVerified: false as const,
+        fixture: profile.fixture,
         lastDispatchStatus,
       }),
     close,
+    closeAcknowledged(): Promise<void> {
+      void close();
+      return closeAcknowledgement!;
+    },
     createRunAdapter(runOptions: NativeResponsesRunOptions): ProviderAdapter {
       checkProfile();
       const lease = runOptions.lease,
@@ -267,9 +291,16 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
       };
       let pending: Pending | null = null;
       let lastRunDispatchStatus: NativeResponsesDispatchStatus = "notDispatched";
-      function rememberStatus(request: Pending, status: NativeResponsesDispatchStatus) {
+      function rememberStatus(
+        request: Pending,
+        status: NativeResponsesDispatchStatus,
+        terminalProof = false,
+      ) {
         // A confirmed complete write can never become an unsent request later.
         if (request.status === "sent" && status !== "sent") return;
+        // A scheduled dispatch may outlive lost acknowledgements. Neither an
+        // unsuccessful cancel nor a nonterminal zero status proves an unsent call.
+        if (request.dispatched && status === "notDispatched" && !terminalProof) return;
         request.status = status;
         lastRunDispatchStatus = status;
         if (request.ordinal === requestOrdinal) lastDispatchStatus = status;
@@ -296,15 +327,16 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
               () => undefined,
             );
             // Read only the final send fact after cancellation; never release stale bytes.
-            const final = await call<{ dispatchStatus?: unknown }>(
-              "poll_native_responses_request",
-              {
-                requestId: request.requestId,
-                cursor: request.cursor,
-              },
-            ).catch(() => null);
+            const final = await call<PollReceipt>("poll_native_responses_request", {
+              requestId: request.requestId,
+              cursor: request.cursor,
+            }).catch(() => null);
             if (final && dispatchStatus(final.dispatchStatus))
-              rememberStatus(request, final.dispatchStatus);
+              rememberStatus(
+                request,
+                final.dispatchStatus,
+                terminalUnsentProof(final, request.cursor),
+              );
           }
           await call("release_native_responses_request", { requestId: request.requestId }).catch(
             () => undefined,
@@ -503,7 +535,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
               !["notDispatched", "mayHaveBeenSent", "sent"].includes(result.dispatchStatus)
             )
               throw failure();
-            rememberStatus(request!, result.dispatchStatus);
+            rememberStatus(request!, result.dispatchStatus, terminalUnsentProof(result, cursor));
             if (
               result.error !== null ||
               (result.dispatchStatus === "notDispatched" &&
@@ -664,7 +696,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
           supportsStreaming: true,
           supportsTools: true,
           supportsPreSendValidation: true,
-          isMock: false,
+          isMock: profile.fixture,
         }),
         async complete(request, callOptions) {
           if (!pending) lastRunDispatchStatus = "notDispatched";
