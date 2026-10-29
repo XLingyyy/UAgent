@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { LeftSidebar } from "../sidebar/LeftSidebar";
 import { Workspace } from "../workspace/Workspace";
 import { InspectorPane } from "../inspector/InspectorPane";
@@ -16,6 +17,7 @@ import "./MainLayout.css";
  * and `data-utility-pane-state="open|closed"` for utility drawer tasks.
  */
 export function MainLayout() {
+  const {text: uiText} = useI18n();
   const inspectorOpen = useLayoutStore((state) => state.inspector.open);
   const { toggleInspector } = useLayoutActions();
 
@@ -31,7 +33,7 @@ export function MainLayout() {
         <LeftSidebar />
         <Workspace />
       </div>
-      {modal && <button className="ua-drawer-backdrop" aria-label="Close tools backdrop" onClick={toggleInspector} tabIndex={-1} />}
+      {modal && <button className="ua-drawer-backdrop" aria-label={uiText("Close tools backdrop")} onClick={toggleInspector} tabIndex={-1} />}
       <InspectorPane open={inspectorOpen} onClose={toggleInspector} />
     </div>
   );

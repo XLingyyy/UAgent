@@ -1,6 +1,7 @@
-import type { ProviderRuntimeEvent, ProviderRuntimeRequest } from "@uagent/shared";
+import {boundConversationHistory} from "./conversation-history.js";
+import type { ProviderRuntimeEvent, ProviderRuntimeRequest, TaskDraft } from "@uagent/shared";
 import type { ProviderAdapter } from "./provider-adapter.js";
-import { runProviderComplete } from "./provider-runner.js";
+import { runProviderComplete, runProviderStream, type ProviderExecutionOptions } from "./provider-runner.js";
 
 export interface ProviderRuntimeBridgeOptions {
   adapter: ProviderAdapter;
@@ -44,9 +45,10 @@ export class ProviderRuntimeBridge {
 
   async execute(
     input: ProviderBridgeExecuteInput,
-    _draft: unknown,
+    draft: TaskDraft,
     taskId: string,
     planId: string,
+    options: ProviderExecutionOptions = {},
   ): Promise<ProviderBridgeExecuteResult> {
     const request: ProviderRuntimeRequest = {
       id: `provider-request-${taskId}-${planId}`,
@@ -55,14 +57,17 @@ export class ProviderRuntimeBridge {
       messages: [
         { role: "system", content: input.system },
         { role: "developer", content: buildDeveloperMessage(input) },
+        ...boundConversationHistory(draft.conversationHistory??[]),
         { role: "user", content: buildUserMessage(input) },
       ],
       temperature: 0,
       maxOutputTokens: 1024,
-      metadata: { taskId, planId },
+      metadata: { taskId, planId, projectId: draft.projectId },
     };
 
-    const result = await runProviderComplete(this.adapter, request);
+    const result = this.adapter.stream && this.adapter.getCapabilities().supportsStreaming
+      ? await runProviderStream(this.adapter, request, options)
+      : await runProviderComplete(this.adapter, request, options);
     return { events: result.events };
   }
 }

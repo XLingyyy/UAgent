@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import type { MockThread } from "../types/ui";
 import "./ThreadSection.css";
 
@@ -15,12 +16,13 @@ export interface ThreadSectionProps {
 }
 
 export function ThreadSection({ threads, activeThreadId, onThreadSelect }: ThreadSectionProps) {
+  const {text: uiText} = useI18n();
   return (
-    <section className="ua-thread-section" aria-label="Threads">
+    <section className="ua-thread-section" aria-label={uiText("Threads")}>
       <div className="ua-thread-section__header">
-        <span className="ua-thread-section__label">Threads</span>
+        <span className="ua-thread-section__label">{uiText("Threads")}</span>
       </div>
-      <div className="ua-thread-section__list" role="listbox" aria-label="Thread list">
+      <div className="ua-thread-section__list" role="listbox" aria-label={uiText("Thread list")}>
         {threads.map((thread) => (
           <button
             key={thread.id}
@@ -32,10 +34,10 @@ export function ThreadSection({ threads, activeThreadId, onThreadSelect }: Threa
           >
             <div className="ua-thread-item__main">
               <span className="ua-thread-item__title">{thread.title}</span>
-              <span className="ua-thread-item__time">{thread.updatedAt}</span>
+              <span className="ua-thread-item__time">{thread.type === "Runtime" ? uiText(thread.updatedAt === "done" ? "Completed" : thread.updatedAt) : thread.updatedAt}</span>
             </div>
             <span className={`ua-thread-badge ${THREAD_TYPE_VARIANT[thread.type]}`}>
-              {thread.type}
+              {uiText(thread.type)}
             </span>
           </button>
         ))}

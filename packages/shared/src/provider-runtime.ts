@@ -18,6 +18,10 @@ export interface ProviderRuntimeRequest {
     planId?: string;
     traceId?: string;
     networkMode?: string;
+    projectId?: string | null;
+    projectEpoch?: number;
+    /** Internal scoped result analysis; never implicitly append selected attachments. */
+    purpose?: "tool_feedback";
   };
 }
 
@@ -55,6 +59,8 @@ export interface ProviderStreamChunk {
   index: number;
   delta: string;
   done: boolean;
+  usage?: ProviderUsage;
+  finishReason?: "stop" | "length";
 }
 
 export interface ProviderRuntimeError {

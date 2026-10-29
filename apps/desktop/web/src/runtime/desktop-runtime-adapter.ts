@@ -1,3 +1,5 @@
+import { createProviderProposals, type ProviderProposalController, type ProposalScope } from "@uagent/runtime";
+import type { ProviderAdapter } from "@uagent/runtime";
 import { FIXTURES_ENABLED, ACCEPTANCE_ENABLED } from "./build-capabilities";
 import {
   createAgentLoopRuntime,
@@ -500,6 +502,8 @@ export async function collectMvp15dUiAuthority(
 
 
 export interface DesktopRuntimeAdapter {
+  getProviderProposals?(): ProviderProposalController;
+  setProviderProjectContext?(context: Omit<ProposalScope,"epoch">): void;
   getSnapshot(): RuntimeSnapshot;
   getMcpState(): McpConnectionState;
   getMcpDiscovery(): McpDiscoverySnapshot | null;
@@ -635,6 +639,9 @@ export interface Mvp15LiveAssetToolsetFingerprintPublication extends Mvp15LiveAs
 }
 
 export interface DesktopRuntimeAdapterOptions {
+  /** Explicit session injection; not derived from saved credentials or fixture defaults. */
+  providerAdapter?: ProviderAdapter;
+  providerEnabled?: boolean;
   createTransport?: (endpoint: string, transportKind: string) => McpTransportClient;
   nativeInvoke?: NativeInvoke | null;
   /** Explicit source-only fixtures. These are never promoted to fixed live authority. */
@@ -690,9 +697,13 @@ export function createDesktopRuntimeAdapter(
     ? (options?.nativeInvoke ?? null)
     : getGlobalInvoke();
   const router: AgentLoopRuntimeClient = createAgentLoopRuntime({
+    onProviderAnalysis: (taskId,text)=>providerProposals.stage(text,taskId),
     runtimeMode: "mock",
     discovery: null,
     clockStart: 1_000,
+    providerAdapter: options?.providerAdapter,
+    providerEnabled: options?.providerEnabled ?? false,
+    providerAnalysisOnly: Boolean(options?.providerAdapter),
     actionSelector: (step, context) => {
       const action = selectAction(step, context);
       return !FIXTURES_ENABLED && action.type === "mock_observation"
@@ -769,6 +780,9 @@ export function createDesktopRuntimeAdapter(
   }
 
   mvp9Service.subscribe(() => syncMvp9());
+  let providerScope:ProposalScope={projectId:null,rootRef:null,trusted:false,epoch:0};
+  const providerProposals=createProviderProposals({recordAnalysis:(taskId,text)=>router.recordProviderResultAnalysis(taskId,text),provider:options?.providerEnabled?options.providerAdapter:undefined,terminal:mvp9Service.mvp10.terminal,scope:()=>providerScope,feedback:(...args)=>router.providerProposalFeedback(...args)});
+
   if (terminalAdapter) {
     void mvp9Service.mvp10.terminal.refreshCapability().then(() => syncMvp9());
   }
@@ -1073,6 +1087,9 @@ export function createDesktopRuntimeAdapter(
       listener(snapshot);
     }
   };
+
+  // Forward each provider delta before submitTask settles.
+  router.subscribe(syncSnapshot);
 
   const syncMcp = () => {
     if (
@@ -3854,6 +3871,10 @@ export function createDesktopRuntimeAdapter(
   };
 
   const adapter: DesktopRuntimeAdapter = {
+    getProviderProposals:()=>providerProposals,
+    setProviderProjectContext(context){
+      if(context.projectId!==providerScope.projectId||context.rootRef!==providerScope.rootRef||context.trusted!==providerScope.trusted){providerProposals.invalidate();providerScope={...context,epoch:providerScope.epoch+1};}
+    },
     getSnapshot: () => router.getSnapshot(),
     getMcpState: () => mcpState,
     getAssetMutationCapability: async () => {
@@ -4181,6 +4202,11 @@ export function createDesktopRuntimeAdapter(
       }
     },
     invalidateProjectContext() {
+      providerProposals.invalidate();
+      providerScope={...providerScope,epoch:providerScope.epoch+1};
+      for (const task of Object.values(router.getSnapshot().tasksById)) {
+        if (!["completed", "failed", "cancelled"].includes(task.state)) void router.cancelTask(task.id);
+      }
       const pending = retractMvp15DCompanionAttestation("installed_unverified", "BLOCKED_BY_PLUGIN_PROVENANCE", "project_context_changed", mcpDiscoveryGeneration, true);
       syncMcp();
       void pending?.catch(() => undefined);
@@ -4211,15 +4237,18 @@ export function createDesktopRuntimeAdapter(
     },
 
     submitTask: async (draft) => {
-      if (!FIXTURES_ENABLED && !currentDiscovery) {
+      if (!FIXTURES_ENABLED && !currentDiscovery && !(options?.providerAdapter && options.providerEnabled)) {
         throw new Error("Connect and discover a read-only MCP session before submitting a task.");
       }
+      providerProposals.invalidate();
       const record = await router.submitTask(draft);
       syncSnapshot();
+      if (record.state === "failed") throw new Error("task_submission_failed");
       return record;
     },
 
     cancelTask: async (taskId) => {
+      if(providerProposals.getSnapshot()?.taskId===taskId)providerProposals.invalidate();
       await router.cancelTask(taskId);
       syncSnapshot();
     },

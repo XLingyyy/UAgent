@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { safeDisplay } from "./safe-display";
 import type { ReviewFinding } from "./inspector-data";
 import "./InspectorFinding.css";
@@ -23,13 +24,14 @@ export function InspectorFinding({
   scope,
   evidenceRef,
 }: ReviewFinding) {
+  const {text:uiText,t}=useI18n();
   return (
     <article
       className={`ua-finding ${SEVERITY_CLASS[severity] ?? ""}`}
-      aria-label={`Finding: ${safeDisplay(title)}`}
+      aria-label={t("review.findingLabel",{title:safeDisplay(title)})}
     >
       <div className="ua-finding__header">
-        <span className="ua-finding__severity">{SEVERITY_LABEL[severity] ?? severity}</span>
+        <span className="ua-finding__severity">{uiText(SEVERITY_LABEL[severity] ?? severity)}</span>
         <h4 className="ua-finding__title">{safeDisplay(title)}</h4>
       </div>
       <p className="ua-finding__description">{safeDisplay(description)}</p>

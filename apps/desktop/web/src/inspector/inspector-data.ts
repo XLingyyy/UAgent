@@ -258,7 +258,7 @@ export const utilityTools: UtilityToolDefinition[] = [
   {
     id: "logs",
     label: "Logs",
-    summary: "Static rows",
+    summary: "Current-project task events",
   },
   {
     id: "asset-search",

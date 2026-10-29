@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import "./Workspace.css";
 import { ConversationViewport } from "./ConversationViewport";
 import { WelcomeHero } from "./WelcomeHero";
@@ -6,13 +7,14 @@ import { ComposerDock } from "../composer/ComposerDock";
 import { useThreadStore, useProjectStore, useRuntimeStore } from "../stores/ui-store";
 
 export function Workspace() {
+  const {text: uiText} = useI18n();
   const activeThreadId = useThreadStore((state) => state.activeThreadId);
   const project = useProjectStore((state) => state.registeredProjects.find((item) => item.id === state.activeProjectId));
   const editorStatus = useRuntimeStore((state) => state.mvp14.session?.status ?? "not connected");
   const workspaceMode = activeThreadId ? "thread" : "welcome";
 
   return (
-    <main className="ua-workspace" aria-label="Workspace" data-workspace-mode={workspaceMode}>
+    <main className="ua-workspace" aria-label={uiText("Workspace")} data-workspace-mode={workspaceMode}>
       <div className={`ua-workspace__content ua-workspace__content--${workspaceMode}`}>
         {workspaceMode === "welcome" ? (
           <div className="ua-workspace__welcome-stack">

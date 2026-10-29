@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { useAccessiblePopup } from "../hooks/useAccessiblePopup";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
@@ -32,6 +33,7 @@ function getDropdownLeft(triggerLeft: number) {
 }
 
 export function ProjectSelector({ value, projects, onChange, onManageProjects }: ProjectSelectorProps) {
+  const {text: uiText,t} = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [position, setPosition] = useState<DropdownPosition | null>(null);
@@ -40,7 +42,7 @@ export function ProjectSelector({ value, projects, onChange, onManageProjects }:
 
   const activeProject = projects.find((p) => p.id === value) ?? null;
 
-  const triggerLabel = activeProject ? `Project: ${activeProject.name}` : "No project";
+  const triggerLabel = activeProject ? `${uiText("Project")}: ${activeProject.name}` : uiText("No project");
 
   const close = useCallback(() => {
     setIsOpen(false);
@@ -114,7 +116,7 @@ export function ProjectSelector({ value, projects, onChange, onManageProjects }:
         ref={triggerRef}
         className={`ua-project-selector__trigger${!activeProject ? " ua-project-selector__trigger--empty" : ""}`}
         type="button"
-        aria-label={`Project selector: ${activeProject ? activeProject.name : "No project"}`}
+        aria-label={t("project.selectorLabel",{project:activeProject?.name??uiText("No project")})}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         onClick={handleTriggerClick}
@@ -131,7 +133,7 @@ export function ProjectSelector({ value, projects, onChange, onManageProjects }:
           <div
             className="ua-project-selector__dropdown ua-motion-layer"
             role="listbox"
-            aria-label="Select project"
+            aria-label={uiText("Select project")}
             data-motion="layer"
             style={{
               position: "fixed",
@@ -144,16 +146,16 @@ export function ProjectSelector({ value, projects, onChange, onManageProjects }:
                 ref={searchInputRef}
                 className="ua-project-selector__search-input"
                 type="text"
-                placeholder="Search projects"
+                placeholder={uiText("Search projects")}
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
-                aria-label="Search projects"
+                aria-label={uiText("Search projects")}
               />
             </div>
 
             <div className="ua-project-selector__list">
               {filteredProjects.length === 0 && (
-                <div className="ua-project-selector__empty">No matching projects</div>
+                <div className="ua-project-selector__empty">{uiText("No matching projects")}</div>
               )}
 
               {filteredProjects.map((project) => (
@@ -174,7 +176,7 @@ export function ProjectSelector({ value, projects, onChange, onManageProjects }:
                       {project.engineVersion}
                       <span className="ua-project-selector__item-sep" aria-hidden="true">
                         {" "}
-                        &middot;{" "}
+                        {"·"}{" "}
                       </span>
                       <span className="ua-project-selector__item-status--warning">
                         {project.connectionStatus}
@@ -201,16 +203,15 @@ export function ProjectSelector({ value, projects, onChange, onManageProjects }:
                 {value === null ? "\u2713" : ""}
               </span>
               <span className="ua-project-selector__item-body">
-                <span className="ua-project-selector__item-name">No project</span>
-                <span className="ua-project-selector__item-desc">Use no project</span>
+                <span className="ua-project-selector__item-name">{uiText("No project")}</span>
+                <span className="ua-project-selector__item-desc">{uiText("Use no project")}</span>
               </span>
             </div>
 
             <div className="ua-project-selector__section-divider" />
 
             <button type="button" className="ua-project-selector__item" onClick={() => { close(); onManageProjects?.(); }} disabled={!onManageProjects}>
-              Manage project roots
-            </button>
+              {uiText("Manage project roots")}{" "}</button>
           </div>,
           document.body,
         )}

@@ -14,6 +14,11 @@ export interface SettingsPageEntry {
 
 export const settingsPages: SettingsPageEntry[] = [
   {
+    id: "archived-chats", title: "Saved conversations", group: "Preferences",
+    phase: "Local", enabled: true,
+    summary: "Read and archive explicitly saved local conversation copies; execution is never restored.",
+  },
+  {
     id: "profile",
     title: "Profile",
     group: "Account",
@@ -59,7 +64,7 @@ export const settingsPages: SettingsPageEntry[] = [
     group: "System",
     phase: "MVP6",
     enabled: true,
-    summary: "Local mock provider defaults and model selection.",
+    summary: "Manage providers, models, and connection state.",
   },
 ];
 

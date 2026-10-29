@@ -1,3 +1,4 @@
+import {I18nProvider} from "./i18n";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App, { initializeFixedAppRuntimeAdapter } from "./app/App";
@@ -6,11 +7,12 @@ import "./styles/tokens.css";
 import "./styles/theme.css";
 import "./styles/animations.css";
 import "./styles/globals.css";
+import "./styles/design-refresh.css";
 
 initializeFixedAppRuntimeAdapter();
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <I18nProvider><App /></I18nProvider>
   </React.StrictMode>,
 );
 

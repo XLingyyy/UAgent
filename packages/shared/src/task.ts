@@ -132,6 +132,11 @@ export type TaskEventType =
 export type TaskEventLevel = "info" | "success" | "warning" | "error";
 
 export interface TaskDraft {
+  /** Text-only, completed turns from this conversation, shown in exact outbound review. */
+  conversationId?: string;
+  conversationHistory?: Array<{role:"user"|"assistant";content:string}>;
+  /** Attachment/tool-bearing turns are never implicitly inherited. */
+  historyEligible?: boolean;
   input: string;
   projectId: string | null;
   permissionMode: PermissionMode;

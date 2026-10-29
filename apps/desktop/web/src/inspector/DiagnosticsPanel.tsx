@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import type { TaskEvent } from "@uagent/shared";
 import { InspectorSummaryCard } from "./InspectorSummaryCard";
 import { diagnosticSummary } from "./inspector-data";
@@ -49,13 +50,12 @@ function hasMvp11State(runtime: RuntimeStoreState | null): boolean {
   );
 }
 
-function formatCounts(errorCount: number, warningCount: number): string {
-  return `${errorCount} ${errorCount === 1 ? "error" : "errors"} / ${warningCount} ${
-    warningCount === 1 ? "warning" : "warnings"
-  }`;
+function formatCounts(errorCount:number,warningCount:number,text:(source:string)=>string):string {
+  return `${errorCount} ${text("Errors")} / ${warningCount} ${text("Warnings")}`;
 }
 
 export function DiagnosticsPanel() {
+  const {text: uiText,t} = useI18n();
   const runtime = useOptionalRuntimeStore((state) => state);
   const activeTaskId = runtime?.activeTaskId ?? null;
   const runtimeEvents = activeTaskId ? (runtime?.eventsByTaskId[activeTaskId] ?? []) : [];
@@ -73,34 +73,32 @@ export function DiagnosticsPanel() {
     const build = mvp11.buildAnalysis;
 
     return (
-      <section className="ua-diagnostics-panel" aria-label="Diagnostics panel">
+      <section className="ua-diagnostics-panel" aria-label={uiText("Diagnostics panel")}>
         <div className="ua-diagnostics-panel__summary">
           <InspectorSummaryCard
-            label="Project diagnostics"
-            value={formatCounts(mvp11.diagnosticCounts.error, mvp11.diagnosticCounts.warning)}
+            label={uiText("Project diagnostics")}
+            value={formatCounts(mvp11.diagnosticCounts.error, mvp11.diagnosticCounts.warning,uiText)}
             tone={mvp11.diagnosticCounts.error > 0 ? "warning" : "success"}
           />
-          <InspectorSummaryCard label="Context Pack" value={mvp11.contextPackStatus} />
+          <InspectorSummaryCard label={uiText("Context Pack")} value={mvp11.contextPackStatus} />
         </div>
 
-        <h3 className="ua-diagnostics-panel__section-title">Project diagnostics</h3>
+        <h3 className="ua-diagnostics-panel__section-title">{uiText("Project diagnostics")}</h3>
         <div className="ua-diagnostics-panel__items">
-          <div className="ua-diagnostics-item" aria-label="MVP11 diagnostic counts">
+          <div className="ua-diagnostics-item" aria-label={uiText("MVP11 diagnostic counts")}>
             <div className="ua-diagnostics-item__header">
               <span className="ua-diagnostics-item__label">
-                {formatCounts(mvp11.diagnosticCounts.error, mvp11.diagnosticCounts.warning)}
+                {formatCounts(mvp11.diagnosticCounts.error, mvp11.diagnosticCounts.warning,uiText)}
               </span>
               <span className="ua-diagnostics-item__state ua-diagnostics-item__state--warning">
                 {mvp11.metadataStatus}
               </span>
             </div>
             <p className="ua-diagnostics-item__description">
-              {mvp11.diagnosticCounts.total} total diagnostics from UE metadata, project index,
-              MCP read-only observations, and recorded build output.
-            </p>
+              {mvp11.diagnosticCounts.total} {uiText("total diagnostics from UE metadata, project index, MCP read-only observations, and recorded build output.")}{" "}</p>
           </div>
           {kindEntries.map(([kind, count]) => (
-            <div key={kind} className="ua-diagnostics-item" aria-label={`Diagnostic kind ${kind}`}>
+            <div key={kind} className="ua-diagnostics-item" aria-label={t("diagnostics.kindLabel",{kind})}>
               <div className="ua-diagnostics-item__header">
                 <span className="ua-diagnostics-item__label">{kind}</span>
                 <span className="ua-diagnostics-item__state ua-diagnostics-item__state--default">
@@ -122,7 +120,7 @@ export function DiagnosticsPanel() {
             )
             .slice(0, 6)
             .map((diagnostic) => (
-              <div key={`repair-${diagnostic.id}`} className="ua-diagnostics-item" aria-label={`Repair ${diagnostic.id}`}>
+              <div key={`repair-${diagnostic.id}`} className="ua-diagnostics-item" aria-label={t("diagnostics.repairLabel",{id:diagnostic.id})}>
                 <div className="ua-diagnostics-item__header">
                   <span className="ua-diagnostics-item__label">
                     {"title" in diagnostic ? diagnostic.title : diagnostic.message}
@@ -132,17 +130,16 @@ export function DiagnosticsPanel() {
                     type="button"
                     onClick={() => actions?.proposeRepairForDiagnostic(diagnostic.id)}
                   >
-                    Propose fix
-                  </button>
+                    {uiText("Propose fix")}{" "}</button>
                 </div>
                 <p className="ua-diagnostics-item__description">
-                  {diagnostic.displayPath ?? "No affected file"} · {diagnostic.kind}
+                  {diagnostic.displayPath ?? uiText("No affected file")} · {diagnostic.kind}
                 </p>
               </div>
             ))}
         </div>
 
-        <h3 className="ua-diagnostics-panel__section-title">Affected files</h3>
+        <h3 className="ua-diagnostics-panel__section-title">{uiText("Affected files")}</h3>
         <div className="ua-diagnostics-panel__items">
           {affectedFiles.length > 0 ? (
             affectedFiles.slice(0, 8).map((file) => (
@@ -157,44 +154,43 @@ export function DiagnosticsPanel() {
               </div>
             ))
           ) : (
-            <div className="ua-diagnostics-item" aria-label="No affected files">
-              <p className="ua-diagnostics-item__description">No affected files recorded yet.</p>
+            <div className="ua-diagnostics-item" aria-label={uiText("No affected files")}>
+              <p className="ua-diagnostics-item__description">{uiText("No affected files recorded yet.")}</p>
             </div>
           )}
         </div>
 
-        <h3 className="ua-diagnostics-panel__section-title">Build Failure Analysis</h3>
+        <h3 className="ua-diagnostics-panel__section-title">{uiText("Build Failure Analysis")}</h3>
         <div className="ua-diagnostics-panel__items">
-          <div className="ua-diagnostics-item" aria-label="Build diagnostics">
+          <div className="ua-diagnostics-item" aria-label={uiText("Build diagnostics")}>
             <div className="ua-diagnostics-item__header">
               <span className="ua-diagnostics-item__label">
-                {build ? `${build.errorCount} build errors / ${build.warningCount} warnings` : "No build analysis"}
+                {build ? t("diagnostics.buildCounts",{errors:build.errorCount,warnings:build.warningCount}) : uiText("No build analysis")}
               </span>
               <span className="ua-diagnostics-item__state ua-diagnostics-item__state--accent">
                 {mvp11.buildAnalysisStatus}
               </span>
             </div>
             <p className="ua-diagnostics-item__description">
-              {build?.topIssues[0] ?? "Analyze recorded terminal output to populate build diagnostics."}
+              {build?.topIssues[0] ?? uiText("Analyze recorded terminal output to populate build diagnostics.")}
             </p>
           </div>
         </div>
 
-        <h3 className="ua-diagnostics-panel__section-title">Context Pack</h3>
+        <h3 className="ua-diagnostics-panel__section-title">{uiText("Context Pack")}</h3>
         <div className="ua-diagnostics-panel__items">
-          <div className="ua-diagnostics-item" aria-label="Context Pack">
+          <div className="ua-diagnostics-item" aria-label={uiText("Context Pack")}>
             <div className="ua-diagnostics-item__header">
               <span className="ua-diagnostics-item__label">
-                {mvp11.contextPack?.title ?? "Context Pack v1"}
+                {mvp11.contextPack?.title ?? uiText("Context Pack v1")}
               </span>
               <span className="ua-diagnostics-item__state ua-diagnostics-item__state--default">
                 {mvp11.contextPackStatus}
               </span>
             </div>
             <p className="ua-diagnostics-item__description">
-              Redaction: {mvp11.redactionSummary.replacedPaths} paths /{" "}
-              {mvp11.redactionSummary.replacedSecrets} secrets
-            </p>
+              {uiText("Redaction:")}{" "}{mvp11.redactionSummary.replacedPaths} {uiText("paths /")}{" "}
+              {mvp11.redactionSummary.replacedSecrets} {uiText("secrets")}{" "}</p>
           </div>
         </div>
       </section>
@@ -203,23 +199,23 @@ export function DiagnosticsPanel() {
 
   if (diagnostics.length > 0) {
     return (
-      <section className="ua-diagnostics-panel" aria-label="Diagnostics panel">
+      <section className="ua-diagnostics-panel" aria-label={uiText("Diagnostics panel")}>
         <div className="ua-diagnostics-panel__summary">
-          <InspectorSummaryCard label="Diagnostics" value={runtime?.status ?? "ready"} tone="warning" />
+          <InspectorSummaryCard label={uiText("Diagnostics")} value={runtime?.status ?? "ready"} tone="warning" />
         </div>
-        <h3 className="ua-diagnostics-panel__section-title">Runtime health</h3>
+        <h3 className="ua-diagnostics-panel__section-title">{uiText("Runtime health")}</h3>
         <div className="ua-diagnostics-panel__items">
           {diagnostics.map((event) => (
             <div key={event.id} className="ua-diagnostics-item" aria-label={event.title}>
               <div className="ua-diagnostics-item__header">
                 <span className="ua-diagnostics-item__label">{event.title}</span>
                 <span className="ua-diagnostics-item__state ua-diagnostics-item__state--warning">
-                  {event.level ?? "warning"}
+                  {event.level ?? uiText("warning")}
                 </span>
               </div>
               <p className="ua-diagnostics-item__description">{event.body}</p>
               {event.type === "provider_request_failed" && event.payload && typeof event.payload === "object" && "code" in event.payload ? (
-                <span className="ua-diagnostics-item__code">Error code: {String((event.payload as Record<string, unknown>).code)}</span>
+                <span className="ua-diagnostics-item__code">{uiText("Error code:")}{" "}{String((event.payload as Record<string, unknown>).code)}</span>
               ) : null}
             </div>
           ))}
@@ -229,67 +225,61 @@ export function DiagnosticsPanel() {
   }
 
   return (
-    <section className="ua-diagnostics-panel" aria-label="Diagnostics panel">
+    <section className="ua-diagnostics-panel" aria-label={uiText("Diagnostics panel")}>
       <div className="ua-diagnostics-panel__summary">
-        <InspectorSummaryCard label="Diagnostics" value={diagnosticSummary.status} tone="warning" />
+        <InspectorSummaryCard label={uiText("Diagnostics")} value={uiText("No live diagnostics source")} tone="warning" />
       </div>
-      <h3 className="ua-diagnostics-panel__section-title">UE Project Diagnostics</h3>
+      <h3 className="ua-diagnostics-panel__section-title">{uiText("UE Project Diagnostics")}</h3>
       <div className="ua-diagnostics-panel__items">
-        <div className="ua-diagnostics-item" aria-label="UE Project Diagnostics">
+        <div className="ua-diagnostics-item" aria-label={uiText("UE Project Diagnostics")}>
           <div className="ua-diagnostics-item__header">
-            <span className="ua-diagnostics-item__label">Metadata checks</span>
+            <span className="ua-diagnostics-item__label">{uiText("Metadata checks")}</span>
             <span className="ua-diagnostics-item__state ua-diagnostics-item__state--success">
-              Read-only
-            </span>
+              {uiText("Read-only")}{" "}</span>
           </div>
           <p className="ua-diagnostics-item__description">
-            Metadata, module, plugin, target, Build.cs, Config, binary-preview, and permission diagnostics use indexed summaries only.
-          </p>
+            {uiText("Metadata, module, plugin, target, Build.cs, Config, binary-preview, and permission diagnostics use indexed summaries only.")}{" "}</p>
         </div>
       </div>
-      <h3 className="ua-diagnostics-panel__section-title">Build Failure Analysis</h3>
+      <h3 className="ua-diagnostics-panel__section-title">{uiText("Build Failure Analysis")}</h3>
       <div className="ua-diagnostics-panel__items">
-        <div className="ua-diagnostics-item" aria-label="Build Failure Analysis">
+        <div className="ua-diagnostics-item" aria-label={uiText("Build Failure Analysis")}>
           <div className="ua-diagnostics-item__header">
-            <span className="ua-diagnostics-item__label">Recorded output parser</span>
+            <span className="ua-diagnostics-item__label">{uiText("Recorded output parser")}</span>
             <span className="ua-diagnostics-item__state ua-diagnostics-item__state--accent">
-              User-triggered
-            </span>
+              {uiText("User-triggered")}{" "}</span>
           </div>
           <p className="ua-diagnostics-item__description">
-            Terminal output can be analyzed from recorded evidence summaries without re-running commands or storing raw stdout.
-          </p>
+            {uiText("Terminal output can be analyzed from recorded evidence summaries without re-running commands or storing raw stdout.")}{" "}</p>
         </div>
       </div>
-      <h3 className="ua-diagnostics-panel__section-title">Context Pack</h3>
+      <h3 className="ua-diagnostics-panel__section-title">{uiText("Context Pack")}</h3>
       <div className="ua-diagnostics-panel__items">
-        <div className="ua-diagnostics-item" aria-label="Context Pack">
+        <div className="ua-diagnostics-item" aria-label={uiText("Context Pack")}>
           <div className="ua-diagnostics-item__header">
-            <span className="ua-diagnostics-item__label">Context Pack v1</span>
+            <span className="ua-diagnostics-item__label">{uiText("Context Pack v1")}</span>
             <span className="ua-diagnostics-item__state ua-diagnostics-item__state--default">
-              v1 summary
-            </span>
+              {uiText("v1 summary")}{" "}</span>
           </div>
           <p className="ua-diagnostics-item__description">
-            Context Pack v1 combines project overview, diagnostics, build failures, important files, MCP observations, and safety boundaries.
-          </p>
+            {uiText("Context Pack v1 combines project overview, diagnostics, build failures, important files, MCP observations, and safety boundaries.")}{" "}</p>
         </div>
       </div>
-      <h3 className="ua-diagnostics-panel__section-title">Runtime health</h3>
+      <h3 className="ua-diagnostics-panel__section-title">{uiText("Runtime health")}</h3>
       <div className="ua-diagnostics-panel__items">
         {diagnosticSummary.items.map((item) => (
-          <div key={item.id} className="ua-diagnostics-item" aria-label={item.label}>
+          <div key={item.id} className="ua-diagnostics-item" aria-label={uiText(item.label)}>
             <div className="ua-diagnostics-item__header">
-              <span className="ua-diagnostics-item__label">{item.label}</span>
+              <span className="ua-diagnostics-item__label">{uiText(item.label)}</span>
               <span
                 className={`ua-diagnostics-item__state ${
                   TONE_LABEL_CLASS[item.tone] ?? TONE_LABEL_CLASS.default
                 }`}
               >
-                {item.state}
+                {uiText(item.state)}
               </span>
             </div>
-            <p className="ua-diagnostics-item__description">{item.description}</p>
+            <p className="ua-diagnostics-item__description">{uiText(item.description)}</p>
           </div>
         ))}
       </div>

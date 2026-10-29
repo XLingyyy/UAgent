@@ -51,7 +51,7 @@ export function mapProviderRuntimeEvent(
     }
 
     case "provider_request_completed": {
-      const taskEvent = createTaskEvent(base, taskId, eventSequence, "provider_request_completed", "Provider request completed", `Provider ${event.providerId} request ${event.requestId} completed.`, "success", { providerId: event.providerId, usage: event.response.usage });
+      const taskEvent = createTaskEvent(base, taskId, eventSequence, "provider_request_completed", "Provider request completed", `Provider ${event.providerId} request ${event.requestId} completed.`, "success", { providerId: event.providerId, usage: event.response.usage, responseText:event.response.text });
       taskEvents.push(taskEvent);
       break;
     }

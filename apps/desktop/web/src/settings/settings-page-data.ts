@@ -26,7 +26,7 @@ export const generalPageData: SettingsPageData = {
   id: "general",
   title: "General",
   description:
-    "Configure work mode defaults, permission defaults, language, and bottom-panel settings.",
+    "Choose your language and review the workspace defaults.",
   sections: [
     {
       id: "work-mode",
@@ -422,7 +422,7 @@ export const archivedChatsPageData: SettingsPageData = {
 export const providerPageData: SettingsPageData = {
   id: "provider",
   title: "Provider",
-  description: "Manage provider connections, network modes, and secret-safe configuration.",
+  description: "Manage providers, models, and connection state.",
   sections: [
     {
       id: "provider-list",

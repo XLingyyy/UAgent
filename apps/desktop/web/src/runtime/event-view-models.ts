@@ -248,6 +248,7 @@ function formatTimestamp(createdAt: number): string {
 export function mapTaskEventToWorkspaceMessage(event: TaskEvent): WorkspaceMessage {
   return {
     id: event.id,
+    eventType: event.type,
     kind: EVENT_KIND[event.type],
     label: EVENT_LABELS[event.type],
     title: event.title,

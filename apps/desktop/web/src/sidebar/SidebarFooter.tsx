@@ -1,9 +1,11 @@
+import {useI18n} from "../i18n";
 import { useAccessiblePopup } from "../hooks/useAccessiblePopup";
 import { useState, useRef, useCallback } from "react";
 import { useSettingsActions } from "../stores/ui-store";
 import "./SidebarFooter.css";
 
 export function SidebarFooter() {
+  const {text: uiText} = useI18n();
   const { openSettings } = useSettingsActions();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 
@@ -23,53 +25,49 @@ export function SidebarFooter() {
           type="button"
           className="ua-sidebar-footer__btn"
           onClick={() => openSettings("general")}
-          aria-label="Open settings"
+          aria-label={uiText("Open settings")}
         >
           <span className="ua-sidebar-footer__btn-icon" aria-hidden>
             &#x2699;
           </span>
-          Settings
-        </button>
+          {uiText("Settings")}{" "}</button>
         <div className="ua-sidebar-footer__account">
           <button
             type="button"
             className="ua-sidebar-footer__btn"
             onClick={() => setAccountMenuOpen((open) => !open)}
             ref={triggerRef}
-            aria-label="Open profile menu"
+            aria-label={uiText("Open profile menu")}
             aria-haspopup="menu"
             aria-expanded={accountMenuOpen}
           >
             <span className="ua-sidebar-footer__btn-icon" aria-hidden>
               &#x25CF;
             </span>
-            Account
-          </button>
+            {uiText("Account")}{" "}</button>
           {accountMenuOpen && (
-            <div className="ua-sidebar-footer__menu" role="menu" aria-label="Account menu">
+            <div className="ua-sidebar-footer__menu" role="menu" aria-label={uiText("Account menu")}>
               <button
                 type="button"
                 role="menuitem"
                 className="ua-sidebar-footer__menu-item"
                 onClick={() => openSettingsPage("general")}
               >
-                Open settings
-              </button>
+                {uiText("Open settings")}{" "}</button>
               <button
                 type="button"
                 role="menuitem"
                 className="ua-sidebar-footer__menu-item"
                 onClick={() => openSettingsPage("profile")}
               >
-                Open profile
-              </button>
+                {uiText("Open profile")}{" "}</button>
             </div>
           )}
         </div>
       </div>
       <div className="ua-sidebar-footer__meta">
-        <span className="ua-sidebar-footer__version">UAgent MVP15</span>
-        <span className="ua-sidebar-footer__status">Local / No UE writes</span>
+        <span className="ua-sidebar-footer__version">{uiText("UAgent · desktop")}</span>
+        <span className="ua-sidebar-footer__status">{uiText("Local workspace")}</span>
       </div>
     </div>
   );

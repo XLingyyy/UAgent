@@ -27,13 +27,13 @@ type ScenarioName =
   | "mvp6-composer-no-voice"
   | "mvp6-model-reasoning-menu"
   | "mvp6-provider-model-sync"
-  | "mvp6-attach-menu-disabled"
+  | "mvp6-attach-menu-bounded-text"
   | "mvp6-utility-drawer-default-closed"
   | "mvp6-utility-drawer-narrow-overlay"
   | "mvp6-safety-panel-regression"
   | "mvp6-audit-panel-regression"
   | "mvp6-changes-panel-regression"
-  | "mvp6-placeholder-tools-disabled"
+  | "mvp6-local-data-tools-enabled"
   | "mvp6-settings-six-pages"
   | "mvp6-general-page"
   | "mvp6-profile-page-readonly"
@@ -309,7 +309,7 @@ const scenarios: Mvp6Scenario[] = [
     },
   },
   {
-    name: "mvp6-attach-menu-disabled",
+    name: "mvp6-attach-menu-bounded-text",
     assertionCount: 9,
     run: () => {
       renderMvp6App();
@@ -318,8 +318,8 @@ const scenarios: Mvp6Scenario[] = [
       const menu = screen.getByRole("menu", { name: "Attach context" });
       const items = within(menu).getAllByRole("menuitem");
 
-      expect(items).toHaveLength(4);
-      for (const label of ["File", "Asset", "Screenshot", "Context Pack"]) {
+      expect(items).toHaveLength(2);
+      for (const label of ["Screenshot", "Context Pack"]) {
         expect(within(menu).getByText(label)).toBeTruthy();
       }
       for (const item of items) {
@@ -395,7 +395,7 @@ const scenarios: Mvp6Scenario[] = [
     },
   },
   {
-    name: "mvp6-placeholder-tools-disabled",
+    name: "mvp6-local-data-tools-enabled",
     assertionCount: 6,
     run: () => {
       renderMvp6App();
@@ -404,8 +404,8 @@ const scenarios: Mvp6Scenario[] = [
       expect(within(drawer).getByRole("tablist", { name: "Utility tools" })).toBeTruthy();
       for (const label of ["Logs", "Asset Search"]) {
         const tab = within(drawer).getByRole("tab", { name: label });
-        expect(tab.getAttribute("aria-disabled")).toBe("true");
-        expect(tab.getAttribute("aria-describedby")).toMatch(/^ua-coming-soon-tooltip-/);
+        expect(tab.getAttribute("aria-disabled")).toBeNull();
+        fireEvent.click(tab);expect(tab.getAttribute("aria-selected")).toBe("true");
       }
       // Terminal, Browser, Screenshot, Files, and UE are now active later-MVP panels
       for (const label of ["Terminal", "Browser", "Screenshot", "Files", "UE"]) {

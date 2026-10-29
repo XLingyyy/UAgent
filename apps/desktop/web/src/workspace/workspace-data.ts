@@ -16,6 +16,7 @@ export type WorkspaceMessageKind = "user-request" | "agent-plan" | "tool-event" 
 
 export interface WorkspaceMessage {
   id: string;
+  eventType?: string;
   kind: WorkspaceMessageKind;
   label: string;
   title: string;

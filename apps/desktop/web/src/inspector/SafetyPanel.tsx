@@ -1,7 +1,9 @@
+import {useI18n} from "../i18n";
 import { useOptionalRuntimeActions, useOptionalRuntimeStore } from "../stores/ui-store";
 import "./UtilityPlaceholderPanel.css";
 
 export function SafetyPanel() {
+  const {text: uiText} = useI18n();
   const runtime = useOptionalRuntimeStore((state) => state);
   const runtimeActions = useOptionalRuntimeActions();
   const activeTaskId = runtime?.activeTaskId ?? null;
@@ -22,51 +24,51 @@ export function SafetyPanel() {
   const stepId = payload?.stepId as string | null | undefined;
 
   return (
-    <section className="ua-utility-placeholder" aria-label="Safety panel">
+    <section className="ua-utility-placeholder" aria-label={uiText("Safety panel")}>
       <div className="ua-utility-placeholder__header">
         <div className="ua-utility-placeholder__title-group">
-          <span className="ua-utility-placeholder__eyebrow">Runtime-derived</span>
-          <h3 className="ua-utility-placeholder__title">Safety</h3>
+          <span className="ua-utility-placeholder__eyebrow">{uiText("Runtime-derived")}</span>
+          <h3 className="ua-utility-placeholder__title">{uiText("Safety")}</h3>
         </div>
         <span className="ua-utility-placeholder__state">
-          {pendingApproval ? "approval_required" : runtime?.activeTaskId ? "no_pending_approval" : "idle"}
+          {pendingApproval ? uiText("approval_required") : runtime?.activeTaskId ? uiText("no_pending_approval") : uiText("idle")}
         </span>
       </div>
 
       <ul className="ua-utility-placeholder__list">
         {!activeTaskId && (
-          <li className="ua-utility-placeholder__item">No active task. Submit a task to see safety state.</li>
+          <li className="ua-utility-placeholder__item">{uiText("No active task. Submit a task to see safety state.")}</li>
         )}
 
         {activeTaskId && approvalRequired.length === 0 && (
-          <li className="ua-utility-placeholder__item">No approval events for the active task.</li>
+          <li className="ua-utility-placeholder__item">{uiText("No approval events for the active task.")}</li>
         )}
 
         {activeTaskId && approvalRequired.length > 0 && (
           <>
             <li className="ua-utility-placeholder__item">
-              Approval requests: {approvalRequired.length}
+              {uiText("Approval requests:")}{" "}{approvalRequired.length}
             </li>
             <li className="ua-utility-placeholder__item">
-              Approved: {approvalApproved.length}
+              {uiText("Approved:")}{" "}{approvalApproved.length}
             </li>
             <li className="ua-utility-placeholder__item">
-              Denied: {approvalDenied.length}
+              {uiText("Denied:")}{" "}{approvalDenied.length}
             </li>
             <li className="ua-utility-placeholder__item">
-              Cancelled: {approvalCancelled.length}
+              {uiText("Cancelled:")}{" "}{approvalCancelled.length}
             </li>
             <li className="ua-utility-placeholder__item">
-              Timed out: {approvalTimedOut.length}
+              {uiText("Timed out:")}{" "}{approvalTimedOut.length}
             </li>
             {riskLevel && (
               <li className="ua-utility-placeholder__item">
-                Risk level: {riskLevel}
+                {uiText("Risk level:")}{" "}{riskLevel}
               </li>
             )}
             {latestApprovalReq && (
               <li className="ua-utility-placeholder__item">
-                Last request: {latestApprovalReq.body}
+                {uiText("Last request:")}{" "}{latestApprovalReq.body}
               </li>
             )}
           </>
@@ -74,7 +76,7 @@ export function SafetyPanel() {
 
         {lastSandbox && (
           <li className="ua-utility-placeholder__item">
-            Latest sandbox: {lastSandbox.type.replace("sandbox_", "")}
+            {uiText("Latest sandbox:")}{" "}{lastSandbox.type.replace("sandbox_", "")}
           </li>
         )}
       </ul>
@@ -90,8 +92,7 @@ export function SafetyPanel() {
               );
             }}
           >
-            Approve
-          </button>
+            {uiText("Approve")}{" "}</button>
           <button
             className="ua-utility-placeholder__action ua-utility-placeholder__action--danger"
             type="button"
@@ -101,8 +102,7 @@ export function SafetyPanel() {
               );
             }}
           >
-            Deny
-          </button>
+            {uiText("Deny")}{" "}</button>
           <button
             className="ua-utility-placeholder__action"
             type="button"
@@ -112,8 +112,7 @@ export function SafetyPanel() {
               );
             }}
           >
-            Cancel task
-          </button>
+            {uiText("Cancel task")}{" "}</button>
         </div>
       )}
     </section>

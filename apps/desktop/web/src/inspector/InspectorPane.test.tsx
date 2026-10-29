@@ -227,18 +227,10 @@ describe("InspectorPane", () => {
     it.each([
       ["Logs"],
       ["Asset Search"],
-    ])("keeps %s as a disabled future tool placeholder", (toolName) => {
-      renderInspector();
-      const tab = screen.getByRole("tab", { name: toolName });
-      fireEvent.click(tab);
-
-      expect(tab.getAttribute("aria-selected")).toBe("false");
-      expect(tab.getAttribute("aria-disabled")).toBe("true");
-      expect(tab.getAttribute("aria-describedby")).toMatch(/^ua-coming-soon-tooltip-/);
-      expect(screen.getByRole("tab", { name: "Review" }).getAttribute("aria-selected")).toBe(
-        "true",
-      );
-      expect(screen.getByRole("tooltip", { name: new RegExp(toolName) })).toBeTruthy();
+    ])("opens the local %s tool", async (toolName) => {
+      await act(async () => { render(<UIProvider><InspectorPane open /></UIProvider>); });const tab=screen.getByRole("tab",{name:toolName});fireEvent.click(tab);
+      expect(tab.getAttribute("aria-selected")).toBe("true");expect(tab.getAttribute("aria-disabled")).toBeNull();
+      expect(screen.getByLabelText(toolName==="Logs"?"Local task logs":"Local indexed asset search")).toBeTruthy();
     });
 
     it("switches to the active UE editor panel", () => {

@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import type { MockProject, ProjectTreeNode as ProjectTreeNodeType } from "../types/ui";
 import type { ProjectIndexSnapshot, SafeFilePreviewResult } from "@uagent/shared";
 import { ProjectTree } from "./ProjectTree";
@@ -32,12 +33,12 @@ function ProjectSummary({
   emptyText: string;
   showActions?: boolean;
 }) {
+  const {text: uiText} = useI18n();
   if (!project) {
     return (
       <div className="ua-project-card ua-project-card--empty">
         <span className="ua-project-card__name ua-project-card__name--empty">
-          No project selected
-        </span>
+          {uiText("No project selected")}{" "}</span>
         <span className="ua-project-card__empty-text">{emptyText}</span>
       </div>
     );
@@ -61,11 +62,9 @@ function ProjectSummary({
       {showActions && (
         <div className="ua-project-card__actions">
           <button className="ua-project-card__btn" type="button" disabled>
-            Open Project
-          </button>
+            {uiText("Open Project")}{" "}</button>
           <button className="ua-project-card__btn" type="button" disabled>
-            Switch
-          </button>
+            {uiText("Switch")}{" "}</button>
         </div>
       )}
     </div>
@@ -91,18 +90,19 @@ export function ProjectSection({
   diagnosticCounts = {},
   mutationMarkers = {},
 }: ProjectSectionProps) {
+  const {text: uiText,t} = useI18n();
   if (mode === "projects") {
     return (
       <section
         className="ua-project-section ua-project-section--projects"
-        aria-label="Project resource browser"
+        aria-label={uiText("Project resource browser")}
       >
         <div className="ua-project-section__header">
-          <span className="ua-project-section__label">Projects</span>
-          <span className="ua-project-section__hint">Local mock list</span>
+          <span className="ua-project-section__label">{uiText("Projects")}</span>
+          <span className="ua-project-section__hint">{uiText("Local mock list")}</span>
         </div>
         <div className="ua-project-browser">
-          <div className="ua-project-list" role="listbox" aria-label="Mock project list">
+          <div className="ua-project-list" role="listbox" aria-label={uiText("Mock project list")}>
             {projects.map((projectOption) => {
               const isActive = activeProjectId === projectOption.id;
               return (
@@ -129,7 +129,7 @@ export function ProjectSection({
               );
             })}
           </div>
-          <div className="ua-project-details" aria-label="Active project details">
+          <div className="ua-project-details" aria-label={uiText("Active project details")}>
             <ProjectSummary
               project={project}
               emptyText="Select a local mock project from the list"
@@ -137,11 +137,11 @@ export function ProjectSection({
             />
           </div>
           <div className="ua-project-index-banner" role="status">
-            <span>{indexSnapshot ? "Index ready" : "No project root registered"}</span>
+            <span>{indexSnapshot ? uiText("Index ready") : uiText("No project root registered")}</span>
             <span>
               {indexSnapshot
-                ? `Read-only project index / ${Object.values(diagnosticCounts).reduce((sum, count) => sum + count, 0)} diagnostics`
-                : "Fixture fallback"}
+                ? t("project.indexSummary",{count:Object.values(diagnosticCounts).reduce((sum,count)=>sum+count,0)})
+                : uiText("Fixture fallback")}
             </span>
             <button
               className="ua-project-card__btn"
@@ -149,33 +149,31 @@ export function ProjectSection({
               disabled={!onScanProject || scanStatus === "scanning"}
               onClick={onScanProject}
             >
-              Scan project
-            </button>
+              {uiText("Scan project")}{" "}</button>
             <button
               className="ua-project-card__btn"
               type="button"
               disabled={scanStatus !== "scanning" || !onCancelScan}
               onClick={onCancelScan}
             >
-              Cancel
-            </button>
+              {uiText("Cancel")}{" "}</button>
           </div>
           <label className="ua-project-filter">
-            <span>Indexed asset filter</span>
+            <span>{uiText("Indexed asset filter")}</span>
             <input
               value={assetFilter}
               onChange={(event) => onAssetFilterChange?.(event.target.value)}
-              aria-label="Filter indexed assets"
-              placeholder="Filter by name, type, or path"
+              aria-label={uiText("Filter indexed assets")}
+              placeholder={uiText("Filter by name, type, or path")}
             />
           </label>
-          <span className="ua-project-filter__hint">Filter only; no scan triggered</span>
+          <span className="ua-project-filter__hint">{uiText("Filter only; no scan triggered")}</span>
           {project && (
             <ProjectTree
               key={project.id}
               nodes={treeNodes}
               label={indexSnapshot ? "Indexed Asset Browser" : "Asset Browser"}
-              ariaLabel={`${project.name} ${indexSnapshot ? "indexed " : ""}asset browser`}
+              ariaLabel={`${project.name} · ${uiText(indexSnapshot ? "Indexed asset browser" : "Asset Browser")}`}
               diagnosticCounts={diagnosticCounts}
               mutationMarkers={mutationMarkers}
               onNodeSelect={(node) => {
@@ -185,19 +183,18 @@ export function ProjectSection({
               }}
             />
           )}
-          <div className="ua-project-asset-details" aria-label="Asset details region">
-            <span className="ua-project-section__label">Asset details</span>
-            <span>{selectedAssetPath ?? "Select an indexed asset"}</span>
+          <div className="ua-project-asset-details" aria-label={uiText("Asset details region")}>
+            <span className="ua-project-section__label">{uiText("Asset details")}</span>
+            <span>{selectedAssetPath ?? uiText("Select an indexed asset")}</span>
             <button
               className="ua-project-card__btn"
               type="button"
               disabled={!onPreviewFile}
               onClick={() => onPreviewFile?.("Config/DefaultGame.ini")}
             >
-              DefaultGame.ini
-            </button>
+              {uiText("DefaultGame.ini")}{" "}</button>
           </div>
-          <div className="ua-project-preview" aria-label="File preview panel">
+          <div className="ua-project-preview" aria-label={uiText("File preview panel")}>
             {preview ? (
               <>
                 <span className="ua-project-section__label">
@@ -205,12 +202,11 @@ export function ProjectSection({
                 </span>
                 <pre>{preview.content || preview.reason}</pre>
                 <span>
-                  Redaction: {preview.redaction.replacedSecrets} secrets /{" "}
-                  {preview.redaction.replacedPaths} paths
-                </span>
+                  {uiText("Redaction:")}{" "}{preview.redaction.replacedSecrets} {uiText("secrets /")}{" "}
+                  {preview.redaction.replacedPaths} {uiText("paths")}{" "}</span>
               </>
             ) : (
-              <span>No file preview requested</span>
+              <span>{uiText("No file preview requested")}</span>
             )}
           </div>
         </div>
@@ -221,13 +217,13 @@ export function ProjectSection({
   return (
     <section
       className="ua-project-section ua-project-section--workspace"
-      aria-label="Workspace project summary"
+      aria-label={uiText("Workspace project summary")}
     >
       <div className="ua-project-section__header">
-        <span className="ua-project-section__label">Current Project</span>
-        <span className="ua-project-section__hint">Local context</span>
+        <span className="ua-project-section__label">{uiText("Current Project")}</span>
+        <span className="ua-project-section__hint">{uiText("Local context")}</span>
       </div>
-      <ProjectSummary project={project} emptyText="Select a project from the composer dock" />
+      <ProjectSummary project={project} emptyText={uiText("Simple questions do not need a project.")} />
     </section>
   );
 }

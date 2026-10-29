@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { useState, useCallback } from "react";
 import { useRuntimeStore, useRuntimeActions, useProjectStore } from "../stores/ui-store";
 
@@ -37,6 +38,7 @@ function getRiskLabel(risk: string): string {
 }
 
 export function TerminalPanel() {
+  const {text: uiText,t} = useI18n();
   const terminalState = useRuntimeStore((s) => s.mvp9.mvp10.terminal);
   const buildAnalysis = useRuntimeStore((s) => s.mvp11.buildAnalysis);
   const activeProject = useProjectStore((s) =>
@@ -122,19 +124,17 @@ export function TerminalPanel() {
 
   if (!capability.enabled) {
     return (
-      <div className="ua-inspector-terminal" role="region" aria-label="Terminal">
+      <div className="ua-inspector-terminal" role="region" aria-label={uiText("Terminal")}>
         <div className="ua-inspector-terminal__header">
-          <span>Terminal</span>
-          <span className="ua-inspector__badge">MVP10</span>
+          <span>{uiText("Terminal")}</span>
+          <span className="ua-inspector__badge">{uiText("MVP10")}</span>
         </div>
         <div className="ua-inspector-terminal__blocked">
-          <p>Real terminal execution is disabled.</p>
+          <p>{uiText("Real terminal execution is disabled.")}</p>
           <p className="ua-inspector-terminal__blocked-hint">
-            Enable in Settings → Config → Terminal Execution.
-          </p>
+            {uiText("Enable in Settings → Config → Terminal Execution.")}{" "}</p>
           <p className="ua-inspector-terminal__blocked-hint">
-            Only allowlisted commands (typecheck, lint, test, git status/diff) are supported.
-          </p>
+            {uiText("Only allowlisted commands (typecheck, lint, test, git status/diff) are supported.")}{" "}</p>
         </div>
       </div>
     );
@@ -142,33 +142,32 @@ export function TerminalPanel() {
 
   if (stage === "rejected") {
     return (
-      <div className="ua-inspector-terminal" role="region" aria-label="Terminal proposal rejected">
+      <div className="ua-inspector-terminal" role="region" aria-label={uiText("Terminal proposal rejected")}>
         <div className="ua-inspector-terminal__header">
-          <span>Terminal</span>
-          <span className="ua-inspector__badge">MVP10</span>
+          <span>{uiText("Terminal")}</span>
+          <span className="ua-inspector__badge">{uiText("MVP10")}</span>
         </div>
         <div className="ua-inspector-terminal__body">
           <div className="ua-inspector-terminal__field">
-            <label>Status</label>
-            <span className="ua-inspector-terminal__status--rejected">Rejected</span>
+            <label>{uiText("Status")}</label>
+            <span className="ua-inspector-terminal__status--rejected">{uiText("Rejected")}</span>
           </div>
           {approvalState?.reason && (
             <div className="ua-inspector-terminal__field">
-              <label>Reason</label>
+              <label>{uiText("Reason")}</label>
               <span>{approvalState.reason}</span>
             </div>
           )}
           {approvalError && (
             <div className="ua-inspector-terminal__field">
-              <label>Error</label>
+              <label>{uiText("Error")}</label>
               <span className="ua-inspector-terminal__error">{approvalError}</span>
             </div>
           )}
         </div>
         <div className="ua-inspector-terminal__actions">
-          <button className="ua-btn ua-btn--secondary" type="button" onClick={handleReset} aria-label="Reset terminal">
-            Reset
-          </button>
+          <button className="ua-btn ua-btn--secondary" type="button" onClick={handleReset} aria-label={uiText("Reset terminal")}>
+            {uiText("Reset")}{" "}</button>
         </div>
       </div>
     );
@@ -178,34 +177,34 @@ export function TerminalPanel() {
     const isRunning = stage === "executing";
     const chunks = executionResult?.chunks ?? [];
     return (
-      <div className="ua-inspector-terminal" role="region" aria-label="Terminal execution">
+      <div className="ua-inspector-terminal" role="region" aria-label={uiText("Terminal execution")}>
         <div className="ua-inspector-terminal__header">
-          <span>Terminal</span>
-          <span className="ua-inspector__badge">MVP10</span>
+          <span>{uiText("Terminal")}</span>
+          <span className="ua-inspector__badge">{uiText("MVP10")}</span>
         </div>
         <div className="ua-inspector-terminal__body">
           <div className="ua-inspector-terminal__field">
-            <label>Status</label>
+            <label>{uiText("Status")}</label>
             <span className={`ua-inspector-terminal__status--${stage}`}>
-              {stage === "executing" ? "Running..." :
-               stage === "completed" ? "Completed" :
-               stage === "timed_out" ? "Timed out" :
-               stage === "cancelled" ? "Cancelled" :
-               "Failed"}
+              {stage === "executing" ? uiText("Running...") :
+               stage === "completed" ? uiText("Completed") :
+               stage === "timed_out" ? uiText("Timed out") :
+               stage === "cancelled" ? uiText("Cancelled") :
+               uiText("Failed")}
             </span>
           </div>
           {activeProposal && (
             <>
               <div className="ua-inspector-terminal__field">
-                <label>Proposal ID</label>
+                <label>{uiText("Proposal ID")}</label>
                 <code className="ua-text-mono">{activeProposal.id}</code>
               </div>
               <div className="ua-inspector-terminal__field">
-                <label>Command</label>
+                <label>{uiText("Command")}</label>
                 <code>{activeProposal.command}</code>
               </div>
               <div className="ua-inspector-terminal__field">
-                <label>Risk</label>
+                <label>{uiText("Risk")}</label>
                 <span className={getRiskClass(activeProposal.classification.risk)}>
                   {getRiskLabel(activeProposal.classification.risk)}
                 </span>
@@ -216,75 +215,69 @@ export function TerminalPanel() {
             <>
               {executionResult.exitState && (
                 <div className="ua-inspector-terminal__field">
-                  <label>Exit code</label>
+                  <label>{uiText("Exit code")}</label>
                   <span>{executionResult.exitState.code}</span>
                 </div>
               )}
               <div className="ua-inspector-terminal__field">
-                <label>Duration</label>
-                <span>{executionResult.exitState ? formatDuration(executionResult.exitState.durationMs) : "N/A"}</span>
+                <label>{uiText("Duration")}</label>
+                <span>{executionResult.exitState ? formatDuration(executionResult.exitState.durationMs) : uiText("N/A")}</span>
               </div>
               {executionResult.redactionSummary && (
                 <div className="ua-inspector-terminal__field">
-                  <label>Redactions</label>
+                  <label>{uiText("Redactions")}</label>
                   <span>
-                    {executionResult.redactionSummary.replacedSecrets} secrets,
-                    {" "}{executionResult.redactionSummary.replacedPaths} paths
-                  </span>
+                    {executionResult.redactionSummary.replacedSecrets} {uiText("secrets,")}{" "}{" "}{executionResult.redactionSummary.replacedPaths} {uiText("paths")}{" "}</span>
                 </div>
               )}
               {executionResult.outputTruncated && (
                 <div className="ua-inspector-terminal__field">
-                  <label>Truncation</label>
+                  <label>{uiText("Truncation")}</label>
                   <span>
-                    Output limited to {executionResult.totalLines} lines / {Math.round(executionResult.totalBytes / 1024)} KB
-                  </span>
+                    {uiText("Output limited to")}{" "}{executionResult.totalLines} {uiText("lines /")}{" "}{Math.round(executionResult.totalBytes / 1024)} {uiText("KB")}{" "}</span>
                 </div>
               )}
             </>
           )}
         </div>
         {chunks.length > 0 && (
-          <div className="ua-inspector-terminal__output" aria-label="Command output">
+          <div className="ua-inspector-terminal__output" aria-label={uiText("Command output")}>
             {chunks.map((chunk) => (
               <div key={chunk.index} className="ua-inspector-terminal__output-line" data-stream={chunk.stream}>
                 <span className="ua-inspector-terminal__output-stream">[{chunk.stream}]</span>
                 <span>{chunk.text}</span>
-                {chunk.truncated && <span className="ua-inspector-terminal__truncated">…truncated</span>}
+                {chunk.truncated && <span className="ua-inspector-terminal__truncated">{uiText("…truncated")}</span>}
               </div>
             ))}
           </div>
         )}
         <div className="ua-inspector-terminal__actions">
           {isRunning ? (
-            <button className="ua-btn ua-btn--danger" type="button" onClick={handleCancel} aria-label="Cancel execution">
-              Cancel
-            </button>
+            <button className="ua-btn ua-btn--danger" type="button" onClick={handleCancel} aria-label={uiText("Cancel execution")}>
+              {uiText("Cancel")}{" "}</button>
           ) : (
             <>
-              <button className="ua-btn ua-btn--primary" type="button" onClick={analyzeBuildOutputEvidence} aria-label="Analyze output">
-                Analyze output
-              </button>
-              <button className="ua-btn ua-btn--secondary" type="button" onClick={handleReset} aria-label="Clear terminal">
-                Clear
-              </button>
+              <button className="ua-btn ua-btn--primary" type="button" onClick={analyzeBuildOutputEvidence} aria-label={uiText("Analyze output")}>
+                {uiText("Analyze output")}{" "}</button>
+              <button className="ua-btn ua-btn--secondary" type="button" onClick={handleReset} aria-label={uiText("Clear terminal")}>
+                {uiText("Clear")}{" "}</button>
             </>
           )}
         </div>
         {buildAnalysis && (
-          <div className="ua-inspector-terminal__body" aria-label="Build failure analysis">
+          <div className="ua-inspector-terminal__body" aria-label={uiText("Build failure analysis")}>
             <div className="ua-inspector-terminal__field">
-              <label>Build diagnostics</label>
-              <span>{buildAnalysis.errorCount} errors, {buildAnalysis.warningCount} warnings</span>
+              <label>{uiText("Build diagnostics")}</label>
+              <span>{buildAnalysis.errorCount} {uiText("errors,")}{" "}{buildAnalysis.warningCount} {uiText("warnings")}</span>
             </div>
             {buildAnalysis.topIssues.slice(0, 3).map((issue) => (
               <div key={issue} className="ua-inspector-terminal__field">
-                <label>Issue</label>
+                <label>{uiText("Issue")}</label>
                 <span>{issue}</span>
               </div>
             ))}
             <div className="ua-inspector-terminal__field">
-              <label>Next checks</label>
+              <label>{uiText("Next checks")}</label>
               <span>{buildAnalysis.nextChecks.join(" ")}</span>
             </div>
           </div>
@@ -302,59 +295,59 @@ export function TerminalPanel() {
     const timeoutSeconds = Math.round(activeProposal.timeoutMs / 1000);
     const isApproved = stage === "approved";
     return (
-      <div className="ua-inspector-terminal" role="region" aria-label="Terminal proposal">
+      <div className="ua-inspector-terminal" role="region" aria-label={uiText("Terminal proposal")}>
         <div className="ua-inspector-terminal__header">
-          <span>Command Proposal</span>
-          <span className="ua-inspector__badge">MVP10</span>
+          <span>{uiText("Command Proposal")}</span>
+          <span className="ua-inspector__badge">{uiText("MVP10")}</span>
         </div>
         <div className="ua-inspector-terminal__body">
           <div className="ua-inspector-terminal__field">
-            <label>Status</label>
+            <label>{uiText("Status")}</label>
             <span className={`ua-inspector-terminal__status--${stage}`}>
-              {isApproved ? "Approved" : "Pending approval"}
+              {isApproved ? uiText("Approved") : uiText("Pending approval")}
             </span>
           </div>
           <div className="ua-inspector-terminal__field">
-            <label>Proposal ID</label>
+            <label>{uiText("Proposal ID")}</label>
             <code className="ua-text-mono">{activeProposal.id}</code>
           </div>
           <div className="ua-inspector-terminal__field">
-            <label>Command</label>
+            <label>{uiText("Command")}</label>
             <code>{activeProposal.command}</code>
           </div>
           <div className="ua-inspector-terminal__field">
-            <label>Risk</label>
+            <label>{uiText("Risk")}</label>
             <span className={riskClass}>
-              {riskLabel} &mdash; {classification.reason}
+              {riskLabel} {"—"}{" "}{classification.reason}
             </span>
           </div>
           <div className="ua-inspector-terminal__field">
-            <label>Working directory</label>
+            <label>{uiText("Working directory")}</label>
             <code>{activeProposal.cwd}</code>
           </div>
           <div className="ua-inspector-terminal__field">
-            <label>Expires</label>
+            <label>{uiText("Expires")}</label>
             <span>{formatExpiry(activeProposal.expiresAt)}</span>
           </div>
           <div className="ua-inspector-terminal__field">
-            <label>Timeout</label>
-            <span>{timeoutSeconds}s</span>
+            <label>{uiText("Timeout")}</label>
+            <span>{timeoutSeconds}{uiText("s")}</span>
           </div>
           <div className="ua-inspector-terminal__field">
-            <label>Output limit</label>
-            <span>{Math.round(activeProposal.outputLimitBytes / 1024)} KB / {activeProposal.outputLimitLines} lines</span>
+            <label>{uiText("Output limit")}</label>
+            <span>{Math.round(activeProposal.outputLimitBytes / 1024)} {uiText("KB /")}{" "}{activeProposal.outputLimitLines} {uiText("lines")}</span>
           </div>
           {token && (
             <div className="ua-inspector-terminal__field">
-              <label>Token</label>
+              <label>{uiText("Token")}</label>
               <span className="ua-inspector-terminal__token-status">
-                Issued &middot; expires in {formatExpiry(token.expiresAt)}
+                {uiText("Issued &middot; expires in")}{" "}{formatExpiry(token.expiresAt)}
               </span>
             </div>
           )}
           {approvalError && (
             <div className="ua-inspector-terminal__field">
-              <label>Error</label>
+              <label>{uiText("Error")}</label>
               <span className="ua-inspector-terminal__error">{approvalError}</span>
             </div>
           )}
@@ -367,24 +360,22 @@ export function TerminalPanel() {
                 type="button"
                 disabled={approveDisabled}
                 onClick={handleApprove}
-                aria-label={approveDisabled ? "Command not allowlisted" : "Approve and execute command"}
+                aria-label={approveDisabled ? uiText("Command not allowlisted") : uiText("Approve and execute command")}
               >
-                {approveDisabled ? "Blocked" : "Approve & Execute"}
+                {approveDisabled ? uiText("Blocked") : uiText("Approve & Execute")}
               </button>
               <button
                 className="ua-btn ua-btn--secondary"
                 type="button"
                 onClick={handleReject}
-                aria-label="Reject command proposal"
+                aria-label={uiText("Reject command proposal")}
               >
-                Reject
-              </button>
+                {uiText("Reject")}{" "}</button>
             </>
           )}
           {isApproved && (
-            <button className="ua-btn ua-btn--secondary" type="button" onClick={handleReset} aria-label="Reset terminal">
-              Reset
-            </button>
+            <button className="ua-btn ua-btn--secondary" type="button" onClick={handleReset} aria-label={uiText("Reset terminal")}>
+              {uiText("Reset")}{" "}</button>
           )}
         </div>
       </div>
@@ -392,27 +383,26 @@ export function TerminalPanel() {
   }
 
   return (
-    <div className="ua-inspector-terminal ua-inspector-terminal--idle" role="region" aria-label="Terminal">
+    <div className="ua-inspector-terminal ua-inspector-terminal--idle" role="region" aria-label={uiText("Terminal")}>
       <div className="ua-inspector-terminal__header">
-        <span>Terminal</span>
-        <span className="ua-inspector__badge">MVP10</span>
+        <span>{uiText("Terminal")}</span>
+        <span className="ua-inspector__badge">{uiText("MVP10")}</span>
       </div>
-      <p className="ua-inspector-terminal__empty">No active proposal</p>
+      <p className="ua-inspector-terminal__empty">{uiText("No active proposal")}</p>
       <form onSubmit={handleSubmitInput}>
         <div className="ua-inspector-terminal__field">
-          <label htmlFor="terminal-command-input">Command</label>
+          <label htmlFor="terminal-command-input">{uiText("Command")}</label>
           <input
             id="terminal-command-input"
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Enter a command..."
+            placeholder={uiText("Enter a command...")}
           />
         </div>
         <div className="ua-inspector-terminal__actions">
-          <button className="ua-btn ua-btn--primary" type="submit" aria-label="Propose command">
-            Propose
-          </button>
+          <button className="ua-btn ua-btn--primary" type="submit" aria-label={uiText("Propose command")}>
+            {uiText("Propose")}{" "}</button>
         </div>
       </form>
       <div className="ua-inspector-terminal__quick-actions">
@@ -422,7 +412,7 @@ export function TerminalPanel() {
             className="ua-btn ua-btn--secondary"
             type="button"
             onClick={() => handlePropose(action)}
-            aria-label={`Quick action: ${action}`}
+            aria-label={t("terminal.quickActionLabel",{action})}
           >
             {action}
           </button>

@@ -1,3 +1,4 @@
+import {supportsProviderModel} from "../provider/runtime-availability";
 import type { PermissionMode } from "@uagent/shared";
 import { DEFAULT_PROVIDERS, formatContextWindow } from "../provider/provider-data";
 import type { ProviderConfig, ProviderReasoningEffort } from "../types/provider";
@@ -82,6 +83,8 @@ export interface ComposerModelOption {
   networkMode?: string;
   hasSecret?: boolean;
   isFixture?: boolean;
+  runtimeSupported?: boolean;
+  reasoningSupported?: boolean;
 }
 
 export interface ComposerReasoningOption {
@@ -119,6 +122,8 @@ export function createComposerModelOptions(providers: ProviderConfig[]): Compose
         id: JSON.stringify([provider.providerId, model.id]),
         providerId: provider.providerId,
         modelId: model.id,
+        runtimeSupported: supportsProviderModel(provider,model.id),
+        reasoningSupported: model.supportsReasoning,
         label: model.label,
         provider: provider.displayName,
         contextWindow: formatContextWindow(model.contextWindow),

@@ -1,3 +1,7 @@
+import {ProviderSessionLifetime} from "../runtime/ProviderSessionLifetime";
+import {safeProviderSession} from "../runtime/safe-provider-session";
+import {OutboundRequestReview} from "../settings/pages/OutboundRequestReview";
+import { LocalWorkspaceBootstrap } from "../settings/pages/LocalWorkspacePanel";
 import { AppShell } from "../shell/AppShell";
 import { createDesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
 import { registerFixedAppRuntimeAdapter } from "../runtime/runtime-store";
@@ -7,7 +11,7 @@ let fixedAppRuntimeAdapter: ReturnType<typeof createDesktopRuntimeAdapter> | nul
 
 export function initializeFixedAppRuntimeAdapter() {
   if (!fixedAppRuntimeAdapter) {
-    fixedAppRuntimeAdapter = createDesktopRuntimeAdapter();
+    fixedAppRuntimeAdapter = createDesktopRuntimeAdapter({providerAdapter:safeProviderSession.adapter,providerEnabled:true});
     registerFixedAppRuntimeAdapter(fixedAppRuntimeAdapter);
   }
   return fixedAppRuntimeAdapter;
@@ -23,7 +27,10 @@ export default function App() {
   const runtimeAdapter = initializeFixedAppRuntimeAdapter();
   return (
     <UIProvider runtimeClient={runtimeAdapter}>
+      <ProviderSessionLifetime />
+      <LocalWorkspaceBootstrap />
       <AppShell />
+      <OutboundRequestReview />
     </UIProvider>
   );
 }

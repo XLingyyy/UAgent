@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { useAccessiblePopup } from "../hooks/useAccessiblePopup";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
@@ -32,6 +33,7 @@ function getDropdownLeft(triggerLeft: number) {
 }
 
 export function PermissionSelector({ value, onChange }: PermissionSelectorProps) {
+  const {text: uiText,t} = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [position, setPosition] = useState<DropdownPosition | null>(null);
@@ -114,7 +116,7 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
         ref={triggerRef}
         className={`ua-permission-selector__trigger ua-permission-selector__trigger--${current?.tone ?? "default"}`}
         type="button"
-        aria-label={`Permission mode: ${label}`}
+        aria-label={t("permissions.modeLabel",{mode:uiText(label)})}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         onClick={handleTriggerClick}
@@ -124,7 +126,7 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
             {iconMap[value] ?? ""}
           </span>
         )}
-        <span className="ua-permission-selector__trigger-label">{label}</span>
+        <span className="ua-permission-selector__trigger-label">{uiText(label)}</span>
         <span className="ua-permission-selector__chevron" aria-hidden="true">
           {isOpen ? "\u25B4" : "\u25BE"}
         </span>
@@ -136,7 +138,7 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
           <div
             className="ua-permission-selector__dropdown ua-motion-layer"
             role="listbox"
-            aria-label="Permission mode"
+            aria-label={uiText("Permission mode")}
             data-motion="layer"
             style={{
               position: "fixed",
@@ -147,9 +149,7 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
             {isConfirming ? (
               <div className="ua-permission-selector__confirmation">
                 <p className="ua-permission-selector__confirmation-text">
-                  MVP6 mock only. No runtime permission is changed. No filesystem, network, UE/MCP,
-                  or command execution is enabled.
-                </p>
+                  {uiText("MVP6 mock only. No runtime permission is changed. No filesystem, network, UE/MCP, or command execution is enabled.")}{" "}</p>
                 <div className="ua-permission-selector__confirmation-actions">
                   <button
                     className="ua-permission-selector__confirm-btn"
@@ -159,8 +159,7 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
                       close();
                     }}
                   >
-                    Confirm mock mode
-                  </button>
+                    {uiText("Confirm mock mode")}{" "}</button>
                   <button
                     className="ua-permission-selector__cancel-btn"
                     type="button"
@@ -168,8 +167,7 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
                       setIsConfirming(false);
                     }}
                   >
-                    Cancel
-                  </button>
+                    {uiText("Cancel")}{" "}</button>
                 </div>
               </div>
             ) : (
@@ -193,10 +191,10 @@ export function PermissionSelector({ value, onChange }: PermissionSelectorProps)
                       <span
                         className={`ua-permission-selector__item-label ua-permission-selector__item-label--${option.tone}`}
                       >
-                        {option.label}
+                        {uiText(option.label ?? "")}
                       </span>
                       <span className="ua-permission-selector__item-desc">
-                        {option.description}
+                        {uiText(option.description ?? "")}
                       </span>
                     </span>
                   </div>

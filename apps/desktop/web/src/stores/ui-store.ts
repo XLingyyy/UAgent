@@ -1,3 +1,7 @@
+import {attachmentStore} from "../runtime/attachment-store";
+import {conversationTasks,completedConversationHistory,conversationKey} from "../runtime/conversation-context";
+import {safeProviderSession} from "../runtime/safe-provider-session";
+import type { WorkspaceConfig } from "../runtime/local-workspace-store";
 import { createRequestGeneration } from "./request-generation";
 import { FIXTURES_ENABLED, ACCEPTANCE_ENABLED } from "../runtime/build-capabilities";
 import { createContext, createElement, useContext, useEffect, useMemo, type ReactNode } from "react";
@@ -27,7 +31,7 @@ import {
   type Mvp15McpAssetToolDescriptor,
   type Mvp15McpAssetToolInventory,
 } from "@uagent/runtime";
-import type { ChangeOperationV2, ProjectDiagnostic } from "@uagent/shared";
+import type { ChangeOperationV2, ProjectDiagnostic, ProjectProfile } from "@uagent/shared";
 import type { AssetMutationDraftOperation } from "@uagent/runtime";
 import { createNativeProjectAdapter } from "../runtime/project-native-adapter";
 import { getDefaultModelSelection } from "../composer/composer-data";
@@ -527,6 +531,8 @@ async function callMvp15ToolSafely(
 }
 
 interface UIStoreBundle {
+  providerProposals: ReturnType<NonNullable<DesktopRuntimeAdapter["getProviderProposals"]>> | undefined;
+  workspacePersistence: { capture(): WorkspaceConfig; restore(config: WorkspaceConfig, active?: () => boolean): Promise<void> };
   layoutStore: SliceStore<LayoutStoreState>;
   settingsStore: SliceStore<SettingsShellState>;
   projectStore: SliceStore<ProjectStoreState>;
@@ -718,6 +724,7 @@ function createUIStateBundle(
   const projectAdapter = createNativeProjectAdapter();
   const projectRequests = createRequestGeneration();
   let submissionPending = false;
+  let submissionRoutingCurrent: (() => boolean) | null = null;
   let assetOperationPending = false;
   let assetOperationCurrent: (() => boolean) | null = null;
   const isCurrentAssetOperation = () => assetOperationCurrent?.() ?? true;
@@ -726,6 +733,11 @@ function createUIStateBundle(
   const layoutStore = createSliceStore(createInitialLayoutState(initialState));
   const settingsStore = createSliceStore(createInitialSettingsState(initialState));
   const projectStore = createSliceStore(createInitialProjectState(initialState));
+  const syncProviderProject=()=>{
+    const state=projectStore.getState();const project=state.registeredProjects.find(p=>p.id===state.activeProjectId);
+    runtimeClient.setProviderProjectContext?.({projectId:state.activeProjectId,rootRef:project?.rootRef??null,trusted:project?.trustState==="trusted"});
+  };
+  projectStore.subscribe(syncProviderProject);syncProviderProject();
   const threadStore = createSliceStore(createInitialThreadState(initialState));
   const composerStore = createSliceStore(createInitialComposerState(initialState, providerState));
   const providerStore = createSliceStore(providerState);
@@ -861,6 +873,10 @@ function createUIStateBundle(
   let mvp15RunCounter = 0;
   let runningGeneration = 0;
   runtimeClient.subscribe((snapshot) => {
+    const active = snapshot.activeTaskId ? snapshot.tasksById[snapshot.activeTaskId] : null;
+    if (submissionRoutingCurrent?.() && active && active.draft.projectId === projectStore.getState().activeProjectId) {
+      threadStore.setState({ activeThreadId: active.id });
+    }
     runtimeStore.setState((previousState) => ({
       ...previousState,
       ...snapshot,
@@ -1272,10 +1288,13 @@ function createUIStateBundle(
   };
 
   const threadActions: ThreadStoreActions = {
-    setActiveThread: (threadId) =>
-      threadStore.setState((previousState) =>
-        previousState.activeThreadId === threadId ? previousState : { activeThreadId: threadId },
-      ),
+    setActiveThread: (threadId) => {
+      if(threadStore.getState().activeThreadId===threadId)return;
+      const selected=threadId?runtimeStore.getState().tasksById[threadId]:null;
+      if(selected&&selected.draft.projectId!==projectStore.getState().activeProjectId)return;
+      if(submissionPending){projectRequests.invalidate();const id=runtimeStore.getState().activeTaskId;if(id)void runtimeClient.cancelTask(id).catch(()=>undefined);}
+      threadStore.setState({activeThreadId:threadId});
+    },
   };
 
   const composerActions: ComposerStoreActions = {
@@ -1310,11 +1329,15 @@ function createUIStateBundle(
       submissionPending = true;
       const originalInput = composerStore.getState().input;
       const isCurrent = projectRequests.begin("submit");
+      submissionRoutingCurrent = isCurrent;
       composerStore.setState((previous) => ({ ...previous, submitting: true, submitError: null }));
       try {
-        const record = await runtimeClient.submitTask(draft);
+        const snapshot=runtimeStore.getState();
+        const previous=conversationTasks(snapshot.tasksById,threadStore.getState().activeThreadId,draft.projectId);
+        const history=completedConversationHistory(previous.filter(task=>task.draft.providerId===draft.providerId&&task.draft.modelId===draft.modelId),snapshot.eventsByTaskId);
+        const record = await runtimeClient.submitTask({...draft,conversationId:previous.length?conversationKey(previous[0]):crypto.randomUUID(),conversationHistory:history,historyEligible:attachmentStore.selected(draft.projectId).length===0});
         if (isCurrent()) {
-          composerStore.setState((previous) => ({ ...previous, input: previous.input === originalInput ? "" : previous.input }));
+          composerStore.setState((previous) => ({ ...previous, input: record.state !== "cancelled" && previous.input === originalInput ? "" : previous.input }));
           threadStore.setState({ activeThreadId: record.id });
           layoutStore.setState((previous) => ({ ...previous, sidebar: { ...previous.sidebar, activeNav: "workspace" } }));
         }
@@ -1324,6 +1347,7 @@ function createUIStateBundle(
         throw new Error("task_submission_failed");
       } finally {
         submissionPending = false;
+        submissionRoutingCurrent = null;
         composerStore.setState((previous) => ({ ...previous, submitting: false }));
       }
     },
@@ -3118,6 +3142,10 @@ function createUIStateBundle(
       if (!nextProvider.providerId.trim() || new Set(nextProvider.models.map((model) => model.id)).size !== nextProvider.models.length) {
         throw new Error("invalid_provider_model_identity");
       }
+      if(nextProvider.providerId==="deepseek"){
+        safeProviderSession.close("revoked");
+        if(nextProvider.enabled&&nextProvider.networkMode==="live")safeProviderSession.enable();else safeProviderSession.disable();
+      }
       const existingIndex = previousProviderState.providers.findIndex(
         (provider) => provider.providerId === nextProvider.providerId,
       );
@@ -3140,6 +3168,7 @@ function createUIStateBundle(
       syncComposerSelection(previousProviderState, nextProviderState);
     },
     deleteProvider: (providerId) => {
+      if(providerId==="deepseek")safeProviderSession.disable();
       const previousProviderState = providerStore.getState();
       const providers = previousProviderState.providers.filter(
         (provider) => provider.providerId !== providerId,
@@ -3674,7 +3703,36 @@ function createUIStateBundle(
     uiReadinessReason: mvp15dUiReadinessReason,
   };
 
+  const syncProviderContext = () => { const c=composerStore.getState(),id=threadStore.getState().activeThreadId,task=id?runtimeStore.getState().tasksById[id]:null; safeProviderSession.updateContext(projectStore.getState().activeProjectId,c.input,c.selectedModelId,task?conversationKey(task):""); };
+  projectStore.subscribe(syncProviderContext);
+  composerStore.subscribe(syncProviderContext);
+  threadStore.subscribe(syncProviderContext);
+  runtimeStore.subscribe(syncProviderContext);
+  syncProviderContext();
+
+  const workspacePersistence = {
+    capture(): WorkspaceConfig {
+      const project=projectStore.getState();
+      const roots=project.registeredProjects.map(p=>({id:p.id,root:projectAdapter.resolveRawRoot(p.id,p.rootRef)}));
+      return {schemaVersion:1,theme:layoutStore.getState().theme,projectRoots:roots.map(p=>p.root),selectedProjectRoot:roots.find(p=>p.id===project.activeProjectId)?.root??null,deepseekConfigured:providerStore.getState().providers.some(p=>p.providerId==="deepseek")};
+    },
+    async restore(config: WorkspaceConfig, active:()=>boolean=()=>true) {
+      const current=projectRequests.begin("local-workspace-restore");
+      const initialProject=projectStore.getState(),initialComposer=composerStore.getState();
+      const restored:Array<{root:string;project:ProjectProfile}>=[];
+      for(const root of config.projectRoots){const project=await projectAdapter.addProject(root);if(!active()||!current())return;restored.push({root,project:{...project,trustState:"untrusted" as const}});}
+      if(!active()||!current()||projectStore.getState()!==initialProject||composerStore.getState()!==initialComposer)return;
+      const selected=restored.find(p=>p.root===config.selectedProjectRoot)?.project.id??null;
+      projectActions.setActiveProject(null);
+      projectActions.setActiveProject(selected);
+      projectStore.setState(previous=>({...previous,registeredProjects:restored.map(p=>p.project),activeProjectId:selected}));
+      layoutActions.setTheme(config.theme);
+      if(config.deepseekConfigured) providerActions.saveProvider({providerId:"deepseek",displayName:"DeepSeek",baseUrl:"https://api.deepseek.com",wireApi:"openai_compatible",authMode:"env_key",models:[{id:"deepseek-flash",label:"DeepSeek Flash",contextWindow:1000000,supportsReasoning:false}],defaultModel:"deepseek-flash",enabled:true,networkMode:"disabled"});
+    },
+  };
   return {
+    providerProposals:runtimeClient.getProviderProposals?.(),
+    workspacePersistence,
     layoutStore,
     settingsStore,
     projectStore,
@@ -3880,3 +3938,7 @@ export function useUI(): UIContextValue {
 }
 
 export { createDefaultComposerState };
+
+export function useWorkspacePersistenceActions() { return useUIStoreBundle().workspacePersistence; }
+
+export function useProviderProposalService(){ return useUIStoreBundle().providerProposals; }

@@ -11,6 +11,7 @@ import { createProviderRuntimeError, normalizeProviderError } from "./provider-e
 export interface ProviderExecutionOptions {
   signal?: AbortSignal;
   timeoutTicks?: number;
+  onEvent?: (event: ProviderRuntimeEvent) => void;
 }
 
 export interface ProviderCompleteResult {
@@ -30,23 +31,26 @@ export async function runProviderComplete(
   request: ProviderRuntimeRequest,
   options: ProviderExecutionOptions = {},
 ): Promise<ProviderCompleteResult> {
-  const events: ProviderRuntimeEvent[] = [startedEvent(request)];
+  const events: ProviderRuntimeEvent[] = [];
+  const publish = (...next: ProviderRuntimeEvent[]) => { events.push(...next); next.forEach(event => options.onEvent?.(event)); };
+  publish(startedEvent(request));
   if (isTimeout(options.timeoutTicks)) {
-    events.push(timeoutFailedEvent(request, adapter.id));
+    publish(timeoutFailedEvent(request, adapter.id));
     return { response: emptyCancelledResponse(request), events };
   }
   if (options.signal?.aborted) {
-    events.push(cancelledEvent(request));
+    publish(cancelledEvent(request));
     return { response: emptyCancelledResponse(request), events };
   }
 
   try {
-    const response = await adapter.complete(request);
-    events.push(usageEvent(request, response.usage));
-    events.push({ type: "provider_request_completed", requestId: request.id, providerId: request.providerId, response });
+    const response = await adapter.complete(request, { signal: options.signal });
+    if (options.signal?.aborted) { publish(cancelledEvent(request)); return { response: emptyCancelledResponse(request), events }; }
+    publish(usageEvent(request, response.usage));
+    publish({ type: "provider_request_completed", requestId: request.id, providerId: request.providerId, response });
     return { response, events };
   } catch (error) {
-    events.push(failedEvent(request, adapter.id, error));
+    publish(options.signal?.aborted ? cancelledEvent(request) : failedEvent(request, adapter.id, error));
     return { response: emptyCancelledResponse(request), events };
   }
 }
@@ -56,17 +60,19 @@ export async function runProviderStream(
   request: ProviderRuntimeRequest,
   options: ProviderExecutionOptions = {},
 ): Promise<ProviderStreamResult> {
-  const events: ProviderRuntimeEvent[] = [startedEvent(request)];
+  const events: ProviderRuntimeEvent[] = [];
+  const publish = (...next: ProviderRuntimeEvent[]) => { events.push(...next); next.forEach(event => options.onEvent?.(event)); };
+  publish(startedEvent(request));
   if (isTimeout(options.timeoutTicks)) {
-    events.push(timeoutFailedEvent(request, adapter.id));
+    publish(timeoutFailedEvent(request, adapter.id));
     return { text: "", chunks: [], events };
   }
   if (options.signal?.aborted) {
-    events.push(cancelledEvent(request));
+    publish(cancelledEvent(request));
     return { text: "", chunks: [], events };
   }
   if (!adapter.stream) {
-    events.push(failedEvent(request, adapter.id, { code: "malformed_response", message: "Provider does not support streaming." }));
+    publish(failedEvent(request, adapter.id, { code: "malformed_response", message: "Provider does not support streaming." }));
     return { text: "", chunks: [], events };
   }
 
@@ -74,33 +80,39 @@ export async function runProviderStream(
   let text = "";
   let started = false;
   let chunkCount = 0;
+  let measuredUsage: ProviderUsage | undefined;
+  let finishReason: "stop" | "length" = "stop";
 
   try {
-    for await (const chunk of adapter.stream(request)) {
+    for await (const chunk of adapter.stream(request, { signal: options.signal })) {
       if (options.signal?.aborted) {
-        events.push(cancelledEvent(request));
+        publish(cancelledEvent(request));
         return { text, chunks, events };
       }
       if (isChunkBudgetExhausted(chunkCount, options.timeoutTicks)) {
-        events.push(timeoutFailedEvent(request, adapter.id));
+        publish(timeoutFailedEvent(request, adapter.id));
         return { text, chunks, events };
       }
       if (!started) {
-        events.push({ type: "provider_stream_started", requestId: request.id, providerId: request.providerId });
+        publish({ type: "provider_stream_started", requestId: request.id, providerId: request.providerId });
         started = true;
       }
+      if (chunk.usage) measuredUsage = chunk.usage;
+      if (chunk.finishReason) finishReason = chunk.finishReason;
       chunks.push(chunk);
       text += chunk.delta;
       chunkCount += 1;
-      events.push({ type: "provider_stream_delta", requestId: request.id, providerId: request.providerId, chunk });
+      publish({ type: "provider_stream_delta", requestId: request.id, providerId: request.providerId, chunk });
     }
     if (!started) {
-      events.push({ type: "provider_stream_started", requestId: request.id, providerId: request.providerId });
+      publish({ type: "provider_stream_started", requestId: request.id, providerId: request.providerId });
     }
-    const usage = usageFromText(request, text);
-    events.push({ type: "provider_stream_completed", requestId: request.id, providerId: request.providerId, text });
-    events.push(usageEvent(request, usage));
-    events.push({
+    if (options.signal?.aborted) { publish(cancelledEvent(request)); return { text, chunks, events }; }
+    const usage = measuredUsage ?? (adapter.getCapabilities().isMock ? usageFromText(request, text) : undefined);
+    if (!usage) throw createProviderRuntimeError(adapter.id, "malformed_response", "Measured provider usage is required.");
+    publish({ type: "provider_stream_completed", requestId: request.id, providerId: request.providerId, text });
+    publish(usageEvent(request, usage));
+    publish({
       type: "provider_request_completed",
       requestId: request.id,
       providerId: request.providerId,
@@ -110,14 +122,14 @@ export async function runProviderStream(
         providerId: request.providerId,
         modelId: request.modelId,
         text,
-        finishReason: "stop",
+        finishReason,
         usage,
         createdAt: 1_000,
       },
     });
     return { text, chunks, usage, events };
   } catch (error) {
-    events.push(failedEvent(request, adapter.id, error));
+    publish(options.signal?.aborted ? cancelledEvent(request) : failedEvent(request, adapter.id, error));
     return { text, chunks, events };
   }
 }

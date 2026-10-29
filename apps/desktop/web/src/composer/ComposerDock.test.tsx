@@ -124,15 +124,15 @@ describe("ComposerDock", () => {
     expect(textarea.value).toBe("");
   });
 
-  it("shows staged attach menu entries through ComingSoonGate", () => {
+  it("shows local text context and gates unsupported capture entries", () => {
     renderDock();
 
     const addBtn = screen.getByLabelText("Open attach menu") as HTMLButtonElement;
     fireEvent.click(addBtn);
 
     const menu = screen.getByRole("menu", { name: "Attach context" });
-    expect(within(menu).getByText("File")).toBeTruthy();
-    expect(within(menu).getByText("Asset")).toBeTruthy();
+    expect(within(menu).getByLabelText("Local text attachment")).toBeTruthy();
+    expect(within(menu).getByText(/asset references can be selected from Asset Search/)).toBeTruthy();
     expect(within(menu).getByText("Screenshot")).toBeTruthy();
     expect(within(menu).getByText("Context Pack")).toBeTruthy();
     for (const item of within(menu).getAllByRole("menuitem")) {

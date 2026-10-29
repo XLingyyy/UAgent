@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import {
   isTerminalTaskState,
   type AgentPlan,
@@ -21,7 +22,7 @@ const CAPABILITY_KINDS = ["Files", "Terminal", "Browser", "Screenshot", "Provide
 function mcpRuntimeLabel(status: string, capabilities: unknown): string {
   if (status === "connected" && capabilities) return "MCP read-only";
   if (status === "connected") return "Connected · discovery required";
-  return "Mock only";
+  return "No live connection";
 }
 
 function payloadRecord(event: TaskEvent): Record<string, unknown> | null {
@@ -74,6 +75,7 @@ function deriveCapabilityStatus(kind: string, events: TaskEvent[]): { label: str
 }
 
 export function RuntimePanel() {
+  const {text: uiText,t} = useI18n();
   const runtime = useOptionalRuntimeStore((state) => state);
   const runtimeActions = useOptionalRuntimeActions();
   const activeTaskId = runtime?.activeTaskId ?? null;
@@ -97,37 +99,36 @@ export function RuntimePanel() {
     kind,
     status: deriveCapabilityStatus(kind, events),
   }));
-  const fullSummary = capabilityStatuses.map((cs) => `${cs.kind} ${cs.status.summary}`).join(", ");
+  const fullSummary = capabilityStatuses.map((cs) => `${uiText(cs.kind)} ${cs.status.summary==="blocked"?uiText("Blocked"):cs.status.summary}`).join(", ");
 
   const projectState = useProjectStore((state) => state);
   const nativeStatuses = projectState.capabilityStatus;
 
   return (
-    <section className="ua-utility-placeholder" aria-label="Runtime panel">
+    <section className="ua-utility-placeholder" aria-label={uiText("Runtime panel")}>
       <div className="ua-utility-placeholder__header">
         <div className="ua-utility-placeholder__title-group">
           <span className="ua-utility-placeholder__eyebrow">
-            {mcpRuntimeLabel(runtime?.mcp.status ?? "disconnected", runtime?.mcp.capabilities)}
+            {uiText(mcpRuntimeLabel(runtime?.mcp.status ?? "disconnected", runtime?.mcp.capabilities))}
           </span>
-          <h3 className="ua-utility-placeholder__title">Runtime context</h3>
+          <h3 className="ua-utility-placeholder__title">{uiText("Runtime context")}</h3>
         </div>
-        <span className="ua-utility-placeholder__state">{runtime?.status ?? "ready"}</span>
+        <span className="ua-utility-placeholder__state">{runtime?.status ?? uiText("ready")}</span>
       </div>
 
       <ul className="ua-utility-placeholder__list">
-        <li className="ua-utility-placeholder__item" aria-label="MVP7 capability dashboard">
-          Capability bridge: {fullSummary}
+        <li className="ua-utility-placeholder__item" aria-label={uiText("MVP7 capability dashboard")}>
+          {uiText("Capability bridge:")}{" "}{fullSummary}
         </li>
         {capabilityStatuses.map(({ kind, status }) => (
             <li key={kind} className="ua-utility-placeholder__item">
-              <span>{kind}</span>
-              <span>{status.label}</span>
+              <span>{uiText(kind)}</span>
+              <span>{uiText(status.label)}</span>
             </li>
         ))}
         {nativeStatuses.length > 0 && (
-          <li className="ua-utility-placeholder__item" aria-label="Native FS bridge status">
-            Native FS bridge: {projectState.nativeSource} · {nativeStatuses.length} capabilities
-          </li>
+          <li className="ua-utility-placeholder__item" aria-label={uiText("Native FS bridge status")}>
+            {uiText("Native FS bridge:")}{" "}{projectState.nativeSource} · {nativeStatuses.length} {uiText("capabilities")}{" "}</li>
         )}
         {nativeStatuses.map((cap) => (
           <li key={`native-${cap.kind}`} className="ua-utility-placeholder__item">
@@ -136,42 +137,42 @@ export function RuntimePanel() {
           </li>
         ))}
         <li className="ua-utility-placeholder__item">
-          Task: {activeTask?.title ?? "No active runtime task"}
+          {uiText("Task:")}{" "}{activeTask?.title ?? uiText("No active runtime task")}
         </li>
         <li className="ua-utility-placeholder__item">
-          State: {activeTask?.state ?? "idle"}
+          {uiText("State:")}{" "}{activeTask?.state ?? uiText("idle")}
         </li>
-        <li className="ua-utility-placeholder__item">{visibleEventCount} events</li>
+        <li className="ua-utility-placeholder__item">{visibleEventCount} {uiText("events")}</li>
         <li className="ua-utility-placeholder__item">
-          Plan: {plan?.goal ?? "No active Agent plan"}
-        </li>
-        <li className="ua-utility-placeholder__item">
-          Current step: {currentStep?.title ?? "None"}
-        </li>
-        <li className="ua-utility-placeholder__item">Completed steps: {completedSteps}</li>
-        <li className="ua-utility-placeholder__item">Observations: {observations}</li>
-        <li className="ua-utility-placeholder__item">Evidence: {evidence}</li>
-        <li className="ua-utility-placeholder__item">Blocked: {blocked}</li>
-        <li className="ua-utility-placeholder__item">
-          Provider requests: {providerRequests}
+          {uiText("Plan:")}{" "}{plan?.goal ?? uiText("No active Agent plan")}
         </li>
         <li className="ua-utility-placeholder__item">
-          Provider stream chunks: {providerChunks}
+          {uiText("Current step:")}{" "}{currentStep?.title ?? uiText("None")}
+        </li>
+        <li className="ua-utility-placeholder__item">{uiText("Completed steps:")}{" "}{completedSteps}</li>
+        <li className="ua-utility-placeholder__item">{uiText("Observations:")}{" "}{observations}</li>
+        <li className="ua-utility-placeholder__item">{uiText("Evidence:")}{" "}{evidence}</li>
+        <li className="ua-utility-placeholder__item">{uiText("Blocked:")}{" "}{blocked}</li>
+        <li className="ua-utility-placeholder__item">
+          {uiText("Provider requests:")}{" "}{providerRequests}
         </li>
         <li className="ua-utility-placeholder__item">
-          Provider failures: {providerFailures}
+          {uiText("Provider stream chunks:")}{" "}{providerChunks}
         </li>
         <li className="ua-utility-placeholder__item">
-          {runtime?.mockOnlyWarning ?? "Local planning / no provider call"}
+          {uiText("Provider failures:")}{" "}{providerFailures}
         </li>
         <li className="ua-utility-placeholder__item">
-          MCP: {runtime?.mcp.status ?? "disconnected"}
+          {runtime?.mockOnlyWarning ?? uiText("Local planning / no provider call")}
         </li>
         <li className="ua-utility-placeholder__item">
-          Discovery:{" "}
+          {uiText("MCP:")}{" "}{runtime?.mcp.status ?? uiText("disconnected")}
+        </li>
+        <li className="ua-utility-placeholder__item">
+          {uiText("Discovery:")}{" "}
           {runtime?.mcp.capabilities
-            ? `${runtime.mcp.capabilities.tools} tools / ${runtime.mcp.capabilities.resources} resources / ${runtime.mcp.capabilities.prompts} prompts`
-            : "none"}
+            ? t("mcp.discoverySummary",{tools:runtime.mcp.capabilities.tools,resources:runtime.mcp.capabilities.resources,prompts:runtime.mcp.capabilities.prompts})
+            : uiText("none")}
         </li>
         {events.slice(-3).map((event) => (
           <li key={event.id} className="ua-utility-placeholder__item">
@@ -186,7 +187,7 @@ export function RuntimePanel() {
             .join("");
           return (
             <li className="ua-utility-placeholder__item ua-utility-placeholder__item--preview">
-              Stream preview: {streamText.slice(0, 100)}{streamText.length > 100 ? "..." : ""}
+              {uiText("Stream preview:")}{" "}{streamText.slice(0, 100)}{streamText.length > 100 ? "..." : ""}
             </li>
           );
         })()}
@@ -202,8 +203,7 @@ export function RuntimePanel() {
           }
         }}
       >
-        Cancel mock task
-      </button>
+        {uiText("Cancel mock task")}{" "}</button>
     </section>
   );
 }

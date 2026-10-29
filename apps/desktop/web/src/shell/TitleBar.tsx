@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useLayoutActions, useLayoutStore, useSettingsStore, useProjectStore, useRuntimeStore } from "../stores/ui-store";
@@ -89,6 +90,7 @@ async function toggleMaximizeWindow(): Promise<void> {
  * it renders a static bar so the layout is visible.
  */
 export function TitleBar({ title = "UAgent" }: TitleBarProps) {
+  const {text: uiText,t} = useI18n();
   const settingsOpen = useSettingsStore((state) => state.open);
   const inspectorOpen = useLayoutStore((state) => state.inspector.open);
   const mcpStatus = useRuntimeStore((state) => state.mcp.status);
@@ -96,7 +98,7 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
   const editorCapabilityEnabled = useRuntimeStore((state) => Boolean(state.mvp14?.capability.enabled));
   const nativeSource = useProjectStore((state) => state.nativeSource);
   const { toggleInspector } = useLayoutActions();
-  const toolsLabel = inspectorOpen ? "Close utility drawer" : "Open utility drawer";
+  const toolsLabel = t(inspectorOpen ? "nav.closeTools" : "nav.openTools");
 
   // Collapse the editor observation status into a short, readable label for the
   // titlebar pill. The underlying status/reason strings (e.g.
@@ -111,8 +113,8 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
   })();
 
   // Track maximized state so the restore/maximize button label swaps. In the
-  // browser/Vitest preview this stays false (no IPC), so the button reads as
-  // "Maximize window". Re-checked after a maximize/restore click so the label
+  // browser/Vitest preview this stays unknown (no IPC), so the button reads as
+  // "Window state unavailable". Re-checked after a maximize/restore click so the label
   // reflects the new state in the real desktop shell.
   const [isMaximized, setIsMaximized] = useState<boolean | null>(null);
   const [windowBusy, setWindowBusy] = useState(false);
@@ -136,7 +138,7 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
       window.removeEventListener("focus", refreshWindow);
     };
   }, [refreshWindow]);
-  const maximizeAriaLabel = isMaximized === null ? "Window state unavailable" : isMaximized ? "Restore window" : "Maximize window";
+  const maximizeAriaLabel = t(isMaximized === null ? "shell.windowUnavailable" : isMaximized ? "shell.restore" : "shell.maximize");
   const handleMinimize = () => { void minimizeWindow(); };
   const handleToggleMaximize = async () => {
     if (busy.current) return;
@@ -150,82 +152,85 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
     void closeWindow();
   };
 
+  // Tauri 2.11's deep region covers all non-interactive descendants, including
+  // right-side gaps and status text. Buttons explicitly opt out. Leave dragging
+  // and double-click maximization to Tauri's injected native window handler.
   return (
-    <header className="ua-titlebar" data-tauri-drag-region="">
-      <div className="ua-titlebar__left" data-tauri-drag-region>
-        <span className="ua-titlebar__brand" data-tauri-drag-region>
+    <header className="ua-titlebar" data-tauri-drag-region="deep">
+      <div className="ua-titlebar__left">
+        <span className="ua-titlebar__brand">
           {title}
         </span>
-        <span className="ua-titlebar__crumb" data-tauri-drag-region>
-          Project Workspace Shell
-        </span>
+        <span className="ua-titlebar__crumb">
+          {uiText("Unreal workspace")}{" "}</span>
       </div>
-      <div className="ua-titlebar__center" data-tauri-drag-region>
-        <span className="ua-titlebar__drag-hint" data-tauri-drag-region>Local-first agent workspace</span>
+      <div className="ua-titlebar__center">
+        <span className="ua-titlebar__drag-hint"></span>
       </div>
       <div className="ua-titlebar__right">
-        <div className="ua-titlebar__status" aria-label="Connection summary">
-          <span className="ua-titlebar__status-pill ua-titlebar__status-pill--key" title="Deterministic planning; provider analysis does not authorize execution">
-            {FIXTURES_ENABLED ? "Fixture" : "Local planner"}
+        <div className="ua-titlebar__status" aria-label={uiText("Connection summary")}>
+          <span className="ua-titlebar__status-pill ua-titlebar__status-pill--key" title={uiText("Deterministic planning; provider analysis does not authorize execution")}>
+            {FIXTURES_ENABLED ? uiText("Fixture") : uiText("Local planner")}
           </span>
           <span
             className="ua-titlebar__status-pill ua-titlebar__status-pill--key"
-            title={`MCP ${mcpStatus}: read-only tools only; tile-mutating MCP calls are blocked.`}
+            title={t("shell.mcpPolicyHint",{status:uiText(mcpStatus === "disconnected"?"Not connected":mcpStatus==="connected"?"Connected":mcpStatus)})}
           >
-            MCP: {mcpStatus}
+            {uiText("MCP:")}{" "}{uiText(mcpStatus === "disconnected" ? "Not connected" : mcpStatus === "connected" ? "Connected" : mcpStatus)}
           </span>
           <span
             className="ua-titlebar__status-pill ua-titlebar__status-pill--p4"
-            title="No provider connectivity has been verified by this interface."
+            title={uiText("No provider connectivity has been verified by this interface.")}
           >
-            Provider: off
-          </span>
+            {uiText("Provider: unverified")}{" "}</span>
           <span
             className="ua-titlebar__status-pill ua-titlebar__status-pill--p4"
-            title="Network access depends on the explicitly connected MCP endpoint."
+            title={uiText("Network access depends on the explicitly connected MCP endpoint.")}
           >
-            Explicit connections
-          </span>
+            {uiText("Explicit connections")}{" "}</span>
           <span
             className={`ua-titlebar__status-pill ua-titlebar__status-pill--p3`}
-            title={nativeSource === "native" ? "Native filesystem bridge: read-only" : nativeSource === "fixture" ? "Native filesystem bridge: fixture fallback" : "Native filesystem bridge: offline"}
+            title={nativeSource === "native" ? uiText("Native filesystem bridge: read-only") : nativeSource === "fixture" ? uiText("Native filesystem bridge: fixture fallback") : uiText("Native filesystem bridge: offline")}
           >
-            {nativeSource === "native" ? "Native FS RO" : nativeSource === "fixture" ? "Native FS fix" : "Native FS off"}
+            {nativeSource === "native" ? uiText("Native FS RO") : nativeSource === "fixture" ? uiText("Native FS fix") : uiText("Native FS off")}
           </span>
           <span
             className="ua-titlebar__status-pill ua-titlebar__status-pill--p2"
-            title={`UE Editor: ${editorStatus}`}
+            title={t("shell.editorStatusLabel",{status:editorStatus})}
           >
-            UE: {ueShortLabel}
+            {uiText("UE:")}{" "}{ueShortLabel}
           </span>
         </div>
         <div className="ua-titlebar__controls">
           {!settingsOpen && <button
+            data-tauri-drag-region="false"
             className="ua-titlebar__btn"
             onClick={toggleInspector}
             aria-label={toolsLabel}
             aria-pressed={inspectorOpen}
             type="button"
           >
-            <span aria-hidden>Tools</span>
+            <span aria-hidden>{uiText("Tools")}</span>
           </button>}
-          <span className="ua-titlebar__badge">MVP15 workspace</span>
-          <span className="ua-titlebar__badge ua-titlebar__badge--subtle">{nativeSource === "native" ? "Native bridge" : "Web preview"}</span>
+
+
         </div>
         <div
           className="ua-titlebar__window-controls"
-          aria-label="Window controls"
+          aria-label={uiText("Window controls")}
         >
           <button
+            data-tauri-drag-region="false"
             className="ua-titlebar__window-btn"
             type="button"
-            aria-label="Minimize window"
+            aria-label={uiText("Minimize window")}
             disabled={!getTauriWindowInternals()}
             onClick={handleMinimize}
           >
             <span className="ua-titlebar__win-icon ua-titlebar__win-icon--minimize" aria-hidden="true" />
           </button>
           <button
+            data-tauri-drag-region="false"
             className="ua-titlebar__window-btn"
             type="button"
             aria-label={maximizeAriaLabel}
@@ -240,9 +245,10 @@ export function TitleBar({ title = "UAgent" }: TitleBarProps) {
             />
           </button>
           <button
+            data-tauri-drag-region="false"
             className="ua-titlebar__window-btn ua-titlebar__window-btn--close"
             type="button"
-            aria-label="Close window"
+            aria-label={uiText("Close window")}
             disabled={!getTauriWindowInternals()}
             onClick={handleClose}
           >

@@ -5,9 +5,11 @@ import type {
   ProviderStreamChunk,
 } from "@uagent/shared";
 
+export interface ProviderCallOptions { signal?: AbortSignal; }
+
 export interface ProviderAdapter {
   readonly id: string;
-  complete(request: ProviderRuntimeRequest): Promise<ProviderRuntimeResponse>;
-  stream?(request: ProviderRuntimeRequest): AsyncIterable<ProviderStreamChunk>;
+  complete(request: ProviderRuntimeRequest, options?: ProviderCallOptions): Promise<ProviderRuntimeResponse>;
+  stream?(request: ProviderRuntimeRequest, options?: ProviderCallOptions): AsyncIterable<ProviderStreamChunk>;
   getCapabilities(): ProviderCapability;
 }

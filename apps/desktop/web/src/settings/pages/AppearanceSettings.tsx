@@ -1,3 +1,4 @@
+import {useI18n} from "../../i18n";
 import { SettingsPageLayout, SettingsSection } from "../SettingsPageLayout";
 import { appearancePageData } from "../settings-page-data";
 import { useLayoutActions, useLayoutStore } from "../../stores/ui-store";
@@ -5,6 +6,7 @@ import type { UATheme } from "../../types/ui";
 import "../pages/SettingsPages.css";
 
 export function AppearanceSettings() {
+  const {text: uiText} = useI18n();
   return (
     <SettingsPageLayout page={appearancePageData}>
       {appearancePageData.sections.map((section) => (
@@ -16,13 +18,13 @@ export function AppearanceSettings() {
         </SettingsSection>
       ))}
       <div className="ua-settings-page__note">
-        Theme is local to this preview. Provider and runtime settings remain mock-only.
-      </div>
+        {uiText("Appearance is local. Save workspace preferences in Connections & safety.")}{" "}</div>
     </SettingsPageLayout>
   );
 }
 
 function ThemeModeControls() {
+  const {text: uiText} = useI18n();
   const theme = useLayoutStore((state) => state.theme);
   const { setTheme } = useLayoutActions();
   const themeOptions: Array<{
@@ -47,7 +49,7 @@ function ThemeModeControls() {
   ];
 
   return (
-    <div className="ua-settings-page__option-group" role="radiogroup" aria-label="Theme mode">
+    <div className="ua-settings-page__option-group" role="radiogroup" aria-label={uiText("Theme mode")}>
       {themeOptions.map((option) => {
         const selected = option.id === theme;
         return (
@@ -58,7 +60,7 @@ function ThemeModeControls() {
             aria-checked={selected}
             aria-disabled={option.disabled || undefined}
             disabled={option.disabled}
-            title={option.description}
+            title={uiText(option.description ?? "")}
             className={[
               "ua-settings-page__option",
               selected ? "ua-settings-page__option--selected" : "",
@@ -73,7 +75,7 @@ function ThemeModeControls() {
             }}
           >
             <span className="ua-settings-page__option-radio" aria-hidden />
-            <span>{option.label}</span>
+            <span>{uiText(option.label ?? "")}</span>
           </button>
         );
       })}
@@ -82,42 +84,45 @@ function ThemeModeControls() {
 }
 
 function AccentColorControls() {
+  const {text: uiText} = useI18n();
   return (
-    <div className="ua-settings-page__accent-group" role="radiogroup" aria-label="Accent color">
+    <div className="ua-settings-page__accent-group" role="radiogroup" aria-label={uiText("Accent color")}>
       <button
         type="button"
         role="radio"
         className="ua-settings-page__accent-swatch ua-settings-page__accent-swatch--selected"
-        title="Pale blue accent is locked for this preview"
-        aria-label="Pale blue accent"
+        title={uiText("Sage accent")}
+        aria-label={uiText("Sage accent")}
         aria-checked="true"
       >
         <span className="ua-settings-page__accent-fill" />
       </button>
-      <span className="ua-settings-page__accent-label">Pale blue, fixed for MVP6</span>
+      <span className="ua-settings-page__accent-label">{uiText("Sage accent")}</span>
     </div>
   );
 }
 
 function TypographyDisplay() {
+  const {text: uiText} = useI18n();
   return (
     <div className="ua-settings-page__static-stack">
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">UI font</span>
-        <span className="ua-settings-page__static-value">System UI</span>
+        <span className="ua-settings-page__static-label">{uiText("UI font")}</span>
+        <span className="ua-settings-page__static-value">{uiText("System UI")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Code font</span>
-        <span className="ua-settings-page__static-value">SF Mono / Cascadia Code</span>
+        <span className="ua-settings-page__static-label">{uiText("Code font")}</span>
+        <span className="ua-settings-page__static-value">{uiText("SF Mono / Cascadia Code")}</span>
       </div>
     </div>
   );
 }
 
 function ContrastDisplay() {
+  const {text: uiText} = useI18n();
   return (
     <div className="ua-settings-page__slider-skeleton">
-      <span className="ua-settings-page__static-value">Normal</span>
+      <span className="ua-settings-page__static-value">{uiText("Normal")}</span>
     </div>
   );
 }

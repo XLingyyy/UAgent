@@ -1,3 +1,5 @@
+import {useI18n} from "../i18n";
+import {LocalLogsPanel,LocalAssetSearchPanel} from "./LocalDataPanels";
 import { useNarrowViewport } from "../shell/useNarrowViewport";
 import { useEffect, useRef, useState } from "react";
 import { ComingSoonGate } from "../components/ComingSoonGate";
@@ -36,6 +38,8 @@ function isUtilityPlaceholderTool(toolId: UtilityToolId): toolId is UtilityPlace
 }
 
 function renderToolPanel(toolId: UtilityToolId) {
+  if(toolId === "logs") return <LocalLogsPanel/>;
+  if(toolId === "asset-search") return <LocalAssetSearchPanel/>;
   if (toolId === "review") {
     return <ReviewPanel />;
   }
@@ -103,11 +107,12 @@ function renderToolPanel(toolId: UtilityToolId) {
   return null;
 }
 
-function isFutureTool(toolId: UtilityToolId): boolean {
-  return ["logs", "asset-search"].includes(toolId);
+function isFutureTool(_toolId: UtilityToolId): boolean {
+  return false;
 }
 
 export function InspectorPane({ open, onClose }: InspectorPaneProps) {
+  const {text: uiText} = useI18n();
   const [activeToolId, setActiveToolId] = useState<UtilityToolId>("review");
   const paneRef = useRef<HTMLElement>(null);
   const modal = useNarrowViewport();
@@ -145,30 +150,29 @@ export function InspectorPane({ open, onClose }: InspectorPaneProps) {
       aria-modal={open && modal ? true : undefined}
       {...(!open ? { inert: "" } : {})}
       className={`ua-inspector ua-motion-panel ${open ? "ua-inspector--open" : "ua-inspector--closed"}`}
-      aria-label="Utility drawer"
+      aria-label={uiText("Utility drawer")}
       aria-hidden={!open}
       data-motion="panel"
       data-state={open ? "open" : "closed"}
     >
       <div className="ua-inspector__header">
-        <span className="ua-inspector__title">Tools</span>
+        <span className="ua-inspector__title">{uiText("Tools")}</span>
         {onClose && (
           <button
             className="ua-inspector__close"
             onClick={onClose}
-            aria-label="Close tools"
+            aria-label={uiText("Close tools")}
             type="button"
           >
-            Close
-          </button>
+            {uiText("Close")}{" "}</button>
         )}
       </div>
       <div className="ua-inspector__body">
         <div className="ua-inspector__summary" aria-live="polite">
-          <span className="ua-inspector__summary-label">Utility drawer</span>
-          <span className="ua-inspector__summary-text">{activeTool.summary}</span>
+          <span className="ua-inspector__summary-label">{uiText("Utility drawer")}</span>
+          <span className="ua-inspector__summary-text">{uiText(activeTool.summary)}</span>
         </div>
-        <div className="ua-inspector__tab-bar" role="tablist" aria-label="Utility tools">
+        <div className="ua-inspector__tab-bar" role="tablist" aria-label={uiText("Utility tools")}>
           {utilityTools.map((tool) => {
             const selected = activeToolId === tool.id;
             const tabId = `ua-utility-tool-${tool.id}`;
@@ -188,7 +192,7 @@ export function InspectorPane({ open, onClose }: InspectorPaneProps) {
                 }}
                 type="button"
               >
-                {tool.label}
+                {uiText(tool.label)}
               </button>
             );
 

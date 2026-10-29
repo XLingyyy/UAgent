@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
 import { PrimaryNav } from "./PrimaryNav";
 import { ProjectSection } from "./ProjectSection";
@@ -17,12 +18,13 @@ import {
   useThreadStore,
 } from "../stores/ui-store";
 import { getRuntimeTaskIds } from "../runtime/runtime-store";
+import {conversationKey} from "../runtime/conversation-context";
 import type { ProjectTreeNode, SidebarViewMode } from "../types/ui";
 import type { AssetIndexEntry } from "@uagent/shared";
 import "./LeftSidebar.css";
 
 const SIDEBAR_MODES: Array<{ id: SidebarViewMode; label: string }> = [
-  { id: "project", label: "Project" },
+  { id: "project", label: "Projects" },
   { id: "conversation", label: "Conversation" },
   { id: "asset-browser", label: "Asset Browser" },
 ];
@@ -69,6 +71,7 @@ function buildIndexedTree(assets: AssetIndexEntry[], filter: string) {
 }
 
 export function LeftSidebar() {
+  const {text: uiText,t} = useI18n();
   const activeNav = useLayoutStore((state) => state.sidebar.activeNav);
   const sidebarView = useLayoutStore((state) => state.sidebar.viewMode);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
@@ -114,7 +117,8 @@ export function LeftSidebar() {
   const canScanRegisteredProject = Boolean(
     registeredProject && registeredProject.trustState === "trusted",
   );
-  const runtimeThreads = getRuntimeTaskIds(runtime).map((taskId) => ({
+  const seenConversations=new Set<string>();
+  const runtimeThreads = getRuntimeTaskIds(runtime).filter(taskId=>{const task=runtime.tasksById[taskId],key=conversationKey(task);if(task.draft.projectId!==activeProjectId||seenConversations.has(key))return false;seenConversations.add(key);return true;}).map((taskId) => ({
     id: taskId,
     title: runtime.tasksById[taskId].title,
     type: "Runtime" as const,
@@ -124,7 +128,7 @@ export function LeftSidebar() {
   return (
     <aside
       className="ua-sidebar ua-motion-panel"
-      aria-label="Sidebar"
+      aria-label={uiText("Sidebar")}
       data-motion="panel"
       data-sidebar-view={sidebarView}
     >
@@ -135,7 +139,8 @@ export function LeftSidebar() {
           onSettingsOpen={() => openSettings("general")}
         />
       </div>
-      <div className="ua-sidebar__mode-tabs" role="tablist" aria-label="Project workspace sidebar modes">
+      <button type="button" className="ua-chat-new" onClick={()=>setActiveThread(null)}>{t("chat.new")}</button>
+      <div className="ua-sidebar__mode-tabs" role="tablist" aria-label={uiText("Project workspace sidebar modes")}>
         {SIDEBAR_MODES.map((item) => (
           <button
             key={item.id}
@@ -147,7 +152,7 @@ export function LeftSidebar() {
             aria-selected={sidebarView === item.id}
             onClick={() => setSidebarViewMode(item.id)}
           >
-            {item.label}
+            {uiText(item.label)}
           </button>
         ))}
       </div>

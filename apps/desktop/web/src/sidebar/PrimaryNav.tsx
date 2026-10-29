@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import type { NavSection } from "../types/ui";
 import "./PrimaryNav.css";
 
@@ -20,8 +21,9 @@ export interface PrimaryNavProps {
 }
 
 export function PrimaryNav({ activeNav, onNavChange, onSettingsOpen }: PrimaryNavProps) {
+  const {text: uiText} = useI18n();
   return (
-    <nav className="ua-primary-nav" aria-label="Primary navigation">
+    <nav className="ua-primary-nav" aria-label={uiText("Primary navigation")}>
       <ul className="ua-primary-nav__list">
         {NAV_ITEMS.map((item) => (
           <li key={item.key}>
@@ -39,7 +41,7 @@ export function PrimaryNav({ activeNav, onNavChange, onSettingsOpen }: PrimaryNa
               <span className="ua-primary-nav__icon" aria-hidden>
                 {item.symbol}
               </span>
-              <span className="ua-primary-nav__text">{item.label}</span>
+              <span className="ua-primary-nav__text">{uiText(item.label)}</span>
             </button>
           </li>
         ))}

@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import {
   type SettingsPageData,
   type SettingsSectionData,
@@ -12,15 +13,16 @@ export function SettingsPageLayout({
   page: SettingsPageData;
   children: React.ReactNode;
 }) {
+  const {text: uiText,t} = useI18n();
   return (
     <main
       className="ua-settings-content"
-      aria-label={`Settings: ${page.title}`}
+      aria-label={t("settings.pageLabel",{page:uiText(page.title)})}
       data-settings-page={page.id}
     >
       <div className="ua-settings-content__header">
-        <h2 className="ua-settings-content__title">{page.title}</h2>
-        <p className="ua-settings-content__summary">{page.description}</p>
+        <h2 className="ua-settings-content__title">{uiText(page.title)}</h2>
+        <p className="ua-settings-content__summary">{uiText(page.description)}</p>
       </div>
       <div className="ua-settings-content__body">{children}</div>
     </main>
@@ -34,14 +36,15 @@ export function SettingsSection({
   section: SettingsSectionData;
   children?: React.ReactNode;
 }) {
+  const {text: uiText} = useI18n();
   return (
     <section className="ua-settings-section" aria-labelledby={`section-${section.id}`}>
       <div className="ua-settings-section__header">
         <h3 id={`section-${section.id}`} className="ua-settings-section__title">
-          {section.title}
+          {uiText(section.title)}
         </h3>
         {section.description && (
-          <p className="ua-settings-section__description">{section.description}</p>
+          <p className="ua-settings-section__description">{uiText(section.description)}</p>
         )}
       </div>
       <div className="ua-settings-section__body">
@@ -55,18 +58,19 @@ export function SettingsSection({
 }
 
 export function SettingsRowItem({ row }: { row: SettingsRow }) {
+  const {text: uiText} = useI18n();
   return (
     <div
       className={`ua-settings-row${row.disabled ? " ua-settings-row--disabled" : ""}`}
       data-row-id={row.id}
     >
       <div className="ua-settings-row__info">
-        <span className="ua-settings-row__label">{row.label}</span>
-        {row.description && <span className="ua-settings-row__description">{row.description}</span>}
+        <span className="ua-settings-row__label">{uiText(row.label)}</span>
+        {row.description && <span className="ua-settings-row__description">{uiText(row.description)}</span>}
       </div>
       <div className="ua-settings-row__control">
         {row.disabled && row.disabledReason && (
-          <span className="ua-settings-row__disabled-reason">{row.disabledReason}</span>
+          <span className="ua-settings-row__disabled-reason">{uiText(row.disabledReason)}</span>
         )}
       </div>
     </div>

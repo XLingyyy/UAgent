@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
 import { AssetLifecycleEvidence, hasAssetLifecycle } from "./AssetLifecycleEvidence";
 import type { AgentReport, TaskEvent } from "@uagent/shared";
@@ -77,13 +78,12 @@ function runtimeFindings(events: TaskEvent[]): ReviewFinding[] {
   return findings;
 }
 
-function formatCounts(errorCount: number, warningCount: number): string {
-  return `${errorCount} ${errorCount === 1 ? "error" : "errors"} / ${warningCount} ${
-    warningCount === 1 ? "warning" : "warnings"
-  }`;
+function formatCounts(errorCount:number,warningCount:number,text:(source:string)=>string):string {
+  return `${errorCount} ${text("Errors")} / ${warningCount} ${text("Warnings")}`;
 }
 
 export function ReviewPanel() {
+  const {text: uiText,t} = useI18n();
   const runtime = useOptionalRuntimeStore((state) => state);
   const activeTaskId = runtime?.activeTaskId ?? null;
   const activeTask = activeTaskId ? runtime?.tasksById[activeTaskId] : null;
@@ -94,30 +94,30 @@ export function ReviewPanel() {
   const mvp13 = runtime?.mvp13;
   const mvp14 = runtime?.mvp14;
 
-  if (hasAssetLifecycle(runtime?.mvp15)) return <AssetLifecycleEvidence state={runtime.mvp15} title="Review" />;
+  if (hasAssetLifecycle(runtime?.mvp15)) return <AssetLifecycleEvidence state={runtime.mvp15} title={uiText("Review")} />;
 
   if (mvp14 && (mvp14.session || mvp14.snapshot || mvp14.discovery)) {
     return (
-      <section className="ua-review-panel" aria-label="Review panel">
+      <section className="ua-review-panel" aria-label={uiText("Review panel")}>
         <div className="ua-review-panel__summary">
-          <InspectorSummaryCard label="Editor" value={mvp14.session?.status ?? mvp14.capability.reason} />
-          <InspectorSummaryCard label="Snapshot" value={mvp14.snapshot?.snapshot?.editorState ?? "not recorded"} />
+          <InspectorSummaryCard label={uiText("Editor")} value={mvp14.session?.status ?? mvp14.capability.reason} />
+          <InspectorSummaryCard label={uiText("Snapshot")} value={mvp14.snapshot?.snapshot?.editorState ?? "not recorded"} />
         </div>
         <div className="ua-review-panel__findings">
-          <h3 className="ua-review-panel__section-title">MVP14 observation chain</h3>
+          <h3 className="ua-review-panel__section-title">{uiText("MVP14 observation chain")}</h3>
           <InspectorFinding
             id="mvp14-observation-snapshot"
             severity="info"
-            title="Observation snapshot"
-            description="UE Editor discovery, attach, heartbeat, and snapshot are recorded as read-only summaries."
+            title={uiText("Observation snapshot")}
+            description={uiText("UE Editor discovery, attach, heartbeat, and snapshot are recorded as read-only summaries.")}
             scope="Editor observation"
             evidenceRef="editor_snapshot"
           />
           <InspectorFinding
             id="mvp14-state-only-boundary"
             severity="info"
-            title="State-only operation boundary"
-            description="State-only editor operation flow remains proposal/approval/execute; asset mutation is still blocked."
+            title={uiText("State-only operation boundary")}
+            description={uiText("State-only editor operation flow remains proposal/approval/execute; asset mutation is still blocked.")}
             scope="Editor operation"
             evidenceRef="editor_state_operation"
           />
@@ -128,26 +128,26 @@ export function ReviewPanel() {
 
   if (mvp13 && (mvp13.editorProposals.length > 0 || mvp13.mcpDryRuns.length > 0 || mvp13.assetPlans.length > 0)) {
     return (
-      <section className="ua-review-panel" aria-label="Review panel">
+      <section className="ua-review-panel" aria-label={uiText("Review panel")}>
         <div className="ua-review-panel__summary">
-          <InspectorSummaryCard label="Editor" value={mvp13.editorSession?.status ?? mvp13.editorCapability.reason} />
-          <InspectorSummaryCard label="MCP" value={mvp13.assetPlans.length > 0 ? "blocked plan" : "dry-run"} />
+          <InspectorSummaryCard label={uiText("Editor")} value={mvp13.editorSession?.status ?? mvp13.editorCapability.reason} />
+          <InspectorSummaryCard label={uiText("MCP")} value={mvp13.assetPlans.length > 0 ? "blocked plan" : "dry-run"} />
         </div>
         <div className="ua-review-panel__findings">
-          <h3 className="ua-review-panel__section-title">MVP13 chain</h3>
+          <h3 className="ua-review-panel__section-title">{uiText("MVP13 chain")}</h3>
           <InspectorFinding
             id="mvp13-editor-chain"
             severity="info"
-            title="Operation proposal path"
-            description="Editor state changes move through proposal, approval, execution, evidence, and replay summaries."
+            title={uiText("Operation proposal path")}
+            description={uiText("Editor state changes move through proposal, approval, execution, evidence, and replay summaries.")}
             scope="Editor"
             evidenceRef={mvp13.evidenceIds[0] ?? "editor_operation_summary"}
           />
           <InspectorFinding
             id="mvp13-mcp-chain"
             severity={mvp13.assetPlans.length > 0 ? "warning" : "info"}
-            title="MCP mutation mapping"
-            description="Mutating MCP tools are dry-run/proposal only; text-backed changes map to ChangeSet v2 and asset writes stay blocked."
+            title={uiText("MCP mutation mapping")}
+            description={uiText("Mutating MCP tools are dry-run/proposal only; text-backed changes map to ChangeSet v2 and asset writes stay blocked.")}
             scope="MCP"
             evidenceRef="mcp_mutation_summary"
           />
@@ -157,32 +157,32 @@ export function ReviewPanel() {
   }
 
   if (mvp11?.analysisRequested || (mvp11 && mvp11.diagnosticCounts.total > 0)) {
-    const diagnosticSummary = formatCounts(mvp11.diagnosticCounts.error, mvp11.diagnosticCounts.warning);
+    const diagnosticSummary = formatCounts(mvp11.diagnosticCounts.error, mvp11.diagnosticCounts.warning,uiText);
     const topAffectedFile = Object.values(mvp11.affectedFiles)[0]?.path ?? "No affected files recorded";
     const nextChecks = mvp11.buildAnalysis?.nextChecks ?? [
       "Analyze recorded terminal output before requesting fixes.",
     ];
 
     return (
-      <section className="ua-review-panel" aria-label="Review panel">
+      <section className="ua-review-panel" aria-label={uiText("Review panel")}>
         <div className="ua-review-panel__summary">
-          <InspectorSummaryCard label="Status" value={mvp11.metadataStatus} />
-          <InspectorSummaryCard label="Diagnostics" value={diagnosticSummary} />
+          <InspectorSummaryCard label={uiText("Status")} value={mvp11.metadataStatus} />
+          <InspectorSummaryCard label={uiText("Diagnostics")} value={diagnosticSummary} />
         </div>
-        <div className="ua-review-panel__findings" aria-label="Diagnostic summary">
-          <h3 className="ua-review-panel__section-title">Diagnostic summary</h3>
+        <div className="ua-review-panel__findings" aria-label={uiText("Diagnostic summary")}>
+          <h3 className="ua-review-panel__section-title">{uiText("Diagnostic summary")}</h3>
           <InspectorFinding
             id="mvp11-diagnostic-counts"
             severity={mvp11.diagnosticCounts.error > 0 ? "warning" : "info"}
             title={diagnosticSummary}
-            description={`${mvp11.diagnosticCounts.total} diagnostics from real MVP11 runtime state.`}
+            description={`${mvp11.diagnosticCounts.total} ${uiText("diagnostics from the current runtime.")}`}
             scope="Diagnostics"
             evidenceRef="ue_project_diagnostic"
           />
           <InspectorFinding
             id="mvp11-top-files"
             severity="info"
-            title="Top affected file"
+            title={uiText("Top affected file")}
             description={topAffectedFile}
             scope="Diagnostics"
             evidenceRef="build_failure_summary"
@@ -192,7 +192,7 @@ export function ReviewPanel() {
               key={`${check}-${index}`}
               id={`mvp11-next-check-${index}`}
               severity="info"
-              title={index === 0 ? "Next checks" : `Next check ${index + 1}`}
+              title={index === 0 ? uiText("Next checks") : t("review.nextCheckLabel",{number:index+1})}
               description={check}
               scope="Diagnostics"
               evidenceRef={mvp11.contextPack?.id ?? "context_pack_summary"}
@@ -205,13 +205,13 @@ export function ReviewPanel() {
 
   if (activeTask && reviewEvents.length > 0) {
     return (
-      <section className="ua-review-panel" aria-label="Review panel">
+      <section className="ua-review-panel" aria-label={uiText("Review panel")}>
         <div className="ua-review-panel__summary">
-          <InspectorSummaryCard label="Task" value={activeTask.title} />
-          <InspectorSummaryCard label="Verdict" value={activeTask.state} />
+          <InspectorSummaryCard label={uiText("Task")} value={activeTask.title} />
+          <InspectorSummaryCard label={uiText("Verdict")} value={activeTask.state} />
         </div>
         <div className="ua-review-panel__findings">
-          <h3 className="ua-review-panel__section-title">Findings</h3>
+          <h3 className="ua-review-panel__section-title">{uiText("Findings")}</h3>
           {findings.map((finding) => (
             <InspectorFinding key={finding.id} {...finding} />
           ))}
@@ -220,49 +220,49 @@ export function ReviewPanel() {
     );
   }
 
-  if (!FIXTURES_ENABLED) return <section className="ua-review-panel" aria-label="Review panel"><p>No review recorded for the current project.</p></section>;
+  if (!FIXTURES_ENABLED) return <section className="ua-review-panel" aria-label={uiText("Review panel")}><p>{uiText("No review recorded for the current project.")}</p></section>;
 
   return (
-    <section className="ua-review-panel" aria-label="Review panel">
+    <section className="ua-review-panel" aria-label={uiText("Review panel")}>
       <div className="ua-review-panel__summary">
-        <InspectorSummaryCard label="Status" value={reviewSummary.status} />
-        <InspectorSummaryCard label="Verdict" value={reviewSummary.verdict} />
+        <InspectorSummaryCard label={uiText("Status")} value={reviewSummary.status} />
+        <InspectorSummaryCard label={uiText("Verdict")} value={reviewSummary.verdict} />
       </div>
       <div className="ua-review-panel__findings">
-        <h3 className="ua-review-panel__section-title">Findings</h3>
+        <h3 className="ua-review-panel__section-title">{uiText("Findings")}</h3>
         {reviewFindings.map((finding) => (
           <InspectorFinding key={finding.id} {...finding} />
         ))}
       </div>
-      <div className="ua-review-panel__findings" aria-label="Diagnostic summary">
-        <h3 className="ua-review-panel__section-title">Diagnostic summary</h3>
+      <div className="ua-review-panel__findings" aria-label={uiText("Diagnostic summary")}>
+        <h3 className="ua-review-panel__section-title">{uiText("Diagnostic summary")}</h3>
         <InspectorFinding
           id="mvp11-diagnostic-counts"
           severity="info"
-          title="Error and warning counts"
-          description="Recorded MVP11 summaries expose error count, warning count, top files, and next checks without automatic fixes."
+          title={uiText("Error and warning counts")}
+          description={uiText("Recorded MVP11 summaries expose error count, warning count, top files, and next checks without automatic fixes.")}
           scope="Diagnostics"
           evidenceRef="build_failure_summary"
         />
         <InspectorFinding
           id="mvp11-top-files"
           severity="info"
-          title="Top files"
-          description="[project-root]/Source and [project-root]/Config entries are surfaced from redacted diagnostics."
+          title={uiText("Top files")}
+          description={uiText("[project-root]/Source and [project-root]/Config entries are surfaced from redacted diagnostics.")}
           scope="Diagnostics"
           evidenceRef="ue_project_diagnostic"
         />
         <InspectorFinding
           id="mvp11-next-checks"
           severity="info"
-          title="Next checks"
-          description="Open the first affected file, verify module references, then run an approved verification command manually."
+          title={uiText("Next checks")}
+          description={uiText("Open the first affected file, verify module references, then run an approved verification command manually.")}
           scope="Diagnostics"
           evidenceRef="context_pack_summary"
         />
       </div>
       <div className="ua-review-panel__evidence">
-        <h3 className="ua-review-panel__section-title">Evidence checklist</h3>
+        <h3 className="ua-review-panel__section-title">{uiText("Evidence checklist")}</h3>
         <p className="ua-review-panel__evidence-note">{reviewSummary.evidenceLabel}</p>
         <ul className="ua-review-panel__evidence-list">
           {reviewSummary.evidenceItems.map((item) => (
@@ -277,7 +277,7 @@ export function ReviewPanel() {
                     ? "\u25CB"
                     : "\u2717"}
               </span>
-              <span className="ua-review-panel__evidence-label">{item.label}</span>
+              <span className="ua-review-panel__evidence-label">{uiText(item.label)}</span>
             </li>
           ))}
         </ul>

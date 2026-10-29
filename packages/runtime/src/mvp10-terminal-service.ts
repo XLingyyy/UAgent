@@ -109,6 +109,8 @@ export function createRealTerminalServiceWithOptions(
   const listeners = new Set<(event: { type: "state_changed"; state: RealTerminalServiceState }) => void>();
   const tokenStore = new Map<string, ApprovalToken>();
   const adapter = options.adapter ?? null;
+  let generation=0;
+  let approvalPending=false;
 
   const defaultCapability: TerminalExecutionCapabilityStatus = adapter?.getCapability() ?? {
     enabled: false,
@@ -181,8 +183,11 @@ export function createRealTerminalServiceWithOptions(
       trustedRoot: string,
       projectId: string | null = null,
     ): TerminalCommandProposal | Promise<TerminalCommandProposal> {
+      if(approvalPending) throw new Error("terminal_operation_pending");
+      const proposalGeneration=++generation;
       if (adapter) {
         return adapter.propose(command, cwd, taskId, trustedRoot, projectId).then((proposal) => {
+          if(proposalGeneration!==generation) throw new Error("terminal_proposal_superseded");
           state = {
             ...state,
             capability: adapter.getCapability(),
@@ -209,6 +214,7 @@ export function createRealTerminalServiceWithOptions(
           notify();
           return proposal;
         }).catch((error) => {
+          if(proposalGeneration!==generation) throw new Error("terminal_proposal_superseded");
           const limits = getDefaultExecutionLimits();
           const message = error instanceof Error ? error.message : String(error);
           const proposal: TerminalCommandProposal = {
@@ -293,6 +299,9 @@ export function createRealTerminalServiceWithOptions(
     },
 
     async approve(proposalId: string, actor: string, reason: string): Promise<ApprovalToken | null> {
+      if(approvalPending||state.stage!=="proposed"||state.activeProposal?.id!==proposalId)return null;
+      approvalPending=true;const approvedGeneration=generation;
+      try {
       const proposal = state.proposals.find(p => p.id === proposalId);
       if (!proposal) return null;
       if (proposal.classification.risk !== "allowlisted" || !proposal.classification.cwdIsContained) {
@@ -316,6 +325,7 @@ export function createRealTerminalServiceWithOptions(
       if (adapter) {
         try {
           const token = await adapter.approve(proposal, actor, reason);
+          if(approvedGeneration!==generation||token.status!=="issued")return null;
           const approvalState: TerminalApprovalState = {
             proposalId,
             status: "approved",
@@ -352,7 +362,10 @@ export function createRealTerminalServiceWithOptions(
           };
           notify();
 
+          // A subscriber can revoke approval synchronously during notification.
+          if(approvedGeneration!==generation)return null;
           const result = await adapter.execute(proposal);
+          if(approvedGeneration!==generation)return null;
           state = {
             ...state,
             executionResult: result,
@@ -367,6 +380,7 @@ export function createRealTerminalServiceWithOptions(
           notify();
           return token;
         } catch (error) {
+          if(approvedGeneration!==generation)return null;
           const message = error instanceof Error ? error.message : String(error);
           state = {
             ...state,
@@ -419,9 +433,11 @@ export function createRealTerminalServiceWithOptions(
       };
       notify();
       return token;
+      } finally { approvalPending=false; }
     },
 
     reject(proposalId: string, actor: string, reason: string) {
+      generation++;
       const proposal = state.proposals.find(p => p.id === proposalId);
       if (!proposal) return;
       state = {
@@ -441,12 +457,14 @@ export function createRealTerminalServiceWithOptions(
     },
 
     cancel(_executionId: string) {
+      generation++;
       void _executionId;
       state = { ...state, stage: "cancelled" };
       notify();
     },
 
     reset() {
+      generation++;
       state = {
         proposals: [],
         activeProposal: null,

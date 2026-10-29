@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { useAccessiblePopup } from "../hooks/useAccessiblePopup";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
@@ -49,15 +50,16 @@ export function ModelSelector({
   onReasoningChange,
   onManageProviders,
 }: ModelSelectorProps) {
+  const {text: uiText,t} = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<DropdownPosition | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const currentModel = models.find((m) => m.id === modelId);
   const currentReasoning = reasoningOptionsList.find((r) => r.id === reasoningEffort);
-  const modelLabel = currentModel?.label ?? "Model not configured";
-  const reasoningLabel = currentReasoning?.label ?? "Medium";
-  const triggerAriaLabel = `Model selector: ${modelLabel}, reasoning ${reasoningLabel.toLowerCase()}`;
+  const modelLabel = modelId === "not-configured" ? uiText("Model not configured") : currentModel?.label ?? uiText("Model not configured");
+  const reasoningLabel = uiText(currentReasoning?.label ?? "Medium");
+  const triggerAriaLabel = `${uiText("Model")}: ${modelLabel}${reasoningOptionsList.length?`, ${uiText("Reasoning")} ${reasoningLabel}`:""}`;
   const isModelNotConfigured = modelId === "not-configured";
 
   const close = useCallback(() => {
@@ -142,11 +144,11 @@ export function ModelSelector({
       >
         <span className="ua-model-selector__trigger-label">
           <span className="ua-model-selector__trigger-model">{modelLabel}</span>
-          <span className="ua-model-selector__trigger-sep" aria-hidden="true">
+          {reasoningOptionsList.length>0&&<><span className="ua-model-selector__trigger-sep" aria-hidden="true">
             {" "}
             ·{" "}
           </span>
-          <span className="ua-model-selector__trigger-reasoning">{reasoningLabel}</span>
+          <span className="ua-model-selector__trigger-reasoning">{reasoningLabel}</span></>}
         </span>
         <span className="ua-model-selector__chevron" aria-hidden="true">
           {isOpen ? "\u25B4" : "\u25BE"}
@@ -159,7 +161,7 @@ export function ModelSelector({
           <div
             className="ua-model-selector__dropdown ua-motion-layer"
             role="listbox"
-            aria-label="Model and reasoning settings"
+            aria-label={uiText("Model and reasoning settings")}
             data-motion="layer"
             style={{
               position: "fixed",
@@ -167,7 +169,7 @@ export function ModelSelector({
               bottom: `${position.bottom}px`,
             }}
           >
-            <div className="ua-model-selector__group-header">Reasoning</div>
+            {reasoningOptionsList.length>0&&<div className="ua-model-selector__group-header">{uiText("Reasoning")}</div>}
 
             {reasoningOptionsList.map((option) => (
               <div
@@ -184,14 +186,14 @@ export function ModelSelector({
                   {option.id === reasoningEffort ? "\u2713" : ""}
                 </span>
                 <span className="ua-model-selector__item-body">
-                  <span className="ua-model-selector__item-label">{option.label}</span>
+                  <span className="ua-model-selector__item-label">{uiText(option.label ?? "")}</span>
                 </span>
               </div>
             ))}
 
             <div className="ua-model-selector__section-divider" />
 
-            <div className="ua-model-selector__group-header">Models</div>
+            <div className="ua-model-selector__group-header">{uiText("Models")}</div>
 
             {models.map((option) => (
               <div
@@ -212,14 +214,14 @@ export function ModelSelector({
                   <span className="ua-model-selector__item-label">
                     {option.provider !== "None"
                       ? `${option.provider} / ${option.label}`
-                      : option.label}
+                      : uiText(option.label ?? "")}
                   </span>
                   <span className="ua-model-selector__item-desc">
-                    {option.contextWindow !== "N/A"
-                      ? `Context: ${option.contextWindow} · ${getNetworkModeLabel(option.networkMode ?? "mock")}`
-                      : "No model selected"}
-                    {option.hasSecret === false && option.networkMode === "live" && (
-                      <span className="ua-model-selector__item-warning"> · No secret</span>
+                    {option.runtimeSupported===false ? t("productUi.unavailable") : option.contextWindow !== "N/A"
+                      ? t("composer.modelContextLabel",{context:option.contextWindow,networkMode:uiText(getNetworkModeLabel(option.networkMode??"mock"))})
+                      : uiText("No model selected")}
+                    {option.runtimeSupported===undefined && option.hasSecret === false && option.networkMode === "live" && (
+                      <span className="ua-model-selector__item-warning"> {uiText("· No secret")}</span>
                     )}
                   </span>
                 </span>
@@ -231,8 +233,8 @@ export function ModelSelector({
             <div className="ua-model-selector__item" role="option"
                 tabIndex={-1} onClick={handleManageProviders}>
               <span className="ua-model-selector__item-body">
-                <span className="ua-model-selector__item-label">Manage providers</span>
-                <span className="ua-model-selector__item-desc">Open provider settings</span>
+                <span className="ua-model-selector__item-label">{uiText("Manage providers")}</span>
+                <span className="ua-model-selector__item-desc">{uiText("Open provider settings")}</span>
               </span>
             </div>
           </div>,

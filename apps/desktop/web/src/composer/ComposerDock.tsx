@@ -1,3 +1,6 @@
+import {useI18n} from "../i18n";
+import {safeProviderSession} from "../runtime/safe-provider-session";
+import {AttachmentPanel} from "./AttachmentPanel";
 import { ComingSoonGate } from "../components/ComingSoonGate";
 import { ModelSelector } from "./ModelSelector";
 import { PermissionSelector } from "./PermissionSelector";
@@ -6,15 +9,15 @@ import { composerMock, createComposerModelOptions, reasoningOptions, toSharedPer
 import {
   useComposerActions,
   useComposerStore,
+  useRuntimeStore,
   useProjectActions,
   useProjectStore,
   useProviderStore,
   useRuntimeActions,
-  useRuntimeStore,
   useSettingsActions,
   useLayoutActions,
 } from "../stores/ui-store";
-import { useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import "./ComposerDock.css";
 
 export interface ComposerDockProps {
@@ -57,10 +60,13 @@ function detectTerminalIntent(input: string): CommandSuggestion | null {
 }
 
 export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
+  const {text: uiText,t} = useI18n();
   const composer = useComposerStore((state) => state);
+  const activeTask=useRuntimeStore(state=>state.activeTaskId?state.tasksById[state.activeTaskId]:null);
+  const canStop=Boolean(activeTask&&!(["completed","failed","cancelled"] as string[]).includes(activeTask.state));
+  const [stopError,setStopError]=useState<string|null>(null);
+  const session = useSyncExternalStore(safeProviderSession.subscribe, safeProviderSession.getSnapshot, safeProviderSession.getSnapshot);
   const provider = useProviderStore((state) => state);
-  const mcpStatus = useRuntimeStore((state) => state.mcp.status);
-  const mcpCapabilities = useRuntimeStore((state) => state.mcp.capabilities);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const activeProject = useProjectStore((state) =>
     state.activeProjectId ? state.registeredProjects.find((p) => p.id === state.activeProjectId) ?? null : null,
@@ -74,6 +80,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
     setComposerModel,
     setComposerReasoning,
     submitComposerTask,
+    cancelRuntimeTask,
   } = useComposerActions();
   const { proposeMvp10TerminalCommand } = useRuntimeActions();
   const [suggestionCard, setSuggestionCard] = useState<CommandSuggestion | null>(null);
@@ -84,9 +91,11 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const providerModelOptions = createComposerModelOptions(provider.providers);
   const { input, permission, selectedModelId, reasoningEffort, runMode } =
     composer;
-  const { placeholder, addButtonLabel, sendButtonLabel } = composerMock;
+  const { addButtonLabel } = composerMock;
   const trimmedInput = input.trim();
-  const canSubmit = trimmedInput.length > 0 && !composer.submitting;
+  const selectedOption=providerModelOptions.find(option=>option.id===selectedModelId);
+  const modelUnavailable=selectedModelId!=="not-configured"&&(selectedOption?.runtimeSupported!==true||!session.ready);
+  const canSubmit = trimmedInput.length > 0 && !composer.submitting && !modelUnavailable;
   const providerStatus = selectedModelId === "not-configured" ? "not_configured" : "configured";
   const nativeRoot = activeProject?.rootRef ?? null;
   const displayRoot = activeProject?.displayRoot ?? "[project-root]";
@@ -106,6 +115,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
     }
     submitting.current = true;
     setSuggestionCard(null);
+    setStopError(null);
     const selected = providerModelOptions.find((option) => option.id === selectedModelId);
     try {
       await submitComposerTask({
@@ -119,14 +129,14 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   };
 
   return (
-    <footer className="ua-composer" aria-label="Composer dock" data-composer-mode={mode}>
+    <footer className="ua-composer" aria-label={uiText("Composer dock")} data-composer-mode={mode}>
       <div className="ua-composer__input-row">
         <div className="ua-composer__left-tools">
           <div className="ua-composer__attach">
             <button
               className="ua-composer__add-btn"
               type="button"
-              aria-label="Open attach menu"
+              aria-label={uiText("Open attach menu")}
               aria-haspopup="menu"
               aria-expanded={composer.attachMenuOpen}
               onClick={() => setComposerAttachMenuOpen(!composer.attachMenuOpen)}
@@ -134,16 +144,15 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
               {addButtonLabel}
             </button>
             {composer.attachMenuOpen && (
-              <div className="ua-composer__attach-menu" role="menu" aria-label="Attach context">
+              <div className="ua-composer__attach-menu" role="menu" aria-label={uiText("Attach context")}>
+                <AttachmentPanel/>
                 {[
-                  ["File", "Attach local files after filesystem approval is implemented."],
-                  ["Asset", "Attach UE asset references after asset indexing is implemented."],
                   ["Screenshot", "Attach screenshots after capture approval is implemented."],
                   ["Context Pack", "Attach reusable context packs after packaging is implemented."],
                 ].map(([label, reason]) => (
                   <ComingSoonGate key={label} phase="MVP7" reason={reason}>
                     <button className="ua-composer__attach-item" type="button" role="menuitem">
-                      {label}
+                      {uiText(label)}
                     </button>
                   </ComingSoonGate>
                 ))}
@@ -157,50 +166,53 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         <div className="ua-composer__input-zone">
           <textarea
             className="ua-composer__textarea"
-            placeholder={placeholder}
+            placeholder={uiText("Describe a task. Start with a question or a small change.")}
             value={input}
+            onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void handleSubmit(); } }}
             onChange={(e) => handleInputChange(e.target.value)}
-            aria-label="Composer input"
+            aria-label={uiText("Composer input")}
           />
         </div>
 
         <div className="ua-composer__right-tools">
-          <span title="No measured token usage is available">Context: Unknown</span>
+
 
           <ModelSelector
             modelId={selectedModelId}
             reasoningEffort={reasoningEffort}
             models={providerModelOptions}
-            reasoningOptionsList={reasoningOptions}
+            reasoningOptionsList={selectedOption?.reasoningSupported?reasoningOptions:[]}
             onModelChange={setComposerModel}
             onReasoningChange={setComposerReasoning}
             onManageProviders={() => openSettings("provider")}
           />
 
+          {canStop&&<button className="ua-composer__stop-btn" type="button" aria-label={uiText("Stop task")} onClick={()=>{safeProviderSession.close("stopped");void cancelRuntimeTask(activeTask!.id).catch(()=>setStopError("Stop could not be confirmed. Review task details before retrying."));}}>{uiText("Stop")}</button>}
           <button
             className="ua-composer__send-btn"
             type="button"
             disabled={!canSubmit}
-            aria-label={composer.submitting ? "Submitting task" : canSubmit ? "Send task" : "Send - disabled"}
+            aria-label={composer.submitting ? uiText("Submitting task") : canSubmit ? uiText("Send task") : uiText("Send - disabled")}
             onClick={() => void handleSubmit()}
           >
-            {sendButtonLabel}
+            {composer.submitting ? uiText("Preparing…") : uiText("Send task")}
           </button>
         </div>
       </div>
 
-      {composer.submitError && <p role="alert">{composer.submitError}</p>}
+      {stopError&&<p role="alert">{uiText(stopError)}</p>}
+      {composer.submitError && <p role="alert">{uiText(composer.submitError)}</p>}
       {suggestionCard && (
         <div
           className={`ua-composer__suggestion ${suggestionCard.risk === "blocked" ? "ua-composer__suggestion--blocked" : ""}`}
           role="status"
-          aria-label="Command suggestion"
+          aria-label={uiText("Command suggestion")}
         >
           <div className="ua-composer__suggestion-info">
             <span className="ua-composer__suggestion-command">
               <code>{suggestionCard.command}</code>
             </span>
-            <span className="ua-composer__suggestion-label">{suggestionCard.label}</span>
+            <span className="ua-composer__suggestion-label">{suggestionCard.risk === "allowlisted" ? uiText(suggestionCard.label) : suggestionCard.command}</span>
           </div>
           <div className="ua-composer__suggestion-actions">
             {suggestionCard.risk === "allowlisted" ? (
@@ -221,73 +233,23 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
                   setSuggestionCard(null);
                 }}
                 disabled={!nativeRoot}
-                aria-label={`Propose command: ${suggestionCard.command}`}
-                title={nativeRoot ? `Working directory: ${displayRoot}` : "Select and trust a project before proposing a command"}
+                aria-label={t("composer.proposeCommandLabel",{command:suggestionCard.command})}
+                title={nativeRoot ? t("composer.workingDirectoryLabel",{path:displayRoot}) : uiText("Select and trust a project before proposing a command")}
               >
-                Propose command
-              </button>
+                {uiText("Propose command")}{" "}</button>
             ) : (
-              <span className="ua-composer__suggestion-blocked">{suggestionCard.reason}</span>
+              <span className="ua-composer__suggestion-blocked">{uiText(suggestionCard.reason)}</span>
             )}
           </div>
         </div>
       )}
 
       <div className="ua-composer__status-row">
-        <ProjectSelector
-          onManageProjects={() => openSettings("config")}
-          value={activeProjectId}
-          projects={registeredProjects.map((p) => ({ id: p.id, name: p.name, engineVersion: p.engine.label, connectionStatus: p.trustState, path: p.displayRoot }))}
-          onChange={setActiveProject}
-        />
-
-        <span className="ua-composer__status-separator" aria-hidden="true" />
-
-        <span className="ua-composer__status-item">
-          <span className="ua-composer__status-label">Runtime</span>
-          <span className="ua-composer__status-value">
-            {mcpStatus === "connected" && mcpCapabilities ? "MCP read-only" : mcpStatus === "connected" ? "Discovery required" : "Not connected"}
-          </span>
-        </span>
-
-        <span className="ua-composer__status-separator" aria-hidden="true" />
-
-        <span className="ua-composer__status-item">
-          <span className="ua-composer__status-label">Mode</span>
-          <span className="ua-composer__status-value">
-            {runMode === "local" ? "Local mode" : "Sandbox"}
-          </span>
-        </span>
-
-        <span className="ua-composer__status-item">
-          <span className="ua-composer__status-label">Safety</span>
-          <span className="ua-composer__status-value">
-            {permission === "request-approval"
-              ? "Approval required"
-              : "Native policy still enforced"}
-          </span>
-        </span>
-
-        <span className="ua-composer__status-item">
-          <span className="ua-composer__status-label">Branch</span>
-          <span className="ua-composer__status-value ua-text-mono">Unknown</span>
-        </span>
-
-        {providerStatus === "not_configured" ? (
-          <span className="ua-composer__status-item ua-composer__status-item--warning">
-            <span className="ua-composer__status-label">Model</span>
-            <span className="ua-composer__status-value">Not configured / no provider call</span>
-          </span>
-        ) : (
-          <span className="ua-composer__status-item">
-            <span className="ua-composer__status-label">Provider</span>
-            <span className="ua-composer__status-value">
-              {selectedModelId !== "not-configured"
-                ? "Connectivity unverified"
-                : "Not configured"}
-            </span>
-          </span>
-        )}
+        <ProjectSelector onManageProjects={()=>openSettings("config")} value={activeProjectId} projects={registeredProjects.map(p=>({id:p.id,name:p.name,engineVersion:p.engine.label,connectionStatus:p.trustState,path:p.displayRoot}))} onChange={setActiveProject}/>
+        <span className="ua-composer__status-item"><span className="ua-composer__status-value">{permission==="request-approval"?uiText("Execution needs approval"):uiText("Native approval policy enforced")}</span></span>
+        <button type="button" className="ua-composer__session-link" onClick={()=>openSettings("provider")}>
+          {selectedModelId==="not-configured"?t("productUi.local"):providerModelOptions.find(m=>m.id===selectedModelId)?.runtimeSupported!==true?t("productUi.unavailable"):session.ready?uiText("Session open · connection unverified"):t("product.sessionClosed")}
+        </button>
       </div>
     </footer>
   );

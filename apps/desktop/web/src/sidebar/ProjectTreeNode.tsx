@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import type { KeyboardEvent } from "react";
 import type { ProjectTreeNode } from "../types/ui";
 import "./ProjectTreeNode.css";
@@ -37,6 +38,7 @@ export function ProjectTreeNode({
   onSelect,
   onFocus,
 }: ProjectTreeNodeProps) {
+  const {t}=useI18n();
   const hasChildren = Boolean(node.children?.length);
   const isExpanded = expandedIds.has(node.id);
   const isSelected = selectedId === node.id;
@@ -117,7 +119,7 @@ export function ProjectTreeNode({
           <button
             className={toggleClassNames}
             type="button"
-            aria-label={`${isExpanded ? "Collapse" : "Expand"} ${node.name}`}
+            aria-label={t(isExpanded?"project.collapseNode":"project.expandNode",{name:node.name})}
             tabIndex={-1}
             onClick={(e) => {
               e.stopPropagation();
@@ -137,8 +139,8 @@ export function ProjectTreeNode({
         {diagnosticCount > 0 && (
           <span
             className="ua-tree-node__diagnostics"
-            aria-label={`${diagnosticCount} diagnostics for ${node.name}`}
-            title={`${diagnosticCount} diagnostics`}
+            aria-label={t("project.diagnosticsForNode",{count:diagnosticCount,name:node.name})}
+            title={t("project.diagnosticCount",{count:diagnosticCount})}
           >
             {diagnosticCount}
           </span>
@@ -146,7 +148,7 @@ export function ProjectTreeNode({
         {markers.length > 0 && (
           <span
             className="ua-tree-node__diagnostics"
-            aria-label={`${markers.join(", ")} marker for ${node.name}`}
+            aria-label={t("project.nodeMarkers",{markers:markers.join(", "),name:node.name})}
             title={markers.join(", ")}
           >
             {markers.includes("mutation_blocked") ? "!" : "*"}

@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import {
   cloneElement,
   isValidElement,
@@ -58,13 +59,14 @@ function createBlockedKeyHandler(originalHandler?: (event: KeyboardEvent<HTMLEle
 }
 
 export function ComingSoonGate({ phase, reason, children, blockChild }: ComingSoonGateProps) {
+  const {text:uiText}=useI18n();
   const tooltipId = `ua-coming-soon-tooltip-${useId()}`;
 
   if (!isValidElement(children)) {
     return children;
   }
 
-  const message = `Coming in ${phase}: ${reason}`;
+  const message = `${uiText("Not available yet")} (${phase}): ${uiText(reason)}`;
   const child = children as ReactElement<ComingSoonChildProps>;
   const childProps = child.props;
 

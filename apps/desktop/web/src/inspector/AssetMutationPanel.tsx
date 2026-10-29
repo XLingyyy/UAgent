@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { useState } from "react";
 import { MVP15_ASSET_TOOL_ALLOWLIST } from "@uagent/runtime";
 import { useOptionalRuntimeActions, useOptionalRuntimeStore } from "../stores/ui-store";
@@ -12,6 +13,7 @@ export function formatMvp15UiBlocker(reason: string): string {
 }
 
 export function AssetMutationPanel() {
+  const {text: uiText} = useI18n();
   const mvp15 = useOptionalRuntimeStore((state) => state.mvp15);
   const mvp14 = useOptionalRuntimeStore((state) => state.mvp14);
   const actions = useOptionalRuntimeActions();
@@ -69,21 +71,21 @@ export function AssetMutationPanel() {
     : null;
 
   return (
-    <section className="ua-utility-placeholder" aria-label="Asset mutation panel">
+    <section className="ua-utility-placeholder" aria-label={uiText("Asset mutation panel")}>
       <div className="ua-utility-placeholder__header">
         <div className="ua-utility-placeholder__title-group">
-          <span className="ua-utility-placeholder__eyebrow">MVP15 sandbox-only</span>
-          <h3 className="ua-utility-placeholder__title">Asset Mutation</h3>
+          <span className="ua-utility-placeholder__eyebrow">{uiText("MVP15 sandbox-only")}</span>
+          <h3 className="ua-utility-placeholder__title">{uiText("Asset Mutation")}</h3>
         </div>
         <span className="ua-utility-placeholder__state">{stateLabel}</span>
       </div>
       <ul className="ua-utility-placeholder__list">
-        <li className="ua-utility-placeholder__item">Sandbox root: {mvp15?.gate.sandboxRoot ?? "/Game/UAgentSandbox"}</li>
+        <li className="ua-utility-placeholder__item">{uiText("Sandbox root:")}{" "}{mvp15?.gate.sandboxRoot ?? "/Game/UAgentSandbox"}</li>
         <li className="ua-utility-placeholder__item">
           <label>
-            Source asset path{" "}
+            {uiText("Source asset path")}{" "}
             <input
-              aria-label="Source asset path"
+              aria-label={uiText("Source asset path")}
               className="ua-utility-placeholder__input"
               type="text"
               value={sourceAssetPath}
@@ -93,170 +95,161 @@ export function AssetMutationPanel() {
           </label>
         </li>
         <li className="ua-utility-placeholder__item">
-          Gate modes: disabled / dry-run-only / sandbox-enabled / supervisor-local-smoke-required
-        </li>
+          {uiText("Gate modes: disabled / dry-run-only / sandbox-enabled / supervisor-local-smoke-required")}{" "}</li>
         <li className="ua-utility-placeholder__item">
           <span className="ua-utility-placeholder__action-row">
             <button
               className="ua-utility-placeholder__button"
               type="button"
-              aria-label="Dry-run sandbox asset mutation"
+              aria-label={uiText("Dry-run sandbox asset mutation")}
               disabled={mvp15?.busy}
               onClick={() => {
                 void actions?.runMvp15AssetDryRun(sourceAssetPath);
               }}
             >
-              Dry-run
-            </button>
+              {uiText("Dry-run")}{" "}</button>
             <button
               className="ua-utility-placeholder__button"
               type="button"
-              aria-label="Approve sandbox asset mutation"
+              aria-label={uiText("Approve sandbox asset mutation")}
               disabled={mvp15?.busy || !canApprove}
               onClick={() => {
                 void actions?.approveMvp15AssetChangeSet();
               }}
             >
-              Approve
-            </button>
+              {uiText("Approve")}{" "}</button>
             <button
               className="ua-utility-placeholder__button"
               type="button"
-              aria-label="Execute sandbox asset mutation"
+              aria-label={uiText("Execute sandbox asset mutation")}
               disabled={mvp15?.busy || !canExecute}
               onClick={() => {
                 void actions?.executeMvp15AssetChangeSet();
               }}
             >
-              Execute
-            </button>
+              {uiText("Execute")}{" "}</button>
             <button
               className="ua-utility-placeholder__button"
               type="button"
-              aria-label="Verify sandbox asset mutation"
+              aria-label={uiText("Verify sandbox asset mutation")}
               disabled={mvp15?.busy || !canVerify}
               onClick={() => {
                 void actions?.verifyMvp15AssetChangeSet();
               }}
             >
-              Verify
-            </button>
+              {uiText("Verify")}{" "}</button>
             <button
               className="ua-utility-placeholder__button"
               type="button"
-              aria-label="Rollback sandbox asset mutation"
+              aria-label={uiText("Rollback sandbox asset mutation")}
               disabled={mvp15?.busy || !canRollback}
               onClick={() => {
                 void actions?.rollbackMvp15AssetChangeSet();
               }}
             >
-              Rollback
-            </button>
+              {uiText("Rollback")}{" "}</button>
             <button
               className="ua-utility-placeholder__button"
               type="button"
-              aria-label="Final verify restored Content"
+              aria-label={uiText("Final verify restored Content")}
               disabled={mvp15?.busy || !canFinalVerify}
               onClick={() => {
                 void actions?.finalVerifyMvp15AssetChangeSet();
               }}
             >
-              Final verify
-            </button>
+              {uiText("Final verify")}{" "}</button>
             <button
               className="ua-utility-placeholder__button"
               type="button"
-              aria-label="Inspect recorded asset replay"
+              aria-label={uiText("Inspect recorded asset replay")}
               disabled={mvp15?.busy || !canInspectReplay}
               onClick={() => {
                 actions?.inspectMvp15AssetReplay();
               }}
             >
-              Inspect replay
-            </button>
+              {uiText("Inspect replay")}{" "}</button>
           </span>
         </li>
-        {runtimeMode && <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-execution-mode" data-mvp15d-value={runtimeMode}>Execution mode: {runtimeMode}</li>}
-        <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-binding" data-mvp15d-value={bindingLabel}>Binding: {bindingLabel}</li>
+        {runtimeMode && <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-execution-mode" data-mvp15d-value={runtimeMode}>{uiText("Execution mode:")}{" "}{runtimeMode}</li>}
+        <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-binding" data-mvp15d-value={bindingLabel}>{uiText("Binding:")}{" "}{bindingLabel}</li>
         {companion && (
           <>
-            <li className="ua-utility-placeholder__item">Companion plugin: {companion.status}</li>
+            <li className="ua-utility-placeholder__item">{uiText("Companion plugin:")}{" "}{companion.status}</li>
             <li className="ua-utility-placeholder__item">
-              Companion contract: {companion.pluginVersion ?? "unverified"} / {companion.contractVersion ?? "unverified"}
+              {uiText("Companion contract:")}{" "}{companion.pluginVersion ?? uiText("unverified")} / {companion.contractVersion ?? uiText("unverified")}
             </li>
             <li className="ua-utility-placeholder__item">
-              Manifest SHA: {companion.manifestSha256Prefix ? `${companion.manifestSha256Prefix}…` : "unverified"}
+              {uiText("Manifest SHA:")}{" "}{companion.manifestSha256Prefix ? `${companion.manifestSha256Prefix}…` : uiText("unverified")}
             </li>
             <li className="ua-utility-placeholder__item">
-              Live fingerprint: {companion.liveFingerprintSha256Prefix ? `${companion.liveFingerprintSha256Prefix}…` : "unverified"}
+              {uiText("Live fingerprint:")}{" "}{companion.liveFingerprintSha256Prefix ? `${companion.liveFingerprintSha256Prefix}…` : uiText("unverified")}
             </li>
-            <li className="ua-utility-placeholder__item">Current generation: {companion.currentGeneration}</li>
-            {companion.blocker && <li className="ua-utility-placeholder__item">Companion blocker: {companion.blocker}</li>}
+            <li className="ua-utility-placeholder__item">{uiText("Current generation:")}{" "}{companion.currentGeneration}</li>
+            {companion.blocker && <li className="ua-utility-placeholder__item">{uiText("Companion blocker:")}{" "}{companion.blocker}</li>}
           </>
         )}
-        {aggregatePrefix && <li className="ua-utility-placeholder__item">Aggregate dry-run: {aggregatePrefix}…</li>}
+        {aggregatePrefix && <li className="ua-utility-placeholder__item">{uiText("Aggregate dry-run:")}{" "}{aggregatePrefix}…</li>}
         {realMode && (
           <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-registration" data-mvp15d-value={nativeRegistrationStatus}>
-            Native registration: {nativeRegistrationStatus}
+            {uiText("Native registration:")}{" "}{nativeRegistrationStatus}
           </li>
         )}
-        {mvp15?.sourceAssetPath && <li className="ua-utility-placeholder__item">Source: {mvp15.sourceAssetPath}</li>}
-        {mvp15?.runId && <li className="ua-utility-placeholder__item">Run: {mvp15.runId}</li>}
+        {mvp15?.sourceAssetPath && <li className="ua-utility-placeholder__item">{uiText("Source:")}{" "}{mvp15.sourceAssetPath}</li>}
+        {mvp15?.runId && <li className="ua-utility-placeholder__item">{uiText("Run:")}{" "}{mvp15.runId}</li>}
         {readyMcpInventory && (
           <>
             <li className="ua-utility-placeholder__item">
-              Live exact-six contract: {companion?.liveFingerprintReady ? "ready" : "attestation required"}
+              {uiText("Live exact-six contract:")}{" "}{companion?.liveFingerprintReady ? uiText("ready") : uiText("attestation required")}
             </li>
             <li className="ua-utility-placeholder__item">
-              Exact-six tools ({readyMcpInventory.availableTools.length}/6): {readyMcpInventory.availableTools.join(", ")}
+              {uiText("Exact-six tools (")}{readyMcpInventory.availableTools.length}/6): {readyMcpInventory.availableTools.join(", ")}
             </li>
-            <li className="ua-utility-placeholder__item">Input schemas: ready</li>
-            <li className="ua-utility-placeholder__item">Dry-run schemas: ready</li>
-            <li className="ua-utility-placeholder__item">Rollback metadata: ready</li>
-            <li className="ua-utility-placeholder__item">Affected-assets schemas: ready</li>
-            <li className="ua-utility-placeholder__item">Read-only evidence queries: ready</li>
+            <li className="ua-utility-placeholder__item">{uiText("Input schemas: ready")}</li>
+            <li className="ua-utility-placeholder__item">{uiText("Dry-run schemas: ready")}</li>
+            <li className="ua-utility-placeholder__item">{uiText("Rollback metadata: ready")}</li>
+            <li className="ua-utility-placeholder__item">{uiText("Affected-assets schemas: ready")}</li>
+            <li className="ua-utility-placeholder__item">{uiText("Read-only evidence queries: ready")}</li>
           </>
         )}
         {mvp15?.mcpInventory?.missingTools.length ? (
-          <li className="ua-utility-placeholder__item">Missing MCP tools: {mvp15.mcpInventory.missingTools.join(", ")}</li>
+          <li className="ua-utility-placeholder__item">{uiText("Missing MCP tools:")}{" "}{mvp15.mcpInventory.missingTools.join(", ")}</li>
         ) : null}
         {mvp15?.mcpInventory?.missingSchemas.length ? (
-          <li className="ua-utility-placeholder__item">Missing MCP schema: {mvp15.mcpInventory.missingSchemas.join(", ")}</li>
+          <li className="ua-utility-placeholder__item">{uiText("Missing MCP schema:")}{" "}{mvp15.mcpInventory.missingSchemas.join(", ")}</li>
         ) : null}
         {mvp15?.mcpInventory?.missingDryRunSchemas.length ? (
-          <li className="ua-utility-placeholder__item">Missing MCP dry-run schema: {mvp15.mcpInventory.missingDryRunSchemas.join(", ")}</li>
+          <li className="ua-utility-placeholder__item">{uiText("Missing MCP dry-run schema:")}{" "}{mvp15.mcpInventory.missingDryRunSchemas.join(", ")}</li>
         ) : null}
         {mvp15?.mcpInventory?.missingRollbackContracts.length ? (
-          <li className="ua-utility-placeholder__item">Missing MCP rollback contract: {mvp15.mcpInventory.missingRollbackContracts.join(", ")}</li>
+          <li className="ua-utility-placeholder__item">{uiText("Missing MCP rollback contract:")}{" "}{mvp15.mcpInventory.missingRollbackContracts.join(", ")}</li>
         ) : null}
         {mvp15?.mcpInventory?.missingEvidenceQueries.length ? (
-          <li className="ua-utility-placeholder__item">Missing MCP evidence query: {mvp15.mcpInventory.missingEvidenceQueries.join(", ")}</li>
+          <li className="ua-utility-placeholder__item">{uiText("Missing MCP evidence query:")}{" "}{mvp15.mcpInventory.missingEvidenceQueries.join(", ")}</li>
         ) : null}
-        {dryRun && <li className="ua-utility-placeholder__item">Dry-run: {dryRun.status}</li>}
-        {changeSet && <li className="ua-utility-placeholder__item">Risk: {changeSet.risk}</li>}
-        {approval && <li className="ua-utility-placeholder__item">Approval: {approval.status}</li>}
-        {execution && <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-execution" data-mvp15d-value={execution.status}>Execution: {execution.status}</li>}
-        {verification && <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-verification" data-mvp15d-value={verification.status}>Verification: {verification.status}</li>}
-        {changeSet?.state === "rolled_back" && <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-rollback" data-mvp15d-value="rolled_back">Rollback: rolled_back</li>}
+        {dryRun && <li className="ua-utility-placeholder__item">{uiText("Dry-run:")}{" "}{dryRun.status}</li>}
+        {changeSet && <li className="ua-utility-placeholder__item">{uiText("Risk:")}{" "}{changeSet.risk}</li>}
+        {approval && <li className="ua-utility-placeholder__item">{uiText("Approval:")}{" "}{approval.status}</li>}
+        {execution && <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-execution" data-mvp15d-value={execution.status}>{uiText("Execution:")}{" "}{execution.status}</li>}
+        {verification && <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-verification" data-mvp15d-value={verification.status}>{uiText("Verification:")}{" "}{verification.status}</li>}
+        {changeSet?.state === "rolled_back" && <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-rollback" data-mvp15d-value="rolled_back">{uiText("Rollback: rolled_back")}</li>}
         {mvp15 && (
           <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-final-verification" data-mvp15d-value={mvp15.finalVerification.status}>
-            Final Content verification: {mvp15.finalVerification.status}
+            {uiText("Final Content verification:")}{" "}{mvp15.finalVerification.status}
           </li>
         )}
         {mvp15 && (
           <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-replay-inspection" data-mvp15d-value={mvp15.replayInspection.status}>
-            Replay inspection: {mvp15.replayInspection.status} / [{mvp15.replayInspection.sideEffectDelta.join(", ")}]
+            {uiText("Replay inspection:")}{" "}{mvp15.replayInspection.status} / [{mvp15.replayInspection.sideEffectDelta.join(", ")}]
           </li>
         )}
         {changeSet?.operations.map((operation) => (
           <li key={operation.id} className="ua-utility-placeholder__item">
-            {operation.kind}: {operation.assetPathBefore ?? "new"} -&gt; {operation.assetPathAfter ?? "removed"}
+            {operation.kind}: {operation.assetPathBefore ?? uiText("new")} -&gt; {operation.assetPathAfter ?? uiText("removed")}
           </li>
         ))}
         {replay?.replayOnly && (
           <li className="ua-utility-placeholder__item" data-mvp15d-observation="asset-replay">
-            Replay: recorded summaries only / {replay.recordedOnlyActions?.join(", ")} / 0 runtime side effects
-          </li>
+            {uiText("Replay: recorded summaries only /")}{" "}{replay.recordedOnlyActions?.join(", ")} {uiText("/ 0 runtime side effects")}{" "}</li>
         )}
         {mvp15?.lastError && (
           <li
@@ -264,7 +257,7 @@ export function AssetMutationPanel() {
             data-mvp15d-observation="asset-last-error"
             data-mvp15d-value={formatMvp15UiBlocker(mvp15.lastError)}
           >
-            Last issue: {formatMvp15UiBlocker(mvp15.lastError)}
+            {uiText("Last issue:")}{" "}{formatMvp15UiBlocker(mvp15.lastError)}
           </li>
         )}
       </ul>

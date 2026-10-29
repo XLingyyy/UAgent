@@ -1,0 +1,33 @@
+import {localizeText,getLocale} from "../i18n";
+const uiText=(source:string)=>localizeText(getLocale(),source);
+import {act,cleanup,fireEvent,render,screen,waitFor} from "@testing-library/react";
+import {afterEach,describe,expect,it,vi} from "vitest";
+import {createOutboundConsentGate,DEEPSEEK_CAMPAIGN,DEEPSEEK_ENDPOINT,DEEPSEEK_MODEL,type DeepSeekBudgetRecord,type DeepSeekBudgetStore} from "@uagent/runtime";
+import {createSafeProviderSession} from "./safe-provider-session";
+import {createAttachmentStore} from "./attachment-store";
+import {createDesktopRuntimeAdapter} from "./desktop-runtime-adapter";
+import {UIProvider} from "../stores/ui-store";
+import {ProviderProposalPanel} from "../workspace/ProviderProposalPanel";
+import {OutboundRequestReview} from "../settings/pages/OutboundRequestReview";
+import type {NativeInvoke} from "./project-native-adapter";
+let manager:ReturnType<typeof createSafeProviderSession>|undefined;
+afterEach(()=>{cleanup();manager?.dispose();vi.unstubAllGlobals();});
+describe("explicit second-round UI with offline native and transport boundaries",()=>{
+ it("gets two separate full-request confirmations and reservations, one tool approval, and no recursive execution",async()=>{
+  vi.stubGlobal("fetch",vi.fn(()=>{throw Error("REAL NETWORK FORBIDDEN");}));
+  const proposal=JSON.stringify({version:1,kind:"terminal_readonly",command:"git status",reason:"Inspect synthetic state"});
+  const fetcher=vi.fn(async()=>new Response(`data: ${JSON.stringify({model:DEEPSEEK_MODEL,choices:[{delta:{content:proposal},finish_reason:"stop"}],usage:{prompt_tokens:20,completion_tokens:30,total_tokens:50}})}\n\ndata: [DONE]\n\n`,{headers:{"Content-Type":"text/event-stream"}}));
+  let record:DeepSeekBudgetRecord={campaign:DEEPSEEK_CAMPAIGN,limitMicros:10000000,reservedMicros:0,requests:0,uncertainRequests:0,inputTokens:0,outputTokens:0};
+  const ledger:DeepSeekBudgetStore={durable:false,read:()=>({...record}),reserve:vi.fn((amount:number)=>{record={...record,reservedMicros:record.reservedMicros+amount,requests:record.requests+1,uncertainRequests:record.uncertainRequests+1};return String(record.requests);}),recordUsage:vi.fn()};
+  const gate=createOutboundConsentGate();manager=createSafeProviderSession({mode:"offline",fetcher,gate,attachments:createAttachmentStore()});
+  const invoke=vi.fn(async(name:string,payload?:unknown)=>{if(name==="terminal_capability_status")return {enabled:true,mode:"native"};if(name==="propose_terminal_command")return {proposalId:"synthetic-proposal",command:(payload as {input:{command:string}}).input.command,risk:"allowlisted",reason:"safe",canonicalCwd:"G:/Synthetic"};if(name==="approve_terminal_proposal")return {token:"synthetic-only",status:"approved"};if(name==="execute_terminal_command_real")return {status:"completed",chunks:[],exitCode:0,outputSummary:"Synthetic local result password=private-result sk-tiny-canary"};throw Error("synthetic_unavailable");});
+  const runtime=createDesktopRuntimeAdapter({nativeInvoke:invoke as NativeInvoke,providerAdapter:manager.adapter,providerEnabled:true});
+  render(<UIProvider runtimeClient={runtime} initialState={{project:{activeProjectId:"A"}}}><ProviderProposalPanel/><OutboundRequestReview gate={gate}/></UIProvider>);
+  runtime.setProviderProjectContext?.({projectId:"A",rootRef:"G:/Synthetic",trusted:true});manager.updateContext("A","","deepseek-flash");manager.open("synthetic-ui-feedback-key",ledger,{endpoint:DEEPSEEK_ENDPOINT,model:DEEPSEEK_MODEL,campaign:DEEPSEEK_CAMPAIGN,expiresAt:Date.now()+60000,pricesVerified:true,inputMicrosPerToken:2,outputMicrosPerToken:8});
+  let first!:ReturnType<typeof runtime.submitTask>;act(()=>{first=runtime.submitTask({input:"Inspect synthetic project",projectId:"A",providerId:"deepseek",modelId:"deepseek-flash",permissionMode:"request_approval",reasoningEffort:"medium",runMode:"local",branch:null,contextPercent:null});});
+  await screen.findByRole("dialog",{name:uiText("Exact outbound request review")});expect(fetcher).not.toHaveBeenCalled();fireEvent.click(screen.getByText(uiText("Confirm this request once")));await act(async()=>{await first;});expect(fetcher).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByText(uiText("Approve this read-only command")));await screen.findByLabelText(uiText("Edited tool result to share"));expect((screen.getByLabelText(uiText("Edited tool result to share")) as HTMLTextAreaElement).value).toBe("");expect((screen.getByText(uiText("Review one model follow-up")) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByText(uiText("Use redacted result for editing")));expect((screen.getByLabelText(uiText("Edited tool result to share")) as HTMLTextAreaElement).value).not.toContain("private-result");fireEvent.click(screen.getByLabelText(uiText("Share this edited result only")));fireEvent.change(screen.getByLabelText(uiText("Edited tool result to share")),{target:{value:"Only this chosen synthetic status excerpt."}});expect((screen.getByLabelText(uiText("Share this edited result only")) as HTMLInputElement).checked).toBe(false);fireEvent.click(screen.getByLabelText(uiText("Share this edited result only")));fireEvent.click(screen.getByText(uiText("Review one model follow-up")));
+  await screen.findByRole("dialog",{name:uiText("Exact outbound request review")});const body=screen.getByLabelText(uiText("Exact outbound body")).textContent!;expect(body).toContain("Only this chosen synthetic status excerpt.");expect(body).not.toContain("private-result");expect(body).not.toContain("Inspect synthetic project");expect(fetcher).toHaveBeenCalledTimes(1);expect(record.requests).toBe(1);fireEvent.click(screen.getByText(uiText("Confirm this request once")));await waitFor(()=>expect(screen.getByLabelText(uiText("Model feedback analysis"))).toBeTruthy());expect(fetcher).toHaveBeenCalledTimes(2);expect(record.requests).toBe(2);expect(Object.values(runtime.getSnapshot().eventsByTaskId).flat().filter(e=>e.title==="Model result analysis completed")).toHaveLength(1);expect(ledger.reserve).toHaveBeenCalledTimes(2);expect(invoke.mock.calls.filter(c=>c[0]==="execute_terminal_command_real")).toHaveLength(1);expect((screen.getByText(uiText("Review one model follow-up")) as HTMLButtonElement).disabled).toBe(true);expect(fetch).not.toHaveBeenCalled();
+ });
+});

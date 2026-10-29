@@ -1,7 +1,9 @@
+import {useI18n} from "../i18n";
 import { useCallback, useEffect } from "react";
 import { useRuntimeStore, useRuntimeActions, useProjectStore } from "../stores/ui-store";
 
 export function WatcherPanel() {
+  const {text: uiText} = useI18n();
   const watcherState = useRuntimeStore((s) => s.mvp9.watcher);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const registeredProjects = useProjectStore((s) => s.registeredProjects);
@@ -56,38 +58,32 @@ export function WatcherPanel() {
     <div
       className="ua-inspector-watcher"
       role="region"
-      aria-label="File watcher"
+      aria-label={uiText("File watcher")}
     >
       <div className="ua-inspector-watcher__header">
-        <span>File Watcher</span>
-        <span className="ua-inspector__badge">MVP10</span>
+        <span>{uiText("File Watcher")}</span>
+        <span className="ua-inspector__badge">{uiText("MVP10")}</span>
       </div>
 
       {stage === "idle" && (
         <>
           <div className="ua-inspector-watcher__status">
-            <span className="ua-inspector-watcher__status-value">Idle</span>
+            <span className="ua-inspector-watcher__status-value">{uiText("Idle")}</span>
           </div>
           <div className="ua-inspector-watcher__info">
             {watcherDisabled ? (
               <>
-                <p>Real watcher disabled: {capability?.reason ?? "feature_disabled"}</p>
+                <p>{uiText("Real watcher disabled:")}{" "}{capability?.reason ?? uiText("feature_disabled")}</p>
                 <p>
-                  Trusted root required. Debounce {capability?.debounceMs ?? 500}ms,
-                  queue limit {capability?.maxQueueSize ?? 10000}, overflow {capability?.overflowAction ?? "warn"},
-                  read diff only.
-                </p>
+                  {uiText("Trusted root required. Debounce")}{" "}{capability?.debounceMs ?? 500}{uiText("ms, queue limit")}{" "}{capability?.maxQueueSize ?? 10000}{uiText(", overflow")}{" "}{capability?.overflowAction ?? uiText("warn")}{uiText(", read diff only.")}{" "}</p>
               </>
             ) : (
               <p>
-                File watcher monitors the project root for changes. It produces
-                dirty state and a diff summary. No automatic rescan or side
-                effects.
-              </p>
+                {uiText("File watcher monitors the project root for changes. It produces dirty state and a diff summary. No automatic rescan or side effects.")}{" "}</p>
             )}
             {activeProject && (
               <p className="ua-inspector-watcher__root">
-                Project root: {activeProject.displayRoot}
+                {uiText("Project root:")}{" "}{activeProject.displayRoot}
               </p>
             )}
           </div>
@@ -97,10 +93,9 @@ export function WatcherPanel() {
               type="button"
               onClick={handleStart}
               disabled={watcherDisabled}
-              aria-label="Start watching project root"
+              aria-label={uiText("Start watching project root")}
             >
-              Start Watching
-            </button>
+              {uiText("Start Watching")}{" "}</button>
           </div>
         </>
       )}
@@ -108,20 +103,19 @@ export function WatcherPanel() {
       {stage === "blocked" && (
         <>
           <div className="ua-inspector-watcher__status">
-            <span className="ua-inspector-watcher__status-value">Blocked</span>
+            <span className="ua-inspector-watcher__status-value">{uiText("Blocked")}</span>
           </div>
           <div className="ua-inspector-watcher__info">
-            <p>Cannot start watcher: {stopReason}</p>
+            <p>{uiText("Cannot start watcher:")}{" "}{stopReason}</p>
           </div>
           <div className="ua-inspector-watcher__actions">
             <button
               className="ua-btn ua-btn--secondary"
               type="button"
               onClick={handleReset}
-              aria-label="Reset watcher"
+              aria-label={uiText("Reset watcher")}
             >
-              Reset
-            </button>
+              {uiText("Reset")}{" "}</button>
           </div>
         </>
       )}
@@ -129,45 +123,43 @@ export function WatcherPanel() {
       {stage === "active" && session && (
         <>
           <div className="ua-inspector-watcher__status">
-            <span className="ua-inspector-watcher__status-value">Active</span>
+            <span className="ua-inspector-watcher__status-value">{uiText("Active")}</span>
             <span className="ua-inspector-watcher__status-detail">
-              Root: {displayRoot}
+              {uiText("Root:")}{" "}{displayRoot}
             </span>
           </div>
 
           {overflowed && (
             <div className="ua-inspector-watcher__overflow">
               <span className="ua-inspector-watcher__overflow-warning">
-                Overflow warning: too many change events
-              </span>
+                {uiText("Overflow warning: too many change events")}{" "}</span>
             </div>
           )}
 
           <div className="ua-inspector-watcher__dirty-state">
             <span className="ua-inspector-watcher__dirty-label">
-              {dirty ? "Dirty" : "Not dirty"}
+              {dirty ? uiText("Dirty") : uiText("Not dirty")}
             </span>
             <span className="ua-inspector-watcher__status-detail">
-              Queued changes: {queuedCount}
+              {uiText("Queued changes:")}{" "}{queuedCount}
             </span>
           </div>
 
           {lastError && (
             <div className="ua-inspector-watcher__info">
-              <p>Watcher error: {lastError}</p>
+              <p>{uiText("Watcher error:")}{" "}{lastError}</p>
             </div>
           )}
 
           {diff && (
             <div className="ua-inspector-watcher__diff">
               <div className="ua-inspector-watcher__diff-header">
-                Diff Summary
-              </div>
+                {uiText("Diff Summary")}{" "}</div>
               <ul className="ua-inspector-watcher__diff-list">
-                <li>Added: {diff.summary.added}</li>
-                <li>Modified: {diff.summary.modified}</li>
-                <li>Deleted: {diff.summary.deleted}</li>
-                <li>Ignored: {diff.summary.ignored}</li>
+                <li>{uiText("Added:")}{" "}{diff.summary.added}</li>
+                <li>{uiText("Modified:")}{" "}{diff.summary.modified}</li>
+                <li>{uiText("Deleted:")}{" "}{diff.summary.deleted}</li>
+                <li>{uiText("Ignored:")}{" "}{diff.summary.ignored}</li>
               </ul>
               {diff.entries.length > 0 && (
                 <ul className="ua-inspector-watcher__diff-entries">
@@ -187,18 +179,16 @@ export function WatcherPanel() {
               className="ua-btn ua-btn--secondary"
               type="button"
               onClick={handleComputeDiff}
-              aria-label="Read diff"
+              aria-label={uiText("Read diff")}
             >
-              Read Diff
-            </button>
+              {uiText("Read Diff")}{" "}</button>
             <button
               className="ua-btn ua-btn--danger"
               type="button"
               onClick={handleStop}
-              aria-label="Stop watching project root"
+              aria-label={uiText("Stop watching project root")}
             >
-              Stop Watching
-            </button>
+              {uiText("Stop Watching")}{" "}</button>
           </div>
         </>
       )}
@@ -206,20 +196,19 @@ export function WatcherPanel() {
       {stage === "stopped" && (
         <>
           <div className="ua-inspector-watcher__status">
-            <span className="ua-inspector-watcher__status-value">Stopped</span>
+            <span className="ua-inspector-watcher__status-value">{uiText("Stopped")}</span>
           </div>
           <div className="ua-inspector-watcher__info">
-            <p>Watcher stopped. Reason: {stopReason ?? "unknown"}</p>
+            <p>{uiText("Watcher stopped. Reason:")}{" "}{stopReason ?? uiText("unknown")}</p>
           </div>
           <div className="ua-inspector-watcher__actions">
             <button
               className="ua-btn ua-btn--primary"
               type="button"
               onClick={handleReset}
-              aria-label="Start watching project root"
+              aria-label={uiText("Start watching project root")}
             >
-              Start Watching
-            </button>
+              {uiText("Start Watching")}{" "}</button>
           </div>
         </>
       )}

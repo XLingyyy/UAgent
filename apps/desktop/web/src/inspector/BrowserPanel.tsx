@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { useState, useCallback } from "react";
 import { useProjectStore, useRuntimeStore, useRuntimeActions } from "../stores/ui-store";
 
@@ -20,6 +21,7 @@ function redactUrlForDisplay(url: string): string {
 }
 
 export function BrowserPanel() {
+  const {text: uiText} = useI18n();
   const browserState = useRuntimeStore((s) => s.mvp9.browser);
   const activeProject = useProjectStore((s) =>
     s.registeredProjects.find((project) => project.id === s.activeProjectId) ?? null,
@@ -55,16 +57,16 @@ export function BrowserPanel() {
   );
 
   return (
-    <div className="ua-inspector-browser" role="region" aria-label="Browser preview">
+    <div className="ua-inspector-browser" role="region" aria-label={uiText("Browser preview")}>
       <div className="ua-inspector-browser__header">
-        <span>Browser Preview</span>
-        <span className="ua-inspector__badge">MVP10</span>
+        <span>{uiText("Browser Preview")}</span>
+        <span className="ua-inspector__badge">{uiText("MVP10")}</span>
       </div>
 
       <div className="ua-inspector-browser__capability">
-        <span className="ua-inspector-browser__capability-label">Capability:</span>
+        <span className="ua-inspector-browser__capability-label">{uiText("Capability:")}</span>
         <span className={`ua-inspector-browser__capability-value ${enabled ? "ua-text--enabled" : "ua-text--disabled"}`}>
-          {enabled ? "Enabled" : "Disabled"}
+          {enabled ? uiText("Enabled") : uiText("Disabled")}
         </span>
         {!enabled && capability.reason && (
           <span className="ua-inspector-browser__capability-reason">({capability.reason})</span>
@@ -73,29 +75,28 @@ export function BrowserPanel() {
 
       {enabled && (
         <div className="ua-inspector-browser__policy">
-          <span className="ua-inspector-browser__policy-label">Policy:</span>
+          <span className="ua-inspector-browser__policy-label">{uiText("Policy:")}</span>
           <span className="ua-inspector-browser__policy-value">
-            localhost/127.0.0.1/trusted output file allowed, external blocked
-          </span>
+            {uiText("localhost/127.0.0.1/trusted output file allowed, external blocked")}{" "}</span>
         </div>
       )}
 
       <div className="ua-inspector-browser__capability">
-        <span className="ua-inspector-browser__capability-label">Requested:</span>
+        <span className="ua-inspector-browser__capability-label">{uiText("Requested:")}</span>
         <span className="ua-inspector-browser__capability-value">
-          {requestedDisplay ?? "None"}
+          {requestedDisplay ?? uiText("None")}
         </span>
       </div>
 
       <div className="ua-inspector-browser__capability">
-        <span className="ua-inspector-browser__capability-label">Classification:</span>
+        <span className="ua-inspector-browser__capability-label">{uiText("Classification:")}</span>
         <span className="ua-inspector-browser__capability-value">
-          {classification ?? "not_requested"}
+          {classification ?? uiText("not_requested")}
         </span>
       </div>
 
       <div className="ua-inspector-browser__capability">
-        <span className="ua-inspector-browser__capability-label">Preview status:</span>
+        <span className="ua-inspector-browser__capability-label">{uiText("Preview status:")}</span>
         <span className="ua-inspector-browser__capability-value">
           {stage}
         </span>
@@ -103,7 +104,7 @@ export function BrowserPanel() {
 
       {blockedReason && (
         <div className="ua-inspector-browser__capability">
-          <span className="ua-inspector-browser__capability-label">Blocked reason:</span>
+          <span className="ua-inspector-browser__capability-label">{uiText("Blocked reason:")}</span>
           <span className="ua-inspector-browser__capability-value">
             {blockedReason}
           </span>
@@ -112,7 +113,7 @@ export function BrowserPanel() {
 
       {lastError && (
         <div className="ua-inspector-browser__capability">
-          <span className="ua-inspector-browser__capability-label">Last error:</span>
+          <span className="ua-inspector-browser__capability-label">{uiText("Last error:")}</span>
           <span className="ua-inspector-browser__capability-value">
             {lastError}
           </span>
@@ -123,27 +124,26 @@ export function BrowserPanel() {
         <input
           type="text"
           className="ua-inspector-browser__url-input"
-          placeholder="Enter URL (local only by default)"
+          placeholder={uiText("Enter URL (local only by default)")}
           value={urlInput}
           onChange={handleUrlChange}
-          aria-label="URL input"
+          aria-label={uiText("URL input")}
         />
         <button
           className="ua-btn ua-btn--primary"
           type="button"
           onClick={handlePreview}
-          aria-label="Preview URL"
+          aria-label={uiText("Preview URL")}
         >
-          Preview
-        </button>
+          {uiText("Preview")}{" "}</button>
       </div>
 
       {stage === "idle" && (
         <div className="ua-inspector-browser__status">
           <p className="ua-inspector-browser__status-text">
             {enabled
-              ? "Enter a localhost URL or file path to preview. External URLs are blocked."
-              : "Real browser preview is disabled. Enable with UAGENT_ENABLE_REAL_BROWSER=1"}
+              ? uiText("Enter a localhost URL or file path to preview. External URLs are blocked.")
+              : uiText("Real browser preview is disabled. Enable with UAGENT_ENABLE_REAL_BROWSER=1")}
           </p>
         </div>
       )}
@@ -151,78 +151,73 @@ export function BrowserPanel() {
       {stage === "blocked" && (
         <div className="ua-inspector-browser__status ua-inspector-browser__status--blocked">
           <p className="ua-inspector-browser__status-text">
-            Target blocked: {requestedDisplay ?? "[blocked target]"} - {blockedReason}
+            {uiText("Target blocked:")}{" "}{requestedDisplay ?? uiText("[blocked target]")} - {blockedReason}
           </p>
           <button
             className="ua-btn ua-btn--secondary"
             type="button"
             onClick={handleReset}
-            aria-label="Clear blocked URL"
+            aria-label={uiText("Clear blocked URL")}
           >
-            Clear
-          </button>
+            {uiText("Clear")}{" "}</button>
         </div>
       )}
 
       {stage === "failed" && (
         <div className="ua-inspector-browser__status ua-inspector-browser__status--blocked">
           <p className="ua-inspector-browser__status-text">
-            Preview failed: {lastError}
+            {uiText("Preview failed:")}{" "}{lastError}
           </p>
           <button
             className="ua-btn ua-btn--secondary"
             type="button"
             onClick={handleReset}
-            aria-label="Clear error"
+            aria-label={uiText("Clear error")}
           >
-            Clear
-          </button>
+            {uiText("Clear")}{" "}</button>
         </div>
       )}
 
       {stage === "active" && session && (
         <div className="ua-inspector-browser__session">
           <div className="ua-inspector-browser__session-info">
-            <div>URL: {session.displayUrl || redactUrlForDisplay(session.url)}</div>
-            <div>Status: {session.status}</div>
+            <div>{uiText("URL:")}{" "}{session.displayUrl || redactUrlForDisplay(session.url)}</div>
+            <div>{uiText("Status:")}{" "}{session.status}</div>
           </div>
           <button
             className="ua-btn ua-btn--primary"
             type="button"
             onClick={handleLaunchPreview}
-            aria-label="Launch Preview"
+            aria-label={uiText("Launch Preview")}
           >
-            Launch Preview
-          </button>
+            {uiText("Launch Preview")}{" "}</button>
           <button
             className="ua-btn ua-btn--secondary"
             type="button"
             onClick={handleReset}
-            aria-label="Cancel browser preview"
+            aria-label={uiText("Cancel browser preview")}
           >
-            Cancel
-          </button>
+            {uiText("Cancel")}{" "}</button>
         </div>
       )}
 
       {stage === "completed" && artifact && (
         <div className="ua-inspector-browser__artifact">
           <div className="ua-inspector-browser__artifact-info">
-            <div>Artifact: {artifact.id}</div>
-            <div>Kind: {artifact.kind}</div>
-            <div>MIME: {artifact.mimeType}</div>
-            <div>Size: {artifact.byteSize} bytes</div>
-            <div>Redacted: {artifact.redacted ? "yes" : "no"}</div>
-            <div>Label: {artifact.displayLabel}</div>
+            <div>{uiText("Artifact:")}{" "}{artifact.id}</div>
+            <div>{uiText("Kind:")}{" "}{artifact.kind}</div>
+            <div>{uiText("MIME:")}{" "}{artifact.mimeType}</div>
+            <div>{uiText("Size:")}{" "}{artifact.byteSize} {uiText("bytes")}</div>
+            <div>{uiText("Redacted:")}{" "}{artifact.redacted ? uiText("yes") : uiText("no")}</div>
+            <div>{uiText("Label:")}{" "}{artifact.displayLabel}</div>
           </div>
           <button
             className="ua-btn ua-btn--secondary"
             type="button"
             onClick={handleReset}
-            aria-label="New browser preview"
+            aria-label={uiText("New browser preview")}
           >
-            New Preview
-          </button>
+            {uiText("New Preview")}{" "}</button>
         </div>
       )}
     </div>

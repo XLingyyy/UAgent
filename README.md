@@ -1,502 +1,78 @@
 # UAgent
 
-AI Agent Host and Client aligned with UE5.8 official Unreal MCP Server. UAgent provides a local-first desktop workspace for planning, executing, and reviewing AI-assisted workflows - starting with Unreal Engine game development tooling.
+面向 Unreal Engine 工作流的本地桌面 Agent 工作台，使用 React、TypeScript 和 Tauri。当前重点是清晰的模型对话、显式上下文分享，以及可单独审阅的工具操作。
 
-## Current status: frontend stabilization reconstruction
+Local desktop workspace for model conversations and explicitly approved Unreal Engine workflows. The current live model transport implements **DeepSeek / `deepseek-flash` only**; other provider configurations are saved as configuration, not advertised as runnable integrations.
 
-The October 2026 reconstruction restores project-switch isolation, Composer
-submission guards, explicit production/fixture boundaries, provider/model identity,
-keyboard interactions, evidence presentation, and bounded DDC cleanup retries.
-See [the reconstruction and scoped validation record](docs/rebuild-mvp15-20261026.md)
-for the 19 frontend tests, 4 native cleanup tests, 12 browser checks, typecheck,
-and Web build results. These are focused checks, not a full regression run.
+## 当前能力
 
-Native Windows Snap, real UE lifecycle acceptance on the rebuilt source, live
-Provider integration, and the four historical cache cleanup outcomes remain
-unverified. Some product entry points and persistent configuration are still
-incomplete. This branch does not establish readiness for MVP16 or a new release.
+- 桌面界面默认中文，设置 → 通用可即时切换 English，重启保留语言偏好。
+- 首页动态显示实际模型或未选择状态。设置 → 模型服务管理服务商、端点与模型列表，明确区分已配置、会话关闭、连接未验证及当前构建尚不可运行。
+- 当前真实传输只接入 DeepSeek 官方端点的 `deepseek-flash`。可以编辑其他服务商与模型配置，但尚未实现其真实调用，不能通过配置界面开启相应推理。
+- 同一对话继续追问时，按 user/assistant 顺序携带最近最多 8 轮已完成纯文本，最多 12 KiB；新对话和不同项目隔离。附件、工具执行及失败/取消的轮次不自动继承，完整出站确认展示实际发送的历史与正文。
+- 助手正文在同一消息节点内连续流式更新，支持基础 Markdown 排版。运行事件和诊断默认折叠；停止保留部分回复与草稿，失败不自动重试，也不伪装为成功上下文。
+- 本地项目索引、文件/资源引用、日志与工具入口继续保留各自的信任、能力和审批边界。模型提案不等于执行授权。
 
-## Historical MVP15D acceptance (7dd3148)
+## 凭证、费用与审批
 
-The historical implementation commit
-`7dd31488554e1cfc1aa54cd8a15d3a891a536f5a` passed the complete detached-clean
-F0-F16 source-bound chain. The Tauri release binary SHA-256 is
-`95370ee47cf79c8e5ee8e2550dd42dd8a57e8395961d2ba2aed5a66d61d8650d`;
-UE 5.8.1 BuildPlugin sealed six artifacts and two modules, ExactSix passed, and
-fixed 15A passed `3 / 3 / 0 / 0`. Rendered product 15B captured all six tools in
-Tool Search ON/OFF sessions and all six retractions. Authorized 15C completed
-five forward operations, four inverse rollbacks, eight negative cases, the real
-cross-TTL wait and replay delta `0/0/0/0/0`; `/Game/Test01` was restored and
-owned process/port/cache residue is zero. D16 sealed independently verifiable
-Final `48 / 20` and UE581 `38 / 10` file/directory inventories with a matching
-22-file/six-artifact bridge. The desktop badge is `MVP15 Complete`; Overall MVP15,
-D13-D16, G13 and G16 are `COMPLETE`, blockers are `None`, `PASS_REAL_SMOKE: YES`,
-and Ready for MVP16 is `YES`.
+产品**没有固定 10 元累计费用门槛**，费用以服务商账单为准，由用户自行控制。旧测试活动的策略代码和账本可以保留作历史记录，产品会话不依赖其初始化、核价或额度预留。
 
-### Historical MVP15D closeout lineage
+API 密钥由用户在本机为当前会话手动输入，只保存在内存，不自动读取环境密钥或旧聊天密钥，不写入配置、存档或日志。一小时过期、停止、切换项目/模型或退出会清除会话。
 
-The superseded Resume 15 checkpoint also includes Final Live Acceptance
-Resume 3 Rework 1's live-owner/restart repair, Resume 4's BuildPlugin descriptor
-verifier repair, Resume 5's official Automation-report UTF-8 BOM repair, and
-Resume 6's exact-once creation-FILETIME provenance repair. Resume 7 adds the
-independent raw Automation-report verifier and the sealed final-runner/UE581
-inventory bridge required before a fresh live lineage may be accepted. Resume 8
-Rework 1 closes the cross-layer Windows verbatim local-drive normalization gap:
-only exact `\\?\X:\...` roots become ordinary `X:/...`, while UNC and device
-namespaces remain fail closed through adapter trust and native read-only use.
-Resume 9 then reached an official UE 5.8.1 Automation `3 / 3 / 0 / 0` result on
-the predecessor checkpoint and exposed the next production boundary in rendered
-15B: the managed guardian omitted the headless `-NullRHI` switch and could not
-establish the MCP listener inside its 120-second bound. The accepted Resume 9
-source checkpoint adds that switch only to the task-owned managed UE child.
-Retained real-UE diagnostics show the repaired vector starting the listener,
-passing `UAgentAssetTools.ReadOnly`, exiting normally, and leaving zero residue.
-The pre-repair live lineage remains partial and cannot satisfy current-source 15A.
-Resume 10 then completed a clean build and the official 15A `3 / 3 / 0 / 0`
-matrix on `51cdf227...`, reached actual rendered 15B through `confirmTrust`, and
-failed closed because the sealed six-artifact package manifest included
-`Resources/mvp15d-native-binding-v2.json` while the UE companion expected only
-five package paths. The accepted Resume 10 source checkpoint adds that exact
-artifact to the strict allowlist and updates the production-manifest test fixture.
-No patched release or live gate was run after the repair.
-Resume 11 rebuilt from that checkpoint and reached the separate exact-six
-prerequisite, which failed closed because the UE `FString` default less-than
-ordered JSON keys without case sensitivity while the Node manifest producer used
-case-sensitive ordinal ordering. The accepted Resume 11 checkpoint supplies an
-explicit case-sensitive key predicate and a positive production-manifest
-self-hash regression. No patched release or live gate was run after this repair.
-Resume 12 rebuilt that checkpoint and passed the separate ExactSix `1 / 1 / 0 /
-0` diagnostic and fixed 15A `3 / 3 / 0 / 0` matrix, then exposed a rendered 15B
-capability split: native invoke reported the editor bridge enabled while the UI
-store retained `feature_disabled`. The accepted source checkpoint defers fixed
-adapter creation from dependency-module evaluation to application bootstrap,
-registers it idempotently before render, and regression-covers late Tauri bridge
-availability. Every Resume 12 live artifact predates this UI repair.
-Resume 13 then rebuilt `38cec6f...`, passed the separate ExactSix `1 / 1 / 0 /
-0` diagnostic and fixed 15A `3 / 3 / 0 / 0`, and reached rendered 15B through
-project trust. The managed-process path still requested fixture
-`Game.uproject` although the validated disposable project contained only
-`FinalHost.uproject`, so the lineage failed closed before guardian spawn. The
-accepted Resume 13 source checkpoint derives the pre-index descriptor from the
-validated project filename and regression-covers the rendered no-index flow.
-Every Resume 13 live artifact predates this repair and remains diagnostic only.
-Resume 14 rebuilt `c60a094e...`, passed the separate ExactSix `1 / 1 / 0 / 0`
-diagnostic and fixed 15A `3 / 3 / 0 / 0`, and again reached rendered 15B through
-project trust. The fixed-authority path then passed the UI's opaque trusted-root
-token directly to native managed-process creation, whose canonical trusted-root
-registry correctly rejected it. The accepted Resume 14 source checkpoint
-resolves that token only at each direct native editor create/attach boundary,
-keeps UI/product state opaque, and retains native fail-closed validation. Every
-Resume 14 live artifact predates this repair and remains diagnostic only.
-Resume 15 rebuilt `9d04ef7...`, passed the separate ExactSix `1 / 1 / 0 / 0`
-diagnostic and fixed 15A `3 / 3 / 0 / 0`, then exposed two rendered 15B
-contract defects: the native MCP observer rejected a legal notification
-`HTTP 202` empty body, and the exact-six descriptors omitted four required
-contract objects. The first accepted Resume 15 source checkpoint at
-`f5b514c7ac78a47c233bfdbae9e3f2d70840a08f` accepts an empty body only for a
-valid id-less JSON-RPC notification with status 202 and publishes all required
-descriptor contract objects. That clean checkpoint then passed ExactSix `1 / 1
-/ 0 / 0` and fixed 15A `3 / 3 / 0 / 0`; rendered 15B exposed three further
-production defects. The second accepted Resume 15 source checkpoint accepts
-task-owned OS-observed `managed` module provenance, retries the same rendered
-Connect control once after an explicit `error`, and limits identity aggregation
-to the exact-six asset descriptors when legal MCP meta tools are also present.
-All live artifacts from `f5b514c...` predate this second repair and remain
-diagnostic only.
-That second checkpoint at `6fb99447f3158c9f0326c93774fe03c5319762ff`
-passed clean ExactSix and fixed 15A, then rendered 15B rejected an equal renderer
-predecessor window because its JSON object members arrived in a different order.
-The historical third checkpoint `96e7183f9bb6644bf72191b68277b112c33ccc1d`
-compares exact key count and values independently of member order. Its clean run
-passed ExactSix and fixed 15A, then rendered 15B exposed stale successor attach,
-exited-process liveness, causal ancestry, request-bound session and nested contract
-handling defects. The historical fourth checkpoint closes those five defects.
-Live product and UI children now receive an isolated UE
-editor bridge/launch gate and an absolute UE root; capability-only, UE
-Automation and N2 children cannot inherit that authority, and asset mutation
-remains enabled only for live UI lifecycle. The native bridge starts one
-task/phase-owned guardian which owns the exact UE/MCP listener, task-local DDC
-and PID/creation-FILETIME identity from pre-Connect readiness through rendered
-Disconnect and root-process closeout.
+开启会话本身不发请求，也不代表连接验证成功。每次真实发送仍需单独确认端点、模型、项目和完整正文。改稿、切换会话/项目、撤销或停止会使旧确认失效。文件、终端和 UE 操作仍需要独立、限定范围的审批与沙盒检查；没有自动重试或备用模型切换。
 
-The accepted source checkpoint makes UE restart consume an ordered native
-terminate/create/attach/MCP/attestation receipt chain. A successful transition
-requires confirmed predecessor exit, a different process and listener identity,
-new editor and MCP sessions, newer generations, and installed/loaded module
-equality against the canonical package manifest. Raw PID, port, endpoint,
-session, FILETIME and local paths remain native-memory facts; retained product
-evidence uses hashes and receipt references. This source work does not establish
-15A, 15B, 15C, D16, a real smoke, or Stage Ready; those gates still require a
-fresh clean-checkout run from the accepted implementation SHA.
+## 使用流程
 
-Resume 4 reached a real UE 5.8.1 `BuildPlugin` package and exposed the official
-descriptor rewrite. The accepted verifier binds source and packaged descriptor
-bytes independently, allows only the observed Installed/EngineVersion/default
-field transformation, and rejects every other semantic drift. That run's
-release, package, manifest and evidence were invalidated and removed after the
-source change; no live gate advanced.
+1. 打开设置 → 模型服务 → 添加服务商，选择已接入的服务商类型，核对端点与模型后保存。
+2. 在连接状态中输入本次会话密钥，明确勾选授权并开启会话。
+3. 在工作台输入问题。简单文本对话不要求先注册 UE 项目；发送前审阅完整请求，再确认一次。
+4. 在同一对话继续追问；“新对话”开始独立上下文。附件需重新选择，工具结果分享需另行选择和确认。
 
-Resume 5 then reached install/load and an official UE Automation report whose
-fixed three-test matrix passed. UE 5.8.1 writes that `index.json` with a UTF-8
-BOM; the accepted producer now removes exactly one leading decoded BOM before
-strict JSON parsing while retaining the original bytes for SHA-256. The source
-repair again invalidated and removed the pre-repair live lineage, so 15A and all
-later live gates remain open.
+服务商编辑器目前更新的是当前应用会话配置。现有“连接与安全 → 保存本机配置”可以显式保留已接入模型选择、主题和项目路径，恢复后仍需重新信任项目和开启模型会话。其他自定义服务商完整配置的持久化尚未实现。保存的聊天是脱敏文本副本，只读展示，不自动恢复为可发送上下文或执行权限。
 
-Resume 6 reached the same official `3 / 3 / 0 / 0` matrix, canonical loaded
-module authority, unchanged Content and zero process/port residue, then failed
-closed because an already hashed creation FILETIME was retained a second time.
-The accepted source now passes the validated raw early-process FILETIME through
-the generic retention transform exactly once. The required side-effect scan was
-also narrowed for exact negative-case vocabulary and now exits with zero blocked
-findings while retaining unsafe-positive self-tests. All Resume 6 live artifacts
-predate this repair and remain diagnostic only.
+## 从源码开发与构建
 
-Final Pre-live Source Closure Rework 7 is historical `PARTIAL / NEEDS_FIX`; no
-checkpoint was created. Rework 8 (actual bridge orchestration and exact window
-instance ownership) has `Review Verdict: NEEDS_FIX`; no checkpoint was created.
-Rework 9 implementation and controlled verification have `Review Verdict:
-PASS` and are checkpointed at implementation commit
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. On 2026-08-12, explicitly
-authorized exact-manifest cleanup removed all 4,601 historical TEMP fixture
-roots with failures 0 and residual 0. Fresh asset `40/40` and bridge `14/14`
-regressions passed and left zero matching roots. `External Gate / TEMP cleanup:
-PASS`; the historical mtime actor remains unconfirmed.
-Final Live Acceptance Resume Rework 1 has `Review Verdict: PASS` for its source
-content and controlled verification and is checkpointed at implementation
-commit `de248a7028d21c53c26db7b28930d583566580a6`.
-It routes visible N1-N8 settings controls through the production desktop
-adapter, obtains N1 `untrusted_root` before trust, runs N2 in an exact
-task-owned child with native mutation authority disabled, and records N7/N8
-through actual MCP execute/rollback calls. No current clean-checkout 15A-15C
-evidence is claimed.
-Final Live Acceptance Resume 2 Rework 3 has `Review Verdict: PASS` for its
-source-only retained-transcript privacy repair and is checkpointed at
-`25d1262528e0976d24f96056975fdb36bc790b77`. Unterminated quoted secrets now
-fail closed at line/EOF boundaries, bare punctuation tails remain covered, and
-the shared producer/scanner/manifest grammar is bounded. The invalid Resume 2
-clone/evidence cleanup gate is `SATISFIED`: an independent zero-residual scan on
-2026-08-14 found no clone, evidence root, task process or declared-port listener.
-No live gate advanced from cleanup alone.
-The separate Final Source/Tooling Rework 8 checkpoint dated 2026-08-03 remains a
-historical `COMPLETE / PASS` record at implementation commit
-`98c8b387e1124a519977849d48ab824e4e6bb9c5`. G14, G15 and G16 are complete.
-D13 / 15A, D14 / 15B, D15 / 15C and D16 are complete on `2293cdf...`; UE 5.8.1
-compatibility and overall MVP15 acceptance are complete. Ready for the next stage
-and current `PASS_REAL_SMOKE` are `YES`.
+仓库使用 pnpm workspace。根据仓库 engines，需要 Node.js 20+、pnpm 9+。原生桌面还需要 Rust 工具链；Windows 构建需要 C++ 构建工具和 WebView2 运行时。
 
-Final Pre-live Source Closure Rework 1-6 are historical `PARTIAL / NEEDS_FIX`
-submissions without checkpoints. The reviewed Rework 9 implementation preserves Rework 8's two
-actual predecessor/successor `App` registrations, each calling production
-`startMvp15dRuntimeBridge(invoke)`, and changes the native parent lifecycle. The
-first main-thread task validates the exact Tauri-injected predecessor, registers
-an exact-instance one-shot `Destroyed` listener, and destroys only that captured
-receiver; it cannot build or acknowledge success. An off-main worker waits with
-a bound and without holding `BridgeState`, then queues a new main-thread
-continuation after AppManager removal. The continuation revalidates the
-handoff/task/phase/private binding, checks current `main` occupancy, and builds
-one successor only when the label is empty. Atomic dispatch gates prevent timed
-out queued or running tasks from later destroying or building. While this
-handoff is pending, the app prevents last-window exit; terminal no-window
-failures exit explicitly.
+```sh
+pnpm install --frozen-lockfile
 
-A hidden Windows Webview/Wry regression now reproduces the old same-task
-collision as the locked stable API's actual
-`WebviewLabelAlreadyExists("main")`, observes manager removal with build count 0,
-and then creates a same-label successor with a different HWND from the next
-main-thread continuation. A second real continuation injects replacement B from
-the `RunEvent::WindowEvent(Destroyed)` callback before the exact predecessor
-listener; B survives, the third-window build count remains 0, and protocol tests
-keep acknowledgement/claim/publish/complete closed. The asynchronous native-App
-harness returns the restart response before parent destroy/build/acknowledgement
-and uses its lifecycle query as the parent-ready barrier. Acknowledgement v2,
-claim v3, window identity v1, product summary v2, N4, N5, second rollback, and
-actual MCP DELETE controls remain unchanged.
+# 浏览器前端预览；没有原生窗口/文件系统能力
+pnpm --filter @uagent/desktop web:dev
 
-The TEMP residue gate is closed. The authoritative cleanup manifest contains
-4,601 directories (4,591 `uagent-asset-*`, 10
-`uagent-mvp15d-bridge-test-*`) at SHA-256
-`45b870c32fbf48c20bf1545dbdaf7ac58c036c400b521677fccd22e4dae9d893`.
-Before deletion, exact TEMP containment, names, directory type, complete
-descendants, reparse/link absence, exact-set equality, and live-owner safety all
-passed. The cleanup deleted 837 fixture files, 4,717 internal directories, and
-all 4,601 roots; failures and residuals were zero. Post-cleanup asset and bridge
-regressions passed and the second rescan remained at zero matching roots. Earlier
-94/235 root-only `mtimeNs` observations remain historical and unattributed.
+# Tauri 原生桌面开发
+pnpm --filter @uagent/desktop tauri:dev
 
-These remain source implementation and controlled-test facts. No current
-clean-checkout Tool Search ON/OFF sessions, installed/load/manifest tuple, live
-fingerprint, retraction session boundary, full 15A N1-N8 acceptance root,
-partial/unknown run, real parent closeout, live UE/MCP run, or real mutation
-evidence was produced. The latest source delta invalidates the previous release and
-all earlier 15A-15C evidence. The installed release capability gate remains
-open; the invalid Resume 2 cleanup gate is closed and a fresh 15A restart is
-dispatched from a clean checkout of
-`4f0247ab8ac67bc55d50d2ae89b92077199cab2e`. The fifth interim checkpoint
-`bb89126d82416f0958050405ff1ab693505614f7` extends the owned live-phase budget
-from 180 to 600 seconds. Its clean chain passed ExactSix and fixed 15A and
-completed the real rendered 15B producer, which exposed an overbroad retained-
-event process-ID redaction. The sixth checkpoint preserves validated 64-character
-lowercase process-identity SHA-256 fields while continuing to bind raw or invalid
-values. Its clean chain again passed ExactSix and fixed 15A and completed rendered
-15B, which exposed a stale observation binding after session/PID retention. The
-seventh checkpoint recomputes that binding over the final retained material. Its
-clean chain again passed ExactSix and fixed 15A and completed rendered 15B, where
-the runner looked for raw runtime PID identity in the intentionally filtered
-phase transcript. The eighth checkpoint reads the canonical raw-runtime file,
-verifies its descriptor and full task/source/runtime context, and supplies the
-validated PID binding to both execute and persisted verification paths; all
-phase-specific readiness and closeout gates remain unchanged.
+# 仅构建前端
+pnpm --filter @uagent/desktop web:build
 
-The last verified pre-checkpoint Tauri build embedded
-`uagent.mvp15d.source-identity.v2`: base/compiled commit
-`d308d80a994079dc22af2b982e70ae416d832e4f`, resolved head ref, honest
-`sourceDirty: true`, and SHA-256
-`ccf061de9f2583d26b9562a9739255f04b288c84672603424859c04fee686099`
-over its complete 336-file
-`uagent.mvp15d.production-source-boundary.v2`. The accepted Resume 7 source
-checkpoint adds the independent final-live verifier, so its boundary contains 336
-production files discovered from 14 approved roots plus 28 exact files;
-9 exact exclusion classes account for 126 excluded entries. Tests, docs,
-workflow data, build output, evidence, caches, logs, installers, secrets, and
-external roots stay outside it. A new production file is included
-automatically, and deletion of a tracked production file marks the identity
-dirty. The accepted checkpoint's `build.rs` watch set contains 357 entries,
-including normal or linked-worktree Git metadata, symbolic or detached HEAD,
-loose refs, and packed refs. The historical 2026-08-03 checkpoint closed its
-then-current G15 scope, and Rework 9 is checkpointed at
-`aa14363f15d8bdc8eaf392c67cf444496cc8a968`. Resume Rework 1 remains recorded at
-`de248a7028d21c53c26db7b28930d583566580a6`; the privacy repair is checkpointed
-at `25d1262528e0976d24f96056975fdb36bc790b77`, the live-owner repair at
-`0b47dd41e92f941f87c45c5694ec75d2cc932771`, and the Resume 4 BuildPlugin
-descriptor verifier repair at `a780fc4231b99b39153fb88c9ab460717610b3f3`.
-The historical Automation-report BOM repair is checkpointed at
-`7916cf74cb205049e1c8967b9217cb8b64df36ca`. The exact-once UE process
-provenance repair is checkpointed at
-`8b2ba0bf83e70f6ecdddb12202b6cb80732300fa`. Resume 9 remains checkpointed at
-`51cdf22753ae2f9d90a0e3d5cb03df8495fa7e46`. Resume 10 remains checkpointed at
-`4b6e2fa35ad999882dd3b50d697ab7cb36a1552e`, and Resume 11 at
-`f14dc69543a42d553542b73547c3598fb39947b6`. Resume 12's fixed-adapter bootstrap
-repair remains accepted at `38cec6f3e11af1e4b991430d3941e71c57d2c45d`. Resume 14's
-trusted-root boundary repair remains accepted at
-`9d04ef710eff5a8c2aebdf0c92076e8ee477c1f5`. Resume 15's first interim source
-checkpoint remains historical at `f5b514c7ac78a47c233bfdbae9e3f2d70840a08f`.
-Its second interim checkpoint is historical at
-`6fb99447f3158c9f0326c93774fe03c5319762ff`, and its third at
-`96e7183f9bb6644bf72191b68277b112c33ccc1d`. The fourth checkpoint is
-`e20a9921caf77d1ac05c95ff8811acef9c63938a`; the fifth final-live source
-checkpoint is `bb89126d82416f0958050405ff1ab693505614f7`; the sixth
-checkpoint is `39bccbc4a88d925bd3f44ad5c5a44add10a48b39`; the seventh checkpoint
-is `9fc667bceeaf81bcd087cec0f690c76bf067ad9f`; the historical eighth checkpoint is
-`e50022ddecf0c6a19ceb4d78dc8eb54b5e118f0b`; the ninth checkpoint is
-`3331e220f53f528c7cc98e61efc927428d4eaeca`; the tenth checkpoint is
-`8c78b172dd7ac03c7d38f0d28cc157611e4a63a7`; the eleventh checkpoint is
-`f50b8361fc0dd2fd1543cb7a30161c8d5d3ebe02`; the current twelfth checkpoint is
-`4f0247ab8ac67bc55d50d2ae89b92077199cab2e`. A separate clean-checkout rebuild
-from the twelfth checkpoint restarts G16 and D13 / 15A.
-
-The loaded-module publisher still has one write-capable production path. It
-publishes only after the owned live process is re-observed and the private
-task marker, session/generation, PID, creation FILETIME, executable bytes,
-project, source identity, manifest, package, installed inventory, producer/
-helper/observer/Job facts are independently derived. Raw process/session facts
-remain ephemeral; retained ledgers contain only domain-separated SHA-256
-bindings. Its private publisher brand is an in-process condition and is not
-serialized. The standalone writer CLI is disabled; injected observation and
-pure builders remain fixture-marked.
-
-Verification has two explicit levels. Exported verifiers and CLI `verify`
-reopen and cross-bind retained files and return a persisted-consistency status
-with `productionLaunchAuthorityVerified: false`. A coherent copied or
-hand-authored chain can satisfy that consistency level, so it is never described
-as owned live-production evidence. Only `executeLivePhase()` can return
-`*_owned_launch_verified` with `productionLaunchAuthorityVerified: true`: the
-same parent invocation must check absent outputs, select the fixed producer and
-arguments, use the real non-injected launcher, validate the actual child result,
-consume the events, complete persisted cross-binding, and consume a private
-single-use `WeakSet` receipt that is neither exported nor serialized. Public
-origin strings, hashes, projected identity bindings, Job/event JSON, booleans,
-nonces, and caller objects cannot create that receipt.
-
-The Windows observer rejects leaf links and every symlink/junction/reparse
-ancestor below the installed root. Real fixture-process and intermediate
-`Binaries`/`Win64` junction regressions pass. Cleanup retains the Job handle,
-forces or awaits closeout, retries only for Windows handle release, and fails
-when a process or directory remains. Fifteen inherited task fixture directories
-plus one transient test residue were removed after exact `%TEMP%` containment,
-name, and no-live-owner checks; the final matching process and fixture-directory
-counts are zero.
-
-The historical Final Source/Tooling Rework 8 release `uagent.exe` passed all three capability-only
-handshakes — native startup, the normal-product renderer, and the rendered
-validate/add/trust controls — with zero MCP calls, zero network calls, zero
-asset operations, and zero residuals. The probes establish only the runtime
-boundary. They do not claim real product discovery, UE execution, Tool Search,
-or asset mutation.
-
-UE Automation will continue to come from the official `-ReportExportPath` JSON
-report plus exact UAgent task markers and a fixed companion Automation matrix.
-Ordinary UE logs remain separate redacted logs and are never treated as pure
-JSONL. Full UE execution remains post-checkpoint.
-
-The UE 5.8.1 evidence collector uses a closed allowlist, deterministic
-redaction, independent verification, and secret/path rejection. The unsafe
-predecessor evidence root was invalidated and removed for
-`TOKEN_AND_RAW_PATH_EVIDENCE_INVALID`; no replacement live root was created.
-Full compatibility and acceptance are assigned to the newly dispatched
-clean-checkout task based on current implementation commit
-`4f0247ab8ac67bc55d50d2ae89b92077199cab2e`.
-Real UE, Tool Search, and mutation
-were `SKIPPED_BY_TASK_BOUNDARY` in the source-repair task. The dispatched live
-task may enter exact-sandbox 15C mutation only after fresh 15A and 15B pass.
-
-The tracked multi-size ICO and actual Tauri MSI/NSIS packaging remain accepted
-implementation facts. Identity v2 / manifest v3 independently preserve engine
-`5.8.1`, engine changelist `56057345`, compatible changelist `55116800`, and
-module BuildId `55116800`; exact `RunUAT.bat ... -Rocket` construction and the
-deterministic module index remain in place. Historical Source Checkpoint Rework 7 / UE 5.8.0
-validation retains its original meaning and does not satisfy the current live
-gates.
-
-Historical Source Checkpoint Rework 7 D0/build/UE evidence still validates in place. It preserves
-the selected Direct route and closes the Toolset Registry alternative for the
-accepted D0-D12 source checkpoint, but it does not substitute for final
-15A-15C evidence.
-
-## Historical Stage: MVP15 - Native Authority Binding Rework
-
-This historical stage reopened MVP15 for native authority binding acceptance and recorded `BLOCKED` / Ready `NO`. C11/11A delivered the native trusted-root, live observation/process, default-off mutation-gate, and absolute transaction/recovery controls with a green automated ledger. C12 then identified UE `5.8.0` promoted build/changelist `55116800`, descriptor-reported `Unreal MCP` version `1.0`, and six reproducible project-local module hashes. C13 created a retained task copy, and C13B proved that a task-owned UE can use an isolated task-local DDC and reach the exact modules plus a task-owned loopback listener; the cold-cache listener appeared at about `+602.9s`, outside its 600-second gate.
-
-C13C reused that warm DDC and observed all launch-readiness conditions together at `+33.408s`, without connecting to MCP or performing product/native/mutation actions. C13D then proved that child-only `PYTHONDONTWRITEBYTECODE=1` does not suppress the UE embedded runtime's 28 generated cache files. C13E modeled route A as `163` byte-exact business files plus 28 source-mapped `cpython-311` cache paths and produced a clean one-launch ledger at `+94.338s`; supervisor review then found two validator defects. C13E1 repaired and closed those defects: every native path-inspection error fails with `PATH_INSPECTION_FAILED`, `header.valid` reflects the complete header result, the expanded 23-test matrix passes, and the retained `191 = 163 + 28` copy revalidates read-only with zero cache metadata change and no additional UE launch. Supervisor review accepted the repair and recorded verified implementation commit `12159b9b5eb31829208df5c01c7fc97f157398c2`; the remote checkpoint is published and local external artifacts are excluded by commit `af457cad6c870c62b333bfba82df4fb38d83c6b1`.
-
-C14 implemented deterministic `uagent.mvp15.live-asset-toolset-fingerprint.v1` publication in the real desktop adapter. C14A hardens that boundary: a new connection generation atomically retracts old discovery, facade inventory, MCP binding, and fingerprint before any synchronous status notification; blocked publications expose only allowlisted names, stable flags, and counts, never raw unexpected/duplicate names. Primitive, non-string, throwing/proxy-like, malformed, and non-JSON inputs remain fail closed without an accepted SHA-256. The controlled C14 task-owned read-only attempt reached the exact loaded module/listener environment, preserved Route A `191 = 163 + 28`, and made one initialization request before a pre-discovery transport/environment failure. It produced no descriptor/schema evidence and is not a schema rejection; discovery and every registration/token/dry-run/execute/verify/rollback/replay/mutation count stayed zero. Separately, the authoritative active-byte mapping remains `BLOCKED_BY_MCP_SCHEMA`: all six signed Epic sibling binaries differ from the active unsigned project-local set, and no authoritative package manifest or source/build attestation maps those active bytes. Supervisor review accepted the C14/C14A implementation at verified commit `37c29cbc7961218bfd71d1809178359952a75e18`; its documentation closeout is published in the same task checkpoint. The historical 09Z `PASS_REAL_SMOKE` remains former happy-path evidence only. At the C14 checkpoint, product-adapter capture and the product-UI lifecycle were still absent; current status is summarized above.
-
-1. **Asset Mutation Contracts**: Sandbox asset paths, operation kinds, dry-run plans, ChangeSet approvals, verification, rollback, evidence, audit, and replay summaries.
-2. **Sandbox Policy**: Blocks non-sandbox paths, path traversal, Save All, unsafe delete/move/rename/bulk operations, broad mutating MCP calls, stale manifests, provider auto-apply, raw secrets, and replay re-execution.
-3. **Runtime Asset Service**: Deterministic dry-run, ephemeral native-issued approval token handoff, execute, verify, rollback, manifest, replay summary, and scenario matrix support.
-4. **Native Guard Rework**: Native commands are bound to authoritative trusted-root and live observation registries, a strict `UAGENT_ENABLE_ASSET_MUTATION=1` gate, a 60-second one-time token, and absolute 15-minute forward / 20-minute recovery deadlines. Automated C11 coverage is present; C12-C13E1 add accepted real build, module, task-copy, DDC, process, listener, and fail-closed dual-layer Plugins containment evidence, while provenance and fresh product-UI acceptance remain blocked.
-5. **MCP Schema Adapters**: Exact allowlist for dry-run, execute, and rollback-capable sandbox asset tools with strict state-specific structured results, required `sideEffectObserved`, read-only evidence queries, and a redacted session/generation-bound exact-six fingerprint publication; generic wrapper mutation remains blocked.
-6. **Desktop UI / Store**: Inspector Assets and Changes surfaces expose `executed`, `verified`, `rollback_available`, `rolled_back`, stable blocked reasons, redacted operation audit, and recorded replay summaries. The working tree also contains inherited visible Companion status/contract/hash/fingerprint/generation copy in `AssetMutationPanel` and `ConfigSettings`, with matching UI assertions; historical Source Checkpoint Rework 7 and documentation-only Source Checkpoint Rework 8/Rework 9 did not edit those files or the five TitleBar-coupled files, and the inherited changes do not establish acceptance.
-7. **Scenario Matrix / Side-effect Scan / Docs**: Security checks also cover native trust, observation provenance, native gate authority, transaction liveness, and pre-trust root mapping regressions.
-
-Controlled text writes remain approval-gated and limited to trusted fixture/temp roots or explicitly trusted project roots. Non-sandbox UE assets, Save All, bulk asset operations, arbitrary shell expansion, provider live defaults, automatic git operations, replay re-execute, and raw secret/path leakage remain blocked.
-
-Real UE execution remains limited to `/Game/UAgentSandbox/**`; the accepted `/Game/Test01` source stays read-only.
-
-## Technology Stack
-
-- **Desktop Shell**: Tauri 2 + React 18 + Vite 5
-- **Language**: TypeScript 5.5+ (strict mode)
-- **Package Manager**: pnpm 9+ monorepo
-- **Linting**: ESLint 9 (flat config) + Prettier
-- **Testing**: Vitest + Testing Library
-
-## Quick Start
-
-```bash
-pnpm install
-pnpm --filter @uagent/desktop web:dev   # Start Vite dev server (browser preview, fixture fallback)
-pnpm --filter @uagent/desktop dev        # Start Tauri native dev (real FS bridge available, requires Rust)
-pnpm typecheck    # TypeScript checking
-pnpm lint         # Static analysis
-pnpm test         # Run test suite
+# 构建未打包的调试版桌面程序
+pnpm --filter @uagent/desktop tauri:build --debug --no-bundle
 ```
 
-## Project Structure
+以 Tauri 构建日志输出的位置为准，`CARGO_TARGET_DIR` 会影响目标目录。默认配置使用本地相对 `frontendDist`。本轮没有发布公共 Release、签名安装包或公共 exe 下载；本机交付路径不能作为其他人的下载地址。
 
-```
-apps/desktop/
-  src-tauri/        Tauri 2 native shell (Rust)
-  web/              React + Vite frontend
-    src/
-      app/          Root App and providers
-      shell/        AppShell, TitleBar, MainLayout, GlobalOverlays
-      sidebar/      LeftSidebar
-      workspace/    Workspace (ConversationViewport + ComposerDock area)
-      inspector/    InspectorPane
-      components/   Reusable presentational components
-      runtime/      Desktop mock runtime adapter and event view models
-      stores/       UI state stores (custom slice store)
-      styles/       tokens, theme, animations, globals
-      types/        UI type definitions
-packages/shared/    Shared types plus MVP1 Task/Runtime/Event contract
-packages/runtime/   Deterministic MockRuntime and TaskEvent reducer
-packages/mcp-client/  MCP JSON-RPC, Streamable HTTP, legacy SSE, session, and discovery client
-docs/               Architecture, roadmap, development guide
+类型与本次对话相关的局部检查：
+
+```sh
+pnpm --filter @uagent/desktop typecheck
+pnpm --dir apps/desktop exec vitest run web/src/runtime/conversation-flow.test.tsx web/src/runtime/provider-stream-ui.test.tsx web/src/runtime/outbound-review-ui.test.tsx web/src/runtime/workspace-persistence-ui.test.tsx web/src/i18n/core.test.ts web/src/shell/TitleBar.drag.test.tsx --pool=forks --maxWorkers=1 --minWorkers=1
 ```
 
-## Native Build Prerequisites
+普通构建默认关闭 fixture 与 acceptance 入口；不要将 `VITE_UAGENT_ENABLE_FIXTURES=1` 或 `VITE_UAGENT_ACCEPTANCE_UI=1` 用于对外分发。标题栏的部分脚本集成测试会使用本机 Cargo 缓存中与锁文件一致的 Tauri 源码；无缓存时该组会明确跳过，不会假报已验证原生拖动。
 
-The Tauri 2 native build requires the Rust toolchain (`rustc` / `cargo`) and platform-specific WebView dependencies. The web frontend (`pnpm --filter @uagent/desktop web:build`) builds without Rust.
+## 已验证与边界
 
-## Non-Goals (current stage)
+用户反馈过一次基础真实模型请求能够返回；后续上下文、流式和标题栏修复使用离线合成传输验证，没有重新调用付费 API，也没有读取现有密钥。
 
-- Default live provider network access (must be opt-in)
-- Non-sandbox Unreal Engine writes or uncontrolled/automatic Editor launch
-- Broad mutating MCP tool calls
-- Uncontrolled or arbitrary shell, browser, or filesystem behavior outside the existing approval, trust, containment, and read-only boundaries
-- Save All, broad/bulk asset mutation, provider auto-apply, replay execution, automatic git operations, or secret/raw-path disclosure
-- Cloud deployment, auth, or remote services
-- Forking or embedding Codex/Claude Code/Cursor/Aider
+最近完成 57 项必要局部检查，以及最终调试 exe 的两次原生启动、合成 SSE 多轮、审批正文一致、取消/失败/重试、语言切换与重启偏好、最大化/还原和正常退出。原测试账本保持不变。没有运行全量回归。
 
-## Documentation
+尚未完成或不能据此宣称通过的项目：
 
-- [Architecture](docs/architecture.md)
-- [MVP Roadmap](docs/mvp-roadmap.md)
-- [Runtime Contract](docs/runtime-contract.md)
-- [MVP1 Acceptance](docs/mvp1-acceptance.md)
-- [MCP Read-only Plan](docs/mcp-readonly-plan.md)
-- [MVP2 Acceptance](docs/mvp2-acceptance.md)
-- [Agent Core Plan](docs/agent-core-plan.md)
-- [MVP3 Acceptance](docs/mvp3-acceptance.md)
-- [MVP4 Acceptance](docs/mvp4-acceptance.md)
-- [MVP5 Acceptance](docs/mvp5-acceptance.md)
-- [MVP6 Acceptance](docs/mvp6-acceptance.md)
-- [MVP6 UI Productization Plan](docs/mvp6-ui-productization-plan.md)
-- [MVP6 Baseline Freeze](docs/mvp6-baseline-freeze.md)
-- [MVP6 Manual Smoke](docs/mvp6-manual-smoke.md)
-- [MVP7 Acceptance](docs/mvp7-acceptance.md)
-- [MVP7 Baseline Freeze](docs/mvp7-baseline-freeze.md)
-- [MVP7 Project Index Plan](docs/mvp7-project-index-plan.md)
-- [MVP7 Capability Bridge Plan](docs/mvp7-capability-bridge-plan.md)
-- [MVP7 Manual Smoke](docs/mvp7-manual-smoke.md)
-- [MVP8 Prep](docs/mvp8-prep.md)
-- [MVP8 Baseline Freeze](docs/mvp8-baseline-freeze.md)
-- [MVP8 Native FS Bridge Plan](docs/mvp8-native-fs-bridge-plan.md)
-- [MVP8 Real Project Scan Plan](docs/mvp8-real-project-scan-plan.md)
-- [MVP8 Acceptance](docs/mvp8-acceptance.md)
-- [MVP8 Manual Smoke](docs/mvp8-manual-smoke.md)
-- [MVP8 Risk Register](docs/mvp8-risk-register.md)
-- [MVP9 Prep](docs/mvp9-prep.md)
-- [Workflow Safety Plan](docs/workflow-safety-plan.md)
-- [MVP11 Acceptance](docs/mvp11-acceptance.md)
-- [MVP11 Manual Smoke](docs/mvp11-manual-smoke.md)
-- [MVP11 Final Handoff](docs/mvp11-final-handoff.md)
-- [MVP12 Prep](docs/mvp12-prep.md)
-- [MVP12 Acceptance](docs/mvp12-acceptance.md)
-- [MVP12 Manual Smoke](docs/mvp12-manual-smoke.md)
-- [MVP12 Risk Register](docs/mvp12-risk-register.md)
-- [MVP12 Final Verification](docs/mvp12-final-verification.md)
-- [MVP12 Final Handoff](docs/mvp12-final-handoff.md)
-- [MVP13 Prep](docs/mvp13-prep.md)
-- [MVP13 Acceptance](docs/mvp13-acceptance.md)
-- [MVP13 Manual Smoke](docs/mvp13-manual-smoke.md)
-- [MVP13 Risk Register](docs/mvp13-risk-register.md)
-- [MVP13 Final Verification](docs/mvp13-final-verification.md)
-- [MVP13 Final Handoff](docs/mvp13-final-handoff.md)
-- [MVP15 Prep (historical)](docs/mvp15-prep.md)
-- [MVP15 Acceptance](docs/mvp15-acceptance.md)
-- [MVP15 Manual Smoke](docs/mvp15-manual-smoke.md)
-- [MVP15 Risk Register](docs/mvp15-risk-register.md)
-- [MVP15 UE MCP Plugin Baseline](docs/mvp15-ue-mcp-plugin-baseline.md)
-- [MVP15 Companion Registration ADR](docs/mvp15-ue-companion-plugin-adr.md)
-- [MVP15 Companion Build Manifest Contract](docs/mvp15-ue-companion-plugin-build-manifest.md)
-- [MVP15 Python Cache Contract](scripts/mvp15-python-cache-contract.json) and [read-only validator](scripts/mvp15-python-cache-surface.mjs)
-- [MVP15 Final Verification](docs/mvp15-final-verification.md)
-- [MVP15 Final Handoff](docs/mvp15-final-handoff.md)
-- [Baseline Freeze](docs/mvp5-baseline-freeze.md)
-- [Development Guide](docs/development.md)
+- 当前源码的真实 API 多轮质量、鉴权异常和计费回归。
+- 真实鼠标拖窗与双击验收；已修正拖动覆盖并通过锁定 Tauri 脚本测试，但当前自动化未提供原生鼠标工具。
+- 当前源码的真实 UE 项目生命周期、写入与回滚整体验收，以及 Windows Snap。
+- 其他服务商/模型的真实后端、完整自定义配置持久化和可继续请求的聊天存档恢复。
+- 发布签名、安装包和全产品验收。
 
-## License
-
-Proprietary. All rights reserved.
+实现与局部验证说明见 [桌面 Provider 与对话说明](docs/desktop-provider-and-conversation.md)。旧 MVP15D 与重建阶段的验收记录保留在 [历史 README](docs/history/mvp15-readme-20261026.md) 和 [重建记录](docs/rebuild-mvp15-20261026.md)，不能代替当前源码的新验收。

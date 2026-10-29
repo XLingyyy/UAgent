@@ -70,7 +70,7 @@ describe("SettingsShell", () => {
     expect(search.disabled).toBe(true);
   });
 
-  it("renders the six first-stage settings entries only", () => {
+  it("renders existing settings and the saved conversations entry", () => {
     renderSettingsShell();
     const sidebar = screen.getByLabelText("Settings navigation");
     const navItems = within(sidebar)
@@ -82,6 +82,7 @@ describe("SettingsShell", () => {
 
     expect(navItems.map((button) => button.textContent)).toEqual([
       "ProfileMVP6",
+      "Saved conversationsLocal",
       "GeneralMVP6",
       "AppearanceMVP6",
       "PersonalizationMVP6",
@@ -94,6 +95,13 @@ describe("SettingsShell", () => {
     expect(within(sidebar).queryByText("Computer control")).toBeNull();
     expect(within(sidebar).queryByText("Git")).toBeNull();
     expect(within(sidebar).queryByText("Worktrees")).toBeNull();
+  });
+
+  it("opens saved conversations from production navigation", () => {
+    renderSettingsShell();
+    fireEvent.click(within(screen.getByLabelText("Settings navigation")).getByText("Saved conversations"));
+    expect(screen.getByLabelText("Search saved conversations")).toBeTruthy();
+    expect(screen.getByText("Saved local text copies only. Opening a conversation does not resume execution or restore approval.")).toBeTruthy();
   });
 
   it("defaults active page to General", () => {

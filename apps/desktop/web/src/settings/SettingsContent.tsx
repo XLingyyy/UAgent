@@ -1,3 +1,5 @@
+import {useI18n} from "../i18n";
+import { ArchivedChatsSettings } from "./pages/ArchivedChatsSettings";
 import { getSettingsPage } from "./settings-pages";
 import { GeneralSettings } from "./pages/GeneralSettings";
 import { ProfileSettings } from "./pages/ProfileSettings";
@@ -9,6 +11,7 @@ import { useSettingsStore } from "../stores/ui-store";
 import "./SettingsContent.css";
 
 const PAGE_COMPONENTS: Record<string, () => React.ReactNode> = {
+  "archived-chats": ArchivedChatsSettings,
   general: GeneralSettings,
   profile: ProfileSettings,
   appearance: AppearanceSettings,
@@ -18,13 +21,14 @@ const PAGE_COMPONENTS: Record<string, () => React.ReactNode> = {
 };
 
 export function SettingsContent() {
+  const {text: uiText} = useI18n();
   const activePageId = useSettingsStore((state) => state.activePageId);
   const page = getSettingsPage(activePageId);
   const Page = page ? PAGE_COMPONENTS[page.id] : null;
 
   if (!page && !Page) {
     return (
-      <main className="ua-settings-content" aria-label="Settings: unknown page">
+      <main className="ua-settings-content" aria-label={uiText("Settings: unknown page")}>
         <div className="ua-settings-content__header">
           <h2 className="ua-settings-content__title">{activePageId}</h2>
         </div>

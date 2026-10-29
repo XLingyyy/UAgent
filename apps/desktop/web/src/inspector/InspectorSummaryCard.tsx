@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { safeDisplay } from "./safe-display";
 import "./InspectorSummaryCard.css";
 
@@ -19,9 +20,10 @@ export function InspectorSummaryCard({
   value,
   tone = "default",
 }: InspectorSummaryCardProps) {
+  const {text:uiText}=useI18n();
   return (
     <div className={`ua-summary-card ${TONE_CLASS[tone] ?? TONE_CLASS.default}`}>
-      <span className="ua-summary-card__label">{label}</span>
+      <span className="ua-summary-card__label">{uiText(label)}</span>
       <span className="ua-summary-card__value">{safeDisplay(value)}</span>
     </div>
   );

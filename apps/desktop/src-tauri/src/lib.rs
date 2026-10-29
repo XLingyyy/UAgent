@@ -1,3 +1,5 @@
+pub(crate) mod local_workspace;
+pub(crate) mod provider_budget;
 pub(crate) mod asset_mutation;
 pub(crate) mod browser;
 pub mod mcp;
@@ -1666,6 +1668,12 @@ pub fn run() {
             ue_editor_process::stop_editor_observation_session,
             ue_editor_process::terminate_managed_editor_process,
             ue_editor_process::release_managed_editor_process,
+            local_workspace::read_local_workspace,
+            local_workspace::save_local_workspace,
+            provider_budget::initialize_provider_budget,
+            provider_budget::read_provider_budget,
+            provider_budget::reserve_provider_budget,
+            provider_budget::record_provider_usage,
             asset_mutation::get_asset_mutation_capability,
             asset_mutation::dry_run_asset_mutation,
             asset_mutation::register_asset_mutation_approval,

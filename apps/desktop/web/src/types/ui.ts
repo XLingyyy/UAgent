@@ -165,7 +165,7 @@ export type SetSidebarViewMode = (viewMode: SidebarViewMode) => void;
 export type SetTheme = (theme: UATheme) => void;
 
 /** Set the active thread by id. */
-export type SetActiveThread = (threadId: string) => void;
+export type SetActiveThread = (threadId: string|null) => void;
 
 /** Settings page identifiers for the MVP6 page registry. */
 export type SettingsPageId =
@@ -174,7 +174,8 @@ export type SettingsPageId =
   | "appearance"
   | "config"
   | "personalization"
-  | "provider";
+  | "provider"
+  | "archived-chats";
 
 /** Settings shell local UI state. */
 export interface SettingsShellState {

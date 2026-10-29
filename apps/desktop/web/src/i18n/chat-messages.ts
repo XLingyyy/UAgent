@@ -1,0 +1,15 @@
+export const chatMessages={
+ "chat.conversation":["对话","Conversation"],
+ "chat.user":["你","You"],
+ "chat.assistant":["助手","Assistant"],
+ "chat.new":["新对话","New conversation"],
+ "chat.replying":["正在回复…","Replying…"],
+ "chat.stopped":["已停止。未完成的回复不会用于后续上下文。","Stopped. This incomplete reply will not be used as conversation context."],
+ "chat.failed":["回复未完成。请查看详情；重新发送仍需你的确认。","The reply did not complete. Review details; a retry still needs your confirmation."],
+ "chat.details":["查看运行详情","View run details"],
+ "chat.contextCount":["对话上下文 · 下次携带 {count} 轮","Conversation context · {count} turns for the next request"],
+ "chat.context":["对话上下文","Conversation context"],
+ "chat.contextHelp":["发送时携带当前对话最近 8 轮已完成的纯文本，最多 12 KiB；超出时从最早轮次移除。新对话与不同项目分别隔离。","Requests include up to 8 completed text-only turns from this conversation, limited to 12 KiB. Older turns are omitted when the limit is reached. New conversations and projects are isolated."],
+ "chat.historySharing":["含附件、工具执行或未完成回复的轮次不自动继承。附件需重新选择，工具结果需单独选择分享；发送前可在完整请求正文中审阅实际携带内容。已保存的历史文本副本仍为只读，不自动恢复为请求上下文。","Turns with attachments, tool execution, or incomplete replies are not inherited automatically. Reselect attachments and separately select tool results for sharing. Review the complete actual outbound body before each send. Saved text copies remain read-only and are not restored as request context automatically."],
+ "chat.outboundHistory":["以下完整正文包含本次实际携带的对话文本。附件和工具结果不会自动沿用。","The complete body below includes the conversation text actually being sent. Attachments and tool results are not inherited automatically."],
+} as const;

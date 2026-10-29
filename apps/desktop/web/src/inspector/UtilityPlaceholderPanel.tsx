@@ -1,3 +1,4 @@
+import {useI18n} from "../i18n";
 import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
 import { safeDisplay } from "./safe-display";
 import { AssetLifecycleEvidence, hasAssetLifecycle } from "./AssetLifecycleEvidence";
@@ -81,19 +82,20 @@ function uniqueEvidenceItems(events: TaskEvent[]): EvidenceDisplayItem[] {
 }
 
 export function UtilityPlaceholderPanel({ panel }: UtilityPlaceholderPanelProps) {
+  const {text: uiText,t} = useI18n();
   return (
-    <section className="ua-utility-placeholder" aria-label={`${panel.title} placeholder`}>
+    <section className="ua-utility-placeholder" aria-label={t("tools.placeholderLabel",{title:uiText(panel.title)})}>
       <div className="ua-utility-placeholder__header">
         <div className="ua-utility-placeholder__title-group">
-          <span className="ua-utility-placeholder__eyebrow">{panel.badge}</span>
-          <h3 className="ua-utility-placeholder__title">{panel.title}</h3>
+          <span className="ua-utility-placeholder__eyebrow">{uiText(panel.badge)}</span>
+          <h3 className="ua-utility-placeholder__title">{uiText(panel.title)}</h3>
         </div>
         <span
           className={`ua-utility-placeholder__state${
             panel.state === "Not connected" ? " ua-utility-placeholder__state--warning" : ""
           }`}
         >
-          {panel.state}
+          {uiText(panel.state)}
         </span>
       </div>
 
@@ -106,13 +108,14 @@ export function UtilityPlaceholderPanel({ panel }: UtilityPlaceholderPanelProps)
       </ul>
 
       <button className="ua-utility-placeholder__action" type="button" disabled>
-        {panel.actionLabel}
+        {uiText(panel.actionLabel)}
       </button>
     </section>
   );
 }
 
 export function UtilityEvidencePanel() {
+  const {text: uiText} = useI18n();
   const runtime = useOptionalRuntimeStore((state) => state);
   const activeTaskId = runtime?.activeTaskId ?? null;
   const runtimeEvents = activeTaskId ? (runtime?.eventsByTaskId[activeTaskId] ?? []) : [];
@@ -231,31 +234,31 @@ export function UtilityEvidencePanel() {
     { id: "mvp11-build-failure", status: "ready", label: "Build failure evidence" },
     { id: "mvp11-context-pack", status: "ready", label: "Context pack evidence" },
   ] : [];
-  if (hasAssetLifecycle(runtime?.mvp15)) return <AssetLifecycleEvidence state={runtime.mvp15} title="Evidence" />;
+  if (hasAssetLifecycle(runtime?.mvp15)) return <AssetLifecycleEvidence state={runtime.mvp15} title={uiText("Evidence")} />;
   const recordedItems = [...mvp14EvidenceItems, ...mvp12EvidenceItems, ...mvp11EvidenceItems, ...evidenceItems];
 
   return (
-    <section className="ua-utility-placeholder" aria-label="Evidence panel">
+    <section className="ua-utility-placeholder" aria-label={uiText("Evidence panel")}>
       <div className="ua-utility-placeholder__header">
         <div className="ua-utility-placeholder__title-group">
-          <span className="ua-utility-placeholder__eyebrow">{utilityEvidencePanel.badge}</span>
-          <h3 className="ua-utility-placeholder__title">{utilityEvidencePanel.title}</h3>
+          <span className="ua-utility-placeholder__eyebrow">{uiText(utilityEvidencePanel.badge)}</span>
+          <h3 className="ua-utility-placeholder__title">{uiText(utilityEvidencePanel.title)}</h3>
         </div>
-        <span className="ua-utility-placeholder__state">{recordedItems.length ? "Recorded" : "Not recorded"}</span>
+        <span className="ua-utility-placeholder__state">{recordedItems.length ? uiText("Recorded") : uiText("Not recorded")}</span>
       </div>
 
       <ul className="ua-utility-placeholder__list">
         {recordedItems.map((item, index) => <li key={`${item.id}-${index}`} className="ua-utility-placeholder__item ua-evidence-row">
-          <dl><dt>Summary</dt><dd>{safeDisplay(item.summary)}</dd>
-          <dt>Status</dt><dd>{safeDisplay(item.status)}</dd>
-          <dt>Source</dt><dd>{safeDisplay(item.source)}</dd>
-          <dt>Reference</dt><dd>{safeDisplay(item.evidenceId)}</dd></dl>
+          <dl><dt>{uiText("Summary")}</dt><dd>{safeDisplay(item.summary)}</dd>
+          <dt>{uiText("Status")}</dt><dd>{safeDisplay(item.status)}</dd>
+          <dt>{uiText("Source")}</dt><dd>{safeDisplay(item.source)}</dd>
+          <dt>{uiText("Reference")}</dt><dd>{safeDisplay(item.evidenceId)}</dd></dl>
         </li>)}
-        {recordedItems.length === 0 && (fallbackEvidenceItems.length ? fallbackEvidenceItems.map((item) => <li key={item.id}>{safeDisplay(item.label)}</li>) : <li>No evidence recorded for the current project.</li>)}
+        {recordedItems.length === 0 && (fallbackEvidenceItems.length ? fallbackEvidenceItems.map((item) => <li key={item.id}>{safeDisplay(item.label)}</li>) : <li>{uiText("No evidence recorded for the current project.")}</li>)}
       </ul>
 
       <button className="ua-utility-placeholder__action" type="button" disabled>
-        {utilityEvidencePanel.actionLabel}
+        {uiText(utilityEvidencePanel.actionLabel)}
       </button>
     </section>
   );

@@ -1,3 +1,5 @@
+import {useI18n} from "../../i18n";
+import { LocalWorkspacePanel } from "./LocalWorkspacePanel";
 import { ACCEPTANCE_ENABLED } from "../../runtime/build-capabilities";
 import { useState } from "react";
 import { SettingsPageLayout, SettingsSection } from "../SettingsPageLayout";
@@ -12,8 +14,10 @@ import {
 import "../pages/SettingsPages.css";
 
 export function ConfigSettings() {
+  const {text: uiText} = useI18n();
   return (
     <SettingsPageLayout page={configPageData}>
+      <LocalWorkspacePanel />
       {configPageData.sections.map((section) => (
         <SettingsSection key={section.id} section={section}>
           {section.id === "mcp" && <McpConnectionDisplay />}
@@ -31,13 +35,13 @@ export function ConfigSettings() {
       {ACCEPTANCE_ENABLED && <Mvp15dProductControls />}
       {ACCEPTANCE_ENABLED && <Mvp15dNegativeAcceptanceControls />}
       <div className="ua-settings-page__note">
-        Connection and project-root changes apply to this local session only.
-      </div>
+        {uiText("Use Save local configuration to retain project roots and selection. MCP sessions, trust, approval tokens and credentials are never restored automatically.")}{" "}</div>
     </SettingsPageLayout>
   );
 }
 
 function Mvp15dNegativeAcceptanceControls() {
+  const {text: uiText,t} = useI18n();
   const [status, setStatus] = useState("idle");
   const [busy, setBusy] = useState(false);
   const uiGateEnabled = useRuntimeStore((state) => state.mvp15.gate.mode === "sandbox-enabled");
@@ -148,9 +152,9 @@ function Mvp15dNegativeAcceptanceControls() {
     }
   };
   return (
-    <section className="ua-settings-page__static-stack" aria-label="MVP15D negative acceptance controls">
+    <section className="ua-settings-page__static-stack" aria-label={uiText("MVP15D negative acceptance controls")}>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Rendered negative case</span>
+        <span className="ua-settings-page__static-label">{uiText("Rendered negative case")}</span>
         <span
           className="ua-settings-page__static-value"
           data-mvp15d-observation="negative-control-status"
@@ -169,7 +173,7 @@ function Mvp15dNegativeAcceptanceControls() {
             disabled={busy}
             onClick={() => void runNegative(caseNumber)}
           >
-            {`Run N${caseNumber} rendered negative case`}
+            {t("config.runNegativeCaseLabel",{number:caseNumber})}
           </button>
         ))}
         <button
@@ -178,22 +182,21 @@ function Mvp15dNegativeAcceptanceControls() {
           disabled={busy}
           onClick={() => void runPartialUnknown()}
         >
-          Run rendered partial and unknown matrix
-        </button>
+          {uiText("Run rendered partial and unknown matrix")}{" "}</button>
         <button
           className="ua-settings-page__action-btn"
           type="button"
           disabled={busy}
           onClick={() => void runChildRegistration()}
         >
-          Attempt N2 gate-off approval registration
-        </button>
+          {uiText("Attempt N2 gate-off approval registration")}{" "}</button>
       </div>
     </section>
   );
 }
 
 function CompanionPluginStatusDisplay() {
+  const {text: uiText} = useI18n();
   const companion = useRuntimeStore((state) => state.mvp15.companion);
   const mcpStatus = useRuntimeStore((state) => state.mcp.status);
   const editorSession = useRuntimeStore((state) => state.mvp14.session);
@@ -206,36 +209,35 @@ function CompanionPluginStatusDisplay() {
     update_required: "Update required",
   } as const;
   return (
-    <section className="ua-settings-page__static-stack" aria-label="UAgent UE Companion Plugin">
+    <section className="ua-settings-page__static-stack" aria-label={uiText("UAgent UE Companion Plugin")}>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">UAgent UE Companion Plugin</span>
+        <span className="ua-settings-page__static-label">{uiText("UAgent UE Companion Plugin")}</span>
         <span className="ua-settings-page__static-value" data-mvp15d-observation="companion-status">
-          {labels[companion.status]}
+          {uiText(labels[companion.status])}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Plugin / contract</span>
+        <span className="ua-settings-page__static-label">{uiText("Plugin / contract")}</span>
         <span className="ua-settings-page__static-value">
-          {companion.pluginVersion ?? "unverified"} / {companion.contractVersion ?? "unverified"}
+          {companion.pluginVersion ?? uiText("unverified")} / {companion.contractVersion ?? uiText("unverified")}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Manifest SHA</span>
+        <span className="ua-settings-page__static-label">{uiText("Manifest SHA")}</span>
         <span className="ua-settings-page__static-value">
-          {companion.manifestSha256Prefix ? `${companion.manifestSha256Prefix}…` : "unverified"}
+          {companion.manifestSha256Prefix ? `${companion.manifestSha256Prefix}…` : uiText("unverified")}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Live fingerprint</span>
+        <span className="ua-settings-page__static-label">{uiText("Live fingerprint")}</span>
         <span className="ua-settings-page__static-value" data-mvp15d-observation="companion-fingerprint">
-          {companion.liveFingerprintSha256Prefix ? `${companion.liveFingerprintSha256Prefix}…` : "unverified"}
+          {companion.liveFingerprintSha256Prefix ? `${companion.liveFingerprintSha256Prefix}…` : uiText("unverified")}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Generation / tools</span>
+        <span className="ua-settings-page__static-label">{uiText("Generation / tools")}</span>
         <span className="ua-settings-page__static-value" data-mvp15d-observation="companion-tools">
-          {companion.currentGeneration} / {companion.toolCount} ({companion.perToolSummaryCount} summaries)
-        </span>
+          {companion.currentGeneration} / {companion.toolCount} ({companion.perToolSummaryCount} {uiText("summaries)")}{" "}</span>
       </div>
       {companion.blocker && (
         <p className="ua-settings-page__provider-help-text" role="status">
@@ -249,14 +251,14 @@ function CompanionPluginStatusDisplay() {
           disabled={mcpStatus !== "connected" || editorSession?.mode !== "attached"}
           onClick={() => void refreshMvp15DCompanionAttestation()}
         >
-          Verify companion identity
-        </button>
+          {uiText("Verify companion identity")}{" "}</button>
       </div>
     </section>
   );
 }
 
 function ProjectRootsDisplay() {
+  const {text: uiText,t} = useI18n();
   const [projectRootDraft, setProjectRootDraft] = useState("");
   const [validatedRootRef, setValidatedRootRef] = useState<string | null>(null);
   const [addedProjectId, setAddedProjectId] = useState<string | null>(null);
@@ -291,9 +293,9 @@ function ProjectRootsDisplay() {
   const isAdded = Boolean(addedProjectId && activeProject?.id === addedProjectId);
 
   return (
-    <div className="ua-settings-page__static-stack" aria-label="Project roots and index">
+    <div className="ua-settings-page__static-stack" aria-label={uiText("Project roots and index")}>
       <label className="ua-settings-page__field">
-        <span className="ua-settings-page__field-label">Project root reference</span>
+        <span className="ua-settings-page__field-label">{uiText("Project root reference")}</span>
         <input
           className="ua-settings-page__input"
           value={projectRootDraft}
@@ -302,8 +304,8 @@ function ProjectRootsDisplay() {
             setValidatedRootRef(null);
             setAddedProjectId(null);
           }}
-          placeholder="fixture://lyra"
-          aria-label="Project root reference"
+          placeholder={uiText("fixture://lyra")}
+          aria-label={uiText("Project root reference")}
         />
       </label>
       <div className="ua-settings-page__provider-actions">
@@ -312,95 +314,89 @@ function ProjectRootsDisplay() {
           type="button"
           onClick={() => void handleValidateProjectRoot()}
         >
-          Validate project root
-        </button>
+          {uiText("Validate project root")}{" "}</button>
         <button
           className="ua-settings-page__action-btn"
           type="button"
           disabled={!isValidated || isAdded}
           onClick={() => void handleAddProjectRoot()}
         >
-          Add project root
-        </button>
+          {uiText("Add project root")}{" "}</button>
         <button
           className="ua-settings-page__action-btn"
           type="button"
           disabled={!canTrust}
           onClick={() => activeProject && trustProjectRoot(activeProject.id)}
         >
-          Trust project root
-        </button>
+          {uiText("Trust project root")}{" "}</button>
         <button
           className="ua-settings-page__action-btn"
           type="button"
           disabled={!canScan || project.scanStatus === "scanning"}
           onClick={() => activeProject && scanProjectIndex(activeProject.id)}
         >
-          Scan project index
-        </button>
+          {uiText("Scan project index")}{" "}</button>
         <button
           className="ua-settings-page__action-btn"
           type="button"
           disabled={!activeProject || project.scanStatus !== "scanning"}
           onClick={() => activeProject && cancelProjectScan(activeProject.id)}
         >
-          Cancel scan
-        </button>
+          {uiText("Cancel scan")}{" "}</button>
       </div>
       <div className="ua-settings-page__provider-summary" role="status">
         <span className="ua-settings-page__provider-summary-item">
-          <span className="ua-settings-page__provider-summary-label">Validation</span>
+          <span className="ua-settings-page__provider-summary-label">{uiText("Validation")}</span>
           <span
             className="ua-settings-page__provider-summary-value"
             data-mvp15d-observation="project-validation"
             data-mvp15d-value={isValidated ? "valid" : "not_validated"}
           >
             {project.validation?.ok
-              ? `Validation ready: ${project.validation.projectName}`
-              : project.validation?.reason ?? "Not validated"}
+              ? t("project.validationReady",{project:project.validation.projectName??uiText("Unknown")})
+              : project.validation?.reason ?? uiText("Not validated")}
           </span>
         </span>
         <span className="ua-settings-page__provider-summary-item">
-          <span className="ua-settings-page__provider-summary-label">Registration</span>
+          <span className="ua-settings-page__provider-summary-label">{uiText("Registration")}</span>
           <span
             className="ua-settings-page__provider-summary-value"
             data-mvp15d-observation="project-add"
             data-mvp15d-value={isAdded ? "added" : "not_added"}
           >
-            {isAdded ? "added" : "not added"}
+            {isAdded ? uiText("added") : uiText("not added")}
           </span>
         </span>
         <span className="ua-settings-page__provider-summary-item">
-          <span className="ua-settings-page__provider-summary-label">Trust</span>
+          <span className="ua-settings-page__provider-summary-label">{uiText("Trust")}</span>
           <span
             className="ua-settings-page__provider-summary-value"
             data-mvp15d-observation="project-trust"
             data-mvp15d-value={activeProject?.trustState ?? "untrusted"}
           >
-            {activeProject?.trustState ?? "untrusted"}
+            {activeProject?.trustState ?? uiText("untrusted")}
           </span>
         </span>
         <span className="ua-settings-page__provider-summary-item">
-          <span className="ua-settings-page__provider-summary-label">Index</span>
+          <span className="ua-settings-page__provider-summary-label">{uiText("Index")}</span>
           <span className="ua-settings-page__provider-summary-value">
-            {project.activeProjectIndex ? "Index ready" : project.scanStatus}
+            {project.activeProjectIndex ? uiText("Index ready") : project.scanStatus}
           </span>
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Root display</span>
+        <span className="ua-settings-page__static-label">{uiText("Root display")}</span>
         <span className="ua-settings-page__static-value">
-          {activeProject?.displayRoot ?? "No project root registered"}
+          {activeProject?.displayRoot ?? uiText("No project root registered")}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Index policy</span>
+        <span className="ua-settings-page__static-label">{uiText("Index policy")}</span>
         <span className="ua-settings-page__static-value">
-          Read-only · ignored dirs: .git, Intermediate, Saved, DerivedDataCache, Binaries, node_modules, .vs
-        </span>
+          {uiText("Read-only · ignored dirs: .git, Intermediate, Saved, DerivedDataCache, Binaries, node_modules, .vs")}{" "}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Source</span>
+        <span className="ua-settings-page__static-label">{uiText("Source")}</span>
         <span className="ua-settings-page__static-value">{project.nativeSource}</span>
       </div>
       <div className="ua-settings-page__provider-actions">
@@ -409,11 +405,10 @@ function ProjectRootsDisplay() {
           type="button"
           onClick={refreshCapabilityStatus}
         >
-          Refresh capability status
-        </button>
+          {uiText("Refresh capability status")}{" "}</button>
       </div>
       {project.capabilityStatus.length > 0 && (
-        <div className="ua-settings-page__provider-summary" aria-label="Capability status">
+        <div className="ua-settings-page__provider-summary" aria-label={uiText("Capability status")}>
           {project.capabilityStatus.map((cap) => (
             <span key={cap.kind} className="ua-settings-page__provider-summary-item">
               <span className="ua-settings-page__provider-summary-label">{cap.kind}</span>
@@ -425,23 +420,23 @@ function ProjectRootsDisplay() {
         </div>
       )}
       {project.fsPolicy && (
-        <div className="ua-settings-page__static-stack" aria-label="Filesystem policy">
+        <div className="ua-settings-page__static-stack" aria-label={uiText("Filesystem policy")}>
           <div className="ua-settings-page__static-row">
-            <span className="ua-settings-page__static-label">Ignored dirs</span>
+            <span className="ua-settings-page__static-label">{uiText("Ignored dirs")}</span>
             <span className="ua-settings-page__static-value">
               {project.fsPolicy.ignoredDirs.join(", ")}
             </span>
           </div>
           <div className="ua-settings-page__static-row">
-            <span className="ua-settings-page__static-label">Max depth</span>
+            <span className="ua-settings-page__static-label">{uiText("Max depth")}</span>
             <span className="ua-settings-page__static-value">{project.fsPolicy.maxDepth}</span>
           </div>
           <div className="ua-settings-page__static-row">
-            <span className="ua-settings-page__static-label">Max nodes</span>
+            <span className="ua-settings-page__static-label">{uiText("Max nodes")}</span>
             <span className="ua-settings-page__static-value">{project.fsPolicy.maxNodes}</span>
           </div>
           <div className="ua-settings-page__static-row">
-            <span className="ua-settings-page__static-label">Redaction</span>
+            <span className="ua-settings-page__static-label">{uiText("Redaction")}</span>
             <span className="ua-settings-page__static-value">{project.fsPolicy.redactionLevel}</span>
           </div>
         </div>
@@ -465,6 +460,7 @@ type ProductControlAction =
   | "productAuthoritySuccessor";
 
 function Mvp15dProductControls() {
+  const {text: uiText} = useI18n();
   const [status, setStatus] = useState("idle");
   const [busy, setBusy] = useState(false);
   const [toolSearchMode, setToolSearchMode] = useState<"on" | "off">("off");
@@ -498,9 +494,9 @@ function Mvp15dProductControls() {
   };
 
   return (
-    <section className="ua-settings-page__static-stack" aria-label="MVP15D product controls">
+    <section className="ua-settings-page__static-stack" aria-label={uiText("MVP15D product controls")}>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Tool Search</span>
+        <span className="ua-settings-page__static-label">{uiText("Tool Search")}</span>
         <span
           className="ua-settings-page__static-value"
           data-mvp15d-observation="tool-search-mode"
@@ -510,7 +506,7 @@ function Mvp15dProductControls() {
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Acceptance control</span>
+        <span className="ua-settings-page__static-label">{uiText("Acceptance control")}</span>
         <span
           className="ua-settings-page__static-value"
           data-mvp15d-observation="product-control-status"
@@ -527,8 +523,7 @@ function Mvp15dProductControls() {
           disabled={busy}
           onClick={() => void runControl("productDiscoveryOn", "tool_search_on")}
         >
-          Tool Search ON
-        </button>
+          {uiText("Tool Search ON")}{" "}</button>
         <button
           className="ua-settings-page__action-btn"
           type="button"
@@ -536,26 +531,19 @@ function Mvp15dProductControls() {
           disabled={busy}
           onClick={() => void runControl("productDiscoveryOff", "tool_search_off")}
         >
-          Tool Search OFF
-        </button>
+          {uiText("Tool Search OFF")}{" "}</button>
         <button className="ua-settings-page__action-btn" type="button" disabled={busy} onClick={() => void runControl("productRetractionReconnect", "mcp_reconnected")}>
-          MCP reconnect
-        </button>
+          {uiText("MCP reconnect")}{" "}</button>
         <button className="ua-settings-page__action-btn" type="button" disabled={busy} onClick={() => void runControl("productRetractionEndpointChange", "endpoint_changed")}>
-          Change MCP endpoint
-        </button>
+          {uiText("Change MCP endpoint")}{" "}</button>
         <button className="ua-settings-page__action-btn" type="button" disabled={busy} onClick={() => void runControl("productRetractionRefreshTools", "tools_refreshed")}>
-          RefreshTools
-        </button>
+          {uiText("RefreshTools")}{" "}</button>
         <button className="ua-settings-page__action-btn" type="button" disabled={busy} onClick={() => void runControl("productRetractionUeRestart", "ue_restart_retracted")}>
-          Retract after UE restart
-        </button>
+          {uiText("Retract after UE restart")}{" "}</button>
         <button className="ua-settings-page__action-btn" type="button" disabled={busy} onClick={() => void runControl("productRetractionStaleCompletion", "stale_completion_retracted")}>
-          Reject stale completion
-        </button>
+          {uiText("Reject stale completion")}{" "}</button>
         <button className="ua-settings-page__action-btn" type="button" disabled={busy} onClick={() => void runControl("productRetractionRendererRestart", "renderer_restart_completed")}>
-          Restart renderer
-        </button>
+          {uiText("Restart renderer")}{" "}</button>
         <button
           className="ua-settings-page__action-btn"
           type="button"
@@ -568,14 +556,14 @@ function Mvp15dProductControls() {
             )
           }
         >
-          Resume renderer restart
-        </button>
+          {uiText("Resume renderer restart")}{" "}</button>
       </div>
     </section>
   );
 }
 
 function McpConnectionDisplay() {
+  const {text: uiText} = useI18n();
   const mcp = useRuntimeStore((state) => state.mcp);
   const { setMcpEndpoint, connectMcp, discoverMcp, disconnectMcp } = useRuntimeActions();
   const endpoint = mcp.profile?.endpoint ?? "";
@@ -583,57 +571,57 @@ function McpConnectionDisplay() {
   const isConnected = mcp.status === "connected";
 
   return (
-    <div className="ua-settings-page__mcp" aria-label="MCP connection">
+    <div className="ua-settings-page__mcp" aria-label={uiText("MCP connection")}>
       <label className="ua-settings-page__field">
-        <span className="ua-settings-page__field-label">Endpoint</span>
+        <span className="ua-settings-page__field-label">{uiText("Endpoint")}</span>
         <input
           className="ua-settings-page__input"
           value={endpoint}
           onChange={(event) => setMcpEndpoint(event.target.value)}
           placeholder="http://127.0.0.1:8765/mcp"
-          aria-label="MCP endpoint URL"
+          aria-label={uiText("MCP endpoint URL")}
         />
       </label>
       <div className="ua-settings-page__provider-summary">
         <span className="ua-settings-page__provider-summary-item">
-          <span className="ua-settings-page__provider-summary-label">Status</span>
+          <span className="ua-settings-page__provider-summary-label">{uiText("Status")}</span>
           <span className="ua-settings-page__provider-summary-value" data-mvp15d-observation="mcp-status">{mcp.status}</span>
         </span>
         <span className="ua-settings-page__provider-summary-item">
-          <span className="ua-settings-page__provider-summary-label">Protocol</span>
+          <span className="ua-settings-page__provider-summary-label">{uiText("Protocol")}</span>
           <span
             className="ua-settings-page__provider-summary-value"
             data-mvp15d-observation="mcp-protocol"
             data-mvp15d-value={mcp.protocolVersion ?? "Not initialized"}
           >
-            {mcp.protocolVersion ?? "Not initialized"}
+            {mcp.protocolVersion ?? uiText("Not initialized")}
           </span>
         </span>
         <span className="ua-settings-page__provider-summary-item">
-          <span className="ua-settings-page__provider-summary-label">Server</span>
+          <span className="ua-settings-page__provider-summary-label">{uiText("Server")}</span>
           <span className="ua-settings-page__provider-summary-value">
-            {mcp.serverInfo?.name ?? "Not connected"}
+            {mcp.serverInfo?.name ?? uiText("Not connected")}
           </span>
         </span>
       </div>
       {mcp.capabilities && (
-        <div className="ua-settings-page__provider-summary" aria-label="MCP discovery counts">
+        <div className="ua-settings-page__provider-summary" aria-label={uiText("MCP discovery counts")}>
           <span className="ua-settings-page__provider-summary-item">
-            <span className="ua-settings-page__provider-summary-label">Tools</span>
+            <span className="ua-settings-page__provider-summary-label">{uiText("Tools")}</span>
             <span className="ua-settings-page__provider-summary-value">{mcp.capabilities.tools}</span>
           </span>
           <span className="ua-settings-page__provider-summary-item">
-            <span className="ua-settings-page__provider-summary-label">Resources</span>
+            <span className="ua-settings-page__provider-summary-label">{uiText("Resources")}</span>
             <span className="ua-settings-page__provider-summary-value">
               {mcp.capabilities.resources}
             </span>
           </span>
           <span className="ua-settings-page__provider-summary-item">
-            <span className="ua-settings-page__provider-summary-label">Prompts</span>
+            <span className="ua-settings-page__provider-summary-label">{uiText("Prompts")}</span>
             <span className="ua-settings-page__provider-summary-value">{mcp.capabilities.prompts}</span>
           </span>
           <span className="ua-settings-page__provider-summary-item">
-            <span className="ua-settings-page__provider-summary-label">Blocked</span>
+            <span className="ua-settings-page__provider-summary-label">{uiText("Blocked")}</span>
             <span className="ua-settings-page__provider-summary-value">
               {mcp.capabilities.blockedTools}
             </span>
@@ -648,79 +636,78 @@ function McpConnectionDisplay() {
           disabled={isBusy || isConnected}
           onClick={() => void connectMcp()}
         >
-          Connect
-        </button>
+          {uiText("Connect")}{" "}</button>
         <button
           className="ua-settings-page__action-btn"
           type="button"
           disabled={!isConnected || isBusy}
           onClick={() => void discoverMcp()}
         >
-          Discover
-        </button>
+          {uiText("Discover")}{" "}</button>
         <button
           className="ua-settings-page__action-btn"
           type="button"
           disabled={!isConnected}
           onClick={disconnectMcp}
         >
-          Disconnect
-        </button>
+          {uiText("Disconnect")}{" "}</button>
       </div>
     </div>
   );
 }
 
 function ApprovalDisplay() {
+  const {text: uiText} = useI18n();
   return (
-    <div className="ua-settings-page__static-stack" aria-label="Approval safety controls">
+    <div className="ua-settings-page__static-stack" aria-label={uiText("Approval safety controls")}>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Default policy</span>
-        <span className="ua-settings-page__static-value">Request approval</span>
+        <span className="ua-settings-page__static-label">{uiText("Default policy")}</span>
+        <span className="ua-settings-page__static-value">{uiText("Request approval")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Read-only</span>
-        <span className="ua-settings-page__static-value">Allow</span>
+        <span className="ua-settings-page__static-label">{uiText("Read-only")}</span>
+        <span className="ua-settings-page__static-value">{uiText("Allow")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Medium/high write</span>
-        <span className="ua-settings-page__static-value">Pause for approval</span>
+        <span className="ua-settings-page__static-label">{uiText("Medium/high write")}</span>
+        <span className="ua-settings-page__static-value">{uiText("Pause for approval")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Destructive</span>
-        <span className="ua-settings-page__static-value ua-settings-page__static-value--staged">Blocked</span>
+        <span className="ua-settings-page__static-label">{uiText("Destructive")}</span>
+        <span className="ua-settings-page__static-value ua-settings-page__static-value--staged">{uiText("Blocked")}</span>
       </div>
     </div>
   );
 }
 
 function SandboxDisplay() {
+  const {text: uiText} = useI18n();
   const gate = useRuntimeStore((state) => state.mvp15.gate);
   const enabled = gate.mode === "sandbox-enabled";
   return (
-    <div className="ua-settings-page__static-stack" aria-label="Sandbox mode controls">
+    <div className="ua-settings-page__static-stack" aria-label={uiText("Sandbox mode controls")}>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Mode</span>
+        <span className="ua-settings-page__static-label">{uiText("Mode")}</span>
         <span className="ua-settings-page__static-value">
-          {enabled ? "Task sandbox enabled" : "Read-only / fixture"}
+          {enabled ? uiText("Task sandbox enabled") : uiText("Read-only / fixture")}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">File system</span>
+        <span className="ua-settings-page__static-label">{uiText("File system")}</span>
         <span className="ua-settings-page__static-value">
-          {enabled ? "Trusted project + fixed run root" : "Read-only"}
+          {enabled ? uiText("Trusted project + fixed run root") : uiText("Read-only")}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Commands</span>
+        <span className="ua-settings-page__static-label">{uiText("Commands")}</span>
         <span className="ua-settings-page__static-value">
-          {enabled ? "Allowlisted with approval" : "Blocked"}
+          {enabled ? uiText("Allowlisted with approval") : uiText("Blocked")}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Network</span>
+        <span className="ua-settings-page__static-label">{uiText("Network")}</span>
         <span className="ua-settings-page__static-value">
-          {enabled ? "Loopback MCP only" : "Disabled"}
+          {enabled ? uiText("Loopback MCP only") : uiText("Disabled")}
         </span>
       </div>
     </div>
@@ -728,121 +715,120 @@ function SandboxDisplay() {
 }
 
 function AuditSessionDisplay() {
+  const {text: uiText} = useI18n();
   return (
-    <div className="ua-settings-page__static-stack" aria-label="Audit and session controls">
+    <div className="ua-settings-page__static-stack" aria-label={uiText("Audit and session controls")}>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Audit log</span>
-        <span className="ua-settings-page__static-value">Append-only projection</span>
+        <span className="ua-settings-page__static-label">{uiText("Audit log")}</span>
+        <span className="ua-settings-page__static-value">{uiText("Append-only projection")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Retention</span>
-        <span className="ua-settings-page__static-value">Local session history</span>
+        <span className="ua-settings-page__static-label">{uiText("Retention")}</span>
+        <span className="ua-settings-page__static-value">{uiText("Local session history")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Replay</span>
-        <span className="ua-settings-page__static-value">Redacted events only</span>
+        <span className="ua-settings-page__static-label">{uiText("Replay")}</span>
+        <span className="ua-settings-page__static-value">{uiText("Redacted events only")}</span>
       </div>
     </div>
   );
 }
 
 function ConfigPathDisplay() {
+  const {text: uiText} = useI18n();
   return (
     <div className="ua-settings-page__path-display">
-      <code className="ua-settings-page__path-text">~/uagent/config/profiles/default.json</code>
+      <code className="ua-settings-page__path-text">{uiText("~/uagent/config/profiles/default.json")}</code>
     </div>
   );
 }
 
 function DiagnosticsDisplay() {
+  const {text: uiText,t} = useI18n();
   const mvp11 = useRuntimeStore((state) => state.mvp11);
   const mvp12 = useRuntimeStore((state) => state.mvp12);
   const mvp14 = useRuntimeStore((state) => state.mvp14);
   const mvp15 = useRuntimeStore((state) => state.mvp15);
   const mcp = useRuntimeStore((state) => state.mcp);
-  const diagnosticCounts = `${mvp11.diagnosticCounts.error} ${
-    mvp11.diagnosticCounts.error === 1 ? "error" : "errors"
-  } / ${mvp11.diagnosticCounts.warning} ${
-    mvp11.diagnosticCounts.warning === 1 ? "warning" : "warnings"
-  }`;
+  const diagnosticCounts=t("terminal.issueCounts",{errors:mvp11.diagnosticCounts.error,warnings:mvp11.diagnosticCounts.warning});
 
   return (
     <div className="ua-settings-page__static-stack">
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Diagnostic Engine</span>
+        <span className="ua-settings-page__static-label">{uiText("Diagnostic Engine")}</span>
         <span className="ua-settings-page__static-value ua-settings-page__static-value--success">
           {mvp11.metadataStatus === "failed" || mvp11.contextPackStatus === "failed"
-            ? "Attention"
-            : "Enabled"}
+            ? uiText("Attention")
+            : uiText("Enabled")}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Mode</span>
-        <span className="ua-settings-page__static-value">Read-only diagnostics + controlled text mutation</span>
+        <span className="ua-settings-page__static-label">{uiText("Mode")}</span>
+        <span className="ua-settings-page__static-value">{uiText("Read-only diagnostics + controlled text mutation")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Text Mutation</span>
+        <span className="ua-settings-page__static-label">{uiText("Text Mutation")}</span>
         <span className="ua-settings-page__static-value ua-settings-page__static-value--accent">
-          {mvp12.capability.mode} / approval {mvp12.capability.approvalRequired ? "required" : "not required"}
+          {mvp12.capability.mode} {uiText("/ approval")}{" "}{mvp12.capability.approvalRequired ? uiText("required") : uiText("not required")}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Allowed extensions</span>
+        <span className="ua-settings-page__static-label">{uiText("Allowed extensions")}</span>
         <span className="ua-settings-page__static-value">{mvp12.capability.allowedExtensions.join(", ")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Blocked dirs</span>
+        <span className="ua-settings-page__static-label">{uiText("Blocked dirs")}</span>
         <span className="ua-settings-page__static-value">{mvp12.capability.blockedDirectories.join(", ")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">MVP11 status</span>
+        <span className="ua-settings-page__static-label">{uiText("MVP11 status")}</span>
         <span className="ua-settings-page__static-value">{mvp11.metadataStatus}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">MVP11 counts</span>
+        <span className="ua-settings-page__static-label">{uiText("MVP11 counts")}</span>
         <span className="ua-settings-page__static-value">{diagnosticCounts}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Provider</span>
-        <span className="ua-settings-page__static-value">Provider live off</span>
+        <span className="ua-settings-page__static-label">{uiText("Provider")}</span>
+        <span className="ua-settings-page__static-value">{uiText("Provider live off")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">MCP</span>
+        <span className="ua-settings-page__static-label">{uiText("MCP")}</span>
         <span className="ua-settings-page__static-value">
           {mcp.capabilities
-            ? `${mcp.status} / ${mcp.capabilities.readOnlyTools} read-only / ${mcp.capabilities.blockedTools} blocked`
-            : `${mcp.status} / MCP read-only`}
+            ? t("mcp.statusCounts",{status:mcp.status,readOnly:mcp.capabilities.readOnlyTools,blocked:mcp.capabilities.blockedTools})
+            : t("mcp.statusReadOnly",{status:mcp.status})}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">UE Editor Observation</span>
+        <span className="ua-settings-page__static-label">{uiText("UE Editor Observation")}</span>
         <span className="ua-settings-page__static-value">
-          {mvp14.capability.enabled ? mvp14.capability.mode : "disabled"} / launch gate separate / trusted root required
-        </span>
+          {mvp14.capability.enabled ? mvp14.capability.mode : uiText("disabled")} {uiText("/ launch gate separate / trusted root required")}{" "}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Editor safety</span>
-        <span className="ua-settings-page__static-value">{mvp14.safetyBoundaries.join(", ")}</span>
+        <span className="ua-settings-page__static-label">{uiText("Editor safety")}</span>
+        <span className="ua-settings-page__static-value">{mvp14.safetyBoundaries.map(uiText).join(", ")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Asset mutation gate</span>
+        <span className="ua-settings-page__static-label">{uiText("Asset mutation gate")}</span>
         <span className="ua-settings-page__static-value">
           {mvp15.gate.mode} / {mvp15.gate.sandboxRoot}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Log level</span>
-        <span className="ua-settings-page__static-value">Info</span>
+        <span className="ua-settings-page__static-label">{uiText("Log level")}</span>
+        <span className="ua-settings-page__static-value">{uiText("Info")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Enabled probes</span>
-        <span className="ua-settings-page__static-value">Runtime, Verifier</span>
+        <span className="ua-settings-page__static-label">{uiText("Enabled probes")}</span>
+        <span className="ua-settings-page__static-value">{uiText("Runtime, Verifier")}</span>
       </div>
     </div>
   );
 }
 
 function TerminalExecutionDisplay() {
+  const {text: uiText} = useI18n();
   const runtimeStore = useRuntimeStore((state) => state);
   const projectStore = useProjectStore((state) => state);
 
@@ -857,53 +843,51 @@ function TerminalExecutionDisplay() {
   };
 
   return (
-    <div className="ua-settings-page__static-stack" aria-label="MVP10 Terminal Execution status">
+    <div className="ua-settings-page__static-stack" aria-label={uiText("MVP10 Terminal Execution status")}>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Real terminal</span>
+        <span className="ua-settings-page__static-label">{uiText("Real terminal")}</span>
         <span className={`ua-settings-page__static-value${currentMode.tone ? ` ua-settings-page__static-value--${currentMode.tone}` : ""}`}>
-          {capability?.enabled ? "Enabled" : "Disabled"} &middot; {capability?.reason ?? capability?.mode ?? "native"} &middot; {latestStage}
+          {capability?.enabled ? uiText("Enabled") : uiText("Disabled")} {"·"}{" "}{capability?.reason ?? capability?.mode ?? uiText("native")} {"·"}{" "}{latestStage}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Allowlist</span>
+        <span className="ua-settings-page__static-label">{uiText("Allowlist")}</span>
         <span className="ua-settings-page__static-value">
-          {capability?.allowlistSummary ?? "MVP10 verification commands only"}
+          {capability?.allowlistSummary ?? uiText("MVP10 verification commands only")}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Trusted root</span>
+        <span className="ua-settings-page__static-label">{uiText("Trusted root")}</span>
         <span className="ua-settings-page__static-value">
-          {trustedRoot ?? "Not configured"} &middot; {capability?.trustedRootRequired ? "required for execution" : "not required"}
+          {trustedRoot ?? uiText("Not configured")} {"·"}{" "}{capability?.trustedRootRequired ? uiText("required for execution") : uiText("not required")}
         </span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Approval</span>
+        <span className="ua-settings-page__static-label">{uiText("Approval")}</span>
         <span className="ua-settings-page__static-value ua-settings-page__static-value--accent">
-          {capability?.approvalRequired ? "Required" : "Not required"} &middot; one-time token
-        </span>
+          {capability?.approvalRequired ? uiText("Required") : uiText("Not required")} {uiText("One-time token")}{" "}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Timeout</span>
-        <span className="ua-settings-page__static-value">Default {Math.round((capability?.timeoutMs ?? 60_000) / 1000)}s &middot; max 300s</span>
+        <span className="ua-settings-page__static-label">{uiText("Timeout")}</span>
+        <span className="ua-settings-page__static-value">{uiText("Default")}{" "}{Math.round((capability?.timeoutMs ?? 60_000) / 1000)}{uiText("s &middot; max 300s")}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Output limit</span>
+        <span className="ua-settings-page__static-label">{uiText("Output limit")}</span>
         <span className="ua-settings-page__static-value">
-          {Math.round((capability?.outputLimitBytes ?? 1_048_576) / 1024 / 1024)} MB / {capability?.outputLimitLines ?? 5000} lines
-        </span>
+          {Math.round((capability?.outputLimitBytes ?? 1_048_576) / 1024 / 1024)} {uiText("MB /")}{" "}{capability?.outputLimitLines ?? 5000} {uiText("lines")}{" "}</span>
       </div>
       <div className="ua-settings-page__static-row">
-        <span className="ua-settings-page__static-label">Current mode</span>
+        <span className="ua-settings-page__static-label">{uiText("Current mode")}</span>
         <span className="ua-settings-page__static-value">
-          {currentMode.mode === "fixture" ? "Fixture mode — proposals only, no execution" :
-           currentMode.mode === "real-gated" ? "Real-gated — approved, awaiting execution" :
-           "Real-enabled — execution active"}
+          {currentMode.mode === "fixture" ? uiText("Fixture mode — proposals only, no execution") :
+           currentMode.mode === "real-gated" ? uiText("Real-gated — approved, awaiting execution") :
+           uiText("Real-enabled — execution active")}
         </span>
       </div>
       {hasProposals && (
         <div className="ua-settings-page__static-row">
-          <span className="ua-settings-page__static-label">Recent proposals</span>
-          <span className="ua-settings-page__static-value">{mvp10Terminal!.proposals.length} total</span>
+          <span className="ua-settings-page__static-label">{uiText("Recent proposals")}</span>
+          <span className="ua-settings-page__static-value">{mvp10Terminal!.proposals.length} {uiText("total")}</span>
         </div>
       )}
     </div>
@@ -911,9 +895,9 @@ function TerminalExecutionDisplay() {
 }
 
 function ResetWorkspaceDisplay() {
+  const {text: uiText} = useI18n();
   return (
     <button type="button" className="ua-settings-page__danger-btn" disabled aria-disabled="true">
-      Reset all workspace data
-    </button>
+      {uiText("Reset all workspace data")}{" "}</button>
   );
 }

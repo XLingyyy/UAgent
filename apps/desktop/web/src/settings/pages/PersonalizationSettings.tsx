@@ -1,9 +1,11 @@
+import {useI18n} from "../../i18n";
 import { ComingSoonGate, getComingSoonPhase } from "../../components/ComingSoonGate";
 import { SettingsPageLayout, SettingsSection } from "../SettingsPageLayout";
 import { personalizationPageData } from "../settings-page-data";
 import "../pages/SettingsPages.css";
 
 export function PersonalizationSettings() {
+  const {text: uiText} = useI18n();
   return (
     <SettingsPageLayout page={personalizationPageData}>
       {personalizationPageData.sections.map((section) => (
@@ -14,36 +16,37 @@ export function PersonalizationSettings() {
         </SettingsSection>
       ))}
       <div className="ua-settings-page__note">
-        This is a UI-only mock. No configuration is saved or applied.
-      </div>
+        {uiText("This is a UI-only mock. No configuration is saved or applied.")}{" "}</div>
     </SettingsPageLayout>
   );
 }
 
 function AgentStyleDisplay() {
+  const {text: uiText} = useI18n();
   return (
     <div
       className="ua-settings-page__option-group"
       role="radiogroup"
-      aria-label="Default agent style"
+      aria-label={uiText("Default agent style")}
     >
       <label className="ua-settings-page__option ua-settings-page__option--selected">
         <span className="ua-settings-page__option-radio" aria-hidden />
-        <span>Concise</span>
+        <span>{uiText("Concise")}</span>
       </label>
       <label className="ua-settings-page__option">
         <span className="ua-settings-page__option-radio" aria-hidden />
-        <span>Detailed</span>
+        <span>{uiText("Detailed")}</span>
       </label>
       <label className="ua-settings-page__option">
         <span className="ua-settings-page__option-radio" aria-hidden />
-        <span>Exploratory</span>
+        <span>{uiText("Exploratory")}</span>
       </label>
     </div>
   );
 }
 
 function InstructionsDisplay() {
+  const {text: uiText} = useI18n();
   const instructionsSection = personalizationPageData.sections.find(
     (section) => section.id === "instructions",
   )!;
@@ -60,14 +63,13 @@ function InstructionsDisplay() {
         >
           <div className="ua-settings-page__instructions-field">
             <span className="ua-settings-page__instructions-label">
-              Project custom instructions
-            </span>
+              {uiText("Project custom instructions")}{" "}</span>
             <textarea
               className="ua-settings-page__textarea"
               disabled
               aria-disabled="true"
               rows={3}
-              placeholder="Project-specific instructions will be editable here in MVP1."
+              placeholder={uiText("Project-specific instructions will be editable here in MVP1.")}
               value=""
               readOnly
             />
@@ -81,13 +83,13 @@ function InstructionsDisplay() {
           reason={instructionsSection.rows[1].description ?? ""}
         >
           <div className="ua-settings-page__instructions-field">
-            <span className="ua-settings-page__instructions-label">Global custom instructions</span>
+            <span className="ua-settings-page__instructions-label">{uiText("Global custom instructions")}</span>
             <textarea
               className="ua-settings-page__textarea"
               disabled
               aria-disabled="true"
               rows={3}
-              placeholder="Global custom instructions will be editable here in MVP1."
+              placeholder={uiText("Global custom instructions will be editable here in MVP1.")}
               value=""
               readOnly
             />
@@ -99,6 +101,7 @@ function InstructionsDisplay() {
 }
 
 function MemoryDisplay() {
+  const {text: uiText} = useI18n();
   const memorySection = personalizationPageData.sections.find(
     (section) => section.id === "memory",
   )!;
@@ -113,7 +116,7 @@ function MemoryDisplay() {
               className="ua-settings-page__toggle-icon ua-settings-page__toggle-icon--off"
               aria-hidden
             />
-            <span>Enable agent memory</span>
+            <span>{uiText("Enable agent memory")}</span>
           </label>
         </ComingSoonGate>
       ) : null}
@@ -124,7 +127,7 @@ function MemoryDisplay() {
               className="ua-settings-page__toggle-icon ua-settings-page__toggle-icon--off"
               aria-hidden
             />
-            <span>Memory scope: Global</span>
+            <span>{uiText("Memory scope: Global")}</span>
           </label>
         </ComingSoonGate>
       ) : null}

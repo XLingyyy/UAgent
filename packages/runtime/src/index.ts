@@ -1,3 +1,6 @@
+export * from "./provider/provider-proposals.js";
+export { redactString } from "./secrets/redaction.js";
+export * from "./provider/outbound-consent.js";
 import type { PlanItem, Evidence, ChatMessage, ToolCall } from "@uagent/shared";
 export { createMockRuntime, type MockRuntimeClient, type MockRuntimeOptions } from "./mock-runtime.js";
 export { classifyMcpToolRisk, isRiskAllowed } from "./mcp-readonly-policy.js";
@@ -33,7 +36,9 @@ export { buildAgentRunTrace } from "./agent-run-recorder.js";
 export { replayAgentRunTrace, type AgentRunReplaySummary } from "./agent-run-replay.js";
 export { buildPromptEnvelope, type BuildPromptEnvelopeInput, type PromptEnvelope } from "./prompt/prompt-builder.js";
 export { buildContextPack, buildToolPolicyPack, type PromptProviderMetadata } from "./prompt/context-pack.js";
-export type { ProviderAdapter } from "./provider/provider-adapter.js";
+export * from "./provider/deepseek-session.js";
+export * from "./provider/conversation-history.js";
+export type { ProviderAdapter, ProviderCallOptions } from "./provider/provider-adapter.js";
 export {
   buildProviderRuntimeRequest,
   type BuildProviderRuntimeRequestInput,

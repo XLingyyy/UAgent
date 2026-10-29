@@ -1,0 +1,50 @@
+/** Complete sentences for the dynamic-copy inventory. Keep runtime values opaque. */
+export const dynamicMessages = {
+  "composer.proposeCommandLabel": ["提出命令：{command}", "Propose command: {command}"],
+  "composer.workingDirectoryLabel": ["工作目录：{path}", "Working directory: {path}"],
+  "composer.modelContextLabel": [
+    "上下文：{context} · {networkMode}",
+    "Context: {context} · {networkMode}",
+  ],
+  "permissions.modeLabel": ["权限模式：{mode}", "Permission mode: {mode}"],
+  "project.selectorLabel": ["项目选择器：{project}", "Project selector: {project}"],
+  "tools.panelLabel": ["{title}面板", "{title} panel"],
+  "audit.eventCount": ["{count} 项事件", "{count} events"],
+  "changes.eventCount": ["{count} 项变更事件", "{count} change events"],
+  "diagnostics.kindLabel": ["诊断类型：{kind}", "Diagnostic kind {kind}"],
+  "diagnostics.repairLabel": ["修复 {id}", "Repair {id}"],
+  "diagnostics.buildCounts": [
+    "{errors} 个构建错误 / {warnings} 个警告",
+    "{errors} build errors / {warnings} warnings",
+  ],
+  "editor.heartbeatSummary": ["{reason} / 进程存活：{alive}", "{reason} / alive {alive}"],
+  "review.findingLabel": ["问题：{title}", "Finding: {title}"],
+  "review.nextCheckLabel": ["后续检查 {number}", "Next check {number}"],
+  "mcp.discoverySummary": [
+    "{tools} 项工具 / {resources} 项资源 / {prompts} 个提示模板",
+    "{tools} tools / {resources} resources / {prompts} prompts",
+  ],
+  "terminal.quickActionLabel": ["快捷操作：{action}", "Quick action: {action}"],
+  "tools.placeholderLabel": ["{title}占位预览", "{title} placeholder"],
+  "config.runNegativeCaseLabel": [
+    "运行 N{number} 界面拒绝分支用例",
+    "Run N{number} rendered negative case",
+  ],
+  "project.validationReady": ["项目验证就绪：{project}", "Validation ready: {project}"],
+  "mcp.statusCounts": [
+    "{status} / {readOnly} 项只读 / {blocked} 项已阻止",
+    "{status} / {readOnly} read-only / {blocked} blocked",
+  ],
+  "mcp.statusReadOnly": ["{status} / MCP 只读", "{status} / MCP read-only"],
+  "provider.contextTokens": ["{count} token", "{count} tokens"],
+  "settings.pageLabel": ["设置：{page}", "Settings: {page}"],
+  "shell.mcpPolicyHint": [
+    "MCP {status}：仅限只读工具，修改类 MCP 调用已阻止。",
+    "MCP {status}: read-only tools only; mutating MCP calls are blocked.",
+  ],
+  "shell.editorStatusLabel": ["UE 编辑器：{status}", "UE Editor: {status}"],
+  "project.diagnosticsForNode": ["{name}：{count} 项诊断", "{count} diagnostics for {name}"],
+  "project.diagnosticCount": ["{count} 项诊断", "{count} diagnostics"],
+  "project.nodeMarkers": ["{name} 的标记：{markers}", "{markers} marker for {name}"],
+  "workspace.messageLabel": ["{label}：{title}", "{label}: {title}"],
+} as const satisfies Record<string, readonly [string, string]>;
