@@ -244,8 +244,8 @@ export interface ComposerStoreActions {
 
 export interface ProviderStoreActions {
   setSelectedProvider: (providerId: string | null) => void;
-  saveProvider: (provider: ProviderConfig) => void;
-  deleteProvider: (providerId: string) => void;
+  saveProvider: (provider: ProviderConfig, version?: import("./provider").ProviderVersion) => void | Promise<void>;
+  deleteProvider: (providerId: string, version?: import("./provider").ProviderVersion) => void | Promise<void>;
   setDefaultProvider: (providerId: string | null) => void;
   setProviderTestStatus: (status: ProviderTestStatus) => void;
 }

@@ -1,3 +1,4 @@
+import {NativeSettingsNotice} from "../runtime/NativeSettingsNotice";
 import {OfflineDemoBanner} from "../runtime/OfflineDemoBanner";
 import { ACCEPTANCE_ENABLED } from "../runtime/build-capabilities";
 import { useNarrowViewport } from "./useNarrowViewport";
@@ -51,6 +52,7 @@ export function AppShell() {
     <div className="ua-app" data-build-commit={import.meta.env.VITE_UAGENT_BUILD_COMMIT??"development"} data-shell-mode={shellMode} data-theme={theme}>
       <div {...(modal ? { inert: "" } : {})} aria-hidden={modal || undefined}><TitleBar /></div>
       <OfflineDemoBanner/>
+      <NativeSettingsNotice/>
       <div className="ua-app__body">
         <div key={motionKey} className="ua-motion-page" data-motion="page">
           {settingsOpen ? <SettingsShell /> : <MainLayout />}

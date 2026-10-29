@@ -1,3 +1,4 @@
+import {nativeProductSettings} from "../../runtime/native-product-settings";
 import {useI18n} from "../../i18n";
 import {SettingsPageLayout} from "../SettingsPageLayout";
 import {generalPageData} from "../settings-page-data";
@@ -21,7 +22,7 @@ export function GeneralSettings(){
      <div className="ua-default-row"><span>{uiText("Model session")}</span><strong>{uiText("Memory only")}</strong></div>
    </section>
    <section className="ua-settings-section"><h3 className="ua-settings-section__title">{uiText("Local configuration and history")}</h3>
-     <p>{uiText("Save project selection and redacted conversation copies explicitly in Connections & safety.")}</p>
+     <p>{nativeProductSettings.enabled()?t("nativeSettings.auto"):uiText("Save project selection and redacted conversation copies explicitly in Connections & safety.")}</p>
      <button type="button" onClick={()=>setActiveSettingsPage("config")}>{uiText("Manage local data")}</button>
    </section>
  </SettingsPageLayout>;

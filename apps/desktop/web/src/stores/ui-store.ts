@@ -1,3 +1,4 @@
+import {nativeProductSettings,restoredProvider} from "../runtime/native-product-settings";
 import {createProjectContextSources} from "../runtime/project-context-sources";
 import {investigationScopeGate} from "../runtime/investigation-scope-gate";
 import {createProjectReadToolRegistry} from "../runtime/project-read-tools";
@@ -535,6 +536,7 @@ async function callMvp15ToolSafely(
 }
 
 interface UIStoreBundle {
+  startNativeSettings:()=>void;
   providerProposals: ReturnType<NonNullable<DesktopRuntimeAdapter["getProviderProposals"]>> | undefined;
   workspacePersistence: { capture(): WorkspaceConfig; restore(config: WorkspaceConfig, active?: () => boolean): Promise<void> };
   layoutStore: SliceStore<LayoutStoreState>;
@@ -724,7 +726,8 @@ function createUIStateBundle(
   initialState?: UIInitialState,
   runtimeClient: DesktopRuntimeAdapter = createDesktopRuntimeAdapter(),
 ): UIStoreBundle {
-  const providerState = createInitialProviderState(initialState);
+  const nativeSaved=initialState?null:nativeProductSettings.getBootstrap();
+  const providerState = nativeSaved ? createInitialProviderState({provider:{providers:nativeSaved.providers.map(p=>restoredProvider(p.config)),providerVersions:nativeProductSettings.providerVersions(),selectedProviderId:nativeSaved.preferences.preferences.selectedProviderId,defaultProviderId:nativeSaved.preferences.preferences.defaultProviderId,testStatus:"idle"}}) : createInitialProviderState(initialState);
   const projectAdapter = createNativeProjectAdapter();
   const projectRequests = createRequestGeneration();
   runtimeClient.configureInvestigation?.({registry:createProjectReadToolRegistry(projectAdapter),contextSources:createProjectContextSources(projectAdapter),resolveScope:id=>investigationScopeGate.claim(id)});
@@ -735,7 +738,7 @@ function createUIStateBundle(
   const isCurrentAssetOperation = () => assetOperationCurrent?.() ?? true;
   let editorGeneration = 0;
   const editorBusy = new Set<string>();
-  const layoutStore = createSliceStore(createInitialLayoutState(initialState));
+  const layoutStore = createSliceStore(createInitialLayoutState(nativeSaved?{...initialState,layout:{...initialState?.layout,theme:nativeSaved.preferences.preferences.theme}}:initialState));
   const settingsStore = createSliceStore(createInitialSettingsState(initialState));
   const projectStore = createSliceStore(createInitialProjectState(initialState));
   const syncProviderProject=()=>{
@@ -3163,16 +3166,8 @@ function createUIStateBundle(
     };
   }
 
-  const providerActions: ProviderStoreActions = {
-    setSelectedProvider: (providerId) =>
-      providerStore.setState((previousState) =>
-        previousState.selectedProviderId === providerId
-          ? previousState
-          : { ...previousState, selectedProviderId: providerId, testStatus: "idle" },
-      ),
-    saveProvider: (nextProviderConfig: ProviderConfig) => {
+  function applySavedProvider(nextProvider: ProviderConfig,providerVersion?:import("../types/provider").ProviderVersion){
       const previousProviderState = providerStore.getState();
-      const nextProvider = cloneProviderConfig(nextProviderConfig);
       if (!nextProvider.providerId.trim() || new Set(nextProvider.models.map((model) => model.id)).size !== nextProvider.models.length) {
         throw new Error("invalid_provider_model_identity");
       }
@@ -3196,53 +3191,41 @@ function createUIStateBundle(
         providers,
         selectedProviderId: nextProvider.providerId,
         testStatus: "idle",
+        ...(providerVersion ? {providerVersions:{...previousProviderState.providerVersions,[nextProvider.providerId]:providerVersion}} : {}),
       };
 
       providerStore.setState(nextProviderState);
       syncComposerSelection(previousProviderState, nextProviderState);
-    },
-    deleteProvider: (providerId) => {
-      if(providerId==="deepseek")safeProviderSession.disable();
-      const previousProviderState = providerStore.getState();
-      const providers = previousProviderState.providers.filter(
-        (provider) => provider.providerId !== providerId,
-      );
-      const fallbackId = providers[0]?.providerId ?? null;
-      const nextProviderState: ProviderState = {
-        ...previousProviderState,
-        providers,
-        selectedProviderId:
-          previousProviderState.selectedProviderId === providerId
-            ? fallbackId
-            : previousProviderState.selectedProviderId,
-        defaultProviderId:
-          previousProviderState.defaultProviderId === providerId
-            ? null
-            : previousProviderState.defaultProviderId,
-        testStatus: "idle",
-      };
 
-      providerStore.setState(nextProviderState);
-      syncComposerSelection(previousProviderState, nextProviderState);
-    },
-    setDefaultProvider: (providerId) => {
-      const previousProviderState = providerStore.getState();
-      if (previousProviderState.defaultProviderId === providerId) {
-        return;
+  }
+  const providerActions: ProviderStoreActions = {
+    setSelectedProvider:(providerId)=>providerStore.setState(previous=>({...previous,selectedProviderId:providerId,testStatus:"idle"})),
+    saveProvider:(config,capturedVersion)=>{
+      const next=cloneProviderConfig(config);
+      if(nativeProductSettings.enabled()){
+        const token=capturedVersion??providerStore.getState().providerVersions?.[next.providerId];
+        if(!token)throw Error("settings_version_required");
+        if(next.providerId==="deepseek")safeProviderSession.close("revoked");
+        return nativeProductSettings.saveProvider(next,token).then(saved=>applySavedProvider({...restoredProvider(saved.config),networkMode:next.networkMode??"disabled"},{providerId:saved.config.providerId,generation:saved.generation,revision:saved.revision,exists:true}));
       }
-
-      const nextProviderState: ProviderState = {
-        ...previousProviderState,
-        defaultProviderId: providerId,
-      };
-
-      providerStore.setState(nextProviderState);
-      syncComposerSelection(previousProviderState, nextProviderState);
+      applySavedProvider(next);
     },
-    setProviderTestStatus: (status) =>
-      providerStore.setState((previousState) =>
-        previousState.testStatus === status ? previousState : { ...previousState, testStatus: status },
-      ),
+    deleteProvider:(providerId,capturedVersion)=>{
+      const apply=()=>{
+        if(providerId==="deepseek")safeProviderSession.disable();
+        const previous=providerStore.getState(),providers=previous.providers.filter(p=>p.providerId!==providerId);
+        const next={...previous,providers,selectedProviderId:previous.selectedProviderId===providerId?providers[0]?.providerId??null:previous.selectedProviderId,defaultProviderId:previous.defaultProviderId===providerId?null:previous.defaultProviderId,testStatus:"idle" as const};
+        providerStore.setState(next);syncComposerSelection(previous,next);
+      };
+      if(nativeProductSettings.enabled()){
+        const token=capturedVersion??providerStore.getState().providerVersions?.[providerId];if(!token)throw Error("settings_version_required");
+        if(providerId==="deepseek")safeProviderSession.close("revoked");
+        return nativeProductSettings.deleteProvider(token).then(apply);
+      }
+      apply();
+    },
+    setDefaultProvider:(providerId)=>{const previous=providerStore.getState(),next={...previous,defaultProviderId:providerId};providerStore.setState(next);syncComposerSelection(previous,next);},
+    setProviderTestStatus:(testStatus)=>providerStore.setState(previous=>({...previous,testStatus})),
   };
 
   const mvp15dUiReadinessReason = (): string | null => {
@@ -3764,7 +3747,41 @@ function createUIStateBundle(
       if(config.deepseekConfigured) providerActions.saveProvider({providerId:"deepseek",displayName:"DeepSeek",baseUrl:"https://api.deepseek.com",wireApi:"openai_compatible",authMode:"env_key",models:[{id:"deepseek-flash",label:"DeepSeek Flash",contextWindow:1000000,supportsReasoning:false}],defaultModel:"deepseek-flash",enabled:true,networkMode:"disabled"});
     },
   };
+  let nativeStarted=false;
+  const startNativeSettings=()=>{
+    const saved=nativeProductSettings.getBootstrap();if(!saved||nativeStarted)return;nativeStarted=true;
+    void(async()=>{
+      const initialProject=projectStore.getState(),restored:ProjectProfile[]=[];
+      for(const p of saved.projects){try{restored.push({...await projectAdapter.addProject(p.root),trustState:"untrusted"});}catch{/* Keep unavailable descriptors in native storage; grant no access. */}}
+      if(projectStore.getState()===initialProject){
+        const id=restored.some(p=>p.id===saved.preferences.preferences.activeProjectId)?saved.preferences.preferences.activeProjectId:null;
+        projectStore.setState(previous=>({...previous,registeredProjects:restored,activeProjectId:id}));
+      }
+      const selectForProject=(id:string|null)=>{
+        const selection=id?nativeProductSettings.projectPreferences(id)?.preferences:null;
+        const provider=providerStore.getState().providers.find(p=>p.providerId===(id?selection?.providerId:providerStore.getState().selectedProviderId));
+        const model=provider?.models.find(m=>m.id===(id?selection?.modelId:provider.defaultModel));
+        composerStore.setState(previous=>({...previous,selectedModelId:provider&&model?JSON.stringify([provider.providerId,model.id]):"not-configured",...(selection?.reasoningEffort?{reasoningEffort:selection.reasoningEffort}:{}),savedRun:undefined}));
+      };
+      let projectId=projectStore.getState().activeProjectId;selectForProject(projectId);
+      let theme=layoutStore.getState().theme,providerSelection=JSON.stringify([providerStore.getState().selectedProviderId,providerStore.getState().defaultProviderId]);
+      let modelSelection=JSON.stringify([composerStore.getState().selectedModelId,composerStore.getState().reasoningEffort]);
+      const persistModel=()=>{
+        const c=composerStore.getState(),next=JSON.stringify([c.selectedModelId,c.reasoningEffort]);if(next===modelSelection)return;modelSelection=next;
+        if(!projectId)return;let providerId:string|null=null,modelId:string|null=null;
+        try{const value=JSON.parse(c.selectedModelId);if(Array.isArray(value)&&value.length===2){providerId=value[0];modelId=value[1];}}catch{/* Explicitly unselected. */}
+        const model=providerStore.getState().providers.find(p=>p.providerId===providerId)?.models.find(m=>m.id===modelId);
+        const effort=model?.supportsReasoning&&(!model.reasoningEfforts||model.reasoningEfforts.includes(c.reasoningEffort))?c.reasoningEffort:null;
+        void nativeProductSettings.saveProjectPreferences(projectId,{providerId,modelId,reasoningEffort:effort}).catch(()=>undefined);
+      };
+      projectStore.subscribe(()=>{const next=projectStore.getState().activeProjectId;if(next===projectId)return;projectId=next;selectForProject(next);modelSelection=JSON.stringify([composerStore.getState().selectedModelId,composerStore.getState().reasoningEffort]);void nativeProductSettings.savePreferences({activeProjectId:next}).catch(()=>undefined);});
+      layoutStore.subscribe(()=>{const next=layoutStore.getState().theme;if(next===theme)return;theme=next;void nativeProductSettings.savePreferences({theme:next}).catch(()=>undefined);});
+      providerStore.subscribe(()=>{const p=providerStore.getState(),next=JSON.stringify([p.selectedProviderId,p.defaultProviderId]);if(next===providerSelection)return;providerSelection=next;void nativeProductSettings.savePreferences({selectedProviderId:p.selectedProviderId,defaultProviderId:p.defaultProviderId}).catch(()=>undefined);});
+      composerStore.subscribe(persistModel);
+    })().catch(()=>undefined);
+  };
   return {
+    startNativeSettings,
     providerProposals:runtimeClient.getProviderProposals?.(),
     workspacePersistence,
     layoutStore,
@@ -3806,6 +3823,7 @@ export function UIProvider({ children, initialState, runtimeClient }: UIProvider
   );
   useEffect(() => {
     let mounted = true;
+    storeBundle.startNativeSettings();
     if (!FIXTURES_ENABLED) {
       const adapter = runtimeClient ?? getFixedAppRuntimeAdapter();
       void (adapter?.getAssetMutationCapability?.() ?? Promise.resolve(false)).then((enabled) => {

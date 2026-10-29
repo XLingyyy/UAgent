@@ -193,10 +193,33 @@ those three, the two combined tests below, and the existing atomic-abort and bou
 selection tests (7 passing tests total). Other original tests compiled under strict
 Clippy but were not rerun in this slice.
 
-UI wiring, the production native-policy adapter, real Provider/UE behavior, physical
+Desktop wiring uses product_settings_commands and provider_endpoint_policy. The
+existing UI stores remain the in-memory owners; the native database is their only
+settings persistence source after migration. Real Provider/UE behavior, physical
 disk-full and forced-kill recovery remain unverified. No historical private session,
 actual key, endpoint probe or third-party network request is used.
 
+
+## Desktop integration boundaries
+
+The main entry initializes native preferences before mounting the application.
+Only an absent native record reads old nonsecret workspace preferences and the
+old locale key; the old files remain unchanged and the locale key becomes inert.
+Provider snapshots restore with idle test status and closed memory-only sessions.
+The existing editor captures ProviderVersion when editing begins, preserves a
+conflicting draft and never refreshes its token to replay a write. Explicit reload
+warns that unsaved edits will be discarded.
+
+Project registration uses the same native identity and canonical root as run
+storage. Each registered project owns model/reasoning preferences; a project with
+no saved choice does not inherit another project\'s selection. Without a project,
+the selected provider\'s configured default model is used. Theme and locale changes
+save automatically with acknowledged preference revisions.
+
+Settings reads/writes and actual renderer fetch preflight share the native endpoint
+policy. Other valid configurations remain unsupported for execution. No UI command
+accepts native observations, connection verification, credentials, trust or backup
+restoration. Backup/recovery remains a native module API without a product entry.
 
 ## Combined T06/T08 regression
 

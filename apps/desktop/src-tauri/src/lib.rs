@@ -4,6 +4,12 @@ pub(crate) mod local_workspace;
 pub(crate) mod local_run_store;
 #[cfg(windows)]
 pub(crate) mod run_store_commands;
+#[cfg(windows)]
+pub(crate) mod product_settings_store;
+#[cfg(windows)]
+pub(crate) mod provider_endpoint_policy;
+#[cfg(windows)]
+pub(crate) mod product_settings_commands;
 pub(crate) mod project_source_versions;
 pub(crate) mod provider_budget;
 pub(crate) mod asset_mutation;
@@ -1597,6 +1603,24 @@ pub fn run() {
             mvp15d_bridge_complete,
             mvp15d_bridge_fail,
             app_profile::get_application_profile,
+            #[cfg(windows)]
+            product_settings_commands::initialize_product_settings,
+            #[cfg(windows)]
+            product_settings_commands::read_product_settings,
+            #[cfg(windows)]
+            product_settings_commands::save_product_preferences,
+            #[cfg(windows)]
+            product_settings_commands::save_product_provider,
+            #[cfg(windows)]
+            product_settings_commands::delete_product_provider,
+            #[cfg(windows)]
+            product_settings_commands::get_product_provider_version,
+            #[cfg(windows)]
+            product_settings_commands::register_product_project,
+            #[cfg(windows)]
+            product_settings_commands::save_product_project_preferences,
+            #[cfg(windows)]
+            product_settings_commands::check_native_provider_endpoint,
             #[cfg(windows)]
             run_store_commands::list_native_run_history,
             #[cfg(windows)]

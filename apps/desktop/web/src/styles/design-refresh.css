@@ -9,7 +9,7 @@
  --ua-color-dark-accent:#a4cfbd; --ua-color-dark-accent-hover:#bddfce;
  --ua-sidebar-width:220px; --ua-sidebar-min-width:200px; --ua-titlebar-height:48px;
 }
-:root,[data-theme="dark"] {
+:root:not([data-theme="light"]),[data-theme="dark"] {
  --ua-bg-input:#161b1b; --ua-bg-active:#a4cfbd13; --ua-accent-soft:#a4cfbd15;
  --ua-accent-active:#8fbca8; --ua-accent-fg:#15221c;
  --ua-border-soft:#a3b0ab19; --ua-border-strong:#a3b0ab42;

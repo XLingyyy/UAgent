@@ -78,6 +78,26 @@ pub fn read_local_workspace(app:tauri::AppHandle)->Result<Option<VersionedWorksp
 #[tauri::command]
 pub fn save_local_workspace(app:tauri::AppHandle,input:SaveInput)->Result<VersionedWorkspace,String>{save(&app_root(&app)?,input)}
 
+/// Native-only projection for the one-time settings migration. Chat content,
+/// credentials and authority are never exposed through this projection.
+pub(crate) struct PreferenceProjection {
+    pub theme: String,
+    pub project_roots: Vec<String>,
+    pub selected_project_root: Option<String>,
+    pub deepseek_configured: bool,
+}
+pub(crate) fn read_preferences_projection(app_data_root: &Path) -> Result<Option<PreferenceProjection>, String> {
+    Ok(read(&app_data_root.join("workspace-v1"))?.map(|record| {
+        let workspace = record.workspace;
+        PreferenceProjection {
+            theme: workspace.theme,
+            project_roots: workspace.project_roots,
+            selected_project_root: workspace.selected_project_root,
+            deepseek_configured: workspace.deepseek_configured,
+        }
+    }))
+}
+
 #[cfg(all(test,windows))]
 mod tests{
  use super::*;

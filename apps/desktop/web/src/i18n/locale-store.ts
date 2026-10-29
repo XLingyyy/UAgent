@@ -10,6 +10,7 @@ export interface LocaleStore {
   getServerSnapshot: () => Locale;
   subscribe: (listener: () => void) => () => void;
   setLocale: (locale: Locale) => void;
+  disablePersistence: () => void;
 }
 export interface LocaleStoreOptions {
   initialLocale?: Locale;
@@ -22,9 +23,11 @@ export interface LocaleStoreOptions {
 export function createLocaleStore(options: LocaleStoreOptions = {}): LocaleStore {
   let locale: Locale = options.initialLocale ?? DEFAULT_LOCALE;
   let initialized = false;
+  let persistenceDisabled = false;
   let listeningTarget: Window | null = null;
   const listeners = new Set<() => void>();
   const storage = (): LocaleStorage | null => {
+    if (persistenceDisabled) return null;
     if (options.storage !== undefined) return options.storage;
     try {
       return typeof window === "undefined" ? null : window.localStorage;
@@ -48,6 +51,7 @@ export function createLocaleStore(options: LocaleStoreOptions = {}): LocaleStore
     listeners.forEach((listener) => listener());
   };
   const onStorage = (event: StorageEvent) => {
+    if (persistenceDisabled) return;
     if (event.key !== LOCALE_STORAGE_KEY && event.key !== null) return;
     // Ignore sessionStorage and unrelated storage areas when supplied by the browser.
     if (event.storageArea && event.storageArea !== storage()) return;
@@ -63,7 +67,7 @@ export function createLocaleStore(options: LocaleStoreOptions = {}): LocaleStore
     subscribe(listener) {
       initialize();
       listeners.add(listener);
-      if (!listeningTarget) {
+      if (!listeningTarget && !persistenceDisabled) {
         const target =
           options.eventTarget !== undefined
             ? options.eventTarget
@@ -82,6 +86,10 @@ export function createLocaleStore(options: LocaleStoreOptions = {}): LocaleStore
           listeningTarget = null;
         }
       };
+    },
+    disablePersistence() {
+      initialize(); persistenceDisabled = true;
+      listeningTarget?.removeEventListener("storage", onStorage); listeningTarget = null;
     },
     setLocale(next) {
       if (!isLocale(next)) return;

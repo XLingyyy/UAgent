@@ -1,3 +1,4 @@
+import {initializeNativeProductSettings} from "./runtime/native-product-settings";
 import {initializeApplicationProfile} from "./runtime/application-profile";
 import {I18nProvider} from "./i18n";
 import React from "react";
@@ -11,6 +12,7 @@ import "./styles/design-refresh.css";
 
 async function boot(){
  await initializeApplicationProfile();
+ await initializeNativeProductSettings();
  const {default:App,initializeFixedAppRuntimeAdapter}=await import("./app/App");
  initializeFixedAppRuntimeAdapter();
  ReactDOM.createRoot(document.getElementById("root")!).render(<React.StrictMode><I18nProvider><App/></I18nProvider></React.StrictMode>);

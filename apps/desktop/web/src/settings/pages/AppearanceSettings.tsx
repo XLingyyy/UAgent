@@ -1,3 +1,4 @@
+import {nativeProductSettings} from "../../runtime/native-product-settings";
 import {useI18n} from "../../i18n";
 import { SettingsPageLayout, SettingsSection } from "../SettingsPageLayout";
 import { appearancePageData } from "../settings-page-data";
@@ -6,7 +7,7 @@ import type { UATheme } from "../../types/ui";
 import "../pages/SettingsPages.css";
 
 export function AppearanceSettings() {
-  const {text: uiText} = useI18n();
+  const {text: uiText,t} = useI18n();
   return (
     <SettingsPageLayout page={appearancePageData}>
       {appearancePageData.sections.map((section) => (
@@ -18,13 +19,13 @@ export function AppearanceSettings() {
         </SettingsSection>
       ))}
       <div className="ua-settings-page__note">
-        {uiText("Appearance is local. Save workspace preferences in Connections & safety.")}{" "}</div>
+        {nativeProductSettings.enabled()?t("nativeSettings.auto"):uiText("Appearance is local. Save workspace preferences in Connections & safety.")}{" "}</div>
     </SettingsPageLayout>
   );
 }
 
 function ThemeModeControls() {
-  const {text: uiText} = useI18n();
+  const {text: uiText,t} = useI18n();
   const theme = useLayoutStore((state) => state.theme);
   const { setTheme } = useLayoutActions();
   const themeOptions: Array<{
@@ -41,9 +42,7 @@ function ThemeModeControls() {
     },
     {
       id: "light",
-      label: "Light (staged)",
-      disabled: true,
-      description: "Future light theme setting",
+      label: t("settings.theme.light"),
     },
     { id: "dark", label: "Dark" },
   ];
@@ -69,7 +68,7 @@ function ThemeModeControls() {
               .filter(Boolean)
               .join(" ")}
             onClick={() => {
-              if (option.id === "dark") {
+              if (option.id === "dark" || option.id === "light") {
                 setTheme(option.id);
               }
             }}

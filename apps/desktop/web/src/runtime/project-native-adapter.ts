@@ -1,3 +1,4 @@
+import {nativeProductSettings} from "./native-product-settings";
 import { FIXTURES_ENABLED } from "./build-capabilities";
 import {
   createMvp8FixtureProjectRegistry,
@@ -277,7 +278,12 @@ export function createNativeProjectAdapter(
         if (!validation.ok) {
           throw new Error(`Invalid project root: ${validation.reason}`);
         }
-        const project = projectFromValidation(ref, validation, now());
+        let project = projectFromValidation(ref, validation, now());
+        if(nativeProductSettings.enabled()){
+          const registered=await nativeProductSettings.registerProject(ref);
+          if(!registered)throw Error("native_project_registration_unavailable");
+          project={...project,id:registered.id,rootRef:registered.id};
+        }
         const normalized = normalizeProjectPath(ref);
         rawPaths.set(project.id, normalized);
         rawPaths.set(project.rootRef, normalized);

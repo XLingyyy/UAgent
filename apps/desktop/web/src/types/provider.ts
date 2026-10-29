@@ -14,6 +14,8 @@ export interface ProviderModel {
   contextWindow: number;
   supportsReasoning: boolean;
   reasoningEfforts?: ProviderReasoningEffort[];
+  capabilityDeclarations?: {text:"unknown"|"supported"|"unsupported";tools:"unknown"|"supported"|"unsupported";streaming:"unknown"|"supported"|"unsupported"};
+  requestDefaults?: {temperature:number|null;maxOutputTokens:number|null};
 }
 
 export interface ProviderConfig {
@@ -30,7 +32,10 @@ export interface ProviderConfig {
   networkMode?: ProviderNetworkMode;
 }
 
+export interface ProviderVersion {providerId:string;generation:string|null;revision:number;exists:boolean}
+
 export interface ProviderState {
+  providerVersions?: Record<string,ProviderVersion>;
   providers: ProviderConfig[];
   selectedProviderId: string | null;
   defaultProviderId: string | null;
