@@ -94,9 +94,71 @@ impl NativeEndpointPolicy for DesktopEndpointPolicy {
     }
 }
 
+/// Canonical Responses target for the dormant native transport preparation layer.
+/// This is not a connectivity observation and does not enable any UI transport.
+pub(crate) fn prepare_responses_endpoint(base_url: &str) -> Result<String> {
+    let checked = NATIVE_ENDPOINT_POLICY.validate_endpoint(WireApi::Responses, base_url)?;
+    let root = checked
+        .canonical_base_url
+        .strip_suffix('/')
+        .unwrap_or(&checked.canonical_base_url);
+    if root != "https://api.openai.com/v1" {
+        return Err(StoreError {
+            kind: "endpointPolicy".into(),
+            message:
+                "the native Responses preparation layer requires the explicit supported API root"
+                    .into(),
+        });
+    }
+    Ok(format!("{root}/responses"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn responses_preparation_keeps_v1_and_does_not_enable_transport() {
+        for root in [
+            "https://api.openai.com/v1",
+            "https://api.openai.com/v1/",
+            "https://API.OPENAI.COM:443/v1",
+        ] {
+            assert_eq!(
+                prepare_responses_endpoint(root).unwrap(),
+                "https://api.openai.com/v1/responses"
+            );
+            assert!(
+                !NATIVE_ENDPOINT_POLICY
+                    .validate_endpoint(WireApi::Responses, root)
+                    .unwrap()
+                    .transport_supported
+            );
+        }
+        assert!(
+            NATIVE_ENDPOINT_POLICY
+                .validate_endpoint(WireApi::ChatCompletions, "https://api.deepseek.com")
+                .unwrap()
+                .transport_supported
+        );
+    }
+    #[test]
+    fn responses_preparation_rejects_injected_or_ambiguous_targets() {
+        for root in [
+            "https://api.openai.com",
+            "https://api.openai.com/v1/responses",
+            "https://api.openai.com/v1//",
+            "https://api.openai.com/v1/../v1",
+            "https://api.openai.com.evil.invalid/v1",
+            "https://other.invalid/v1",
+            "http://127.0.0.1:8000/v1",
+            "https://user:pass@api.openai.com/v1",
+            "https://api.openai.com/v1?api_key=synthetic",
+            "https://api.openai.com/v1#fragment",
+        ] {
+            assert!(prepare_responses_endpoint(root).is_err(), "{root}");
+        }
+    }
+
     #[test]
     fn policy_rejects_dangerous_or_ambiguous_urls_without_network() {
         for url in [

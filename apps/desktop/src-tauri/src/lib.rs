@@ -9,6 +9,8 @@ pub(crate) mod product_settings_store;
 #[cfg(windows)]
 pub(crate) mod provider_endpoint_policy;
 #[cfg(windows)]
+pub(crate) mod native_provider_transport;
+#[cfg(windows)]
 pub(crate) mod product_settings_commands;
 pub(crate) mod project_source_versions;
 pub(crate) mod provider_budget;
