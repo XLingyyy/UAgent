@@ -744,6 +744,7 @@ test("UE identity exact standalone tests and fixture data stay outside the hash"
   try {
     const before = computeSourceIdentity(fixture.repo);
     const testPaths = [
+      "scripts/test-effect-reconciliation-native.ps1",
       "scripts/test-trusted-root-native.ps1",
       "scripts/test-ue-build-native.ps1",
       "scripts/test-ue-build-repair-native.ps1",
@@ -755,6 +756,8 @@ test("UE identity exact standalone tests and fixture data stay outside the hash"
       "scripts/test-ue-scene-batch.mjs",
       "scripts/test-ue-semantic-v2-native.ps1",
       "scripts/test-ue-semantic-v2.mjs",
+      "apps/desktop/src-tauri/src/local_run_store/effect_reconciliation_tests.rs",
+      "apps/desktop/src-tauri/src/local_run_store/effect_dispatch_fence_tests.rs",
       "apps/desktop/src-tauri/src/ue_build_repair_tests.rs",
     ];
     const fixtureData = "packages/runtime/src/__fixtures__/ue-pickup-template-v2-discovery.json";
@@ -785,6 +788,7 @@ test("UE identity rejects unknown and near-name tooling instead of widening excl
     for (const logical of [
       "scripts/new-ue-runtime.mjs",
       "scripts/test-ue-build-native-extra.ps1",
+      "scripts/test-effect-reconciliation-native-extra.ps1",
       "scripts/export-ue-scene-batch-schemas-extra.mjs",
       "scripts/nested/test-ue-build-native.ps1",
     ]) {

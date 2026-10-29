@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 const PRODUCTION_SOURCE_BOUNDARY_VERSION = "uagent.mvp15d.production-source-boundary.v3";
 
 const EXACT_STANDALONE_TEST_RUNNERS = Object.freeze([
+  "scripts/test-effect-reconciliation-native.ps1",
   "scripts/test-trusted-root-native.ps1",
   "scripts/test-ue-build-native.ps1",
   "scripts/test-ue-build-repair-native.ps1",
@@ -42,6 +43,8 @@ const EXACT_STANDALONE_TEST_RUNNERS = Object.freeze([
   "scripts/test-ue-semantic-v2.mjs",
 ]);
 const EXACT_TEST_ONLY_SOURCES = Object.freeze([
+  "apps/desktop/src-tauri/src/local_run_store/effect_reconciliation_tests.rs",
+  "apps/desktop/src-tauri/src/local_run_store/effect_dispatch_fence_tests.rs",
   "apps/desktop/src-tauri/src/ue_build_repair_tests.rs",
 ]);
 const EXACT_TEST_FIXTURE_DATA = Object.freeze([

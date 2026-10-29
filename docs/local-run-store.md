@@ -242,3 +242,7 @@ acceptance.
 Path-prefix tests classify supplied input/canonical path strings only. No shared
 folder or mapped network drive was configured. Real mapped-drive, 8.3 and SUBST
 behavior has not been exercised.
+
+## Optional effect reconciliation
+
+The unregistered [T18 effect journal](effect-reconciliation.md) reuses this database and transaction wrapper without changing the main schema version or run revisions. Its child-module declaration and production adapters remain unapplied. SQLite backups include the optional tables; the current project JSONL exporter does not include them.

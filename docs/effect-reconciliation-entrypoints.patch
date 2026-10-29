@@ -1,0 +1,10 @@
+diff --git a/apps/desktop/src-tauri/src/local_run_store/mod.rs b/apps/desktop/src-tauri/src/local_run_store/mod.rs
+--- a/apps/desktop/src-tauri/src/local_run_store/mod.rs
++++ b/apps/desktop/src-tauri/src/local_run_store/mod.rs
+@@ -2,5 +2,6 @@
+ //! and stores no authority to execute. Recovered runs require fresh authorization.
+ //! The native adapter supplies a trusted app-data directory and project identity.
+ #![cfg(windows)]
++pub mod effect_reconciliation;
+ mod schema;
+ mod sqlite;
