@@ -448,6 +448,15 @@ function sameTransform(actual: SceneTransform, expected: SceneTransform): boolea
   }
   return sameOrientation(actual.rotation, expected.rotation);
 }
+/** Pure display comparison using the same validated geometry and tolerances as scene receipts.
+ * This performs no owner verification and grants no execution authority. */
+export function sceneTransformsMatch(actual: unknown, expected: SceneTransform): boolean {
+  try {
+    return sameTransform(transform(actual), transform(expected));
+  } catch {
+    return false;
+  }
+}
 /** Verifies every identity, plan value and observed actor; a plausible count/hash alone is insufficient. */
 export function parseSceneResult(
   session: SceneSession,
