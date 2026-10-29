@@ -4,7 +4,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 use std::mem::size_of;
 use std::os::windows::fs::{FileExt, OpenOptionsExt};
-use std::os::windows::io::{AsRawHandle, FromRawHandle, RawHandle};
+use std::os::windows::io::{AsHandle, AsRawHandle, BorrowedHandle, FromRawHandle, RawHandle};
 use std::path::PathBuf;
 use std::ptr::null_mut;
 use std::sync::{
@@ -498,6 +498,12 @@ pub struct PinnedDirectory {
     scope: ScopedReader,
 }
 impl PinnedDirectory {
+    /// Native adapters only: this borrows the checked directory object, not a write grant.
+    /// A caller must independently authorize exact child effects and retain/recheck this lease.
+    pub(crate) fn borrow_verified_handle(&self) -> Result<BorrowedHandle<'_>> {
+        self.check_current()?;
+        Ok(self.path.target().file.as_handle())
+    }
     pub fn identity(&self) -> ObjectIdentity {
         self.path.target().identity
     }

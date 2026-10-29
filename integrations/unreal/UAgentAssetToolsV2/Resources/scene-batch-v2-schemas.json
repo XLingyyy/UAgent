@@ -1,0 +1,4009 @@
+{
+  "contractVersion": "2.2.0-scene-batch-current-run",
+  "tools": [
+    {
+      "name": "uagent.v2.scene.capabilities",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "uagent.scene.capabilities.v2"
+          },
+          "protocolVersion": {
+            "type": "integer",
+            "const": 2
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "projectKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "instanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "rootObjectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "productionSupported": {
+            "type": "boolean",
+            "const": false
+          },
+          "scopeMode": {
+            "type": "string",
+            "const": "isolated_lab_current_run_only"
+          },
+          "writeRoot": {
+            "type": "string",
+            "const": "/Game/UAgentBuildLab/Scene_T14"
+          },
+          "approvedPlans": {
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "operationId": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "targetMap": {
+                  "type": "string",
+                  "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+                },
+                "expectedDiskState": {
+                  "type": "string",
+                  "const": "absent"
+                },
+                "items": {
+                  "type": "array",
+                  "minItems": 20,
+                  "maxItems": 20,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "itemId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_]{1,64}$"
+                      },
+                      "objectName": {
+                        "type": "string",
+                        "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                      },
+                      "mesh": {
+                        "type": "string",
+                        "enum": [
+                          "/Engine/BasicShapes/Cube.Cube",
+                          "/Engine/BasicShapes/Sphere.Sphere",
+                          "/Engine/BasicShapes/Cylinder.Cylinder"
+                        ]
+                      },
+                      "material": {
+                        "type": "string",
+                        "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                      },
+                      "transform": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "location": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "z": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "z"
+                            ]
+                          },
+                          "rotation": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "pitch": {
+                                "type": "number",
+                                "minimum": -180,
+                                "maximum": 180
+                              },
+                              "yaw": {
+                                "type": "number",
+                                "minimum": -180,
+                                "maximum": 180
+                              },
+                              "roll": {
+                                "type": "number",
+                                "minimum": -180,
+                                "maximum": 180
+                              }
+                            },
+                            "required": [
+                              "pitch",
+                              "yaw",
+                              "roll"
+                            ]
+                          },
+                          "scale": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": 0.1,
+                                "maximum": 10
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": 0.1,
+                                "maximum": 10
+                              },
+                              "z": {
+                                "type": "number",
+                                "minimum": 0.1,
+                                "maximum": 10
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "z"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "location",
+                          "rotation",
+                          "scale"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "itemId",
+                      "objectName",
+                      "mesh",
+                      "material",
+                      "transform"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "operationId",
+                "targetMap",
+                "expectedDiskState",
+                "items"
+              ]
+            }
+          },
+          "tools": {
+            "type": "array",
+            "minItems": 6,
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "uagent.v2.scene.prepare",
+                    "uagent.v2.scene.execute",
+                    "uagent.v2.scene.cancel",
+                    "uagent.v2.scene.query",
+                    "uagent.v2.scene.resume",
+                    "uagent.v2.scene.save"
+                  ]
+                },
+                "inputSchema": {
+                  "type": "object"
+                },
+                "outputSchema": {
+                  "type": "object"
+                },
+                "effect": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "name",
+                "inputSchema",
+                "outputSchema",
+                "effect"
+              ]
+            }
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "protocolVersion",
+          "contractVersion",
+          "projectKey",
+          "instanceId",
+          "rootObjectId",
+          "runId",
+          "available",
+          "productionSupported",
+          "scopeMode",
+          "writeRoot",
+          "approvedPlans",
+          "tools"
+        ]
+      }
+    },
+    {
+      "name": "uagent.v2.scene.prepare",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "protocolVersion": {
+            "type": "integer",
+            "const": 2
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "expectedProjectKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "expectedInstanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "expectedRootObjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "targetMap": {
+                "type": "string",
+                "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+              },
+              "expectedDiskState": {
+                "type": "string",
+                "const": "absent"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_]{1,64}$"
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                    },
+                    "mesh": {
+                      "type": "string",
+                      "enum": [
+                        "/Engine/BasicShapes/Cube.Cube",
+                        "/Engine/BasicShapes/Sphere.Sphere",
+                        "/Engine/BasicShapes/Cylinder.Cylinder"
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "mesh",
+                    "material",
+                    "transform"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operationId",
+              "targetMap",
+              "expectedDiskState",
+              "items"
+            ]
+          },
+          "hostPermit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "contractVersion",
+          "expectedProjectKey",
+          "expectedInstanceId",
+          "expectedRootObjectId",
+          "runId",
+          "plan",
+          "hostPermit"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "uagent.scene.result.v2"
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "projectKey": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "rootObjectId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "uagent.v2.scene.prepare",
+              "uagent.v2.scene.execute",
+              "uagent.v2.scene.cancel",
+              "uagent.v2.scene.query",
+              "uagent.v2.scene.resume",
+              "uagent.v2.scene.save"
+            ]
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "targetMap": {
+                "type": "string",
+                "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+              },
+              "expectedDiskState": {
+                "type": "string",
+                "const": "absent"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_]{1,64}$"
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                    },
+                    "mesh": {
+                      "type": "string",
+                      "enum": [
+                        "/Engine/BasicShapes/Cube.Cube",
+                        "/Engine/BasicShapes/Sphere.Sphere",
+                        "/Engine/BasicShapes/Cylinder.Cylinder"
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "mesh",
+                    "material",
+                    "transform"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operationId",
+              "targetMap",
+              "expectedDiskState",
+              "items"
+            ]
+          },
+          "planHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_started",
+                  "prepared",
+                  "running",
+                  "paused_for_test_cancel",
+                  "cancelled",
+                  "completed",
+                  "saved",
+                  "conflicted",
+                  "failed"
+                ]
+              },
+              "targetMap": {
+                "type": "string"
+              },
+              "currentWorldMatches": {
+                "type": "boolean"
+              },
+              "packageDirty": {
+                "type": "boolean"
+              },
+              "saved": {
+                "type": "boolean"
+              },
+              "diskExists": {
+                "type": "boolean"
+              },
+              "diskHash": {
+                "type": "string",
+                "pattern": "^(|[0-9a-f]{64})$"
+              },
+              "conflict": {
+                "type": "boolean"
+              },
+              "cancelIsRollback": {
+                "type": "boolean",
+                "const": false
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string"
+                    },
+                    "objectName": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "not_started",
+                        "applied",
+                        "unknown",
+                        "failed"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "owned": {
+                      "type": "boolean"
+                    },
+                    "actorGuid": {
+                      "type": "string"
+                    },
+                    "objectPath": {
+                      "type": "string"
+                    },
+                    "mesh": {
+                      "type": "string"
+                    },
+                    "material": {
+                      "type": "string"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "status",
+                    "reason",
+                    "owned",
+                    "actorGuid",
+                    "objectPath",
+                    "mesh",
+                    "material"
+                  ]
+                }
+              },
+              "queryToken": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "appliedCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20
+              },
+              "conflictReason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "targetMap",
+              "currentWorldMatches",
+              "packageDirty",
+              "saved",
+              "diskExists",
+              "diskHash",
+              "conflict",
+              "cancelIsRollback",
+              "items",
+              "appliedCount",
+              "conflictReason"
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "contractVersion",
+          "projectKey",
+          "instanceId",
+          "rootObjectId",
+          "runId",
+          "operation",
+          "plan",
+          "planHash",
+          "data"
+        ]
+      }
+    },
+    {
+      "name": "uagent.v2.scene.execute",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "protocolVersion": {
+            "type": "integer",
+            "const": 2
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "expectedProjectKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "expectedInstanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "expectedRootObjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "targetMap": {
+                "type": "string",
+                "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+              },
+              "expectedDiskState": {
+                "type": "string",
+                "const": "absent"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_]{1,64}$"
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                    },
+                    "mesh": {
+                      "type": "string",
+                      "enum": [
+                        "/Engine/BasicShapes/Cube.Cube",
+                        "/Engine/BasicShapes/Sphere.Sphere",
+                        "/Engine/BasicShapes/Cylinder.Cylinder"
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "mesh",
+                    "material",
+                    "transform"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operationId",
+              "targetMap",
+              "expectedDiskState",
+              "items"
+            ]
+          },
+          "hostPermit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "contractVersion",
+          "expectedProjectKey",
+          "expectedInstanceId",
+          "expectedRootObjectId",
+          "runId",
+          "plan",
+          "hostPermit"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "uagent.scene.result.v2"
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "projectKey": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "rootObjectId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "uagent.v2.scene.prepare",
+              "uagent.v2.scene.execute",
+              "uagent.v2.scene.cancel",
+              "uagent.v2.scene.query",
+              "uagent.v2.scene.resume",
+              "uagent.v2.scene.save"
+            ]
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "targetMap": {
+                "type": "string",
+                "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+              },
+              "expectedDiskState": {
+                "type": "string",
+                "const": "absent"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_]{1,64}$"
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                    },
+                    "mesh": {
+                      "type": "string",
+                      "enum": [
+                        "/Engine/BasicShapes/Cube.Cube",
+                        "/Engine/BasicShapes/Sphere.Sphere",
+                        "/Engine/BasicShapes/Cylinder.Cylinder"
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "mesh",
+                    "material",
+                    "transform"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operationId",
+              "targetMap",
+              "expectedDiskState",
+              "items"
+            ]
+          },
+          "planHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_started",
+                  "prepared",
+                  "running",
+                  "paused_for_test_cancel",
+                  "cancelled",
+                  "completed",
+                  "saved",
+                  "conflicted",
+                  "failed"
+                ]
+              },
+              "targetMap": {
+                "type": "string"
+              },
+              "currentWorldMatches": {
+                "type": "boolean"
+              },
+              "packageDirty": {
+                "type": "boolean"
+              },
+              "saved": {
+                "type": "boolean"
+              },
+              "diskExists": {
+                "type": "boolean"
+              },
+              "diskHash": {
+                "type": "string",
+                "pattern": "^(|[0-9a-f]{64})$"
+              },
+              "conflict": {
+                "type": "boolean"
+              },
+              "cancelIsRollback": {
+                "type": "boolean",
+                "const": false
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string"
+                    },
+                    "objectName": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "not_started",
+                        "applied",
+                        "unknown",
+                        "failed"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "owned": {
+                      "type": "boolean"
+                    },
+                    "actorGuid": {
+                      "type": "string"
+                    },
+                    "objectPath": {
+                      "type": "string"
+                    },
+                    "mesh": {
+                      "type": "string"
+                    },
+                    "material": {
+                      "type": "string"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "status",
+                    "reason",
+                    "owned",
+                    "actorGuid",
+                    "objectPath",
+                    "mesh",
+                    "material"
+                  ]
+                }
+              },
+              "queryToken": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "appliedCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20
+              },
+              "conflictReason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "targetMap",
+              "currentWorldMatches",
+              "packageDirty",
+              "saved",
+              "diskExists",
+              "diskHash",
+              "conflict",
+              "cancelIsRollback",
+              "items",
+              "appliedCount",
+              "conflictReason"
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "contractVersion",
+          "projectKey",
+          "instanceId",
+          "rootObjectId",
+          "runId",
+          "operation",
+          "plan",
+          "planHash",
+          "data"
+        ]
+      }
+    },
+    {
+      "name": "uagent.v2.scene.cancel",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "protocolVersion": {
+            "type": "integer",
+            "const": 2
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "expectedProjectKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "expectedInstanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "expectedRootObjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "targetMap": {
+                "type": "string",
+                "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+              },
+              "expectedDiskState": {
+                "type": "string",
+                "const": "absent"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_]{1,64}$"
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                    },
+                    "mesh": {
+                      "type": "string",
+                      "enum": [
+                        "/Engine/BasicShapes/Cube.Cube",
+                        "/Engine/BasicShapes/Sphere.Sphere",
+                        "/Engine/BasicShapes/Cylinder.Cylinder"
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "mesh",
+                    "material",
+                    "transform"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operationId",
+              "targetMap",
+              "expectedDiskState",
+              "items"
+            ]
+          },
+          "hostPermit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "contractVersion",
+          "expectedProjectKey",
+          "expectedInstanceId",
+          "expectedRootObjectId",
+          "runId",
+          "plan",
+          "hostPermit"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "uagent.scene.result.v2"
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "projectKey": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "rootObjectId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "uagent.v2.scene.prepare",
+              "uagent.v2.scene.execute",
+              "uagent.v2.scene.cancel",
+              "uagent.v2.scene.query",
+              "uagent.v2.scene.resume",
+              "uagent.v2.scene.save"
+            ]
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "targetMap": {
+                "type": "string",
+                "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+              },
+              "expectedDiskState": {
+                "type": "string",
+                "const": "absent"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_]{1,64}$"
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                    },
+                    "mesh": {
+                      "type": "string",
+                      "enum": [
+                        "/Engine/BasicShapes/Cube.Cube",
+                        "/Engine/BasicShapes/Sphere.Sphere",
+                        "/Engine/BasicShapes/Cylinder.Cylinder"
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "mesh",
+                    "material",
+                    "transform"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operationId",
+              "targetMap",
+              "expectedDiskState",
+              "items"
+            ]
+          },
+          "planHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_started",
+                  "prepared",
+                  "running",
+                  "paused_for_test_cancel",
+                  "cancelled",
+                  "completed",
+                  "saved",
+                  "conflicted",
+                  "failed"
+                ]
+              },
+              "targetMap": {
+                "type": "string"
+              },
+              "currentWorldMatches": {
+                "type": "boolean"
+              },
+              "packageDirty": {
+                "type": "boolean"
+              },
+              "saved": {
+                "type": "boolean"
+              },
+              "diskExists": {
+                "type": "boolean"
+              },
+              "diskHash": {
+                "type": "string",
+                "pattern": "^(|[0-9a-f]{64})$"
+              },
+              "conflict": {
+                "type": "boolean"
+              },
+              "cancelIsRollback": {
+                "type": "boolean",
+                "const": false
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string"
+                    },
+                    "objectName": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "not_started",
+                        "applied",
+                        "unknown",
+                        "failed"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "owned": {
+                      "type": "boolean"
+                    },
+                    "actorGuid": {
+                      "type": "string"
+                    },
+                    "objectPath": {
+                      "type": "string"
+                    },
+                    "mesh": {
+                      "type": "string"
+                    },
+                    "material": {
+                      "type": "string"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "status",
+                    "reason",
+                    "owned",
+                    "actorGuid",
+                    "objectPath",
+                    "mesh",
+                    "material"
+                  ]
+                }
+              },
+              "queryToken": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "appliedCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20
+              },
+              "conflictReason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "targetMap",
+              "currentWorldMatches",
+              "packageDirty",
+              "saved",
+              "diskExists",
+              "diskHash",
+              "conflict",
+              "cancelIsRollback",
+              "items",
+              "appliedCount",
+              "conflictReason"
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "contractVersion",
+          "projectKey",
+          "instanceId",
+          "rootObjectId",
+          "runId",
+          "operation",
+          "plan",
+          "planHash",
+          "data"
+        ]
+      }
+    },
+    {
+      "name": "uagent.v2.scene.query",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "protocolVersion": {
+            "type": "integer",
+            "const": 2
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "expectedProjectKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "expectedInstanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "expectedRootObjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "targetMap": {
+                "type": "string",
+                "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+              },
+              "expectedDiskState": {
+                "type": "string",
+                "const": "absent"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_]{1,64}$"
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                    },
+                    "mesh": {
+                      "type": "string",
+                      "enum": [
+                        "/Engine/BasicShapes/Cube.Cube",
+                        "/Engine/BasicShapes/Sphere.Sphere",
+                        "/Engine/BasicShapes/Cylinder.Cylinder"
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "mesh",
+                    "material",
+                    "transform"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operationId",
+              "targetMap",
+              "expectedDiskState",
+              "items"
+            ]
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "contractVersion",
+          "expectedProjectKey",
+          "expectedInstanceId",
+          "expectedRootObjectId",
+          "runId",
+          "plan"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "uagent.scene.result.v2"
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "projectKey": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "rootObjectId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "uagent.v2.scene.prepare",
+              "uagent.v2.scene.execute",
+              "uagent.v2.scene.cancel",
+              "uagent.v2.scene.query",
+              "uagent.v2.scene.resume",
+              "uagent.v2.scene.save"
+            ]
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "targetMap": {
+                "type": "string",
+                "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+              },
+              "expectedDiskState": {
+                "type": "string",
+                "const": "absent"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_]{1,64}$"
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                    },
+                    "mesh": {
+                      "type": "string",
+                      "enum": [
+                        "/Engine/BasicShapes/Cube.Cube",
+                        "/Engine/BasicShapes/Sphere.Sphere",
+                        "/Engine/BasicShapes/Cylinder.Cylinder"
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "mesh",
+                    "material",
+                    "transform"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operationId",
+              "targetMap",
+              "expectedDiskState",
+              "items"
+            ]
+          },
+          "planHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_started",
+                  "prepared",
+                  "running",
+                  "paused_for_test_cancel",
+                  "cancelled",
+                  "completed",
+                  "saved",
+                  "conflicted",
+                  "failed"
+                ]
+              },
+              "targetMap": {
+                "type": "string"
+              },
+              "currentWorldMatches": {
+                "type": "boolean"
+              },
+              "packageDirty": {
+                "type": "boolean"
+              },
+              "saved": {
+                "type": "boolean"
+              },
+              "diskExists": {
+                "type": "boolean"
+              },
+              "diskHash": {
+                "type": "string",
+                "pattern": "^(|[0-9a-f]{64})$"
+              },
+              "conflict": {
+                "type": "boolean"
+              },
+              "cancelIsRollback": {
+                "type": "boolean",
+                "const": false
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string"
+                    },
+                    "objectName": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "not_started",
+                        "applied",
+                        "unknown",
+                        "failed"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "owned": {
+                      "type": "boolean"
+                    },
+                    "actorGuid": {
+                      "type": "string"
+                    },
+                    "objectPath": {
+                      "type": "string"
+                    },
+                    "mesh": {
+                      "type": "string"
+                    },
+                    "material": {
+                      "type": "string"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "status",
+                    "reason",
+                    "owned",
+                    "actorGuid",
+                    "objectPath",
+                    "mesh",
+                    "material"
+                  ]
+                }
+              },
+              "queryToken": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "appliedCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20
+              },
+              "conflictReason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "targetMap",
+              "currentWorldMatches",
+              "packageDirty",
+              "saved",
+              "diskExists",
+              "diskHash",
+              "conflict",
+              "cancelIsRollback",
+              "items",
+              "appliedCount",
+              "conflictReason"
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "contractVersion",
+          "projectKey",
+          "instanceId",
+          "rootObjectId",
+          "runId",
+          "operation",
+          "plan",
+          "planHash",
+          "data"
+        ]
+      }
+    },
+    {
+      "name": "uagent.v2.scene.resume",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "protocolVersion": {
+            "type": "integer",
+            "const": 2
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "expectedProjectKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "expectedInstanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "expectedRootObjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "targetMap": {
+                "type": "string",
+                "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+              },
+              "expectedDiskState": {
+                "type": "string",
+                "const": "absent"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_]{1,64}$"
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                    },
+                    "mesh": {
+                      "type": "string",
+                      "enum": [
+                        "/Engine/BasicShapes/Cube.Cube",
+                        "/Engine/BasicShapes/Sphere.Sphere",
+                        "/Engine/BasicShapes/Cylinder.Cylinder"
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "mesh",
+                    "material",
+                    "transform"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operationId",
+              "targetMap",
+              "expectedDiskState",
+              "items"
+            ]
+          },
+          "queryToken": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "hostPermit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "contractVersion",
+          "expectedProjectKey",
+          "expectedInstanceId",
+          "expectedRootObjectId",
+          "runId",
+          "plan",
+          "queryToken",
+          "hostPermit"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "uagent.scene.result.v2"
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "projectKey": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "rootObjectId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "uagent.v2.scene.prepare",
+              "uagent.v2.scene.execute",
+              "uagent.v2.scene.cancel",
+              "uagent.v2.scene.query",
+              "uagent.v2.scene.resume",
+              "uagent.v2.scene.save"
+            ]
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "targetMap": {
+                "type": "string",
+                "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+              },
+              "expectedDiskState": {
+                "type": "string",
+                "const": "absent"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_]{1,64}$"
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                    },
+                    "mesh": {
+                      "type": "string",
+                      "enum": [
+                        "/Engine/BasicShapes/Cube.Cube",
+                        "/Engine/BasicShapes/Sphere.Sphere",
+                        "/Engine/BasicShapes/Cylinder.Cylinder"
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "mesh",
+                    "material",
+                    "transform"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operationId",
+              "targetMap",
+              "expectedDiskState",
+              "items"
+            ]
+          },
+          "planHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_started",
+                  "prepared",
+                  "running",
+                  "paused_for_test_cancel",
+                  "cancelled",
+                  "completed",
+                  "saved",
+                  "conflicted",
+                  "failed"
+                ]
+              },
+              "targetMap": {
+                "type": "string"
+              },
+              "currentWorldMatches": {
+                "type": "boolean"
+              },
+              "packageDirty": {
+                "type": "boolean"
+              },
+              "saved": {
+                "type": "boolean"
+              },
+              "diskExists": {
+                "type": "boolean"
+              },
+              "diskHash": {
+                "type": "string",
+                "pattern": "^(|[0-9a-f]{64})$"
+              },
+              "conflict": {
+                "type": "boolean"
+              },
+              "cancelIsRollback": {
+                "type": "boolean",
+                "const": false
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string"
+                    },
+                    "objectName": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "not_started",
+                        "applied",
+                        "unknown",
+                        "failed"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "owned": {
+                      "type": "boolean"
+                    },
+                    "actorGuid": {
+                      "type": "string"
+                    },
+                    "objectPath": {
+                      "type": "string"
+                    },
+                    "mesh": {
+                      "type": "string"
+                    },
+                    "material": {
+                      "type": "string"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "status",
+                    "reason",
+                    "owned",
+                    "actorGuid",
+                    "objectPath",
+                    "mesh",
+                    "material"
+                  ]
+                }
+              },
+              "queryToken": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "appliedCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20
+              },
+              "conflictReason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "targetMap",
+              "currentWorldMatches",
+              "packageDirty",
+              "saved",
+              "diskExists",
+              "diskHash",
+              "conflict",
+              "cancelIsRollback",
+              "items",
+              "appliedCount",
+              "conflictReason"
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "contractVersion",
+          "projectKey",
+          "instanceId",
+          "rootObjectId",
+          "runId",
+          "operation",
+          "plan",
+          "planHash",
+          "data"
+        ]
+      }
+    },
+    {
+      "name": "uagent.v2.scene.save",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "protocolVersion": {
+            "type": "integer",
+            "const": 2
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "expectedProjectKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "expectedInstanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "expectedRootObjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "targetMap": {
+                "type": "string",
+                "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+              },
+              "expectedDiskState": {
+                "type": "string",
+                "const": "absent"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_]{1,64}$"
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                    },
+                    "mesh": {
+                      "type": "string",
+                      "enum": [
+                        "/Engine/BasicShapes/Cube.Cube",
+                        "/Engine/BasicShapes/Sphere.Sphere",
+                        "/Engine/BasicShapes/Cylinder.Cylinder"
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "mesh",
+                    "material",
+                    "transform"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operationId",
+              "targetMap",
+              "expectedDiskState",
+              "items"
+            ]
+          },
+          "queryToken": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "hostPermit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "contractVersion",
+          "expectedProjectKey",
+          "expectedInstanceId",
+          "expectedRootObjectId",
+          "runId",
+          "plan",
+          "queryToken",
+          "hostPermit"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "uagent.scene.result.v2"
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "2.2.0-scene-batch-current-run"
+          },
+          "projectKey": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "rootObjectId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "uagent.v2.scene.prepare",
+              "uagent.v2.scene.execute",
+              "uagent.v2.scene.cancel",
+              "uagent.v2.scene.query",
+              "uagent.v2.scene.resume",
+              "uagent.v2.scene.save"
+            ]
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "targetMap": {
+                "type": "string",
+                "pattern": "^/Game/UAgentBuildLab/Scene_T14/L_[A-Za-z0-9_]{0,78}$"
+              },
+              "expectedDiskState": {
+                "type": "string",
+                "const": "absent"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_]{1,64}$"
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "pattern": "^UA14_[A-Za-z0-9_]{0,59}$"
+                    },
+                    "mesh": {
+                      "type": "string",
+                      "enum": [
+                        "/Engine/BasicShapes/Cube.Cube",
+                        "/Engine/BasicShapes/Sphere.Sphere",
+                        "/Engine/BasicShapes/Cylinder.Cylinder"
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "const": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "mesh",
+                    "material",
+                    "transform"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operationId",
+              "targetMap",
+              "expectedDiskState",
+              "items"
+            ]
+          },
+          "planHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_started",
+                  "prepared",
+                  "running",
+                  "paused_for_test_cancel",
+                  "cancelled",
+                  "completed",
+                  "saved",
+                  "conflicted",
+                  "failed"
+                ]
+              },
+              "targetMap": {
+                "type": "string"
+              },
+              "currentWorldMatches": {
+                "type": "boolean"
+              },
+              "packageDirty": {
+                "type": "boolean"
+              },
+              "saved": {
+                "type": "boolean"
+              },
+              "diskExists": {
+                "type": "boolean"
+              },
+              "diskHash": {
+                "type": "string",
+                "pattern": "^(|[0-9a-f]{64})$"
+              },
+              "conflict": {
+                "type": "boolean"
+              },
+              "cancelIsRollback": {
+                "type": "boolean",
+                "const": false
+              },
+              "items": {
+                "type": "array",
+                "minItems": 20,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string"
+                    },
+                    "objectName": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "not_started",
+                        "applied",
+                        "unknown",
+                        "failed"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "owned": {
+                      "type": "boolean"
+                    },
+                    "actorGuid": {
+                      "type": "string"
+                    },
+                    "objectPath": {
+                      "type": "string"
+                    },
+                    "mesh": {
+                      "type": "string"
+                    },
+                    "material": {
+                      "type": "string"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "location": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": -10000,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        },
+                        "rotation": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "pitch": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "yaw": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            },
+                            "roll": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "pitch",
+                            "yaw",
+                            "roll"
+                          ]
+                        },
+                        "scale": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            },
+                            "z": {
+                              "type": "number",
+                              "minimum": 0.1,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "z"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "location",
+                        "rotation",
+                        "scale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "objectName",
+                    "status",
+                    "reason",
+                    "owned",
+                    "actorGuid",
+                    "objectPath",
+                    "mesh",
+                    "material"
+                  ]
+                }
+              },
+              "queryToken": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "appliedCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20
+              },
+              "conflictReason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "targetMap",
+              "currentWorldMatches",
+              "packageDirty",
+              "saved",
+              "diskExists",
+              "diskHash",
+              "conflict",
+              "cancelIsRollback",
+              "items",
+              "appliedCount",
+              "conflictReason"
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "contractVersion",
+          "projectKey",
+          "instanceId",
+          "rootObjectId",
+          "runId",
+          "operation",
+          "plan",
+          "planHash",
+          "data"
+        ]
+      }
+    }
+  ]
+}

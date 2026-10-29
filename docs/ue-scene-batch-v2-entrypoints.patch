@@ -1,0 +1,10 @@
+diff --git a/apps/desktop/src-tauri/src/lib.rs b/apps/desktop/src-tauri/src/lib.rs
+--- a/apps/desktop/src-tauri/src/lib.rs
++++ b/apps/desktop/src-tauri/src/lib.rs
+@@ -0,0 +1 @@
++mod ue_scene_batch;
+diff --git a/packages/runtime/src/index.ts b/packages/runtime/src/index.ts
+--- a/packages/runtime/src/index.ts
++++ b/packages/runtime/src/index.ts
+@@ -0,0 +1 @@
++export * from "./ue-scene-batch-v2.js";

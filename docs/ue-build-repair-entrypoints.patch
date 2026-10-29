@@ -1,0 +1,11 @@
+diff --git a/apps/desktop/src-tauri/src/lib.rs b/apps/desktop/src-tauri/src/lib.rs
+--- a/apps/desktop/src-tauri/src/lib.rs
++++ b/apps/desktop/src-tauri/src/lib.rs
+@@ -0,0 +1,2 @@
++mod ue_build_repair_io;
++mod ue_build_repair;
+diff --git a/packages/runtime/src/index.ts b/packages/runtime/src/index.ts
+--- a/packages/runtime/src/index.ts
++++ b/packages/runtime/src/index.ts
+@@ -0,0 +1 @@
++export * from "./ue-build-repair.js";

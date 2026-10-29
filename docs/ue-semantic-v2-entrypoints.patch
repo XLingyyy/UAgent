@@ -1,0 +1,13 @@
+diff --git a/apps/desktop/src-tauri/src/lib.rs b/apps/desktop/src-tauri/src/lib.rs
+--- a/apps/desktop/src-tauri/src/lib.rs
++++ b/apps/desktop/src-tauri/src/lib.rs
+@@ -11,2 +11,3 @@ pub(crate) mod ue_editor;
+ pub(crate) mod ue_editor_process;
++pub(crate) mod ue_semantic_read;
+ pub(crate) mod watcher;
+diff --git a/packages/runtime/src/index.ts b/packages/runtime/src/index.ts
+--- a/packages/runtime/src/index.ts
++++ b/packages/runtime/src/index.ts
+@@ -1,1 +1,2 @@
++export * from "./ue-semantic-v2.js";
+ export * from "./provider/provider-proposals.js";
