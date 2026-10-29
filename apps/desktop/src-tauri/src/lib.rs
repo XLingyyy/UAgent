@@ -23,6 +23,10 @@ pub(crate) mod native_responses_fixture;
 #[cfg(windows)]
 pub(crate) mod native_responses_fixture_setup;
 #[cfg(windows)]
+pub(crate) mod native_responses_chat_archive;
+#[cfg(windows)]
+pub(crate) mod native_responses_chat_fixture;
+#[cfg(windows)]
 pub(crate) mod trusted_root_handle;
 #[cfg(windows)]
 pub(crate) mod product_settings_commands;
@@ -1703,6 +1707,7 @@ pub fn run() {
             native_responses_commands::close_native_responses_profile,
             #[cfg(windows)]
             native_responses_commands::bind_native_responses_run,
+            native_responses_commands::bind_native_responses_conversation,
             #[cfg(windows)]
             native_responses_commands::prepare_native_responses_request,
             #[cfg(windows)]

@@ -132,6 +132,9 @@ export type TaskEventType =
 export type TaskEventLevel = "info" | "success" | "warning" | "error";
 
 export interface SavedRunContinuation {
+  /** Archived discussion text selection; never executable coordinator state. */
+  taskMode?:"discussion";
+  logicalProjectId?:string|null;
   parentRunId:string; projectId:string; conversationId:string;
   includeCompletedContext:boolean; completed:boolean; hasUnresolvedEffects:boolean;
   messages:import("./provider-runtime.js").ProviderRuntimeMessage[];

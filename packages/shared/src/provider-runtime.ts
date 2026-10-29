@@ -40,6 +40,8 @@ export interface ProviderRuntimeRequest {
     taskId?: string;
     planId?: string;
     traceId?: string;
+    /** Plain conversation identity; never an execution grant. */
+    conversationId?: string;
     networkMode?: string;
     projectId?: string | null;
     projectEpoch?: number;

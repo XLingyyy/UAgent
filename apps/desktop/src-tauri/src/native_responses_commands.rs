@@ -4,8 +4,11 @@
 #![cfg(windows)]
 use crate::native_provider_transport::{
     ApprovalGrant, Clock, ConfigVersion, DispatchStatus, Lease, MonotonicClock, NativeSession,
-    Owner, PreparedRequest, Transport,
+    Owner, PreparedRequest, SourceAuthority, SourceCheckFailure, SourceChecker, SourcePhase,
+    SourceSnapshot, Transport,
 };
+use crate::native_responses_chat_archive::{ChatArchive, UsageStatus};
+use crate::native_responses_chat_fixture::ChatFixtureTransport;
 use crate::native_responses_fixture::{FixtureResponsesTransport, FixtureSequence};
 use crate::native_responses_http::WinHttpResponsesTransport;
 use crate::native_responses_sources::NativeSourceMonitor;
@@ -83,7 +86,9 @@ struct Run {
     profile: Arc<Profile>,
     scope: ContinuationScope,
     session: NativeSession,
-    monitor: NativeSourceMonitor,
+    monitor: Option<NativeSourceMonitor>,
+    checker: Arc<dyn SourceChecker>,
+    chat: Option<Mutex<ChatState>>,
     deadline: u64,
     fixture_sequence: Option<Arc<FixtureSequence>>,
     alive: AtomicBool,
@@ -116,16 +121,155 @@ impl Run {
             self.revoke();
             return Err(failure("native_responses_configuration_changed"));
         }
-        crate::resolve_trusted_root_binding_by_id(&self.scope.owner.project_id)
-            .map_err(|_| failure("native_responses_project_changed"))?;
+        if self.chat.is_none() {
+            crate::resolve_trusted_root_binding_by_id(&self.scope.owner.project_id)
+                .map_err(|_| failure("native_responses_project_changed"))?;
+        }
         Ok(())
     }
     fn revoke(&self) {
         self.alive.store(false, Ordering::Release);
-        self.monitor.revoke();
+        if let Some(monitor) = &self.monitor {
+            monitor.revoke();
+        }
         let _ = self.session.revoke_all();
         let _ = self.session.clear_credential();
+        if let Some(chat) = &self.chat {
+            if let Ok(mut chat) = chat.lock() {
+                if let Some(pending) = chat.pending.take() {
+                    let _ = chat.archive.fail_request(&pending.logical_id, true);
+                }
+                let _ = chat.archive.finish_conversation();
+            }
+        }
     }
+}
+// Text-only conversations select no filesystem sources. This authority is issued
+// by the same native session; revocation still shares its final dispatch mutex.
+struct TextOnlyChecker(SourceAuthority);
+impl SourceChecker for TextOnlyChecker {
+    fn check(
+        &self,
+        captured: &SourceSnapshot,
+        _phase: SourcePhase,
+    ) -> std::result::Result<SourceSnapshot, SourceCheckFailure> {
+        let current = self.0.snapshot().map_err(|_| SourceCheckFailure)?;
+        if current.generation() != captured.generation()
+            || current.fingerprint() != captured.fingerprint()
+        {
+            return Err(SourceCheckFailure);
+        }
+        Ok(current)
+    }
+}
+struct ChatPending {
+    logical_id: String,
+    response: Arc<Mutex<ResponseState>>,
+}
+struct ChatState {
+    archive: ChatArchive,
+    pending: Option<ChatPending>,
+}
+fn chat_messages(body: &str) -> Result<Vec<serde_json::Value>> {
+    use serde_json::{json, Value};
+    let body: Value =
+        serde_json::from_str(body).map_err(|_| failure("responses_chat_body_invalid"))?;
+    let object = body
+        .as_object()
+        .ok_or_else(|| failure("responses_chat_body_invalid"))?;
+    if object.keys().any(|key| {
+        ![
+            "model",
+            "input",
+            "stream",
+            "store",
+            "include",
+            "max_output_tokens",
+            "temperature",
+            "reasoning",
+            "tools",
+            "tool_choice",
+        ]
+        .contains(&key.as_str())
+    }) || body.get("store") != Some(&json!(false))
+        || body
+            .get("tools")
+            .is_some_and(|tools| tools.as_array().map_or(true, |tools| !tools.is_empty()))
+        || body
+            .get("tool_choice")
+            .is_some_and(|choice| choice != "none")
+    {
+        return Err(failure("responses_chat_tools_forbidden"));
+    }
+    let input = body
+        .get("input")
+        .and_then(Value::as_array)
+        .filter(|v| !v.is_empty() && v.len() <= 128)
+        .ok_or_else(|| failure("responses_chat_body_invalid"))?;
+    input
+        .iter()
+        .map(|item| {
+            let item = item
+                .as_object()
+                .ok_or_else(|| failure("responses_chat_body_invalid"))?;
+            if item
+                .keys()
+                .any(|key| !["type", "role", "content"].contains(&key.as_str()))
+                || item.get("type").and_then(Value::as_str) != Some("message")
+            {
+                return Err(failure("responses_chat_tools_forbidden"));
+            }
+            let role = item
+                .get("role")
+                .and_then(Value::as_str)
+                .filter(|role| ["system", "developer", "user", "assistant"].contains(role))
+                .ok_or_else(|| failure("responses_chat_tools_forbidden"))?;
+            let content = item
+                .get("content")
+                .ok_or_else(|| failure("responses_chat_body_invalid"))?;
+            let text = if let Some(value) = content.as_str() {
+                value.to_owned()
+            } else {
+                let parts = content
+                    .as_array()
+                    .ok_or_else(|| failure("responses_chat_body_invalid"))?;
+                let mut text = String::new();
+                for part in parts {
+                    let part = part
+                        .as_object()
+                        .ok_or_else(|| failure("responses_chat_body_invalid"))?;
+                    if part
+                        .keys()
+                        .any(|key| !["type", "text"].contains(&key.as_str()))
+                        || !["input_text", "output_text"]
+                            .contains(&part.get("type").and_then(Value::as_str).unwrap_or(""))
+                    {
+                        return Err(failure("responses_chat_tools_forbidden"));
+                    }
+                    text.push_str(
+                        part.get("text")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| failure("responses_chat_body_invalid"))?,
+                    );
+                }
+                text
+            };
+            Ok(json!({"role":role,"content":text}))
+        })
+        .collect()
+}
+fn chat_project_namespace(project: Option<&str>) -> Result<String> {
+    if let Some(project) = project {
+        if project.is_empty()
+            || project.len() > 240
+            || project.chars().any(|c| c.is_control() || c.is_whitespace())
+        {
+            return Err(failure("responses_chat_identity_invalid"));
+        }
+    }
+    Ok(project
+        .map(|project| format!("chat:project:{project}"))
+        .unwrap_or_else(|| "chat:local".into()))
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -379,10 +523,11 @@ pub(crate) fn revoke_provider(id: &str) {
 pub(crate) fn has_live_run_for_project(id: &str) -> bool {
     lock(broker())
         .map(|state| {
-            state
-                .runs
-                .values()
-                .any(|run| run.scope.owner.project_id == id && run.alive.load(Ordering::Acquire))
+            state.runs.values().any(|run| {
+                run.monitor.is_some()
+                    && run.scope.owner.project_id == id
+                    && run.alive.load(Ordering::Acquire)
+            })
         })
         .unwrap_or(false)
 }
@@ -397,20 +542,27 @@ pub(crate) fn observe_preview_guarded(
     let runs = lock(broker())?
         .runs
         .values()
-        .filter(|run| run.scope.owner.project_id == project && run.alive.load(Ordering::Acquire))
+        .filter(|run| {
+            run.monitor.is_some()
+                && run.scope.owner.project_id == project
+                && run.alive.load(Ordering::Acquire)
+        })
         .cloned()
         .collect::<Vec<_>>();
     for run in runs {
-        let evidence = run
+        let monitor = run
             .monitor
+            .as_ref()
+            .ok_or_else(|| failure("native_source_unavailable"))?;
+        let evidence = monitor
             .capture_preview_guarded(path, bytes, lines, preview, guard.clone())
             .map_err(|error| {
                 run.revoke();
                 failure(error)
             })?;
-        let mut selected = run.monitor.selected_sources().map_err(failure)?;
+        let mut selected = monitor.selected_sources().map_err(failure)?;
         selected.push(evidence);
-        run.monitor.set_sources(&selected).map_err(|error| {
+        monitor.set_sources(&selected).map_err(|error| {
             run.revoke();
             failure(error)
         })?;
@@ -452,13 +604,16 @@ pub(crate) fn observe_preview(
     };
     for run in runs {
         let capture = (|| -> Result<()> {
-            let evidence = run
+            let monitor = run
                 .monitor
+                .as_ref()
+                .ok_or_else(|| failure("native_source_unavailable"))?;
+            let evidence = monitor
                 .capture_preview(path, bytes, lines, preview)
                 .map_err(failure)?;
-            let mut selected = run.monitor.selected_sources().map_err(failure)?;
+            let mut selected = monitor.selected_sources().map_err(failure)?;
             selected.push(evidence);
-            run.monitor.set_sources(&selected).map_err(failure)?;
+            monitor.set_sources(&selected).map_err(failure)?;
             Ok(())
         })();
         if capture.is_err() {
@@ -493,9 +648,18 @@ input!(BindInput {
     run_id: String,
     scope_expires_at: u64
 });
-input!(PrepareInput {
-    run_handle: String,
-    body: String
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct PrepareInput {
+    pub run_handle: String,
+    pub body: String,
+    #[serde(default)]
+    pub logical_request_id: Option<String>,
+}
+input!(ChatBindInput {
+    profile_id:String,
+    project_id:Option<String>,
+    conversation_id:String,
 });
 input!(RequestInput { request_id: String });
 input!(PollInput {
@@ -549,7 +713,7 @@ pub(crate) async fn open_native_responses_profile(
     input: OpenInput,
 ) -> Result<OpenResult> {
     let root = root(&app)?;
-    // Production Responses stays unavailable until full native root identity is integrated.
+    // This delivery keeps production profiles locked; only the explicit isolated fixture is accepted.
     let fixture_root = crate::app_profile::responses_fixture_root()?;
     if input.credential != "offline-responses-fixture-only" {
         return Err(failure("responses_fixture_credential_required"));
@@ -673,6 +837,9 @@ pub(crate) async fn bind_native_responses_run(
     let window = window.label().to_string();
     worker(move || {
         let profile = profile_owned(&input.profile_id, &window)?;
+        if profile.fixture_root.is_none() {
+            return Err(failure("responses_investigation_fixture_only"));
+        }
         let existing = {
             let state = lock(broker())?;
             state
@@ -806,7 +973,9 @@ pub(crate) async fn bind_native_responses_run(
             profile: profile.clone(),
             scope,
             session,
-            monitor,
+            checker: monitor.checker(),
+            monitor: Some(monitor),
+            chat: None,
             deadline,
             fixture_sequence: profile
                 .fixture_root
@@ -850,6 +1019,272 @@ pub(crate) async fn bind_native_responses_run(
     })
     .await
 }
+fn bind_conversation(
+    profile: Arc<Profile>,
+    project_id: Option<String>,
+    conversation_id: String,
+) -> Result<BindResult> {
+    if conversation_id.is_empty()
+        || conversation_id.len() > 256
+        || conversation_id
+            .chars()
+            .any(|c| c.is_control() || c.is_whitespace())
+    {
+        return Err(failure("responses_chat_identity_invalid"));
+    }
+    let namespace = chat_project_namespace(project_id.as_deref())?;
+    let existing = {
+        let state = lock(broker())?;
+        state
+            .runs
+            .iter()
+            .find(|(_, run)| {
+                run.chat.is_some()
+                    && Arc::ptr_eq(&run.profile, &profile)
+                    && run.scope.owner.project_id == namespace
+                    && run.scope.owner.conversation_id == conversation_id
+            })
+            .map(|(id, run)| (id.clone(), run.clone()))
+    };
+    if let Some((id, run)) = existing {
+        run.current()?;
+        return Ok(BindResult {
+            run_handle: id,
+            owner: run.scope.owner.clone(),
+        });
+    }
+    let owner = ContinuationOwner {
+        project_id: namespace,
+        project_epoch: epoch()?,
+        run_id: format!("chat-run-{}", token()?),
+        conversation_id,
+        provider_id: profile.snapshot.config.provider_id.clone(),
+        model_id: profile.model_id.clone(),
+    };
+    let scope = ContinuationScope {
+        owner: owner.clone(),
+        provider_generation: profile.snapshot.generation.clone(),
+        provider_revision: profile.snapshot.revision,
+        configuration_fingerprint: fingerprint(&profile.snapshot, &profile.model_id)?,
+    };
+    let session = NativeSession::new(
+        Owner {
+            project: owner.project_id.clone(),
+            epoch: owner.project_epoch,
+            run: owner.run_id.clone(),
+            conversation: owner.conversation_id.clone(),
+            provider: owner.provider_id.clone(),
+            model: owner.model_id.clone(),
+        },
+        ConfigVersion {
+            generation: scope.provider_generation.clone(),
+            revision: scope.provider_revision as u64,
+        },
+        [0; 32],
+        profile.clock.clone(),
+    );
+    session
+        .install_credential(profile.key.0.clone(), profile.expires_at)
+        .map_err(|e| failure(e.code()))?;
+    let checker = Arc::new(TextOnlyChecker(session.source_authority()));
+    let archive = ChatArchive::start_with_logical_project(
+        &profile.root,
+        &owner.project_id,
+        &owner.conversation_id,
+        &owner.run_id,
+        &owner.provider_id,
+        &owner.model_id,
+        project_id.as_deref(),
+    )
+    .map_err(|_| failure("responses_chat_archive_failed"))?;
+    let run = Arc::new(Run {
+        profile: profile.clone(),
+        scope,
+        session,
+        monitor: None,
+        checker,
+        chat: Some(Mutex::new(ChatState {
+            archive,
+            pending: None,
+        })),
+        // The conversation shares the memory profile lifetime. Each dispatch
+        // still captures its own at-most-ten-minute native request lease.
+        deadline: profile.expires_at,
+        fixture_sequence: None,
+        alive: AtomicBool::new(true),
+    });
+    run.current()?;
+    let id = token()?;
+    let mut state = lock(broker())?;
+    if state.runs.len() >= MAX_RUNS
+        || !profile.alive.load(Ordering::Acquire)
+        || state.updating.contains(&owner.provider_id)
+        || state.windows.get(&profile.window) != Some(&(profile.window_generation, false))
+        || !state
+            .profiles
+            .get(&profile.id)
+            .is_some_and(|current| Arc::ptr_eq(current, &profile))
+    {
+        drop(state);
+        run.revoke();
+        return Err(failure("native_responses_session_closed"));
+    }
+    if let Some((existing, previous)) = state.runs.iter().find(|(_, previous)| {
+        previous.chat.is_some()
+            && Arc::ptr_eq(&previous.profile, &profile)
+            && previous.scope.owner.project_id == owner.project_id
+            && previous.scope.owner.conversation_id == owner.conversation_id
+    }) {
+        let result = BindResult {
+            run_handle: existing.clone(),
+            owner: previous.scope.owner.clone(),
+        };
+        drop(state);
+        run.revoke();
+        return Ok(result);
+    }
+    let retired: Vec<_> = state
+        .runs
+        .iter()
+        .filter(|(_, previous)| previous.chat.is_some() && Arc::ptr_eq(&previous.profile, &profile))
+        .map(|(id, _)| id.clone())
+        .collect();
+    let retired: Vec<_> = retired
+        .into_iter()
+        .filter_map(|id| state.runs.remove(&id))
+        .collect();
+    state.runs.insert(id.clone(), run);
+    drop(state);
+    for previous in retired {
+        previous.revoke();
+    }
+    Ok(BindResult {
+        run_handle: id,
+        owner,
+    })
+}
+#[tauri::command]
+pub(crate) async fn bind_native_responses_conversation(
+    window: tauri::WebviewWindow,
+    input: ChatBindInput,
+) -> Result<BindResult> {
+    let profile = profile_owned(&input.profile_id, window.label())?;
+    worker(move || bind_conversation(profile, input.project_id, input.conversation_id)).await
+}
+fn fail_chat_request(request: &Request, cancelled: bool) {
+    if let Some(chat) = &request.run.chat {
+        if let Ok(mut chat) = chat.lock() {
+            if chat
+                .pending
+                .as_ref()
+                .is_some_and(|pending| Arc::ptr_eq(&pending.response, &request.response))
+            {
+                let pending = chat.pending.take().expect("checked pending");
+                let _ = chat.archive.fail_request(&pending.logical_id, cancelled);
+            }
+        }
+    }
+}
+fn chat_terminal_response(response: &ResponseState) -> Option<serde_json::Value> {
+    let bytes: Vec<u8> = response.chunks.iter().flatten().copied().collect();
+    let text = std::str::from_utf8(&bytes).ok()?;
+    if response
+        .head
+        .as_ref()?
+        .content_type
+        .split(';')
+        .next()?
+        .trim()
+        == "application/json"
+    {
+        return serde_json::from_str(text).ok();
+    }
+    let normalized = text.replace("\r\n", "\n");
+    let mut terminal = None;
+    for event in normalized.split("\n\n") {
+        let data = event
+            .lines()
+            .filter_map(|line| line.strip_prefix("data:").map(str::trim_start))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&data) else {
+            continue;
+        };
+        if value.get("type").and_then(|v| v.as_str()) == Some("response.completed") {
+            terminal = value.get("response").cloned();
+        }
+    }
+    terminal
+}
+fn chat_response_matches(response: &ResponseState, record: &ProviderNativeContinuation) -> bool {
+    let Some(value) = chat_terminal_response(response) else {
+        return false;
+    };
+    if value.get("id").and_then(|v| v.as_str()) != Some(&record.response_id)
+        || value.get("status").and_then(|v| v.as_str()) != Some("completed")
+        || value.get("output").and_then(|v| v.as_array()) != Some(&record.output)
+    {
+        return false;
+    }
+    let mut text = String::new();
+    for item in &record.output {
+        match item.get("type").and_then(|v| v.as_str()) {
+            Some("reasoning") => {}
+            Some("message") => {
+                if item.get("role").and_then(|v| v.as_str()) != Some("assistant") {
+                    return false;
+                }
+                let Some(parts) = item.get("content").and_then(|v| v.as_array()) else {
+                    return false;
+                };
+                for part in parts {
+                    if part.get("type").and_then(|v| v.as_str()) != Some("output_text") {
+                        return false;
+                    }
+                    let Some(content) = part.get("text").and_then(|v| v.as_str()) else {
+                        return false;
+                    };
+                    text.push_str(content);
+                }
+            }
+            _ => return false,
+        }
+    }
+    text == record.assistant.content
+}
+
+fn chat_usage(response: &ResponseState) -> UsageStatus {
+    let bytes: Vec<u8> = response.chunks.iter().flatten().copied().collect();
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        return UsageStatus::Unknown;
+    };
+    for line in text.lines().rev() {
+        let Some(data) = line.strip_prefix("data: ") else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
+            continue;
+        };
+        if value.get("type").and_then(|v| v.as_str()) != Some("response.completed") {
+            continue;
+        }
+        let Some(usage) = value.pointer("/response/usage") else {
+            return UsageStatus::Unknown;
+        };
+        let (Some(input_tokens), Some(output_tokens)) = (
+            usage.get("input_tokens").and_then(|v| v.as_u64()),
+            usage.get("output_tokens").and_then(|v| v.as_u64()),
+        ) else {
+            return UsageStatus::Unknown;
+        };
+        return UsageStatus::Reported {
+            input_tokens,
+            output_tokens,
+            total_tokens: usage.get("total_tokens").and_then(|v| v.as_u64()),
+        };
+    }
+    UsageStatus::Unknown
+}
 #[tauri::command]
 pub(crate) async fn prepare_native_responses_request(
     window: tauri::WebviewWindow,
@@ -868,8 +1303,15 @@ pub(crate) async fn prepare_native_responses_request(
                 return Err(failure("native_responses_request_busy"));
             }
         }
-        let sources = run.monitor.selected_sources().map_err(failure)?;
-        run.monitor.set_sources(&sources).map_err(failure)?;
+        let chat_body = if run.chat.is_some() {
+            Some(chat_messages(&input.body)?)
+        } else {
+            None
+        };
+        if let Some(monitor) = &run.monitor {
+            let sources = monitor.selected_sources().map_err(failure)?;
+            monitor.set_sources(&sources).map_err(failure)?;
+        }
         let expires = request_deadline(
             run.profile.clock.now_ms(),
             run.deadline,
@@ -885,7 +1327,7 @@ pub(crate) async fn prepare_native_responses_request(
                 &lease,
                 &run.profile.snapshot.config.base_url,
                 input.body.into_bytes(),
-                run.monitor.checker().as_ref(),
+                run.checker.as_ref(),
             )
             .map_err(|e| failure(e.code()))?;
         run.current()?;
@@ -903,7 +1345,7 @@ pub(crate) async fn prepare_native_responses_request(
         };
         let request = Arc::new(Request {
             window,
-            run,
+            run: run.clone(),
             prepared: Arc::new(prepared),
             lease,
             approval: Mutex::new(None),
@@ -913,6 +1355,28 @@ pub(crate) async fn prepare_native_responses_request(
                 ..Default::default()
             })),
         });
+        if let Some(messages) = chat_body {
+            let logical = input
+                .logical_request_id
+                .as_deref()
+                .filter(|id| !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control))
+                .ok_or_else(|| failure("responses_chat_identity_invalid"))?;
+            let mut chat = lock(
+                run.chat
+                    .as_ref()
+                    .ok_or_else(|| failure("responses_chat_identity_invalid"))?,
+            )?;
+            if chat.pending.is_some() {
+                return Err(failure("responses_chat_request_busy"));
+            }
+            chat.archive
+                .begin_request(logical, &messages)
+                .map_err(|_| failure("responses_chat_archive_failed"))?;
+            chat.pending = Some(ChatPending {
+                logical_id: logical.to_owned(),
+                response: request.response.clone(),
+            });
+        }
         let mut broker = lock(broker())?;
         if broker.requests.len() >= MAX_REQUESTS
             || !broker
@@ -957,7 +1421,7 @@ pub(crate) async fn approve_native_responses_request(
                 .approve(
                     &request.prepared,
                     &request.lease,
-                    request.run.monitor.checker().as_ref(),
+                    request.run.checker.as_ref(),
                 )
                 .map_err(|e| failure(e.code()))?,
         );
@@ -1015,7 +1479,11 @@ pub(crate) async fn dispatch_native_responses_request(
                     Ok(())
                 });
             let mut transport: Box<dyn Transport> =
-                if let Some(sequence) = &request.run.fixture_sequence {
+                if request.run.chat.is_some() && request.run.profile.fixture_root.is_some() {
+                    Box::new(
+                        ChatFixtureTransport::with_chunk_sink(chunk_sink).with_head_sink(head_sink),
+                    )
+                } else if let Some(sequence) = &request.run.fixture_sequence {
                     Box::new(
                         FixtureResponsesTransport::with_chunk_sink(chunk_sink)
                             .with_head_sink(head_sink)
@@ -1031,7 +1499,7 @@ pub(crate) async fn dispatch_native_responses_request(
                 &request.prepared,
                 &request.lease,
                 &grant,
-                request.run.monitor.checker().as_ref(),
+                request.run.checker.as_ref(),
                 transport.as_mut(),
             );
             if let Ok(mut state) = output.lock() {
@@ -1048,6 +1516,9 @@ pub(crate) async fn dispatch_native_responses_request(
                 }
                 state.done = true;
             };
+            if outcome.error.is_some() {
+                fail_chat_request(&request, false);
+            }
         })
         .map_err(|_| failure("native_responses_worker_failed"))?;
     Ok(())
@@ -1127,6 +1598,7 @@ pub(crate) async fn cancel_native_responses_request(
 ) -> Result<()> {
     let request = request_owned(&input.request_id, window.label())?;
     request.prepared.cancel().map_err(|e| failure(e.code()))?;
+    fail_chat_request(&request, true);
     Ok(())
 }
 #[tauri::command]
@@ -1163,9 +1635,55 @@ pub(crate) async fn save_native_provider_continuation(
     let window = window.label().to_string();
     worker(move || {
         let run = run_owned(&input.run_handle, &window)?;
-        ProviderContinuationStore::open(&run.profile.root)
-            .and_then(|store| store.save(&run.scope, &input.record, &NATIVE_ENDPOINT_POLICY))
-            .map_err(|_| failure("native_responses_continuation_save_failed"))?;
+        if let Some(chat) = &run.chat {
+            let mut chat = lock(chat)?;
+            if input
+                .record
+                .assistant
+                .tool_calls
+                .as_ref()
+                .is_some_and(|calls| !calls.is_empty())
+            {
+                return Err(failure("responses_chat_tools_forbidden"));
+            }
+            let pending = chat
+                .pending
+                .as_ref()
+                .filter(|pending| pending.logical_id == input.record.request_id)
+                .ok_or_else(|| failure("responses_chat_request_mismatch"))?;
+            let response = lock(&pending.response)?;
+            if !response.done
+                || response.error.is_some()
+                || !response
+                    .head
+                    .as_ref()
+                    .is_some_and(|head| (200..300).contains(&head.status))
+                || !run.alive.load(Ordering::Acquire)
+                || !chat_response_matches(&response, &input.record)
+            {
+                return Err(failure("responses_chat_response_unconfirmed"));
+            }
+            let usage = chat_usage(&response);
+            drop(response);
+            ProviderContinuationStore::open(&run.profile.root)
+                .and_then(|store| store.save(&run.scope, &input.record, &NATIVE_ENDPOINT_POLICY))
+                .map_err(|_| failure("native_responses_continuation_save_failed"))?;
+            if !run.alive.load(Ordering::Acquire) || !run.profile.alive.load(Ordering::Acquire) {
+                return Err(failure("native_responses_session_closed"));
+            }
+            chat.archive
+                .complete_request(
+                    &input.record.request_id,
+                    &input.record.assistant.content,
+                    usage,
+                )
+                .map_err(|_| failure("responses_chat_archive_failed"))?;
+            chat.pending = None;
+        } else {
+            ProviderContinuationStore::open(&run.profile.root)
+                .and_then(|store| store.save(&run.scope, &input.record, &NATIVE_ENDPOINT_POLICY))
+                .map_err(|_| failure("native_responses_continuation_save_failed"))?;
+        }
         run.current()?;
         Ok(())
     })

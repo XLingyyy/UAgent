@@ -91,6 +91,7 @@ function setup(
           conversationId: "conversation-fixture",
         },
       };
+    else if(command==="bind_native_responses_conversation")result={runHandle:"native-chat",owner:{providerId,modelId,projectId:input.projectId===null?"chat:local":"chat:project:"+input.projectId,projectEpoch:43,runId:"chat-run-fixture",conversationId:input.conversationId}};
     else if (command === "load_native_provider_continuations") result = records;
     else if (command === "save_native_provider_continuation")
       records.push(input.record as ProviderNativeContinuation);
@@ -225,6 +226,20 @@ const request = (): ProviderRuntimeRequest => ({
 });
 
 describe("safe Responses fixture controller (synthetic invoke only)", () => {
+  it("routes ordinary requests through native chat and discards native ownership on conversation change",async()=>{
+    vi.stubGlobal("fetch",vi.fn(()=>{throw Error("No browser fetch");}));
+    const h=setup();await h.open();
+    const input={...request(),metadata:{projectId,conversationId:"conversation-fixture"},messages:[{role:"user" as const,content:"ordinary question"}]};
+    const result=await h.manager.adapter.complete(input);
+    expect(result.text).toBe("Native fixture answer");expect(result.usageStatus).toBe("unknown");
+    expect(h.count("bind_native_responses_conversation")).toBe(1);expect(h.count("bind_native_responses_run")).toBe(0);
+    expect(h.manager.adapter.getCapabilities().supportsTools).toBe(false);
+    h.manager.updateContext(projectId,"new question",modelId,"different-conversation");await h.manager.whenSettled();
+    expect(h.manager.getSnapshot().ready).toBe(false);
+    expect(h.count("close_native_responses_profile")).toBe(1);
+    expect(h.fetcher).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled();
+  });
+
   it.each([{ responsesFixture: false }, { native: false }])(
     "rejects unavailable fixture configuration without native calls: %j",
     async (patch) => {
@@ -267,13 +282,10 @@ describe("safe Responses fixture controller (synthetic invoke only)", () => {
     expect(h.calls).toHaveLength(0);
   });
 
-  it("requires an actual live lease and refuses generic discussion without a DeepSeek fallback", async () => {
+  it("requires an actual live investigation lease and refuses an unowned generic request without fallback", async () => {
     const h = setup();
     await h.open();
-    await expect(h.manager.adapter.complete(request())).rejects.toMatchObject({
-      code: "provider_unavailable",
-      providerId,
-    });
+    await expect(h.manager.adapter.complete(request())).rejects.toThrow("responses_chat_unavailable");
     const approved = h.lease();
     expect(() =>
       h.manager.createRunAdapter(JSON.parse(JSON.stringify(approved)) as RunScopeLease),

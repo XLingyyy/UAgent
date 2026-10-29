@@ -7,6 +7,26 @@ demo profile, labelled as a local synthetic fixture. Ordinary mode remains
 blocked while production transport acceptance remains incomplete. Opening a
 fixture session never establishes a real model connection.
 
+## Text-only conversations
+
+The isolated fixture also supports ordinary discussion, without a trusted project,
+index scan or tool grant. Its native conversation binding issues a fresh run/epoch
+and selects an explicitly text-only source checker. The native body validator
+rejects tools, function items and server-side history references. Every text request
+still uses the same prepare, exact-body review, single-use approval and final
+dispatch gate. Production profiles and real credentials remain blocked in this
+delivery; enabling them is separate from this offline acceptance.
+
+Completed conversation text is bounded to eight turns / 12 KiB for each outgoing
+request. Native output remains scoped to the exact live provider/model/project/
+epoch/run/conversation and credential lifetime; it is never relabelled across runs.
+The managed SQLite archive keeps full message bodies and each actual outbound
+message selection. Cancellation and failed requests add no completed assistant
+reply. Normal close finalizes the archive; abrupt termination remains incomplete.
+Viewing history performs no send. Continuing selected completed discussion text
+creates a fresh conversation and requires a new memory session and per-request
+review; it restores no native output IDs, credentials or approvals.
+
 ## Request boundary
 
 The only production target is `https://api.openai.com/v1/responses`, derived by

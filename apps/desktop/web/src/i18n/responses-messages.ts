@@ -1,4 +1,8 @@
 export const responsesMessages = {
+  "responses.freshChatAuthorization":["继续会创建新对话。需重新开启临时会话并检查每次实际请求；不会恢复旧凭证或审批。","Continuing creates a new conversation. Open a fresh memory session and review each actual request; old credentials and approvals are not restored."],
+  "responses.continueChatHint":["已选择历史对话正文。请开启临时会话，输入新的问题，并在发送前检查实际正文。","Archived conversation text selected. Open a memory session, enter a new question and review the actual body before sending."],
+  "responses.shareArchivedText":["选择已完成的普通对话正文作为新对话上下文；发送前仍需检查实际请求","Select completed conversation text as context for the new conversation; review the actual request before sending"],
+  "responses.prepareChatFixture":["准备 Responses 普通对话演示","Prepare Responses chat demo"],
   "responses.fixtureCredential": [
     "夹具凭证（不要输入真实 API 密钥）",
     "Fixture credential (do not enter a real API key)",

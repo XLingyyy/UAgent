@@ -996,7 +996,7 @@ function createUIStateBundle(
         shouldSyncDefault?nextDefault.reasoningEffort:previousComposerState.reasoningEffort);
       if(previousComposerState.selectedModelId===selectedModelId&&previousComposerState.reasoningEffort===reasoningEffort)
         return previousComposerState;
-      return {...previousComposerState,selectedModelId,reasoningEffort};
+      return {...previousComposerState,selectedModelId,reasoningEffort,...(selectedModelId!==previousComposerState.selectedModelId?{savedRun:undefined}:{})};
   };
   const withModelSelectionBarrier = (selectedModelId:string,publish:()=>void):void|Promise<void> => {
     const version=++modelSelectionVersion;
@@ -1367,8 +1367,8 @@ function createUIStateBundle(
   };
 
   const composerActions: ComposerStoreActions = {
-    setComposerTaskMode:taskMode=>composerStore.setState(previous=>({...previous,taskMode,...(taskMode==="discussion"?{savedRun:undefined}:{})})),
-    setSavedRun:savedRun=>composerStore.setState(previous=>({...previous,savedRun,taskMode:savedRun?"investigation":previous.taskMode})),
+    setComposerTaskMode:taskMode=>composerStore.setState(previous=>({...previous,taskMode,...(previous.savedRun&&(previous.savedRun.taskMode??"investigation")!==taskMode?{savedRun:undefined}:{})})),
+    setSavedRun:savedRun=>composerStore.setState(previous=>({...previous,savedRun,taskMode:savedRun?(savedRun.taskMode??"investigation"):previous.taskMode})),
     setComposerInput: (input) =>
       composerStore.setState((previousState) =>
         previousState.input === input ? previousState : { ...previousState, input },
@@ -1388,7 +1388,7 @@ function createUIStateBundle(
       composerStore.setState((previousState) => {
         const reasoningEffort=resolveEffectiveReasoning(providerStore.getState().providers,selectedModelId,previousState.reasoningEffort);
         return previousState.selectedModelId===selectedModelId&&previousState.reasoningEffort===reasoningEffort
-          ?previousState:{...previousState,selectedModelId,reasoningEffort};
+          ?previousState:{...previousState,selectedModelId,reasoningEffort,...(selectedModelId!==previousState.selectedModelId?{savedRun:undefined}:{})};
       });};
       const result=withModelSelectionBarrier(selectedModelId,publish);
       return result?.catch(()=>undefined);
@@ -1409,9 +1409,11 @@ function createUIStateBundle(
         await safeProviderSession.whenSettled();
         const snapshot=runtimeStore.getState();
         const previous=conversationTasks(snapshot.tasksById,threadStore.getState().activeThreadId,draft.projectId);
-        const history=completedConversationHistory(previous.filter(task=>task.draft.providerId===draft.providerId&&task.draft.modelId===draft.modelId),snapshot.eventsByTaskId);
+        const archived=draft.savedRun?.taskMode==="discussion"?draft.savedRun:null;
+        const imported=archived?.includeCompletedContext?archived.messages.filter((m):m is {role:"user"|"assistant";content:string}=>["user","assistant"].includes(m.role)&&!m.toolCalls?.length&&!m.toolCallId).map(m=>({role:m.role,content:m.content})):[];
+        const history=[...imported,...completedConversationHistory(previous.filter(task=>task.draft.providerId===draft.providerId&&task.draft.modelId===draft.modelId),snapshot.eventsByTaskId)];
         const conversationId=draft.savedRun?.conversationId??(previous.length?conversationKey(previous[0]):crypto.randomUUID());
-        if(draft.savedRun&&draft.savedRun.projectId!==draft.projectId)throw Error("scope_review_stale");
+        if(draft.savedRun&&(draft.savedRun.taskMode==="discussion"?(draft.savedRun.logicalProjectId??null):draft.savedRun.projectId)!==draft.projectId)throw Error("scope_review_stale");
         let investigationScopeId:string|undefined;
         if(draft.taskMode==="investigation"){
           const project=draft.projectId?projectAdapter.getProject(draft.projectId):null;
@@ -1429,7 +1431,7 @@ function createUIStateBundle(
         if(!isCurrent())throw Error("scope_review_stale");
         const record = await runtimeClient.submitTask({...draft,conversationId,conversationHistory:history,historyEligible:draft.taskMode!=="investigation"&&attachmentStore.selected(draft.projectId).length===0,...(investigationScopeId?{investigationScopeId}:{})});
         if (isCurrent()) {
-          composerStore.setState((previous) => ({ ...previous, ...(record.state === "completed" ? { taskMode: safeProviderSession.getSnapshot().wireApi==="responses"?"investigation" as const:"discussion" as const, savedRun: undefined } : {}), input: record.state === "completed" && previous.input === originalInput ? "" : previous.input }));
+          composerStore.setState((previous) => ({ ...previous, ...(record.state === "completed" ? { taskMode: draft.taskMode==="investigation"?"investigation" as const:"discussion" as const, savedRun: undefined } : {}), input: record.state === "completed" && previous.input === originalInput ? "" : previous.input }));
           threadStore.setState({ activeThreadId: record.id });
           layoutStore.setState((previous) => ({ ...previous, sidebar: { ...previous.sidebar, activeNav: "workspace" } }));
         }

@@ -70,6 +70,13 @@ export interface NativeResponsesRunOptions {
   getProjectContext: () => { projectId: string | null; revision: string };
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 }
+export interface NativeResponsesConversationOptions {
+  projectId:string|null;
+  conversationId:string;
+  /** Captured live controller authority; never rebuilt from an archive. */
+  isCurrent:()=>boolean;
+  getProjectContext:()=>{projectId:string|null;revision:string};
+}
 function terminalUnsentProof(value: PollReceipt | null, cursor: number): boolean {
   return (
     !!value &&
@@ -244,19 +251,24 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
       void close();
       return closeAcknowledgement!;
     },
-    createRunAdapter(runOptions: NativeResponsesRunOptions): ProviderAdapter {
+    createRunAdapter(runOptions: NativeResponsesRunOptions):ProviderAdapter {return createBoundAdapter(runOptions);},
+    createConversationAdapter(runOptions:NativeResponsesConversationOptions):ProviderAdapter {return createBoundAdapter(runOptions);},
+  };
+  function createBoundAdapter(runOptions:NativeResponsesRunOptions|NativeResponsesConversationOptions):ProviderAdapter {
       checkProfile();
-      const lease = runOptions.lease,
-        isCurrent = lease.isCurrent,
-        getProjectContext = runOptions.getProjectContext,
-        scope = lease.scope,
-        scopeExpiresAt = lease.scope.expiresAt;
+      const chat=!("lease" in runOptions);
+      const isCurrent=chat?runOptions.isCurrent:runOptions.lease.isCurrent,
+        getProjectContext=runOptions.getProjectContext,
+        logicalProject=chat?runOptions.projectId:runOptions.lease.scope.projectId,
+        scope=chat?{providerId,modelId,endpoint:ENDPOINT,projectId:logicalProject===null?"chat:local":"chat:project:"+logicalProject,runId:"",conversationId:runOptions.conversationId}:runOptions.lease.scope,
+        scopeExpiresAt=chat?Math.min(profile.expiresAt,now()+600000):runOptions.lease.scope.expiresAt;
+      if(chat&&(!id(scope.conversationId)||(logicalProject!==null&&!id(logicalProject))))throw failure();
       if (
         scope.providerId !== providerId ||
         scope.modelId !== modelId ||
         scope.endpoint !== ENDPOINT ||
         !id(scope.projectId) ||
-        !id(scope.runId) ||
+        (!chat&&!id(scope.runId)) ||
         !id(scope.conversationId) ||
         !Number.isSafeInteger(scopeExpiresAt) ||
         scopeExpiresAt <= now()
@@ -270,7 +282,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
           runAbort.signal.aborted ||
           signal?.aborted ||
           !isCurrent() ||
-          getProjectContext().projectId !== scope.projectId
+          getProjectContext().projectId !== logicalProject
         ) {
           runAbort.abort();
           throw cancelled();
@@ -350,13 +362,12 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
       };
       runAbort.signal.addEventListener("abort", stop, { once: true });
       let ready: Promise<ReturnType<typeof createProviderRuntimeSession>> | null = null;
+      let nativeOwner:ProviderContinuationOwner|null=null;
+      let logicalRequestId:string|null=null;
       async function initialize() {
         check();
-        const bound = await call<RunReceipt>("bind_native_responses_run", {
-          profileId: profile.profileId,
-          projectId: scope.projectId,
-          runId: scope.runId,
-          scopeExpiresAt,
+        const bound = chat?await call<RunReceipt>("bind_native_responses_conversation",{profileId:profile.profileId,projectId:logicalProject,conversationId:scope.conversationId}):await call<RunReceipt>("bind_native_responses_run", {
+          profileId: profile.profileId,projectId: scope.projectId,runId: scope.runId,scopeExpiresAt,
         });
         check();
         const owner = bound?.owner;
@@ -367,7 +378,8 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
           owner.providerId !== providerId ||
           owner.modelId !== modelId ||
           owner.projectId !== scope.projectId ||
-          owner.runId !== scope.runId ||
+          (!chat&&owner.runId !== scope.runId) ||
+          !id(owner.runId) ||
           owner.conversationId !== scope.conversationId ||
           !Number.isSafeInteger(owner.projectEpoch) ||
           owner.projectEpoch < 0 ||
@@ -376,6 +388,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
           )
         )
           throw failure();
+        nativeOwner=owner;
         const context = () => {
           check();
           const current = getProjectContext();
@@ -408,6 +421,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
             const receipt = await call<PreparedReceipt>("prepare_native_responses_request", {
               runHandle: bound.runHandle,
               body: envelope.body,
+              ...(chat?{logicalRequestId}:{}),
             });
             const request: Pending = {
               requestId: receipt?.requestId,
@@ -644,7 +658,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
           getProjectContext: context,
           fetcher,
           outboundGate: nativeGate,
-          reasoningEffort: runOptions.reasoningEffort,
+          reasoningEffort: "reasoningEffort" in runOptions?runOptions.reasoningEffort:undefined,
           continuationStore: {
             async load(query, signal) {
               check(signal);
@@ -678,9 +692,9 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
         if (
           request.providerId !== providerId ||
           request.modelId !== modelId ||
-          (request.metadata?.runId !== undefined && request.metadata.runId !== scope.runId) ||
-          (request.metadata?.projectId !== undefined &&
-            request.metadata.projectId !== scope.projectId)
+          (!chat&&request.metadata?.runId !== undefined && request.metadata.runId !== scope.runId) ||
+          (request.metadata?.projectId !== undefined && request.metadata.projectId !== logicalProject) ||
+          (chat&&(request.metadata?.conversationId!==scope.conversationId||request.tools?.length||request.messages.some(m=>m.role==="tool"||m.toolCalls?.length||m.toolCallId)))
         )
           throw failure();
         ready ??= initialize();
@@ -688,34 +702,39 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
         check(callOptions?.signal);
         return session.adapter;
       }
+      function ownedRequest(request:ProviderRuntimeRequest):ProviderRuntimeRequest{
+        if(!chat)return request;
+        if(!nativeOwner)throw failure();
+        return {...request,metadata:{...request.metadata,projectId:nativeOwner.projectId,runId:nativeOwner.runId,projectEpoch:nativeOwner.projectEpoch}};
+      }
       return {
         id: providerId,
         getCapabilities: () => ({
           providerId,
           modelIds: [modelId],
           supportsStreaming: true,
-          supportsTools: true,
+          supportsTools: !chat,
           supportsPreSendValidation: true,
           isMock: profile.fixture,
         }),
         async complete(request, callOptions) {
+          if(logicalRequestId)throw failure();
+          logicalRequestId=request.id;
           if (!pending) lastRunDispatchStatus = "notDispatched";
           try {
-            return await (await selected(request, callOptions)).complete(request, callOptions);
-          } catch (error) {
-            throw tagged(error);
-          }
+            const adapter=await selected(request,callOptions);
+            return await adapter.complete(ownedRequest(request),callOptions);
+          } catch (error) {throw tagged(error);} finally {logicalRequestId=null;}
         },
         async *stream(request, callOptions) {
+          if(logicalRequestId)throw failure();
+          logicalRequestId=request.id;
           if (!pending) lastRunDispatchStatus = "notDispatched";
           try {
             const adapter = await selected(request, callOptions);
-            yield* adapter.stream!(request, callOptions);
-          } catch (error) {
-            throw tagged(error);
-          }
+            yield* adapter.stream!(ownedRequest(request), callOptions);
+          } catch (error) {throw tagged(error);} finally {logicalRequestId=null;}
         },
       };
-    },
-  };
+  }
 }

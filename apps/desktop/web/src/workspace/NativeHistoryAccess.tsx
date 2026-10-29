@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from "react";
 import {useI18n} from "../i18n";
 import {RunHistoryPanel} from "./RunHistoryPanel";
-import {canContinueNativeHistory,type NativeRunArchive} from "../runtime/native-run-history";
+import {canContinueNativeHistory,completedArchivedDiscussionText,type NativeRunArchive} from "../runtime/native-run-history";
 import {safeProviderSession} from "../runtime/safe-provider-session";
 import {useProjectActions,useProjectStore,useComposerActions,useThreadActions,useSettingsActions,useRuntimeStore} from "../stores/ui-store";
 import "./NativeHistoryAccess.css";
@@ -17,7 +17,16 @@ export function NativeHistoryAccess(){
  },[open]);
  async function continueSaved(archive:NativeRunArchive,share:boolean){
   if(busy||!canContinueNativeHistory(archive))throw Error("archive_not_continuable");
-  safeProviderSession.close("revoked");threads.setActiveThread(null);
+  await safeProviderSession.closeAsync("revoked");threads.setActiveThread(null);
+  if(archive.coordinatorState?.taskMode==="discussion"){
+   const state=archive.coordinatorState,logical=state.logicalProjectId;
+   if((logical!==null&&typeof logical!=="string")||typeof state.providerId!=="string"||typeof state.modelId!=="string")throw Error("archive_identity_invalid");
+   await projects.setActiveProject(logical);
+   await composer.setComposerModel(JSON.stringify([state.providerId,state.modelId]));
+   const messages=share?completedArchivedDiscussionText(archive):[];
+   composer.setComposerInput("");composer.setSavedRun({taskMode:"discussion",logicalProjectId:logical,parentRunId:archive.descriptor.runId,projectId:archive.descriptor.projectId,conversationId:crypto.randomUUID(),includeCompletedContext:share,completed:true,hasUnresolvedEffects:false,messages});
+   composer.setComposerTaskMode("discussion");setOpen(false);settings.openSettings("provider");return;
+  }
   const id=await projects.addProjectRoot(archive.descriptor.projectRoot);if(!id)throw Error("project_unavailable");
   composer.setComposerInput(archive.descriptor.goal);composer.setSavedRun({
    parentRunId:archive.descriptor.runId,projectId:archive.descriptor.projectId,conversationId:archive.descriptor.sessionId,

@@ -21,7 +21,7 @@ export function OfflineDemoBanner() {
     composer = useComposerActions(),
     projects = useProjectActions();
   if (!getApplicationProfile().offlineDemo) return null;
-  const prepareResponses = async () => {
+  const prepareResponses = async (mode:"discussion"|"investigation"="investigation") => {
     if (busy) return;
     setBusy(true);
     setError(false);
@@ -71,10 +71,12 @@ export function OfflineDemoBanner() {
           },
           version,
         );
-      const projectId = await projects.addProjectRoot(fixture.rootRef);
-      if (!projectId) throw Error("fixture_project_unavailable");
+      if(mode==="investigation"){
+        const projectId = await projects.addProjectRoot(fixture.rootRef);
+        if (!projectId) throw Error("fixture_project_unavailable");
+      }
       await composer.setComposerModel(JSON.stringify([fixture.providerId, fixture.modelId]));
-      composer.setComposerTaskMode("investigation");
+      composer.setComposerTaskMode(mode);
       safeProviderSession.enable();
       if (
         !(await safeProviderSession.openResponses(
@@ -125,6 +127,7 @@ export function OfflineDemoBanner() {
       >
         {t(busy ? "responses.opening" : "responses.prepareFixture")}
       </button>
+      <button type="button" disabled={busy||session.pendingSetup} onClick={()=>void prepareResponses("discussion")}>{t("responses.prepareChatFixture")}</button>
       <span>
         {t(
           session.ready && session.fixture

@@ -62,7 +62,7 @@ export class ProviderRuntimeBridge {
       ],
       temperature: 0,
       maxOutputTokens: 1024,
-      metadata: { taskId, planId, projectId: draft.projectId },
+      metadata: { taskId, planId, projectId: draft.projectId, conversationId:draft.conversationId },
     };
 
     const result = this.adapter.stream && this.adapter.getCapabilities().supportsStreaming

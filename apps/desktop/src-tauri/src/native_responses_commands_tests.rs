@@ -3,6 +3,161 @@ use super::*;
 use crate::product_settings_store::{
     CapabilityDeclarations, Declaration, ProviderConfig, ProviderModel, RequestDefaults,
 };
+
+#[test]
+fn chat_body_rejects_tool_or_server_side_history_inputs() {
+    let valid = json!({"model":"fixture-model","store":false,"stream":true,"input":[
+        {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
+        {"type":"message","role":"assistant","content":"answer"},
+        {"type":"message","role":"user","content":[{"type":"input_text","text":"second"}]}
+    ]});
+    assert_eq!(chat_messages(&valid.to_string()).unwrap().len(), 3);
+    for (key, value) in [
+        ("tools", json!([{"type":"function","name":"read"}])),
+        ("tool_choice", json!("auto")),
+        ("previous_response_id", json!("old-response")),
+    ] {
+        let mut invalid = valid.clone();
+        invalid[key] = value;
+        assert!(chat_messages(&invalid.to_string()).is_err());
+    }
+    for kind in ["function_call", "function_call_output", "reasoning"] {
+        let mut invalid = valid.clone();
+        invalid["input"][0] = json!({"type":kind,"id":"not-a-grant"});
+        assert!(chat_messages(&invalid.to_string()).is_err());
+    }
+}
+#[test]
+fn chat_binding_is_native_owned_bounded_and_reused_only_for_same_live_conversation() {
+    let mut fixture = Fixture::new();
+    let config = fixture.config();
+    let snapshot = fixture.save(&config);
+    let window = format!("chat-window-{}", token().unwrap());
+    let profile = fixture.profile(&snapshot, &window, false);
+    let first = bind_conversation(profile.clone(), None, "conversation-one".into()).unwrap();
+    assert_eq!(first.owner.project_id, "chat:local");
+    assert!(first.owner.run_id.starts_with("chat-run-"));
+    let run = run_owned(&first.run_handle, &window).unwrap();
+    assert!(run.monitor.is_none());
+    assert!(run.chat.is_some());
+    let deadline = run.deadline;
+    let lease = run
+        .session
+        .capture_lease(
+            request_deadline(profile.clock.now_ms(), deadline, profile.expires_at).unwrap(),
+        )
+        .unwrap();
+    let second = bind_conversation(profile.clone(), None, "conversation-one".into()).unwrap();
+    assert_eq!(first.run_handle, second.run_handle);
+    assert_eq!(first.owner, second.owner);
+    assert_eq!(run.deadline, deadline);
+    let changed = bind_conversation(
+        profile.clone(),
+        Some("root:another-project".into()),
+        "conversation-one".into(),
+    )
+    .unwrap();
+    assert_eq!(
+        changed.owner.project_id,
+        "chat:project:root:another-project"
+    );
+    assert!(!lease.is_current());
+    assert!(!run.alive.load(Ordering::Acquire));
+    assert!(run_owned(&first.run_handle, &window).is_err());
+    assert_ne!(changed.owner.project_epoch, first.owner.project_epoch);
+    close_profile(&profile.id, &window).unwrap();
+    assert!(run_owned(&changed.run_handle, &window).is_err());
+}
+#[test]
+fn chat_text_source_authority_rejects_revoked_lease() {
+    let mut fixture = Fixture::new();
+    let config = fixture.config();
+    let snapshot = fixture.save(&config);
+    let window = format!("chat-source-{}", token().unwrap());
+    let profile = fixture.profile(&snapshot, &window, false);
+    let bound = bind_conversation(profile.clone(), None, "conversation-source".into()).unwrap();
+    let run = run_owned(&bound.run_handle, &window).unwrap();
+    let lease = run
+        .session
+        .capture_lease(
+            request_deadline(profile.clock.now_ms(), run.deadline, profile.expires_at).unwrap(),
+        )
+        .unwrap();
+    let body=json!({"model":"fixture-model","store":false,"input":[{"type":"message","role":"user","content":"text only"}]}).to_string();
+    let prepared = run
+        .session
+        .prepare(
+            &lease,
+            &profile.snapshot.config.base_url,
+            body.into_bytes(),
+            run.checker.as_ref(),
+        )
+        .unwrap();
+    run.revoke();
+    assert!(run
+        .session
+        .approve(&prepared, &lease, run.checker.as_ref())
+        .is_err());
+}
+#[test]
+fn chat_namespaces_and_unknown_usage_do_not_masquerade_as_project_authority_or_zero() {
+    assert_eq!(chat_project_namespace(None).unwrap(), "chat:local");
+    assert_eq!(
+        chat_project_namespace(Some("local")).unwrap(),
+        "chat:project:local"
+    );
+    assert!(chat_project_namespace(Some("bad id")).is_err());
+    assert_eq!(chat_usage(&ResponseState::default()), UsageStatus::Unknown);
+}
+
+#[test]
+fn chat_result_requires_the_actual_native_terminal_id_output_and_text() {
+    let output = json!([{"type":"message","id":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"actual reply","annotations":[]}]}]);
+    let terminal = json!({"type":"response.completed","response":{"id":"actual-response","status":"completed","output":output}});
+    let raw = format!("data:{}\n\n", terminal);
+    let chunks = raw.as_bytes().chunks(7).map(|v| v.to_vec()).collect();
+    let response = ResponseState {
+        chunks,
+        bytes: raw.len(),
+        head: Some(Head {
+            status: 200,
+            content_type: "text/event-stream".into(),
+        }),
+        done: true,
+        error: None,
+        dispatch_status: "sent".into(),
+    };
+    let mut record = ProviderNativeContinuation {
+        schema_version: 1,
+        wire_api: "responses".into(),
+        owner: ContinuationOwner {
+            provider_id: "provider".into(),
+            model_id: "model".into(),
+            project_id: "chat:local".into(),
+            project_epoch: 1,
+            run_id: "run".into(),
+            conversation_id: "conversation".into(),
+        },
+        request_id: "request".into(),
+        response_id: "actual-response".into(),
+        created_at: 1,
+        assistant: crate::provider_continuation_store::ContinuationAssistant {
+            content: "actual reply".into(),
+            tool_calls: None,
+        },
+        output: output.as_array().unwrap().clone(),
+    };
+    assert!(chat_response_matches(&response, &record));
+    record.assistant.content = "forged reply".into();
+    assert!(!chat_response_matches(&response, &record));
+    record.assistant.content = "actual reply".into();
+    record.response_id = "different-response".into();
+    assert!(!chat_response_matches(&response, &record));
+    record.response_id = "actual-response".into();
+    record.output[0]["content"][0]["text"] = json!("forged output");
+    assert!(!chat_response_matches(&response, &record));
+}
+
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 use std::path::{Component, Prefix};

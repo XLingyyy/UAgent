@@ -57,6 +57,8 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     finish: () => void;
   };
   let responsesRunAdapters = new WeakMap<RunScopeLease, ProviderAdapter>();
+  const responsesChatAdapters=new Map<string,ProviderAdapter>();
+  let selectedConversation="";
   let responsesProfile: ResponsesProfile | null = null,
     pendingResponses: ResponsesSetup | null = null;
   const responsesSetups = new Set<ResponsesSetup>();
@@ -167,6 +169,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       pendingResponses = null;
     }
     responsesRunAdapters = new WeakMap();
+    responsesChatAdapters.clear();
     const previousResponses = responsesProfile;
     responsesProfile = null;
     session?.clearCredential();
@@ -241,6 +244,28 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
         }
       : request;
   };
+  function conversationAdapter(request:Parameters<ProviderAdapter["complete"]>[0]):ProviderAdapter{
+    const profile=responsesProfile,conversationId=request.metadata?.conversationId,projectId=context.projectId,generation=sessionGeneration;
+    if(!profile||!state.ready||!state.enabled||disposed||!state.expiresAt||Date.now()>=state.expiresAt
+        ||typeof conversationId!=="string"||!conversationId||request.providerId!==state.providerId||request.modelId!==state.modelId
+        ||request.tools?.length||request.messages.some(m=>m.role==="tool"||m.toolCalls?.length||m.toolCallId))throw Error("responses_chat_unavailable");
+    if(selectedConversation&&selectedConversation!==conversationId)throw Error("responses_chat_context_changed");
+    const key=JSON.stringify([projectId,conversationId]),existing=responsesChatAdapters.get(key);
+    if(existing)return existing;
+    const current=()=>responsesProfile===profile&&sessionGeneration===generation&&state.ready&&state.enabled&&!disposed
+      &&context.projectId===projectId&&(!selectedConversation||selectedConversation===conversationId);
+    const selected=profile.createConversationAdapter({projectId,conversationId,isCurrent:current,getProjectContext:()=>({projectId:context.projectId,revision:context.revision})});
+    function watch(call?:ProviderCallOptions){
+      if(!current())throw Error("responses_chat_context_changed");
+      const abort=()=>{if(responsesProfile===profile)close("stopped");};
+      if(call?.signal?.aborted){abort();throw Error("responses_chat_cancelled");}
+      call?.signal?.addEventListener("abort",abort,{once:true});return()=>call?.signal?.removeEventListener("abort",abort);
+    }
+    const scoped:ProviderAdapter={id:selected.id,getCapabilities:()=>selected.getCapabilities(),
+      async complete(request,call){const release=watch(call);try{return await selected.complete(request,call);}finally{release();}},
+      async *stream(request,call){const release=watch(call);try{yield* selected.stream!(request,call);}finally{release();}}};
+    responsesChatAdapters.set(key,scoped);return scoped;
+  }
   const adapter: ProviderAdapter = {
     get id() {
       return state.providerId ?? "deepseek";
@@ -249,11 +274,12 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       providerId: state.providerId ?? "deepseek",
       modelIds: [state.modelId ?? DEEPSEEK_MODEL],
       supportsStreaming: true,
-      supportsTools: true,
+      supportsTools: state.wireApi!=="responses",
       supportsPreSendValidation: true,
       isMock: state.ready ? state.fixture : options.mode === "offline",
     }),
     async complete(request, call) {
+      if(responsesProfile)return conversationAdapter(request).complete(withContext(request),call);
       const current = requireSession(),
         release = watchAbort(current, call);
       try {
@@ -263,6 +289,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       }
     },
     async *stream(request, call) {
+      if(responsesProfile){yield* conversationAdapter(request).stream!(withContext(request),call);return;}
       const current = requireSession(),
         release = watchAbort(current, call);
       try {
@@ -595,8 +622,10 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     updateContext(projectId: string | null, input: string, model: string, conversationId = "") {
       const next = JSON.stringify([projectId, input, model, conversationId]);
       if (next === identity) return;
+      const conversationChanged=Boolean(responsesChatAdapters.size&&selectedConversation&&conversationId!==selectedConversation);
+      selectedConversation=conversationId;
       const changed =
-        projectId !== context.projectId || (selectedModel !== null && model !== selectedModel);
+        projectId !== context.projectId || (selectedModel !== null && model !== selectedModel)||conversationChanged;
       selectedModel = model;
       identity = next;
       context = { ...context, projectId, epoch: context.epoch + (changed ? 1 : 0) };

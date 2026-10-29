@@ -157,7 +157,7 @@ function id(value: unknown): string {
   if (
     !result ||
     new TextEncoder().encode(result).length > 256 ||
-    /[\u0000-\u001f\u007f-\u009f]/u.test(result)
+    Array.from(result).some(char=>{const code=char.codePointAt(0)!;return code<=0x1f||(code>=0x7f&&code<=0x9f);})
   )
     return invalid();
   return result;
@@ -430,6 +430,29 @@ export function canContinueNativeHistory(archive: NativeRunArchive): boolean {
     ) &&
     !archive.snapshot.steps.some((step) => step.status === "inFlight" || step.status === "unknown")
   );
+}
+
+
+/** Select only completed discussion requests. Failed/cancelled user blocks are
+ * display evidence, never silently paired with a later successful answer. */
+export function completedArchivedDiscussionText(archive:NativeRunArchive):Array<{role:"user"|"assistant";content:string}>{
+  if(archive.coordinatorState?.taskMode!=="discussion")return [];
+  const pending=new Map<string,string>(),selected=new Set<string>(),history:Array<{role:"user"|"assistant";content:string}>=[];
+  for(const event of archive.events){
+    const data=event.data as Record<string,RunJsonValue>,payload=data.payload as Record<string,RunJsonValue>|undefined;
+    if(event.kind==="model_started"&&payload&&typeof payload.requestId==="string"&&Array.isArray(payload.messages)){
+      const tail:string[]=[];
+      for(let i=payload.messages.length-1;i>=0;i--){const m=payload.messages[i] as Record<string,RunJsonValue>;if(!m||m.role!=="user"||typeof m.content!=="string")break;tail.unshift(m.content);}
+      if(tail.length)pending.set(payload.requestId,tail.join("\n\n"));
+    }
+    if(event.kind==="coordinator_state_v1"&&data.taskMode==="discussion"&&data.lastRequestStatus==="completed"&&typeof data.lastRequestId==="string"&&!selected.has(data.lastRequestId)&&typeof data.messageCount==="number"){
+      const answer=archive.providerMessages[data.messageCount-1],question=pending.get(data.lastRequestId);
+      if(question!==undefined&&answer?.role==="assistant"&&!answer.toolCalls?.length&&!answer.toolCallId){
+        history.push({role:"user",content:question},{role:"assistant",content:answer.content});selected.add(data.lastRequestId);
+      }
+    }
+  }
+  return history;
 }
 
 /** Interrupted stream text is evidence for display only, never a completed history turn. */

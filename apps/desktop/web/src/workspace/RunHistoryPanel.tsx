@@ -243,9 +243,9 @@ export function RunHistoryPanel({
                 <p>{t("historyRun.session", { title: archive.descriptor.sessionTitle })}</p>
                 <p>{t("historyRun.run", { id: archive.descriptor.runId })}</p>
                 <p>{t("historyRun.updated", { time: date(archive.snapshot.run.updatedAt) })}</p>
-                <p className="ua-run-history__root">
+                {archive.coordinatorState?.taskMode!=="discussion"&&<p className="ua-run-history__root">
                   {t("historyRun.archivedRoot", { root: archive.descriptor.projectRoot })}
-                </p>
+                </p>}
               </header>
               <p
                 role="status"
@@ -314,7 +314,7 @@ export function RunHistoryPanel({
                 </details>
               )}
               <footer className="ua-run-history__continue">
-                <p>{t("historyRun.freshAuthorization")}</p>
+                <p>{t(archive.coordinatorState?.taskMode==="discussion"?"responses.freshChatAuthorization":"historyRun.freshAuthorization")}</p>
                 {unresolved && <p role="alert">{t("historyRun.reconciliation")}</p>}
                 {!archive.coordinatorState && <p>{t("historyRun.noCoordinator")}</p>}
                 <label>
@@ -326,7 +326,7 @@ export function RunHistoryPanel({
                     }
                     onChange={(event) => setShareCompletedContext(event.target.checked)}
                   />
-                  {t("historyRun.shareCompleted")}
+                  {t(archive.coordinatorState?.taskMode==="discussion"?"responses.shareArchivedText":"historyRun.shareCompleted")}
                 </label>
                 <button
                   type="button"

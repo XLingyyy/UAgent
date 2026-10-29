@@ -1,3 +1,4 @@
+import { completedArchivedDiscussionText,type NativeRunArchive } from "./native-run-history";
 import { describe, expect, it, vi } from "vitest";
 import {
   archivedPartialAssistantText,
@@ -74,6 +75,17 @@ function archiveFixture() {
     completeness: { complete: true, loadedMessageCount: 3, storedMessageCount: 3, reason: null },
   };
 }
+it("selects only completed archived discussion turns, preserving the current user block and excluding failed input",()=>{
+ const archive={coordinatorState:{taskMode:"discussion"},providerMessages:[{role:"user",content:"failed"},{role:"user",content:"question"},{role:"user",content:"selected reference"},{role:"assistant",content:"answer"},{role:"user",content:"cancelled"}],events:[
+ {kind:"model_started",data:{payload:{requestId:"failed",messages:[{role:"user",content:"failed"}]}}},
+ {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"failed",lastRequestStatus:"failed",messageCount:1}},
+ {kind:"model_started",data:{payload:{requestId:"done",messages:[{role:"system",content:"data"},{role:"user",content:"question"},{role:"user",content:"selected reference"}]}}},
+ {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"done",lastRequestStatus:"completed",messageCount:4}},
+ {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"done",lastRequestStatus:"completed",messageCount:4}},
+ {kind:"model_started",data:{payload:{requestId:"cancelled",messages:[{role:"user",content:"cancelled"}]}}},
+ ]} as unknown as NativeRunArchive;
+ expect(completedArchivedDiscussionText(archive)).toEqual([{role:"user",content:"question\n\nselected reference"},{role:"assistant",content:"answer"}]);
+});
 describe("native run history read-only port", () => {
   it("reads bounded descriptors and exact archived message bodies without a project authority command", async () => {
     const saved = archiveFixture(),

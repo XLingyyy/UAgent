@@ -122,6 +122,10 @@ function harness(autoApprove = true) {
         expiresAt: Date.now() + 60000,
         fixture: false,
       };
+    else if(command==="bind_native_responses_conversation"){
+      nativeOwner={...owner,projectId:input.projectId===null?"chat:local":"chat:project:"+input.projectId,runId:"chat-run-fixture"};
+      result={runHandle:"native-chat-handle",owner:nativeOwner};
+    }
     else if (command === "bind_native_responses_run")
       result = { runHandle: "native-run-handle", owner: nativeOwner };
     else if (command === "load_native_provider_continuations") result = records;
@@ -157,7 +161,7 @@ function harness(autoApprove = true) {
           dispatchStatus: nativeStatus,
         };
       else {
-        const value = body();
+        const value = body();value.id="resp_fixture_"+activeNativeRequest;
         const stream = JSON.parse(preparedBody).stream === true;
         const raw = stream
           ? [
@@ -218,7 +222,7 @@ function harness(autoApprove = true) {
     fail(command: string) {
       failingCommands.add(command);
     },
-    async open() {
+    async open(chat=false) {
       const profile = await createNativeResponsesProfile({
         invoke,
         providerId: owner.providerId,
@@ -227,7 +231,7 @@ function harness(autoApprove = true) {
         gate,
       });
       cleanup.push(profile.close);
-      const adapter = profile.createRunAdapter({
+      const adapter = chat?profile.createConversationAdapter({projectId,conversationId:owner.conversationId,isCurrent:()=>current,getProjectContext:()=>({projectId,revision})}):profile.createRunAdapter({
         lease,
         getProjectContext: () => ({ projectId, revision }),
       });
@@ -235,6 +239,49 @@ function harness(autoApprove = true) {
     },
   };
 }
+
+
+describe("Responses no-tool conversation native binding (synthetic IPC)",()=>{
+  const chatRequest=(id:string,text:string,history:ProviderRuntimeRequest["messages"]=[]):ProviderRuntimeRequest=>({
+    ...request(id),messages:[...history,{role:"user",content:text}],metadata:{projectId:owner.projectId,conversationId:owner.conversationId}
+  });
+  it("sends both ordinary turns through exact per-request native approvals, with no tool binding",async()=>{
+    const h=harness(false),{adapter}=await h.open(true);
+    const first=adapter.complete(chatRequest("chat-one","My code is blue-whale-42"));
+    await vi.waitFor(()=>expect(h.gate.getPending()).not.toBeNull());expect(h.count("dispatch_native_responses_request")).toBe(0);
+    const firstEnvelope=h.gate.getPending()!.envelope;expect(JSON.parse(firstEnvelope.body).tools).toBeUndefined();
+    h.gate.approve(h.gate.getPending()!.id);const result=await first;expect(result.usageStatus).toBe("unknown");
+    const second=adapter.complete(chatRequest("chat-two","What was my code?",[{role:"user",content:"My code is blue-whale-42"},{role:"assistant",content:result.text}]));
+    await vi.waitFor(()=>expect(h.gate.getPending()).not.toBeNull());
+    expect(h.count("dispatch_native_responses_request")).toBe(1);
+    const review=h.gate.getPending()!.envelope;expect(review.body).toContain("blue-whale-42");expect(review.body).toContain(result.text);
+    h.gate.approve(h.gate.getPending()!.id);await second;
+    expect(h.count("bind_native_responses_conversation")).toBe(1);expect(h.count("bind_native_responses_run")).toBe(0);
+    expect(h.records).toHaveLength(2);expect(h.records.every(r=>r.owner.projectId==="chat:project:"+owner.projectId)).toBe(true);
+    expect(h.calls.filter(c=>c.command==="prepare_native_responses_request").map(c=>c.input.logicalRequestId)).toEqual(["chat-one","chat-two"]);
+    expect(adapter.getCapabilities().supportsTools).toBe(false);expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+  it.each(["tools","tool-message","conversation"] as const)("refuses %s before native binding",async kind=>{
+    const h=harness(),{adapter}=await h.open(true);const input=chatRequest("bad-chat","text");
+    if(kind==="tools")input.tools=[{name:"read",description:"not granted",parameters:{type:"object"}}];
+    if(kind==="tool-message")input.messages.unshift({role:"tool",content:"local result",toolCallId:"local"});
+    if(kind==="conversation")input.metadata!.conversationId="other";
+    await expect(adapter.complete(input)).rejects.toThrow();
+    expect(h.count("prepare_native_responses_request")).toBe(0);expect(h.count("dispatch_native_responses_request")).toBe(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+  it.each(["lease","project","credential"] as const)("invalidates pending conversation on %s change without dispatch",async kind=>{
+    const h=harness(false),{adapter,profile}=await h.open(true);
+    const pending=adapter.complete(chatRequest("held-chat","wait"));const rejection=expect(pending).rejects.toThrow();
+    await vi.waitFor(()=>expect(h.gate.getPending()).not.toBeNull());
+    if(kind==="lease")h.setCurrent(false);
+    else if(kind==="project")h.setProject("other");
+    else await profile.closeAcknowledged();
+    const review=h.gate.getPending();if(review)h.gate.approve(review.id);
+    await rejection;expect(h.count("dispatch_native_responses_request")).toBe(0);
+    expect(h.records).toHaveLength(0);expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});
 
 describe("Responses desktop native IPC bridge (synthetic invoke only)", () => {
   it("opens only on explicit local input, binds lazily, and never claims connectivity", async () => {

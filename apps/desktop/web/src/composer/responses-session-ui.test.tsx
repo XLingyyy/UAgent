@@ -365,20 +365,19 @@ describe("Responses desktop UI ownership and isolated fixture gating", () => {
     expect(mocks.openAccount).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });
-  it("shows dynamic Responses selection but blocks discussion without fallback", async () => {
+  it("allows matching native Responses discussion without granting project tools", async () => {
     mocks.session = matching();
     mocks.composer.taskMode = "discussion";
     mount(<ComposerDock />);
     expect(screen.getByTestId("selected-model").textContent).toBe(
       JSON.stringify(["fixture-openai", "configured-model"]),
     );
-    expect(screen.getByText(translate("en", "responses.discussionUnavailable"))).toBeTruthy();
-    const send = screen.getByRole("button", {
-      name: localizeText("en", "Send - disabled"),
-    }) as HTMLButtonElement;
-    expect(send.disabled).toBe(true);
+    expect(screen.queryByText(translate("en", "responses.discussionUnavailable"))).toBeNull();
+    const send = screen.getByRole("button", {name:"Send task"}) as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
     fireEvent.click(send);
-    expect(mocks.actions.submitComposerTask).not.toHaveBeenCalled();
+    await waitFor(()=>expect(mocks.actions.submitComposerTask).toHaveBeenCalledWith(expect.objectContaining({taskMode:"discussion"})));
+    expect((mocks.actions.submitComposerTask.mock.calls as unknown[][])[0][0]).not.toHaveProperty("investigationScopeId");
   });
   it("allows only a matching session's investigation draft with trusted scanned project; scope is still reviewed by the store", async () => {
     mocks.session = matching();
