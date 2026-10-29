@@ -82,6 +82,13 @@ const forbidden = new Set([
   "endpoint",
   "expiresat",
 ]);
+function completedUsage(payload: Record<string, unknown>): "reported" | "unknown" {
+  const status = payload.usageStatus;
+  if (status !== undefined && status !== "reported" && status !== "unknown") fail("usage_status");
+  const hasUsage = payload.usage !== undefined;
+  if (status !== undefined && (status === "reported") !== hasUsage) fail("usage_status");
+  return hasUsage ? "reported" : "unknown";
+}
 function fail(reason: string): never {
   throw new Error("native_run_store_" + reason);
 }
@@ -98,7 +105,10 @@ function recordId(value: string): string {
   if (
     !value ||
     new TextEncoder().encode(value).length > 256 ||
-    /[\u0000-\u001f\u007f-\u009f]/u.test(value)
+    Array.from(value).some((character) => {
+      const code = character.codePointAt(0)!;
+      return code <= 0x1f || (code >= 0x7f && code <= 0x9f);
+    })
   )
     fail("invalid_id");
   return value;
@@ -367,6 +377,7 @@ function eventView(
       data = {
         requestId: string("requestId"),
         ...(payload.finishReason === undefined ? {} : { finishReason: string("finishReason") }),
+        usageStatus: completedUsage(payload),
         ...(payload.usage === undefined ? {} : { usage: safeJson(payload.usage) }),
       };
       break;

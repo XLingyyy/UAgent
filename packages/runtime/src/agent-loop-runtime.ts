@@ -46,6 +46,8 @@ import { redactString } from "./secrets/redaction.js";
 export interface InvestigationRuntimeOptions {
   registry: ToolRegistry;
   resolveScope: (scopeId:string,draft:TaskDraft)=>RunScopeLease|null;
+  /** Construct a per-run adapter only after the current execution lease exists. */
+  createAdapter?: (lease:RunScopeLease,draft:TaskDraft)=>ProviderAdapter;
   store?: RunStorePort;
   contextSources?: RunContextSources;
 }
@@ -621,13 +623,32 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
       const runtimeMode = options.runtimeMode ?? (discovery ? "mcp-readonly" : "mock");
       emit(taskId, "task_submitted", "User request", redactedDraft.input, "info", { draft: redactedDraft });
       if(draft.taskMode==="investigation"){
-        const config=options.investigation,adapter=options.providerAdapter;
-        const lease=draft.investigationScopeId?config?.resolveScope(draft.investigationScopeId,draft):null;
-        if(!config||!lease||!adapter||!providerBridge?.isEnabled()){
-          emit(taskId,"task_failed","Investigation unavailable","run_scope_unavailable","error");return snapshot.tasksById[taskId]??record;
-        }
+        const config=options.investigation;
         const controller=new AbortController();providerControllers.set(taskId,controller);
-        const coordinator=new RunCoordinator({adapter,registry:config.registry,lease,signal:controller.signal,store:config.store,contextSources:config.contextSources,
+        let failureCode="run_scope_unavailable";
+        try{
+          const lease=draft.investigationScopeId?config?.resolveScope(draft.investigationScopeId,draft):null;
+          const enabled=()=>providerBridge?.isEnabled()??options.providerEnabled===true;
+          const current=()=>{
+            if(!config||config!==options.investigation||!lease||!lease.isCurrent())return false;
+            const scope=lease.scope,limits=scope.limits;
+            return Number.isFinite(scope.expiresAt)&&scope.expiresAt>Date.now()&&
+              !!scope.runId&&scope.id===draft.investigationScopeId&&scope.mode==="read_only"&&
+              scope.projectId===draft.projectId&&scope.conversationId===draft.conversationId&&
+              scope.providerId===draft.providerId&&scope.modelId===draft.modelId&&
+              Object.values(limits).every(value=>Number.isSafeInteger(value)&&value>=1)&&
+              limits.maxToolCalls<=30&&limits.maxModelRequests<=31&&limits.maxDurationMs<=3600000&&
+              limits.maxAttemptsPerFailure<=2&&limits.maxToolResultBytes<=16384&&limits.maxContextBytes<=24576;
+          };
+          if(controller.signal.aborted||isStopped(taskId))return snapshot.tasksById[taskId]??record;
+          if(!enabled()||!current()||!config||!lease)throw Error("run_scope_unavailable");
+          failureCode=config.createAdapter?"run_adapter_unavailable":"run_scope_unavailable";
+          const adapter=config.createAdapter?config.createAdapter(lease,draft):options.providerAdapter;
+          if(!adapter)throw Error("run_adapter_unavailable");
+          failureCode="run_scope_unavailable";
+          if(controller.signal.aborted||isStopped(taskId))return snapshot.tasksById[taskId]??record;
+          if(!enabled()||!current())throw Error("run_scope_unavailable");
+          const coordinator=new RunCoordinator({adapter,registry:config.registry,lease,signal:controller.signal,store:config.store,contextSources:config.contextSources,
           onProviderEvent:event=>{if(!controller.signal.aborted&&!isStopped(taskId))applyProviderEvent(taskId,event);},
           onEvent:(event,run)=>{
             if(controller.signal.aborted||isStopped(taskId))return;
@@ -636,9 +657,10 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
             else if(event.type==="tool_failed")emit(taskId,"agent_step_failed","Project read stopped","Review task details.","warning",{runEvent:event});
             else if(event.type==="status_changed"&&(event.payload as {pauseRequested?:boolean})?.pauseRequested)emit(taskId,"agent_step_started","Pausing investigation","Waiting for the current read or model response to finish.","info",{runEvent:event,run});
           }});
-        taskRuns.set(taskId,coordinator);
-        try{return finishInvestigation(taskId,await coordinator.start(taskId,redactedDraft));}
-        catch{if(!isStopped(taskId))emit(taskId,"task_failed","Investigation unavailable","run_scope_unavailable","error");return snapshot.tasksById[taskId]??record;}
+          taskRuns.set(taskId,coordinator);
+          return finishInvestigation(taskId,await coordinator.start(taskId,redactedDraft));
+        }
+        catch{if(!isStopped(taskId))emit(taskId,"task_failed","Investigation unavailable",failureCode,"error");return snapshot.tasksById[taskId]??record;}
         finally{providerControllers.delete(taskId);}
       }
       if (!discovery && !options.providerAnalysisOnly) {

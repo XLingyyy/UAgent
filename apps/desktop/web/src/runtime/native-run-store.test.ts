@@ -137,6 +137,52 @@ function requested(): RunStoreCommit {
 }
 
 describe("native run-store production boundary", () => {
+  it("persists absent usage as unknown without invented zero counts", async () => {
+    const fixture = nativeRecorder(),
+      value = update();
+    value.events.push(
+      event(2, "model_completed", {
+        requestId: "request-1",
+        finishReason: "stop",
+        usageStatus: "unknown",
+      }),
+    );
+    await fixture.store.commit(value);
+    const completed = fixture.inputs[0]!.batch.events.find(
+      (item) => item.kind === "model_completed",
+    );
+    expect(completed?.data).toMatchObject({
+      type: "model_completed",
+      payload: { requestId: "request-1", usageStatus: "unknown" },
+    });
+    expect((completed!.data as { payload: Record<string, unknown> }).payload).not.toHaveProperty(
+      "usage",
+    );
+  });
+  it("preserves provider-reported usage and normalizes legacy usage status", async () => {
+    const fixture = nativeRecorder(),
+      value = update();
+    const usage = { inputTokens: 11, outputTokens: 7, totalTokens: 18 };
+    value.events.push(event(2, "model_completed", { requestId: "request-1", usage }));
+    await fixture.store.commit(value);
+    const saved = JSON.stringify(fixture.inputs[0]!.batch.events);
+    expect(saved).toContain('"usageStatus":"reported"');
+    expect(saved).toContain('"inputTokens":11');
+    expect(saved).toContain('"totalTokens":18');
+  });
+  it("refuses contradictory accounting before any native commit", async () => {
+    for (const payload of [
+      { usageStatus: "reported" },
+      { usageStatus: "unknown", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
+      { usageStatus: "estimated" },
+    ]) {
+      const fixture = nativeRecorder(),
+        value = update();
+      value.events.push(event(2, "model_completed", { requestId: "request-1", ...payload }));
+      await expect(fixture.store.commit(value)).rejects.toThrow("usage_status");
+      expect(fixture.invoke).not.toHaveBeenCalled();
+    }
+  });
   it("commits only a strict message suffix with stable IDs and exact provider envelopes", async () => {
     const fixture = nativeRecorder(),
       first = requested();
