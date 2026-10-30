@@ -154,9 +154,11 @@ impl SafeSse {
         if contains_secret(&v, &self.key.0, 0) {
             return Err(());
         }
-        if v.get("model")
-            .and_then(Value::as_str)
-            .is_some_and(|s| s != "deepseek-flash")
+        // Projecting a whitelist must not erase a provider failure or turn an
+        // invalid model identity into a successful DeepSeek frame.
+        if v.get("error").is_some_and(|error| !error.is_null())
+            || v.get("model")
+                .is_some_and(|model| model.as_str() != Some("deepseek-flash"))
         {
             return Err(());
         }
@@ -317,6 +319,50 @@ mod tests {
             json!({"model":"deepseek-flash","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}})
         );
         filter.push(end.as_bytes()).unwrap();
+        filter.finish().unwrap();
+    }
+    #[test]
+    fn provider_error_with_choices_never_becomes_successful_output() {
+        for error in [
+            json!({"message":"synthetic provider failure"}),
+            json!("failure"),
+            json!(false),
+            json!(0),
+        ] {
+            let mut filter = SafeSse::new(KEY.as_bytes().to_vec()).unwrap();
+            let event = json!({"model":"deepseek-flash","error":error,"choices":[{"delta":{"content":"must not be delivered"},"finish_reason":"stop"}]});
+            assert!(filter
+                .push(format!("data: {}\n\n", event).as_bytes())
+                .is_err());
+        }
+    }
+    #[test]
+    fn present_nonstring_or_unexpected_model_is_rejected() {
+        for model in [
+            json!(true),
+            json!(1),
+            json!({}),
+            json!([]),
+            Value::Null,
+            json!("other-model"),
+        ] {
+            let mut filter = SafeSse::new(KEY.as_bytes().to_vec()).unwrap();
+            let event = json!({"model":model,"choices":[{"delta":{"content":"must not be delivered"},"finish_reason":"stop"}]});
+            assert!(filter
+                .push(format!("data: {}\n\n", event).as_bytes())
+                .is_err());
+        }
+    }
+    #[test]
+    fn missing_model_with_null_error_preserves_legacy_valid_frames() {
+        let mut filter = SafeSse::new(KEY.as_bytes().to_vec()).unwrap();
+        let event = json!({"error":null,"choices":[{"delta":{"content":"legitimate reply"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}});
+        let output = filter
+            .push(format!("data: {}\n\ndata: [DONE]\n\n", event).as_bytes())
+            .unwrap();
+        assert!(String::from_utf8(output.concat())
+            .unwrap()
+            .contains("legitimate reply"));
         filter.finish().unwrap();
     }
     #[test]
