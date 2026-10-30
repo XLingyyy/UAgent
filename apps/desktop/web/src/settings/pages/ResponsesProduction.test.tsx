@@ -24,7 +24,7 @@ describe("official Responses configuration",()=>{
   await waitFor(()=>expect((screen.getByRole("textbox",{name:"Base URL"}) as HTMLInputElement).value).toBe("https://api.openai.com/v1"));
   expect((screen.getByRole("combobox",{name:"Wire API"}) as HTMLSelectElement).value).toBe("responses");
   expect(screen.queryByRole("textbox",{name:"Model 1 ID"})).toBeNull();
-  expect(screen.getByText(/snapshot IDs recommended/)).toBeTruthy();
+  expect(screen.getByText(/requires an exact model snapshot ID/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button",{name:"Add model"}));
   expect(screen.getByRole("checkbox",{name:"Send reasoning effort 1"})).toBeTruthy();
  });

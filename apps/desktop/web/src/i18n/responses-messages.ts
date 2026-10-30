@@ -1,4 +1,10 @@
 export const responsesMessages = {
+ "responses.modelDocs":["查看官方模型与快照 ID","Official models and snapshot IDs"],
+ "responses.modelMismatch":["响应的模型 ID 与配置不一致。本版要求精确快照 ID；别名正常解析为快照时可能不兼容。请按官方模型页的 Snapshots 修改设置后手动重试。","The response model ID differs from the configuration. This version requires an exact snapshot ID; normal alias resolution may be incompatible. Update the model ID using Snapshots on the official model page, then retry manually."],
+ "responses.httpRequest":["请求或模型配置被拒绝（HTTP {status}）。请核对精确快照 ID、账号模型权限和推理档位后手动重试。","The request or model configuration was rejected (HTTP {status}). Check the exact snapshot ID, account model access and reasoning effort, then retry manually."],
+ "responses.httpAuth":["鉴权失败（HTTP {status}）。请在设置重新输入有效密钥，并检查该模型的访问权限。未自动重试。","Authentication failed (HTTP {status}). Re-enter a valid key in settings and check access to this model. No automatic retry was sent."],
+ "responses.httpLimit":["服务端限制了请求（HTTP {status}）。请检查账号额度或速率限制，稍后手动重试。","The service limited the request (HTTP {status}). Check account quota or rate limits, then retry manually later."],
+ "responses.httpServer":["服务商暂不可用（HTTP {status}），请稍后手动重试。","The service is temporarily unavailable (HTTP {status}). Retry manually later."],
  "responses.freshChatAuthorization":["继续会创建新对话，需重新开启临时会话。按发送发起该次普通请求；不会恢复旧凭证或审批。","Continuing creates a new conversation and needs a fresh memory session. Send starts one ordinary request; old credentials and approvals are not restored."],
  "responses.continueChatHint":["已选择历史对话正文。请开启临时会话，输入新问题后发送。","Archived conversation text selected. Open a memory session, enter a new question and send."],
  "responses.shareArchivedText":["选择已完成的普通对话正文作为新对话上下文","Select completed conversation text as context for the new conversation"],

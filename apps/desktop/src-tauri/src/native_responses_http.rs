@@ -471,7 +471,17 @@ impl Transport for WinHttpResponsesTransport {
             )
         };
         // Failure bodies, including credential echoes, are never forwarded.
-        if queried == 0 || status != 200 {
+        if queried == 0 {
+            return Err(fail(write));
+        }
+        if status != 200 {
+            // Disclose only a numeric rejection status and our own MIME value.
+            // Never read or forward error bodies, headers, auth challenges or redirects.
+            if (400..=599).contains(&status) && !signal.is_cancelled() {
+                if let Some(sink) = &self.head_sink {
+                    sink(status as u16, "application/json").map_err(|_| fail(write))?;
+                }
+            }
             return Err(fail(write));
         }
         // Only this bounded, normalized protocol header is disclosed. Never pass
@@ -758,6 +768,43 @@ mod tests {
         assert!(result.response.is_none());
         assert_eq!(&*seen.lock().unwrap(), b"first");
         server.join().unwrap();
+    }
+    #[test]
+    fn rejection_status_is_numeric_only_and_never_forwards_body_or_headers() {
+        for status in [400, 401, 403, 429, 503] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                receive(&mut stream);
+                write!(stream,"HTTP/1.1 {status} Rejected\r\nContent-Type: text/html\r\nX-Secret: {}\r\nWWW-Authenticate: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",String::from_utf8_lossy(KEY),String::from_utf8_lossy(KEY),KEY.len(),String::from_utf8_lossy(KEY)).unwrap();
+            });
+            let chunks = Arc::new(Mutex::new(Vec::new()));
+            let observed = chunks.clone();
+            let sink: ChunkSink = Arc::new(move |bytes| {
+                observed.lock().unwrap().extend_from_slice(bytes);
+                Ok(())
+            });
+            let heads = Arc::new(Mutex::new(Vec::new()));
+            let observed = heads.clone();
+            let head: HeadSink = Arc::new(move |code, mime| {
+                observed.lock().unwrap().push((code, mime.to_string()));
+                Ok(())
+            });
+            let result = perform(
+                &setup(),
+                &mut WinHttpResponsesTransport::fixture(port, Some(sink)).with_head_sink(head),
+            );
+            assert_eq!(result.status, DispatchStatus::Sent);
+            assert_eq!(result.error, Some(FailureCode::TransportFailed));
+            assert!(result.response.is_none());
+            assert!(chunks.lock().unwrap().is_empty());
+            assert_eq!(
+                &*heads.lock().unwrap(),
+                &[(status as u16, "application/json".to_owned())]
+            );
+            server.join().unwrap();
+        }
     }
     #[test]
     fn redirects_are_not_followed_and_error_body_is_not_streamed() {

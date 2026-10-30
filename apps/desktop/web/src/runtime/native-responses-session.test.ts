@@ -288,6 +288,41 @@ describe("Responses no-tool conversation native binding (synthetic IPC)",()=>{
 });
 
 describe("Responses desktop native IPC bridge (synthetic invoke only)", () => {
+  it.each([[400,"malformed_response"],[401,"auth_missing"],[403,"auth_missing"],[404,"malformed_response"],[422,"malformed_response"],[429,"rate_limited"],[503,"provider_unavailable"]])("classifies a terminal native HTTP %i without forwarding server content or retrying",async(status,code)=>{
+    const h=harness();h.setPoll(cursor=>({cursor,nextCursor:cursor,chunks:[],head:{status,contentType:"application/json"},done:true,error:"native_transport_failed",dispatchStatus:"sent"}));
+    const {profile,adapter}=await h.open();const error=await adapter.complete(request()).catch(e=>e);
+    expect(error).toMatchObject({code,dispatchStatus:"sent",message:"Responses returned HTTP "+status+". No automatic retry was sent."});
+    expect(JSON.stringify(error)).not.toContain(key);
+    expect(h.count("dispatch_native_responses_request")).toBe(1);
+    expect(h.count("save_native_provider_continuation")).toBe(0);
+    expect(profile.getSnapshot().lastDispatchStatus).toBe("sent");
+  });
+  it("waits for a terminal HTTP rejection and keeps possible-send status conservative",async()=>{
+    const h=harness();let polls=0;
+    h.setPoll(cursor=>({cursor,nextCursor:cursor,chunks:[],head:{status:401,contentType:"application/json"},done:++polls>1,error:polls>1?"native_transport_failed":null,dispatchStatus:"mayHaveBeenSent"}));
+    const {adapter}=await h.open();const error=await adapter.complete(request()).catch(e=>e);
+    expect(polls).toBeGreaterThanOrEqual(2);
+    expect(error).toMatchObject({code:"auth_missing",dispatchStatus:"mayHaveBeenSent"});
+    expect(h.count("dispatch_native_responses_request")).toBe(1);
+  });
+  it.each(["native_source_changed","native_request_cancelled"])("does not replace authority failure %s with an HTTP category",async nativeError=>{
+    const h=harness();h.setPoll(cursor=>({cursor,nextCursor:cursor,chunks:[],head:{status:401,contentType:"application/json"},done:true,error:nativeError,dispatchStatus:"mayHaveBeenSent"}));
+    const {adapter}=await h.open();const error=await adapter.complete(request()).catch(e=>e);
+    expect(error).toMatchObject({code:"network_error",dispatchStatus:"mayHaveBeenSent"});
+    expect(error.message).not.toContain("HTTP");expect(h.count("dispatch_native_responses_request")).toBe(1);
+  });
+  it.each([false,true])("keeps strict model checks with a static non-echoing failure, streaming=%s",async stream=>{
+    const h=harness();h.setPoll(cursor=>{
+      const value={...body(),model:"alias-resolved-snapshot-"+key};
+      const raw=stream?"data: "+JSON.stringify({type:"response.created",response:value})+"\n\n":JSON.stringify(value);
+      return {cursor,nextCursor:cursor+1,chunks:[Array.from(new TextEncoder().encode(raw))],head:{status:200,contentType:stream?"text/event-stream":"application/json"},done:true,error:null,dispatchStatus:"sent"};
+    });
+    const {adapter}=await h.open();
+    const error=await (stream?(async()=>{for await(const _chunk of adapter.stream!(request()))void _chunk;})():adapter.complete(request())).catch(e=>e);
+    expect(error).toMatchObject({code:"malformed_response",message:"Responses model differs from the explicitly selected model."});
+    expect(JSON.stringify(error)).not.toContain(key);expect(h.count("save_native_provider_continuation")).toBe(0);
+  });
+
   it("opens only on explicit local input, binds lazily, and never claims connectivity", async () => {
     const h = harness(),
       { profile } = await h.open();

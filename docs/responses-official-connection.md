@@ -5,7 +5,7 @@ The Windows desktop supports ordinary text chat with user-configured models at
 remain configuration-only. The existing DeepSeek route is unchanged.
 
 In Settings > Providers, add the **OpenAI · Responses** template, add an exact
-model ID available to your account (snapshot IDs recommended), choose the default
+model snapshot ID available to your account (required by this version), choose the default
 model and save. Enable reasoning effort only for a model that supports the chosen
 effort. Enter a new session key, authorize the session and open it. Opening does
 not make an API request or verify connectivity. Clicking Send creates one
@@ -25,7 +25,16 @@ Live Responses requests use the saved native model defaults; unset temperature
 and output limits are omitted, using server defaults. Reasoning is sent only when
 declared for the model. No model is automatically selected, substituted or queried.
 The parser currently requires the response model to match the configured exact ID;
-an alias resolved to a different model ID is rejected. Use a snapshot ID in that case.
+an alias normally resolved to a different snapshot ID may be incompatible and is rejected.
+Use the exact snapshot ID listed under Snapshots on the selected model page in the
+[official model catalog](https://developers.openai.com/api/docs/models). This is a
+client compatibility limitation, not evidence of model tampering.
+
+HTTP rejection status is retained as a safe numeric value: parameter/model errors,
+authentication errors and rate/quota errors have distinct bilingual guidance.
+Failure bodies, response headers and credential echoes are never forwarded. There
+is no automatic 401 retry, 429 retry loop or model substitution. HTTP rejection
+never becomes an unsent claim; uncertain sends remain mayHaveBeenSent.
 
 Text history is archived in the existing isolated/native SQLite store, without
 keys, old approvals or reusable send intents. Restoring history is not restoring

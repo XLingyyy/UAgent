@@ -1,5 +1,6 @@
 import {
   createProviderRuntimeSession,
+  createProviderRuntimeError,
   type OutboundConsentGate,
   type OutboundEnvelope,
   type OutboundSendIntent,
@@ -533,6 +534,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
             head: ResponseHead | null = null,
             completed = false,
             streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+          let httpFailure: ReturnType<typeof createProviderRuntimeError> | null = null;
           const abort = () => {
             if (!completed) {
               completed = true;
@@ -567,6 +569,18 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
             )
               throw failure();
             rememberStatus(request!, result.dispatchStatus, terminalUnsentProof(result, cursor));
+            if (result.done && result.error === "native_transport_failed" && result.chunks.length === 0 &&
+                result.dispatchStatus !== "notDispatched" && result.head &&
+                Number.isInteger(result.head.status) && result.head.status >= 400 && result.head.status <= 599 &&
+                result.head.contentType === "application/json" &&
+                (!head || JSON.stringify(head) === JSON.stringify(result.head))) {
+              const status = result.head.status;
+              httpFailure = createProviderRuntimeError(providerId,
+                status === 401 || status === 403 ? "auth_missing" : status === 429 ? "rate_limited" :
+                  status >= 500 ? "provider_unavailable" : "malformed_response",
+                "Responses returned HTTP " + status + ". No automatic retry was sent.");
+              throw httpFailure;
+            }
             if (
               result.error !== null ||
               (result.dispatchStatus === "notDispatched" &&
@@ -589,6 +603,11 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
                 (head && JSON.stringify(head) !== JSON.stringify(candidate))
               )
                 throw failure();
+              // A numeric rejection head is not a terminal proof until the worker closes.
+              if (candidate.status >= 400 && !result.done) {
+                if (result.chunks.length) throw failure();
+                return { chunks: [], done: false };
+              }
               head = { status: candidate.status, contentType: candidate.contentType };
             }
             const chunks = result.chunks.map((chunk) => {
@@ -661,7 +680,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
           } catch {
             completed = true;
             await finish(true);
-            throw failure();
+            throw httpFailure ?? failure();
           }
         };
         const session = createProviderRuntimeSession({
