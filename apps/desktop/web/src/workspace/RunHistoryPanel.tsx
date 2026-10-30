@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import {
-  archivedPartialAssistantText,
+  archivedPartialAssistantReplies,
   canContinueNativeHistory,
   createNativeRunHistory,
   type NativeHistoryPage,
@@ -116,7 +116,7 @@ export function RunHistoryPanel({
       : new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(
           new Date(value),
         );
-  const partialAssistantText = archive ? archivedPartialAssistantText(archive) : "";
+  const partialAssistantReplies = archive ? archivedPartialAssistantReplies(archive) : [];
   const unresolved =
     archive &&
     (archive.descriptor.hasUnresolvedEffects ||
@@ -275,12 +275,12 @@ export function RunHistoryPanel({
                   </article>
                 ))}
               </div>
-              {partialAssistantText && (
-                <article className="ua-run-history__message ua-run-history__message--assistant">
+              {partialAssistantReplies.map(reply => (
+                <article key={reply.requestId} className="ua-run-history__message ua-run-history__message--assistant">
                   <p className="ua-run-history__warning">{t("historyRun.partialStream")}</p>
-                  <ConversationMarkdown text={partialAssistantText} />
+                  <ConversationMarkdown text={reply.text} />
                 </article>
-              )}
+              ))}
               {(archive.snapshot.toolCalls.length > 0 || toolMessages.length > 0) && (
                 <details>
                   <summary>{t("historyRun.toolRecords")}</summary>

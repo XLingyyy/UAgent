@@ -135,6 +135,8 @@ export interface SavedRunContinuation {
   /** Archived discussion text selection; never executable coordinator state. */
   taskMode?:"discussion";
   logicalProjectId?:string|null;
+  /** Data-origin binding for an explicitly selected discussion archive. */
+  providerId?:string; modelId?:string;
   parentRunId:string; projectId:string; conversationId:string;
   includeCompletedContext:boolean; completed:boolean; hasUnresolvedEffects:boolean;
   messages:import("./provider-runtime.js").ProviderRuntimeMessage[];

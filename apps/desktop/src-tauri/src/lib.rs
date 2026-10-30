@@ -25,6 +25,8 @@ pub(crate) mod native_responses_fixture_setup;
 #[cfg(windows)]
 pub(crate) mod native_responses_chat_archive;
 #[cfg(windows)]
+pub(crate) mod native_discussion_archive_commands;
+#[cfg(windows)]
 pub(crate) mod native_responses_chat_fixture;
 #[cfg(windows)]
 pub(crate) mod trusted_root_handle;
@@ -1651,13 +1653,15 @@ pub fn run() {
         .setup(|app| app_profile::setup_isolated_windows(app))
         .on_page_load(|webview,_| {
             #[cfg(windows)]
-            native_responses_commands::register_window(webview.window().label());
+            { native_responses_commands::register_window(webview.window().label());
+              native_discussion_archive_commands::register_window(webview.window().label()); }
         })
         .on_window_event(|window,event| {
             #[cfg(windows)]
             if matches!(event,tauri::WindowEvent::CloseRequested{..}|tauri::WindowEvent::Destroyed) {
                 if matches!(event,tauri::WindowEvent::Destroyed) {native_responses_commands::destroy_window(window.label());}
                 else {native_responses_commands::revoke_window(window.label());}
+                native_discussion_archive_commands::close_window(window.label());
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -1699,6 +1703,12 @@ pub fn run() {
             run_store_commands::commit_native_run_store,
             #[cfg(windows)]
             run_store_commands::snapshot_native_run_store,
+            #[cfg(windows)]
+            native_discussion_archive_commands::open_native_discussion_archive,
+            #[cfg(windows)]
+            native_discussion_archive_commands::mutate_native_discussion_archive,
+            #[cfg(windows)]
+            native_discussion_archive_commands::close_native_discussion_archive,
             #[cfg(windows)]
             native_responses_commands::open_native_responses_profile,
             #[cfg(windows)]

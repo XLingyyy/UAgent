@@ -15,13 +15,13 @@ import {createSupportedProvider} from "../provider/runtime-availability";
 
 const managers:ReturnType<typeof createSafeProviderSession>[]=[];
 afterEach(()=>{cleanup();managers.splice(0).forEach(m=>m.dispose());safeProviderSession.close("cleared");vi.unstubAllGlobals();vi.restoreAllMocks();});
-async function mount(ordinary=false){
+async function mount(ordinary=false,savedRun?:TaskDraft["savedRun"]){
  vi.stubGlobal("fetch",vi.fn(()=>{throw Error("REAL NETWORK FORBIDDEN");}));
  const streams:ReadableStreamDefaultController<Uint8Array>[]=[],sent:string[]=[];
  const fetcher=vi.fn(async(_url:unknown,init?:RequestInit)=>{sent.push(String(init?.body));return new Response(new ReadableStream<Uint8Array>({start(c){streams.push(c);}}),{headers:{"Content-Type":"text/event-stream"}});});
  const gate=createOutboundConsentGate(),manager=createSafeProviderSession({mode:"live",liveAuthorized:true,fetcher,gate,attachments:createAttachmentStore()});managers.push(manager);
  const runtime=createDesktopRuntimeAdapter({nativeInvoke:null,providerAdapter:manager.adapter,providerEnabled:true,...(ordinary?{captureOrdinarySend:(draft:TaskDraft,current:()=>boolean)=>{manager.updateContext(draft.projectId,draft.input,JSON.stringify([draft.providerId,draft.modelId]),draft.conversationId);return manager.captureOrdinarySend(draft,current);}}:{})});const locale=createLocaleStore({initialLocale:"en",storage:null,eventTarget:null});
- const view=render(<I18nProvider store={locale}><UIProvider runtimeClient={runtime} initialState={{provider:{providers:[createSupportedProvider()]},composer:{selectedModelId:JSON.stringify(["deepseek",DEEPSEEK_MODEL])}}}><div className="ua-app"><ConversationViewport/><ComposerDock/></div><OutboundRequestReview gate={gate}/></UIProvider></I18nProvider>);
+ const view=render(<I18nProvider store={locale}><UIProvider runtimeClient={runtime} initialState={{provider:{providers:[createSupportedProvider()]},composer:{selectedModelId:JSON.stringify(["deepseek",DEEPSEEK_MODEL]),...(savedRun?{savedRun}:{})}}}><div className="ua-app"><ConversationViewport/><ComposerDock/></div><OutboundRequestReview gate={gate}/></UIProvider></I18nProvider>);
  act(()=>{safeProviderSession.enable();safeProviderSession.openAccount("synthetic-ui-test-only");manager.openAccount("synthetic-transport-key");});
  await act(async()=>{await Promise.resolve();});
  const input=()=>screen.getByRole("textbox",{name:localizeText(locale.getSnapshot(),"Composer input")}) as HTMLTextAreaElement;
@@ -33,6 +33,29 @@ async function mount(ordinary=false){
  return{...view,manager,runtime,gate,fetcher,sent,streams,input,send,approve,delta,done,reject,locale};
 }
 describe("multi-turn conversation and incremental text without real API",()=>{
+ it.each(["provider","model"])("refuses restored discussion text with a different %s origin before any send",async(kind)=>{
+  const savedRun:NonNullable<TaskDraft["savedRun"]>={taskMode:"discussion",logicalProjectId:null,
+   parentRunId:"archive",projectId:"chat:local",conversationId:"restored",includeCompletedContext:true,completed:true,
+   hasUnresolvedEffects:false,providerId:kind==="provider"?"foreign-provider":"deepseek",
+   modelId:kind==="model"?"foreign-model":DEEPSEEK_MODEL,messages:[{role:"user",content:"Old question"},{role:"assistant",content:"Old answer"}]};
+  const h=await mount(true,savedRun);fireEvent.change(h.input(),{target:{value:"New question"}});
+  fireEvent.click(screen.getByRole("button",{name:"Send task"}));
+  await waitFor(()=>expect(screen.getByRole("alert").textContent).toContain("belongs to another provider or model"));
+  expect(h.fetcher).not.toHaveBeenCalled();expect(h.gate.getPending()).toBeNull();expect(h.input().value).toBe("New question");
+ });
+
+
+ it("restores explicitly selected complete text under the same model using only a fresh send intent",async()=>{
+  const answer="Archived full text. ".repeat(180),savedRun:NonNullable<TaskDraft["savedRun"]>={taskMode:"discussion",logicalProjectId:null,
+   parentRunId:"old-data-only-record",projectId:"chat:local",conversationId:"fresh-conversation",includeCompletedContext:true,completed:true,
+   hasUnresolvedEffects:false,providerId:"deepseek",modelId:DEEPSEEK_MODEL,messages:[{role:"user",content:"Archived question"},{role:"assistant",content:answer}]};
+  const h=await mount(true,savedRun);fireEvent.change(h.input(),{target:{value:"Continue with selected text."}});
+  fireEvent.click(screen.getByRole("button",{name:"Send task"}));await waitFor(()=>expect(h.sent).toHaveLength(1));
+  const body=JSON.parse(h.sent[0]);expect(body.messages[2]).toEqual({role:"user",content:"Archived question"});expect(body.messages[3]).toEqual({role:"assistant",content:answer});
+  expect(h.sent[0]).not.toContain("old-data-only-record");expect(h.gate.getPending()).toBeNull();
+  await h.delta("Fresh complete answer.");await h.done();
+ });
+
  it("ordinary send starts once without a dialog and details remain independent while streaming, switching language and stopping",async()=>{
   const h=await mount(true);
   fireEvent.change(h.input(),{target:{value:"Remember ordinary blue."}});

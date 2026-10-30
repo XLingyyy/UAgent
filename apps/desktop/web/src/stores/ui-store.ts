@@ -1413,6 +1413,7 @@ function createUIStateBundle(
         const snapshot=runtimeStore.getState();
         const previous=conversationTasks(snapshot.tasksById,threadStore.getState().activeThreadId,draft.projectId);
         const archived=draft.savedRun?.taskMode==="discussion"?draft.savedRun:null;
+        if (archived && ((archived.providerId !== undefined && archived.providerId !== draft.providerId) || (archived.modelId !== undefined && archived.modelId !== draft.modelId))) throw Error("discussion_archive_model_changed");
         const imported=archived?.includeCompletedContext?archived.messages.filter((m):m is {role:"user"|"assistant";content:string}=>["user","assistant"].includes(m.role)&&!m.toolCalls?.length&&!m.toolCallId).map(m=>({role:m.role,content:m.content})):[];
         const history=[...imported,...completedConversationHistory(previous.filter(task=>task.draft.providerId===draft.providerId&&task.draft.modelId===draft.modelId),snapshot.eventsByTaskId)];
         const conversationId=draft.savedRun?.conversationId??(previous.length?conversationKey(previous[0]):crypto.randomUUID());
@@ -1456,7 +1457,7 @@ function createUIStateBundle(
         return record.id;
       } catch(error) {
         const code=error instanceof Error?error.message:"";
-        if (isCurrent()) composerStore.setState((previous) => ({ ...previous, submitError: code==="scope_review_cancelled"?"run.scopeCancelled":code==="scope_project_required"?"run.scopeNeedsProject":code==="scope_review_stale"?"run.scopeExpired":"Submission failed. Your input was kept; you can retry." }));
+        if (isCurrent()) composerStore.setState((previous) => ({ ...previous, submitError: code==="discussion_archive_model_changed"?"Saved text belongs to another provider or model. Select its original model or start a new conversation.":code==="scope_review_cancelled"?"run.scopeCancelled":code==="scope_project_required"?"run.scopeNeedsProject":code==="scope_review_stale"?"run.scopeExpired":"Submission failed. Your input was kept; you can retry." }));
         throw new Error("task_submission_failed");
       } finally {
         submissionPending = false;

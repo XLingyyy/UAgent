@@ -42,6 +42,7 @@ export { replayAgentRunTrace, type AgentRunReplaySummary } from "./agent-run-rep
 export { buildPromptEnvelope, type BuildPromptEnvelopeInput, type PromptEnvelope } from "./prompt/prompt-builder.js";
 export { buildContextPack, buildToolPolicyPack, type PromptProviderMetadata } from "./prompt/context-pack.js";
 export * from "./provider/deepseek-session.js";
+export type * from "./provider/ordinary-chat-archive.js";
 export * from "./provider/conversation-history.js";
 export type { ProviderAdapter, ProviderCallOptions } from "./provider/provider-adapter.js";
 export {

@@ -24,7 +24,7 @@ export function NativeHistoryAccess(){
    await projects.setActiveProject(logical);
    await composer.setComposerModel(JSON.stringify([state.providerId,state.modelId]));
    const messages=share?completedArchivedDiscussionText(archive):[];
-   composer.setComposerInput("");composer.setSavedRun({taskMode:"discussion",logicalProjectId:logical,parentRunId:archive.descriptor.runId,projectId:archive.descriptor.projectId,conversationId:crypto.randomUUID(),includeCompletedContext:share,completed:true,hasUnresolvedEffects:false,messages});
+   composer.setComposerInput("");composer.setSavedRun({taskMode:"discussion",logicalProjectId:logical,providerId:state.providerId,modelId:state.modelId,parentRunId:archive.descriptor.runId,projectId:archive.descriptor.projectId,conversationId:crypto.randomUUID(),includeCompletedContext:share,completed:true,hasUnresolvedEffects:false,messages});
    composer.setComposerTaskMode("discussion");setOpen(false);settings.openSettings("provider");return;
   }
   const id=await projects.addProjectRoot(archive.descriptor.projectRoot);if(!id)throw Error("project_unavailable");

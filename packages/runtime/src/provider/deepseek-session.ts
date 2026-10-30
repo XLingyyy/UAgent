@@ -1,3 +1,4 @@
+import type { OrdinaryChatArchive, OrdinaryChatRequestArchive } from "./ordinary-chat-archive.js";
 import { chatToolDefinitions, chatToolMessages } from "./chat-tool-messages.js";
 import { ToolCallAccumulator } from "./tool-call-stream.js";
 import type { OutboundConsentGate, OutboundEnvelope } from "./outbound-consent.js";
@@ -47,6 +48,8 @@ export interface DeepSeekSessionOptions {
   timeoutMs?: number;
   outboundGate?: OutboundConsentGate;
   getProjectContext?: () => { projectId: string | null; epoch: number; revision: string };
+  /** Native text archive only; receives prepared credential-redacted messages, never a key. */
+  ordinaryArchive?: OrdinaryChatArchive;
 }
 
 const fail = (code: "auth_missing" | "provider_unavailable" | "malformed_response" | "cancelled" | "timeout" | "network_error" | "rate_limited", message: string) =>
@@ -122,6 +125,16 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     const key = credential;
+    let archive: OrdinaryChatRequestArchive | undefined, archivedOutput = "", archiveCompleted = false, archiveCancelled = true;
+    const saveHistory = async <T,>(operation: () => Promise<T>): Promise<T> => {
+      try { return await operation(); }
+      catch { throw fail("provider_unavailable", "Conversation history could not be saved. No automatic retry was sent."); }
+    };
+    const persistDelta = async (text: string) => {
+      if (!text) return;
+      if (archive) { await saveHistory(() => archive!.append(text)); archivedOutput += text; }
+      if (controller.signal.aborted) throw fail("cancelled", "Provider request cancelled.");
+    };
     let releaseAbort: (() => void) | undefined;
     const interrupted = new Promise<never>((_, reject) => {
       releaseAbort = () => reject(fail(timedOut ? "timeout" : "cancelled", timedOut ? "Provider timed out." : "Provider request cancelled."));
@@ -137,6 +150,16 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
       const grant=options.outboundGate ? await Promise.race([options.outboundGate.review(envelope,controller.signal,call.outboundSendIntent).catch(()=>{throw fail("cancelled", "Outbound confirmation was withdrawn.");}),interrupted]) : null;
       if(call.beforeSend)await Promise.race([call.beforeSend(),interrupted]);
       const reservationId=await Promise.race([reserve(prepared.inputBound, prepared.body.max_tokens), interrupted]);
+      if (options.ordinaryArchive && !request.metadata?.purpose && !prepared.body.tools &&
+          !request.messages.some(message => message.role === "tool" || message.toolCalls?.length || message.toolCallId)) {
+        const conversationId = request.metadata?.conversationId;
+        if (typeof conversationId !== "string" || !conversationId) throw fail("provider_unavailable", "Conversation archive identity is unavailable.");
+        archive = await saveHistory(() => options.ordinaryArchive!.open({
+          requestId: request.id, conversationId, projectId: scope.projectId,
+          providerId: "deepseek", modelId: DEEPSEEK_MODEL,
+          messages: prepared.body.messages.map(message => ({ role: message.role, content: message.content })),
+        }));
+      }
       const current=options.getProjectContext?.()??scope;
       if (JSON.stringify(current)!==JSON.stringify(scope) || (grant && !grant.consume({...envelope,...current}))) throw fail("cancelled", "Outbound confirmation no longer matches the current context.");
       if (consent && consent.expiresAt<=Date.now()) throw fail("provider_unavailable", "Price consent expired before sending.");
@@ -211,6 +234,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
           const safeLength = held.length-suffixLength;
           if (safeLength) {
             const safe = held.slice(0, safeLength); held = held.slice(safeLength);
+            await persistDelta(safe);
             yield { id: `${request.id}-${index}`, requestId: request.id, providerId: "deepseek", modelId: DEEPSEEK_MODEL, index, delta: safe, done: false };
           }
           if (event.usage) {
@@ -228,8 +252,13 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
       for (const [toolIndex,tail] of toolHeld) if(tail) yield {id:`${request.id}-tool-tail-${toolIndex}`,requestId:request.id,providerId:"deepseek",modelId:DEEPSEEK_MODEL,index:++index,delta:"",done:false,toolCallDelta:{index:toolIndex,argumentsDelta:tail}};
       if (validation) await validation.ledger.recordUsage(usage, typeof reservationId === "string" ? reservationId : undefined);
       if (controller.signal.aborted) throw fail("cancelled", "Provider request cancelled.");
-      yield { id: `${request.id}-done`, requestId: request.id, providerId: "deepseek", modelId: DEEPSEEK_MODEL, index: index + 1, delta: held.split(key).join("[REDACTED]"), done: true, usage, finishReason, ...(completedCalls.length?{toolCalls:completedCalls}:{}) };
+      const tail = held.split(key).join("[REDACTED]");
+      await persistDelta(tail);
+      if (archive) { await saveHistory(() => archive!.complete(archivedOutput, usage!)); archiveCompleted = true; }
+      if (controller.signal.aborted) throw fail("cancelled", "Provider request cancelled.");
+      yield { id: `${request.id}-done`, requestId: request.id, providerId: "deepseek", modelId: DEEPSEEK_MODEL, index: index + 1, delta: tail, done: true, usage, finishReason, ...(completedCalls.length?{toolCalls:completedCalls}:{}) };
     } catch (error) {
+      archiveCancelled = (controller.signal.aborted && !timedOut) || (error !== null && typeof error === "object" && "code" in error && error.code === "cancelled");
       if (controller.signal.aborted) throw fail(timedOut ? "timeout" : "cancelled", timedOut ? "Provider timed out." : "Provider request cancelled.");
       // No raw transport errors, HTTP bodies, headers or request values enter logs.
       if (error && typeof error === "object" && "name" in error && error.name === "ProviderRuntimeError") {
@@ -238,12 +267,14 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
       }
       throw fail("network_error", "Provider request failed. No automatic retry.");
     } finally {
+      if (archive && (!archiveCompleted || controller.signal.aborted)) { try { await archive.fail(archiveCancelled); } catch { /* Pending archive remains incomplete; never write false success. */ } }
       clearTimeout(timer);
       call.signal?.removeEventListener("abort", abort);
       if (releaseAbort) controller.signal.removeEventListener("abort", releaseAbort);
       controller.abort();
       void reader?.cancel().catch(() => undefined);
       pending.delete(controller); busy = false;
+      if (revoked) { try { await options.ordinaryArchive?.close(); } catch { /* Native history stays incomplete on storage failure. */ } }
     }
   }
   const adapter: ProviderAdapter = {
@@ -263,7 +294,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
       if (busy || revoked || value.trim().length < 8 || value.length > 512 || /[\r\n]/.test(value)) throw fail("auth_missing", "Invalid or inactive session credential input.");
       credential = value.trim();
     },
-    clearCredential() { credential = ""; revoked = true; for (const controller of pending) controller.abort(); },
+    clearCredential() { credential = ""; revoked = true; for (const controller of pending) controller.abort(); if (!pending.size) void options.ordinaryArchive?.close().catch(() => undefined); },
     hasCredential: () => Boolean(credential),
     preview(request: ProviderRuntimeRequest) { return { endpoint: DEEPSEEK_ENDPOINT, ...prepare(request).body, automaticRetries: 0 }; },
   };

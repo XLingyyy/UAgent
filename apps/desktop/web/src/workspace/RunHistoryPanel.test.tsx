@@ -138,6 +138,25 @@ describe("archived run history panel", () => {
       expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false),
     );
   });
+
+  it("still displays an earlier partial reply after a later successful retry without duplicating completed deltas",async()=>{
+    const saved=fixture();
+    const event=(kind:string,sequence:number,payload:unknown)=>({
+      id:"run:"+sequence,kind,createdAt:123,data:{eventId:"run:"+sequence,runId:"run",sequence,createdAt:123,type:kind,payload}
+    });
+    saved.raw.events=[
+      event("model_started",1,{requestId:"failed"}),
+      event("model_text_delta",2,{requestId:"failed",text:"Earlier failed partial stays visible"}),
+      event("model_started",3,{requestId:"success"}),
+      event("model_text_delta",4,{requestId:"success",text:"Do not duplicate this completed delta"}),
+      event("model_completed",5,{requestId:"success"})
+    ];
+    view(saved);fireEvent.click(await screen.findByRole("button",{name:/Saved investigation/}));
+    await screen.findByText("Earlier failed partial stays visible");
+    expect(screen.queryByText("Do not duplicate this completed delta")).toBeNull();
+    expect(screen.getByText(/It is not a completed answer/)).toBeTruthy();
+  });
+
   it("labels a saved interrupted assistant stream as partial, outside completed messages", async () => {
     const saved = fixture();
     saved.raw.events = [

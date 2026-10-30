@@ -308,6 +308,15 @@ function parseArchive(value: unknown, projectId: string, runId: string): NativeR
       (complete && coordinatorState.messageCount !== messages.length))
   )
     return invalid();
+  if (coordinatorState?.taskMode === "discussion") {
+    const logical = coordinatorState.logicalProjectId;
+    if ((logical !== null && typeof logical !== "string") ||
+        coordinatorState.archiveOnly !== true ||
+        !["uagent.responses-chat-archive.v1","uagent.deepseek-chat-archive.v1"].includes(String(coordinatorState.archiveFormat)) ||
+        projectId !== (logical === null ? "chat:local" : "chat:project:" + logical) ||
+        saved.projectRoot !== (logical === null ? "conversation://local" : "conversation://chat")) return invalid();
+    id(coordinatorState.providerId); id(coordinatorState.modelId);
+  }
   const snapshot: NativeHistorySnapshot = {
     run: {
       projectId,
@@ -438,14 +447,20 @@ export function canContinueNativeHistory(archive: NativeRunArchive): boolean {
 export function completedArchivedDiscussionText(archive:NativeRunArchive):Array<{role:"user"|"assistant";content:string}>{
   if(archive.coordinatorState?.taskMode!=="discussion")return [];
   const pending=new Map<string,string>(),selected=new Set<string>(),history:Array<{role:"user"|"assistant";content:string}>=[];
+  const finalStatus=new Map<string,RunJsonValue>();
+  for(const event of archive.events){
+    const data=event.data as Record<string,RunJsonValue>;
+    if(event.kind==="coordinator_state_v1"&&typeof data.lastRequestId==="string"&&typeof data.lastRequestStatus==="string")
+      finalStatus.set(data.lastRequestId,data.lastRequestStatus);
+  }
   for(const event of archive.events){
     const data=event.data as Record<string,RunJsonValue>,payload=data.payload as Record<string,RunJsonValue>|undefined;
-    if(event.kind==="model_started"&&payload&&typeof payload.requestId==="string"&&Array.isArray(payload.messages)){
+    if(event.kind==="model_started"&&payload&&payload.contextEligible!==false&&typeof payload.requestId==="string"&&Array.isArray(payload.messages)){
       const tail:string[]=[];
       for(let i=payload.messages.length-1;i>=0;i--){const m=payload.messages[i] as Record<string,RunJsonValue>;if(!m||m.role!=="user"||typeof m.content!=="string")break;tail.unshift(m.content);}
-      if(tail.length)pending.set(payload.requestId,tail.join("\n\n"));
+      if(tail.length===1)pending.set(payload.requestId,tail[0]);
     }
-    if(event.kind==="coordinator_state_v1"&&data.taskMode==="discussion"&&data.lastRequestStatus==="completed"&&typeof data.lastRequestId==="string"&&!selected.has(data.lastRequestId)&&typeof data.messageCount==="number"){
+    if(event.kind==="coordinator_state_v1"&&data.taskMode==="discussion"&&data.lastRequestStatus==="completed"&&typeof data.lastRequestId==="string"&&finalStatus.get(data.lastRequestId)==="completed"&&!selected.has(data.lastRequestId)&&typeof data.messageCount==="number"){
       const answer=archive.providerMessages[data.messageCount-1],question=pending.get(data.lastRequestId);
       if(question!==undefined&&answer?.role==="assistant"&&!answer.toolCalls?.length&&!answer.toolCallId){
         history.push({role:"user",content:question},{role:"assistant",content:answer.content});selected.add(data.lastRequestId);
@@ -453,6 +468,30 @@ export function completedArchivedDiscussionText(archive:NativeRunArchive):Array<
     }
   }
   return history;
+}
+
+
+/** All unfinished request bodies remain viewable after later successful retries.
+ * This selector is presentation only and never supplies restored context. */
+export function archivedPartialAssistantReplies(archive: NativeRunArchive): Array<{requestId:string;text:string}> {
+  const pending = new Map<string,string>();
+  let active: string | undefined;
+  for (const event of archive.events) {
+    const data = event.data as Record<string,RunJsonValue>;
+    const payload = data.payload as Record<string,RunJsonValue> | undefined;
+    if (event.kind === "model_started") {
+      active = typeof payload?.requestId === "string" ? payload.requestId : event.id;
+      pending.set(active,"");
+    } else if (event.kind === "model_text_delta" && typeof payload?.text === "string") {
+      const requestId = typeof payload.requestId === "string" ? payload.requestId : active;
+      if (requestId && pending.has(requestId)) pending.set(requestId,pending.get(requestId)! + payload.text);
+    } else if (event.kind === "model_completed") {
+      const requestId = typeof payload?.requestId === "string" ? payload.requestId : active;
+      if (requestId) pending.delete(requestId);
+      if (requestId === active) active = undefined;
+    }
+  }
+  return [...pending].filter(([,text])=>Boolean(text)).map(([requestId,text])=>({requestId,text}));
 }
 
 /** Interrupted stream text is evidence for display only, never a completed history turn. */

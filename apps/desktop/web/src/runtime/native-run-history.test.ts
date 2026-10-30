@@ -76,17 +76,54 @@ function archiveFixture() {
   };
 }
 it("selects only completed archived discussion turns, preserving the current user block and excluding failed input",()=>{
- const archive={coordinatorState:{taskMode:"discussion"},providerMessages:[{role:"user",content:"failed"},{role:"user",content:"question"},{role:"user",content:"selected reference"},{role:"assistant",content:"answer"},{role:"user",content:"cancelled"}],events:[
+ const archive={coordinatorState:{taskMode:"discussion"},providerMessages:[{role:"user",content:"failed"},{role:"user",content:"question"},{role:"assistant",content:"answer"},{role:"user",content:"cancelled"}],events:[
  {kind:"model_started",data:{payload:{requestId:"failed",messages:[{role:"user",content:"failed"}]}}},
  {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"failed",lastRequestStatus:"failed",messageCount:1}},
- {kind:"model_started",data:{payload:{requestId:"done",messages:[{role:"system",content:"data"},{role:"user",content:"question"},{role:"user",content:"selected reference"}]}}},
- {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"done",lastRequestStatus:"completed",messageCount:4}},
- {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"done",lastRequestStatus:"completed",messageCount:4}},
+ {kind:"model_started",data:{payload:{requestId:"done",messages:[{role:"system",content:"data"},{role:"user",content:"question"}]}}},
+ {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"done",lastRequestStatus:"completed",messageCount:3}},
+ {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"done",lastRequestStatus:"completed",messageCount:3}},
  {kind:"model_started",data:{payload:{requestId:"cancelled",messages:[{role:"user",content:"cancelled"}]}}},
  ]} as unknown as NativeRunArchive;
- expect(completedArchivedDiscussionText(archive)).toEqual([{role:"user",content:"question\n\nselected reference"},{role:"assistant",content:"answer"}]);
+ expect(completedArchivedDiscussionText(archive)).toEqual([{role:"user",content:"question"},{role:"assistant",content:"answer"}]);
 });
+
+it.each(["cancelled","failed"])("does not restore a completed provider body whose delivery was later %s",status=>{
+ const archive={coordinatorState:{taskMode:"discussion"},providerMessages:[{role:"user",content:"Question"},{role:"assistant",content:"Received full provider reply"}],events:[
+ {kind:"model_started",data:{payload:{requestId:"one",contextEligible:true,messages:[{role:"user",content:"Question"}]}}},
+ {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"one",lastRequestStatus:"completed",messageCount:2}},
+ {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"one",lastRequestStatus:status,messageCount:2}}
+ ]} as unknown as NativeRunArchive;
+ expect(completedArchivedDiscussionText(archive)).toEqual([]);
+});
+it("retains attachment-bearing archive bodies without selecting them for ordinary restored context",()=>{
+ const archive={coordinatorState:{taskMode:"discussion"},providerMessages:[{role:"user",content:"Typed question"},{role:"user",content:"Selected private reference"},{role:"assistant",content:"Answer"}],events:[
+ {kind:"model_started",data:{payload:{requestId:"one",contextEligible:false,messages:[{role:"user",content:"Typed question"},{role:"user",content:"Selected private reference"}]}}},
+ {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"one",lastRequestStatus:"completed",messageCount:3}}
+ ]} as unknown as NativeRunArchive;
+ expect(completedArchivedDiscussionText(archive)).toEqual([]);expect(archive.providerMessages).toHaveLength(3);
+ const payload=(archive.events[0].data as {payload:Record<string,unknown>}).payload;
+ delete payload.contextEligible;expect(completedArchivedDiscussionText(archive)).toEqual([]);
+ payload.contextEligible=true;expect(completedArchivedDiscussionText(archive)).toEqual([]);
+});
+
 describe("native run history read-only port", () => {
+  it("binds discussion text to its recorded logical project namespace and known archive format",async()=>{
+    const f=archiveFixture(),project="chat:project:A";
+    const saved={...f,descriptor:{...f.descriptor,projectId:project,projectRoot:"conversation://chat"},
+      snapshot:{...f.snapshot,run:{...f.snapshot.run,projectId:project}},
+      coordinatorState:{format:"uagent.coordinator-state.v1",projectId:project,runId:"run",conversationId:"chat",
+        messageCount:3,requiresFreshAuthorization:true,taskMode:"discussion",archiveOnly:true,
+        archiveFormat:"uagent.deepseek-chat-archive.v1",logicalProjectId:"A",providerId:"deepseek",modelId:"deepseek-flash"}};
+    const port=createNativeRunHistory(async()=>saved);
+    expect((await port.snapshot(project,"run")).coordinatorState?.logicalProjectId).toBe("A");
+    saved.coordinatorState.logicalProjectId="B";
+    await expect(port.snapshot(project,"run")).rejects.toThrow("invalid_record");
+    saved.coordinatorState.logicalProjectId="A";saved.coordinatorState.archiveFormat="unknown-future";
+    await expect(port.snapshot(project,"run")).rejects.toThrow("invalid_record");
+    saved.coordinatorState.archiveFormat="uagent.deepseek-chat-archive.v1";saved.coordinatorState.providerId="";
+    await expect(port.snapshot(project,"run")).rejects.toThrow("invalid_record");
+  });
+
   it("reads bounded descriptors and exact archived message bodies without a project authority command", async () => {
     const saved = archiveFixture(),
       invoke = vi.fn(async (command: string) =>

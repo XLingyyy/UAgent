@@ -112,6 +112,9 @@ impl UsageStatus {
 struct Pending {
     id: String,
     messages: Vec<Value>,
+    partial_text: String,
+    next_delta: u32,
+    last_delta: Option<String>,
 }
 #[derive(Clone)]
 struct Completed {
@@ -147,6 +150,7 @@ pub(crate) struct ChatArchive {
     run_id: String,
     provider_id: String,
     model_id: String,
+    archive_format: &'static str,
     logical_project_id: Option<String>,
     revision: i64,
     message_count: usize,
@@ -363,6 +367,7 @@ impl ChatArchive {
             run_id: native_run_id.into(),
             provider_id: provider_id.into(),
             model_id: model_id.into(),
+            archive_format: ARCHIVE_FORMAT,
             logical_project_id: logical_project_id.map(str::to_owned),
             revision: 0,
             message_count: 0,
@@ -378,6 +383,26 @@ impl ChatArchive {
             last_completion: None,
             closed: false,
         })
+    }
+
+    pub(crate) fn start_deepseek(
+        root: &Path,
+        namespace: &str,
+        conversation: &str,
+        run: &str,
+        project: Option<&str>,
+    ) -> Result<Self> {
+        let mut archive = Self::start_with_logical_project(
+            root,
+            namespace,
+            conversation,
+            run,
+            "deepseek",
+            "deepseek-flash",
+            project,
+        )?;
+        archive.archive_format = "uagent.deepseek-chat-archive.v1";
+        Ok(archive)
     }
 
     fn ack(&self) -> ArchiveAck {
@@ -471,7 +496,7 @@ impl ChatArchive {
             vec![
                 (
                     "model_started",
-                    json!({"requestId":logical_request_id,"messages":exact_messages}),
+                    json!({"requestId":logical_request_id,"messages":exact_messages,"contextEligible":current_input.len()==1}),
                 ),
                 (
                     "status_changed",
@@ -488,10 +513,65 @@ impl ChatArchive {
         self.pending = Some(Pending {
             id: logical_request_id.into(),
             messages: exact_messages.to_vec(),
+            partial_text: String::new(),
+            next_delta: 0,
+            last_delta: None,
         });
         self.last_request_id = Some(logical_request_id.into());
         self.last_request_status = Some(RequestStatus::Pending);
         self.last_completion = None;
+        Ok(ack)
+    }
+
+    /// Persist an observed, already-redacted delta before exposing it to the UI.
+    /// It is display evidence only, never a completed assistant/context message.
+    pub(crate) fn append_text_delta(
+        &mut self,
+        request_id: &str,
+        index: u32,
+        text: &str,
+    ) -> Result<ArchiveAck> {
+        self.open_for_write()?;
+        let pending = self
+            .pending
+            .as_ref()
+            .ok_or_else(|| StoreError::new("conflict"))?;
+        if pending.id != request_id {
+            return Err(StoreError::new("conflict"));
+        }
+        if index.checked_add(1) == Some(pending.next_delta)
+            && pending.last_delta.as_deref() == Some(text)
+        {
+            return Ok(self.ack());
+        }
+        if index != pending.next_delta
+            || index >= 4096
+            || text.is_empty()
+            || text.len() > 65536
+            || pending.partial_text.len().saturating_add(text.len()) > MAX_MESSAGE_BYTES
+        {
+            return Err(StoreError::new("invalid"));
+        }
+        let timestamp = now()?.max(self.updated_at);
+        let ack = self.commit(
+            Vec::new(),
+            vec![(
+                "model_text_delta",
+                json!({"requestId":request_id,"index":index,"text":text}),
+            )],
+            RunStatus::Running,
+            Some(request_id),
+            Some(RequestStatus::Pending),
+            self.requests.len(),
+            timestamp,
+        )?;
+        let pending = self
+            .pending
+            .as_mut()
+            .ok_or_else(|| StoreError::new("conflict"))?;
+        pending.partial_text.push_str(text);
+        pending.last_delta = Some(text.into());
+        pending.next_delta += 1;
         Ok(ack)
     }
 
@@ -520,6 +600,9 @@ impl ChatArchive {
             .as_ref()
             .ok_or_else(|| StoreError::new("conflict"))?;
         if pending.id != logical_request_id {
+            return Err(StoreError::new("conflict"));
+        }
+        if pending.next_delta > 0 && pending.partial_text != assistant {
             return Err(StoreError::new("conflict"));
         }
         if assistant.len() > MAX_MESSAGE_BYTES {
@@ -600,6 +683,45 @@ impl ChatArchive {
         Ok(ack)
     }
 
+    /// Full provider output can be durable before UI delivery finishes. A Stop or
+    /// local delivery failure in that interval preserves bytes but retracts this
+    /// request's eligibility for completed-context selection.
+    pub(crate) fn fail_delivery(
+        &mut self,
+        request_id: &str,
+        cancelled: bool,
+    ) -> Result<ArchiveAck> {
+        if self.archive_format != "uagent.deepseek-chat-archive.v1"
+            || self.pending.is_some()
+            || self.last_request_id.as_deref() != Some(request_id)
+            || self.last_completion.is_none()
+        {
+            return self.fail_request(request_id, cancelled);
+        }
+        self.open_for_write()?;
+        let status = if cancelled {
+            RequestStatus::Cancelled
+        } else {
+            RequestStatus::Failed
+        };
+        let timestamp = now()?.max(self.updated_at);
+        let ack = self.commit(
+            Vec::new(),
+            vec![(
+                "status_changed",
+                json!({"status":"paused","reason":"discussion response delivery not completed"}),
+            )],
+            RunStatus::Paused,
+            Some(request_id),
+            Some(status),
+            self.requests.len(),
+            timestamp,
+        )?;
+        self.last_request_status = Some(status);
+        self.last_completion = None;
+        Ok(ack)
+    }
+
     /// Finalizes a conversation when the broker closes/revokes its native binding.
     /// A still-pending request is cancelled, never reported as completed.
     pub(crate) fn finish_conversation(&mut self) -> Result<ArchiveAck> {
@@ -674,7 +796,7 @@ impl ChatArchive {
             .checked_add(1)
             .ok_or_else(|| StoreError::new("capacity"))?;
         events.push(RunEvent { id:format!("{}:state:{}", self.run_id, revision), kind:"coordinator_state_v1".into(),
-            created_at:timestamp, data:json!({"format":"uagent.coordinator-state.v1","archiveFormat":ARCHIVE_FORMAT,
+            created_at:timestamp, data:json!({"format":"uagent.coordinator-state.v1","archiveFormat":self.archive_format,
                 "archiveOnly":true,"taskMode":"discussion","projectId":self.project_namespace,"runId":self.run_id,
                 "conversationId":self.conversation_id,"logicalProjectId":self.logical_project_id,
                 "providerId":self.provider_id,"modelId":self.model_id,"goal":GOAL,"status":run_status_text(status),

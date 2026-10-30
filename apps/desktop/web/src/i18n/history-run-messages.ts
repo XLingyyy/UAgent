@@ -1,4 +1,5 @@
 export const historyRunMessages = {
+  "historyRun.modelChanged":["已选历史文本来自其他服务商或模型。请重新选择原模型，或开始新对话。","Saved text belongs to another provider or model. Select its original model or start a new conversation."],
   "historyRun.continueHint":["已选择历史记录。请重新信任项目、开启会话并确认本次范围；旧索引会重新查询。","Saved context selected. Trust the project, open a new session and review scope; old index queries run again."],
   "historyRun.events": ["当时保存的任务事件", "Saved task events"],
   "historyRun.partialStream": [

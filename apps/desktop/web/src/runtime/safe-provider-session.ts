@@ -20,6 +20,7 @@ import type { NativeInvoke } from "./project-native-adapter";
 import { createNativeResponsesProfile, validResponsesCredential } from "./native-responses-session";
 import { getApplicationProfile } from "./application-profile";
 import { localNativeInvoke } from "./native-provider-budget";
+import { createNativeOrdinaryChatArchive } from "./native-ordinary-chat-archive";
 import { createNativePolicyFetcher } from "./native-provider-endpoint";
 import { createOfflineDemoFetcher } from "./offline-demo-transport";
 import { outboundReviewGate } from "./outbound-review-store";
@@ -426,6 +427,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     const candidate = createDeepSeekAccountSession({
       mode: options.mode,
       expiresAt,
+      ...(options.nativeInvoke ? {ordinaryArchive: createNativeOrdinaryChatArchive(options.nativeInvoke)} : {}),
       fetcher: options.fetcher,
       outboundGate: gate,
       getProjectContext: () => ({ ...context }),
