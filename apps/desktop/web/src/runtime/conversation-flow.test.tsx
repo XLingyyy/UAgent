@@ -74,6 +74,21 @@ describe("multi-turn conversation and incremental text without real API",()=>{
  });
 
 
+ it("keeps the ordinary send source revision stable while publishing the first task and follow-up",async()=>{
+  const h=await mount(true),capture=h.runtime.captureOrdinarySend!;
+  let checks=0;
+  vi.spyOn(h.runtime,"captureOrdinarySend").mockImplementation((draft,current)=>{
+    const revision=safeProviderSession.getContextVersion(),authorize=capture(draft,current);
+    return(request,stream)=>{expect(safeProviderSession.getContextVersion()).toBe(revision);checks++;return authorize(request,stream);};
+  });
+  for(const [index,text] of ["First native-bound task","Second native-bound task"].entries()){
+    fireEvent.change(h.input(),{target:{value:text}});fireEvent.click(screen.getByRole("button",{name:"Send task"}));
+    await waitFor(()=>expect(h.sent).toHaveLength(index+1));expect(checks).toBe(index+1);
+    await h.delta("Complete "+text);await h.done();
+  }
+  expect(checks).toBe(2);expect(h.gate.getPending()).toBeNull();
+ });
+
  it("does not publish a transient empty conversation while routing a follow-up task",async()=>{
   const h=await mount();await h.send("First question");await h.approve();await h.delta("First answer");await h.done();
   const snapshot=h.runtime.getSnapshot(),active=snapshot.tasksById[snapshot.activeTaskId!],conversation=active.draft.conversationId;

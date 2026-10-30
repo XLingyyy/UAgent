@@ -765,6 +765,7 @@ function createUIStateBundle(
   runtimeClient.configureInvestigation?.({registry:createProjectReadToolRegistry(projectAdapter),contextSources:createProjectContextSources(projectAdapter),resolveScope:id=>investigationScopeGate.claim(id),createAdapter:(lease,draft)=>safeProviderSession.createRunAdapter(lease,draft)});
   let submissionPending = false;
   let submissionRoutingCurrent: (() => boolean) | null = null;
+  let submissionConversation: { id: string; projectId: string | null } | null = null;
   let assetOperationPending = false;
   let assetOperationCurrent: (() => boolean) | null = null;
   const isCurrentAssetOperation = () => assetOperationCurrent?.() ?? true;
@@ -1436,6 +1437,7 @@ function createUIStateBundle(
         if (draft.taskMode === "discussion" && runtimeClient.captureOrdinarySend && safeProviderSession.getSnapshot().ready) {
           const selected = composerStore.getState();
           // Assign this conversation before publishing its first task; this is UI bookkeeping, not a new source.
+          submissionConversation = { id: conversationId, projectId: draft.projectId };
           safeProviderSession.updateContext(draft.projectId, originalInput, selected.selectedModelId, conversationId);
           authorizeOrdinarySend = runtimeClient.captureOrdinarySend(submissionDraft, () => {
             const current = composerStore.getState();
@@ -1459,6 +1461,7 @@ function createUIStateBundle(
       } finally {
         submissionPending = false;
         submissionRoutingCurrent = null;
+        submissionConversation = null;
         composerStore.setState((previous) => ({ ...previous, submitting: false }));
       }
     },
@@ -3814,7 +3817,15 @@ function createUIStateBundle(
     uiReadinessReason: mvp15dUiReadinessReason,
   };
 
-  const syncProviderContext = () => { const c=composerStore.getState(),id=threadStore.getState().activeThreadId,task=id?runtimeStore.getState().tasksById[id]:null; safeProviderSession.updateContext(projectStore.getState().activeProjectId,c.input,c.selectedModelId,task?conversationKey(task):""); };
+  const syncProviderContext = () => {
+    const c = composerStore.getState(), projectId = projectStore.getState().activeProjectId;
+    const id = threadStore.getState().activeThreadId, task = id ? runtimeStore.getState().tasksById[id] : null;
+    // Runtime task publication and thread routing are separate notifications.
+    // Keep this click's conversation stable through that bookkeeping interval.
+    const pendingConversation = submissionPending && submissionRoutingCurrent?.() &&
+      submissionConversation?.projectId === projectId ? submissionConversation.id : null;
+    safeProviderSession.updateContext(projectId, c.input, c.selectedModelId, pendingConversation ?? (task ? conversationKey(task) : ""));
+  };
   projectStore.subscribe(syncProviderContext);
   composerStore.subscribe(syncProviderContext);
   threadStore.subscribe(syncProviderContext);
