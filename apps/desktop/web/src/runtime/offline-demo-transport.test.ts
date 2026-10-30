@@ -159,6 +159,15 @@ describe("native-only local synthetic transport", () => {
     expect(text).not.toContain('"tool_calls":');
   });
 
+  it("streams a bounded long history fixture only in explicit native offline mode", async () => {
+    const fetcher = await fetcherFor();
+    const text = content(await read(await fetcher(DEEPSEEK_ENDPOINT, init([{ role: "user", content: "UAGENT-HISTORY-LONG-FIXTURE" }], { tools: undefined, tool_choice: undefined }))));
+    expect(text).toContain("HISTORY-LONG-BEGIN"); expect(text).toContain("HISTORY-LONG-END");
+    expect(text.length).toBeGreaterThan(6000); expect(new TextEncoder().encode(text).length).toBeLessThan(16384);
+    const next = content(await read(await fetcher(DEEPSEEK_ENDPOINT, init([{ role: "assistant", content: text }, { role: "user", content: "UAGENT-HISTORY-CONTEXT-FIXTURE" }], { tools: undefined, tool_choice: undefined }))));
+    expect(next).toContain("Completed assistant messages received: 1"); expect(next).toContain("Long history present: true");
+  });
+
   it("does not invent a file read when the actual list contains no Source paths", async () => {
     const fetcher = await fetcherFor(), messages = initialMessages();
     const listed = call(await read(await fetcher(DEEPSEEK_ENDPOINT, init(messages))));

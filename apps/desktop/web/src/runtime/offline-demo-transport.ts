@@ -109,6 +109,15 @@ function replyFor(body: ReviewedBody, issued: ReadonlyMap<string, IssuedCall>): 
   if (tail.length !== issued.size * 2) throw invalid();
   if (!toolNames.every(name => body.tools.has(name))) {
     if (tail.length) throw invalid();
+    const goal = String(body.messages[goalIndex]!.content);
+    if (goal === "UAGENT-HISTORY-LONG-FIXTURE") {
+      const lines = Array.from({ length: 100 }, (_, index) => `History row ${String(index + 1).padStart(3, "0")}: deterministic received text; no API request. \u4e2d\u6587\u3002`);
+      return { text: `${syntheticLabel}\nHISTORY-LONG-BEGIN\n${lines.join("\n")}\nHISTORY-LONG-END` };
+    }
+    if (goal === "UAGENT-HISTORY-CONTEXT-FIXTURE") {
+      const completed = body.messages.slice(0, goalIndex).filter(message => message.role === "assistant");
+      return { text: `${syntheticLabel}\nCompleted assistant messages received: ${completed.length}\nLong history present: ${completed.some(message => String(message.content).includes("HISTORY-LONG-END"))}` };
+    }
     return { text: `${syntheticLabel}\nThis is a deterministic local demonstration. Enable Task mode and explicitly approve the three project read tools to inspect Source. No provider connection is verified.\n这是确定性的本地演示。请启用任务模式并明确批准三个项目只读工具，以检查 Source；未验证任何真实服务连接。` };
   }
   if (tail.length % 2 || tail.length > 6) throw invalid();
