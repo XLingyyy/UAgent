@@ -635,10 +635,11 @@ fn replacement_cleanup_failure_keeps_only_new_version_active() {
     assert!(saved.exists && saved.cleanup_pending);
     let new = saved.version.unwrap();
     assert_eq!(load(&b, &old).err(), Some(VaultError::Conflict));
-    assert_eq!(load(&b, &new).unwrap().as_bytes(), REPLACEMENT.as_bytes());
+    assert_eq!(load(&b, &new).err(), Some(VaultError::CleanupPending));
     let clean = cleanup(&b).unwrap();
     assert!(clean.exists && !clean.cleanup_pending);
     assert_eq!(clean.version.as_deref(), Some(new.as_str()));
+    assert_eq!(load(&b, &new).unwrap().as_bytes(), REPLACEMENT.as_bytes());
     assert!(windows::read(&b.os_target(&old).unwrap())
         .unwrap()
         .is_none());
@@ -980,4 +981,285 @@ fn recovery_external_owned_fixture_mutator() {
     }
     assert_eq!(metadata.state().expect("Unchanged fixture metadata"), state);
     println!("Owned isolated synthetic fixture mutation completed; metadata/version preserved; no enumeration.");
+}
+
+fn cleanup_pending_fixture(f: &mut Fixture) -> (CredentialBinding, String, String) {
+    let b = f.binding();
+    let old = save(&b, None, secret(SYNTHETIC)).unwrap().version.unwrap();
+    faults::FAIL_DELETE.with(|v| v.set(true));
+    let saved = save(&b, Some(&old), secret(REPLACEMENT)).unwrap();
+    assert!(saved.exists && saved.cleanup_pending && saved.recovery.is_none());
+    let current = saved.version.unwrap();
+    (b, old, current)
+}
+#[test]
+fn cleanup_matrix_active_pending_blocks_send_stale_cas_and_failed_cleanup_then_retry() {
+    let mut f = Fixture::new();
+    let (b, old, current) = cleanup_pending_fixture(&mut f);
+    assert_eq!(load(&b, &current).err(), Some(VaultError::CleanupPending));
+    let called = AtomicBool::new(false);
+    assert_eq!(
+        with_current(&b, &current, || called.store(true, Ordering::SeqCst)),
+        Err(VaultError::CleanupPending)
+    );
+    assert!(!called.load(Ordering::SeqCst));
+    faults::FAIL_DELETE.with(|v| v.set(true));
+    assert_eq!(
+        cleanup_if_current(&b, &old).err(),
+        Some(VaultError::Conflict)
+    );
+    assert!(
+        faults::FAIL_DELETE.with(|v| v.get()),
+        "Stale cleanup touched the OS delete gate"
+    );
+    // The next correct call consumes the still-pending fault and remains
+    // truthfully active+pending, with no authority to load/send.
+    assert_eq!(
+        cleanup_if_current(&b, &current).err(),
+        Some(VaultError::CleanupPending)
+    );
+    let failed = status(&b).unwrap();
+    assert!(failed.exists && failed.cleanup_pending && failed.recovery.is_none());
+    assert_eq!(failed.version.as_deref(), Some(current.as_str()));
+    assert!(windows::read(&b.os_target(&old).unwrap())
+        .unwrap()
+        .is_some());
+    let clean = cleanup_if_current(&b, &current).unwrap();
+    assert!(clean.exists && !clean.cleanup_pending && clean.recovery.is_none());
+    assert_eq!(clean.version.as_deref(), Some(current.as_str()));
+    assert_eq!(
+        load(&b, &current).unwrap().as_bytes(),
+        REPLACEMENT.as_bytes()
+    );
+    let count = std::cell::Cell::new(0);
+    with_current(&b, &current, || count.set(count.get() + 1)).unwrap();
+    assert_eq!(count.get(), 1);
+}
+#[test]
+fn cleanup_matrix_recovery_pending_stays_recovery_after_cleanup_until_explicit_replace() {
+    for recovery in [
+        CredentialRecovery::Missing,
+        CredentialRecovery::Corrupt,
+        CredentialRecovery::Unavailable,
+    ] {
+        let mut f = Fixture::new();
+        let (b, _old, current) = cleanup_pending_fixture(&mut f);
+        match recovery {
+            CredentialRecovery::Missing => {
+                windows::delete(&b.os_target(&current).unwrap()).unwrap()
+            }
+            CredentialRecovery::Corrupt => windows::write(
+                &b.os_target(&current).unwrap(),
+                b"owned pending corrupt fixture",
+            )
+            .unwrap(),
+            CredentialRecovery::Unavailable => faults::FAIL_READ.with(|v| v.set(true)),
+        }
+        let pending = status(&b).unwrap();
+        assert!(!pending.exists && pending.cleanup_pending && pending.masked.is_none());
+        assert_eq!(pending.recovery, Some(recovery));
+        assert_eq!(load(&b, &current).err(), Some(VaultError::CleanupPending));
+        let called = AtomicBool::new(false);
+        assert_eq!(
+            with_current(&b, &current, || called.store(true, Ordering::SeqCst)),
+            Err(VaultError::CleanupPending)
+        );
+        assert!(!called.load(Ordering::SeqCst));
+        if recovery == CredentialRecovery::Unavailable {
+            faults::FAIL_READ.with(|v| v.set(true));
+        }
+        let cleaned = cleanup_if_current(&b, pending.version.as_deref().unwrap()).unwrap();
+        assert!(!cleaned.exists && !cleaned.cleanup_pending && cleaned.masked.is_none());
+        assert_eq!(cleaned.recovery, Some(recovery));
+        assert_eq!(cleaned.version.as_deref(), Some(current.as_str()));
+        if recovery == CredentialRecovery::Unavailable {
+            faults::FAIL_READ.with(|v| v.set(true));
+        }
+        assert_eq!(load(&b, &current).err(), Some(VaultError::Unavailable));
+        if recovery == CredentialRecovery::Unavailable {
+            faults::FAIL_READ.with(|v| v.set(true));
+        }
+        assert_eq!(
+            with_current(&b, &current, || called.store(true, Ordering::SeqCst)),
+            Err(VaultError::Unavailable)
+        );
+        assert!(!called.load(Ordering::SeqCst));
+        let repaired = save(&b, cleaned.version.as_deref(), secret(SYNTHETIC)).unwrap();
+        assert!(repaired.exists && !repaired.cleanup_pending && repaired.recovery.is_none());
+        assert_ne!(repaired.version, cleaned.version);
+        assert_eq!(
+            load(&b, repaired.version.as_deref().unwrap())
+                .unwrap()
+                .as_bytes(),
+            SYNTHETIC.as_bytes()
+        );
+    }
+}
+#[test]
+fn cleanup_matrix_inactive_pending_remains_disabled_on_failure_then_uses_new_tombstone() {
+    let mut f = Fixture::new();
+    let b = f.binding();
+    let old = save(&b, None, secret(SYNTHETIC)).unwrap().version.unwrap();
+    faults::FAIL_DELETE.with(|v| v.set(true));
+    assert_eq!(delete(&b, &old).err(), Some(VaultError::CleanupPending));
+    let pending = status(&b).unwrap();
+    assert!(!pending.exists && pending.cleanup_pending && pending.recovery.is_none());
+    let token = pending.version.unwrap();
+    assert_ne!(token, old);
+    assert_eq!(load(&b, &token).err(), Some(VaultError::CleanupPending));
+    let called = AtomicBool::new(false);
+    assert_eq!(
+        with_current(&b, &token, || called.store(true, Ordering::SeqCst)),
+        Err(VaultError::CleanupPending)
+    );
+    assert!(!called.load(Ordering::SeqCst));
+    faults::FAIL_DELETE.with(|v| v.set(true));
+    assert_eq!(
+        cleanup_if_current(&b, &token).err(),
+        Some(VaultError::CleanupPending)
+    );
+    let failed = status(&b).unwrap();
+    assert!(!failed.exists && failed.cleanup_pending && failed.recovery.is_none());
+    assert_eq!(failed.version.as_deref(), Some(token.as_str()));
+    let clean = cleanup_if_current(&b, &token).unwrap();
+    assert!(!clean.exists && !clean.cleanup_pending && clean.recovery.is_none());
+    assert_ne!(clean.version.as_deref(), Some(token.as_str()));
+    assert_eq!(
+        load(&b, clean.version.as_deref().unwrap()).err(),
+        Some(VaultError::Conflict)
+    );
+    assert_eq!(
+        cleanup_if_current(&b, &token).err(),
+        Some(VaultError::Conflict)
+    );
+    assert!(windows::read(&b.os_target(&old).unwrap())
+        .unwrap()
+        .is_none());
+}
+#[test]
+fn cleanup_matrix_generation_endpoint_and_profile_mismatch_touch_no_pending_target() {
+    let mut f = Fixture::new();
+    let (b, old, current) = cleanup_pending_fixture(&mut f);
+    let others = [
+        f.binding_at(
+            "profile",
+            "synthetic-provider",
+            "test-generation-two",
+            "https://api.deepseek.com",
+        ),
+        f.binding_at(
+            "profile",
+            "synthetic-provider",
+            "test-generation-one",
+            "https://api.openai.com/v1",
+        ),
+        f.binding_at(
+            "other-profile",
+            "synthetic-provider",
+            "test-generation-one",
+            "https://api.deepseek.com",
+        ),
+    ];
+    for other in others {
+        assert_eq!(
+            cleanup_if_current(&other, &current).err(),
+            Some(VaultError::Conflict)
+        );
+        assert!(windows::read(&b.os_target(&old).unwrap())
+            .unwrap()
+            .is_some());
+    }
+    let pending = status(&b).unwrap();
+    assert!(pending.exists && pending.cleanup_pending);
+    assert_eq!(pending.version.as_deref(), Some(current.as_str()));
+    assert!(cleanup_if_current(&b, &current).unwrap().exists);
+}
+
+/// Only the new cleanup native-UI run may call this test binary entry.
+/// The previous recovery profile and its OS targets are never accepted.
+#[test]
+fn cleanup_external_owned_fixture_mutator() {
+    let Some(root) = std::env::var_os("UAGENT_CLEANUP_UI_ROOT") else {
+        return;
+    };
+    let root = PathBuf::from(root)
+        .canonicalize()
+        .expect("New own cleanup profile must exist");
+    let allowed = PathBuf::from(
+        r"E:\Codex\UAgent\2026-10-29\evidence\credential-vault-cleanup-20261030\isolated-ui-r1",
+    )
+    .canonicalize()
+    .expect("New own cleanup evidence profile must exist");
+    assert!(
+        root == allowed || root.starts_with(&allowed),
+        "Refuse old recovery/production/outside cleanup profile"
+    );
+    let provider = std::env::var("UAGENT_CLEANUP_UI_PROVIDER").expect("Explicit fixture provider");
+    let generation =
+        std::env::var("UAGENT_CLEANUP_UI_GENERATION").expect("Explicit fixture generation");
+    let endpoint =
+        std::env::var("UAGENT_CLEANUP_UI_ENDPOINT").expect("Explicit canonical endpoint");
+    let version =
+        std::env::var("UAGENT_CLEANUP_UI_VERSION").expect("Explicit current active version");
+    let action = std::env::var("UAGENT_CLEANUP_UI_ACTION").expect("Explicit owned fixture action");
+    assert!(
+        matches!(
+            action.as_str(),
+            "missing" | "corrupt" | "replace-pending" | "delete-pending"
+        ),
+        "Unknown cleanup fixture action"
+    );
+    let binding = CredentialBinding::new(&root, &provider, &generation, &endpoint)
+        .expect("Native owned fixture binding");
+    let _guard = windows::TargetGuard::acquire(&binding.target).expect("Own fixture must be idle");
+    let metadata = metadata::Metadata::open(&binding).expect("Own healthy fixture metadata");
+    let state = metadata.state().expect("Own current fixture state");
+    assert!(
+        state.active.as_deref() == Some(version.as_str())
+            && state.token.as_deref() == Some(version.as_str()),
+        "Own fixture active/token mismatch"
+    );
+    let record = read_record(&binding, &version).expect("Own readable active synthetic record");
+    let a = b"uagent-recovery-fixture-key-20261030-A";
+    let b = b"uagent-recovery-fixture-key-20261030-B";
+    assert!(
+        record.secret.as_bytes() == a || record.secret.as_bytes() == b,
+        "Refuse non-designated synthetic credential"
+    );
+    let replacement = if record.secret.as_bytes() == a { b } else { a };
+    drop(record);
+    let target = binding.os_target(&version).expect("Exact owned target");
+    match action.as_str() {
+        "missing" => {
+            windows::delete(&target).expect("Own exact active fixture removal");
+            assert_eq!(metadata.state().unwrap(), state);
+        }
+        "corrupt" => {
+            windows::write(&target, b"owned-cleanup-fixture-malformed")
+                .expect("Own exact active fixture corruption");
+            assert_eq!(metadata.state().unwrap(), state);
+        }
+        "replace-pending" => {
+            faults::FAIL_DELETE.with(|v| v.set(true));
+            let saved = save(
+                &binding,
+                Some(&version),
+                Secret::new(replacement.to_vec()).unwrap(),
+            )
+            .expect("Own pending replacement");
+            assert!(saved.exists && saved.cleanup_pending && saved.recovery.is_none());
+            assert_ne!(saved.version.as_deref(), Some(version.as_str()));
+        }
+        "delete-pending" => {
+            faults::FAIL_DELETE.with(|v| v.set(true));
+            assert_eq!(
+                delete(&binding, &version).err(),
+                Some(VaultError::CleanupPending)
+            );
+            let disabled = metadata.state().unwrap();
+            assert!(disabled.active.is_none() && !disabled.cleanup.is_empty());
+        }
+        _ => unreachable!(),
+    }
+    println!("Owned new cleanup fixture action completed; only designated synthetic target(s); no enumeration/network.");
 }

@@ -1733,6 +1733,8 @@ pub fn run() {
             #[cfg(windows)]
             provider_credential_commands::delete_provider_credential,
             #[cfg(windows)]
+            provider_credential_commands::cleanup_provider_credentials,
+            #[cfg(windows)]
             native_saved_deepseek::open_saved_deepseek_profile,
             #[cfg(windows)]
             native_saved_deepseek::validate_saved_deepseek_text,

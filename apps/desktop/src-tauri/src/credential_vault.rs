@@ -291,6 +291,16 @@ fn describe(state: &metadata::State) -> CredentialStatus {
     status.cleanup_pending = !state.cleanup.is_empty();
     status
 }
+fn require_sendable(state: &metadata::State, expected: &str) -> Result<()> {
+    version_bytes(expected)?;
+    if state.token.as_deref() != Some(expected) {
+        return Err(VaultError::Conflict);
+    }
+    if !state.cleanup.is_empty() {
+        return Err(VaultError::CleanupPending);
+    }
+    require_current(state, expected)
+}
 fn require_current(state: &metadata::State, expected: &str) -> Result<()> {
     version_bytes(expected)?;
     if state.active.as_deref() != Some(expected) {
@@ -317,21 +327,22 @@ fn cleanup_state(
     }
     db.update(&state, state.active.as_deref(), &pending)
 }
-pub fn status(binding: &CredentialBinding) -> Result<CredentialStatus> {
-    let _guard = windows::TargetGuard::acquire(&binding.target)?;
-    let db = metadata::Metadata::open(binding)?;
-    let state = db.state()?;
-    let mut status = describe(&state);
+fn describe_usable(binding: &CredentialBinding, state: &metadata::State) -> CredentialStatus {
+    let mut status = describe(state);
     if let Some(active) = &state.active {
         if let Err(recovery) = read_record(binding, active) {
-            // The metadata token stays trustworthy even when its OS record is
-            // not usable. Return it for explicit CAS repair, never for Send.
             status.exists = false;
             status.masked = None;
             status.recovery = Some(recovery);
         }
     }
-    Ok(status)
+    status
+}
+pub fn status(binding: &CredentialBinding) -> Result<CredentialStatus> {
+    let _guard = windows::TargetGuard::acquire(&binding.target)?;
+    let db = metadata::Metadata::open(binding)?;
+    let state = db.state()?;
+    Ok(describe_usable(binding, &state))
 }
 pub fn save(
     binding: &CredentialBinding,
@@ -399,13 +410,32 @@ pub fn cleanup(binding: &CredentialBinding) -> Result<CredentialStatus> {
     if !cleaned.cleanup.is_empty() {
         return Err(VaultError::CleanupPending);
     }
-    Ok(describe(&cleaned))
+    Ok(describe_usable(binding, &cleaned))
+}
+/// Explicit cleanup retains the UI's captured mutation identity. No OS record
+/// is touched until the same-mutex metadata CAS check succeeds.
+pub fn cleanup_if_current(
+    binding: &CredentialBinding,
+    expected_version: &str,
+) -> Result<CredentialStatus> {
+    version_bytes(expected_version)?;
+    let _guard = windows::TargetGuard::acquire(&binding.target)?;
+    let db = metadata::Metadata::open(binding)?;
+    let current = db.state()?;
+    if current.token.as_deref() != Some(expected_version) {
+        return Err(VaultError::Conflict);
+    }
+    let cleaned = cleanup_state(binding, &db, current)?;
+    if !cleaned.cleanup.is_empty() {
+        return Err(VaultError::CleanupPending);
+    }
+    Ok(describe_usable(binding, &cleaned))
 }
 pub fn load(binding: &CredentialBinding, expected_version: &str) -> Result<Secret> {
     version_bytes(expected_version)?;
     let _guard = windows::TargetGuard::acquire(&binding.target)?;
     let state = metadata::Metadata::open(binding)?.state()?;
-    require_current(&state, expected_version)?;
+    require_sendable(&state, expected_version)?;
     Ok(read_record(binding, expected_version)?.secret)
 }
 /// Keep the durable active reference and exact OS version current until the
@@ -418,7 +448,7 @@ pub fn with_current<T>(
     version_bytes(expected_version)?;
     let _guard = windows::TargetGuard::acquire(&binding.target)?;
     let state = metadata::Metadata::open(binding)?.state()?;
-    require_current(&state, expected_version)?;
+    require_sendable(&state, expected_version)?;
     drop(read_record(binding, expected_version)?);
     Ok(callback())
 }

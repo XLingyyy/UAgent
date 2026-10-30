@@ -176,3 +176,25 @@ pub(crate) async fn delete_provider_credential(
     })
     .await
 }
+#[tauri::command]
+pub(crate) async fn cleanup_provider_credentials(
+    app: tauri::AppHandle,
+    input: DeleteInput,
+) -> Result<Receipt> {
+    let root = crate::app_profile::resolve_app_data_dir(&app)
+        .map_err(|_| "credential_profile_unavailable")?;
+    worker(move || {
+        let _responses =
+            crate::native_responses_commands::begin_provider_update(&input.provider_id)?;
+        let _deepseek = crate::native_saved_deepseek::begin_provider_update(&input.provider_id)?;
+        let (snapshot, binding) = binding_at(&root, &input.provider_id)?;
+        checked(&snapshot, &input.expected_provider_version)?;
+        let status =
+            credential_vault::cleanup_if_current(&binding, &input.expected_credential_version)
+                .map_err(|e| e.kind().to_string())?;
+        let (current, _) = binding_at(&root, &input.provider_id)?;
+        checked(&current, &snapshot.version())?;
+        Ok(receipt(&snapshot, status))
+    })
+    .await
+}

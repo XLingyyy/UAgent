@@ -20,6 +20,7 @@ function harness(initial:SavedProviderCredential=absent()){
   if(command==="get_saved_provider_credential")return receipt;
   if(command==="save_provider_credential"){receipt=stored();return receipt;}
   if(command==="delete_provider_credential"){receipt=absent();return receipt;}
+  if(command==="cleanup_provider_credentials"){receipt={...receipt,cleanupPending:false};return receipt;}
   throw Error("Unexpected synthetic command");
  });
  const state={ready:false,providerId:null,modelId:null,endpoint:null,wireApi:null,fixture:false,canConfigure:true,pendingSetup:false};
@@ -139,12 +140,12 @@ describe("saved provider credential form (synthetic only)",()=>{
  it("cleanup-pending deletion hides the old mask and disables reuse after readback",async()=>{
   const h=harness(stored());let disabled=false;
   h.invoke.mockImplementation(async(command:string)=>{
-   if(command==="get_saved_provider_credential")return disabled?{...absent(),cleanupPending:true}:stored();
+   if(command==="get_saved_provider_credential")return disabled?{...absent(),version:"pending-metadata-token",cleanupPending:true}:stored();
    disabled=true;throw {kind:"credential_cleanup_pending"};
   });
   h.mount();await screen.findByLabelText("Saved API key");
   fireEvent.click(screen.getByRole("button",{name:"Delete API key"}));
-  await screen.findByText("System cleanup did not finish. This key is disabled for future requests.");
+  await screen.findByText("Old credential cleanup is still pending. Retry cleanup explicitly; sessions remain closed until it completes.");
   await waitFor(()=>expect(screen.queryByLabelText("Saved API key")).toBeNull());
   expect(screen.queryByRole("button",{name:"Use saved API key"})).toBeNull();
   expect((screen.getByRole("button",{name:"Save API key"}) as HTMLButtonElement).disabled).toBe(true);
@@ -152,7 +153,7 @@ describe("saved provider credential form (synthetic only)",()=>{
   expect(h.controller.openSaved).not.toHaveBeenCalled();
  });
  it("reopening a cleanup-pending record never offers automatic reuse",async()=>{
-  const h=harness({...absent(),cleanupPending:true});h.mount();
+  const h=harness({...absent(),version:"pending-metadata-token",cleanupPending:true});h.mount();
   await screen.findByText("API key disabled");
   expect(screen.queryByRole("button",{name:"Use saved API key"})).toBeNull();
   expect(screen.queryByLabelText("Saved API key")).toBeNull();
@@ -237,7 +238,7 @@ describe("saved provider credential form (synthetic only)",()=>{
   });
   h.mount();await screen.findByRole("button",{name:"Remove unavailable record"});
   fireEvent.click(screen.getByRole("button",{name:"Remove unavailable record"}));
-  await screen.findByText("System cleanup did not finish. This key is disabled for future requests.");
+  await screen.findByText("Old credential cleanup is still pending. Retry cleanup explicitly; sessions remain closed until it completes.");
   expect(screen.queryByRole("button",{name:"Use saved API key"})).toBeNull();
   expect(screen.queryByRole("button",{name:"Remove unavailable record"})).toBeNull();
   expect((screen.getByRole("button",{name:"Save API key"}) as HTMLButtonElement).disabled).toBe(true);
@@ -266,6 +267,94 @@ describe("saved provider credential form (synthetic only)",()=>{
   expect(screen.queryByRole("button",{name:"Remove unavailable record"})).toBeNull();
   expect((screen.getByRole("button",{name:"Save API key"}) as HTMLButtonElement).disabled).toBe(true);
   expect(h.controller.openSaved).not.toHaveBeenCalled();expect(h.invoke).toHaveBeenCalledTimes(1);
+ });
+ it("active plus pending preserves the mask and waits for explicit cleanup after closing the owner",async()=>{
+  const h=harness({...stored(),cleanupPending:true}),gate=deferred<void>();h.controller.closeAsync.mockReturnValue(gate.promise);h.mount();
+  await screen.findByText("New API key saved · old records await cleanup");
+  expect((screen.getByLabelText("Saved API key") as HTMLInputElement).value).toBe(SAVED_CREDENTIAL_MASK);
+  expect(screen.queryByRole("button",{name:"Use saved API key"})).toBeNull();
+  expect((screen.getByRole("button",{name:"Replace API key"}) as HTMLButtonElement).disabled).toBe(true);
+  expect(h.controller.openSaved).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button",{name:"Retry cleanup"}));
+  expect(h.invoke.mock.calls.some(c=>c[0]==="cleanup_provider_credentials")).toBe(false);
+  await act(async()=>{gate.resolve();await gate.promise;});
+  await waitFor(()=>expect(screen.queryByRole("button",{name:"Retry cleanup"})).toBeNull());
+  expect(h.invoke.mock.calls.filter(c=>c[0]==="cleanup_provider_credentials")).toHaveLength(1);
+  expect((screen.getByRole("button",{name:"Use saved API key"}) as HTMLButtonElement).disabled).toBe(false);
+  expect(h.controller.openSaved).not.toHaveBeenCalled();
+ });
+ it.each(["missing","corrupt","unavailable"] as const)("recovery %s plus pending preserves its reason and requires cleanup before recovery",async recovery=>{
+  const h=harness({...absent(),version:"recovery-token",recovery,cleanupPending:true});h.mount();
+  const messages={missing:"The saved key is missing from system storage.",corrupt:"The saved key record is damaged.",unavailable:"This key is temporarily unavailable."};
+  await screen.findByText(messages[recovery]);
+  expect(screen.getByText("Clean up old credential records before opening a session, replacing or deleting a key.")).toBeTruthy();
+  expect((screen.getByRole("button",{name:"Replace API key"}) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button",{name:"Remove unavailable record"}) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button",{name:"Retry cleanup"}));
+  await waitFor(()=>expect(screen.queryByRole("button",{name:"Retry cleanup"})).toBeNull());
+  expect((screen.getByRole("button",{name:"Replace API key"}) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByRole("button",{name:"Use saved API key"})).toBeNull();
+  expect(screen.queryByLabelText("Saved API key")).toBeNull();expect(h.controller.openSaved).not.toHaveBeenCalled();
+ });
+ it("inactive pending returns to an empty form after explicit cleanup",async()=>{
+  const h=harness({...absent(),version:"inactive-token",cleanupPending:true});h.mount();
+  await screen.findByText("API key disabled");
+  fireEvent.click(screen.getByRole("button",{name:"Retry cleanup"}));
+  await screen.findByText("No API key saved");
+  expect((screen.getByLabelText("API key") as HTMLInputElement).disabled).toBe(false);
+  expect((screen.getByLabelText("API key") as HTMLInputElement).value).toBe("");
+  expect(h.controller.openSaved).not.toHaveBeenCalled();
+ });
+ it("a successful save with active pending is persisted but never opens a session",async()=>{
+  const h=harness();let committed=false;
+  h.invoke.mockImplementation(async(command:string)=>{if(command==="save_provider_credential"){committed=true;return{...stored(),cleanupPending:true};}return committed?{...stored(),cleanupPending:true}:absent();});
+  h.mount();await screen.findByText("No API key saved");
+  fireEvent.change(screen.getByLabelText("API key"),{target:{value:"synthetic-new-valid-key"}});
+  fireEvent.click(screen.getByRole("button",{name:"Save API key"}));
+  await screen.findByText("New API key saved · old records await cleanup");
+  expect(screen.getByLabelText("Saved API key")).toBeTruthy();
+  expect((screen.getByRole("button",{name:"Retry cleanup"}) as HTMLButtonElement).disabled).toBe(false);
+  expect(h.controller.openSaved).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button",{name:"Use saved API key"})).toBeNull();
+ });
+ it("partial cleanup adopts the fresh tombstone token only for a second explicit retry",async()=>{
+  const h=harness();let tries=0;
+  h.invoke.mockImplementation(async(command:string)=>{
+   if(command==="cleanup_provider_credentials"){tries++;return{...absent(),version:tries===1?"partial-token-2":"clean-token-3",cleanupPending:tries===1};}
+   return{...absent(),version:tries?"partial-token-2":"pending-token-1",cleanupPending:true};
+  });
+  h.mount();await screen.findByRole("button",{name:"Retry cleanup"});
+  fireEvent.click(screen.getByRole("button",{name:"Retry cleanup"}));
+  await screen.findByText("Old credential cleanup is still pending. Retry cleanup explicitly; sessions remain closed until it completes.");
+  await waitFor(()=>expect(h.invoke.mock.calls.filter(c=>c[0]==="get_saved_provider_credential")).toHaveLength(2));
+  expect(h.invoke.mock.calls.filter(c=>c[0]==="cleanup_provider_credentials")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button",{name:"Retry cleanup"}));
+  await screen.findByText("No API key saved");
+  const calls=h.invoke.mock.calls.filter(c=>c[0]==="cleanup_provider_credentials") as unknown[][];
+  expect(calls).toHaveLength(2);
+  expect(calls[0][1]).toEqual({input:{providerId:"deepseek",expectedProviderVersion:providerVersion,expectedCredentialVersion:"pending-token-1"}});
+  expect(calls[1][1]).toEqual({input:{providerId:"deepseek",expectedProviderVersion:providerVersion,expectedCredentialVersion:"partial-token-2"}});
+  expect((screen.getByLabelText("API key") as HTMLInputElement).disabled).toBe(false);
+  expect(h.controller.openSaved).not.toHaveBeenCalled();
+ });
+ it("cleanup conflicts keep the mutation review barrier but permit an explicit fresh-token cleanup retry",async()=>{
+  const h=harness();let tries=0;
+  h.invoke.mockImplementation(async(command:string)=>{
+   if(command==="cleanup_provider_credentials"){if(tries++===0)throw{kind:"credential_conflict"};return{...stored(),version:"fresh-token",cleanupPending:false};}
+   return{...stored(),version:tries?"fresh-token":"old-token",cleanupPending:tries<2};
+  });
+  h.mount(providerVersion);await screen.findByRole("button",{name:"Retry cleanup"});
+  fireEvent.click(screen.getByRole("button",{name:"Retry cleanup"}));
+  await screen.findByText("The key or provider configuration changed. Reload the status before trying again.");
+  expect((screen.getByRole("button",{name:"Retry cleanup"}) as HTMLButtonElement).disabled).toBe(false);
+  expect(h.invoke.mock.calls.filter(c=>c[0]==="cleanup_provider_credentials")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button",{name:"Retry cleanup"}));
+  await waitFor(()=>expect(screen.queryByRole("button",{name:"Retry cleanup"})).toBeNull());
+  expect((screen.getByRole("button",{name:"Replace API key"}) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button",{name:"Reload key status"}));
+  await waitFor(()=>expect((screen.getByRole("button",{name:"Replace API key"}) as HTMLButtonElement).disabled).toBe(false));
+  expect(h.invoke.mock.calls.filter(c=>c[0]==="cleanup_provider_credentials")).toHaveLength(2);
+  expect(h.controller.openSaved).not.toHaveBeenCalled();
  });
  it("failed receipt is not presented as a saved key",async()=>{
   const h=harness();

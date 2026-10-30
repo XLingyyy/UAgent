@@ -106,17 +106,18 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const responses=selectedProvider?.wireApi==="responses";
   const [savedCredential,setSavedCredential]=useState<{providerId:string;version:string}|null>(null);
   const [credentialRecovery,setCredentialRecovery]=useState<ProviderCredentialRecovery|null>(null);
+  const [credentialCleanupPending,setCredentialCleanupPending]=useState(false);
   useEffect(()=>{
-    let current=true;setSavedCredential(null);setCredentialRecovery(null);
+    let current=true;setSavedCredential(null);setCredentialRecovery(null);setCredentialCleanupPending(false);
     if(!selectedProvider||!selectedOption?.runtimeSupported||!nativeProviderCredentials.available())return;
     const refresh=()=>{
       void nativeProviderCredentials.get(selectedProvider.providerId).then(receipt=>{
         if(current){
           setSavedCredential(receipt.saved&&!receipt.cleanupPending&&!receipt.recovery&&receipt.version?
             {providerId:selectedProvider.providerId,version:receipt.version}:null);
-          setCredentialRecovery(receipt.recovery??(receipt.cleanupPending?"unavailable":null));
+          setCredentialRecovery(receipt.recovery??null);setCredentialCleanupPending(receipt.cleanupPending===true);
         }
-      },()=>{if(current){setSavedCredential(null);setCredentialRecovery("unavailable");}});
+      },()=>{if(current){setSavedCredential(null);setCredentialRecovery("unavailable");setCredentialCleanupPending(false);}});
     };
     refresh();
     const unsubscribe=nativeProviderCredentials.subscribe(id=>{if(id===selectedProvider.providerId)refresh();});
@@ -127,7 +128,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const responseProjectReady=Boolean(activeProject&&activeProject.trustState==="trusted"&&activeProject.indexStatus==="ready");
   const responseModeUnavailable=responses&&investigation&&!responseProjectReady;
   const savedModeUnavailable=investigation&&Boolean(session.savedCredential||(!sessionReady&&savedUsable));
-  const credentialUnavailable=Boolean(credentialRecovery&&(session.savedCredential||!sessionReady));
+  const credentialUnavailable=Boolean((credentialRecovery||credentialCleanupPending)&&(session.savedCredential||!sessionReady));
   const modelUnavailable=selectedModelId!=="not-configured"&&(selectedOption?.runtimeSupported!==true||(!sessionReady&&!savedUsable)||responseModeUnavailable||savedModeUnavailable||credentialUnavailable||session.nativeClosing||session.nativeCloseFailed);
   const canSubmit = trimmedInput.length > 0 && !composer.submitting && !canStop && !modelUnavailable;
   const providerStatus = selectedModelId === "not-configured" ? "not_configured" : "configured";
@@ -237,7 +238,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         </div>
       </div>
 
-      {credentialUnavailable&&<p role="status">{t(credentialRecovery==="missing"?"vault.recoveryMissing":credentialRecovery==="corrupt"?"vault.recoveryCorrupt":"vault.recoveryUnavailable")}</p>}
+      {credentialUnavailable&&<p role="status">{t(credentialCleanupPending?"vault.cleanupPending":credentialRecovery==="missing"?"vault.recoveryMissing":credentialRecovery==="corrupt"?"vault.recoveryCorrupt":"vault.recoveryUnavailable")}</p>}
       {savedModeUnavailable&&<p role="status">{t("vault.discussionOnly")}</p>}
       {responses&&selectedOption?.runtimeSupported!==true&&<p role="status">{t("responses.nativeUnavailable")}</p>}
       {responses&&selectedOption?.runtimeSupported===true&&investigation&&!responseProjectReady&&<p role="status">{t("run.scopeNeedsProject")}</p>}
@@ -290,7 +291,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         <ProjectSelector onManageProjects={()=>openSettings("config")} value={activeProjectId} projects={registeredProjects.map(p=>({id:p.id,name:p.name,engineVersion:p.engine.label,connectionStatus:p.trustState,path:p.displayRoot}))} onChange={setActiveProject}/>
         <span className="ua-composer__status-item"><span className="ua-composer__status-value">{permission==="request-approval"?t("chat.toolApproval"):uiText("Native approval policy enforced")}</span></span>
         <button type="button" className="ua-composer__session-link" onClick={()=>openSettings("provider")}>
-          {selectedModelId==="not-configured"?t("productUi.local"):providerModelOptions.find(m=>m.id===selectedModelId)?.runtimeSupported!==true?t("productUi.unavailable"):credentialUnavailable?t("vault.recoveryUnavailable"):sessionReady?t(responses&&session.fixture?"demo.sessionReady":"product.sessionReady"):savedUsable?t("vault.saved"):t("product.sessionClosed")}
+          {selectedModelId==="not-configured"?t("productUi.local"):providerModelOptions.find(m=>m.id===selectedModelId)?.runtimeSupported!==true?t("productUi.unavailable"):credentialUnavailable?t(credentialCleanupPending?"vault.cleanupPending":"vault.recoveryUnavailable"):sessionReady?t(responses&&session.fixture?"demo.sessionReady":"product.sessionReady"):savedUsable?t("vault.saved"):t("product.sessionClosed")}
         </button>
       </div>
     </footer>

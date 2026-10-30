@@ -26,7 +26,12 @@ A missing, corrupt or unreadable OS record stays unavailable for sending. Health
 metadata still supplies its captured CAS token for an explicit replacement or
 removal; a metadata failure supplies no repair token. Status refresh never resets
 records or authorizes a request. Configuration/version conflicts require another
-user review, and cleanup failures remain visible.
+user review, and cleanup failures remain visible. An active new key, an unavailable
+active record, or an inactive tombstone can each coexist with old-version cleanup.
+All pending states block Send. Explicit cleanup checks the captured provider and
+credential CAS under the native target mutex, deletes only disabled owned versions,
+and rereads the actual active OS record before publishing its status. Failed cleanup
+can be retried explicitly; it never silently replaces a key or resends a request.
 
 All corresponding native owners are revoked before mutation. A per-target OS
 mutex and active-version check span the final synchronous dispatch gate; polling

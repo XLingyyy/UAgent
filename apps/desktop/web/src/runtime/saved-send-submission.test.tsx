@@ -159,6 +159,22 @@ describe("saved credential Send uses the real UI store critical section (no netw
   expect(h.composerState().input).toBe("Must wait for explicit credential recovery.");
  });
 
+ it.each([
+  {name:"active",saved:true,mask:"********",recovery:null},
+  {name:"recovery",saved:false,mask:null,recovery:"missing" as const},
+  {name:"inactive",saved:false,mask:null,recovery:null},
+ ])("blocks cached session in $name plus cleanup-pending state",async(state)=>{
+  const h=await harness(),first=h.start();await h.release();
+  await act(async()=>{expect((await first.outcome).error).toBeNull();});
+  const before={sent:h.sent.length,intents:h.captures.length,submits:h.submit.mock.calls.length};
+  h.getCredential.mockResolvedValue({...await nativeProviderCredentials.get("deepseek"),...state,cleanupPending:true});
+  await h.input("Do not send before explicit cleanup succeeds.");
+  const next=h.start();
+  await act(async()=>{expect((await next.outcome).error).toMatchObject({message:"task_submission_failed"});});
+  expect(h.sent).toHaveLength(before.sent);expect(h.captures).toHaveLength(before.intents);
+  expect(h.submit).toHaveBeenCalledTimes(before.submits);
+ });
+
  it("rejects a concurrent second submit during a slow opener without another task or intent",async()=>{
   const h=await harness(),first=h.start();
   await waitFor(()=>expect(h.openSaved).toHaveBeenCalledTimes(1));

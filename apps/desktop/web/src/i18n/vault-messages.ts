@@ -2,7 +2,12 @@
 export const vaultMessages = {
   "vault.heading": ["服务凭证", "Provider credentials"],
   "vault.disabled": ["密钥已停用", "API key disabled"],
-  "vault.cleanupPending": ["系统清理未完成；此密钥不会再用于请求。", "System cleanup did not finish. This key is disabled for future requests."],
+  "vault.retryCleanup": ["重试清理旧条目", "Retry cleanup"],
+  "vault.cleaning": ["正在清理旧凭证条目…", "Cleaning old credential records…"],
+  "vault.savedCleanupPending": ["新密钥已保存 · 旧条目待清理", "New API key saved · old records await cleanup"],
+  "vault.cleanupRequired": ["需先清理旧凭证条目，才能开启会话、替换或删除密钥。", "Clean up old credential records before opening a session, replacing or deleting a key."],
+  "vault.cleanupFailed": ["清理结果未确认。可重新读取状态或手动重试清理，不会自动重试。", "Cleanup was not confirmed. Reload the status or retry cleanup explicitly; no automatic retry is made."],
+  "vault.cleanupPending": ["旧凭证条目尚未清理完成。请手动重试清理，完成前不会开启会话。", "Old credential cleanup is still pending. Retry cleanup explicitly; sessions remain closed until it completes."],
   "vault.statusUnknown": ["密钥状态暂不可用", "Key status is temporarily unavailable."],
   "vault.recoveryMissing": ["已保存的密钥已从系统存储移除", "The saved key is missing from system storage."],
   "vault.recoveryCorrupt": ["已保存的密钥记录已损坏", "The saved key record is damaged."],

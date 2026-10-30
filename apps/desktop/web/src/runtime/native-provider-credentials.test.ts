@@ -4,7 +4,7 @@ import {createNativeProviderCredentials,SAVED_CREDENTIAL_MASK} from "./native-pr
 import type {NativeInvoke} from "./project-native-adapter";
 const providerVersion={providerId:"deepseek",generation:"generation-a",revision:1,exists:true};
 const missing=()=>({saved:false,version:null,mask:null,providerVersion:{...providerVersion}});
-const saved=()=>({saved:true,version:"synthetic-vault-version-a",mask:"native mask is never retained",providerVersion:{...providerVersion}});
+const saved=()=>({saved:true,version:"synthetic-vault-version-a",mask:"********",providerVersion:{...providerVersion}});
 describe("native credential metadata client",()=>{
  it("only projects receipt metadata and uses a fixed public mask",async()=>{
   const invoke=vi.fn(async()=>({...saved(),extraSecret:"must-not-be-retained"}));
@@ -67,9 +67,9 @@ describe("native credential metadata client",()=>{
   await expect(client.get("deepseek")).rejects.toMatchObject({kind:"unavailable"});
  });
  it("keeps cleanup pending disabled and distinguishes it from full deletion",async()=>{
-  const pending={...missing(),cleanupPending:true};
+  const pending={...missing(),version:"pending-metadata-token",cleanupPending:true};
   const client=createNativeProviderCredentials(vi.fn(async()=>pending) as NativeInvoke);
-  await expect(client.get("deepseek")).resolves.toMatchObject({saved:false,version:null,cleanupPending:true});
+  await expect(client.get("deepseek")).resolves.toMatchObject({saved:false,version:"pending-metadata-token",cleanupPending:true});
   await expect(client.remove("deepseek",saved())).rejects.toMatchObject({kind:"cleanup_pending"});
  });
  it("preserves a deleted tombstone version as the next explicit save CAS token",async()=>{
@@ -96,7 +96,7 @@ describe("native credential metadata client",()=>{
   expect(invoke).toHaveBeenCalledTimes(1);expect(Object.isFrozen(result)).toBe(true);
  });
  it("rejects usable-key and malformed recovery combinations",async()=>{
-  for(const value of [{...saved(),recovery:"missing"},{...missing(),recovery:"missing"},{...missing(),version:"token",recovery:"unknown"},{...missing(),version:"token",recovery:"corrupt",cleanupPending:true},{...missing(),version:"token",recovery:"missing",mask:SAVED_CREDENTIAL_MASK}]){
+  for(const value of [{...saved(),recovery:"missing"},{...missing(),recovery:"missing"},{...missing(),version:"token",recovery:"unknown"},{...missing(),cleanupPending:true},{...missing(),version:"token",recovery:"missing",mask:SAVED_CREDENTIAL_MASK}]){
    const client=createNativeProviderCredentials(vi.fn(async()=>value) as NativeInvoke);
    await expect(client.get("deepseek")).rejects.toMatchObject({kind:"invalid"});
   }
@@ -121,6 +121,54 @@ describe("native credential metadata client",()=>{
   await expect(client.save("deepseek",{...missing(),version:"old-active-token",recovery:"missing"},"synthetic-replacement-key")).rejects.toMatchObject({kind:"conflict"});
   expect(invoke).toHaveBeenCalledTimes(1);
   expect(invoke).toHaveBeenCalledWith("save_provider_credential",{input:{providerId:"deepseek",expectedProviderVersion:providerVersion,expectedCredentialVersion:"old-active-token",credential:"synthetic-replacement-key"}});
+ });
+ it.each([
+  {name:"initial",value:{...missing(),cleanupPending:false,recovery:null}},
+  {name:"tombstone",value:{...missing(),version:"tombstone-token",cleanupPending:false,recovery:null}},
+  {name:"inactive pending",value:{...missing(),version:"pending-token",cleanupPending:true,recovery:null}},
+  {name:"active clean",value:{...saved(),cleanupPending:false,recovery:null}},
+  {name:"active pending",value:{...saved(),cleanupPending:true,recovery:null}},
+  ...(["missing","corrupt","unavailable"] as const).flatMap(recovery=>[
+   {name:recovery+" clean",value:{...missing(),version:"recovery-token",cleanupPending:false,recovery}},
+   {name:recovery+" pending",value:{...missing(),version:"recovery-token",cleanupPending:true,recovery}},
+  ]),
+ ])("accepts the full cleanup matrix: $name",async({value})=>{
+  const client=createNativeProviderCredentials(vi.fn(async()=>value) as NativeInvoke);
+  await expect(client.get("deepseek")).resolves.toMatchObject({...value,mask:value.saved?SAVED_CREDENTIAL_MASK:null});
+ });
+ it("rejects missing pending tokens, invalid masks, reasons and flag types",async()=>{
+  for(const value of [{...missing(),cleanupPending:true},{...saved(),mask:null},{...saved(),mask:"not a fixed mask"},{...missing(),version:"token",cleanupPending:"yes"},{...missing(),version:"token",recovery:"unknown"},{...saved(),recovery:"missing"}]){
+   const client=createNativeProviderCredentials(vi.fn(async()=>value) as NativeInvoke);
+   await expect(client.get("deepseek")).rejects.toMatchObject({kind:"invalid"});
+  }
+ });
+ it("cleanup sends the captured dual CAS and returns healthy refreshed metadata",async()=>{
+  const expected={...saved(),cleanupPending:true},invoke=vi.fn(async()=>({...saved(),cleanupPending:false})),notify=vi.fn();
+  const client=createNativeProviderCredentials(invoke as NativeInvoke);client.subscribe(notify);
+  await expect(client.cleanup("deepseek",expected)).resolves.toMatchObject({saved:true,cleanupPending:false});
+  expect(invoke).toHaveBeenCalledWith("cleanup_provider_credentials",{input:{providerId:"deepseek",expectedProviderVersion:providerVersion,expectedCredentialVersion:expected.version}});
+  expect(notify).toHaveBeenCalledOnce();expect(notify).toHaveBeenCalledWith("deepseek");
+ });
+ it("cleanup still pending throws without notifying or automatically retrying",async()=>{
+  const invoke=vi.fn(async()=>({...missing(),version:"new-partial-token",cleanupPending:true})),notify=vi.fn();
+  const client=createNativeProviderCredentials(invoke as NativeInvoke);client.subscribe(notify);
+  await expect(client.cleanup("deepseek",{...missing(),version:"old-pending-token",cleanupPending:true})).rejects.toMatchObject({kind:"cleanup_pending"});
+  expect(invoke).toHaveBeenCalledTimes(1);expect(notify).not.toHaveBeenCalled();
+ });
+ it("cleanup requires pending and a valid token while save/remove require cleanup first",async()=>{
+  const invoke=vi.fn(async()=>missing()),client=createNativeProviderCredentials(invoke as NativeInvoke);
+  for(const expected of [missing(),saved(),{...missing(),version:"ordinary-tombstone"}])
+   await expect(client.cleanup("deepseek",expected)).rejects.toMatchObject({kind:"invalid"});
+  for(const expected of [{...saved(),cleanupPending:true},{...missing(),version:"inactive-token",cleanupPending:true},{...missing(),version:"recovery-token",cleanupPending:true,recovery:"corrupt" as const}]){
+   await expect(client.save("deepseek",expected,"synthetic-valid-new-key")).rejects.toMatchObject({kind:"cleanup_pending"});
+   await expect(client.remove("deepseek",expected)).rejects.toMatchObject({kind:"cleanup_pending"});
+  }
+  expect(invoke).not.toHaveBeenCalled();
+ });
+ it("cleanup keeps a remaining recovery state disabled instead of inventing a saved key",async()=>{
+  const result={...missing(),version:"recovery-token",cleanupPending:false,recovery:"missing" as const};
+  const client=createNativeProviderCredentials(vi.fn(async()=>result) as NativeInvoke);
+  await expect(client.cleanup("deepseek",{...result,cleanupPending:true})).resolves.toMatchObject({saved:false,recovery:"missing",cleanupPending:false});
  });
  it("observer failure cannot turn a confirmed native save into a failure",async()=>{
   const client=createNativeProviderCredentials(vi.fn(async()=>saved()) as NativeInvoke);
