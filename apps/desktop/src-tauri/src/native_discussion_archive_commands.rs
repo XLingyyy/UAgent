@@ -80,6 +80,9 @@ pub enum Mutation {
         text: String,
         usage: Option<UsageInput>,
     },
+    ConfirmDelivery {
+        request_id: String,
+    },
     Fail {
         request_id: String,
         cancelled: bool,
@@ -203,6 +206,7 @@ impl Broker {
                 });
                 entry.archive.complete_request(&request_id, &text, usage)
             }
+            Mutation::ConfirmDelivery { request_id } => entry.archive.confirm_delivery(&request_id),
             Mutation::Fail {
                 request_id,
                 cancelled,

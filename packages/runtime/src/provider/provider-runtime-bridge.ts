@@ -31,6 +31,10 @@ export class ProviderRuntimeBridge {
     this.enabled = options.enabled;
   }
 
+  confirmOrdinaryDelivery(requestId: string): Promise<void> {
+    return this.adapter.confirmOrdinaryDelivery?.(requestId) ?? Promise.resolve();
+  }
+
   isEnabled(): boolean {
     return this.enabled;
   }

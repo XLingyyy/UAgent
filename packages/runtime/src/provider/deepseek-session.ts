@@ -73,6 +73,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
   let revoked = false;
   let busy = false;
   const pending = new Set<AbortController>();
+  const deliveryCandidates = new Map<string, OrdinaryChatRequestArchive>();
   const consent = validation?.consent ? Object.freeze({ ...validation.consent }) : undefined;
   const timeoutMs = options.timeoutMs ?? 30_000;
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000) throw fail("provider_unavailable", "Invalid timeout bound.");
@@ -126,6 +127,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     const key = credential;
     let archive: OrdinaryChatRequestArchive | undefined, archivedOutput = "", archiveCompleted = false, archiveCancelled = true;
+    let errorToReport: unknown;
     const saveHistory = async <T,>(operation: () => Promise<T>): Promise<T> => {
       try { return await operation(); }
       catch { throw fail("provider_unavailable", "Conversation history could not be saved. No automatic retry was sent."); }
@@ -257,28 +259,46 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
       if (archive) { await saveHistory(() => archive!.complete(archivedOutput, usage!)); archiveCompleted = true; }
       if (controller.signal.aborted) throw fail("cancelled", "Provider request cancelled.");
       yield { id: `${request.id}-done`, requestId: request.id, providerId: "deepseek", modelId: DEEPSEEK_MODEL, index: index + 1, delta: tail, done: true, usage, finishReason, ...(completedCalls.length?{toolCalls:completedCalls}:{}) };
+      // Iteration was consumed, but only the terminal runtime owner can confirm
+      // completed delivery. A transport return or durable output is insufficient.
+      if (archive && !controller.signal.aborted) deliveryCandidates.set(request.id, archive);
     } catch (error) {
       archiveCancelled = (controller.signal.aborted && !timedOut) || (error !== null && typeof error === "object" && "code" in error && error.code === "cancelled");
-      if (controller.signal.aborted) throw fail(timedOut ? "timeout" : "cancelled", timedOut ? "Provider timed out." : "Provider request cancelled.");
+      if (controller.signal.aborted) errorToReport = fail(timedOut ? "timeout" : "cancelled", timedOut ? "Provider timed out." : "Provider request cancelled.");
       // No raw transport errors, HTTP bodies, headers or request values enter logs.
-      if (error && typeof error === "object" && "name" in error && error.name === "ProviderRuntimeError") {
+      else if (error && typeof error === "object" && "name" in error && error.name === "ProviderRuntimeError") {
         if ("code" in error && error.code === "malformed_response") { revoked = true; credential = ""; }
-        throw error;
-      }
-      throw fail("network_error", "Provider request failed. No automatic retry.");
+        errorToReport = error;
+      } else errorToReport = fail("network_error", "Provider request failed. No automatic retry.");
     } finally {
-      if (archive && (!archiveCompleted || controller.signal.aborted)) { try { await archive.fail(archiveCancelled); } catch { /* Pending archive remains incomplete; never write false success. */ } }
+      let archiveFailure = false;
+      if (archive && (!archiveCompleted || controller.signal.aborted)) {
+        deliveryCandidates.delete(request.id);
+        try { await archive.fail(archiveCancelled); }
+        catch { archiveFailure = true; }
+      }
       clearTimeout(timer);
       call.signal?.removeEventListener("abort", abort);
       if (releaseAbort) controller.signal.removeEventListener("abort", releaseAbort);
       controller.abort();
       void reader?.cancel().catch(() => undefined);
       pending.delete(controller); busy = false;
-      if (revoked) { try { await options.ordinaryArchive?.close(); } catch { /* Native history stays incomplete on storage failure. */ } }
+      if (revoked) { try { await options.ordinaryArchive?.close(); } catch { archiveFailure = true; } }
+      if (archiveFailure) errorToReport = fail("provider_unavailable",
+        "Conversation history delivery is unconfirmed. Saved text is excluded from restored context; no automatic retry was sent.");
     }
+    if (errorToReport) throw errorToReport;
   }
   const adapter: ProviderAdapter = {
     id: "deepseek", stream,
+    async confirmOrdinaryDelivery(requestId) {
+      if (!options.ordinaryArchive) return;
+      const candidate = deliveryCandidates.get(requestId);
+      deliveryCandidates.delete(requestId);
+      if (!candidate || revoked || !credential) throw fail("provider_unavailable", "Conversation history delivery is unconfirmed.");
+      try { await candidate.confirmDelivery(); }
+      catch { throw fail("provider_unavailable", "Conversation history delivery is unconfirmed."); }
+    },
     getCapabilities: () => ({ providerId: "deepseek", modelIds: [DEEPSEEK_MODEL], supportsStreaming: true, supportsTools: !validation, supportsPreSendValidation:true, isMock: options.mode === "offline" }),
     async complete(request, call): Promise<ProviderRuntimeResponse> {
       let text = "", usage: ProviderUsage | undefined, finishReason: Exclude<ProviderFinishReason,"error"> = "stop";
@@ -294,7 +314,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
       if (busy || revoked || value.trim().length < 8 || value.length > 512 || /[\r\n]/.test(value)) throw fail("auth_missing", "Invalid or inactive session credential input.");
       credential = value.trim();
     },
-    clearCredential() { credential = ""; revoked = true; for (const controller of pending) controller.abort(); if (!pending.size) void options.ordinaryArchive?.close().catch(() => undefined); },
+    clearCredential() { credential = ""; revoked = true; deliveryCandidates.clear(); for (const controller of pending) controller.abort(); if (!pending.size) void options.ordinaryArchive?.close().catch(() => undefined); },
     hasCredential: () => Boolean(credential),
     preview(request: ProviderRuntimeRequest) { return { endpoint: DEEPSEEK_ENDPOINT, ...prepare(request).body, automaticRetries: 0 }; },
   };

@@ -16,7 +16,7 @@ export function completedConversationHistory(tasks:TaskRecord[],events:Record<st
  const imported=first?.draft.savedRun?.taskMode==="discussion"&&first.draft.savedRun.includeCompletedContext?first.draft.conversationHistory??[]:[];
  const history:Array<{role:"user"|"assistant";content:string}>=boundConversationHistory(imported);
  for(const task of tasks){const activity=events[task.id]??[];
-  if(task.state!=="completed"||task.draft.historyEligible===false||!activity.some(e=>e.type==="provider_request_completed")||activity.some(e=>/^(tool_|terminal_|mcp_read_|editor_operation_|mcp_mutation_)/.test(e.type)))continue;
+  if(task.state!=="completed"||task.draft.historyEligible===false||activity.some(e=>e.type==="diagnostic_failed"&&(e.payload as {code?:string}|undefined)?.code==="discussion_delivery_unconfirmed")||!activity.some(e=>e.type==="provider_request_completed")||activity.some(e=>/^(tool_|terminal_|mcp_read_|editor_operation_|mcp_mutation_)/.test(e.type)))continue;
   const answer=assistantText(activity);if(!answer)continue;history.push({role:"user",content:task.draft.input},{role:"assistant",content:answer});
  }
  return boundConversationHistory(history.slice(-MAX_CONVERSATION_TURNS*2));

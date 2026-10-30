@@ -61,7 +61,7 @@ export function createNativeOrdinaryChatArchive(invoke: NativeInvoke): OrdinaryC
         await mutate(entry, {kind:"begin",requestId:input.requestId,messages});
         return entry;
       });
-      let index = 0, terminal: "completed" | "failed" | null = null;
+      let index = 0, terminal: "received" | "completed" | "failed" | null = null;
       return {
         append(text) { return enqueue(async () => {
           if (closed || poisoned || terminal) throw unavailable();
@@ -71,6 +71,12 @@ export function createNativeOrdinaryChatArchive(invoke: NativeInvoke): OrdinaryC
         complete(text, usage) { return enqueue(async () => {
           if (closed || poisoned || terminal) throw unavailable();
           await mutate(entry, {kind:"complete",requestId:input.requestId,text,usage});
+          terminal = "received";
+        }); },
+        confirmDelivery() { return enqueue(async () => {
+          if (closed || poisoned || (terminal !== "received" && terminal !== "completed")) throw unavailable();
+          if (terminal === "completed") return;
+          await mutate(entry, {kind:"confirmDelivery",requestId:input.requestId});
           terminal = "completed";
         }); },
         fail(cancelled) {

@@ -349,6 +349,11 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       supportsPreSendValidation: true,
       isMock: state.ready ? state.fixture : options.mode === "offline",
     }),
+    async confirmOrdinaryDelivery(requestId) {
+      if (responsesProfile) return;
+      const current = requireSession();
+      await current.adapter.confirmOrdinaryDelivery?.(requestId);
+    },
     async complete(request, call) {
       if(responsesProfile)return conversationAdapter(request).complete(withContext(request),call);
       const current = requireSession(),

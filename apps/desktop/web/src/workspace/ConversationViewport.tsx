@@ -51,6 +51,7 @@ export function ConversationViewport({ messages = [] }: ConversationViewportProp
         const pending = !["completed", "failed", "cancelled"].includes(task.state), failed = task.state === "failed", cancelled = task.state === "cancelled";
         const lastFailure = events.filter(event=>event.type==="provider_request_failed").at(-1);
         const failureHint = lastFailure ? responsesFailureHint(lastFailure.body??"",locale) : null;
+        const historyUnconfirmed = events.some(event=>event.type==="diagnostic_failed"&&(event.payload as {code?:string}|undefined)?.code==="discussion_delivery_unconfirmed");
         const pauseEvent = events.filter(event => event.type === "approval_required").at(-1);
         const pauseReason = (pauseEvent?.payload as { run?: { stopReason?: string } } | undefined)?.run?.stopReason;
         const paused = pending && task.state === "awaiting_approval" && Boolean(pauseReason);
@@ -60,6 +61,7 @@ export function ConversationViewport({ messages = [] }: ConversationViewportProp
             <span className="ua-chat-role">{t("chat.assistant")}</span>
             {answer ? <ConversationMarkdown text={answer} /> : pending && !paused ? <p className="ua-chat-pending" role="status">{t("chat.replying")}</p> : null}
             {paused && <p className="ua-chat-issue" role="status">{t(runStopReasonKey(pauseReason!))}</p>}
+            {historyUnconfirmed && <p className="ua-chat-issue" role="status">{t("chat.historyUnconfirmed")}</p>}
             {(failed || cancelled) && <p className="ua-chat-issue" role="status">{cancelled?t("chat.stopped"):failureHint?.summary??t("chat.failed")}{!cancelled&&failureHint?.modelDocs&&<> <a href={OPENAI_MODEL_DOCS} target="_blank" rel="noreferrer">{t("responses.modelDocs")}</a></>}</p>}
           </article>
           <button className="ua-chat-details-button" type="button" aria-expanded={detailTaskId === task.id} aria-controls={detailsId}

@@ -58,6 +58,13 @@ impl Fixture {
         .unwrap();
     }
     fn complete(&mut self, id: &str, text: &str) {
+        self.receive(id, text);
+        self.mutate(Mutation::ConfirmDelivery {
+            request_id: id.into(),
+        })
+        .unwrap();
+    }
+    fn receive(&mut self, id: &str, text: &str) {
         self.mutate(Mutation::Complete {
             request_id: id.into(),
             text: text.into(),
@@ -143,7 +150,7 @@ fn complete_unicode_bodies_survive_reopen_and_later_bounded_history() {
     assert!(f
         .events()
         .iter()
-        .any(|e| e.data["archiveFormat"] == "uagent.deepseek-chat-archive.v1"));
+        .any(|e| e.data["archiveFormat"] == "uagent.deepseek-chat-archive.v2"));
 }
 #[test]
 fn cancelled_partial_is_durable_evidence_never_a_completed_turn() {
@@ -341,12 +348,221 @@ fn other_models_tools_and_structured_authority_are_rejected() {
         .is_err());
     assert!(f.messages().is_empty());
 }
+mod fault_db {
+    use std::ffi::{c_char, c_int, c_void, CString};
+    #[link(name = "winsqlite3", kind = "raw-dylib")]
+    extern "C" {
+        fn sqlite3_open_v2(
+            path: *const c_char,
+            db: *mut *mut c_void,
+            flags: c_int,
+            vfs: *const c_char,
+        ) -> c_int;
+        fn sqlite3_exec(
+            db: *mut c_void,
+            sql: *const c_char,
+            callback: Option<
+                unsafe extern "C" fn(
+                    *mut c_void,
+                    c_int,
+                    *mut *mut c_char,
+                    *mut *mut c_char,
+                ) -> c_int,
+            >,
+            arg: *mut c_void,
+            errmsg: *mut *mut c_char,
+        ) -> c_int;
+        fn sqlite3_close_v2(db: *mut c_void) -> c_int;
+    }
+    pub fn reject_events(root: &std::path::Path) {
+        assert!(root.starts_with(std::env::temp_dir()));
+        let path = CString::new(root.join("runs.sqlite3").to_string_lossy().as_bytes()).unwrap();
+        let sql=CString::new("CREATE TRIGGER reject_delivery_event BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT,'controlled fixture write rejection'); END;").unwrap();
+        let mut db = std::ptr::null_mut();
+        unsafe {
+            assert_eq!(
+                sqlite3_open_v2(path.as_ptr(), &mut db, 2, std::ptr::null()),
+                0
+            );
+            let result = sqlite3_exec(
+                db,
+                sql.as_ptr(),
+                None,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            assert_eq!(sqlite3_close_v2(db), 0);
+            assert_eq!(result, 0);
+        }
+    }
+}
+fn save_delivery_evidence(f: &Fixture, name: &str) {
+    let Some(out) = std::env::var_os("UAGENT_DEEPSEEK_DELIVERY_EVIDENCE") else {
+        return;
+    };
+    let out = PathBuf::from(out);
+    assert!(out.is_absolute() && out.is_dir());
+    let events = f.events();
+    let state = events
+        .iter()
+        .filter(|e| e.kind == "coordinator_state_v1")
+        .last()
+        .unwrap()
+        .data
+        .clone();
+    let value = json!({"coordinatorState":state,"providerMessages":f.messages(),"events":events,"actualWindowsSQLite":true});
+    std::fs::write(
+        out.join(format!("{name}.json")),
+        serde_json::to_vec_pretty(&value).unwrap(),
+    )
+    .unwrap();
+}
+#[test]
+fn received_output_is_not_completed_until_explicit_terminal_delivery_confirmation() {
+    let mut f = Fixture::new();
+    f.begin("one", messages("Question"));
+    f.delta("one", 0, "Full received text");
+    f.receive("one", "Full received text");
+    assert_eq!(
+        f.events().last().unwrap().data["lastRequestStatus"],
+        "received"
+    );
+    assert_eq!(
+        f.messages().last().unwrap()["content"],
+        "Full received text"
+    );
+    assert!(f
+        .mutate(Mutation::ConfirmDelivery {
+            request_id: "foreign".into()
+        })
+        .is_err());
+    f.mutate(Mutation::ConfirmDelivery {
+        request_id: "one".into(),
+    })
+    .unwrap();
+    f.mutate(Mutation::ConfirmDelivery {
+        request_id: "one".into(),
+    })
+    .unwrap();
+    f.close();
+    assert_eq!(
+        RunStore::open(&f.root)
+            .unwrap()
+            .snapshot(&f.opened.project_id, &f.opened.run_id)
+            .unwrap()
+            .run
+            .status,
+        RunStatus::Succeeded
+    );
+    save_delivery_evidence(&f, "normal-confirmed");
+}
+#[test]
+fn late_stop_with_failed_retraction_reopens_as_received_never_completed() {
+    let mut f = Fixture::new();
+    f.begin("one", messages("Question"));
+    f.delta("one", 0, "Full received text");
+    f.receive("one", "Full received text");
+    fault_db::reject_events(&f.root);
+    assert!(f
+        .mutate(Mutation::Fail {
+            request_id: "one".into(),
+            cancelled: true
+        })
+        .is_err());
+    assert!(f
+        .broker
+        .close(
+            "owned",
+            HandleInput {
+                schema_version: 1,
+                archive_handle: f.opened.archive_handle.clone()
+            }
+        )
+        .is_err());
+    let reopened = RunStore::open(&f.root)
+        .unwrap()
+        .snapshot(&f.opened.project_id, &f.opened.run_id)
+        .unwrap();
+    assert_eq!(reopened.run.status, RunStatus::Paused);
+    let events = f.events();
+    assert_eq!(events.last().unwrap().data["lastRequestStatus"], "received");
+    assert!(!events
+        .iter()
+        .any(|e| e.kind == "coordinator_state_v1" && e.data["lastRequestStatus"] == "completed"));
+    assert_eq!(
+        f.messages().last().unwrap()["content"],
+        "Full received text"
+    );
+    save_delivery_evidence(&f, "late-stop-retraction-rejected");
+}
+#[test]
+fn rejected_delivery_confirmation_keeps_received_text_ineligible_on_reopen() {
+    let mut f = Fixture::new();
+    f.begin("one", messages("Question"));
+    f.receive("one", "Full received text");
+    fault_db::reject_events(&f.root);
+    assert!(f
+        .mutate(Mutation::ConfirmDelivery {
+            request_id: "one".into()
+        })
+        .is_err());
+    assert_eq!(
+        f.events().last().unwrap().data["lastRequestStatus"],
+        "received"
+    );
+    assert_eq!(
+        f.messages().last().unwrap()["content"],
+        "Full received text"
+    );
+    save_delivery_evidence(&f, "confirmation-rejected");
+}
+#[test]
+fn rejected_output_completion_keeps_only_received_delta_evidence() {
+    let mut f = Fixture::new();
+    f.begin("one", messages("Question"));
+    f.delta("one", 0, "Full received text");
+    fault_db::reject_events(&f.root);
+    assert!(f
+        .mutate(Mutation::Complete {
+            request_id: "one".into(),
+            text: "Full received text".into(),
+            usage: None
+        })
+        .is_err());
+    assert!(f
+        .mutate(Mutation::ConfirmDelivery {
+            request_id: "one".into()
+        })
+        .is_err());
+    assert_eq!(
+        f.events().last().unwrap().data["lastRequestStatus"],
+        "pending"
+    );
+    assert!(!f.messages().iter().any(|m| m["role"] == "assistant"));
+    save_delivery_evidence(&f, "completion-rejected");
+}
+#[test]
+fn closing_received_output_does_not_implicitly_confirm_it() {
+    let mut f = Fixture::new();
+    f.begin("one", messages("Question"));
+    f.receive("one", "Full received text");
+    f.close();
+    assert_eq!(
+        f.events().last().unwrap().data["lastRequestStatus"],
+        "cancelled"
+    );
+    assert_eq!(
+        f.messages().last().unwrap()["content"],
+        "Full received text"
+    );
+    save_delivery_evidence(&f, "received-then-close");
+}
 #[test]
 fn stop_after_provider_completion_keeps_bytes_but_retracts_completed_delivery() {
     let mut f = Fixture::new();
     f.begin("one", messages("Question"));
     f.delta("one", 0, "Full provider reply");
-    f.complete("one", "Full provider reply");
+    f.receive("one", "Full provider reply");
     f.mutate(Mutation::Fail {
         request_id: "one".into(),
         cancelled: true,

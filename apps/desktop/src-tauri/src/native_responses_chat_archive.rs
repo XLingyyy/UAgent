@@ -125,6 +125,7 @@ struct Completed {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RequestStatus {
     Pending,
+    Received,
     Completed,
     Failed,
     Cancelled,
@@ -133,6 +134,7 @@ impl RequestStatus {
     fn text(self) -> &'static str {
         match self {
             Self::Pending => "pending",
+            Self::Received => "received",
             Self::Completed => "completed",
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
@@ -401,7 +403,7 @@ impl ChatArchive {
             "deepseek-flash",
             project,
         )?;
-        archive.archive_format = "uagent.deepseek-chat-archive.v1";
+        archive.archive_format = "uagent.deepseek-chat-archive.v2";
         Ok(archive)
     }
 
@@ -608,6 +610,12 @@ impl ChatArchive {
         if assistant.len() > MAX_MESSAGE_BYTES {
             return Err(StoreError::new("capacity"));
         }
+        // Provider output durability is separate from terminal runtime delivery.
+        let delivery_status = if self.archive_format == "uagent.deepseek-chat-archive.v2" {
+            RequestStatus::Received
+        } else {
+            RequestStatus::Completed
+        };
         let payload = usage.payload(logical_request_id)?;
         let timestamp = now()?.max(self.updated_at);
         let assistant_message = json!({"role":"assistant","content":assistant});
@@ -623,17 +631,51 @@ impl ChatArchive {
             ],
             RunStatus::Paused,
             Some(logical_request_id),
-            Some(RequestStatus::Completed),
+            Some(delivery_status),
             self.requests.len(),
             timestamp,
         )?;
         self.pending = None;
-        self.last_request_status = Some(RequestStatus::Completed);
+        self.last_request_status = Some(delivery_status);
         self.last_completion = Some(Completed {
             id: logical_request_id.into(),
             assistant: assistant.into(),
             usage,
         });
+        Ok(ack)
+    }
+
+    /// Data-only receipt, issued only after the runtime task is terminal-completed.
+    /// If this transaction fails, received text stays readable but context stays ineligible.
+    pub(crate) fn confirm_delivery(&mut self, request_id: &str) -> Result<ArchiveAck> {
+        self.open_for_write()?;
+        if self.archive_format != "uagent.deepseek-chat-archive.v2"
+            || self.pending.is_some()
+            || self.last_request_id.as_deref() != Some(request_id)
+            || self.last_completion.is_none()
+        {
+            return Err(StoreError::new("conflict"));
+        }
+        if self.last_request_status == Some(RequestStatus::Completed) {
+            return Ok(self.ack());
+        }
+        if self.last_request_status != Some(RequestStatus::Received) {
+            return Err(StoreError::new("conflict"));
+        }
+        let timestamp = now()?.max(self.updated_at);
+        let ack = self.commit(
+            Vec::new(),
+            vec![(
+                "status_changed",
+                json!({"status":"paused","reason":"runtime discussion delivery confirmed"}),
+            )],
+            RunStatus::Paused,
+            Some(request_id),
+            Some(RequestStatus::Completed),
+            self.requests.len(),
+            timestamp,
+        )?;
+        self.last_request_status = Some(RequestStatus::Completed);
         Ok(ack)
     }
 
@@ -691,7 +733,7 @@ impl ChatArchive {
         request_id: &str,
         cancelled: bool,
     ) -> Result<ArchiveAck> {
-        if self.archive_format != "uagent.deepseek-chat-archive.v1"
+        if self.archive_format != "uagent.deepseek-chat-archive.v2"
             || self.pending.is_some()
             || self.last_request_id.as_deref() != Some(request_id)
             || self.last_completion.is_none()

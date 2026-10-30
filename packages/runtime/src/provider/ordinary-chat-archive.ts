@@ -7,7 +7,10 @@ export interface OrdinaryChatArchiveInput {
 }
 export interface OrdinaryChatRequestArchive {
   append(text: string): Promise<void>;
+  /** Persist full received output; not evidence of runtime delivery. */
   complete(text: string, usage: ProviderUsage): Promise<void>;
+  /** Data-only final acknowledgement after the runtime task is terminal-completed. */
+  confirmDelivery(): Promise<void>;
   fail(cancelled: boolean): Promise<void>;
 }
 export interface OrdinaryChatArchive {

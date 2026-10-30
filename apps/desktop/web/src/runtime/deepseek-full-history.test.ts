@@ -1,8 +1,9 @@
 // @vitest-environment node
 import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
-import {createDeepSeekAccountSession,createOutboundConsentGate,DEEPSEEK_MODEL} from "@uagent/runtime";
-import type {ProviderRuntimeRequest} from "@uagent/shared";
+import {createAgentLoopRuntime,createDeepSeekAccountSession,createOutboundConsentGate,DEEPSEEK_MODEL} from "@uagent/runtime";
+import type {ProviderRuntimeRequest,TaskDraft} from "@uagent/shared";
 import type {NativeInvoke} from "./project-native-adapter";
+import {completedConversationHistory} from "./conversation-context";
 import {createNativeOrdinaryChatArchive} from "./native-ordinary-chat-archive";
 const key="synthetic-memory-key-only";
 const frame=(text:string,finish=false)=>"data: "+JSON.stringify({model:DEEPSEEK_MODEL,choices:[{delta:{content:text},...(finish?{finish_reason:"stop"}:{})}],...(finish?{usage:{prompt_tokens:20,completion_tokens:200,total_tokens:220}}:{})})+"\n\n"+(finish?"data: [DONE]\n\n":"");
@@ -30,6 +31,48 @@ function harness(fetcher:typeof fetch,hook?:(command:string,input:Record<string,
 beforeEach(()=>{vi.stubGlobal("fetch",vi.fn(()=>{throw Error("REAL NETWORK FORBIDDEN");}));});
 afterEach(()=>{vi.unstubAllGlobals();});
 describe("DeepSeek ordinary full-history observer (synthetic SSE/native DTOs)",()=>{
+ const draft:TaskDraft={input:"Ordinary delivery",projectId:"A",providerId:"deepseek",modelId:DEEPSEEK_MODEL,conversationId:"conversation-A",taskMode:"discussion",permissionMode:"request_approval",reasoningEffort:"medium",runMode:"local",branch:"",contextPercent:0};
+ it("confirms only after terminal task delivery and Stop cannot cancel during the data receipt",async()=>{
+  let release:(()=>void)|undefined;
+  const h=harness(vi.fn(async()=>new Response(frame("Delivered complete text",true),{headers:{"Content-Type":"text/event-stream"}})),async(command,input)=>{
+   if(command==="mutate_native_discussion_archive"&&(input.mutation as {kind:string}).kind==="confirmDelivery"){
+    expect(runtime.getSnapshot().tasksById[runtime.getSnapshot().activeTaskId!].state).toBe("completed");
+    await new Promise<void>(r=>{release=r;});
+   }
+  });
+  const runtime:ReturnType<typeof createAgentLoopRuntime>=createAgentLoopRuntime({runtimeMode:"mock",providerAdapter:h.session.adapter,providerEnabled:true,providerAnalysisOnly:true});
+  const operation=runtime.submitTask(draft,{authorizeOrdinarySend:()=>h.intent()});
+  await vi.waitFor(()=>expect(release).toBeDefined());const taskId=runtime.getSnapshot().activeTaskId!;
+  await runtime.cancelTask(taskId);expect(runtime.getSnapshot().tasksById[taskId].state).toBe("completed");
+  release!();await operation;expect(h.changes().map(m=>m.kind)).toEqual(["begin","delta","complete","confirmDelivery"]);
+  expect(runtime.getSnapshot().eventsByTaskId[taskId].some(e=>e.type==="task_cancelled")).toBe(false);await h.archive.close();
+ });
+ it("keeps normal text visible but excludes context and reports confirmation-write failure",async()=>{
+  const h=harness(vi.fn(async()=>new Response(frame("Received text remains visible",true),{headers:{"Content-Type":"text/event-stream"}})),async(command,input)=>{
+   if(command==="mutate_native_discussion_archive"&&(input.mutation as {kind:string}).kind==="confirmDelivery")throw Error("SQL diagnostic "+key);
+  });
+  const runtime=createAgentLoopRuntime({runtimeMode:"mock",providerAdapter:h.session.adapter,providerEnabled:true,providerAnalysisOnly:true});
+  const task=await runtime.submitTask(draft,{authorizeOrdinarySend:()=>h.intent()}),snapshot=runtime.getSnapshot();
+  expect(task.state).toBe("completed");expect(snapshot.eventsByTaskId[task.id].some(e=>e.type==="provider_request_completed")).toBe(true);
+  expect(snapshot.eventsByTaskId[task.id].some(e=>e.type==="diagnostic_failed"&&(e.payload as {code?:string})?.code==="discussion_delivery_unconfirmed")).toBe(true);
+  expect(completedConversationHistory([task],snapshot.eventsByTaskId)).toEqual([]);
+  expect(JSON.stringify(snapshot)).not.toContain(key);expect(h.changes().filter(m=>m.kind==="confirmDelivery")).toHaveLength(1);await h.archive.close();
+ });
+ it("late Stop plus rejected retraction never confirms delivery or retries and exposes storage uncertainty",async()=>{
+  let release:(()=>void)|undefined;
+  const fetcher=vi.fn(async()=>new Response(frame("Durable full provider text",true),{headers:{"Content-Type":"text/event-stream"}}));
+  const h=harness(fetcher,async(command,input)=>{
+   const kind=(input.mutation as {kind?:string}|undefined)?.kind;
+   if(command==="mutate_native_discussion_archive"&&kind==="complete")await new Promise<void>(r=>{release=r;});
+   if(command==="mutate_native_discussion_archive"&&kind==="fail")throw Error("Controlled SQLite event write rejection");
+  }),abort=new AbortController();
+  const result=h.session.adapter.complete(request(),{signal:abort.signal,outboundSendIntent:h.intent()}).catch(e=>e);
+  await vi.waitFor(()=>expect(release).toBeDefined());abort.abort();release!();
+  expect(await result).toMatchObject({code:"provider_unavailable",message:"Conversation history delivery is unconfirmed. Saved text is excluded from restored context; no automatic retry was sent."});
+  expect(h.changes().map(m=>m.kind)).toEqual(["begin","delta","complete","fail"]);
+  expect(h.changes().some(m=>m.kind==="confirmDelivery")).toBe(false);expect(fetcher).toHaveBeenCalledTimes(1);await h.archive.close();
+ });
+
  it("automatically saves complete bodies over 2000 characters and two rounds without a second dialog",async()=>{
   const answer="Long complete body. ".repeat(200),fetcher=vi.fn(async()=>new Response(frame(answer,true),{headers:{"Content-Type":"text/event-stream"}})),h=harness(fetcher);
   const first=await h.session.adapter.complete(request(),{outboundSendIntent:h.intent()});

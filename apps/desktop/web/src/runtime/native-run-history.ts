@@ -312,7 +312,7 @@ function parseArchive(value: unknown, projectId: string, runId: string): NativeR
     const logical = coordinatorState.logicalProjectId;
     if ((logical !== null && typeof logical !== "string") ||
         coordinatorState.archiveOnly !== true ||
-        !["uagent.responses-chat-archive.v1","uagent.deepseek-chat-archive.v1"].includes(String(coordinatorState.archiveFormat)) ||
+        !["uagent.responses-chat-archive.v1","uagent.deepseek-chat-archive.v1","uagent.deepseek-chat-archive.v2"].includes(String(coordinatorState.archiveFormat)) ||
         projectId !== (logical === null ? "chat:local" : "chat:project:" + logical) ||
         saved.projectRoot !== (logical === null ? "conversation://local" : "conversation://chat")) return invalid();
     id(coordinatorState.providerId); id(coordinatorState.modelId);
@@ -445,7 +445,7 @@ export function canContinueNativeHistory(archive: NativeRunArchive): boolean {
 /** Select only completed discussion requests. Failed/cancelled user blocks are
  * display evidence, never silently paired with a later successful answer. */
 export function completedArchivedDiscussionText(archive:NativeRunArchive):Array<{role:"user"|"assistant";content:string}>{
-  if(archive.coordinatorState?.taskMode!=="discussion")return [];
+  if(archive.coordinatorState?.taskMode!=="discussion"||archive.coordinatorState.archiveFormat==="uagent.deepseek-chat-archive.v1")return [];
   const pending=new Map<string,string>(),selected=new Set<string>(),history:Array<{role:"user"|"assistant";content:string}>=[];
   const finalStatus=new Map<string,RunJsonValue>();
   for(const event of archive.events){

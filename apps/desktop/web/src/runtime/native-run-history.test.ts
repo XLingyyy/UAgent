@@ -87,7 +87,7 @@ it("selects only completed archived discussion turns, preserving the current use
  expect(completedArchivedDiscussionText(archive)).toEqual([{role:"user",content:"question"},{role:"assistant",content:"answer"}]);
 });
 
-it.each(["cancelled","failed"])("does not restore a completed provider body whose delivery was later %s",status=>{
+it.each(["received","cancelled","failed"])("does not restore a completed provider body whose delivery was later %s",status=>{
  const archive={coordinatorState:{taskMode:"discussion"},providerMessages:[{role:"user",content:"Question"},{role:"assistant",content:"Received full provider reply"}],events:[
  {kind:"model_started",data:{payload:{requestId:"one",contextEligible:true,messages:[{role:"user",content:"Question"}]}}},
  {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"one",lastRequestStatus:"completed",messageCount:2}},
@@ -106,6 +106,18 @@ it("retains attachment-bearing archive bodies without selecting them for ordinar
  payload.contextEligible=true;expect(completedArchivedDiscussionText(archive)).toEqual([]);
 });
 
+it("requires explicit v2 delivery confirmation and refuses unprovable old DeepSeek completion",()=>{
+ const archive={coordinatorState:{taskMode:"discussion",archiveFormat:"uagent.deepseek-chat-archive.v2"},providerMessages:[{role:"user",content:"Q"},{role:"assistant",content:"Full received body"}],events:[
+  {kind:"model_started",data:{payload:{requestId:"one",contextEligible:true,messages:[{role:"user",content:"Q"}]}}},
+  {kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"one",lastRequestStatus:"received",messageCount:2}}
+ ]} as unknown as NativeRunArchive;
+ expect(completedArchivedDiscussionText(archive)).toEqual([]);
+ archive.events.push({kind:"coordinator_state_v1",data:{taskMode:"discussion",lastRequestId:"one",lastRequestStatus:"completed",messageCount:2}} as never);
+ expect(completedArchivedDiscussionText(archive)).toEqual([{role:"user",content:"Q"},{role:"assistant",content:"Full received body"}]);
+ archive.coordinatorState!.archiveFormat="uagent.deepseek-chat-archive.v1";
+ expect(completedArchivedDiscussionText(archive)).toEqual([]);
+ expect(archive.providerMessages[1].content).toBe("Full received body");
+});
 describe("native run history read-only port", () => {
   it("binds discussion text to its recorded logical project namespace and known archive format",async()=>{
     const f=archiveFixture(),project="chat:project:A";

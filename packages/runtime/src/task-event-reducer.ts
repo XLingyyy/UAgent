@@ -148,6 +148,13 @@ function statusForState(state: TaskState): RuntimeStatus {
 export function applyTaskEvent(snapshot: RuntimeSnapshot, event: TaskEvent): RuntimeSnapshot {
   const previousTask = snapshot.tasksById[event.taskId];
   const state = stateForEvent(event);
+  // Data-only archive warnings may arrive after terminal delivery. Retain the
+  // warning without reopening or changing the terminal task state.
+  if (previousTask && isTerminalTaskState(previousTask.state) && event.type === "diagnostic_failed" &&
+      (event.payload as {code?:string}|undefined)?.code === "discussion_delivery_unconfirmed") {
+    return { ...snapshot, eventsByTaskId: { ...snapshot.eventsByTaskId,
+      [event.taskId]: [...(snapshot.eventsByTaskId[event.taskId] ?? []), event] } };
+  }
   if (
     previousTask &&
     isTerminalTaskState(previousTask.state) &&

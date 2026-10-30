@@ -33,6 +33,20 @@ async function mount(ordinary=false,savedRun?:TaskDraft["savedRun"]){
  return{...view,manager,runtime,gate,fetcher,sent,streams,input,send,approve,delta,done,reject,locale};
 }
 describe("multi-turn conversation and incremental text without real API",()=>{
+ it("shows terminal history uncertainty in both languages without resending or reusing the turn",async()=>{
+  const h=await mount(true);vi.spyOn(h.manager.adapter,"confirmOrdinaryDelivery").mockRejectedValue(Error("synthetic archive acknowledgement loss"));
+  fireEvent.change(h.input(),{target:{value:"One ordinary delivered reply"}});
+  fireEvent.click(screen.getByRole("button",{name:"Send task"}));
+  await waitFor(()=>expect(h.sent).toHaveLength(1));await h.delta("Visible received answer");await h.done();
+  expect(screen.getByText(/history confirmation result is unknown/)).toBeTruthy();
+  const snapshot=h.runtime.getSnapshot(),task=snapshot.tasksById[snapshot.activeTaskId!];
+  expect(task.state).toBe("completed");expect(completedConversationHistory([task],snapshot.eventsByTaskId)).toEqual([]);
+  act(()=>h.locale.setLocale("zh-CN"));
+  expect(screen.getByText(/历史确认结果未知/)).toBeTruthy();
+  expect(document.querySelector(".ua-chat-message--assistant")?.textContent).toContain("Visible received answer");
+  expect(h.sent).toHaveLength(1);expect(h.gate.getPending()).toBeNull();
+ });
+
  it.each(["provider","model"])("refuses restored discussion text with a different %s origin before any send",async(kind)=>{
   const savedRun:NonNullable<TaskDraft["savedRun"]>={taskMode:"discussion",logicalProjectId:null,
    parentRunId:"archive",projectId:"chat:local",conversationId:"restored",includeCompletedContext:true,completed:true,

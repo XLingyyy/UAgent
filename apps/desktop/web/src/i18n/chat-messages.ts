@@ -1,4 +1,5 @@
 export const chatMessages={
+ "chat.historyUnconfirmed":["回复已收到，但历史确认结果未知；未能核实交付确认的记录不会用于恢复上下文。请保留原文，不要自动重发。","The reply was received, but the history confirmation result is unknown. Records without a verified delivery receipt are excluded from restored context. Keep the text; do not resend automatically."],
  "chat.runDetails":["运行详情","Run details"],
  "chat.closeDetails":["关闭运行详情","Close run details"],
  "chat.runEvents":["运行记录","Run events"],

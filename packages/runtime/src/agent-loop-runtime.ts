@@ -727,6 +727,14 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
           if (options.providerAnalysisOnly) {
             emit(taskId, "task_completed", "Analysis completed", "Provider analysis completed. No tools were executed.", "success");
             sessionEngine.recordTaskCompletion(taskId, "completed", redactedDraft.input, "provider");
+            // Task completion is the synchronous delivery boundary. cancelTask cannot
+            // change a terminal task while the data-only archive receipt is pending.
+            if (draft.taskMode === "discussion" && completed?.type === "provider_request_completed") {
+              try { await activeBridge.confirmOrdinaryDelivery(completed.requestId); }
+              catch { emit(taskId, "diagnostic_failed", "Conversation history unconfirmed",
+                "History confirmation could not be acknowledged. Recovery requires a verified delivery receipt; do not resend automatically.", "warning",
+                { code: "discussion_delivery_unconfirmed" }); }
+            }
             return snapshot.tasksById[taskId] ?? record;
           }
         } catch {
