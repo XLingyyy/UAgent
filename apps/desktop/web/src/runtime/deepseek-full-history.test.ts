@@ -3,6 +3,7 @@ import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import {createAgentLoopRuntime,createDeepSeekAccountSession,createOutboundConsentGate,DEEPSEEK_MODEL} from "@uagent/runtime";
 import type {ProviderRuntimeRequest,TaskDraft} from "@uagent/shared";
 import type {NativeInvoke} from "./project-native-adapter";
+import {createSafeProviderSession} from "./safe-provider-session";
 import {completedConversationHistory} from "./conversation-context";
 import {createNativeOrdinaryChatArchive} from "./native-ordinary-chat-archive";
 const key="synthetic-memory-key-only";
@@ -31,6 +32,12 @@ function harness(fetcher:typeof fetch,hook?:(command:string,input:Record<string,
 beforeEach(()=>{vi.stubGlobal("fetch",vi.fn(()=>{throw Error("REAL NETWORK FORBIDDEN");}));});
 afterEach(()=>{vi.unstubAllGlobals();});
 describe("DeepSeek ordinary full-history observer (synthetic SSE/native DTOs)",()=>{
+ it("does not treat a closed non-DeepSeek session as a missing DeepSeek delivery",async()=>{
+  const invoke=vi.fn(async()=>{throw Error("No native call expected");});
+  const manager=createSafeProviderSession({mode:"live",liveAuthorized:true,nativeInvoke:invoke});
+  await expect(manager.adapter.confirmOrdinaryDelivery!("retired-request",{providerId:"configured-responses",modelId:"configured-model"})).resolves.toBeUndefined();
+  expect(invoke).not.toHaveBeenCalled();manager.dispose();
+ });
  const draft:TaskDraft={input:"Ordinary delivery",projectId:"A",providerId:"deepseek",modelId:DEEPSEEK_MODEL,conversationId:"conversation-A",taskMode:"discussion",permissionMode:"request_approval",reasoningEffort:"medium",runMode:"local",branch:"",contextPercent:0};
  it("confirms only after terminal task delivery and Stop cannot cancel during the data receipt",async()=>{
   let release:(()=>void)|undefined;

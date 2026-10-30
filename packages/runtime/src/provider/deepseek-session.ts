@@ -291,8 +291,10 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
   }
   const adapter: ProviderAdapter = {
     id: "deepseek", stream,
-    async confirmOrdinaryDelivery(requestId) {
+    async confirmOrdinaryDelivery(requestId, identity) {
       if (!options.ordinaryArchive) return;
+      if (identity.providerId !== "deepseek" || identity.modelId !== DEEPSEEK_MODEL)
+        throw fail("provider_unavailable", "Conversation history delivery identity changed.");
       const candidate = deliveryCandidates.get(requestId);
       deliveryCandidates.delete(requestId);
       if (!candidate || revoked || !credential) throw fail("provider_unavailable", "Conversation history delivery is unconfirmed.");

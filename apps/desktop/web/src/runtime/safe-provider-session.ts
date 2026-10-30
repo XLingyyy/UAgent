@@ -349,10 +349,12 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       supportsPreSendValidation: true,
       isMock: state.ready ? state.fixture : options.mode === "offline",
     }),
-    async confirmOrdinaryDelivery(requestId) {
-      if (responsesProfile) return;
+    async confirmOrdinaryDelivery(requestId, identity) {
+      // Use the terminal request identity, not whichever session is now selected.
+      // In particular, a just-closed Responses profile has no DeepSeek receipt.
+      if (identity.providerId !== "deepseek") return;
       const current = requireSession();
-      await current.adapter.confirmOrdinaryDelivery?.(requestId);
+      await current.adapter.confirmOrdinaryDelivery?.(requestId, identity);
     },
     async complete(request, call) {
       if(responsesProfile)return conversationAdapter(request).complete(withContext(request),call);

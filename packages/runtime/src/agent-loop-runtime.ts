@@ -730,7 +730,7 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
             // Task completion is the synchronous delivery boundary. cancelTask cannot
             // change a terminal task while the data-only archive receipt is pending.
             if (draft.taskMode === "discussion" && completed?.type === "provider_request_completed") {
-              try { await activeBridge.confirmOrdinaryDelivery(completed.requestId); }
+              try { await activeBridge.confirmOrdinaryDelivery(completed.requestId, {providerId:completed.response.providerId,modelId:completed.response.modelId}); }
               catch { emit(taskId, "diagnostic_failed", "Conversation history unconfirmed",
                 "History confirmation could not be acknowledged. Recovery requires a verified delivery receipt; do not resend automatically.", "warning",
                 { code: "discussion_delivery_unconfirmed" }); }

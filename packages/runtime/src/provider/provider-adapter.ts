@@ -19,6 +19,6 @@ export interface ProviderAdapter {
   complete(request: ProviderRuntimeRequest, options?: ProviderCallOptions): Promise<ProviderRuntimeResponse>;
   stream?(request: ProviderRuntimeRequest, options?: ProviderCallOptions): AsyncIterable<ProviderStreamChunk>;
   /** Data-only archive receipt after terminal ordinary-task delivery; never a send/tool grant. */
-  confirmOrdinaryDelivery?(requestId: string): Promise<void>;
+  confirmOrdinaryDelivery?(requestId: string, identity: Pick<ProviderRuntimeRequest,"providerId"|"modelId">): Promise<void>;
   getCapabilities(): ProviderCapability;
 }
