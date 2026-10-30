@@ -13,8 +13,8 @@ export const responsesMessages = {
     "This Responses session supports project investigations only. Switch task mode.",
   ],
   "responses.nativeUnavailable": [
-    "Responses 目前仅支持隔离的本机夹具，普通模式尚未开放。",
-    "Responses is currently available only in an isolated local fixture. Ordinary mode is not yet supported.",
+    "Responses 需在 Windows 桌面配置 OpenAI 官方地址 https://api.openai.com/v1；其他端点仅保存配置。",
+    "Responses requires the Windows desktop and the official OpenAI API root https://api.openai.com/v1. Other endpoints are configuration only.",
   ],
   "responses.prepareFixture": ["准备 Responses 本地演示", "Prepare local Responses demo"],
   "responses.fixtureHelp": [

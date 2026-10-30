@@ -6,6 +6,7 @@ import {ProviderSettings} from "./ProviderSettings";
 import {ProviderSessionSetup} from "./ProviderSessionSetup";
 import {nativeProductSettings} from "../../runtime/native-product-settings";
 import {createResponsesProvider,supportsProviderModel} from "../../provider/runtime-availability";
+import {createComposerModelOptions} from "../../composer/composer-data";
 import {createSafeProviderSession} from "../../runtime/safe-provider-session";
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();});
 function wrap(child:React.ReactNode,locale:"en"|"zh-CN"="en"){
@@ -40,6 +41,7 @@ describe("official Responses configuration",()=>{
   const p=createResponsesProvider();p.models=[{id:"synthetic",label:"Synthetic",supportsReasoning:false,contextWindow:32768}];
   expect(supportsProviderModel(p,"synthetic")).toBe(false);
   nativeHost();expect(supportsProviderModel(p,"synthetic")).toBe(true);
+  expect(createComposerModelOptions([p]).find(m=>m.modelId==="synthetic")).toMatchObject({networkMode:"live",isFixture:false,runtimeSupported:true});
   for(const root of ["https://other.invalid/v1","http://localhost:8000/v1","https://api.openai.com.evil.invalid/v1"])
    expect(supportsProviderModel({...p,baseUrl:root},"synthetic")).toBe(false);
  });

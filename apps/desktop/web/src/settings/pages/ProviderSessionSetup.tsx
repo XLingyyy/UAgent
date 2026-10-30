@@ -127,7 +127,7 @@ export function ProviderSessionSetup({
               ? fixture ? t("demo.sessionHelp") : (locale === "zh-CN"
                 ? "支持 OpenAI 官方 Responses 服务。开启会话只保存临时凭证；点击发送才会联网，连接状态尚未验证。"
                 : "Supports the official OpenAI Responses service. Opening holds a temporary credential; only Send makes a request. Connectivity is unverified.")
-              : (locale === "zh-CN" ? "此版本仅支持 https://api.openai.com/v1 的 Responses。其他端点仅保存配置。" : "This version supports Responses at https://api.openai.com/v1 only. Other endpoints are configuration only.")
+              : t("responses.nativeUnavailable")
             : supported
               ? t("product.connectionHelp")
               : t("product.unsupportedHelp")}

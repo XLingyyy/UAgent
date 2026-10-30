@@ -1,4 +1,4 @@
-import {supportsProviderModel} from "../provider/runtime-availability";
+import {supportsProviderModel,responsesFixtureAvailable} from "../provider/runtime-availability";
 import type { PermissionMode } from "@uagent/shared";
 import { DEFAULT_PROVIDERS, formatContextWindow } from "../provider/provider-data";
 import type { ProviderConfig, ProviderReasoningEffort } from "../types/provider";
@@ -120,7 +120,7 @@ export function createComposerModelOptions(providers: ProviderConfig[]): Compose
     }
     provider.models.forEach((model) => {
       const runtimeSupported=supportsProviderModel(provider,model.id);
-      const responsesFixture=provider.wireApi==="responses"&&runtimeSupported;
+      const responsesFixture=provider.wireApi==="responses"&&runtimeSupported&&responsesFixtureAvailable();
       options.push({
         id: JSON.stringify([provider.providerId, model.id]),
         providerId: provider.providerId,
