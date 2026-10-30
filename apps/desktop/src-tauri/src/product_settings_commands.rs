@@ -347,6 +347,7 @@ pub(crate) async fn save_product_provider(
     input: SaveProviderInput,
 ) -> Result<ProviderSnapshot> {
     worker(move || {
+        let _deepseek_update=crate::native_saved_deepseek::begin_provider_update(&input.config.provider_id).map_err(|_|error("unavailable","native provider revocation is unavailable"))?;
         let _provider_update=crate::native_responses_commands::begin_provider_update(&input.config.provider_id)
             .map_err(|_| error("unavailable","native provider session invalidation failed"))?;
         ProductSettingsStore::open(settings_root(&app_data_root(&app)?))?.save_provider(
@@ -363,6 +364,7 @@ pub(crate) async fn delete_product_provider(
     input: DeleteProviderInput,
 ) -> Result<ProviderVersion> {
     worker(move || {
+        let _deepseek_update=crate::native_saved_deepseek::begin_provider_update(&input.version.provider_id).map_err(|_|error("unavailable","native provider revocation is unavailable"))?;
         let _provider_update=crate::native_responses_commands::begin_provider_update(&input.version.provider_id)
             .map_err(|_| error("unavailable","native provider session invalidation failed"))?;
         ProductSettingsStore::open(settings_root(&app_data_root(&app)?))?

@@ -461,9 +461,32 @@ impl NativeSession {
         body: Vec<u8>,
         checker: &dyn SourceChecker,
     ) -> Result<PreparedRequest> {
+        self.prepare_for(lease, base_url, body, checker, false)
+    }
+    pub(crate) fn prepare_chat_completions(
+        &self,
+        lease: &Lease,
+        base_url: &str,
+        body: Vec<u8>,
+        checker: &dyn SourceChecker,
+    ) -> Result<PreparedRequest> {
+        self.prepare_for(lease, base_url, body, checker, true)
+    }
+    fn prepare_for(
+        &self,
+        lease: &Lease,
+        base_url: &str,
+        body: Vec<u8>,
+        checker: &dyn SourceChecker,
+        chat: bool,
+    ) -> Result<PreparedRequest> {
         self.check_source(lease, checker, SourcePhase::Prepare)?;
-        let endpoint = crate::provider_endpoint_policy::prepare_responses_endpoint(base_url)
-            .map_err(|_| FailureCode::EndpointRejected)?;
+        let endpoint = if chat {
+            crate::provider_endpoint_policy::prepare_deepseek_endpoint(base_url)
+        } else {
+            crate::provider_endpoint_policy::prepare_responses_endpoint(base_url)
+        }
+        .map_err(|_| FailureCode::EndpointRejected)?;
         if body.is_empty() || body.len() > MAX_REQUEST_BYTES || std::str::from_utf8(&body).is_err()
         {
             return Err(FailureCode::InvalidBody);

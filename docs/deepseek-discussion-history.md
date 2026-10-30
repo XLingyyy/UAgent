@@ -59,11 +59,12 @@ selection refuses them. No old rows are deleted, rewritten or silently migrated.
 The optional older manual text-copy format remains readable unchanged.
 
 Restoration requires explicit text selection, a matching recorded logical
-project namespace and provider/model, a fresh memory credential/session, and a new
+project namespace and provider/model, a fresh native session, and a new
 ordinary Send intent. It creates a new conversation/run. Existing eight-turn /
 12 KiB selection bounds still apply. Attachment-bearing requests, tool results,
 failed/cancelled deliveries, native handles, credentials, approvals and project
-trust are not restored as context or authority.
+trust are not restored as context or authority. An explicitly saved provider-bound
+key can open that new native session; it does not restore any archived grant.
 
 The shared archive retains its existing capacity bounds (128 requests, 4,096
 messages, 8 MiB retained bodies and 8 MiB events); each observed partial is bounded and

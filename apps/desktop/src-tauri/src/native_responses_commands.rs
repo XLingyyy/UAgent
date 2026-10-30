@@ -3,16 +3,18 @@
 //! a native lease and a single exact-body approval. No command accepts a URL.
 #![cfg(windows)]
 use crate::native_provider_transport::{
-    ApprovalGrant, Clock, ConfigVersion, DispatchStatus, Lease, MonotonicClock, NativeSession,
-    Owner, PreparedRequest, SourceAuthority, SourceCheckFailure, SourceChecker, SourcePhase,
-    SourceSnapshot, Transport,
+    ApprovalGrant, Clock, ConfigVersion, DispatchOutcome, DispatchStatus, FailureCode, Lease,
+    MonotonicClock, NativeSession, Owner, PreparedRequest, SourceAuthority, SourceCheckFailure,
+    SourceChecker, SourcePhase, SourceSnapshot, Transport,
 };
 use crate::native_responses_chat_archive::{ChatArchive, UsageStatus};
 use crate::native_responses_chat_fixture::ChatFixtureTransport;
 use crate::native_responses_fixture::{FixtureResponsesTransport, FixtureSequence};
 use crate::native_responses_http::WinHttpResponsesTransport;
 use crate::native_responses_sources::NativeSourceMonitor;
-use crate::product_settings_store::{AuthMode, ProductSettingsStore, ProviderSnapshot, WireApi};
+use crate::product_settings_store::{
+    AuthMode, ProductSettingsStore, ProviderSnapshot, ProviderVersion, WireApi,
+};
 use crate::provider_continuation_store::{
     ContinuationOwner, ContinuationScope, ProviderContinuationStore, ProviderNativeContinuation,
 };
@@ -68,6 +70,11 @@ impl Drop for Secret {
         self.0.fill(0);
     }
 }
+#[derive(Clone)]
+struct SavedCredential {
+    binding: crate::credential_vault::CredentialBinding,
+    version: String,
+}
 struct Profile {
     id: String,
     window: String,
@@ -78,6 +85,7 @@ struct Profile {
     endpoint: String,
     fixture_root: Option<PathBuf>,
     key: Secret,
+    saved_credential: Option<SavedCredential>,
     clock: Arc<MonotonicClock>,
     expires_at: u64,
     alive: AtomicBool,
@@ -641,6 +649,12 @@ input!(OpenInput {
     model_id: String,
     credential: String
 });
+input!(SavedOpenInput {
+    provider_id: String,
+    model_id: String,
+    expected_vault_version: String,
+    expected_provider_version: ProviderVersion
+});
 input!(ProfileInput { profile_id: String });
 input!(BindInput {
     profile_id: String,
@@ -726,10 +740,41 @@ pub(crate) async fn open_native_responses_profile(
     window: tauri::WebviewWindow,
     input: OpenInput,
 ) -> Result<OpenResult> {
+    open_profile_internal(app, window, input, None).await
+}
+#[tauri::command]
+pub(crate) async fn open_saved_native_responses_profile(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    input: SavedOpenInput,
+) -> Result<OpenResult> {
+    open_profile_internal(
+        app,
+        window,
+        OpenInput {
+            provider_id: input.provider_id,
+            model_id: input.model_id,
+            credential: String::new(),
+        },
+        Some((
+            input.expected_vault_version,
+            input.expected_provider_version,
+        )),
+    )
+    .await
+}
+async fn open_profile_internal(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    input: OpenInput,
+    saved_version: Option<(String, ProviderVersion)>,
+) -> Result<OpenResult> {
     let root = root(&app)?;
     // Mode is native-owned. Normal startup never falls back to a fixture.
     let offline_demo = crate::app_profile::get_application_profile()?.offline_demo;
-    validate_profile_mode(offline_demo, &input.credential)?;
+    if saved_version.is_none() {
+        validate_profile_mode(offline_demo, &input.credential)?;
+    }
     let fixture_root = if offline_demo {
         Some(crate::app_profile::responses_fixture_root()?)
     } else {
@@ -753,7 +798,30 @@ pub(crate) async fn open_native_responses_profile(
             .map_err(|_| failure("native_responses_endpoint_rejected"))?;
         // Validation uses the same memory-only credential contract as dispatch.
         let clock = Arc::new(MonotonicClock::new());
-        let key = Secret(input.credential.into_bytes());
+        let (key, saved_credential) = if let Some((version, expected_provider)) = saved_version {
+            if snapshot.version() != expected_provider {
+                return Err(failure("credential_configuration_changed"));
+            }
+            let app_data = root
+                .parent()
+                .ok_or_else(|| failure("credential_profile_unavailable"))?;
+            let (current, binding) =
+                crate::provider_credential_commands::binding_at(app_data, &input.provider_id)?;
+            if current.version() != snapshot.version() {
+                return Err(failure("credential_configuration_changed"));
+            }
+            let saved =
+                crate::credential_vault::load(&binding, &version).map_err(|e| failure(e.kind()))?;
+            (
+                Secret(saved.as_bytes().to_vec()),
+                Some(SavedCredential { binding, version }),
+            )
+        } else {
+            (Secret(input.credential.into_bytes()), None)
+        };
+        if provider(&root, &input.provider_id, &input.model_id)?.version() != snapshot.version() {
+            return Err(failure("credential_configuration_changed"));
+        }
         let temporary = NativeSession::new(
             Owner {
                 project: "setup".into(),
@@ -798,6 +866,7 @@ pub(crate) async fn open_native_responses_profile(
             endpoint: endpoint.clone(),
             fixture_root,
             key,
+            saved_credential,
             clock,
             expires_at: PROFILE_TTL,
             alive: AtomicBool::new(true),
@@ -1332,6 +1401,13 @@ pub(crate) async fn prepare_native_responses_request(
                 return Err(failure("native_responses_request_busy"));
             }
         }
+        if run.profile.saved_credential.is_some() {
+            let value: serde_json::Value =
+                serde_json::from_str(&input.body).map_err(|_| failure("native_body_invalid"))?;
+            if crate::native_deepseek_http::contains_secret(&value, &run.profile.key.0, 0) {
+                return Err(failure("credential_echo_rejected"));
+            }
+        }
         let chat_body = if run.chat.is_some() {
             Some(chat_messages(&input.body)?)
         } else {
@@ -1478,20 +1554,44 @@ pub(crate) async fn dispatch_native_responses_request(
             let output = request.response.clone();
             let output_head = output.clone();
             let output_chunk = output.clone();
+            let filter = if request.run.profile.saved_credential.is_some() {
+                match crate::native_saved_responses_filter::SavedResponsesFilter::new(
+                    request.run.profile.key.0.clone(),
+                ) {
+                    Ok(value) => Some(Arc::new(Mutex::new(value))),
+                    Err(_) => {
+                        if let Ok(mut state) = output.lock() {
+                            state.error = Some("credential_filter_unavailable".into());
+                            state.done = true;
+                        }
+                        return;
+                    }
+                }
+            } else {
+                None
+            };
+            let chunk_filter = filter.clone();
             let chunk_sink: Arc<dyn Fn(&[u8]) -> std::result::Result<(), ()> + Send + Sync> =
                 Arc::new(move |bytes| {
+                    let frames = if let Some(filter) = &chunk_filter {
+                        filter.lock().map_err(|_| ())?.push(bytes)?
+                    } else {
+                        vec![bytes.to_vec()]
+                    };
                     let mut state = output_chunk.lock().map_err(|_| ())?;
-                    if bytes.len() > 65_536
-                        || state.chunks.len() >= MAX_CHUNKS
-                        || state
-                            .bytes
-                            .checked_add(bytes.len())
-                            .map_or(true, |size| size > MAX_BUFFER)
-                    {
-                        return Err(());
+                    for frame in frames {
+                        if frame.len() > 65_536
+                            || state.chunks.len() >= MAX_CHUNKS
+                            || state
+                                .bytes
+                                .checked_add(frame.len())
+                                .map_or(true, |size| size > MAX_BUFFER)
+                        {
+                            return Err(());
+                        }
+                        state.bytes += frame.len();
+                        state.chunks.push(frame);
                     }
-                    state.bytes += bytes.len();
-                    state.chunks.push(bytes.to_vec());
                     Ok(())
                 });
             let head_sink: Arc<dyn Fn(u16, &str) -> std::result::Result<(), ()> + Send + Sync> =
@@ -1524,13 +1624,58 @@ pub(crate) async fn dispatch_native_responses_request(
                             .with_head_sink(head_sink),
                     )
                 };
-            let outcome = request.run.session.dispatch(
-                &request.prepared,
-                &request.lease,
-                &grant,
-                request.run.checker.as_ref(),
-                transport.as_mut(),
-            );
+            let mut dispatch = || {
+                request.run.session.dispatch(
+                    &request.prepared,
+                    &request.lease,
+                    &grant,
+                    request.run.checker.as_ref(),
+                    transport.as_mut(),
+                )
+            };
+            // The OS target guard spans the same final NativeSession dispatch.
+            // Poll/close never reacquire it, so streaming/cancellation stay live.
+            let mut outcome = if let Some(saved) = &request.run.profile.saved_credential {
+                crate::credential_vault::with_current(&saved.binding, &saved.version, dispatch)
+                    .unwrap_or(DispatchOutcome {
+                        status: DispatchStatus::NotDispatched,
+                        error: Some(FailureCode::IdentityChanged),
+                        response: None,
+                    })
+            } else {
+                dispatch()
+            };
+            if outcome.error.is_none() {
+                if let Some(filter) = &filter {
+                    let final_frames = filter
+                        .lock()
+                        .map_err(|_| ())
+                        .and_then(|mut filter| filter.finish());
+                    match final_frames {
+                        Ok(frames) => {
+                            if let Ok(mut state) = output.lock() {
+                                for frame in frames {
+                                    if frame.len() > 65_536
+                                        || state.chunks.len() >= MAX_CHUNKS
+                                        || state
+                                            .bytes
+                                            .checked_add(frame.len())
+                                            .map_or(true, |size| size > MAX_BUFFER)
+                                    {
+                                        outcome.error = Some(FailureCode::ResponseLimit);
+                                        break;
+                                    }
+                                    state.bytes += frame.len();
+                                    state.chunks.push(frame);
+                                }
+                            } else {
+                                outcome.error = Some(FailureCode::Unavailable)
+                            }
+                        }
+                        Err(_) => outcome.error = Some(FailureCode::TransportFailed),
+                    }
+                }
+            }
             if let Ok(mut state) = output.lock() {
                 state.dispatch_status = match outcome.status {
                     DispatchStatus::NotDispatched => "notDispatched",

@@ -19,6 +19,16 @@ pub(crate) mod provider_continuation_store;
 #[cfg(windows)]
 pub(crate) mod native_responses_commands;
 #[cfg(windows)]
+pub(crate) mod credential_vault;
+#[cfg(windows)]
+pub(crate) mod provider_credential_commands;
+#[cfg(windows)]
+pub(crate) mod native_saved_deepseek;
+#[cfg(windows)]
+pub(crate) mod native_deepseek_http;
+#[cfg(windows)]
+pub(crate) mod native_saved_responses_filter;
+#[cfg(windows)]
 pub(crate) mod native_responses_fixture;
 #[cfg(windows)]
 pub(crate) mod native_responses_fixture_setup;
@@ -1654,7 +1664,8 @@ pub fn run() {
         .on_page_load(|webview,_| {
             #[cfg(windows)]
             { native_responses_commands::register_window(webview.window().label());
-              native_discussion_archive_commands::register_window(webview.window().label()); }
+              native_discussion_archive_commands::register_window(webview.window().label());
+              native_saved_deepseek::register_window(webview.window().label()); }
         })
         .on_window_event(|window,event| {
             #[cfg(windows)]
@@ -1662,6 +1673,8 @@ pub fn run() {
                 if matches!(event,tauri::WindowEvent::Destroyed) {native_responses_commands::destroy_window(window.label());}
                 else {native_responses_commands::revoke_window(window.label());}
                 native_discussion_archive_commands::close_window(window.label());
+                if matches!(event,tauri::WindowEvent::Destroyed) {native_saved_deepseek::destroy_window(window.label());}
+                else {native_saved_deepseek::revoke_window(window.label());}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -1711,6 +1724,32 @@ pub fn run() {
             native_discussion_archive_commands::close_native_discussion_archive,
             #[cfg(windows)]
             native_responses_commands::open_native_responses_profile,
+            #[cfg(windows)]
+            native_responses_commands::open_saved_native_responses_profile,
+            #[cfg(windows)]
+            provider_credential_commands::get_saved_provider_credential,
+            #[cfg(windows)]
+            provider_credential_commands::save_provider_credential,
+            #[cfg(windows)]
+            provider_credential_commands::delete_provider_credential,
+            #[cfg(windows)]
+            native_saved_deepseek::open_saved_deepseek_profile,
+            #[cfg(windows)]
+            native_saved_deepseek::validate_saved_deepseek_text,
+            #[cfg(windows)]
+            native_saved_deepseek::prepare_saved_deepseek_request,
+            #[cfg(windows)]
+            native_saved_deepseek::approve_saved_deepseek_request,
+            #[cfg(windows)]
+            native_saved_deepseek::dispatch_saved_deepseek_request,
+            #[cfg(windows)]
+            native_saved_deepseek::poll_saved_deepseek_request,
+            #[cfg(windows)]
+            native_saved_deepseek::cancel_saved_deepseek_request,
+            #[cfg(windows)]
+            native_saved_deepseek::release_saved_deepseek_request,
+            #[cfg(windows)]
+            native_saved_deepseek::close_saved_deepseek_profile,
             #[cfg(windows)]
             native_responses_fixture_setup::prepare_native_responses_fixture,
             #[cfg(windows)]

@@ -20,6 +20,31 @@ use std::{
 };
 
 const ENDPOINT: &str = "https://api.openai.com/v1/responses";
+#[derive(Clone, Copy)]
+enum FixedTarget {
+    Responses,
+    DeepSeek,
+}
+impl FixedTarget {
+    fn endpoint(self) -> &'static str {
+        match self {
+            Self::Responses => ENDPOINT,
+            Self::DeepSeek => "https://api.deepseek.com/chat/completions",
+        }
+    }
+    fn host(self) -> &'static str {
+        match self {
+            Self::Responses => "api.openai.com",
+            Self::DeepSeek => "api.deepseek.com",
+        }
+    }
+    fn path(self) -> &'static str {
+        match self {
+            Self::Responses => "/v1/responses",
+            Self::DeepSeek => "/chat/completions",
+        }
+    }
+}
 const READ_BYTES: usize = 8192;
 const MAX_REQUEST_BYTES: usize = 1_048_576;
 const TOTAL_TIMEOUT: Duration = Duration::from_secs(120);
@@ -275,6 +300,7 @@ impl Drop for Authorization {
 pub(crate) type ChunkSink = Arc<dyn Fn(&[u8]) -> Result<(), ()> + Send + Sync>;
 pub(crate) type HeadSink = Arc<dyn Fn(u16, &str) -> Result<(), ()> + Send + Sync>;
 pub(crate) struct WinHttpResponsesTransport {
+    target: FixedTarget,
     sink: Option<ChunkSink>,
     head_sink: Option<HeadSink>,
     #[cfg(test)]
@@ -283,6 +309,7 @@ pub(crate) struct WinHttpResponsesTransport {
 impl WinHttpResponsesTransport {
     pub(crate) fn new() -> Self {
         Self {
+            target: FixedTarget::Responses,
             sink: None,
             head_sink: None,
             #[cfg(test)]
@@ -291,11 +318,17 @@ impl WinHttpResponsesTransport {
     }
     pub(crate) fn with_chunk_sink(sink: ChunkSink) -> Self {
         Self {
+            target: FixedTarget::Responses,
             sink: Some(sink),
             head_sink: None,
             #[cfg(test)]
             fixture_port: None,
         }
+    }
+    pub(crate) fn deepseek(sink: ChunkSink) -> Self {
+        let mut transport = Self::with_chunk_sink(sink);
+        transport.target = FixedTarget::DeepSeek;
+        transport
     }
     pub(crate) fn with_head_sink(mut self, sink: HeadSink) -> Self {
         self.head_sink = Some(sink);
@@ -304,6 +337,7 @@ impl WinHttpResponsesTransport {
     #[cfg(test)]
     fn fixture(port: u16, sink: Option<ChunkSink>) -> Self {
         Self {
+            target: FixedTarget::Responses,
             sink,
             head_sink: None,
             fixture_port: Some(port),
@@ -337,8 +371,8 @@ impl WinHttpResponsesTransport {
             }
         }
     }
-    fn check_request(request: RequestView<'_>) -> Result<(), TransportFailure> {
-        if request.endpoint != ENDPOINT
+    fn check_request(&self, request: RequestView<'_>) -> Result<(), TransportFailure> {
+        if request.endpoint != self.target.endpoint()
             || request.body.is_empty()
             || request.body.len() > MAX_REQUEST_BYTES
             || std::str::from_utf8(request.body).is_err()
@@ -351,7 +385,7 @@ impl WinHttpResponsesTransport {
 impl Transport for WinHttpResponsesTransport {
     fn before_dispatch(&mut self, request: RequestView<'_>) -> Result<(), TransportFailure> {
         // Parsing/bounds only: not even a WinHTTP session or socket is opened.
-        Self::check_request(request)
+        self.check_request(request)
     }
     fn dispatch(
         &mut self,
@@ -360,7 +394,7 @@ impl Transport for WinHttpResponsesTransport {
         signal: DispatchSignal<'_>,
         response: &mut ResponseBuffer,
     ) -> Result<WriteReceipt, TransportFailure> {
-        Self::check_request(request)?;
+        self.check_request(request)?;
         if credential.bytes().is_empty()
             || credential.bytes().len() > 16_384
             || credential
@@ -383,7 +417,7 @@ impl Transport for WinHttpResponsesTransport {
         if unsafe { WinHttpSetTimeouts(session.0, 10_000, 10_000, 30_000, 30_000) } == 0 {
             return Err(fail(WriteStatus::MayHaveWritten));
         }
-        let (host, port, secure) = ("api.openai.com", 443, true);
+        let (host, port, secure) = (self.target.host(), 443, true);
         #[cfg(test)]
         let (host, port, secure) = match self.fixture_port {
             Some(port) => ("127.0.0.1", port, false),
@@ -393,7 +427,7 @@ impl Transport for WinHttpResponsesTransport {
         let connection =
             Handle::checked(unsafe { WinHttpConnect(session.0, host.as_ptr(), port, 0) })?;
         let method = wide("POST");
-        let path = wide("/v1/responses");
+        let path = wide(self.target.path());
         let opened = Handle::checked(unsafe {
             WinHttpOpenRequest(
                 connection.0,
@@ -951,6 +985,40 @@ mod tests {
         assert!(result.response.is_none());
         assert_eq!(count.load(Ordering::Relaxed), 0);
         server.join().unwrap();
+    }
+
+    #[test]
+    fn real_winhttp_deepseek_loopback_uses_fixed_chat_path_and_exact_body() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let expected = b"data: {\"choices\":[{\"delta\":{\"content\":\"local\"}}]}\n\n";
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let received = receive(&mut stream);
+            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",expected.len()).unwrap();
+            stream.write_all(expected).unwrap();
+            received
+        });
+        let session = setup();
+        let lease = session.capture_lease(30_000).unwrap();
+        let body=b"{\"model\":\"fixture-model\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"local synthetic goal\"}]}";
+        let prepared = session
+            .prepare_chat_completions(&lease, "https://api.deepseek.com", body.to_vec(), &Source)
+            .unwrap();
+        let approved = session.approve(&prepared, &lease, &Source).unwrap();
+        let mut engine = WinHttpResponsesTransport::fixture(port, None);
+        engine.target = FixedTarget::DeepSeek;
+        let result = session.dispatch(&prepared, &lease, &approved, &Source, &mut engine);
+        assert_eq!(result.status, DispatchStatus::Sent);
+        assert_eq!(result.error, None);
+        assert_eq!(result.response.unwrap().bytes(), expected);
+        let received = server.join().unwrap();
+        let end = received.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+        assert_eq!(&received[end + 4..], body);
+        let headers = String::from_utf8(received[..end].to_vec()).unwrap();
+        assert!(headers.starts_with("POST /chat/completions HTTP/1.1"));
+        assert!(headers.contains("Authorization: Bearer synthetic-winhttp-fixture-key-only"));
+        assert!(!headers.to_ascii_lowercase().contains("cookie:"));
     }
 
     #[test]

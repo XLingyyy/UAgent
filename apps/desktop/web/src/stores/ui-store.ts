@@ -41,6 +41,8 @@ import type { ChangeOperationV2, ProjectDiagnostic, ProjectProfile } from "@uage
 import type { AssetMutationDraftOperation } from "@uagent/runtime";
 import { createNativeProjectAdapter } from "../runtime/project-native-adapter";
 import { getDefaultModelSelection } from "../composer/composer-data";
+import { nativeProviderCredentials } from "../runtime/native-provider-credentials";
+import { supportsProviderModel } from "../provider/runtime-availability";
 import { cloneProviderConfig } from "../provider/provider-data";
 import type { ProviderConfig, ProviderState } from "../types/provider";
 import type {
@@ -1005,7 +1007,7 @@ function createUIStateBundle(
     const version=++modelSelectionVersion;
     const commit=()=>{if(version!==modelSelectionVersion)throw Error("model_selection_changed");publish();};
     const session=safeProviderSession.getSnapshot();
-    if(composerStore.getState().selectedModelId!==selectedModelId&&(session.wireApi==="responses"||session.nativeClosing||session.nativeCloseFailed)){
+    if(composerStore.getState().selectedModelId!==selectedModelId&&(session.wireApi==="responses"||session.savedCredential||session.nativeClosing||session.nativeCloseFailed)){
       return safeProviderSession.closeAsync("project_changed").then(commit).catch(error=>{
         if(version===modelSelectionVersion)composerStore.setState(previous=>({...previous,submitError:"responses.switchFailed"}));
         throw error;
@@ -1157,7 +1159,7 @@ function createUIStateBundle(
         mvp15: { ...runtimeBaseState.mvp15, gate: previous.mvp15.gate, companion: runtimeClient.getMvp15DCompanionStatus?.() ?? runtimeBaseState.mvp15.companion },
       }));
       };
-      if(safeProviderSession.getSnapshot().wireApi==="responses"||safeProviderSession.getSnapshot().nativeClosing){
+      if(safeProviderSession.getSnapshot().wireApi==="responses"||safeProviderSession.getSnapshot().savedCredential||safeProviderSession.getSnapshot().nativeClosing){
         projectRequests.invalidate();
         return safeProviderSession.closeAsync("project_changed").then(publish).catch(()=>{
           if(version===projectSelectionVersion)projectStore.setState(previous=>({...previous,lastError:"responses.switchFailed"}));
@@ -1359,7 +1361,10 @@ function createUIStateBundle(
 
   const threadActions: ThreadStoreActions = {
     setActiveThread: (threadId) => {
-      if(threadStore.getState().activeThreadId===threadId)return;
+      if(threadStore.getState().activeThreadId===threadId){
+        if(threadId===null&&submissionPending){projectRequests.invalidate();safeProviderSession.close("revoked");}
+        return;
+      }
       const selected=threadId?runtimeStore.getState().tasksById[threadId]:null;
       if(selected&&selected.draft.projectId!==projectStore.getState().activeProjectId)return;
       investigationScopeGate.invalidate();
@@ -1404,12 +1409,15 @@ function createUIStateBundle(
     submitComposerTask: async (draft) => {
       if (submissionPending) throw new Error("submission_in_progress");
       submissionPending = true;
-      const originalInput = composerStore.getState().input;
+      const startingSelection = composerStore.getState(), startingThread=threadStore.getState().activeThreadId;
+      const originalInput = startingSelection.input;
+      const selectionCurrent=()=>{const c=composerStore.getState();return c.input===originalInput&&c.selectedModelId===startingSelection.selectedModelId&&c.reasoningEffort===startingSelection.reasoningEffort&&c.taskMode===startingSelection.taskMode&&c.savedRun===startingSelection.savedRun&&projectStore.getState().activeProjectId===draft.projectId&&threadStore.getState().activeThreadId===startingThread;};
       const isCurrent = projectRequests.begin("submit");
       submissionRoutingCurrent = isCurrent;
       composerStore.setState((previous) => ({ ...previous, submitting: true, submitError: null }));
       try {
         await safeProviderSession.whenSettled();
+        if(!isCurrent()||!selectionCurrent())throw Error("scope_review_stale");
         const snapshot=runtimeStore.getState();
         const previous=conversationTasks(snapshot.tasksById,threadStore.getState().activeThreadId,draft.projectId);
         const archived=draft.savedRun?.taskMode==="discussion"?draft.savedRun:null;
@@ -1418,6 +1426,17 @@ function createUIStateBundle(
         const history=[...imported,...completedConversationHistory(previous.filter(task=>task.draft.providerId===draft.providerId&&task.draft.modelId===draft.modelId),snapshot.eventsByTaskId)];
         const conversationId=draft.savedRun?.conversationId??(previous.length?conversationKey(previous[0]):crypto.randomUUID());
         if(draft.savedRun&&(draft.savedRun.taskMode==="discussion"?(draft.savedRun.logicalProjectId??null):draft.savedRun.projectId)!==draft.projectId)throw Error("scope_review_stale");
+        if(draft.taskMode==="discussion"&&draft.providerId&&draft.modelId&&nativeProviderCredentials.available()&&supportsProviderModel(providerStore.getState().providers.find(p=>p.providerId===draft.providerId),draft.modelId)){
+          // Saving/selecting only updates data. A new owner opens inside this Send mutex.
+          submissionConversation={id:conversationId,projectId:draft.projectId};
+          safeProviderSession.updateContext(draft.projectId,originalInput,startingSelection.selectedModelId,conversationId);
+          const currentSession=safeProviderSession.getSnapshot();
+          if(!currentSession.ready||currentSession.providerId!==draft.providerId||currentSession.modelId!==draft.modelId){
+            const opened=await safeProviderSession.openSaved(draft.providerId,draft.modelId);
+            if(!isCurrent()||!selectionCurrent())throw Error("scope_review_stale");
+            if(!opened)throw Error("saved_credential_unavailable");
+          }
+        }
         let investigationScopeId:string|undefined;
         if(draft.taskMode==="investigation"){
           const project=draft.projectId?projectAdapter.getProject(draft.projectId):null;
@@ -3301,7 +3320,7 @@ function createUIStateBundle(
         const token=capturedVersion??providerStore.getState().providerVersions?.[next.providerId];
         if(!token)throw Error("settings_version_required");
         const apply=(saved:Awaited<ReturnType<typeof nativeProductSettings.saveProvider>>)=>applySavedProvider({...restoredProvider(saved.config),networkMode:next.networkMode??"disabled"},{providerId:saved.config.providerId,generation:saved.generation,revision:saved.revision,exists:true});
-        if(safeProviderSession.getSnapshot().wireApi==="responses"&&safeProviderSession.getSnapshot().providerId===next.providerId)return safeProviderSession.closeAsync("revoked").then(()=>nativeProductSettings.saveProvider(next,token)).then(apply);
+        if((safeProviderSession.getSnapshot().wireApi==="responses"||safeProviderSession.getSnapshot().savedCredential)&&safeProviderSession.getSnapshot().providerId===next.providerId)return safeProviderSession.closeAsync("revoked").then(()=>nativeProductSettings.saveProvider(next,token)).then(apply);
         if(next.providerId==="deepseek")safeProviderSession.close("revoked");
         return nativeProductSettings.saveProvider(next,token).then(apply);
       }
@@ -3316,7 +3335,7 @@ function createUIStateBundle(
       };
       if(nativeProductSettings.enabled()){
         const token=capturedVersion??providerStore.getState().providerVersions?.[providerId];if(!token)throw Error("settings_version_required");
-        if(safeProviderSession.getSnapshot().wireApi==="responses"&&safeProviderSession.getSnapshot().providerId===providerId)return safeProviderSession.closeAsync("revoked").then(()=>nativeProductSettings.deleteProvider(token)).then(apply);
+        if((safeProviderSession.getSnapshot().wireApi==="responses"||safeProviderSession.getSnapshot().savedCredential)&&safeProviderSession.getSnapshot().providerId===providerId)return safeProviderSession.closeAsync("revoked").then(()=>nativeProductSettings.deleteProvider(token)).then(apply);
         if(providerId==="deepseek")safeProviderSession.close("revoked");
         return nativeProductSettings.deleteProvider(token).then(apply);
       }

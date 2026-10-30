@@ -117,6 +117,18 @@ pub(crate) fn prepare_responses_endpoint(base_url: &str) -> Result<String> {
     Ok(format!("{root}/responses"))
 }
 
+/// Saved credentials can target only the official DeepSeek Chat Completions endpoint.
+pub(crate) fn prepare_deepseek_endpoint(base_url: &str) -> Result<String> {
+    let checked = NATIVE_ENDPOINT_POLICY.validate_endpoint(WireApi::ChatCompletions, base_url)?;
+    if checked.canonical_base_url != "https://api.deepseek.com" {
+        return Err(StoreError {
+            kind: "endpointPolicy".into(),
+            message: "native DeepSeek supports only the official API root".into(),
+        });
+    }
+    Ok("https://api.deepseek.com/chat/completions".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

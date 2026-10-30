@@ -21,6 +21,8 @@ import { createNativeResponsesProfile, validResponsesCredential } from "./native
 import { getApplicationProfile } from "./application-profile";
 import { localNativeInvoke } from "./native-provider-budget";
 import { createNativeOrdinaryChatArchive } from "./native-ordinary-chat-archive";
+import { createSavedDeepSeekProfile } from "./native-saved-deepseek-session";
+import { createNativeProviderCredentials } from "./native-provider-credentials";
 import { createNativePolicyFetcher } from "./native-provider-endpoint";
 import { createOfflineDemoFetcher } from "./offline-demo-transport";
 import { outboundReviewGate } from "./outbound-review-store";
@@ -63,6 +65,8 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
   let responsesRunAdapters = new WeakMap<RunScopeLease, ProviderAdapter>();
   const responsesChatAdapters=new Map<string,ProviderAdapter>();
   let selectedConversation="";
+  type SavedDeepSeekProfile = Awaited<ReturnType<typeof createSavedDeepSeekProfile>>;
+  let savedDeepSeekProfile: SavedDeepSeekProfile | null = null;
   let responsesProfile: ResponsesProfile | null = null,
     pendingResponses: ResponsesSetup | null = null;
   const responsesSetups = new Set<ResponsesSetup>();
@@ -98,6 +102,8 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     endpoint: null as string | null,
     wireApi: null as "chat_completions" | "responses" | null,
     fixture: false,
+    savedCredential: false,
+    savedKeyVersion: null as string | null,
     nativeClosing: false,
     nativeCloseFailed: false,
   };
@@ -117,7 +123,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     };
     emit();
   }
-  function trackNativeClose(profile: ResponsesProfile) {
+  function trackNativeClose(profile: {closeAcknowledged(): Promise<void>}) {
     nativeCloses++;
     const acknowledged = profile.closeAcknowledged().then(
       () => {
@@ -177,7 +183,9 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     responsesRunAdapters = new WeakMap();
     responsesChatAdapters.clear();
     const previousResponses = responsesProfile;
+    const previousSavedDeepSeek = savedDeepSeekProfile;
     responsesProfile = null;
+    savedDeepSeekProfile = null;
     session?.clearCredential();
     session = null;
     invalidate();
@@ -192,7 +200,10 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       endpoint: null,
       wireApi: null,
       fixture: false,
+      savedCredential: false,
+      savedKeyVersion: null,
     };
+    if (previousSavedDeepSeek) void trackNativeClose(previousSavedDeepSeek);
     if (previousResponses) void trackNativeClose(previousResponses);
     publishNativeState();
   }
@@ -345,7 +356,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       providerId: state.providerId ?? "deepseek",
       modelIds: [state.modelId ?? DEEPSEEK_MODEL],
       supportsStreaming: true,
-      supportsTools: state.wireApi!=="responses",
+      supportsTools: !state.savedCredential && state.wireApi!=="responses",
       supportsPreSendValidation: true,
       isMock: state.ready ? state.fixture : options.mode === "offline",
     }),
@@ -357,6 +368,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       await current.adapter.confirmOrdinaryDelivery?.(requestId, identity);
     },
     async complete(request, call) {
+      if (state.savedCredential && (request.metadata?.purpose || request.tools?.length || request.messages.some(m=>m.role==="tool"||m.toolCalls?.length||m.toolCallId))) throw Error("saved_session_discussion_only");
       if(responsesProfile)return conversationAdapter(request).complete(withContext(request),call);
       const current = requireSession(),
         release = watchAbort(current, call);
@@ -367,6 +379,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       }
     },
     async *stream(request, call) {
+      if (state.savedCredential && (request.metadata?.purpose || request.tools?.length || request.messages.some(m=>m.role==="tool"||m.toolCalls?.length||m.toolCallId))) throw Error("saved_session_discussion_only");
       if(responsesProfile){yield* conversationAdapter(request).stream!(withContext(request),call);return;}
       const current = requireSession(),
         release = watchAbort(current, call);
@@ -578,7 +591,128 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       publishNativeState();
     }
   }
+  async function openSaved(providerId: string, modelId: string): Promise<boolean> {
+    if (!options.nativeInvoke || !baseCanConfigure || disposed || !state.enabled || nativeRevocationFailed)
+      throw Error("saved_session_native_unavailable");
+    close();
+    const earlierSetups = [...responsesSetups];
+    let finish!: () => void;
+    const settled = new Promise<void>(resolve => { finish = resolve; });
+    const holder: ResponsesSetup = {
+      key: "", version: context.revision, generation: sessionGeneration,
+      cancelled: false, settled, finish,
+    };
+    pendingResponses = holder;
+    responsesSetups.add(holder);
+    state = {...state, pendingSetup: true};
+    publishNativeState();
+    const current = () => pendingResponses === holder && !holder.cancelled &&
+      holder.version === context.revision && holder.generation === sessionGeneration &&
+      !disposed && state.enabled && !nativeRevocationFailed;
+    let candidate: ResponsesProfile | SavedDeepSeekProfile | null = null;
+    let nativeOpenIssued = false, nativeOpenReturned = false;
+    try {
+      await Promise.all(earlierSetups.map(setup => setup.settled));
+      await nativeBarrier;
+      if (!current()) return false;
+      const receipt = await createNativeProviderCredentials(options.nativeInvoke).get(providerId);
+      if (!current()) return false;
+      if (!receipt.saved || !receipt.version || receipt.cleanupPending || !receipt.providerVersion.exists ||
+          (receipt.wireApi !== "responses" && receipt.wireApi !== "chat_completions") ||
+          receipt.endpoint !== (receipt.wireApi === "responses" ? "https://api.openai.com/v1/responses" : DEEPSEEK_ENDPOINT))
+        throw Error("saved_session_credential_unavailable");
+      if (receipt.wireApi === "responses" && !responsesAllowed) throw Error("saved_session_native_unavailable");
+      if (receipt.wireApi === "chat_completions" && (providerId !== "deepseek" || modelId !== DEEPSEEK_MODEL))
+        throw Error("saved_session_model_unavailable");
+      const projectId = context.projectId;
+      // A pending native receipt is private to this holder and cannot dispatch.
+      // Keep ownership until it returns so even a Stop gets an acknowledged close.
+      let receiptPending = true;
+      const nativeCurrent = () => receiptPending ||
+        (!holder.cancelled && holder.generation === sessionGeneration && context.projectId === projectId &&
+          !disposed && state.enabled && !nativeRevocationFailed);
+      nativeOpenIssued = true;
+      try {
+        candidate = receipt.wireApi === "responses"
+          ? await createNativeResponsesProfile({
+              invoke: options.nativeInvoke, providerId, modelId,
+              credential: "native-saved-responses-parser-marker", savedVersion: receipt.version, savedProviderVersion: receipt.providerVersion, gate,
+            })
+          : await createSavedDeepSeekProfile({
+              invoke: options.nativeInvoke, providerId, modelId, expectedVaultVersion: receipt.version, expectedProviderVersion: receipt.providerVersion,
+              getContext: () => ({projectId: context.projectId, conversationId: selectedConversation, revision: context.revision}),
+              isCurrent: nativeCurrent,
+            });
+        nativeOpenReturned = true;
+      } finally { receiptPending = false; }
+      if (!current()) {
+        const stale = candidate; candidate = null;
+        await trackNativeClose(stale);
+        return false;
+      }
+      const snapshot = candidate.getSnapshot();
+      const expectedFixture = receipt.wireApi === "responses" ? responsesFixture : options.mode === "offline";
+      if (snapshot.providerId !== providerId || snapshot.modelId !== modelId ||
+          snapshot.endpoint !== receipt.endpoint || snapshot.fixture !== expectedFixture) {
+        const rejected = candidate; candidate = null;
+        await trackNativeClose(rejected);
+        throw Error("saved_session_profile_mismatch");
+      }
+      if (receipt.wireApi === "responses") {
+        responsesProfile = candidate as ResponsesProfile;
+      } else {
+        const profile = candidate as SavedDeepSeekProfile;
+        const nativeInvoke: NativeInvoke = async <T,>(command: string, args?: unknown) => {
+          const mutation = (args as {input?:{mutation?:{kind?:string;messages?:unknown}}}|undefined)?.input?.mutation;
+          if (command === "mutate_native_discussion_archive" && mutation?.kind === "begin")
+            await profile.validateText(JSON.stringify(mutation.messages));
+          return options.nativeInvoke!<T>(command, args);
+        };
+        const local = createDeepSeekAccountSession({
+          mode: options.mode, expiresAt: snapshot.expiresAt, fetcher: profile.fetcher,
+          ordinaryArchive: createNativeOrdinaryChatArchive(nativeInvoke),
+          outboundGate: gate, getProjectContext: () => ({...context}),
+        });
+        local.setCredential("native-saved-deepseek-parser-marker");
+        session = local;
+        savedDeepSeekProfile = profile;
+      }
+      pendingResponses = null;
+      state = {
+        ...state, ready: true, pendingSetup: false, providerId, modelId,
+        endpoint: snapshot.endpoint, wireApi: receipt.wireApi,
+        fixture: snapshot.fixture, expiresAt: snapshot.expiresAt,
+        savedCredential: true, savedKeyVersion: receipt.version,
+      };
+      const opened = candidate;
+      expiryTimer = setTimeout(() => {
+        if (responsesProfile === opened || savedDeepSeekProfile === opened) close("expired");
+      }, Math.max(0,snapshot.expiresAt-Date.now()));
+      emit();
+      return true;
+    } catch {
+      const wasCurrent = current();
+      if (candidate && candidate !== responsesProfile && candidate !== savedDeepSeekProfile)
+        await trackNativeClose(candidate).catch(() => undefined);
+      if (wasCurrent) close("setup_failed");
+      if (nativeOpenIssued && !nativeOpenReturned) nativeRevocationFailed = true;
+      if (nativeRevocationFailed) throw Error("native_revocation_unconfirmed");
+      if (!wasCurrent && (holder.cancelled || holder.version !== context.revision || holder.generation !== sessionGeneration))
+        return false;
+      throw Error("saved_session_setup_failed");
+    } finally {
+      holder.key = "";
+      if (pendingResponses === holder) {
+        pendingResponses = null;
+        state = {...state,pendingSetup:false};
+      }
+      responsesSetups.delete(holder);
+      holder.finish();
+      publishNativeState();
+    }
+  }
   function createRunAdapter(lease: RunScopeLease, draft?: TaskDraft): ProviderAdapter {
+    if (state.savedCredential) throw Error("saved_session_discussion_only");
     const profile = responsesProfile;
     if (!profile) return adapter;
     if (state.expiresAt !== null && Date.now() >= state.expiresAt) {
@@ -681,6 +815,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     adapter,
     openAccount,
     openResponses,
+    openSaved,
     captureOrdinarySend,
     createRunAdapter,
     whenSettled,
@@ -702,7 +837,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     updateContext(projectId: string | null, input: string, model: string, conversationId = "") {
       const next = JSON.stringify([projectId, input, model, conversationId]);
       if (next === identity) return;
-      const conversationChanged=Boolean(responsesChatAdapters.size&&selectedConversation&&conversationId!==selectedConversation);
+      const conversationChanged=Boolean((responsesChatAdapters.size||savedDeepSeekProfile)&&selectedConversation&&conversationId!==selectedConversation);
       selectedConversation=conversationId;
       const changed =
         projectId !== context.projectId || (selectedModel !== null && model !== selectedModel)||conversationChanged;
@@ -792,8 +927,8 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
   };
 }
 export type SafeProviderSession = ReturnType<typeof createSafeProviderSession>;
-// Local setup is available; no session exists until the user explicitly opens one.
-// Never load a chat secret, environment key, saved credential or automatic transport.
+// Startup never reads credential bytes into the renderer. A later trusted Send
+// may open a native saved profile for the selected provider; native owns its key.
 const localProfile = getApplicationProfile();
 const nativeInvoke = localNativeInvoke();
 export const safeProviderSession = createSafeProviderSession(

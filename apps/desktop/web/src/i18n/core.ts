@@ -1,3 +1,4 @@
+import {vaultMessages} from "./vault-messages";
 import {responsesMessages} from "./responses-messages";
 import {nativeSettingsMessages} from "./native-settings-messages";
 import {historyRunMessages} from "./history-run-messages";
@@ -35,6 +36,7 @@ export const messageCatalog = {
   ...demoMessages,
   ...nativeSettingsMessages,
   ...responsesMessages,
+  ...vaultMessages,
 } as const;
 export type TranslationKey = keyof typeof messageCatalog;
 

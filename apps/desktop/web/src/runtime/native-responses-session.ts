@@ -14,6 +14,7 @@ import type {
   ProviderRuntimeRequest,
 } from "@uagent/shared";
 import type { NativeInvoke } from "./project-native-adapter";
+import type { ProviderVersion } from "../types/provider";
 
 const ENDPOINT = "https://api.openai.com/v1/responses";
 const MAX_BYTES = 4_194_304;
@@ -63,8 +64,11 @@ export interface NativeResponsesProfileOptions {
   invoke: NativeInvoke;
   providerId: string;
   modelId: string;
-  /** Supplied only by the current local input event. Never read from persistence. */
+  /** Legacy one-off memory input, or a nonsecret marker for saved mode. */
   credential: string;
+  /** Native vault mutation token; never a credential or reusable send grant. */
+  savedVersion?: string;
+  savedProviderVersion?: Readonly<ProviderVersion>;
   gate: OutboundConsentGate;
   signal?: AbortSignal;
   now?: () => number;
@@ -165,11 +169,14 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
     gate = options.gate,
     now = options.now ?? Date.now,
     openingSignal = options.signal;
-  let credential = options.credential;
+  const savedVersion = options.savedVersion;
+  const savedProviderVersion = options.savedProviderVersion ? Object.freeze({...options.savedProviderVersion}) : undefined;
+  let credential = savedVersion ? "native-saved-responses-parser-marker" : options.credential;
   if (
     !id(providerId) ||
     !id(modelId) ||
     !validResponsesCredential(credential) ||
+    (savedVersion !== undefined && (!id(savedVersion) || !savedProviderVersion || savedProviderVersion.providerId !== providerId || !savedProviderVersion.exists || !id(savedProviderVersion.generation) || !Number.isSafeInteger(savedProviderVersion.revision) || savedProviderVersion.revision < 0)) ||
     openingSignal?.aborted
   )
     throw failure();
@@ -182,11 +189,9 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
   }
   let profile: ProfileReceipt;
   try {
-    profile = await call<ProfileReceipt>("open_native_responses_profile", {
-      providerId,
-      modelId,
-      credential,
-    });
+    profile = savedVersion
+      ? await call<ProfileReceipt>("open_saved_native_responses_profile", {providerId, modelId, expectedVaultVersion: savedVersion, expectedProviderVersion: savedProviderVersion})
+      : await call<ProfileReceipt>("open_native_responses_profile", {providerId, modelId, credential});
   } catch (error) {
     credential = "";
     throw error;
@@ -263,6 +268,8 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
           requestDefaults: Object.freeze({ ...profile.modelSettings.requestDefaults }),
         }) : undefined,
         lastDispatchStatus,
+        savedCredential: savedVersion !== undefined,
+        savedKeyVersion: savedVersion ?? null,
       }),
     close,
     closeAcknowledged(): Promise<void> {
@@ -275,6 +282,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
   function createBoundAdapter(runOptions:NativeResponsesRunOptions|NativeResponsesConversationOptions):ProviderAdapter {
       checkProfile();
       const chat=!("lease" in runOptions);
+      if (savedVersion && !chat) throw failure();
       const isCurrent=chat?runOptions.isCurrent:runOptions.lease.isCurrent,
         getProjectContext=runOptions.getProjectContext,
         logicalProject=chat?runOptions.projectId:runOptions.lease.scope.projectId,
