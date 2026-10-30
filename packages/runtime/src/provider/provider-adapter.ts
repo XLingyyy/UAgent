@@ -4,9 +4,12 @@ import type {
   ProviderRuntimeResponse,
   ProviderStreamChunk,
 } from "@uagent/shared";
+import type { OutboundSendIntent } from "./outbound-consent.js";
 
 export interface ProviderCallOptions {
   signal?: AbortSignal;
+  /** One trusted UI send, bound to an exact ordinary request; never persisted. */
+  outboundSendIntent?: OutboundSendIntent;
   /** Revalidate live context after exact-body approval, immediately before transport. Never changes the approved body. */
   beforeSend?: () => Promise<void>;
 }

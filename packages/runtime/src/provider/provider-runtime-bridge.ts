@@ -68,9 +68,11 @@ export class ProviderRuntimeBridge {
       metadata: { taskId, planId, projectId: draft.projectId, conversationId:draft.conversationId },
     };
 
-    const result = this.adapter.stream && this.adapter.getCapabilities().supportsStreaming
-      ? await runProviderStream(this.adapter, request, options)
-      : await runProviderComplete(this.adapter, request, options);
+    const stream = Boolean(this.adapter.stream && this.adapter.getCapabilities().supportsStreaming);
+    const execution = { ...options, outboundSendIntent: draft.taskMode === "discussion" ? options.authorizeSend?.(request, stream) : undefined };
+    const result = stream
+      ? await runProviderStream(this.adapter, request, execution)
+      : await runProviderComplete(this.adapter, request, execution);
     return { events: result.events };
   }
 }

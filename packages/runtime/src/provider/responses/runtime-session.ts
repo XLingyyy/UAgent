@@ -292,6 +292,7 @@ export function createResponsesRuntimeSession(options: ResponsesRuntimeSessionOp
       const sourceBeforeSend = call.beforeSend;
       const transportCall = {
         signal: controller.signal,
+        outboundSendIntent: call.outboundSendIntent,
         // Native invokes this after exact-body approval. Preserve the caller's
         // source validation and recheck this fixed lease after its await.
         beforeSend: async () => {

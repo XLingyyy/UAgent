@@ -291,13 +291,26 @@ export function extractProviderStreamText(events: TaskEvent[]): string {
     .join("");
 }
 
+/** Presentation only. Original deltas, reply bodies and audit payloads remain in the store. */
+export function runDetailEvents(events: TaskEvent[]): TaskEvent[] {
+  return events.filter(event => event.type !== "provider_stream_delta").map(event => {
+    const keepBody = event.type === "provider_usage_recorded" || event.level === "error" ||
+      /tool|terminal|mutation|sandbox|approval|capability|diagnostic|file_preview|mcp_read|_failed$|_cancelled$|_blocked$/.test(event.type);
+    const payload = event.payload && typeof event.payload === "object" ? { ...event.payload as Record<string, unknown> } : event.payload;
+    if (payload && typeof payload === "object" && event.type.startsWith("provider_")) {
+      delete (payload as Record<string, unknown>).responseText;
+      delete (payload as Record<string, unknown>).chunk;
+    }
+    return { ...event, body: keepBody ? event.body : undefined, payload };
+  });
+}
+
 export function extractRuntimeEvidence(events: TaskEvent[]): TaskEvent[] {
   return events.filter(
     (event) =>
       event.type === "evidence_created" ||
       event.type === "agent_observation_created" ||
       event.type === "mcp_read_completed" ||
-      event.type === "provider_stream_delta" ||
       event.type === "provider_usage_recorded" ||
       event.type === "terminal_output" ||
       event.type === "diagnostic_completed" ||

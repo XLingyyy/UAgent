@@ -2,6 +2,7 @@ import {
   createProviderRuntimeSession,
   type OutboundConsentGate,
   type OutboundEnvelope,
+  type OutboundSendIntent,
   type ProviderAdapter,
   type ProviderCallOptions,
   type RunScopeLease,
@@ -407,7 +408,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
             gate.invalidate();
             stop();
           },
-          async review(envelope: OutboundEnvelope, signal?: AbortSignal) {
+          async review(envelope: OutboundEnvelope, signal?: AbortSignal, intent?: OutboundSendIntent) {
             check(signal);
             if (
               pending ||
@@ -454,7 +455,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
               )
                 throw failure();
               check(signal);
-              const grant = await gate.review(envelope, signal);
+              const grant = await gate.review(envelope, signal, intent);
               check(signal);
               await call("approve_native_responses_request", { requestId: request.requestId });
               check(signal);

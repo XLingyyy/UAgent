@@ -1,4 +1,5 @@
 import { buildAgentRunTrace, replayAgentRunTrace } from "@uagent/runtime";
+import { runDetailEvents } from "./event-view-models";
 import type { AgentTraceStatus, TaskEvent, TaskRecord } from "@uagent/shared";
 
 export interface AgentTraceRowViewModel {
@@ -47,7 +48,8 @@ export function createAgentTraceViewModel(
     };
   }
 
-  const trace = buildAgentRunTrace(events, task);
+  const displayEvents = runDetailEvents(events);
+  const trace = buildAgentRunTrace(displayEvents, task);
   const replay = replayAgentRunTrace(trace);
 
   return {
@@ -55,7 +57,7 @@ export function createAgentTraceViewModel(
     status: trace.status,
     goal: trace.goal,
     summary: `${replay.eventTypes.length} trace events / ${replay.stepTitles.length} steps`,
-    rows: createRows(events, trace.events),
+    rows: createRows(displayEvents, trace.events),
     steps: trace.steps.map((step) => ({
       id: step.id,
       title: step.title,

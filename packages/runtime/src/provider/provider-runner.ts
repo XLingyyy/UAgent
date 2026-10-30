@@ -11,10 +11,13 @@ import type {
   ProviderNativeContinuation,
 } from "@uagent/shared";
 import type { ProviderAdapter } from "./provider-adapter.js";
+import type { OutboundSendIntent } from "./outbound-consent.js";
 import { createProviderRuntimeError, normalizeProviderError } from "./provider-error.js";
 
 export interface ProviderExecutionOptions {
   signal?: AbortSignal;
+  outboundSendIntent?: OutboundSendIntent;
+  authorizeSend?: (request: Readonly<ProviderRuntimeRequest>, stream: boolean) => OutboundSendIntent;
   timeoutTicks?: number;
   beforeSend?: () => Promise<void>;
   onEvent?: (event: ProviderRuntimeEvent) => void;
@@ -85,6 +88,7 @@ export async function runProviderComplete(
     const raw = await adapter.complete(request, {
       signal: options.signal,
       beforeSend: options.beforeSend,
+      outboundSendIntent: options.outboundSendIntent,
     });
     if (options.signal?.aborted) {
       publish(cancelledEvent(request));
@@ -155,6 +159,7 @@ export async function runProviderStream(
     for await (const chunk of adapter.stream(request, {
       signal: options.signal,
       beforeSend: options.beforeSend,
+      outboundSendIntent: options.outboundSendIntent,
     })) {
       if (options.signal?.aborted) {
         publish(cancelledEvent(request));

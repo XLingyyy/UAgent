@@ -1,5 +1,6 @@
 import {
   createDeepSeekAccountSession,
+  redactString,
   createDeepSeekSession,
   createProviderRuntimeError,
   DEEPSEEK_MODEL,
@@ -12,7 +13,9 @@ import {
   type OutboundConsentGate,
   type RunScopeLease,
 } from "@uagent/runtime";
-import type { TaskDraft } from "@uagent/shared";
+import type { TaskDraft, ProviderRuntimeRequest } from "@uagent/shared";
+import { responsesBody } from "../../../../../packages/runtime/src/provider/responses/protocol.js";
+import { boundConversationHistory } from "../../../../../packages/runtime/src/provider/conversation-history.js";
 import type { NativeInvoke } from "./project-native-adapter";
 import { createNativeResponsesProfile } from "./native-responses-session";
 import { getApplicationProfile } from "./application-profile";
@@ -244,6 +247,62 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
         }
       : request;
   };
+  function captureOrdinarySend(draft: TaskDraft, stillCurrent: () => boolean) {
+    const snapshot = JSON.parse(JSON.stringify({
+      taskMode: draft.taskMode, input: draft.input, projectId: draft.projectId,
+      providerId: draft.providerId, modelId: draft.modelId, conversationId: draft.conversationId,
+      conversationHistory: draft.conversationHistory ?? [], reasoningEffort: draft.reasoningEffort,
+    })) as TaskDraft;
+    const generation = sessionGeneration, revision = context.revision, epoch = context.epoch;
+    const currentSession = session, profile = responsesProfile, endpoint = state.endpoint;
+    const deadline = Date.now() + 60_000;
+    let used = false;
+    const current = () => {
+      try {
+        return !disposed && state.ready && state.enabled && Date.now() < deadline &&
+          state.expiresAt !== null && Date.now() < state.expiresAt &&
+          sessionGeneration === generation && context.revision === revision &&
+          context.projectId === snapshot.projectId && state.providerId === snapshot.providerId &&
+          state.modelId === snapshot.modelId && state.endpoint === endpoint &&
+          session === currentSession && responsesProfile === profile && stillCurrent();
+      } catch { return false; }
+    };
+    if (snapshot.taskMode !== "discussion" || !snapshot.conversationId || !endpoint ||
+        (!currentSession && !profile) || !gate.captureSendIntent || !current())
+      throw Error("ordinary_send_unavailable");
+    const history = boundConversationHistory(snapshot.conversationHistory ?? []);
+    const effort = ["none", "minimal", "low", "medium", "high", "xhigh"].includes(snapshot.reasoningEffort) ? snapshot.reasoningEffort : undefined;
+    return (request: Readonly<ProviderRuntimeRequest>, stream: boolean) => {
+      if (used) throw Error("ordinary_send_already_used");
+      used = true;
+      if (!current() || request.providerId !== snapshot.providerId || request.modelId !== snapshot.modelId ||
+          request.metadata?.projectId !== snapshot.projectId || request.metadata?.conversationId !== snapshot.conversationId ||
+          request.metadata?.purpose || request.reasoningEffort !== effort || request.tools?.length ||
+          request.messages.some(m => m.role === "tool" || m.toolCalls?.length || m.toolCallId) ||
+          request.messages[0]?.role !== "system" || request.messages[1]?.role !== "developer" ||
+          JSON.stringify(request.messages.slice(2, -1)) !== JSON.stringify(history) ||
+          request.messages.at(-1)?.role !== "user" ||
+          request.messages.at(-1)?.content !== redactString(snapshot.input) + "\n\nNo tool execution is enabled by this request.")
+        throw Error("ordinary_send_snapshot_changed");
+      // Reuse the actual protocol serializers, including selected references and credential redaction.
+      const scoped = withContext(request);
+      let body: string;
+      if (profile) body = JSON.stringify(responsesBody(scoped, stream));
+      else {
+        const preview = { ...currentSession!.preview(scoped) } as Record<string, unknown>;
+        delete preview.endpoint;
+        delete preview.automaticRetries;
+        body = JSON.stringify(preview);
+      }
+      const projectId = profile ? (snapshot.projectId === null ? "chat:local" : "chat:project:" + snapshot.projectId) : snapshot.projectId;
+      return gate.captureSendIntent!({
+        isCurrent: current,
+        matches: envelope => current() && envelope.endpoint === endpoint && envelope.model === snapshot.modelId &&
+          envelope.projectId === projectId && envelope.revision === revision &&
+          (profile !== null || envelope.epoch === epoch) && envelope.body === body,
+      });
+    };
+  }
   function conversationAdapter(request:Parameters<ProviderAdapter["complete"]>[0]):ProviderAdapter{
     const profile=responsesProfile,conversationId=request.metadata?.conversationId,projectId=context.projectId,generation=sessionGeneration;
     if(!profile||!state.ready||!state.enabled||disposed||!state.expiresAt||Date.now()>=state.expiresAt
@@ -602,6 +661,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     adapter,
     openAccount,
     openResponses,
+    captureOrdinarySend,
     createRunAdapter,
     whenSettled,
     closeAsync(reason: CloseReason = "revoked") {

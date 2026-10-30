@@ -264,7 +264,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
 
       <div className="ua-composer__status-row">
         <ProjectSelector onManageProjects={()=>openSettings("config")} value={activeProjectId} projects={registeredProjects.map(p=>({id:p.id,name:p.name,engineVersion:p.engine.label,connectionStatus:p.trustState,path:p.displayRoot}))} onChange={setActiveProject}/>
-        <span className="ua-composer__status-item"><span className="ua-composer__status-value">{permission==="request-approval"?uiText("Execution needs approval"):uiText("Native approval policy enforced")}</span></span>
+        <span className="ua-composer__status-item"><span className="ua-composer__status-value">{permission==="request-approval"?t("chat.toolApproval"):uiText("Native approval policy enforced")}</span></span>
         <button type="button" className="ua-composer__session-link" onClick={()=>openSettings("provider")}>
           {selectedModelId==="not-configured"?t("productUi.local"):providerModelOptions.find(m=>m.id===selectedModelId)?.runtimeSupported!==true?t("productUi.unavailable"):sessionReady?t(responses&&session.fixture?"demo.sessionReady":"product.sessionReady"):t("product.sessionClosed")}
         </button>

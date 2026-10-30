@@ -15,12 +15,12 @@ import {createSupportedProvider} from "../provider/runtime-availability";
 
 const managers:ReturnType<typeof createSafeProviderSession>[]=[];
 afterEach(()=>{cleanup();managers.splice(0).forEach(m=>m.dispose());safeProviderSession.close("cleared");vi.unstubAllGlobals();vi.restoreAllMocks();});
-async function mount(){
+async function mount(ordinary=false){
  vi.stubGlobal("fetch",vi.fn(()=>{throw Error("REAL NETWORK FORBIDDEN");}));
  const streams:ReadableStreamDefaultController<Uint8Array>[]=[],sent:string[]=[];
  const fetcher=vi.fn(async(_url:unknown,init?:RequestInit)=>{sent.push(String(init?.body));return new Response(new ReadableStream<Uint8Array>({start(c){streams.push(c);}}),{headers:{"Content-Type":"text/event-stream"}});});
  const gate=createOutboundConsentGate(),manager=createSafeProviderSession({mode:"live",liveAuthorized:true,fetcher,gate,attachments:createAttachmentStore()});managers.push(manager);
- const runtime=createDesktopRuntimeAdapter({nativeInvoke:null,providerAdapter:manager.adapter,providerEnabled:true});const locale=createLocaleStore({initialLocale:"en",storage:null,eventTarget:null});
+ const runtime=createDesktopRuntimeAdapter({nativeInvoke:null,providerAdapter:manager.adapter,providerEnabled:true,...(ordinary?{captureOrdinarySend:(draft:TaskDraft,current:()=>boolean)=>{manager.updateContext(draft.projectId,draft.input,JSON.stringify([draft.providerId,draft.modelId]),draft.conversationId);return manager.captureOrdinarySend(draft,current);}}:{})});const locale=createLocaleStore({initialLocale:"en",storage:null,eventTarget:null});
  const view=render(<I18nProvider store={locale}><UIProvider runtimeClient={runtime} initialState={{provider:{providers:[createSupportedProvider()]},composer:{selectedModelId:JSON.stringify(["deepseek",DEEPSEEK_MODEL])}}}><div className="ua-app"><ConversationViewport/><ComposerDock/></div><OutboundRequestReview gate={gate}/></UIProvider></I18nProvider>);
  act(()=>{safeProviderSession.enable();safeProviderSession.openAccount("synthetic-ui-test-only");manager.openAccount("synthetic-transport-key");});
  await act(async()=>{await Promise.resolve();});
@@ -33,6 +33,47 @@ async function mount(){
  return{...view,manager,runtime,gate,fetcher,sent,streams,input,send,approve,delta,done,reject,locale};
 }
 describe("multi-turn conversation and incremental text without real API",()=>{
+ it("ordinary send starts once without a dialog and details remain independent while streaming, switching language and stopping",async()=>{
+  const h=await mount(true);
+  fireEvent.change(h.input(),{target:{value:"Remember ordinary blue."}});
+  const send=screen.getByRole("button",{name:"Send task"});
+  fireEvent.click(send);fireEvent.click(send);
+  await waitFor(()=>expect(h.sent).toHaveLength(1));
+  expect(h.gate.getPending()).toBeNull();expect(screen.queryByRole("button",{name:"Confirm this request once"})).toBeNull();
+  await h.delta("Ordinary answer ");
+  const assistant=document.querySelector(".ua-chat-message--assistant");
+  fireEvent.click(screen.getByRole("button",{name:"View run details"}));
+  const panel=screen.getByRole("region",{name:"Run details"}),details=screen.getByLabelText("Run events");
+  const list=document.querySelector(".ua-chat-list") as HTMLElement;
+  Object.defineProperty(list,"scrollHeight",{value:900,configurable:true});list.scrollTop=17;details.scrollTop=31;
+  await h.delta("continues.");
+  expect(document.querySelector(".ua-chat-message--assistant")).toBe(assistant);
+  expect(assistant?.textContent).toContain("Ordinary answer continues.");
+  expect(panel.textContent).not.toContain("Ordinary answer");
+  expect(screen.getByRole("region",{name:"Run details"})).toBe(panel);
+  expect(details.scrollTop).toBe(31);expect(list.scrollTop).toBe(17);
+  act(()=>h.locale.setLocale("zh-CN"));expect(h.sent).toHaveLength(1);
+  expect(screen.getByRole("region",{name:"运行详情"})).toBe(panel);expect(details.scrollTop).toBe(31);
+  act(()=>h.locale.setLocale("en"));
+  await h.done();
+  expect(h.runtime.getSnapshot().eventsByTaskId[h.runtime.getSnapshot().activeTaskId!].some(e=>e.type==="provider_stream_delta"&&e.body==="Ordinary answer ")).toBe(true);
+  fireEvent.click(screen.getByRole("button",{name:"Close run details"}));
+  fireEvent.change(h.input(),{target:{value:"Second ordinary question."}});fireEvent.click(screen.getByRole("button",{name:"Send task"}));
+  await waitFor(()=>expect(h.sent).toHaveLength(2));
+  expect(h.gate.getPending()).toBeNull();
+  const body=JSON.parse(h.sent[1]);expect(body.messages[3].content).toBe("Ordinary answer continues.");
+  await h.delta("Incomplete second answer");
+  fireEvent.click(screen.getAllByRole("button",{name:"View run details"}).at(-1)!);
+  const stoppedPanel=screen.getByRole("region",{name:"Run details"});
+  fireEvent.click(screen.getByRole("button",{name:"Stop task"}));
+  await waitFor(()=>expect(document.querySelectorAll(".ua-chat-message--assistant")[1]?.getAttribute("aria-busy")).toBe("false"));
+  expect(h.sent).toHaveLength(2);expect(stoppedPanel.textContent).not.toContain("Incomplete second answer");
+  fireEvent.click(screen.getByRole("button",{name:"Close run details"}));
+  fireEvent.click(screen.getAllByRole("button",{name:"View run details"}).at(-1)!);
+  expect(screen.getByRole("region",{name:"Run details"}).textContent).not.toContain("Incomplete second answer");
+ });
+
+
  it("does not publish a transient empty conversation while routing a follow-up task",async()=>{
   const h=await mount();await h.send("First question");await h.approve();await h.delta("First answer");await h.done();
   const snapshot=h.runtime.getSnapshot(),active=snapshot.tasksById[snapshot.activeTaskId!],conversation=active.draft.conversationId;
@@ -45,7 +86,7 @@ describe("multi-turn conversation and incremental text without real API",()=>{
 
  it("sends exact ordered history and keeps incremental content in one assistant node",async()=>{
   const h=await mount();await h.send("Remember synthetic blue.");expect(h.fetcher).not.toHaveBeenCalled();await h.approve();await h.delta("Synthetic ");await waitFor(()=>expect(document.querySelector(".ua-chat-message--assistant")?.textContent).toContain("Synthetic "));
-  const node=document.querySelector(".ua-chat-message--assistant");expect(document.querySelectorAll(".ua-chat-message--assistant")).toHaveLength(1);expect(document.querySelector(".ua-chat-details")?.hasAttribute("open")).toBe(false);
+  const node=document.querySelector(".ua-chat-message--assistant");expect(document.querySelectorAll(".ua-chat-message--assistant")).toHaveLength(1);expect(screen.queryByRole("region",{name:"Run details"})).toBeNull();
   await h.delta("blue.");expect(document.querySelector(".ua-chat-message--assistant")).toBe(node);expect(node?.textContent).toContain("Synthetic blue.");await h.done();expect(document.querySelectorAll(".ua-chat-message--assistant")).toHaveLength(1);
   const review=await h.send("What color?");const body=JSON.parse(review.envelope.body);expect(body.messages.map((m:{role:string})=>m.role)).toEqual(["system","system","user","assistant","user"]);expect(body.messages[2].content).toBe("Remember synthetic blue.");expect(body.messages[3].content).toBe("Synthetic blue.");expect(screen.getByLabelText("Exact outbound body").textContent).toBe(review.envelope.body);expect(h.fetcher).toHaveBeenCalledTimes(1);
   await h.approve();expect(h.sent[1]).toBe(review.envelope.body);await h.delta("Blue.");await h.done();expect(document.querySelectorAll(".ua-chat-message--assistant")).toHaveLength(2);expect(document.querySelectorAll(".ua-chat-message--user")).toHaveLength(2);expect(fetch).not.toHaveBeenCalled();

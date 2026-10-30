@@ -25,6 +25,7 @@ export {
   type AgentLoopContextUpdate,
   type AgentLoopOptions, type InvestigationRuntimeOptions,
   type AgentLoopRuntimeClient,
+  type AgentLoopSubmissionOptions,
 } from "./agent-loop-runtime.js";
 export {
   createEvidenceFromObservation,

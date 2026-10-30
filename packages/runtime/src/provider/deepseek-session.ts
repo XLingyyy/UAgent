@@ -134,7 +134,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
       const scope=options.getProjectContext?.() ?? {projectId:request.metadata?.projectId??null,epoch:request.metadata?.projectEpoch??0,revision:request.id};
       if (request.metadata?.projectId !== undefined && request.metadata.projectId !== scope.projectId) throw fail("cancelled", "Project changed before outbound review.");
       const envelope: OutboundEnvelope={endpoint:DEEPSEEK_ENDPOINT,model:DEEPSEEK_MODEL,...scope,body:prepared.serialized,...(consent?{maximumCostMicros:prepared.inputBound*consent.inputMicrosPerToken+prepared.body.max_tokens*consent.outputMicrosPerToken}:{})};
-      const grant=options.outboundGate ? await Promise.race([options.outboundGate.review(envelope,controller.signal).catch(()=>{throw fail("cancelled", "Outbound confirmation was withdrawn.");}),interrupted]) : null;
+      const grant=options.outboundGate ? await Promise.race([options.outboundGate.review(envelope,controller.signal,call.outboundSendIntent).catch(()=>{throw fail("cancelled", "Outbound confirmation was withdrawn.");}),interrupted]) : null;
       if(call.beforeSend)await Promise.race([call.beforeSend(),interrupted]);
       const reservationId=await Promise.race([reserve(prepared.inputBound, prepared.body.max_tokens), interrupted]);
       const current=options.getProjectContext?.()??scope;

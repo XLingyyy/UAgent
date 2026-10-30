@@ -6,6 +6,7 @@ import {createProjectReadToolRegistry} from "../runtime/project-read-tools";
 import {attachmentStore} from "../runtime/attachment-store";
 import {conversationTasks,completedConversationHistory,conversationKey} from "../runtime/conversation-context";
 import {safeProviderSession} from "../runtime/safe-provider-session";
+import type { TaskDraft } from "@uagent/shared";
 import type { WorkspaceConfig } from "../runtime/local-workspace-store";
 import { createRequestGeneration } from "./request-generation";
 import { FIXTURES_ENABLED, ACCEPTANCE_ENABLED } from "../runtime/build-capabilities";
@@ -1430,7 +1431,21 @@ function createUIStateBundle(
           investigationScopeId=lease.scope.id;
         }
         if(!isCurrent())throw Error("scope_review_stale");
-        const record = await runtimeClient.submitTask({...draft,conversationId,conversationHistory:history,historyEligible:draft.taskMode!=="investigation"&&attachmentStore.selected(draft.projectId).length===0,...(investigationScopeId?{investigationScopeId}:{})});
+        const submissionDraft: TaskDraft = {...draft,conversationId,conversationHistory:history,historyEligible:draft.taskMode!=="investigation"&&attachmentStore.selected(draft.projectId).length===0,...(investigationScopeId?{investigationScopeId}:{})};
+        let authorizeOrdinarySend: ReturnType<typeof safeProviderSession.captureOrdinarySend> | undefined;
+        if (draft.taskMode === "discussion" && runtimeClient.captureOrdinarySend && safeProviderSession.getSnapshot().ready) {
+          const selected = composerStore.getState();
+          // Assign this conversation before publishing its first task; this is UI bookkeeping, not a new source.
+          safeProviderSession.updateContext(draft.projectId, originalInput, selected.selectedModelId, conversationId);
+          authorizeOrdinarySend = runtimeClient.captureOrdinarySend(submissionDraft, () => {
+            const current = composerStore.getState();
+            return isCurrent() && projectStore.getState().activeProjectId === draft.projectId &&
+              current.input === originalInput && current.selectedModelId === selected.selectedModelId &&
+              current.reasoningEffort === selected.reasoningEffort && current.taskMode === selected.taskMode &&
+              current.savedRun === selected.savedRun;
+          });
+        }
+        const record = await runtimeClient.submitTask(submissionDraft, { authorizeOrdinarySend });
         if (isCurrent()) {
           composerStore.setState((previous) => ({ ...previous, ...(record.state === "completed" ? { taskMode: draft.taskMode==="investigation"?"investigation" as const:"discussion" as const, savedRun: undefined } : {}), input: record.state === "completed" && previous.input === originalInput ? "" : previous.input }));
           threadStore.setState({ activeThreadId: record.id });

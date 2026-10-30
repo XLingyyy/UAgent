@@ -3,7 +3,7 @@
 The Windows implementation is split into a protocol adapter, a native request
 broker and a fixed-target WinHTTP engine. Configuration and declared capability
 do not establish connectivity. The desktop selector exposes Responses only in an explicitly isolated offline
-demo profile, labelled as a local synthetic fixture. Ordinary mode remains
+demo profile, labelled as a local synthetic fixture. Non-fixture production profiles remain
 blocked while production transport acceptance remains incomplete. Opening a
 fixture session never establishes a real model connection.
 
@@ -13,8 +13,12 @@ The isolated fixture also supports ordinary discussion, without a trusted projec
 index scan or tool grant. Its native conversation binding issues a fresh run/epoch
 and selects an explicitly text-only source checker. The native body validator
 rejects tools, function items and server-side history references. Every text request
-still uses the same prepare, exact-body review, single-use approval and final
-dispatch gate. Production profiles and real credentials remain blocked in this
+still uses the same prepare, exact-body single-use approval and final
+dispatch gate. A trusted ordinary Send action captures one memory-only intent for
+the full request snapshot, so it does not display a second confirmation dialog.
+This capability cannot be serialized, reused or applied to investigation/tool
+calls. Changes to the source, model, conversation, credential or cancellation
+state revoke it; investigation requests still use explicit outbound review. Production profiles and real credentials remain blocked in this
 delivery; enabling them is separate from this offline acceptance.
 
 Completed conversation text is bounded to eight turns / 12 KiB for each outgoing
@@ -49,8 +53,8 @@ returns the original owner and deadline.
 
 The exact UTF-8 body is retained with its SHA-256, endpoint, model, owner,
 configuration and source snapshot. The desktop bridge prepares that body before
-displaying the existing outbound review, verifies the hash and binds the user's
-single-use approval. The native dispatch gate checks the same lease, grant,
+resolving ordinary Send intent or displaying investigation outbound review,
+verifies the hash and binds the user's single-use approval. The native dispatch gate checks the same lease, grant,
 credential, owner, configuration, cancellation and source authority immediately
 before dispatch. Native settings updates block new owners for the whole mutation
 and revoke existing sessions; window lifecycle events also invalidate pending

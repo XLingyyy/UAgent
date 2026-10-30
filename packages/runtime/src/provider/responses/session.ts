@@ -455,7 +455,7 @@ export function createResponsesSession(options: ResponsesSessionOptions) {
       const envelope: OutboundEnvelope = { endpoint, model: modelId, ...scope, body: serialized };
       const grant = gate
         ? await Promise.race([
-            gate.review(envelope, controller.signal).catch(() => {
+            gate.review(envelope, controller.signal, call.outboundSendIntent).catch(() => {
               throw fail("cancelled", "Responses outbound confirmation was withdrawn.");
             }),
             interrupted,

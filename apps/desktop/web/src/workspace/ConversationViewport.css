@@ -71,3 +71,14 @@
   word-break: break-word;
   margin: 0;
 }
+
+.ua-chat-details-button{margin-top:12px;padding:6px 0;border:0;background:transparent;color:var(--ua-text-tertiary);font:inherit;font-size:11px;cursor:pointer}
+.ua-chat-details-button:hover,.ua-chat-details-button[aria-expanded="true"]{color:var(--ua-text-primary)}
+.ua-run-details{display:flex;flex-direction:column;flex:0 0 auto;min-height:0;max-height:min(42vh,360px);border-top:1px solid var(--ua-border-subtle);background:var(--ua-bg-panel)}
+.ua-run-details__header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px}
+.ua-run-details__header strong{font-size:12px}
+.ua-run-details__header p{margin:4px 0 0;font-size:11px;color:var(--ua-text-muted)}
+.ua-run-details__header button{border:1px solid var(--ua-border-subtle);border-radius:6px;padding:6px 10px;font:inherit;font-size:11px;background:transparent;color:var(--ua-text)}
+.ua-run-details__events{min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.ua-run-details__events .ua-conversation-message{padding:10px 16px;font-size:12px}
+.ua-run-details__events .ua-conversation-message__title{font-size:12px}

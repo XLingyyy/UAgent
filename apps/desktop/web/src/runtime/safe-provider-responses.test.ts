@@ -227,6 +227,48 @@ const request = (): ProviderRuntimeRequest => ({
 });
 
 describe("safe Responses fixture controller (synthetic invoke only)", () => {
+  it("uses trusted ordinary send snapshots for two requests without a second dialog, retaining native approval", async () => {
+    const h=setup({autoApprove:false});await h.open();
+    const bridge=new ProviderRuntimeBridge({adapter:{id:providerId,getCapabilities:()=>h.manager.adapter.getCapabilities(),complete:(r,c)=>h.manager.adapter.complete(r,c)},enabled:true});
+    const history: Array<{role:"user"|"assistant";content:string}>=[];
+    for(const [index,effort] of ["low","xhigh"].entries()){
+      const text="ordinary UI request "+index;
+      h.manager.updateContext(projectId,text,modelId,"conversation-fixture");
+      const draft={permissionMode:"request_approval",runMode:"local",branch:"",contextPercent:0,taskMode:"discussion",input:text,projectId,providerId,modelId,reasoningEffort:effort,conversationId:"conversation-fixture",conversationHistory:[...history]} as TaskDraft;
+      const authorizeSend=h.manager.captureOrdinarySend(draft,()=>true);
+      const seen:Array<unknown>=[];const unsubscribe=h.gate.subscribe(()=>seen.push(h.gate.getPending()));
+      await bridge.execute({system:"You are an assistant.",developer:"Discuss only.",context:[],constraints:[],toolPolicy:["No tool execution is enabled by this request."],user:text,metadata:{providerId,providerModelId:modelId}},draft,"ordinary-"+index,"plan-"+index,{authorizeSend});
+      unsubscribe();
+      expect(h.gate.getPending()).toBeNull();expect(seen.every(value=>value===null)).toBe(true);
+      expect(h.count("approve_native_responses_request")).toBe(index+1);expect(h.count("dispatch_native_responses_request")).toBe(index+1);
+      expect(JSON.parse(h.prepared()).reasoning).toEqual({effort});
+      history.push({role:"user",content:text},{role:"assistant",content:"Native fixture answer"});
+    }
+    expect(h.count("bind_native_responses_conversation")).toBe(1);expect(h.records).toHaveLength(2);
+    expect(h.fetcher).not.toHaveBeenCalled();
+  });
+
+  it("ordinary send authorization rejects scope expansion, stale sources, replay and investigation modes", async () => {
+    const h=setup({autoApprove:false});await h.open();const text="ordinary UI request";
+    const draft={permissionMode:"request_approval",runMode:"local",branch:"",contextPercent:0,taskMode:"discussion",input:text,projectId,providerId,modelId,reasoningEffort:"low",conversationId:"conversation-fixture",conversationHistory:[]} as TaskDraft;
+    const ordinary=():ProviderRuntimeRequest=>({...request(),reasoningEffort:"low",metadata:{projectId,conversationId:"conversation-fixture"},messages:[{role:"system",content:"system"},{role:"developer",content:"developer"},{role:"user",content:text+"\n\nNo tool execution is enabled by this request."}]});
+    expect(()=>h.manager.captureOrdinarySend({...draft,taskMode:"investigation"},()=>true)).toThrow("unavailable");
+    for(const expand of ["tool","history","reasoning","conversation"]){
+      const authorize=h.manager.captureOrdinarySend(draft,()=>true),input=ordinary();
+      if(expand==="tool")input.tools=[{name:"read",description:"not granted",parameters:{type:"object"}}];
+      if(expand==="history")input.messages.splice(2,0,{role:"user",content:"unselected local result"});
+      if(expand==="reasoning")input.reasoningEffort="xhigh";
+      if(expand==="conversation")input.metadata!.conversationId="foreign";
+      expect(()=>authorize(input,false)).toThrow("changed");
+    }
+    const stale=h.manager.captureOrdinarySend(draft,()=>true);h.manager.updateContext(projectId,"changed source",modelId,"conversation-fixture");
+    expect(()=>stale(ordinary(),false)).toThrow("changed");
+    const one=h.manager.captureOrdinarySend(draft,()=>true);one(ordinary(),false);
+    expect(()=>one(ordinary(),false)).toThrow("already_used");
+    expect(h.count("dispatch_native_responses_request")).toBe(0);expect(h.gate.getPending()).toBeNull();
+  });
+
+
   it("uses each draft's reasoning selection through a cached ordinary bridge and exact native approval", async () => {
     vi.stubGlobal("fetch", vi.fn(() => { throw Error("No browser fetch"); }));
     const h = setup({ autoApprove: false });

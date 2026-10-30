@@ -41,6 +41,7 @@ import { createSessionHistory, type SessionHistoryEngine } from "./session-histo
 import { ProviderRuntimeBridge } from "./provider/provider-runtime-bridge.js";
 import { mapProviderRuntimeEvent } from "./provider/provider-event-bridge.js";
 import type { ProviderAdapter } from "./provider/provider-adapter.js";
+import type { ProviderExecutionOptions } from "./provider/provider-runner.js";
 import { redactString } from "./secrets/redaction.js";
 
 export interface InvestigationRuntimeOptions {
@@ -89,7 +90,12 @@ export interface AgentLoopContextUpdate {
   providerAnalysisOnly?: boolean;
 }
 
+export interface AgentLoopSubmissionOptions {
+  /** Ephemeral trusted UI callback; never put it in a draft, archive, or investigation scope. */
+  authorizeOrdinarySend?: ProviderExecutionOptions["authorizeSend"];
+}
 export interface AgentLoopRuntimeClient extends RuntimeClient {
+  submitTask(draft: TaskDraft, submission?: AgentLoopSubmissionOptions): Promise<TaskRecord>;
   updateContext(update: AgentLoopContextUpdate): void;
   getTaskRun(taskId:string):TaskRun|null;
   pauseTaskRun(taskId:string):void;
@@ -589,7 +595,7 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
       if(!coordinator)throw Error("run_not_found");
       return finishInvestigation(taskId,await coordinator.resume());
     },
-    async submitTask(draft: TaskDraft): Promise<TaskRecord> {
+    async submitTask(draft: TaskDraft, submission?: AgentLoopSubmissionOptions): Promise<TaskRecord> {
       taskSequence += 1;
       eventSequence = 0;
       observationSequence = 0;
@@ -698,7 +704,7 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
               user: redactedDraft.input,
               metadata: { providerId: draft.providerId ?? options.providerAdapter?.id ?? "provider", providerModelId: draft.modelId },
             }, normalizedDraft, taskId, plan.id,
-            { signal: controller.signal, onEvent: (event) => {
+            { signal: controller.signal, authorizeSend: draft.taskMode === "discussion" ? submission?.authorizeOrdinarySend : undefined, onEvent: (event) => {
               if (controller.signal.aborted || isStopped(taskId)) return;
               eventSequence += 1;
               for (const taskEvent of mapProviderRuntimeEvent(event, taskId, eventSequence).taskEvents) {

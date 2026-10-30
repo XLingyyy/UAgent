@@ -1,4 +1,5 @@
 import {useI18n} from "../i18n";
+import { runDetailEvents } from "../runtime/event-view-models";
 import {
   isTerminalTaskState,
   type AgentPlan,
@@ -81,7 +82,8 @@ export function RuntimePanel() {
   const activeTaskId = runtime?.activeTaskId ?? null;
   const activeTask = activeTaskId ? runtime?.tasksById[activeTaskId] : null;
   const events = activeTaskId ? (runtime?.eventsByTaskId[activeTaskId] ?? []) : [];
-  const visibleEventCount = events.filter((event) => event.type !== "mcp_fallback_to_mock").length;
+  const displayEvents = runDetailEvents(events);
+  const visibleEventCount = displayEvents.filter((event) => event.type !== "mcp_fallback_to_mock").length;
   const canCancel = Boolean(activeTaskId && activeTask && runtimeActions && !isTerminalTaskState(activeTask.state));
   const plan = extractPlan(events);
   const currentStep = extractCurrentStep(events);
@@ -90,7 +92,6 @@ export function RuntimePanel() {
   const evidence = events.filter((event) => event.type === "evidence_created").length;
   const blocked = events.filter((event) => event.type === "mcp_tool_blocked").length;
   const providerRequests = events.filter((event) => event.type === "provider_request_started").length;
-  const providerChunks = events.filter((event) => event.type === "provider_stream_delta").length;
   const providerFailures = events.filter(
     (event) => event.type === "provider_request_failed" || event.type === "provider_request_cancelled"
   ).length;
@@ -157,9 +158,6 @@ export function RuntimePanel() {
           {uiText("Provider requests:")}{" "}{providerRequests}
         </li>
         <li className="ua-utility-placeholder__item">
-          {uiText("Provider stream chunks:")}{" "}{providerChunks}
-        </li>
-        <li className="ua-utility-placeholder__item">
           {uiText("Provider failures:")}{" "}{providerFailures}
         </li>
         <li className="ua-utility-placeholder__item">
@@ -174,23 +172,11 @@ export function RuntimePanel() {
             ? t("mcp.discoverySummary",{tools:runtime.mcp.capabilities.tools,resources:runtime.mcp.capabilities.resources,prompts:runtime.mcp.capabilities.prompts})
             : uiText("none")}
         </li>
-        {events.slice(-3).map((event) => (
+        {displayEvents.slice(-3).map((event) => (
           <li key={event.id} className="ua-utility-placeholder__item">
             {event.title}
           </li>
         ))}
-        {providerChunks > 0 && (() => {
-          const streamText = events
-            .filter((e) => e.type === "provider_stream_delta")
-            .slice(-5)
-            .map((e) => e.body)
-            .join("");
-          return (
-            <li className="ua-utility-placeholder__item ua-utility-placeholder__item--preview">
-              {uiText("Stream preview:")}{" "}{streamText.slice(0, 100)}{streamText.length > 100 ? "..." : ""}
-            </li>
-          );
-        })()}
       </ul>
 
       <button

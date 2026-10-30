@@ -22,6 +22,7 @@ import {
   unwrapPluginDryRunResult,
   validatePluginDryRunResult,
   type AgentLoopRuntimeClient,
+  type AgentLoopSubmissionOptions,
   type DryRunBindingContext,
   type DryRunBindingInput,
   type ExternalBindingOperation,
@@ -563,7 +564,8 @@ export interface DesktopRuntimeAdapter {
   isMvp15McpBindingCurrent?(binding: string): boolean;
   subscribe(listener: (snapshot: RuntimeSnapshot) => void): () => void;
   subscribeMcp(listener: (state: McpConnectionState) => void): () => void;
-  submitTask(draft: TaskDraft): Promise<TaskRecord>;
+  captureOrdinarySend?: (draft: TaskDraft, isCurrent: () => boolean) => NonNullable<AgentLoopSubmissionOptions["authorizeOrdinarySend"]>;
+  submitTask(draft: TaskDraft, submission?: AgentLoopSubmissionOptions): Promise<TaskRecord>;
   cancelTask(taskId: string): Promise<void>;
   submitApprovalDecision(
     taskId: string,
@@ -648,6 +650,8 @@ export interface DesktopRuntimeAdapterOptions {
   /** Explicit session injection; not derived from saved credentials or fixture defaults. */
   providerAdapter?: ProviderAdapter;
   providerEnabled?: boolean;
+  /** Must belong to the same managed ProviderAdapter; not inferred for injected adapters. */
+  captureOrdinarySend?: DesktopRuntimeAdapter["captureOrdinarySend"];
   createTransport?: (endpoint: string, transportKind: string) => McpTransportClient;
   nativeInvoke?: NativeInvoke | null;
   /** Explicit source-test storage seam; production uses the native application-data store. */
@@ -4249,12 +4253,13 @@ export function createDesktopRuntimeAdapter(
     getTaskRun: taskId=>router.getTaskRun(taskId),
     pauseTaskRun: taskId=>router.pauseTaskRun(taskId),
     resumeTaskRun: taskId=>router.resumeTaskRun(taskId),
-    submitTask: async (draft) => {
+    captureOrdinarySend: options?.captureOrdinarySend,
+    submitTask: async (draft, submission) => {
       if (!FIXTURES_ENABLED && !currentDiscovery && !(options?.providerAdapter && options.providerEnabled)) {
         throw new Error("Connect and discover a read-only MCP session before submitting a task.");
       }
       providerProposals.invalidate();
-      const record = await router.submitTask(draft);
+      const record = await router.submitTask(draft, submission);
       syncSnapshot();
       if (record.state === "failed") throw new Error("task_submission_failed");
       return record;

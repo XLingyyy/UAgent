@@ -302,7 +302,13 @@ export function RunHistoryPanel({
               {archive.events.length > 0 && (
                 <details>
                   <summary>{t("historyRun.events")}</summary>
-                  <pre>{JSON.stringify(archive.events, null, 2)}</pre>
+                  <pre>{JSON.stringify(archive.events.filter(event => event.kind !== "model_text_delta").map(event => {
+                    const data = event.data as { payload?: Record<string, unknown> };
+                    if (!event.kind.startsWith("model_") || !data?.payload) return event;
+                    const payload = { ...data.payload };
+                    delete payload.messages; delete payload.responseText; delete payload.text;
+                    return { ...event, data: { ...data, payload } };
+                  }), null, 2)}</pre>
                 </details>
               )}
               {systemMessages.length > 0 && (

@@ -13,7 +13,7 @@ let fixedAppRuntimeAdapter: ReturnType<typeof createDesktopRuntimeAdapter> | nul
 
 export function initializeFixedAppRuntimeAdapter() {
   if (!fixedAppRuntimeAdapter) {
-    fixedAppRuntimeAdapter = createDesktopRuntimeAdapter({providerAdapter:safeProviderSession.adapter,providerEnabled:true});
+    fixedAppRuntimeAdapter = createDesktopRuntimeAdapter({providerAdapter:safeProviderSession.adapter,providerEnabled:true,captureOrdinarySend:safeProviderSession.captureOrdinarySend});
     registerFixedAppRuntimeAdapter(fixedAppRuntimeAdapter);
   }
   return fixedAppRuntimeAdapter;

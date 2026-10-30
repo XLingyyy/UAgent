@@ -19,7 +19,7 @@ export const productMessages={
  "product.sessionClosed":["会话未开启","Session closed"],
  "product.apiKey":["本次会话 API 密钥","Session API key"],
  "product.authorizeLabel":["授权本次模型会话","Authorize this model session"],
- "product.authorize":["允许本次会话使用此密钥。每次发送仍需单独确认完整请求。","Allow this session to use this key. Every send still requires confirmation of the complete request."],
+ "product.authorize":["允许本次会话使用此密钥。普通聊天按发送即发起该次请求；工具操作和额外数据分享仍需单独审批。","Allow this session to use this key. Send starts one ordinary chat request; tools and additional data sharing still need separate approval."],
  "product.openSession":["开启会话并选择模型","Open session and select model"],
  "product.clearSession":["关闭会话并清除密钥","Close session and clear key"],
  "product.credentialHelp":["密钥只留在内存，不会保存。停止、切换项目或模型、退出及一小时后会清除。费用以服务商账单为准。","Keys stay in memory and are never saved. Stop, project or model changes, exit, or one hour clears the key. Refer to your provider for billing."],

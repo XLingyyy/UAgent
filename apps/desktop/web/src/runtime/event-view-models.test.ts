@@ -5,6 +5,7 @@ import {
   extractRuntimeEvidence,
   extractRuntimeReview,
   mapTaskEventToWorkspaceMessage,
+  runDetailEvents,
 } from "./event-view-models";
 
 function event(type: TaskEvent["type"], level: TaskEvent["level"] = "info"): TaskEvent {
@@ -20,6 +21,20 @@ function event(type: TaskEvent["type"], level: TaskEvent["level"] = "info"): Tas
 }
 
 describe("MVP3 Agent event view models", () => {
+  it("keeps reply text out of detail projections without changing the raw audit history", () => {
+    const delta={...event("provider_stream_delta"),body:"reply in progress"};
+    const complete={...event("provider_request_completed"),body:"full reply",payload:{responseText:"full reply",chunk:{text:"reply"},usage:{inputTokens:2,outputTokens:3}}};
+    const failure={...event("provider_request_failed","error"),body:"connection lost"};
+    const usage={...event("provider_usage_recorded"),body:"input 2 / output 3"};
+    const raw=[delta,complete,failure,usage],before=JSON.stringify(raw);
+    const shown=runDetailEvents(raw);
+    expect(shown.map(item=>item.type)).not.toContain("provider_stream_delta");
+    expect(shown[0].body).toBeUndefined();
+    expect(shown[0].payload).toEqual({usage:{inputTokens:2,outputTokens:3}});
+    expect(shown[1].body).toBe("connection lost");expect(shown[2].body).toBe("input 2 / output 3");
+    expect(JSON.stringify(raw)).toBe(before);
+  });
+
   it("maps Agent plan, step, observation, and report events to user-readable message kinds", () => {
     expect(mapTaskEventToWorkspaceMessage(event("agent_plan_created")).kind).toBe("agent-plan");
     expect(mapTaskEventToWorkspaceMessage(event("agent_step_started")).kind).toBe("tool-event");
@@ -69,7 +84,6 @@ describe("MVP3 Agent event view models", () => {
       "provider_request_cancelled",
     ]);
     expect(extractRuntimeEvidence(events).map((item) => item.type)).toEqual([
-      "provider_stream_delta",
       "provider_usage_recorded",
     ]);
     expect(mapTaskEventToWorkspaceMessage(event("provider_request_failed")).label).toBe("Provider failed");

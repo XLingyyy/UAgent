@@ -59,7 +59,6 @@ describe("createAgentTraceViewModel", () => {
     expect(model.rows.map((row) => row.label)).toEqual([
       "Run started",
       "Provider request started",
-      "Provider stream delta",
       "Provider usage recorded",
       "Provider request completed",
       "Run completed",
@@ -82,14 +81,14 @@ describe("createAgentTraceViewModel", () => {
 
     const model = createAgentTraceViewModel(events, task);
 
-    expect(model.rows.find((row) => row.label === "Provider stream started")?.detail).toBe("request provider-request-1");
-    expect(model.rows.find((row) => row.label === "Provider stream delta")?.detail).toBe("delta: hello");
+    expect(model.rows.find((row) => row.label === "Provider stream started")?.detail).toBe("Provider stream started");
+    expect(model.rows.find((row) => row.label === "Provider stream delta")).toBeUndefined();
     expect(model.rows.find((row) => row.label === "Provider stream completed")?.tone).toBe("success");
     expect(model.rows.find((row) => row.label === "Provider usage recorded")?.tone).toBe("default");
     expect(model.rows.find((row) => row.label === "Provider request completed")?.tone).toBe("success");
   });
 
-  it("marks provider failures and cancellations without hiding partial stream rows", () => {
+  it("keeps provider failures and cancellations while text remains in the conversation", () => {
     const task = createTask("failed");
     const events: TaskEvent[] = [
       event("task_submitted", 1, "User request", "Stream provider response"),
@@ -102,10 +101,10 @@ describe("createAgentTraceViewModel", () => {
 
     const model = createAgentTraceViewModel(events, task);
 
-    expect(model.rows.map((row) => row.label)).toContain("Provider stream delta");
+    expect(model.rows.map((row) => row.label)).not.toContain("Provider stream delta");
     expect(model.rows.find((row) => row.label === "Provider request failed")?.tone).toBe("error");
     expect(model.rows.find((row) => row.label === "Provider request cancelled")?.tone).toBe("warning");
-    expect(model.rows.find((row) => row.label === "Provider stream delta")?.tone).toBe("default");
+    expect(model.rows.find((row) => row.label === "Provider stream delta")).toBeUndefined();
   });
 });
 
