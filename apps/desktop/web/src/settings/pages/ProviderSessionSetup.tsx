@@ -7,7 +7,7 @@ import {
   responsesFixtureAvailable,
   supportsProviderModel,
 } from "../../provider/runtime-availability";
-import type { ProviderConfig } from "../../types/provider";
+import type { ProviderConfig, ProviderVersion } from "../../types/provider";
 import { useComposerActions } from "../../stores/ui-store";
 
 type SessionController = SafeProviderSession & {
@@ -20,6 +20,7 @@ type ProviderSessionProps = {
   provider: ProviderConfig;
   controller?: SavedSessionController;
   credentials?: NativeProviderCredentials;
+  providerVersion?: Readonly<ProviderVersion>;
 };
 /** Explicit old injected controllers retain their memory-only unit-test surface.
  * The real application always uses native storage and never falls back on error. */
@@ -28,11 +29,11 @@ export function ProviderSessionSetup(props: ProviderSessionProps) {
     return <MemoryProviderSessionSetup provider={props.provider} controller={props.controller} />;
   return <SavedProviderSessionSetup provider={props.provider}
     controller={props.controller ?? safeProviderSession}
-    credentials={props.credentials ?? nativeProviderCredentials} />;
+    credentials={props.credentials ?? nativeProviderCredentials} providerVersion={props.providerVersion} />;
 }
 
-function SavedProviderSessionSetup({ provider, controller, credentials }: {
-  provider: ProviderConfig; controller: SavedSessionController; credentials: NativeProviderCredentials;
+function SavedProviderSessionSetup({ provider, controller, credentials, providerVersion }: {
+  provider: ProviderConfig; controller: SavedSessionController; credentials: NativeProviderCredentials; providerVersion?: Readonly<ProviderVersion>;
 }) {
   const { t } = useI18n();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
@@ -46,7 +47,19 @@ function SavedProviderSessionSetup({ provider, controller, credentials }: {
   const [operation, setOperation] = useState<"loading" | "saving" | "removing" | "opening" | null>("loading");
   const [error, setError] = useState<"unavailable" | "invalid" | "changed" | "saveFailed" | "removeFailed" | "openFailed" | "cleanupPending" | null>(null);
   const [reloadRequired, setReloadRequired] = useState(false);
+  function matchesDisplayedProvider(value: SavedProviderCredential): boolean {
+    const expectedWire = provider.wireApi === "responses" ? "responses" : "chat_completions";
+    const expectedEndpoint = expectedWire === "responses" ? "https://api.openai.com/v1/responses" : "https://api.deepseek.com/chat/completions";
+    const version = value.providerVersion;
+    return value.wireApi === expectedWire && value.endpoint === expectedEndpoint && version.exists &&
+      (!providerVersion || (version.providerId === providerVersion.providerId && version.generation === providerVersion.generation &&
+        version.revision === providerVersion.revision && version.exists === providerVersion.exists));
+  }
   const busy = operation !== null;
+  const recovery = saved?.recovery ?? null;
+  const recoverable = Boolean(recovery && saved?.version && !saved.cleanupPending);
+  const recoveryChoice = recoverable && !replacing;
+  const recoveryKey = recovery === "missing" ? "vault.recoveryMissing" : recovery === "corrupt" ? "vault.recoveryCorrupt" : "vault.recoveryUnavailable";
   async function load() {
     const current = ++generation.current;
     setOperation("loading"); setError(null); setSaved(null); setReplacing(false); setHasInput(false);
@@ -56,11 +69,12 @@ function SavedProviderSessionSetup({ provider, controller, credentials }: {
       if (!credentials.available()) throw new ProviderCredentialError("unavailable");
       const result = await credentials.get(provider.providerId);
       if (current !== generation.current) return;
+      if (!matchesDisplayedProvider(result)) throw new ProviderCredentialError("conflict");
       setSaved(result); setReloadRequired(!result.providerVersion.exists || Boolean(result.cleanupPending));
       if (result.cleanupPending) setError("cleanupPending");
       else if (!result.providerVersion.exists) setError("changed");
-    } catch {
-      if (current === generation.current) { setError("unavailable"); setReloadRequired(true); }
+    } catch (reason) {
+      if (current === generation.current) { setError(reason instanceof ProviderCredentialError && reason.kind === "conflict" ? "changed" : "unavailable"); setReloadRequired(true); }
     } finally {
       if (current === generation.current) setOperation(null);
     }
@@ -72,7 +86,7 @@ function SavedProviderSessionSetup({ provider, controller, credentials }: {
       if (password.current) password.current.value = "";
     };
     // The exact native config is captured by the receipt and checked on every mutation.
-  }, [credentials, controller, provider.providerId, provider.baseUrl, provider.wireApi, provider.enabled, provider.authMode, supported, model?.id]);
+  }, [credentials, controller, provider.providerId, provider.baseUrl, provider.wireApi, provider.enabled, provider.authMode, supported, model?.id, providerVersion?.providerId, providerVersion?.generation, providerVersion?.revision, providerVersion?.exists]);
   async function useSaved(current = generation.current) {
     if (!model || !controller.openSaved || !supported) throw new Error("saved_session_unavailable");
     await setComposerModel(JSON.stringify([provider.providerId, model.id]));
@@ -84,12 +98,13 @@ function SavedProviderSessionSetup({ provider, controller, credentials }: {
     try {
       const result = await credentials.get(provider.providerId);
       if (current !== generation.current) return;
+      if (!matchesDisplayedProvider(result)) { setSaved(null); setError("changed"); return; }
       setSaved(result); setReplacing(false);
       if (result.cleanupPending) setError("cleanupPending");
     } catch { if (current === generation.current) setSaved(null); }
   }
   async function saveKey() {
-    if (busy || !saved || reloadRequired) return;
+    if (busy || !saved || reloadRequired || (saved.recovery && !replacing)) return;
     let key = password.current?.value ?? "";
     if (password.current) password.current.value = "";
     setHasInput(false); setError(null);
@@ -104,6 +119,7 @@ function SavedProviderSessionSetup({ provider, controller, credentials }: {
       const result = await credentials.save(provider.providerId, saved, key);
       key = "";
       if (current !== generation.current) return;
+      if (!matchesDisplayedProvider(result)) throw new ProviderCredentialError("conflict");
       if (!result.saved) throw new Error("saved_receipt_missing");
       setSaved(result); setReplacing(false); persisted = true;
       setOperation("opening");
@@ -123,7 +139,7 @@ function SavedProviderSessionSetup({ provider, controller, credentials }: {
     }
   }
   async function removeKey() {
-    if (busy || !saved?.saved || reloadRequired) return;
+    if (busy || !saved || (!saved.saved && !recoverable) || reloadRequired) return;
     const current = generation.current;
     let mutationStarted = false;
     setOperation("removing"); setError(null);
@@ -135,6 +151,7 @@ function SavedProviderSessionSetup({ provider, controller, credentials }: {
       mutationStarted = true;
       const result = await credentials.remove(provider.providerId, saved);
       if (current !== generation.current) return;
+      if (!matchesDisplayedProvider(result)) throw new ProviderCredentialError("conflict");
       if (result.saved) throw new Error("deleted_receipt_missing");
       setSaved(result); setReplacing(false);
     } catch (reason) {
@@ -155,33 +172,33 @@ function SavedProviderSessionSetup({ provider, controller, credentials }: {
       <p className="ua-session-state" role="status">{operation === "loading" ? t("vault.loading") :
         operation === "saving" ? t("vault.saving") : operation === "removing" ? t("vault.removing") :
         operation === "opening" ? t("responses.opening") : !supported ? t("product.unsupported") :
-        saved?.cleanupPending ? t("vault.disabled") : saved?.saved ? ready ? t("product.sessionReady") : t("vault.saved") : t("vault.notSaved")}</p>
+        !saved ? t("vault.statusUnknown") : saved.cleanupPending ? t("vault.disabled") : recovery ? t(recoveryKey) : saved?.saved ? ready ? t("product.sessionReady") : t("vault.saved") : t("vault.notSaved")}</p>
       {supported && <>
         {saved?.saved && !replacing ? <label className="ua-session-key">
           {t("vault.savedKey")}<input key="saved-mask" type="password" className="ua-settings-page__input"
             aria-label={t("vault.savedKey")} value={SAVED_CREDENTIAL_MASK} readOnly autoComplete="off" />
-        </label> : <label className="ua-session-key">
+        </label> : recoveryChoice ? <p role="note">{t("vault.recoveryHelp")}</p> : <label className="ua-session-key">
           {t("vault.title")}<input key="credential-entry" ref={password} type="password" defaultValue="" className="ua-settings-page__input"
             aria-label={t("vault.title")} autoComplete="off" spellCheck={false}
             disabled={busy || !saved || reloadRequired} onChange={() => { setHasInput(Boolean(password.current?.value)); if (!reloadRequired) setError(null); }} />
         </label>}
         <div className="ua-session-actions">
-          {(!saved?.saved || replacing) && <button type="button" className="ua-session-open"
+          {!recoveryChoice && (!saved?.saved || replacing) && <button type="button" className="ua-session-open"
             disabled={busy || !hasInput || !saved || reloadRequired} onClick={() => void saveKey()}>{t("vault.save")}</button>}
-          {saved?.saved && !replacing && <button type="button" disabled={busy || reloadRequired}
+          {(saved?.saved || recoverable) && !replacing && <button type="button" disabled={busy || reloadRequired}
             onClick={() => { setReplacing(true); setHasInput(false); setError(null); }}>{t("vault.replace")}</button>}
-          {saved?.saved && replacing && <button type="button" disabled={busy}
+          {(saved?.saved || recoverable) && replacing && <button type="button" disabled={busy}
             onClick={() => { if (password.current) password.current.value = ""; setReplacing(false); setHasInput(false); setError(null); }}>{t("vault.cancelReplace")}</button>}
-          {saved?.saved && <button type="button" disabled={busy || reloadRequired} onClick={() => void removeKey()}>{t("vault.remove")}</button>}
+          {(saved?.saved || recoverable) && <button type="button" disabled={busy || reloadRequired} onClick={() => void removeKey()}>{t(recovery ? "vault.removeUnavailable" : "vault.remove")}</button>}
           {saved?.saved && !ready && !replacing && <button type="button" disabled={busy || reloadRequired}
             onClick={async () => { const current=generation.current; setOperation("opening"); setError(null); try { await useSaved(current); } catch { if(current===generation.current)setError("openFailed"); } finally { if(current===generation.current)setOperation(null); } }}>{t("vault.useSaved")}</button>}
           {ready && <button type="button" disabled={busy} onClick={async () => { try { await controller.closeAsync("cleared"); } catch { setError("openFailed"); } }}>{t("vault.closeSession")}</button>}
-          {reloadRequired && <button type="button" disabled={busy} onClick={() => void load()}>{t("vault.refresh")}</button>}
+          {(reloadRequired || recoverable) && <button type="button" disabled={busy} onClick={() => void load()}>{t("vault.refresh")}</button>}
         </div>
         <p className="ua-settings-page__action-note">{t("vault.reuseHelp")}</p>
         <p className="ua-settings-page__action-note">{t("vault.bindingHelp")}</p>
         <p className="ua-settings-page__action-note">{t("vault.discussionOnly")}</p>
-        {(!saved?.saved || replacing) && <><p className="ua-settings-page__action-note">{t("vault.saveConsent")}</p><p className="ua-settings-page__action-note">{t("vault.inputHelp")}</p></>}
+        {!recoveryChoice && (!saved?.saved || replacing) && <><p className="ua-settings-page__action-note">{t("vault.saveConsent")}</p><p className="ua-settings-page__action-note">{t("vault.inputHelp")}</p></>}
         {error && <p role="alert">{t(("vault." + error) as "vault.unavailable" | "vault.invalid" | "vault.changed" | "vault.saveFailed" | "vault.removeFailed" | "vault.openFailed" | "vault.cleanupPending")}</p>}
       </>}
     </div>

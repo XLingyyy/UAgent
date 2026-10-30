@@ -113,6 +113,19 @@ impl Secret {
     }
 }
 
+/// Only describes OS-record usability. This is never a grant to load or send.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CredentialRecovery {
+    Missing,
+    Corrupt,
+    Unavailable,
+}
+impl From<CredentialRecovery> for VaultError {
+    fn from(_: CredentialRecovery) -> Self {
+        Self::Unavailable
+    }
+}
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CredentialStatus {
@@ -122,6 +135,9 @@ pub struct CredentialStatus {
     pub version: Option<String>,
     pub masked: Option<&'static str>,
     pub cleanup_pending: bool,
+    /// A healthy metadata token survives OS-record failure for explicit repair.
+    /// exists=false and masked=None for every recovery state.
+    pub recovery: Option<CredentialRecovery>,
 }
 impl CredentialStatus {
     fn absent() -> Self {
@@ -130,6 +146,7 @@ impl CredentialStatus {
             version: None,
             masked: None,
             cleanup_pending: false,
+            recovery: None,
         }
     }
     fn present(version: String) -> Self {
@@ -138,6 +155,7 @@ impl CredentialStatus {
             version: Some(version),
             masked: Some(MASK),
             cleanup_pending: false,
+            recovery: None,
         }
     }
 }
@@ -235,9 +253,17 @@ struct Record {
     version: String,
     secret: Secret,
 }
-fn read_record(binding: &CredentialBinding, expected_version: &str) -> Result<Record> {
-    let Some(bytes) = windows::read(&binding.os_target(expected_version)?)? else {
-        return Err(VaultError::Unavailable);
+fn read_record(
+    binding: &CredentialBinding,
+    expected_version: &str,
+) -> std::result::Result<Record, CredentialRecovery> {
+    let Some(bytes) = windows::read(
+        &binding
+            .os_target(expected_version)
+            .map_err(|_| CredentialRecovery::Unavailable)?,
+    )?
+    else {
+        return Err(CredentialRecovery::Missing);
     };
     let b = bytes.0.as_slice();
     if !(HEADER + 8..=HEADER + MAX_KEY).contains(&b.len())
@@ -246,9 +272,9 @@ fn read_record(binding: &CredentialBinding, expected_version: &str) -> Result<Re
         || hex(&b[40..72]) != expected_version
         || usize::from(u16::from_le_bytes([b[72], b[73]])) != b.len() - HEADER
     {
-        return Err(VaultError::Unavailable);
+        return Err(CredentialRecovery::Corrupt);
     }
-    let secret = Secret::new(b[HEADER..].to_vec()).map_err(|_| VaultError::Unavailable)?;
+    let secret = Secret::new(b[HEADER..].to_vec()).map_err(|_| CredentialRecovery::Corrupt)?;
     Ok(Record {
         version: expected_version.into(),
         secret,
@@ -295,10 +321,17 @@ pub fn status(binding: &CredentialBinding) -> Result<CredentialStatus> {
     let _guard = windows::TargetGuard::acquire(&binding.target)?;
     let db = metadata::Metadata::open(binding)?;
     let state = db.state()?;
+    let mut status = describe(&state);
     if let Some(active) = &state.active {
-        drop(read_record(binding, active)?);
+        if let Err(recovery) = read_record(binding, active) {
+            // The metadata token stays trustworthy even when its OS record is
+            // not usable. Return it for explicit CAS repair, never for Send.
+            status.exists = false;
+            status.masked = None;
+            status.recovery = Some(recovery);
+        }
     }
-    Ok(describe(&state))
+    Ok(status)
 }
 pub fn save(
     binding: &CredentialBinding,
@@ -395,6 +428,7 @@ mod faults {
     thread_local! {
         pub static FAIL_WRITE:Cell<bool>=const{Cell::new(false)};
         pub static FAIL_DELETE:Cell<bool>=const{Cell::new(false)};
+        pub static FAIL_READ:Cell<bool>=const{Cell::new(false)};
     }
 }
 
@@ -580,19 +614,25 @@ mod windows {
             }
         }
     }
-    pub(super) fn read(target: &str) -> Result<Option<SensitiveBytes>> {
+    pub(super) fn read(
+        target: &str,
+    ) -> std::result::Result<Option<SensitiveBytes>, CredentialRecovery> {
+        #[cfg(test)]
+        if super::faults::FAIL_READ.with(|v| v.replace(false)) {
+            return Err(CredentialRecovery::Unavailable);
+        }
         let target = wide(target);
         let mut raw = ptr::null_mut();
         if unsafe { CredReadW(target.as_ptr(), 1, 0, &mut raw) } == 0 {
             return if unsafe { GetLastError() } == 1168 {
                 Ok(None)
             } else {
-                Err(VaultError::Unavailable)
+                Err(CredentialRecovery::Unavailable)
             };
         }
         let guard = ReadCredential(raw);
         if guard.0.is_null() {
-            return Err(VaultError::Unavailable);
+            return Err(CredentialRecovery::Corrupt);
         }
         let c = unsafe { &*guard.0 };
         if c.kind != 1
@@ -600,7 +640,7 @@ mod windows {
             || c.blob_size as usize > MAX_BLOB
             || (c.blob.is_null() && c.blob_size != 0)
         {
-            return Err(VaultError::Unavailable);
+            return Err(CredentialRecovery::Corrupt);
         }
         let bytes = if c.blob_size == 0 {
             Vec::new()

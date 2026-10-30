@@ -5,13 +5,14 @@ import {I18nProvider,createLocaleStore,translate} from "../../i18n";
 import {createSupportedProvider} from "../../provider/runtime-availability";
 import {createNativeProviderCredentials,SAVED_CREDENTIAL_MASK,type SavedProviderCredential} from "../../runtime/native-provider-credentials";
 import type {NativeInvoke} from "../../runtime/project-native-adapter";
+import type {ProviderVersion} from "../../types/provider";
 import type {SafeProviderSession} from "../../runtime/safe-provider-session";
 const composer=vi.hoisted(()=>({setComposerModel:vi.fn(async()=>undefined)}));
 vi.mock("../../stores/ui-store",()=>({useComposerActions:()=>composer}));
 vi.mock("../../runtime/safe-provider-session",()=>({safeProviderSession:{}}));
 const providerVersion={providerId:"deepseek",generation:"generation-a",revision:1,exists:true};
-const absent=():SavedProviderCredential=>({saved:false,version:null,mask:null,providerVersion:{...providerVersion}});
-const stored=():SavedProviderCredential=>({saved:true,version:"synthetic-vault-version-a",mask:SAVED_CREDENTIAL_MASK,providerVersion:{...providerVersion}});
+const absent=():SavedProviderCredential=>({saved:false,version:null,mask:null,providerVersion:{...providerVersion},wireApi:"chat_completions",endpoint:"https://api.deepseek.com/chat/completions"});
+const stored=():SavedProviderCredential=>({saved:true,version:"synthetic-vault-version-a",mask:SAVED_CREDENTIAL_MASK,providerVersion:{...providerVersion},wireApi:"chat_completions",endpoint:"https://api.deepseek.com/chat/completions"});
 function deferred<T>(){let resolve!:(value:T)=>void;let reject!:(reason:unknown)=>void;const promise=new Promise<T>((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};}
 function harness(initial:SavedProviderCredential=absent()){
  let receipt=initial;
@@ -26,7 +27,7 @@ function harness(initial:SavedProviderCredential=absent()){
  const credentials=createNativeProviderCredentials(invoke as NativeInvoke);
  const locale=createLocaleStore({initialLocale:"en",storage:null,eventTarget:null});
  const provider=createSupportedProvider();
- const mount=()=>render(<I18nProvider store={locale}><ProviderSessionSetup provider={provider} controller={controller as unknown as SafeProviderSession} credentials={credentials}/></I18nProvider>);
+ const mount=(displayedVersion?:Readonly<ProviderVersion>)=>render(<I18nProvider store={locale}><ProviderSessionSetup provider={provider} providerVersion={displayedVersion} controller={controller as unknown as SafeProviderSession} credentials={credentials}/></I18nProvider>);
  return{invoke,controller,credentials,locale,provider,mount,setReceipt:(next:typeof initial)=>{receipt=next;}};
 }
 afterEach(()=>{cleanup();composer.setComposerModel.mockReset();composer.setComposerModel.mockResolvedValue(undefined);});
@@ -156,6 +157,115 @@ describe("saved provider credential form (synthetic only)",()=>{
   expect(screen.queryByRole("button",{name:"Use saved API key"})).toBeNull();
   expect(screen.queryByLabelText("Saved API key")).toBeNull();
   expect(h.controller.openSaved).not.toHaveBeenCalled();
+ });
+ it.each([
+  ["missing","The saved key is missing from system storage."],
+  ["corrupt","The saved key record is damaged."],
+  ["unavailable","This key is temporarily unavailable."],
+ ] as const)("renders disabled %s recovery and waits for an explicit user action",async(recovery,message)=>{
+  const h=harness({...absent(),version:"active-metadata-token",recovery});h.mount();
+  await screen.findByText(message);
+  expect(screen.queryByLabelText("API key")).toBeNull();
+  expect(screen.queryByRole("button",{name:"Save API key"})).toBeNull();
+  expect(screen.queryByLabelText("Saved API key")).toBeNull();
+  expect(screen.queryByRole("button",{name:"Use saved API key"})).toBeNull();
+  expect(screen.getByRole("button",{name:"Replace API key"})).toBeTruthy();
+  expect(screen.getByRole("button",{name:"Remove unavailable record"})).toBeTruthy();
+  expect(h.invoke).toHaveBeenCalledTimes(1);expect(h.controller.openSaved).not.toHaveBeenCalled();
+ });
+ it.each(["missing","corrupt","unavailable"] as const)("replaces %s only after a user click and saves the captured token",async recovery=>{
+  const h=harness({...absent(),version:"active-metadata-token",recovery});h.mount();
+  await screen.findByRole("button",{name:"Replace API key"});
+  fireEvent.click(screen.getByRole("button",{name:"Replace API key"}));
+  expect((screen.getByLabelText("API key") as HTMLInputElement).value).toBe("");
+  expect(h.invoke).toHaveBeenCalledTimes(1);
+  fireEvent.change(screen.getByLabelText("API key"),{target:{value:"synthetic-recovery-replacement"}});
+  fireEvent.click(screen.getByRole("button",{name:"Save API key"}));
+  await screen.findByLabelText("Saved API key");
+  expect(h.controller.closeAsync).toHaveBeenCalledWith("revoked");
+  const call=h.invoke.mock.calls.find(c=>c[0]==="save_provider_credential");
+  expect((call as unknown[])[1]).toEqual({input:{providerId:"deepseek",expectedProviderVersion:providerVersion,expectedCredentialVersion:"active-metadata-token",credential:"synthetic-recovery-replacement"}});
+  expect(h.invoke.mock.calls.filter(c=>c[0]==="save_provider_credential")).toHaveLength(1);
+  expect(h.controller.openSaved).toHaveBeenCalledTimes(1);
+ });
+ it("explicitly removing an unavailable record keeps it disabled and does not open a session",async()=>{
+  const h=harness({...absent(),version:"active-metadata-token",recovery:"unavailable"});h.mount();
+  await screen.findByRole("button",{name:"Remove unavailable record"});
+  fireEvent.click(screen.getByRole("button",{name:"Remove unavailable record"}));
+  await screen.findByText("No API key saved");
+  expect(h.invoke.mock.calls.filter(c=>c[0]==="delete_provider_credential")).toHaveLength(1);
+  expect(h.controller.openSaved).not.toHaveBeenCalled();
+  expect(h.invoke.mock.calls.some(c=>c[0]==="save_provider_credential")).toBe(false);
+ });
+ it("stale recovery CAS is read back but never automatically replayed",async()=>{
+  const initial={...absent(),version:"old-active-token",recovery:"missing" as const},h=harness(initial);let stale=false;
+  h.invoke.mockImplementation(async(command:string)=>{
+   if(command==="get_saved_provider_credential")return stale?{...initial,version:"new-token",providerVersion:{...providerVersion,revision:2}}:initial;
+   stale=true;throw {kind:"credential_conflict"};
+  });
+  h.mount();await screen.findByRole("button",{name:"Remove unavailable record"});
+  fireEvent.click(screen.getByRole("button",{name:"Remove unavailable record"}));
+  await screen.findByText("The key or provider configuration changed. Reload the status before trying again.");
+  expect((screen.getByRole("button",{name:"Replace API key"}) as HTMLButtonElement).disabled).toBe(true);
+  expect(h.invoke.mock.calls.filter(c=>c[0]==="delete_provider_credential")).toHaveLength(1);
+  expect(h.invoke.mock.calls.filter(c=>c[0]==="get_saved_provider_credential")).toHaveLength(2);
+  const call=h.invoke.mock.calls.find(c=>c[0]==="delete_provider_credential");
+  expect((call as unknown[])[1]).toEqual({input:{providerId:"deepseek",expectedProviderVersion:providerVersion,expectedCredentialVersion:"old-active-token"}});
+ });
+ it("endpoint changes during recovery save cannot open or replay the old intent",async()=>{
+  const initial={...absent(),version:"old-active-token",recovery:"corrupt" as const},h=harness(initial),gate=deferred<SavedProviderCredential>();let changed=false;
+  h.invoke.mockImplementation(async(command:string)=>command==="save_provider_credential"?gate.promise:changed?{...initial,version:"new-token",providerVersion:{...providerVersion,revision:2}}:initial);
+  const view=h.mount();await screen.findByRole("button",{name:"Replace API key"});
+  fireEvent.click(screen.getByRole("button",{name:"Replace API key"}));
+  fireEvent.change(screen.getByLabelText("API key"),{target:{value:"synthetic-recovery-replacement"}});
+  fireEvent.click(screen.getByRole("button",{name:"Save API key"}));
+  await waitFor(()=>expect(h.invoke.mock.calls.some(c=>c[0]==="save_provider_credential")).toBe(true));
+  changed=true;
+  view.rerender(<I18nProvider store={h.locale}><ProviderSessionSetup provider={{...h.provider,baseUrl:"https://api.deepseek.com/"}} controller={h.controller as unknown as SafeProviderSession} credentials={h.credentials}/></I18nProvider>);
+  await act(async()=>{gate.reject({kind:"credential_conflict"});await gate.promise.catch(()=>undefined);});
+  expect(h.controller.openSaved).not.toHaveBeenCalled();
+  expect(h.invoke.mock.calls.filter(c=>c[0]==="save_provider_credential")).toHaveLength(1);
+  const oldCall=h.invoke.mock.calls.find(c=>c[0]==="save_provider_credential");
+  expect((oldCall as unknown[])[1]).toEqual({input:{providerId:"deepseek",expectedProviderVersion:providerVersion,expectedCredentialVersion:"old-active-token",credential:"synthetic-recovery-replacement"}});
+  expect(screen.queryByLabelText("Saved API key")).toBeNull();
+ });
+ it("failed recovery removal reads back disabled cleanup-pending instead of claiming success",async()=>{
+  const h=harness({...absent(),version:"active-metadata-token",recovery:"corrupt"});let disabled=false;
+  h.invoke.mockImplementation(async(command:string)=>{
+   if(command==="get_saved_provider_credential")return disabled?{...absent(),version:"disabled-tombstone",cleanupPending:true,recovery:null}:{...absent(),version:"active-metadata-token",recovery:"corrupt"};
+   disabled=true;throw {kind:"credential_cleanup_pending"};
+  });
+  h.mount();await screen.findByRole("button",{name:"Remove unavailable record"});
+  fireEvent.click(screen.getByRole("button",{name:"Remove unavailable record"}));
+  await screen.findByText("System cleanup did not finish. This key is disabled for future requests.");
+  expect(screen.queryByRole("button",{name:"Use saved API key"})).toBeNull();
+  expect(screen.queryByRole("button",{name:"Remove unavailable record"})).toBeNull();
+  expect((screen.getByRole("button",{name:"Save API key"}) as HTMLButtonElement).disabled).toBe(true);
+  expect(h.invoke.mock.calls.filter(c=>c[0]==="delete_provider_credential")).toHaveLength(1);
+ });
+ it("a native route for another endpoint cannot be adopted into the displayed provider",async()=>{
+  const h=harness({...absent(),version:"active-metadata-token",recovery:"missing",wireApi:"responses",endpoint:"https://api.openai.com/v1/responses"});h.mount(providerVersion);
+  await screen.findByText("The key or provider configuration changed. Reload the status before trying again.");
+  expect(screen.queryByRole("button",{name:"Replace API key"})).toBeNull();
+  expect(screen.queryByRole("button",{name:"Remove unavailable record"})).toBeNull();
+  expect(h.invoke).toHaveBeenCalledTimes(1);expect(h.controller.openSaved).not.toHaveBeenCalled();
+ });
+ it("a changed generation or revision cannot silently refresh the displayed recovery CAS token",async()=>{
+  const h=harness({...absent(),version:"new-active-token",recovery:"corrupt",providerVersion:{...providerVersion,generation:"different-generation",revision:2}});h.mount(providerVersion);
+  await screen.findByText("The key or provider configuration changed. Reload the status before trying again.");
+  expect(screen.queryByRole("button",{name:"Replace API key"})).toBeNull();
+  expect((screen.getByRole("button",{name:"Save API key"}) as HTMLButtonElement).disabled).toBe(true);
+  expect(h.invoke).toHaveBeenCalledTimes(1);
+ });
+ it("unreadable metadata offers only a read-only refresh and never fabricates a recovery token",async()=>{
+  const h=harness();h.invoke.mockImplementation(async()=>{throw Error("metadata unavailable");});h.mount();
+  await screen.findByText("Secure key storage is unavailable. Keys cannot be saved or read.");
+  expect(screen.getByText("Key status is temporarily unavailable.")).toBeTruthy();
+  expect(screen.queryByText("No API key saved")).toBeNull();
+  expect(screen.queryByRole("button",{name:"Replace API key"})).toBeNull();
+  expect(screen.queryByRole("button",{name:"Remove unavailable record"})).toBeNull();
+  expect((screen.getByRole("button",{name:"Save API key"}) as HTMLButtonElement).disabled).toBe(true);
+  expect(h.controller.openSaved).not.toHaveBeenCalled();expect(h.invoke).toHaveBeenCalledTimes(1);
  });
  it("failed receipt is not presented as a saved key",async()=>{
   const h=harness();

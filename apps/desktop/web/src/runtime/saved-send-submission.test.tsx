@@ -49,7 +49,7 @@ async function harness({holdStream=false,threadId=null as string|null}={}){
  const snapshots=new WeakMap<object,ReturnType<typeof safeProviderSession.getSnapshot>>();
  vi.spyOn(safeProviderSession,"getSnapshot").mockImplementation(()=>{
   const state=manager.getSnapshot();let cached=snapshots.get(state);
-  if(!cached){cached={...state,savedCredential:true};snapshots.set(state,cached);}
+  if(!cached){cached={...state,savedCredential:true,savedKeyVersion:"synthetic-vault-generation"};snapshots.set(state,cached);}
   return cached;
  });
  vi.spyOn(safeProviderSession,"subscribe").mockImplementation(manager.subscribe);
@@ -144,6 +144,19 @@ describe("saved credential Send uses the real UI store critical section (no netw
   expect(h.log.indexOf("intent:capture")).toBeLessThan(h.log.indexOf("runtime:submit"));
   expect(h.log.indexOf("runtime:submit")).toBeLessThan(h.log.indexOf("synthetic:dispatch"));
   expect(h.sent).toHaveLength(1);expect(h.gate.getPending()).toBeNull();
+ });
+
+ it.each(["missing","corrupt","unavailable"] as const)("blocks a cached ready saved session after %s without a send intent",async(recovery)=>{
+  const h=await harness(),first=h.start();await h.release();
+  await act(async()=>{expect((await first.outcome).error).toBeNull();});
+  const before={sent:h.sent.length,intents:h.captures.length,submits:h.submit.mock.calls.length};
+  h.getCredential.mockResolvedValue({...await nativeProviderCredentials.get("deepseek"),saved:false,mask:null,recovery});
+  await h.input("Must wait for explicit credential recovery.");
+  const next=h.start();
+  await act(async()=>{expect((await next.outcome).error).toMatchObject({message:"task_submission_failed"});});
+  expect(h.sent).toHaveLength(before.sent);expect(h.captures).toHaveLength(before.intents);
+  expect(h.submit).toHaveBeenCalledTimes(before.submits);
+  expect(h.composerState().input).toBe("Must wait for explicit credential recovery.");
  });
 
  it("rejects a concurrent second submit during a slow opener without another task or intent",async()=>{

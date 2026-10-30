@@ -88,6 +88,40 @@ describe("native credential metadata client",()=>{
    await expect(rejected.get("deepseek")).rejects.toMatchObject({kind:"invalid"});
   }
  });
+ it.each(["missing","corrupt","unavailable"] as const)("preserves disabled %s recovery metadata without treating it as a usable key",async recovery=>{
+  const value={...missing(),version:"healthy-metadata-token",recovery};
+  const invoke=vi.fn(async()=>value),client=createNativeProviderCredentials(invoke as NativeInvoke);
+  const result=await client.get("deepseek");
+  expect(result).toMatchObject({saved:false,version:"healthy-metadata-token",mask:null,recovery});
+  expect(invoke).toHaveBeenCalledTimes(1);expect(Object.isFrozen(result)).toBe(true);
+ });
+ it("rejects usable-key and malformed recovery combinations",async()=>{
+  for(const value of [{...saved(),recovery:"missing"},{...missing(),recovery:"missing"},{...missing(),version:"token",recovery:"unknown"},{...missing(),version:"token",recovery:"corrupt",cleanupPending:true},{...missing(),version:"token",recovery:"missing",mask:SAVED_CREDENTIAL_MASK}]){
+   const client=createNativeProviderCredentials(vi.fn(async()=>value) as NativeInvoke);
+   await expect(client.get("deepseek")).rejects.toMatchObject({kind:"invalid"});
+  }
+ });
+ it.each(["missing","corrupt","unavailable"] as const)("removes %s recovery only with its captured metadata token",async recovery=>{
+  const invoke=vi.fn(async()=>({...missing(),version:"disabled-tombstone"})),client=createNativeProviderCredentials(invoke as NativeInvoke);
+  const expected={...missing(),version:"active-metadata-token",recovery};
+  await expect(client.remove("deepseek",expected)).resolves.toMatchObject({saved:false,version:"disabled-tombstone"});
+  expect(invoke).toHaveBeenCalledWith("delete_provider_credential",{input:{providerId:"deepseek",expectedProviderVersion:providerVersion,expectedCredentialVersion:"active-metadata-token"}});
+ });
+ it("does not confirm removal while native still reports an active recovery record",async()=>{
+  const invoke=vi.fn(async()=>({...missing(),version:"still-active-metadata-token",recovery:"missing"})),client=createNativeProviderCredentials(invoke as NativeInvoke);
+  await expect(client.remove("deepseek",{...missing(),version:"old-active-token",recovery:"missing"})).rejects.toMatchObject({kind:"invalid"});
+ });
+ it("ordinary absent/tombstone records cannot be removed by the recovery route",async()=>{
+  const invoke=vi.fn(async()=>missing()),client=createNativeProviderCredentials(invoke as NativeInvoke);
+  await expect(client.remove("deepseek",{...missing(),version:"ordinary-tombstone"})).rejects.toMatchObject({kind:"invalid"});
+  expect(invoke).not.toHaveBeenCalled();
+ });
+ it("explicit recovery replacement uses the old token once and never refreshes or retries a conflict",async()=>{
+  const invoke=vi.fn(async()=>{throw {kind:"credential_conflict",detail:"private diagnostic"};}),client=createNativeProviderCredentials(invoke as NativeInvoke);
+  await expect(client.save("deepseek",{...missing(),version:"old-active-token",recovery:"missing"},"synthetic-replacement-key")).rejects.toMatchObject({kind:"conflict"});
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(invoke).toHaveBeenCalledWith("save_provider_credential",{input:{providerId:"deepseek",expectedProviderVersion:providerVersion,expectedCredentialVersion:"old-active-token",credential:"synthetic-replacement-key"}});
+ });
  it("observer failure cannot turn a confirmed native save into a failure",async()=>{
   const client=createNativeProviderCredentials(vi.fn(async()=>saved()) as NativeInvoke);
   client.subscribe(()=>{throw Error("Synthetic observer");});

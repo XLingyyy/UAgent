@@ -1,7 +1,9 @@
 //! Metadata-only credential management IPC. Keys are accepted only on explicit Save.
 //! The OS vault and native senders consume them; no command returns key bytes.
 #![cfg(windows)]
-use crate::credential_vault::{self, CredentialBinding, CredentialStatus, Secret};
+use crate::credential_vault::{
+    self, CredentialBinding, CredentialRecovery, CredentialStatus, Secret,
+};
 use crate::product_settings_store::{
     AuthMode, NativeEndpointPolicy, ProductSettingsStore, ProviderSnapshot, ProviderVersion,
     WireApi,
@@ -38,6 +40,7 @@ pub(crate) struct Receipt {
     mask: Option<&'static str>,
     provider_version: ProviderVersion,
     cleanup_pending: bool,
+    recovery: Option<CredentialRecovery>,
     wire_api: &'static str,
     endpoint: &'static str,
 }
@@ -89,6 +92,7 @@ fn receipt(snapshot: &ProviderSnapshot, status: CredentialStatus) -> Receipt {
         },
         provider_version: snapshot.version(),
         cleanup_pending: status.cleanup_pending,
+        recovery: status.recovery,
         wire_api: if snapshot.config.wire_api == WireApi::Responses {
             "responses"
         } else {

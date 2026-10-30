@@ -1430,7 +1430,18 @@ function createUIStateBundle(
           // Saving/selecting only updates data. A new owner opens inside this Send mutex.
           submissionConversation={id:conversationId,projectId:draft.projectId};
           safeProviderSession.updateContext(draft.projectId,originalInput,startingSelection.selectedModelId,conversationId);
-          const currentSession=safeProviderSession.getSnapshot();
+          let currentSession=safeProviderSession.getSnapshot();
+          if(currentSession.savedCredential){
+            // A cached native owner is not evidence that its OS credential still exists.
+            const credential=await nativeProviderCredentials.get(draft.providerId);
+            if(!isCurrent()||!selectionCurrent())throw Error("scope_review_stale");
+            if(!credential.saved||credential.recovery||credential.cleanupPending||!credential.version)throw Error("saved_credential_unavailable");
+            if(credential.version!==currentSession.savedKeyVersion){
+              await safeProviderSession.closeAsync("revoked");
+              if(!isCurrent()||!selectionCurrent())throw Error("scope_review_stale");
+              currentSession=safeProviderSession.getSnapshot();
+            }
+          }
           if(!currentSession.ready||currentSession.providerId!==draft.providerId||currentSession.modelId!==draft.modelId){
             const opened=await safeProviderSession.openSaved(draft.providerId,draft.modelId);
             if(!isCurrent()||!selectionCurrent())throw Error("scope_review_stale");

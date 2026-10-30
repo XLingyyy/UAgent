@@ -22,6 +22,12 @@ a tombstone mutation token prevents an old absent-state Save from replaying.
 No existing memory key, environment key, old chat key or production database is
 silently migrated. New key input is bounded to 8–2048 printable ASCII bytes.
 
+A missing, corrupt or unreadable OS record stays unavailable for sending. Healthy
+metadata still supplies its captured CAS token for an explicit replacement or
+removal; a metadata failure supplies no repair token. Status refresh never resets
+records or authorizes a request. Configuration/version conflicts require another
+user review, and cleanup failures remain visible.
+
 All corresponding native owners are revoked before mutation. A per-target OS
 mutex and active-version check span the final synchronous dispatch gate; polling
 and cancellation do not acquire that mutex. Stop closes the current request and

@@ -63,7 +63,7 @@ export function ProviderSettings(){
     <p className="ua-settings-page__action-note">{t("product.saveHelp")}</p><div className="ua-session-actions"><button type="button" className="ua-session-open" disabled={busy} onClick={()=>void save()}>{text("Save provider")}</button><button type="button" disabled={busy} onClick={()=>{setEditing(false);setError(false);}}>{text("Cancel")}</button></div>{error&&<p role="alert">{t("product.configError")}</p>}
    </fieldset></section>:selected&&<>
    <section className="ua-settings-section"><div className="ua-product-provider-header"><div><h3>{selected.displayName}</h3><p>{currentModel?.label??t("product.selectModel")} {currentModel&&<code>{currentModel.id}</code>}</p></div><div className="ua-session-actions"><button type="button" disabled={busy} onClick={()=>{setCapturedVersion(providerVersions?.[selected.providerId]);setDraft(clone(selected));setCreationConflict(null);setError(false);setEditing(true);}}>{text("Edit provider")}</button><button type="button" disabled={busy} onClick={async()=>{try{await deleteProvider(selected.providerId,providerVersions?.[selected.providerId]);setError(false);}catch{setError(true);}}}>{text("Delete provider")}</button></div></div><dl className="ua-outbound-identifiers"><div><dt>{text("Endpoint")}</dt><dd>{selected.baseUrl}</dd></div><div><dt>{text("Wire API")}</dt><dd>{selected.wireApi}</dd></div></dl><p>{t("product.configuredModels",{models:selected.models.map(m=>m.label).join(" / ")})}</p></section>
-   <ProviderSessionSetup key={selected.providerId} provider={selected}/>
+   <ProviderSessionSetup key={selected.providerId} provider={selected} providerVersion={providerVersions?.[selected.providerId]}/>
   </>}
  </SettingsPageLayout>;
 }

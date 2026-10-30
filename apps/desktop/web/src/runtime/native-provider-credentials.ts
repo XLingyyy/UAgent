@@ -3,12 +3,14 @@ import type { NativeInvoke } from "./project-native-adapter";
 import { localNativeInvoke } from "./native-provider-budget";
 
 export const SAVED_CREDENTIAL_MASK = "••••••••";
+export type ProviderCredentialRecovery = "missing" | "corrupt" | "unavailable";
 export interface SavedProviderCredential {
   readonly saved: boolean;
   readonly version: string | null;
   readonly mask: string | null;
   readonly providerVersion: Readonly<ProviderVersion>;
   readonly cleanupPending?: boolean;
+  readonly recovery?: ProviderCredentialRecovery | null;
   readonly wireApi?: "chat_completions" | "responses";
   readonly endpoint?: string;
 }
@@ -25,7 +27,7 @@ const invalid = () => new ProviderCredentialError("invalid");
 const validId = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= 256 && Array.from(value).every(character => { const code=character.charCodeAt(0); return code>=32 && code!==127; });
 export function validSavedCredentialInput(value: string): boolean {
-  return value.length >= 8 && value.length <= 2048 && /^[\x21-\x7e]+$/.test(value) && !/^\*+$/.test(value);
+  return value.length >= 8 && value.length <= 2048 && /^[\x21-\x7e]+$/.test(value) && !/^\*+$/.test(value) && value !== SAVED_CREDENTIAL_MASK;
 }
 function receipt(value: unknown, providerId: string): SavedProviderCredential {
   const v = value as Partial<SavedProviderCredential> | null;
@@ -36,6 +38,9 @@ function receipt(value: unknown, providerId: string): SavedProviderCredential {
       (v.saved ? !validId(v.version) : v.version !== null && !validId(v.version)) ||
       (v.saved ? typeof v.mask !== "string" : v.mask !== null) ||
       (v.cleanupPending !== undefined && typeof v.cleanupPending !== "boolean") || (v.cleanupPending && v.saved)) throw invalid();
+  const recovery = v.recovery ?? null;
+  if ((recovery !== null && !["missing", "corrupt", "unavailable"].includes(recovery)) ||
+      (recovery !== null && (v.saved || !validId(v.version) || v.mask !== null || v.cleanupPending))) throw invalid();
   const routed = v.wireApi !== undefined || v.endpoint !== undefined;
   if (routed && !((v.wireApi === "chat_completions" && v.endpoint === "https://api.deepseek.com/chat/completions") ||
     (v.wireApi === "responses" && v.endpoint === "https://api.openai.com/v1/responses"))) throw invalid();
@@ -44,6 +49,7 @@ function receipt(value: unknown, providerId: string): SavedProviderCredential {
     saved: v.saved, version: v.version ?? null, mask: v.saved ? SAVED_CREDENTIAL_MASK : null,
     providerVersion: Object.freeze({ providerId, generation: p.generation, revision: p.revision, exists: p.exists }),
     ...(v.cleanupPending === undefined ? {} : {cleanupPending: v.cleanupPending}),
+    ...(v.recovery === undefined ? {} : {recovery}),
     ...(routed ? {wireApi: v.wireApi, endpoint: v.endpoint} : {}),
   });
 }
@@ -61,8 +67,8 @@ export function createNativeProviderCredentials(invoke: NativeInvoke | null) {
     catch (error) { throw safeFailure(error); }
   }
   function token(providerId: string, expected: SavedProviderCredential) {
-    if (!validId(providerId) || expected.providerVersion.providerId !== providerId) throw invalid();
-    return { ...expected.providerVersion };
+    if (!validId(providerId)) throw invalid();
+    return receipt(expected, providerId);
   }
   return {
     available: () => invoke !== null,
@@ -74,11 +80,12 @@ export function createNativeProviderCredentials(invoke: NativeInvoke | null) {
       return call("get_saved_provider_credential", { providerId }, providerId);
     },
     async save(providerId: string, expected: SavedProviderCredential, credential: string) {
-      const expectedProviderVersion = token(providerId, expected);
+      const captured = token(providerId, expected);
+      const expectedProviderVersion = { ...captured.providerVersion };
       if (!validSavedCredentialInput(credential)) throw invalid();
       try {
         const result = await call("save_provider_credential", {
-          providerId, expectedProviderVersion, expectedCredentialVersion: expected.version, credential,
+          providerId, expectedProviderVersion, expectedCredentialVersion: captured.version, credential,
         }, providerId);
         if (!result.saved) throw invalid();
         for (const listener of listeners) { try { listener(providerId); } catch { /* Observers do not change the native receipt. */ } }
@@ -86,12 +93,13 @@ export function createNativeProviderCredentials(invoke: NativeInvoke | null) {
       } finally { credential = ""; }
     },
     async remove(providerId: string, expected: SavedProviderCredential) {
-      const expectedProviderVersion = token(providerId, expected);
-      if (!expected.saved || !validId(expected.version)) throw invalid();
+      const captured = token(providerId, expected);
+      const expectedProviderVersion = { ...captured.providerVersion };
+      if ((!captured.saved && !captured.recovery) || captured.cleanupPending || !validId(captured.version)) throw invalid();
       const result = await call("delete_provider_credential", {
-        providerId, expectedProviderVersion, expectedCredentialVersion: expected.version,
+        providerId, expectedProviderVersion, expectedCredentialVersion: captured.version,
       }, providerId);
-      if (result.saved) throw invalid();
+      if (result.saved || result.recovery) throw invalid();
       if (result.cleanupPending) throw new ProviderCredentialError("cleanup_pending");
       for (const listener of listeners) { try { listener(providerId); } catch { /* Observers do not change the native receipt. */ } }
       return result;

@@ -410,7 +410,10 @@ fn malformed_os_record_is_static_error_and_never_a_default_reset() {
     let target = b.os_target(&version).unwrap();
     let bad = b"synthetic malformed private fixture";
     windows::write(&target, bad).unwrap();
-    assert_eq!(status(&b).err(), Some(VaultError::Unavailable));
+    let recovery = status(&b).unwrap();
+    assert!(!recovery.exists && recovery.masked.is_none());
+    assert_eq!(recovery.recovery, Some(CredentialRecovery::Corrupt));
+    assert_eq!(recovery.version.as_deref(), Some(version.as_str()));
     assert_eq!(
         save(&b, None, secret(SYNTHETIC)).err(),
         Some(VaultError::Conflict)
@@ -743,4 +746,238 @@ fn profile_path_junction_is_rejected_without_changing_link_privileges() {
     fs::remove_dir(&alias).unwrap();
     assert!(target.exists());
     drop(b);
+}
+
+#[test]
+fn recovery_missing_os_entry_can_be_explicitly_replaced_with_captured_metadata_token() {
+    let mut f = Fixture::new();
+    let b = f.binding();
+    let old = save(&b, None, secret(SYNTHETIC)).unwrap().version.unwrap();
+    windows::delete(&b.os_target(&old).unwrap()).unwrap();
+    let reopened = CredentialBinding::new(
+        &f.root.join("profile"),
+        "synthetic-provider",
+        "test-generation-one",
+        "https://api.deepseek.com",
+    )
+    .unwrap();
+    let state = status(&reopened).unwrap();
+    assert!(!state.exists && state.masked.is_none() && !state.cleanup_pending);
+    assert_eq!(state.version.as_deref(), Some(old.as_str()));
+    assert_eq!(state.recovery, Some(CredentialRecovery::Missing));
+    assert_eq!(load(&reopened, &old).err(), Some(VaultError::Unavailable));
+    let called = AtomicBool::new(false);
+    assert_eq!(
+        with_current(&reopened, &old, || called.store(true, Ordering::SeqCst)),
+        Err(VaultError::Unavailable)
+    );
+    assert!(!called.load(Ordering::SeqCst));
+    let restored = save(&reopened, state.version.as_deref(), secret(REPLACEMENT)).unwrap();
+    assert!(restored.exists && restored.recovery.is_none());
+    assert_ne!(restored.version.as_deref(), Some(old.as_str()));
+    assert_eq!(
+        load(&reopened, restored.version.as_deref().unwrap())
+            .unwrap()
+            .as_bytes(),
+        REPLACEMENT.as_bytes()
+    );
+    assert_eq!(
+        save(&reopened, Some(&old), secret(SYNTHETIC)).err(),
+        Some(VaultError::Conflict)
+    );
+}
+#[test]
+fn recovery_corrupt_os_entry_can_be_explicitly_replaced_without_reusing_old_cas() {
+    let mut f = Fixture::new();
+    let b = f.binding();
+    let old = save(&b, None, secret(SYNTHETIC)).unwrap().version.unwrap();
+    windows::write(
+        &b.os_target(&old).unwrap(),
+        b"owned synthetic malformed record",
+    )
+    .unwrap();
+    let state = status(&b).unwrap();
+    assert!(!state.exists && state.masked.is_none());
+    assert_eq!(state.version.as_deref(), Some(old.as_str()));
+    assert_eq!(state.recovery, Some(CredentialRecovery::Corrupt));
+    let encoded = serde_json::to_string(&state).unwrap();
+    assert!(encoded.contains("\"recovery\":\"corrupt\""));
+    assert!(!encoded.contains(SYNTHETIC) && !encoded.contains("malformed"));
+    assert_eq!(load(&b, &old).err(), Some(VaultError::Unavailable));
+    let called = AtomicBool::new(false);
+    assert_eq!(
+        with_current(&b, &old, || called.store(true, Ordering::SeqCst)),
+        Err(VaultError::Unavailable)
+    );
+    assert!(!called.load(Ordering::SeqCst));
+    let restored = save(&b, state.version.as_deref(), secret(REPLACEMENT)).unwrap();
+    assert!(restored.exists && restored.recovery.is_none());
+    assert_eq!(status(&b).unwrap(), restored);
+    assert_eq!(
+        save(&b, Some(&old), secret(SYNTHETIC)).err(),
+        Some(VaultError::Conflict)
+    );
+    assert_eq!(delete(&b, &old).err(), Some(VaultError::Conflict));
+}
+#[test]
+fn recovery_missing_os_entry_can_be_explicitly_reset_and_tombstone_stays_cas_bound() {
+    let mut f = Fixture::new();
+    let b = f.binding();
+    let old = save(&b, None, secret(SYNTHETIC)).unwrap().version.unwrap();
+    windows::delete(&b.os_target(&old).unwrap()).unwrap();
+    let state = status(&b).unwrap();
+    assert_eq!(state.recovery, Some(CredentialRecovery::Missing));
+    let removed = delete(&b, state.version.as_deref().unwrap()).unwrap();
+    assert!(!removed.exists && !removed.cleanup_pending && removed.recovery.is_none());
+    assert_ne!(removed.version, state.version);
+    assert_eq!(
+        save(&b, state.version.as_deref(), secret(REPLACEMENT)).err(),
+        Some(VaultError::Conflict)
+    );
+    let restored = save(&b, removed.version.as_deref(), secret(REPLACEMENT)).unwrap();
+    assert!(restored.exists && restored.recovery.is_none());
+}
+#[test]
+fn recovery_unknown_os_read_failure_is_unavailable_and_dispatch_callback_never_runs() {
+    let mut f = Fixture::new();
+    let b = f.binding();
+    let old = save(&b, None, secret(SYNTHETIC)).unwrap().version.unwrap();
+    faults::FAIL_READ.with(|v| v.set(true));
+    let state = status(&b).unwrap();
+    assert!(!state.exists && state.masked.is_none());
+    assert_eq!(state.version.as_deref(), Some(old.as_str()));
+    assert_eq!(state.recovery, Some(CredentialRecovery::Unavailable));
+    faults::FAIL_READ.with(|v| v.set(true));
+    assert_eq!(load(&b, &old).err(), Some(VaultError::Unavailable));
+    let called = AtomicBool::new(false);
+    faults::FAIL_READ.with(|v| v.set(true));
+    assert_eq!(
+        with_current(&b, &old, || called.store(true, Ordering::SeqCst)),
+        Err(VaultError::Unavailable)
+    );
+    assert!(!called.load(Ordering::SeqCst));
+    // Explicit reset does not need to read the old OS secret. Its metadata CAS
+    // commits inactivity before a failed OS delete can leave the record behind.
+    faults::FAIL_DELETE.with(|v| v.set(true));
+    assert_eq!(
+        delete(&b, state.version.as_deref().unwrap()).err(),
+        Some(VaultError::CleanupPending)
+    );
+    let disabled = status(&b).unwrap();
+    assert!(!disabled.exists && disabled.recovery.is_none() && disabled.cleanup_pending);
+    assert_ne!(disabled.version, state.version);
+    assert!(windows::read(&b.os_target(&old).unwrap())
+        .unwrap()
+        .is_some());
+    assert_eq!(load(&b, &old).err(), Some(VaultError::Conflict));
+    let clean = cleanup(&b).unwrap();
+    assert!(!clean.exists && !clean.cleanup_pending && clean.recovery.is_none());
+}
+#[test]
+fn recovery_unknown_os_read_failure_allows_only_deliberate_cas_replacement() {
+    let mut f = Fixture::new();
+    let b = f.binding();
+    let old = save(&b, None, secret(SYNTHETIC)).unwrap().version.unwrap();
+    faults::FAIL_READ.with(|v| v.set(true));
+    let state = status(&b).unwrap();
+    assert_eq!(state.recovery, Some(CredentialRecovery::Unavailable));
+    assert_eq!(state.version.as_deref(), Some(old.as_str()));
+    assert_eq!(
+        save(&b, None, secret(REPLACEMENT)).err(),
+        Some(VaultError::Conflict)
+    );
+    let restored = save(&b, state.version.as_deref(), secret(REPLACEMENT)).unwrap();
+    assert!(restored.exists && restored.recovery.is_none());
+    assert_eq!(
+        load(&b, restored.version.as_deref().unwrap())
+            .unwrap()
+            .as_bytes(),
+        REPLACEMENT.as_bytes()
+    );
+}
+#[test]
+fn recovery_unreadable_metadata_still_fails_whole_status_without_a_token() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let mut f = Fixture::new();
+    let b = f.binding();
+    let old = save(&b, None, secret(SYNTHETIC)).unwrap().version.unwrap();
+    let pin = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(0)
+        .open(b.profile_root.join(metadata::FILE_NAME))
+        .unwrap();
+    assert_eq!(status(&b).err(), Some(VaultError::Unavailable));
+    let called = AtomicBool::new(false);
+    assert_eq!(
+        with_current(&b, &old, || called.store(true, Ordering::SeqCst)),
+        Err(VaultError::Unavailable)
+    );
+    assert!(!called.load(Ordering::SeqCst));
+    drop(pin);
+    let original = status(&b).unwrap();
+    assert!(original.exists && original.recovery.is_none());
+    assert_eq!(original.version.as_deref(), Some(old.as_str()));
+}
+
+/// External helper for this task's just-created isolated native UI fixtures.
+/// No environment flag or mutation entry is present in production builds.
+#[test]
+fn recovery_external_owned_fixture_mutator() {
+    let Some(root) = std::env::var_os("UAGENT_RECOVERY_UI_ROOT") else {
+        return;
+    };
+    let root = PathBuf::from(root)
+        .canonicalize()
+        .expect("Own isolated fixture root must exist");
+    let base =
+        PathBuf::from(r"E:\Codex\UAgent\2026-10-29\evidence\credential-vault-recovery-20261030")
+            .canonicalize()
+            .expect("Own fixture evidence base must exist");
+    assert!(
+        root != base && root.starts_with(&base),
+        "Refuse any production/outside fixture root"
+    );
+    let provider = std::env::var("UAGENT_RECOVERY_UI_PROVIDER").expect("Explicit fixture provider");
+    let generation =
+        std::env::var("UAGENT_RECOVERY_UI_GENERATION").expect("Explicit fixture generation");
+    let endpoint =
+        std::env::var("UAGENT_RECOVERY_UI_ENDPOINT").expect("Explicit fixture canonical endpoint");
+    let version =
+        std::env::var("UAGENT_RECOVERY_UI_VERSION").expect("Explicit active fixture version");
+    let action =
+        std::env::var("UAGENT_RECOVERY_UI_ACTION").expect("Explicit missing/corrupt action");
+    assert!(
+        matches!(action.as_str(), "missing" | "corrupt"),
+        "Unknown fixture action"
+    );
+    let binding = CredentialBinding::new(&root, &provider, &generation, &endpoint)
+        .expect("Native fixture binding");
+    let _guard = windows::TargetGuard::acquire(&binding.target).expect("Own fixture must be idle");
+    let metadata = metadata::Metadata::open(&binding).expect("Own fixture healthy metadata");
+    let state = metadata.state().expect("Own fixture metadata state");
+    assert!(
+        state.cleanup.is_empty()
+            && state.active.as_deref() == Some(version.as_str())
+            && state.token.as_deref() == Some(version.as_str()),
+        "Fixture active/version mismatch"
+    );
+    let record = read_record(&binding, &version).expect("Own fixture readable initial record");
+    assert!(
+        matches!(
+            record.secret.as_bytes(),
+            b"uagent-recovery-fixture-key-20261030-A" | b"uagent-recovery-fixture-key-20261030-B"
+        ),
+        "Refuse to mutate any non-designated synthetic fixture credential"
+    );
+    drop(record);
+    let target = binding.os_target(&version).expect("Exact owned target");
+    if action == "missing" {
+        windows::delete(&target).expect("Own fixture deletion");
+    } else {
+        windows::write(&target, b"owned-recovery-fixture-malformed-blob")
+            .expect("Own fixture corruption");
+    }
+    assert_eq!(metadata.state().expect("Unchanged fixture metadata"), state);
+    println!("Owned isolated synthetic fixture mutation completed; metadata/version preserved; no enumeration.");
 }
