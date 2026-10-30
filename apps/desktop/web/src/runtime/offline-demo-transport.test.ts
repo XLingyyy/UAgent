@@ -161,7 +161,7 @@ describe("native-only local synthetic transport", () => {
 
   it("streams a bounded long history fixture only in explicit native offline mode", async () => {
     const fetcher = await fetcherFor();
-    const text = content(await read(await fetcher(DEEPSEEK_ENDPOINT, init([{ role: "user", content: "Local history: produce a long example." }], { tools: undefined, tool_choice: undefined }))));
+    const text = content(await read(await fetcher(DEEPSEEK_ENDPOINT, init([{ role: "user", content: "Local history: produce a long example.\n\nNo tool execution is enabled by this request." }], { tools: undefined, tool_choice: undefined }))));
     expect(text).toContain("Long history begins."); expect(text).toContain("Long history ends.");
     expect(text.length).toBeGreaterThan(6000); expect(new TextEncoder().encode(text).length).toBeLessThan(16384);
     const next = content(await read(await fetcher(DEEPSEEK_ENDPOINT, init([{ role: "assistant", content: text }, { role: "user", content: "Local history: count completed replies." }], { tools: undefined, tool_choice: undefined }))));

@@ -109,7 +109,8 @@ function replyFor(body: ReviewedBody, issued: ReadonlyMap<string, IssuedCall>): 
   if (tail.length !== issued.size * 2) throw invalid();
   if (!toolNames.every(name => body.tools.has(name))) {
     if (tail.length) throw invalid();
-    const goal = String(body.messages[goalIndex]!.content);
+    // The ordinary runtime adds this inert suffix to the actual reviewed user message.
+    const goal = String(body.messages[goalIndex]!.content).replace(/\n\nNo tool execution is enabled by this request\.$/, "");
     if (goal === "Local history: produce a long example.") {
       const lines = Array.from({ length: 100 }, (_, index) => `History row ${String(index + 1).padStart(3, "0")}: deterministic received text; no API request. \u4e2d\u6587\u3002`);
       return { text: `${syntheticLabel}\nLong history begins.\n${lines.join("\n")}\nLong history ends.` };
