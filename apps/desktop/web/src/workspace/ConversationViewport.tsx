@@ -73,7 +73,7 @@ export function ConversationViewport({ messages = [] }: ConversationViewportProp
     </div>
     {selectedTask && <section className="ua-run-details" id={detailsId} role="region" aria-label={t("chat.runDetails")} data-task-id={selectedTask.id}>
       <header className="ua-run-details__header">
-        <div><strong>{t("chat.runDetails")}</strong><p>{t(`chat.state.${selectedTask.state}`)} 路 {knownUsage ? t("chat.usageCounts", { input: usage.inputTokens, output: usage.outputTokens }) : t("chat.usageUnknown")}</p></div>
+        <div><strong>{t("chat.runDetails")}</strong><p>{t(`chat.state.${selectedTask.state}`)} / {knownUsage ? t("chat.usageCounts", { input: usage.inputTokens, output: usage.outputTokens }) : t("chat.usageUnknown")}</p></div>
         <button type="button" onClick={closeDetails} aria-label={t("chat.closeDetails")}>{t("common.close")}</button>
       </header>
       <div ref={detailList} className="ua-run-details__events" aria-label={t("chat.runEvents")} tabIndex={0}>
