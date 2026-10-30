@@ -26,7 +26,7 @@ Read-only structured project investigation is available as an explicit task mode
 | [T18 效果核对](docs/effect-reconciliation.md) | 未注册的持久日志与交接屏障；不自动迁移旧扩展，不代表生产恢复或外部执行已结束。 |
 | [T19 资源队列](packages/runtime/src/run/resource-queue/README.md) | 未注册的单进程共享实例；最多三个本地模型槽，尚未提供原生资源认证或跨进程互斥。 |
 | [Anthropic Messages](packages/runtime/src/provider/anthropic/README.md) | 未注册的协议模块；没有生产原生传输、UI 或真实账号验收。 |
-| [Responses 桌面对话](docs/responses-native-transport.md) | 普通对话及调查仅在显式隔离离线 fixture 中接通；生产门禁未开放，真实 API 和外部 TLS 尚未验收。 |
+| [Responses 桌面对话](docs/responses-official-connection.md) | Windows 普通对话已开放 OpenAI 官方端点与本机临时密钥；调查仍仅隔离 fixture。真实 API 和外部 TLS 结果待用户验收。 |
 
 代码合入与生产激活分开。恢复后仍需新凭证和新的发送意图，调查外发与工具审批保持独立；配置或历史记录不恢复执行权限。
 
@@ -87,7 +87,7 @@ pnpm --dir apps/desktop exec vitest run web/src/runtime/conversation-flow.test.t
 - 当前源码的真实 API 多轮质量、鉴权异常和计费回归。
 - 真实鼠标拖窗与双击验收；已修正拖动覆盖并通过锁定 Tauri 脚本测试，但当前自动化未提供原生鼠标工具。
 - 当前源码的真实 UE 项目生命周期、写入与回滚整体验收，以及 Windows Snap。
-- 非 fixture Responses、Anthropic 的真实传输，以及生产恢复接线、跨进程资源互斥和断电恢复。
+- Responses 的真实 API / 外部 TLS 验收与生产调查、Anthropic 的生产传输，以及生产恢复接线、跨进程资源互斥和断电恢复。
 - 发布签名、安装包和全产品验收。
 
 模块边界与行为约定见 [桌面 Provider 与对话说明](docs/desktop-provider-and-conversation.md)，开发与构建见 [开发指南](docs/development.md)。

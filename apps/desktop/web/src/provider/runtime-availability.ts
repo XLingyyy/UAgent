@@ -2,6 +2,9 @@ import type { ProviderConfig } from "../types/provider";
 import { DEEPSEEK_MODEL } from "@uagent/runtime";
 import { getApplicationProfile } from "../runtime/application-profile";
 
+export function responsesNativeAvailable(): boolean {
+  return typeof (globalThis as { __TAURI_INTERNALS__?: { invoke?: unknown } }).__TAURI_INTERNALS__?.invoke === "function";
+}
 export function responsesFixtureAvailable(): boolean {
   try {
     const profile = getApplicationProfile();
@@ -26,7 +29,7 @@ export function supportsProviderModel(
     return false;
   if (provider.wireApi === "responses")
     return (
-      responsesFixtureAvailable() &&
+      (responsesFixtureAvailable() || responsesNativeAvailable()) &&
       ["https://api.openai.com/v1", "https://api.openai.com/v1/"].includes(provider.baseUrl)
     );
   if (
@@ -62,13 +65,18 @@ export function sessionMatchesProviderModel(
   if (provider.wireApi === "responses")
     return (
       state.wireApi === "responses" &&
-      state.fixture === true &&
+      state.fixture === responsesFixtureAvailable() &&
       state.endpoint === "https://api.openai.com/v1/responses"
     );
   return (
     ["openai_compatible", "chat_completions"].includes(state.wireApi ?? "") &&
     state.endpoint === "https://api.deepseek.com/chat/completions"
   );
+}
+export function createResponsesProvider(): ProviderConfig {
+  return { providerId: crypto.randomUUID(), displayName: "OpenAI", baseUrl: "https://api.openai.com/v1",
+    wireApi: "responses", authMode: "env_key", networkMode: "live", enabled: true,
+    models: [], defaultModel: undefined };
 }
 export function createSupportedProvider(): ProviderConfig {
   return {

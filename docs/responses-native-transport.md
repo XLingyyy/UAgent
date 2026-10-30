@@ -2,14 +2,15 @@
 
 The Windows implementation is split into a protocol adapter, a native request
 broker and a fixed-target WinHTTP engine. Configuration and declared capability
-do not establish connectivity. The desktop selector exposes Responses only in an explicitly isolated offline
-demo profile, labelled as a local synthetic fixture. Non-fixture production profiles remain
-blocked while production transport acceptance remains incomplete. Opening a
-fixture session never establishes a real model connection.
+do not establish connectivity. Windows ordinary chat supports the official OpenAI
+API root with a user-entered memory credential; see [configuration](responses-official-connection.md).
+Investigation remains restricted to the explicit isolated offline fixture.
+Real API and external TLS acceptance remain pending user testing. Opening a
+session never establishes a verified model connection.
 
 ## Text-only conversations
 
-The isolated fixture also supports ordinary discussion, without a trusted project,
+Both the official connection and the isolated fixture support ordinary discussion, without a trusted project,
 index scan or tool grant. Its native conversation binding issues a fresh run/epoch
 and selects an explicitly text-only source checker. The native body validator
 rejects tools, function items and server-side history references. Every text request
@@ -18,8 +19,9 @@ dispatch gate. A trusted ordinary Send action captures one memory-only intent fo
 the full request snapshot, so it does not display a second confirmation dialog.
 This capability cannot be serialized, reused or applied to investigation/tool
 calls. Changes to the source, model, conversation, credential or cancellation
-state revoke it; investigation requests still use explicit outbound review. Production profiles and real credentials remain blocked in this
-delivery; enabling them is separate from this offline acceptance.
+state revoke it; fixture investigation requests still use explicit outbound review.
+Normal startup never selects the fixture, and its reserved dummy credential is
+rejected by normal profiles.
 
 Completed conversation text is bounded to eight turns / 12 KiB for each outgoing
 request. Native output remains scoped to the exact live provider/model/project/
@@ -28,8 +30,8 @@ The managed SQLite archive keeps full message bodies and each actual outbound
 message selection. Cancellation and failed requests add no completed assistant
 reply. Normal close finalizes the archive; abrupt termination remains incomplete.
 Viewing history performs no send. Continuing selected completed discussion text
-creates a fresh conversation and requires a new memory session and per-request
-review; it restores no native output IDs, credentials or approvals.
+creates a fresh conversation and requires a new memory session and a fresh Send
+intent; it restores no native output IDs, credentials or approvals.
 
 ## Request boundary
 
@@ -108,5 +110,5 @@ The existing session/composer controls now select the exact open profile and
 wait for native revocation acknowledgement before publishing project/model changes.
 A fixed local fixture performs list/find/read through the normal native tools;
 only its model responses are synthesized. A real-window three-tool/cancel/restart
-acceptance remains required. Ordinary projectless chat and
-cross-run native-reasoning migration are not enabled by these APIs.
+fixture acceptance has separate local evidence. Ordinary projectless chat is
+available; cross-run native-reasoning migration is not enabled by these APIs.

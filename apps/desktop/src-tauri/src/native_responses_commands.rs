@@ -680,6 +680,13 @@ pub(crate) struct OpenResult {
     endpoint: String,
     expires_at: u64,
     fixture: bool,
+    model_settings: ModelSettings,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ModelSettings {
+    supports_reasoning: bool,
+    request_defaults: crate::product_settings_store::RequestDefaults,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -706,6 +713,13 @@ pub(crate) struct PollResult {
     error: Option<String>,
     dispatch_status: String,
 }
+fn validate_profile_mode(offline_demo: bool, credential: &str) -> Result<()> {
+    let fixture_key = credential == "offline-responses-fixture-only";
+    if offline_demo != fixture_key {
+        return Err(failure("native_responses_credential_mode_mismatch"));
+    }
+    Ok(())
+}
 #[tauri::command]
 pub(crate) async fn open_native_responses_profile(
     app: tauri::AppHandle,
@@ -713,11 +727,14 @@ pub(crate) async fn open_native_responses_profile(
     input: OpenInput,
 ) -> Result<OpenResult> {
     let root = root(&app)?;
-    // This delivery keeps production profiles locked; only the explicit isolated fixture is accepted.
-    let fixture_root = crate::app_profile::responses_fixture_root()?;
-    if input.credential != "offline-responses-fixture-only" {
-        return Err(failure("responses_fixture_credential_required"));
-    }
+    // Mode is native-owned. Normal startup never falls back to a fixture.
+    let offline_demo = crate::app_profile::get_application_profile()?.offline_demo;
+    validate_profile_mode(offline_demo, &input.credential)?;
+    let fixture_root = if offline_demo {
+        Some(crate::app_profile::responses_fixture_root()?)
+    } else {
+        None
+    };
     window
         .inner_size()
         .map_err(|_| failure("native_responses_window_unavailable"))?;
@@ -759,6 +776,17 @@ pub(crate) async fn open_native_responses_profile(
         temporary
             .clear_credential()
             .map_err(|e| failure(e.code()))?;
+        let model = snapshot
+            .config
+            .models
+            .iter()
+            .find(|m| m.id == input.model_id)
+            .ok_or_else(|| failure("native_responses_model_unavailable"))?;
+        let model_settings = ModelSettings {
+            supports_reasoning: model.supports_reasoning,
+            request_defaults: model.request_defaults.clone(),
+        };
+        let fixture = fixture_root.is_some();
         let id = token()?;
         let profile = Arc::new(Profile {
             id: id.clone(),
@@ -768,7 +796,7 @@ pub(crate) async fn open_native_responses_profile(
             snapshot,
             model_id: input.model_id.clone(),
             endpoint: endpoint.clone(),
-            fixture_root: Some(fixture_root),
+            fixture_root,
             key,
             clock,
             expires_at: PROFILE_TTL,
@@ -817,7 +845,8 @@ pub(crate) async fn open_native_responses_profile(
             model_id: input.model_id,
             endpoint,
             expires_at: wall + PROFILE_TTL,
-            fixture: true,
+            fixture,
+            model_settings,
         })
     })
     .await

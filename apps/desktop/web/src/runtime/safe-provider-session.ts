@@ -17,7 +17,7 @@ import type { TaskDraft, ProviderRuntimeRequest } from "@uagent/shared";
 import { responsesBody } from "../../../../../packages/runtime/src/provider/responses/protocol.js";
 import { boundConversationHistory } from "../../../../../packages/runtime/src/provider/conversation-history.js";
 import type { NativeInvoke } from "./project-native-adapter";
-import { createNativeResponsesProfile } from "./native-responses-session";
+import { createNativeResponsesProfile, validResponsesCredential } from "./native-responses-session";
 import { getApplicationProfile } from "./application-profile";
 import { localNativeInvoke } from "./native-provider-budget";
 import { createNativePolicyFetcher } from "./native-provider-endpoint";
@@ -76,7 +76,9 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
   let expiryTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   let pendingSetup: { key: string; version: string } | null = null;
-  const responsesAllowed = options.responsesFixture === true && options.nativeInvoke != null;
+  const responsesFixture = options.mode === "offline" && options.responsesFixture === true;
+  const responsesAllowed = options.nativeInvoke != null && (responsesFixture ||
+    (options.mode === "live" && options.liveAuthorized === true));
   const baseCanConfigure =
     options.mode === "offline"
       ? !!options.fetcher || responsesAllowed
@@ -228,6 +230,15 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     };
   }
   const withContext = (request: Parameters<ProviderAdapter["complete"]>[0]) => {
+    // The live profile owns model defaults. Do not inherit DeepSeek-only parameters.
+    const profile = responsesProfile?.getSnapshot();
+    if (profile && !profile.fixture) {
+      const settings = profile.modelSettings;
+      if (!settings) throw Error("responses_model_settings_unavailable");
+      request = { ...request, temperature: settings.requestDefaults.temperature ?? undefined,
+        maxOutputTokens: settings.requestDefaults.maxOutputTokens ?? undefined,
+        reasoningEffort: settings.supportsReasoning ? request.reasoningEffort : undefined };
+    }
     if ((request.metadata?.projectId ?? null) !== context.projectId)
       throw createProviderRuntimeError("deepseek", "cancelled", "Provider project changed.");
     const selected =
@@ -437,19 +448,19 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
   ): Promise<boolean> {
     if (
       !responsesAllowed ||
-      options.mode !== "offline" ||
       !options.nativeInvoke ||
       disposed ||
       !state.enabled ||
       nativeRevocationFailed
     ) {
       credential = "";
-      throw Error("responses_fixture_unavailable");
+      throw Error("responses_native_unavailable");
     }
-    if (credential !== RESPONSES_FIXTURE_CREDENTIAL || !providerId || !modelId) {
+    if (!validResponsesCredential(credential) || !providerId || !modelId ||
+        (responsesFixture ? credential !== RESPONSES_FIXTURE_CREDENTIAL : credential === RESPONSES_FIXTURE_CREDENTIAL)) {
       credential = "";
       close("setup_failed");
-      throw Error("responses_fixture_credential_required");
+      throw Error(responsesFixture ? "responses_fixture_credential_required" : "responses_credential_invalid");
     }
     close();
     const earlierSetups = [...responsesSetups];
@@ -502,11 +513,11 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
         return false;
       }
       const snapshot = candidate.getSnapshot();
-      if (snapshot.fixture !== true) {
+      if (snapshot.fixture !== responsesFixture) {
         const rejected = candidate;
         candidate = null;
         await trackNativeClose(rejected);
-        throw Error("responses_fixture_required");
+        throw Error("responses_profile_mode_mismatch");
       }
       responsesProfile = candidate;
       pendingResponses = null;

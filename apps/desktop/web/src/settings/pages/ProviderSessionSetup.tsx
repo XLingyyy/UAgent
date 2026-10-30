@@ -3,6 +3,7 @@ import { useI18n } from "../../i18n";
 import { safeProviderSession, type SafeProviderSession } from "../../runtime/safe-provider-session";
 import {
   sessionMatchesProviderModel,
+  responsesFixtureAvailable,
   supportsProviderModel,
 } from "../../provider/runtime-availability";
 import type { ProviderConfig } from "../../types/provider";
@@ -18,7 +19,7 @@ export function ProviderSessionSetup({
   provider: ProviderConfig;
   controller?: SessionController;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const state = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
@@ -35,6 +36,7 @@ export function ProviderSessionSetup({
     pendingGeneration = useRef<number | undefined>(undefined);
   const model = provider.models.find((m) => m.id === provider.defaultModel) ?? provider.models[0];
   const responses = provider.wireApi === "responses",
+    fixture = responses && responsesFixtureAvailable(),
     supported = supportsProviderModel(provider, model?.id);
   const ready = sessionMatchesProviderModel(state, provider, model?.id);
   useEffect(() => {
@@ -122,8 +124,10 @@ export function ProviderSessionSetup({
         <p className="ua-settings-section__description">
           {responses
             ? supported
-              ? t("demo.sessionHelp")
-              : t("responses.nativeUnavailable")
+              ? fixture ? t("demo.sessionHelp") : (locale === "zh-CN"
+                ? "支持 OpenAI 官方 Responses 服务。开启会话只保存临时凭证；点击发送才会联网，连接状态尚未验证。"
+                : "Supports the official OpenAI Responses service. Opening holds a temporary credential; only Send makes a request. Connectivity is unverified.")
+              : (locale === "zh-CN" ? "此版本仅支持 https://api.openai.com/v1 的 Responses。其他端点仅保存配置。" : "This version supports Responses at https://api.openai.com/v1 only. Other endpoints are configuration only.")
             : supported
               ? t("product.connectionHelp")
               : t("product.unsupportedHelp")}
@@ -135,29 +139,29 @@ export function ProviderSessionSetup({
             {t("product.selectedModel", { model: model.label })} · <code>{provider.wireApi}</code>
           </p>
         )}
-        {responses && supported && <p role="note">{t("demo.banner")}</p>}
+        {fixture && supported && <p role="note">{t("demo.banner")}</p>}
         <p className="ua-session-state" role="status">
           {pending
             ? t("responses.opening")
             : !supported
               ? t("product.unsupported")
               : ready
-                ? t(responses ? "demo.sessionReady" : "product.sessionReady")
+                ? t(fixture ? "demo.sessionReady" : "product.sessionReady")
                 : t("product.sessionClosed")}
         </p>
         {supported && (
           <>
             <label className="ua-session-key">
-              {t(responses ? "responses.fixtureCredential" : "product.apiKey")}
+              {t(fixture ? "responses.fixtureCredential" : "product.apiKey")}
               <input
                 ref={password}
                 type="password"
-                placeholder={responses ? "offline-responses-fixture-only" : undefined}
+                placeholder={fixture ? "offline-responses-fixture-only" : undefined}
                 autoComplete="off"
                 spellCheck={false}
-                maxLength={512}
+                maxLength={16384}
                 disabled={pending}
-                aria-label={t(responses ? "responses.fixtureCredential" : "product.apiKey")}
+                aria-label={t(fixture ? "responses.fixtureCredential" : "product.apiKey")}
                 className="ua-settings-page__input"
                 onChange={() => {
                   controller.close();
@@ -190,14 +194,14 @@ export function ProviderSessionSetup({
               >
                 {pending
                   ? t("responses.opening")
-                  : t(responses ? "demo.openSession" : "product.openSession")}
+                  : t(fixture ? "demo.openSession" : "product.openSession")}
               </button>
               <button type="button" onClick={clear}>
-                {t(responses ? "demo.closeSession" : "product.clearSession")}
+                {t(fixture ? "demo.closeSession" : "product.clearSession")}
               </button>
             </div>
             <p className="ua-settings-page__action-note">
-              {t(responses ? "demo.sessionHelp" : "product.credentialHelp")}
+              {t(fixture ? "demo.sessionHelp" : "product.credentialHelp")}
             </p>
             {error && <p role="alert">{t("product.setupError")}</p>}
           </>

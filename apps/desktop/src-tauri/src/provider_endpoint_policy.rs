@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) struct DesktopEndpointPolicy;
 pub(crate) static NATIVE_ENDPOINT_POLICY: DesktopEndpointPolicy = DesktopEndpointPolicy;
-const POLICY_REVISION: &str = "desktop-endpoint-policy-v1-deepseek-chat";
+const POLICY_REVISION: &str = "desktop-endpoint-policy-v2-official-responses";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -81,11 +81,16 @@ impl NativeEndpointPolicy for DesktopEndpointPolicy {
         if url.path() == "/" {
             canonical_base_url.pop();
         }
-        let transport_supported = canonical_base_url == "https://api.deepseek.com"
+        let transport_supported = (canonical_base_url == "https://api.deepseek.com"
             && matches!(
                 wire_api,
                 WireApi::ChatCompletions | WireApi::OpenaiCompatible
-            );
+            ))
+            || (canonical_base_url
+                .strip_suffix('/')
+                .unwrap_or(&canonical_base_url)
+                == "https://api.openai.com/v1"
+                && matches!(wire_api, WireApi::Responses));
         Ok(EndpointDecision {
             canonical_base_url,
             policy_revision: POLICY_REVISION.into(),
@@ -94,8 +99,7 @@ impl NativeEndpointPolicy for DesktopEndpointPolicy {
     }
 }
 
-/// Canonical Responses target for the dormant native transport preparation layer.
-/// This is not a connectivity observation and does not enable any UI transport.
+/// The official Responses HTTPS target. Configuration is not a connectivity observation.
 pub(crate) fn prepare_responses_endpoint(base_url: &str) -> Result<String> {
     let checked = NATIVE_ENDPOINT_POLICY.validate_endpoint(WireApi::Responses, base_url)?;
     let root = checked
@@ -106,7 +110,7 @@ pub(crate) fn prepare_responses_endpoint(base_url: &str) -> Result<String> {
         return Err(StoreError {
             kind: "endpointPolicy".into(),
             message:
-                "the native Responses preparation layer requires the explicit supported API root"
+                "native Responses supports only the official https://api.openai.com/v1 API root"
                     .into(),
         });
     }
@@ -117,7 +121,7 @@ pub(crate) fn prepare_responses_endpoint(base_url: &str) -> Result<String> {
 mod tests {
     use super::*;
     #[test]
-    fn responses_preparation_keeps_v1_and_does_not_enable_transport() {
+    fn responses_supports_only_the_explicit_official_v1_target() {
         for root in [
             "https://api.openai.com/v1",
             "https://api.openai.com/v1/",
@@ -128,7 +132,7 @@ mod tests {
                 "https://api.openai.com/v1/responses"
             );
             assert!(
-                !NATIVE_ENDPOINT_POLICY
+                NATIVE_ENDPOINT_POLICY
                     .validate_endpoint(WireApi::Responses, root)
                     .unwrap()
                     .transport_supported
@@ -147,6 +151,7 @@ mod tests {
             "https://api.openai.com",
             "https://api.openai.com/v1/responses",
             "https://api.openai.com/v1//",
+            "https://api.openai.com:444/v1",
             "https://api.openai.com/v1/../v1",
             "https://api.openai.com.evil.invalid/v1",
             "https://other.invalid/v1",
@@ -209,6 +214,10 @@ mod tests {
             }
         }
         for (wire, url) in [
+            (WireApi::ChatCompletions, "https://api.openai.com/v1"),
+            (WireApi::OpenaiCompatible, "https://api.openai.com/v1"),
+            (WireApi::Responses, "https://other.invalid/v1"),
+            (WireApi::Responses, "https://api.openai.com/v1//"),
             (WireApi::Responses, "https://api.deepseek.com"),
             (WireApi::Anthropic, "https://api.deepseek.com"),
             (WireApi::OpenaiCompatible, "https://api.deepseek.com/v1"),

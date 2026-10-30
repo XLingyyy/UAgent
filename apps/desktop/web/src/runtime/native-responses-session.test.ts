@@ -121,6 +121,7 @@ function harness(autoApprove = true) {
         endpoint,
         expiresAt: Date.now() + 60000,
         fixture: false,
+        modelSettings: { supportsReasoning: true, requestDefaults: { temperature: null, maxOutputTokens: null } },
       };
     else if(command==="bind_native_responses_conversation"){
       nativeOwner={...owner,projectId:input.projectId===null?"chat:local":"chat:project:"+input.projectId,runId:"chat-run-fixture"};

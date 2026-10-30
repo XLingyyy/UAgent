@@ -1,5 +1,24 @@
 //! Local broker/DTO tests. No WebView, remote endpoint, real credential or HTTP.
 use super::*;
+#[test]
+fn profile_modes_never_fall_back_or_accept_the_other_modes_credential() {
+    assert!(validate_profile_mode(false, "synthetic-user-entered-credential").is_ok());
+    assert!(validate_profile_mode(true, "offline-responses-fixture-only").is_ok());
+    assert!(validate_profile_mode(false, "offline-responses-fixture-only").is_err());
+    assert!(validate_profile_mode(true, "synthetic-user-entered-credential").is_err());
+}
+#[test]
+fn live_model_settings_receipt_contains_only_configured_nonsecret_defaults() {
+    let value = serde_json::to_value(ModelSettings {
+        supports_reasoning: false,
+        request_defaults: Default::default(),
+    })
+    .unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({"supportsReasoning":false,"requestDefaults":{"temperature":null,"maxOutputTokens":null}})
+    );
+}
 use crate::product_settings_store::{
     CapabilityDeclarations, Declaration, ProviderConfig, ProviderModel, RequestDefaults,
 };

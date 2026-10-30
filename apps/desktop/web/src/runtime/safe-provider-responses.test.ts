@@ -50,6 +50,8 @@ function setup(
     ttl?: number;
     nativeFixture?: boolean;
     autoApprove?: boolean;
+    live?: boolean;
+    modelSettings?: { supportsReasoning: boolean; requestDefaults: { temperature: number|null; maxOutputTokens: number|null } };
   } = {},
 ) {
   const calls: Array<{ command: string; input: Record<string, unknown> }> = [],
@@ -75,7 +77,8 @@ function setup(
         modelId: input.modelId,
         endpoint,
         expiresAt: Date.now() + (patch.ttl ?? 60000),
-        fixture: patch.nativeFixture ?? true,
+        fixture: patch.nativeFixture ?? !patch.live,
+        modelSettings: patch.modelSettings ?? {supportsReasoning:false,requestDefaults:{temperature:null,maxOutputTokens:null}},
       };
     } else if (command === "close_native_responses_profile") {
       if (closeWait) await closeWait.promise;
@@ -142,10 +145,11 @@ function setup(
     throw Error("DeepSeek fallback must not run");
   });
   const manager = createSafeProviderSession({
-    mode: "offline",
+    mode: patch.live ? "live" : "offline",
+    liveAuthorized: patch.live,
     fetcher,
     nativeInvoke: patch.native === false ? null : invoke,
-    responsesFixture: patch.responsesFixture ?? true,
+    responsesFixture: patch.responsesFixture ?? !patch.live,
     gate,
     attachments,
   });
@@ -157,7 +161,7 @@ function setup(
       if (pending) queueMicrotask(() => gate.approve(pending.id));
     });
   const count = (command: string) => calls.filter((call) => call.command === command).length;
-  const open = () => manager.openResponses(providerId, modelId, RESPONSES_FIXTURE_CREDENTIAL);
+  const open = () => manager.openResponses(providerId, modelId, patch.live ? "synthetic-local-test-credential" : RESPONSES_FIXTURE_CREDENTIAL);
   function lease(override: Partial<RunScopeLease["scope"]> = {}) {
     const generation = manager.getSessionGeneration(),
       authority = new RunScopeAuthority();
@@ -227,6 +231,40 @@ const request = (): ProviderRuntimeRequest => ({
 });
 
 describe("safe Responses fixture controller (synthetic invoke only)", () => {
+  it("opens an authorized live native profile without dispatch, credential persistence or a fixture fallback", async()=>{
+    const h=setup({live:true});await expect(h.open()).resolves.toBe(true);
+    expect(h.manager.getSnapshot()).toMatchObject({ready:true,fixture:false,wireApi:"responses"});
+    expect(h.count("dispatch_native_responses_request")).toBe(0);
+    expect(JSON.stringify(h.manager.getSnapshot())).not.toContain("synthetic-local-test-credential");
+    expect(h.fetcher).not.toHaveBeenCalled();
+  });
+  it.each([{nativeFixture:true},{native:false}])("refuses wrong native mode or missing native transport in live mode: %j",async patch=>{
+    const h=setup({live:true,...patch});await expect(h.open()).rejects.toThrow();
+    expect(h.manager.getSnapshot().ready).toBe(false);
+    expect(h.count("dispatch_native_responses_request")).toBe(0);expect(h.fetcher).not.toHaveBeenCalled();
+  });
+  it("rejects fixture and malformed credentials before native open in normal mode",async()=>{
+    const h=setup({live:true});
+    for(const key of [RESPONSES_FIXTURE_CREDENTIAL,"short","synthetic key","bad\ncredential"])
+      await expect(h.manager.openResponses(providerId,modelId,key)).rejects.toThrow("responses_credential_invalid");
+    expect(h.calls).toHaveLength(0);expect(h.manager.getSnapshot().nativeCloseFailed).toBe(false);
+  });
+  it.each([false,true])("sends two ordinary live-mode synthetic requests with exact intent and declared reasoning=%s",async supportsReasoning=>{
+    const h=setup({live:true,autoApprove:false,modelSettings:{supportsReasoning,requestDefaults:{temperature:null,maxOutputTokens:null}}});await h.open();
+    const bridge=new ProviderRuntimeBridge({adapter:{id:providerId,getCapabilities:()=>h.manager.adapter.getCapabilities(),complete:(r,c)=>h.manager.adapter.complete(r,c)},enabled:true});
+    const history:Array<{role:"user"|"assistant";content:string}>=[];
+    for(const [index,effort] of ["low","xhigh"].entries()){
+      const text="live synthetic UI turn "+index;h.manager.updateContext(projectId,text,modelId,"conversation-fixture");
+      const draft={permissionMode:"request_approval",runMode:"local",branch:"",contextPercent:0,taskMode:"discussion",input:text,projectId,providerId,modelId,reasoningEffort:effort,conversationId:"conversation-fixture",conversationHistory:[...history]} as TaskDraft;
+      await bridge.execute({system:"Assistant",developer:"Discuss only",context:[],constraints:[],toolPolicy:["No tool execution is enabled by this request."],user:text,metadata:{providerId,providerModelId:modelId}},draft,"live-"+index,"plan-"+index,{authorizeSend:h.manager.captureOrdinarySend(draft,()=>true)});
+      const body=JSON.parse(h.prepared());expect(body.model).toBe(modelId);
+      expect(body.temperature).toBeUndefined();expect(body.max_output_tokens).toBeUndefined();
+      expect(body.reasoning).toEqual(supportsReasoning?{effort}:undefined);
+      expect(h.gate.getPending()).toBeNull();history.push({role:"user",content:text},{role:"assistant",content:"Native fixture answer"});
+    }
+    expect(h.count("dispatch_native_responses_request")).toBe(2);
+    expect(h.count("approve_native_responses_request")).toBe(2);expect(h.fetcher).not.toHaveBeenCalled();
+  });
   it("uses trusted ordinary send snapshots for two requests without a second dialog, retaining native approval", async () => {
     const h=setup({autoApprove:false});await h.open();
     const bridge=new ProviderRuntimeBridge({adapter:{id:providerId,getCapabilities:()=>h.manager.adapter.getCapabilities(),complete:(r,c)=>h.manager.adapter.complete(r,c)},enabled:true});
@@ -349,7 +387,7 @@ describe("safe Responses fixture controller (synthetic invoke only)", () => {
     "rejects unavailable fixture configuration without native calls: %j",
     async (patch) => {
       const h = setup(patch);
-      await expect(h.open()).rejects.toThrow("responses_fixture_unavailable");
+      await expect(h.open()).rejects.toThrow("responses_native_unavailable");
       expect(h.calls).toHaveLength(0);
       expect(h.manager.getSnapshot().ready).toBe(false);
     },
@@ -500,7 +538,7 @@ describe("safe Responses fixture controller (synthetic invoke only)", () => {
       canConfigure: false,
     });
     await expect(h.manager.whenSettled()).rejects.toThrow("native_revocation_unconfirmed");
-    await expect(h.open()).rejects.toThrow("responses_fixture_unavailable");
+    await expect(h.open()).rejects.toThrow("responses_native_unavailable");
     expect(() => h.manager.openAccount("synthetic-deepseek-input")).toThrow(
       "native_revocation_unconfirmed",
     );

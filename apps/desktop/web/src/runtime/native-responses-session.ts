@@ -30,6 +30,10 @@ interface ProfileReceipt {
   endpoint: string;
   expiresAt: number;
   fixture: boolean;
+  modelSettings?: {
+    supportsReasoning: boolean;
+    requestDefaults: { temperature: number | null; maxOutputTokens: number | null };
+  };
 }
 interface RunReceipt {
   runHandle: string;
@@ -91,6 +95,15 @@ function terminalUnsentProof(value: PollReceipt | null, cursor: number): boolean
     Array.isArray(value.chunks) &&
     value.chunks.length === 0
   );
+}
+export function validResponsesCredential(value: string): boolean {
+  return value.length >= 8 && value.length <= 16384 && !/[^\x21-\x7e]/.test(value);
+}
+function validModelSettings(value: ProfileReceipt["modelSettings"]): boolean {
+  if (!value || typeof value.supportsReasoning !== "boolean" || !value.requestDefaults) return false;
+  const { temperature, maxOutputTokens } = value.requestDefaults;
+  return (temperature === null || (typeof temperature === "number" && Number.isFinite(temperature) && temperature >= 0 && temperature <= 2)) &&
+    (maxOutputTokens === null || (Number.isSafeInteger(maxOutputTokens) && maxOutputTokens! > 0));
 }
 function failure(): Error {
   // Native/transport exceptions are deliberately never copied into renderer errors.
@@ -155,9 +168,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
   if (
     !id(providerId) ||
     !id(modelId) ||
-    credential.length < 8 ||
-    credential.length > 16384 ||
-    /[^\x21-\x7e]/.test(credential) ||
+    !validResponsesCredential(credential) ||
     openingSignal?.aborted
   )
     throw failure();
@@ -186,6 +197,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
     profile.modelId === modelId &&
     profile.endpoint === ENDPOINT &&
     typeof profile.fixture === "boolean" &&
+    (profile.fixture || validModelSettings(profile.modelSettings)) &&
     Number.isSafeInteger(profile.expiresAt) &&
     profile.expiresAt > now() &&
     profile.expiresAt - now() <= 3_600_000 &&
@@ -245,6 +257,10 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
         expiresAt: profile.expiresAt,
         connectionVerified: false as const,
         fixture: profile.fixture,
+        modelSettings: profile.modelSettings ? Object.freeze({
+          supportsReasoning: profile.modelSettings.supportsReasoning,
+          requestDefaults: Object.freeze({ ...profile.modelSettings.requestDefaults }),
+        }) : undefined,
         lastDispatchStatus,
       }),
     close,
