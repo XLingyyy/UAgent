@@ -10,6 +10,7 @@ import type {
   RunEvent,
   RunSourceRef,
   RunStorePort,
+  RunStep,
   RunToolResult,
   TaskDraft,
   TaskRun,
@@ -76,6 +77,7 @@ export class RunCoordinator {
   private pendingResult: RunToolResult | null = null;
   private pendingResultPersisted = false;
   private pendingResultClassified = false;
+  private pendingStep: RunStep | null = null;
   private sources: RunSourceRef[] = [];
   private failures = new Map<string, number>();
   private readonly argumentFailures: { count: number };
@@ -262,6 +264,66 @@ export class RunCoordinator {
     }
     this.pauseRequested = false;
     return this.parallelDraft&&!this.parallelMerged&&this.runState.collaboration?.activeAgent!=="planner"?this.driveParallel():this.drive();
+  }
+  /** Change requirements at a settled pause; discard unsent calls, never replay completed effects. */
+  async amend(instructions: string, expectedPlanVersion: number): Promise<RunOutcome> {
+    const run = this.runState;
+    if (!run || run.status !== "paused" || this.active || run.collaboration
+      || !["user_paused", "requirements_updated"].includes(run.stopReason ?? ""))
+      throw Error("run_amendment_unavailable");
+    if (expectedPlanVersion !== run.planVersion) throw Error("run_plan_changed");
+    if (typeof instructions !== "string" || !instructions.trim() || instructions.length > 2048
+      || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(instructions)
+      || run.planVersion >= 4) throw Error("run_amendment_invalid");
+    this.check(false);
+    // A pause can occur after a result was saved but before it joined the model history.
+    if (this.pendingResult && (!this.pendingResultPersisted || this.pendingResult.status !== "completed"))
+      throw Error("run_result_requires_reconciliation");
+    this.active = true;
+    try {
+      if (this.pendingResult) {
+        this.assertShareable(this.pendingResult);
+        this.sources.push(...this.pendingResult.sources);
+        this.messages.push({ role: "tool", toolCallId: this.pending[this.pendingIndex]!.id,
+          content: JSON.stringify(this.pendingResult) });
+        this.pendingResult = null;
+        this.pendingStep = null;
+        this.pendingIndex++;
+      }
+      // Keep the original assistant calls immutable and close each protocol pair explicitly.
+      for (const call of this.pending.slice(this.pendingIndex)) {
+        const result: RunToolResult = { callId: call.id, toolId: call.name, status: "cancelled",
+          effectState: "not_started", output: null, sources: [], truncated: false, diagnosticCode: "user_replanned" };
+        const stepId = this.pendingStep?.stepId ?? `${run.runId}:step:${run.steps.length + 1}`;
+        if (this.pendingStep) Object.assign(this.pendingStep, { status: "cancelled", result });
+        else {
+          run.steps.push({ stepId, dependencies: run.steps.length ? [run.steps.at(-1)!.stepId] : [],
+            inputRefs: [], preconditions: ["scope_current", "read_only"], executor: call.name,
+            callId: call.id, status: "cancelled", result });
+          this.publish("tool_requested", { callId: call.id, name: call.name, arguments: redactString(call.arguments) }, stepId);
+        }
+        this.publish("tool_failed", { result }, stepId);
+        this.messages.push({ role: "tool", toolCallId: call.id, content: JSON.stringify(result) });
+        this.pendingStep = null;
+      }
+      this.pending = [];
+      this.pendingIndex = 0;
+      run.planVersion++;
+      // Each amendment is a full replacement of the supplemental requirements. Retain the original goal.
+      this.messages.push({ role: "user", content: `Updated supplemental requirements (plan ${run.planVersion}; replaces earlier supplements, original scope unchanged): ${redactString(instructions.trim())}` });
+      this.contextPlan = null;
+      this.setStatus("paused", "requirements_updated");
+      const checkpoint = this.checkpoint("requirements_updated");
+      this.publish("checkpoint_created", { checkpoint });
+      await this.persist(checkpoint);
+    } catch (error) {
+      this.setStatus("paused", "persistence_failed_after_amendment");
+      throw error;
+    } finally {
+      this.active = false;
+      if (this.controller.signal.aborted) await this.cancel();
+    }
+    return this.outcome();
   }
   private check(observePause = true): void {
     if (this.controller.signal.aborted || this.options.signal?.aborted)
@@ -531,40 +593,46 @@ export class RunCoordinator {
               content: JSON.stringify(this.pendingResult),
             });
             this.pendingResult = null;
+            this.pendingStep = null;
             this.pendingIndex++;
             continue;
           }
-          if (run.toolCalls >= run.limits.maxToolCalls) throw new StopRun("paused", "tool_limit");
-          if (!this.worker && run.collaboration?.activeAgent === "investigator" && run.toolCalls >= Math.ceil(run.limits.maxToolCalls / 2))
-            throw new StopRun("paused", "reviewer_tool_budget_reserved");
-          const failureKey = this.failureKey(call.name, call.arguments);
-          if ((this.failures.get(failureKey) ?? 0) >= run.limits.maxAttemptsPerFailure)
-            throw new StopRun("paused", "failure_limit");
-          const stepId = `${run.runId}:step:${run.steps.length + 1}`;
-          const step = {
-            stepId,
-            dependencies: run.steps.length ? [run.steps[run.steps.length - 1]!.stepId] : [],
-            inputRefs: this.sources.map((source) => source.version),
-            preconditions: ["scope_current", "read_only"],
-            executor: call.name,
-            status: "running" as const,
-            callId: call.id,
-          };
-          run.steps.push(step);
-          run.toolCalls++;
-          this.publish(
-            "tool_requested",
-            {
+          if (!this.pendingStep) {
+            if (run.toolCalls >= run.limits.maxToolCalls) throw new StopRun("paused", "tool_limit");
+            if (!this.worker && run.collaboration?.activeAgent === "investigator" && run.toolCalls >= Math.ceil(run.limits.maxToolCalls / 2))
+              throw new StopRun("paused", "reviewer_tool_budget_reserved");
+            const failureKey = this.failureKey(call.name, call.arguments);
+            if ((this.failures.get(failureKey) ?? 0) >= run.limits.maxAttemptsPerFailure)
+              throw new StopRun("paused", "failure_limit");
+            const stepId = `${run.runId}:step:${run.steps.length + 1}`;
+            const step: RunStep = {
+              stepId,
+              dependencies: run.steps.length ? [run.steps[run.steps.length - 1]!.stepId] : [],
+              inputRefs: this.sources.map((source) => source.version),
+              preconditions: ["scope_current", "read_only"],
+              executor: call.name,
+              status: "running" as const,
               callId: call.id,
-              ...(this.providerCallIds.has(call.id)?{providerCallId:this.providerCallIds.get(call.id)}:{}),
-              name: call.name,
-              arguments: redactString(call.arguments),
-              scopeRef: run.scope.id,
-            },
-            stepId,
-          );
-          this.publish("tool_started", { callId: call.id, name: call.name }, stepId);
-          await this.persist();
+            };
+            run.steps.push(step);
+            this.pendingStep = step;
+            run.toolCalls++;
+            this.publish(
+              "tool_requested",
+              {
+                callId: call.id,
+                ...(this.providerCallIds.has(call.id)?{providerCallId:this.providerCallIds.get(call.id)}:{}),
+                name: call.name,
+                arguments: redactString(call.arguments),
+                scopeRef: run.scope.id,
+              },
+              stepId,
+            );
+            this.publish("tool_started", { callId: call.id, name: call.name }, stepId);
+            await this.persist();
+          }
+          const step = this.pendingStep;
+          const stepId = step.stepId;
           this.check();
           const result = await this.options.registry.execute(call, {
             runId: run.runId,

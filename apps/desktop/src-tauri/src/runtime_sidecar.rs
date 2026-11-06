@@ -16,12 +16,13 @@ type Result<T> = std::result::Result<T, &'static str>;
 const MAX_FRAME: u64 = 1024 * 1024;
 
 #[derive(Clone, Copy)]
-pub(crate) enum HostCommand { Hello, Start, Snapshot, Pause, Resume, Cancel, Revoke, Shutdown }
+pub(crate) enum HostCommand { Hello, Start, Snapshot, Pause, Resume, Amend, Cancel, Revoke, Shutdown }
 impl HostCommand {
     fn method(self) -> &'static str {
         match self {
             Self::Hello => "hello", Self::Start => "start", Self::Snapshot => "snapshot",
             Self::Pause => "pause", Self::Resume => "resume", Self::Cancel => "cancel",
+            Self::Amend => "amend",
             Self::Revoke => "revoke", Self::Shutdown => "shutdown",
         }
     }

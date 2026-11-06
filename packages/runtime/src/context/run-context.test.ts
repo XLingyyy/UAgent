@@ -97,6 +97,18 @@ function pair(
   ];
 }
 describe("deterministic source-bound run context", () => {
+  it("pins the latest supplemental requirement and omits superseded edits without changing the archive",()=>{
+    const r=run(),records:ProviderRuntimeMessage[]=[...pinned(r),...pair("first","Observed value"),
+      {role:"user",content:"Old supplemental requirement"},{role:"user",content:"Latest supplemental requirement"}];
+    const before=JSON.stringify(records),selected=prepareRunContext({run:r,records,goalMessageIndex:2});
+    expect(selected.messages.at(-1)!.content).toBe("Latest supplemental requirement");
+    expect(selected.plan.omitted).toContainEqual({originalMessageIndexes:[5],reason:"superseded"});
+    expect(selected.plan.segments).toContainEqual({category:"goal",originalMessageIndexes:[6],selection:"exact",sources:[]});
+    expect(JSON.stringify(records)).toBe(before);
+    expect(()=>chatToolMessages(selected.messages,true,"synthetic-key")).not.toThrow();
+    r.limits.maxContextBytes=300;
+    expect(()=>prepareRunContext({run:r,records,goalMessageIndex:2})).toThrow("context_limit");
+  });
   it("keeps full records intact while fitting UTF-8 budget and retaining indexed excerpts and provenance", () => {
     const r = run(),
       records = [

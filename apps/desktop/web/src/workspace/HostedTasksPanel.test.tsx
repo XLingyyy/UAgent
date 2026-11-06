@@ -8,6 +8,22 @@ vi.mock("../runtime/safe-provider-session",()=>({safeProviderSession:{getHostedP
 vi.mock("../i18n",()=>({useI18n:()=>({locale:"en"})}));
 vi.mock("../stores/ui-store",()=>({useSettingsActions:()=>({openSettings:mocks.settings}),useProjectStore:(select:Function)=>select({activeProjectId:"p",registeredProjects:[{id:"p",name:"Project",trustState:"trusted"}]})}));
 afterEach(()=>{cleanup();vi.clearAllMocks();});
+it("saves paused requirements against the observed plan version without automatically resuming",async()=>{
+  HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+  HTMLDialogElement.prototype.close=function(){this.open=false;};
+  let version=1;
+  mocks.invoke.mockImplementation(async(command:string,args?:{input:{action:string}})=>{
+    if(command==="list_hosted_tasks")return[{runId:"existing",projectId:"p",goal:"Read source",terminal:false}];
+    if(args?.input.action==="amend"){version++;return{accepted:true};}
+    if(args?.input.action==="snapshot")return{revision:7,settled:true,text:"Paused",run:{status:"paused",stopReason:version===1?"user_paused":"requirements_updated",planVersion:version,steps:[],modelRequests:1,toolCalls:0}};
+    throw Error("unexpected action");
+  });
+  render(<HostedTasksPanel/>);fireEvent.click(screen.getByRole("button",{name:"Background file investigation"}));
+  fireEvent.change(await screen.findByLabelText("Updated requirements"),{target:{value:"Focus on header declarations"}});
+  fireEvent.click(screen.getByRole("button",{name:"Save requirements and replan"}));
+  await waitFor(()=>expect(mocks.invoke).toHaveBeenCalledWith("control_hosted_task",{input:{runId:"existing",action:"amend",instructions:"Focus on header declarations",expectedPlanVersion:1}}));
+  expect(mocks.invoke.mock.calls.some(([,args])=>args?.input?.action==="resume")).toBe(false);
+});
 it("reattaches to a native task after the panel unmounts without issuing start, cancel or resume",async()=>{
   HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   HTMLDialogElement.prototype.close=function(){this.open=false;};

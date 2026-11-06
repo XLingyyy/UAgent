@@ -288,16 +288,26 @@ pub(crate) async fn start_hosted_task(app:tauri::AppHandle,window:tauri::Webview
 }
 #[derive(serde::Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
-pub(crate) struct ControlInput {run_id:String,action:String}
+pub(crate) struct ControlInput {run_id:String,action:String,instructions:Option<String>,expected_plan_version:Option<u64>}
 #[tauri::command]
 pub(crate) async fn control_hosted_task(app:tauri::AppHandle,window:tauri::WebviewWindow,input:ControlInput)->std::result::Result<Value,String> {
     app.state::<ManagedRunStoreState>().capture_window_grant(&window).map_err(|_|"host_task_document_revoked")?;
     let service=app.state::<HostedTasks>().inner.lock().map_err(|_|"host_task_unavailable")?.clone().ok_or("host_task_not_found")?;
     let task=service.task(&input.run_id)?;
+    let mut payload=json!({"runId":input.run_id});
     let command=match input.action.as_str(){"snapshot"=>HostCommand::Snapshot,"pause"=>HostCommand::Pause,"cancel"=>{task.cancel();HostCommand::Cancel},
+        "amend"=>{
+            task.current()?;
+            let instructions=input.instructions.as_deref().filter(|text|!text.trim().is_empty()&&text.encode_utf16().count()<=2048
+                &&!text.chars().any(|c|matches!(c,'\0'..='\u{8}'|'\u{b}'|'\u{c}'|'\u{e}'..='\u{1f}'|'\u{7f}'..='\u{9f}'|'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')))
+                .ok_or("host_task_amendment_invalid")?;
+            let version=input.expected_plan_version.filter(|version|(1..=3).contains(version)).ok_or("host_task_amendment_invalid")?;
+            payload["instructions"]=json!(instructions);payload["expectedPlanVersion"]=json!(version);
+            HostCommand::Amend
+        },
         "resume"=>{task.current()?;HostCommand::Resume},_=>return Err("host_task_action_invalid".into())};
     tauri::async_runtime::spawn_blocking(move||{
-        let result=service.client.request(command,json!({"runId":input.run_id}),Duration::from_secs(15));
+        let result=service.client.request(command,payload,Duration::from_secs(15));
         if input.action=="cancel"&&result.is_ok(){task.terminal.store(true,Ordering::Release);task.release_if_finished();}
         result
     })

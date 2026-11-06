@@ -18,6 +18,7 @@ export function HostedTasksPanel() {
   const [tasks,setTasks]=useState<TaskDescription[]>([]),[selected,setSelected]=useState<string|null>(null);
   const [snapshot,setSnapshot]=useState<Snapshot|null>(null),[goal,setGoal]=useState(""),[prefix,setPrefix]=useState("Source");
   const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null);
+  const [instructions,setInstructions]=useState("");
   const generation=useRef(0);
   useEffect(()=>{const node=panel.current;if(!open||!node)return;node.showModal();return()=>{generation.current++;if(node.open)node.close();};},[open]);
   useEffect(()=>{
@@ -52,10 +53,12 @@ export function HostedTasksPanel() {
     }catch{if(current===generation.current)setError(zh?"任务未启动。请检查项目已信任、临时 DeepSeek 会话已开启，并完成范围确认。":"Task did not start. Check project trust, temporary DeepSeek session and scope confirmation.");}
     finally{setBusy(false);}
   }
-  async function control(action:"pause"|"resume"|"cancel"){
+  async function control(action:"pause"|"resume"|"cancel"|"amend"){
     if(!invoke||!selected||busy)return;setBusy(true);setError(null);
-    try{await invoke("control_hosted_task",{input:{runId:selected,action}});
+    try{await invoke("control_hosted_task",{input:{runId:selected,action,
+      ...(action==="amend"?{instructions,expectedPlanVersion:snapshot?.run.planVersion}:{})}});
       setSnapshot(await invoke<Snapshot>("control_hosted_task",{input:{runId:selected,action:"snapshot"}}));
+      if(action==="amend")setInstructions("");
     }catch{setError(zh?"操作未确认。原授权到期后需要新建任务。":"Operation was not confirmed. Start a new task after its original authorization expires.");}
     finally{setBusy(false);}
   }
@@ -80,6 +83,11 @@ export function HostedTasksPanel() {
           <div className="ua-hosted-tasks__actions"><button disabled={busy||done||snapshot.run.status==="paused"} onClick={()=>void control("pause")}>{zh?"暂停":"Pause"}</button>
           <button disabled={busy||snapshot.run.status!=="paused"} onClick={()=>void control("resume")}>{zh?"继续":"Resume"}</button>
           <button disabled={busy||done} onClick={()=>void control("cancel")}>{zh?"取消任务":"Cancel task"}</button></div>
+          {snapshot.run.status==="paused"&&["user_paused","requirements_updated"].includes(snapshot.run.stopReason??"")&&snapshot.run.planVersion<4&&<div>
+            <p>{zh?`计划版本 ${snapshot.run.planVersion}。补充要求会跳过尚未执行的调用，保留已有结果；读取范围、额度与到期时间不变。保存后点击继续。再次修改时请填写完整补充要求。`:`Plan ${snapshot.run.planVersion}. Updating requirements skips unsent calls and retains completed results. Scope, budgets and expiry stay unchanged. Save, then resume. Each update replaces the supplemental requirements.`}</p>
+            <label>{zh?"补充要求":"Updated requirements"}<textarea value={instructions} onChange={e=>setInstructions(e.target.value)} maxLength={2048} rows={3}/></label>
+            <button disabled={busy||!instructions.trim()} onClick={()=>void control("amend")}>{zh?"保存要求并重新规划":"Save requirements and replan"}</button>
+          </div>}
           {snapshot.run.stopReason&&<p>{snapshot.run.stopReason}</p>}<pre>{snapshot.text}</pre>
           <ul>{snapshot.run.steps.map(step=><li key={step.stepId}>{step.executor} · {step.status}{step.result?.truncated?(zh?"（结果已截断）":" (truncated)"):""}</li>)}</ul>
         </section>}

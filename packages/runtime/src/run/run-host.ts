@@ -80,6 +80,13 @@ export class RunHost {
     return this.drive(entry, () => entry.coordinator.resume());
   }
 
+  amend(runId: string, instructions: string, expectedPlanVersion: number): Promise<RunOutcome> {
+    if (this.closed) throw Error("run_host_closed");
+    const entry = this.get(runId);
+    if (entry.pending || entry.cancelling) throw Error("run_still_running");
+    return this.drive(entry, () => entry.coordinator.amend(instructions, expectedPlanVersion));
+  }
+
   /** The process owner must keep its broker alive until these checkpoints settle. */
   async close(): Promise<{ checkpointed: boolean }> {
     this.closed = true;

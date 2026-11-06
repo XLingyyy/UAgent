@@ -67,6 +67,11 @@ export class RuntimeHostServer {
       case "cancel": await this.host.cancel(runId); break;
       case "revoke": this.owners.get(runId)!.current = false; await this.host.cancel(runId); break;
       case "resume": this.observe(runId, this.host.resume(runId)); break;
+      case "amend": {
+        const change = input as { instructions: string; expectedPlanVersion: number };
+        await this.host.amend(runId, change.instructions, change.expectedPlanVersion);
+        break;
+      }
       default: throw Error("unknown_host_command");
     }
     return { accepted: true };

@@ -27,7 +27,7 @@ interface Group {
   indexes: number[];
   messages: ProviderRuntimeMessage[];
   sources: RunSourceRef[];
-  category: "history" | "project_fact" | "tool_result";
+  category: "history" | "project_fact" | "tool_result" | "goal";
   score: number;
 }
 interface Candidate {
@@ -105,6 +105,14 @@ function groups(
   }
   const seen = new Set<string>();
   for (let i = goalIndex + 1; i < records.length; ) {
+    if (records[i]?.role === "user") {
+      const amendment = records[i]!;
+      if (amendment.toolCalls || amendment.toolCallId || !amendment.content.trim())
+        throw new RunContextError("context_protocol");
+      result.push({ indexes: [i], messages: [copy(amendment)], sources: [], category: "goal", score: i });
+      i++;
+      continue;
+    }
     const start = i,
       assistant = records[i++],
       calls = assistant?.toolCalls;
@@ -219,7 +227,9 @@ export function prepareRunContext(input: {
   )
     throw new RunContextError("context_scope");
   const all = groups(records, goalMessageIndex, run),
-    tools = all.filter((g) => g.category !== "history");
+    tools = all.filter((g) => g.category === "project_fact" || g.category === "tool_result"),
+    amendments = all.filter((g) => g.category === "goal"),
+    latestAmendment = amendments.at(-1);
   const latest = new Map<string, string>(),
     freshness = new Map<string, string>();
   for (const group of tools)
@@ -233,8 +243,9 @@ export function prepareRunContext(input: {
         latest.get(sourceKey(s)) !== s.version ||
         Boolean(s.freshness && freshness.get(pathKey(s)) !== s.freshness),
     );
-  const selected: Candidate[] = [],
-    omitted: RunContextPlan["omitted"] = [];
+  const selected: Candidate[] = latestAmendment ? [candidate(latestAmendment, run.goal)] : [],
+    omitted: RunContextPlan["omitted"] = amendments.filter(group => group !== latestAmendment)
+      .map(group => ({ originalMessageIndexes: group.indexes, reason: "superseded" }));
   const mandatory: RunContextSegment[] = [
     { category: "constraints", originalMessageIndexes: [0, 1], selection: "exact", sources: [] },
     {
@@ -278,7 +289,7 @@ export function prepareRunContext(input: {
     const messages = assemble(candidates);
     return messages.length <= 30 && bytes(messages) <= run.limits.maxContextBytes;
   };
-  if (!fits([])) throw new RunContextError("context_limit");
+  if (!fits(selected)) throw new RunContextError("context_limit");
   const newest = tools.at(-1);
   if (newest && stale(newest)) throw new RunContextError("context_stale");
   const order = [

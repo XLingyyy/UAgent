@@ -13,6 +13,7 @@ import type {
 import type { ProviderAdapter } from "../provider/provider-adapter.js";
 import { RunCoordinator } from "./run-coordinator.js";
 import { ToolRegistry } from "./tool-registry.js";
+import {createNativeRunStore, type NativeRunCommitInput} from "./native-run-store.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -150,6 +151,71 @@ function fixture() {
 }
 
 describe("bounded run coordinator using synthetic models and actual isolated filesystem reads", () => {
+  it.each([false,true])("handles a persisted but undispatched tool intent without a second step (replan=%s)",async(replan)=>{
+    const f=fixture(),s=scope();let pausedOnce=false;
+    s.limits.maxToolCalls=1;
+    const run=new RunCoordinator({registry:f.registry,lease:{scope:s,isCurrent:()=>true},
+      adapter:adapter(async request=>request.messages.some(message=>message.role==="tool")?answer(request,"Done"):
+        answer(request,"",{id:"intent",name:"project_read_file",arguments:'{"path":"manifest.json"}'})),
+      store:{commit:async update=>{if(!pausedOnce&&update.events.some(event=>event.type==="tool_started")){pausedOnce=true;run.requestPause();}}}});
+    const paused=await run.start("task",draft(s));
+    expect(paused.run.status).toBe("paused");expect(f.reads).toEqual([]);expect(paused.run.steps).toHaveLength(1);
+    if(replan){
+      const amended=await run.amend("Skip the pending read",1);
+      expect(amended.run.steps).toHaveLength(1);expect(amended.run.steps[0]!.result?.diagnosticCode).toBe("user_replanned");
+      expect(f.reads).toEqual([]);return;
+    }
+    const resumed=await run.resume();
+    expect(resumed.run.status).toBe("completed");expect(f.reads).toEqual(["manifest.json"]);
+    expect(resumed.run.steps).toHaveLength(1);expect(resumed.run.toolCalls).toBe(1);
+  });
+
+  it("replans a paused batch without replaying completed reads or executing discarded calls", async () => {
+    const f=fixture(), s=scope(), inputs:NativeRunCommitInput[]=[], requests:ProviderRuntimeRequest[]=[];
+    const store=createNativeRunStore(async(_command,args)=>{
+      const input=args.input as NativeRunCommitInput;inputs.push(input);
+      return {schemaVersion:1,projectId:input.projectId,runId:input.runId,revision:input.expectedRevision+1,
+        messageCount:input.expectedMessageCount+input.batch.messages.length};
+    });
+    const calls=["manifest.json","Source/Main.cpp","Source/Value.h"].map((path,i)=>({id:`old-${i}`,name:"project_read_file",arguments:JSON.stringify({path})}));
+    const provider=adapter(async request=>{
+      requests.push(request);
+      if(requests.length===1)return {...answer(request,"Original batch",calls[0]),toolCalls:calls};
+      if(requests.length===2)return answer(request,"New plan",{id:"new-read",name:"project_read_file",arguments:'{"path":"Source/Value.h"}'});
+      return answer(request,"Value is 7");
+    });
+    const run=new RunCoordinator({adapter:provider,registry:f.registry,store,lease:{scope:s,isCurrent:()=>true},
+      onEvent:event=>{if(event.type==="tool_completed"&&f.reads.length===1)run.requestPause();}});
+    const paused=await run.start("task",draft(s));
+    expect(paused.run.status).toBe("paused");expect(f.reads).toEqual(["manifest.json"]);
+    const originalMessages=inputs.flatMap(input=>input.batch.messages).map(message=>message.body);
+    const amended=await run.amend("Skip Main.cpp; read Value.h directly and answer in Chinese.",1);
+    expect(amended.run.planVersion).toBe(2);expect(amended.run.status).toBe("paused");
+    expect(amended.run.scope).toEqual(paused.run.scope);expect(amended.run.toolCalls).toBe(1);
+    expect(amended.run.steps.map(step=>step.status)).toEqual(["completed","cancelled","cancelled"]);
+    expect(inputs.at(-1)!.batch.toolCalls.map(call=>call.status)).toEqual(["succeeded","skipped","skipped"]);
+    expect(inputs.flatMap(input=>input.batch.messages).slice(0,originalMessages.length).map(message=>message.body)).toEqual(originalMessages);
+    await expect(run.amend("Stale edit",1)).rejects.toThrow("run_plan_changed");
+    const result=await run.resume();expect(result.run.status).toBe("completed");
+    expect(f.reads).toEqual(["manifest.json","Source/Value.h"]);
+    expect(result.run.toolCalls).toBe(2);expect(result.run.modelRequests).toBe(3);
+    expect(requests[1]!.messages.at(-1)!.content).toContain("Skip Main.cpp");
+    expect(requests[1]!.messages.filter(message=>message.role==="tool").map(message=>JSON.parse(message.content).diagnosticCode))
+      .toEqual([undefined,"user_replanned","user_replanned"]);
+  });
+
+  it("rejects expired amendments and blocks scheduling after an amendment cannot be saved",async()=>{
+    const f=fixture(), s=scope();let current=true, failSave=false, calls=0;
+    const run=new RunCoordinator({registry:f.registry,lease:{scope:s,isCurrent:()=>current},
+      adapter:adapter(async request=>{calls++;run.requestPause();return answer(request,"",{id:"pending",name:"project_read_file",arguments:'{"path":"manifest.json"}'});}),
+      store:{commit:async()=>{if(failSave)throw Error("disk unavailable");}}});
+    await run.start("task",draft(s));current=false;
+    await expect(run.amend("New requirement",1)).rejects.toThrow("scope_expired");
+    expect(run.getSnapshot()!.planVersion).toBe(1);current=true;failSave=true;
+    await expect(run.amend("New requirement",1)).rejects.toThrow();
+    expect(run.getSnapshot()!.stopReason).toBe("persistence_failed_after_amendment");
+    await run.resume();expect(calls).toBe(1);expect(f.reads).toEqual([]);
+  });
   it("follows three causally dependent reads and feeds exact call IDs/results back to the model", async () => {
     const f = fixture(),
       requests: ProviderRuntimeRequest[] = [],
