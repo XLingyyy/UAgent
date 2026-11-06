@@ -7,6 +7,7 @@ export * from "./run/run-scope.js";
 export * from "./context/run-context.js";
 export * from "./provider/provider-proposals.js";
 export { redactString, redactPathsInString } from "./secrets/redaction.js";
+export { redactProjectFile } from "./secrets/project-file-redaction.js";
 export * from "./provider/outbound-consent.js";
 import type { PlanItem, Evidence, ChatMessage, ToolCall } from "@uagent/shared";
 export { createMockRuntime, type MockRuntimeClient, type MockRuntimeOptions } from "./mock-runtime.js";

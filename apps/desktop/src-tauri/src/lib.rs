@@ -91,6 +91,10 @@ pub(crate) mod native_responses_commands;
 #[cfg(windows)]
 pub(crate) mod native_host_model;
 #[cfg(windows)]
+mod native_host_reads;
+#[cfg(windows)]
+mod native_host_tasks;
+#[cfg(windows)]
 pub(crate) mod credential_vault;
 #[cfg(windows)]
 pub(crate) mod provider_credential_commands;
@@ -1762,6 +1766,7 @@ pub fn run() {
                 // Submission failure is recorded; it cannot grant recovery admission.
                 let store=app.state::<managed_run_store::ManagedRunStoreState>();
                 let _=store.schedule_startup_scan(catalog);
+                app.manage(native_host_tasks::HostedTasks::default());
             }
             app_profile::setup_isolated_windows(app)
         })
@@ -1921,6 +1926,9 @@ pub fn run() {
             #[cfg(windows)]
             run_store_commands::snapshot_native_run_store,
             native_host_model::open_host_model_profile,
+            native_host_tasks::start_hosted_task,
+            native_host_tasks::control_hosted_task,
+            native_host_tasks::list_hosted_tasks,
             native_host_model::close_host_model_profile,
             run_store_commands::read_native_run_artifact,
             run_store_commands::inspect_native_repair_recovery,
@@ -2071,6 +2079,7 @@ pub fn run() {
         .run(|app, event| {
             #[cfg(windows)]
             if matches!(&event, tauri::RunEvent::Exit) {
+                if let Some(tasks) = app.try_state::<native_host_tasks::HostedTasks>() { tasks.shutdown(); }
                 native_host_model::close_all();
                 if let Some(monitor) = app.try_state::<ue_build_preview_commands::UEBuildPreviewMonitor>() {
                     monitor.shutdown();

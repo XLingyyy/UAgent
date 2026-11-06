@@ -1,0 +1,6 @@
+.ua-hosted-tasks label { display: grid; gap: 6px; margin: 14px 0; }
+.ua-hosted-tasks input, .ua-hosted-tasks textarea, .ua-hosted-tasks select { width: 100%; box-sizing: border-box; }
+.ua-hosted-tasks pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.ua-hosted-tasks__actions { display: flex; gap: 8px; }
+.ua-hosted-tasks-open { padding: 8px 12px; border: 1px solid var(--ua-border-strong); border-radius: 6px; background: var(--ua-bg-elevated); color: var(--ua-text-secondary); cursor: pointer; }
+.ua-hosted-tasks .ua-history-drawer__content { padding: 0 18px 18px; }

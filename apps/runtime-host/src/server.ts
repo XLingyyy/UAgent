@@ -2,6 +2,8 @@ import type { ProviderRuntimeResponse, ProviderToolDefinition, RunToolResult, Ta
 import { RunHost } from "../../../packages/runtime/src/run/run-host.js";
 import { createNativeRunStore } from "../../../packages/runtime/src/run/native-run-store.js";
 import { BrokerPeer } from "./broker-peer.js";
+import { prepareHostedChatRequest } from "./chat-request.js";
+import { redactProjectFile } from "../../../packages/runtime/src/secrets/project-file-redaction.js";
 
 interface StartInput {
   taskId: string;
@@ -88,12 +90,24 @@ export class RuntimeHostServer {
           supportsTools: true, supportsStreaming: false, supportsPreSendValidation: true, isMock: false }),
         complete: async (request, options) => {
           await options?.beforeSend?.();
-          return this.broker.request<ProviderRuntimeResponse>(scope.runId, "provider.complete", request, options?.signal);
+          return this.broker.request<ProviderRuntimeResponse>(scope.runId, "provider.complete", prepareHostedChatRequest(request), options?.signal);
         },
       },
       registry: {
         definitions: () => structuredClone(input.tools),
-        execute: (call, context) => this.broker.request<RunToolResult>(scope.runId, "tool.execute", call, context.signal),
+        execute: async (call, context) => {
+          const result = await this.broker.request<RunToolResult>(scope.runId, "tool.execute", call, context.signal);
+          if (result.toolId === "project.read_file" && result.status === "completed") {
+            const output = result.output as Record<string, unknown>;
+            if (typeof output.text !== "string") throw Error("host_file_result_invalid");
+            const safe = redactProjectFile(output.text);
+            result.output = { ...result.output as Record<string, import("@uagent/shared").RunJsonValue>,
+              text: safe.text, redacted: output.redacted === true || safe.redacted };
+          }
+          if (new TextEncoder().encode(JSON.stringify(result)).length > scope.limits.maxToolResultBytes)
+            throw Error("host_tool_result_limit");
+          return result;
+        },
       },
       contextSources: {
         validate: (sources, _scope, signal) => this.broker.request<boolean>(scope.runId, "context.validate", sources, signal),

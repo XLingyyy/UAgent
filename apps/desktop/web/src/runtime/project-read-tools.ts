@@ -8,7 +8,7 @@ import {
   type RegisteredRunTool,
   type RunToolContext,
 } from "@uagent/runtime";
-import { redactPathsInString } from "@uagent/runtime";
+import { redactProjectFile } from "@uagent/runtime";
 import type { NativeProjectAdapter } from "./project-native-adapter";
 import { checkedFreshness, projectIndexVersion } from "./project-context-sources";
 
@@ -45,33 +45,6 @@ function safeFile(path: string): boolean {
     !/(?:\.pem|\.key|\.p12|\.pfx|\.secret)$/.test(name) &&
     !["credentials.json", "secrets.json"].includes(name)
   );
-}
-function redactFile(text: string): { text: string; redacted: boolean } {
-  const original = text;
-  text = text.replace(
-    /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]*?(?:-----END (?:[A-Z ]+ )?PRIVATE KEY-----|$)/g,
-    "[REDACTED PRIVATE KEY]",
-  );
-  text = text
-    .split("\n")
-    .map((line) =>
-      /["']?(?:api[_-]?key|authorization|password|secret|approval[_-]?token|execution[_-]?token)["']?\s*[:=]/i.test(
-        line,
-      )
-        ? "[REDACTED SENSITIVE LINE]"
-        : line,
-    )
-    .join("\n");
-  text = text.replace(
-    /\b(?:sk-[A-Za-z0-9_-]{12,}|ghp_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,}|xox[baprs]-[A-Za-z0-9-]{12,})\b/g,
-    "[REDACTED]",
-  );
-  text = text.replace(/https?:\/\/[^\s/]+:[^\s/@]+@[^\s]+/g, "[REDACTED CREDENTIAL URL]");
-  text = redactPathsInString(text).replace(
-    /[A-Za-z]:\\Users\\[^\\\s]+(?:\\[^\s]*)*/g,
-    "[user-home]",
-  );
-  return { text, redacted: text !== original };
 }
 function validateArgs(args: Record<string, unknown>, keys: string[], required: string[]): void {
   if (
@@ -268,7 +241,7 @@ export function createProjectReadToolRegistry(
       const freshness = after ? checkedFreshness(after, path) : undefined;
       if (adapter.source === "native" && (!freshness || freshness !== beforeVersion))
         throw Error("source_changed_during_read");
-      const safe = redactFile(preview.content),
+      const safe = redactProjectFile(preview.content),
         digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(safe.text));
       const version =
         "preview-sha256:" +

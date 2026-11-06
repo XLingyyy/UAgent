@@ -52,7 +52,8 @@ export class BrokerPeer {
     this.pending.delete(id);
     entry.cleanup();
     if (ok) entry.resolve(value);
-    else entry.reject(Error("host_broker_request_failed"));
+    else entry.reject(Error(typeof value === "string" && /^[a-zA-Z0-9_]{1,80}$/.test(value)
+      ? value : "host_broker_request_failed"));
   }
 
   close(): void {

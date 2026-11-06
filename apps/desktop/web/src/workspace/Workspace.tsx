@@ -1,4 +1,5 @@
 import {CodexConversation} from "./CodexConversation";
+import {HostedTasksPanel} from "./HostedTasksPanel";
 import {useI18n} from "../i18n";
 import "./Workspace.css";
 import { ConversationViewport } from "./ConversationViewport";
@@ -20,6 +21,7 @@ export function Workspace() {
       <div className="ua-workspace__toolbar">
         <div className="ua-workspace__identity"><span className="ua-workspace__mark" aria-hidden>U</span><div><strong>{project?.name ?? uiText("Workspace")}</strong><span>{uiText("Local workspace")}</span></div></div>
       <CodexConversation key={project?.id??"none"} projectId={project?.id??null} projectTrusted={project?.trustState==="trusted"} onProjectSetup={()=>openSettings("config")}/>
+      <HostedTasksPanel />
       </div>
       <div className={`ua-workspace__content ua-workspace__content--${workspaceMode}`}>
         {workspaceMode === "welcome" ? (

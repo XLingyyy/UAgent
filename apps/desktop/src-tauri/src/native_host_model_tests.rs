@@ -50,6 +50,23 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn host_model_late_task_uses_absolute_deadline_and_never_extends_profile_ttl() {
+    use std::sync::atomic::AtomicU64;
+    struct TestClock(AtomicU64);
+    impl Clock for TestClock { fn now_ms(&self)->u64 {self.0.load(Ordering::Acquire)} }
+    for (started, expected_deadline) in [(180_000,240_000),(TTL-1000,TTL)] {
+        let f=Fixture::new();let clock=Arc::new(TestClock(AtomicU64::new(started)));
+        {let mut state=lock().unwrap();Arc::get_mut(state.profiles.get_mut(&f.profile).unwrap()).unwrap().clock=clock.clone();}
+        let task=f.capture();assert_eq!(task.deadline_ms(),expected_deadline);
+        let lease=task.session().capture_lease(task.deadline_ms()).unwrap();
+        clock.0.store(expected_deadline-1,Ordering::Release);
+        assert!(lease.is_current());assert!(task.check_current().is_ok());
+        clock.0.store(expected_deadline,Ordering::Release);
+        assert!(!lease.is_current());assert!(task.check_current().is_err());
+    }
+}
+
+#[test]
 fn host_model_task_survives_view_revocation_but_cannot_mint_another_task() {
     let f=Fixture::new();let task=f.capture();
     let lease=task.session().capture_lease(1000).unwrap();

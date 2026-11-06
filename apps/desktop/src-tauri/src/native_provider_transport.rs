@@ -82,6 +82,9 @@ pub(crate) use memory_admission::{MemoryPreflight,MemoryTransport,PendingMemoryP
 #[path = "native_task_admission.rs"]
 mod task_admission;
 pub(crate) use task_admission::{PendingTaskPermit, ReadyTaskPermit};
+#[path = "native_host_chat_transport.rs"]
+mod host_chat_transport;
+pub(crate) use host_chat_transport::HostedChatTransport;
 type Result<T> = std::result::Result<T, FailureCode>;
 
 /// Trusted native monotonic time only; implementations must not block or call out.

@@ -91,7 +91,8 @@ async function harness(options: { holdModel?: boolean; failStore?: boolean } = {
           entered.resolve();
           if (options.holdModel) await release.promise;
           if (!current) throw Error("revoked");
-          const request = message.input as ProviderRuntimeRequest;
+          const request = message.input.request as ProviderRuntimeRequest;
+          expect(JSON.parse(message.input.body).stream).toBe(false);
           const tools = request.messages.filter(item => item.role === "tool");
           const last = tools.at(-1);
           const content = last ? JSON.parse(JSON.parse(last.content).output.text) : { next: "manifest.json" };

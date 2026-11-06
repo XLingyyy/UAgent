@@ -1249,6 +1249,15 @@ pub(crate) async fn commit_hosted_run_store(
         apply_commit_for_document(store, &input, &binding.canonical_root, Some(identity))
     }).await
 }
+pub(crate) async fn snapshot_hosted_run_store(
+    state: &crate::managed_run_store::ManagedRunStoreState,
+    task: Arc<crate::managed_run_store::NativeStoreTaskGrant>, input: SnapshotInput,
+) -> Result<SnapshotResult, StoreError> {
+    if input.schema_version != 1 || !task.accepts(&input.project_id, &input.run_id) { return Err(invalid()); }
+    let project = input.project_id.clone();
+    let run = input.run_id.clone();
+    state.with_store_for_task(task, &project, &run, false, move |store, _, _| read_archive(store, &input)).await
+}
 #[tauri::command]
 pub async fn snapshot_native_run_store(
     app: tauri::AppHandle,

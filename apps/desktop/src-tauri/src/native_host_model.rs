@@ -17,7 +17,7 @@ struct Profile {
     root: PathBuf,
     snapshot: ProviderSnapshot,
     model: String,
-    clock: Arc<MonotonicClock>,
+    clock: Arc<dyn Clock>,
     key: Secret,
 }
 
@@ -28,7 +28,7 @@ pub(crate) struct TaskModel {
     snapshot: ProviderSnapshot,
     owner: Owner,
     task: Arc<NativeStoreTaskGrant>,
-    clock: Arc<MonotonicClock>,
+    clock: Arc<dyn Clock>,
     deadline: u64,
     alive: AtomicBool,
     session: NativeSession,
@@ -36,6 +36,7 @@ pub(crate) struct TaskModel {
 impl TaskModel {
     pub(crate) fn session(&self) -> &NativeSession { &self.session }
     pub(crate) fn remaining_ms(&self) -> u64 { self.deadline.saturating_sub(self.clock.now_ms()) }
+    pub(crate) fn deadline_ms(&self) -> u64 { self.deadline }
     pub(crate) fn check_current(&self) -> Result<()> {
         if !self.alive.load(Ordering::Acquire) || self.remaining_ms() == 0
             || !self.task.accepts(&self.owner.project, &self.owner.run) {
@@ -114,11 +115,12 @@ pub(crate) fn capture(id: &str, window: &str, document: &NativeStoreWindowGrant,
     if current.version() != profile.snapshot.version() { return Err("host_model_configuration_changed"); }
     let session = NativeSession::new(owner.clone(), ConfigVersion { generation: current.generation.clone(),
         revision: current.revision as u64 }, [0;32], profile.clock.clone());
-    let remaining = duration_ms.min(TTL.saturating_sub(profile.clock.now_ms()));
-    session.install_credential(profile.key.as_bytes().to_vec(), remaining)
+    let now = profile.clock.now_ms();
+    let deadline = now.saturating_add(duration_ms).min(TTL);
+    session.install_credential(profile.key.as_bytes().to_vec(), deadline)
         .map_err(|_| "host_model_credential_invalid")?;
     let model = Arc::new(TaskModel { profile_id: id.into(), window: window.into(), root: profile.root.clone(), snapshot: current,
-        owner, task, clock: profile.clock.clone(), deadline: profile.clock.now_ms().saturating_add(remaining),
+        owner, task, clock: profile.clock.clone(), deadline,
         alive: AtomicBool::new(true), session });
     let mut state = lock()?;
     if state.closed || state.updating.contains(&model.owner.provider) || !document.is_current()
