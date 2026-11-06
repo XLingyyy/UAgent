@@ -5,14 +5,14 @@ use crate::{ue_build_profile::PreparedUEBuild,ue_build_repair::*,ue_build_repair
 pub(super) struct Continuation {
     cycle:crate::ue_repair_cycle::Cycle,build_cancelled:Arc<AtomicBool>,
     project:String, prepared:String, run:String, document:Arc<NativeStoreWindowGrant>, root:Arc<TrustedRootHandle>,
-    plan:Option<PreparedUEBuild>, restart:Option<effect::EffectIntent>, pub(super) session_id:String, diagnostic:String, expires:Instant,
+    plan:Option<PreparedUEBuild>, restart:Option<effect::EffectIntent>, pub(super) session_id:String, diagnostic:Option<String>, expires:Instant,
     settlement:Option<(effect::SettledOperationProof,effect::EffectIntent)>, restore:Option<crate::runtime_host_recovery_catalog::SettledRepairRestore>, restoring:bool,
     session:Option<RepairSession>, snapshot:Option<RepairSnapshot>, preview:Option<NativeRepairPreview>, applied:bool,
 }
 impl Continuation {
     pub(super) fn from_build(project:String,prepared:String,document:Arc<NativeStoreWindowGrant>,root:Arc<TrustedRootHandle>,plan:PreparedUEBuild,result:&UEBuildExecutionResult,cycle:crate::ue_repair_cycle::Cycle,build_cancelled:Arc<AtomicBool>)->Result<Self,String>{
         Ok(Self{cycle,build_cancelled,project,prepared,run:result.owner.run_id.clone(),document,root,plan:Some(plan),restart:None,session_id:id()?,
-            diagnostic:hash(&serde_json::to_vec(result).map_err(|_|"ue_repair_result_encoding")?),expires:Instant::now()+Duration::from_secs(600),
+            diagnostic:Some(hash(&serde_json::to_vec(result).map_err(|_|"ue_repair_result_encoding")?)),expires:Instant::now()+Duration::from_secs(600),
             settlement:None,restore:None,restoring:false,session:None,snapshot:None,preview:None,applied:false})
     }
     fn current(&self)->bool{!self.build_cancelled.load(Ordering::SeqCst)&&self.document.is_current()&&!self.root.is_revoked()&&Instant::now()<self.expires}
@@ -87,7 +87,7 @@ pub(crate) async fn open_ue_build_repair(window:tauri::WebviewWindow,store:tauri
     let result=tauri::async_runtime::spawn_blocking(move||->Result<_,String>{
         if c.session.is_some(){return Err("ue_repair_scope_already_selected".into());}
         let binding=RepairBinding{host_session_id:c.session_id.clone(),project_id:c.project.clone(),root_object_id:c.root.identity().observation_key(),run_id:c.run.clone(),profile_fingerprint:c.plan.as_ref().ok_or("ue_repair_build_plan_required")?.preview().fingerprint.clone()};
-        let diagnostic=RepairDiagnosticRef{diagnostic_id:c.diagnostic.clone(),build_owner:RepairBuildOwner{run_id:c.run.clone(),step_id:"build".into(),fingerprint:binding.profile_fingerprint.clone()}};
+        let diagnostic=RepairDiagnosticRef{diagnostic_id:c.diagnostic.clone().ok_or("ue_repair_build_origin_required")?,build_owner:RepairBuildOwner{run_id:c.run.clone(),step_id:"build".into(),fingerprint:binding.profile_fingerprint.clone()}};
         let paths=match (input.path,input.paths){(Some(path),None)=>vec![path],(None,Some(paths))=>paths,_=>return Err("ue_repair_exact_paths_required".into())};
         let mut session=RepairSession::from_verified_host(c.root.as_ref().clone(),binding,diagnostic,paths.clone())?;
         if !live(&a)||!c.current(){return Err("ue_repair_scope_changed".into());}
@@ -129,7 +129,7 @@ async fn apply(app:tauri::AppHandle,window:tauri::WebviewWindow,store:&ManagedRu
     let (mut c,p)=tauri::async_runtime::spawn_blocking(move||->Result<_,String>{
         let p=c.preview.as_ref().ok_or("ue_repair_preview_required")?;
         if input.session_id!=c.session_id||input.digest!=p.native_plan_digest||c.applied||!c.current()||!live(&a){return Err("ue_repair_preview_changed".into());}
-        let targets=p.preview.files.iter().map(|f|format!("{}\nBefore SHA-256: {}\nAfter SHA-256: {}",f.path,f.before_hash,f.after_hash)).collect::<Vec<_>>().join("\n\n");
+        let targets=p.preview.files.iter().map(|f|f.path.clone()).collect::<Vec<_>>().join("\n\n");
         if !ask(hwnd,&format!("{} this exact reviewed source batch?\nProject: {}\nFiles:\n{}\nPlan SHA-256: {}\n\nAll before-images are backed up before any write. A partial failure stops the batch; no automatic rollback or build. Declining consumes this repair session.",if c.restoring{"Restore"}else{"Write"},c.root.path_hint().display(),targets,p.native_plan_digest)){return Err("ue_repair_declined".into());}
         if !c.current()||!live(&a){return Err("ue_repair_scope_changed".into());}
         c.plan.as_ref().map(|plan|plan.revalidate_and_hold()).transpose()?;
@@ -137,14 +137,19 @@ async fn apply(app:tauri::AppHandle,window:tauri::WebviewWindow,store:&ManagedRu
     }).await.map_err(|_|"ue_repair_worker_failed")??;
     let host=app.state::<host::RuntimeHostService>().inner().clone();let catalog=app.state::<Arc<PersistentRecoveryCatalog>>().inner().clone();
     let run=id()?;let history_run_id=run.clone();let conversation=id()?;let operation=id()?;let label=window.label().to_owned();
-    let identity=host::OwnerIdentity{scope_id:c.session_id.clone(),run_id:run.clone(),project_id:c.project.clone(),root_ref:c.root.identity().observation_key(),conversation_id:conversation.clone(),provider_id:"native-ue-repair".into(),model_id:"none".into()};
+    let identity=host::OwnerIdentity{scope_id:c.session_id.clone(),run_id:run.clone(),project_id:c.project.clone(),root_ref:c.root.identity().observation_key(),conversation_id:conversation.clone(),provider_id:if p.preview.task.is_some(){"native-source-change"}else{"native-ue-repair"}.into(),model_id:"none".into()};
     let owner=host.connect(&label,identity.clone()).map_err(str::to_string)?.owner;
     let stopped=Arc::new(AtomicBool::new(false));
-    let engine=if let Some(original)=&c.restart {original.resources.iter().find(|r|r.kind==effect::ResourceKind::Ubt).ok_or("ue_restore_resource_missing")?.key.clone()}else{format!("engine:{}",c.plan.as_ref().ok_or("ue_repair_build_plan_required")?.preview().profile.engine_root.to_lowercase())};
-    let resources=host::NativeResourceBinding::from_verified_root(c.root.clone(),vec![host::ResourceClaim{kind:host::ResourceKind::Ubt,key:engine.clone()},host::ResourceClaim{kind:host::ResourceKind::FileWrite,key:identity.root_ref.clone()}]).map_err(str::to_string)?;
-    let mut registration=host.register_ue_operation_pending(&label,host::NativeOperationInput{owner:owner.clone(),job_id:operation.clone(),step_id:"repair".into(),queue_timeout_ms:15000,execution_timeout_ms:15000,resources,observer:Arc::new(Observer(stopped.clone()))},&identity,&catalog).map_err(str::to_string)?;
+    let source_only=p.preview.task.is_some();
+    let effect_resources=if let Some(original)=&c.restart {original.resources.clone()}else{
+        vec![effect::ResourceClaim{kind:effect::ResourceKind::Ubt,key:format!("engine:{}",c.plan.as_ref().ok_or("ue_repair_build_plan_required")?.preview().profile.engine_root.to_lowercase())},effect::ResourceClaim{kind:effect::ResourceKind::FileWrite,key:identity.root_ref.clone()}]
+    };
+    let claims=effect_resources.iter().map(|r|host::ResourceClaim{kind:match r.kind{effect::ResourceKind::Ubt=>host::ResourceKind::Ubt,effect::ResourceKind::FileWrite=>host::ResourceKind::FileWrite,effect::ResourceKind::UeEditor=>host::ResourceKind::UeEditor},key:r.key.clone()}).collect();
+    let resources=host::NativeResourceBinding::from_verified_root(c.root.clone(),claims).map_err(str::to_string)?;
+    let operation_input=host::NativeOperationInput{owner:owner.clone(),job_id:operation.clone(),step_id:"repair".into(),queue_timeout_ms:15000,execution_timeout_ms:15000,resources,observer:Arc::new(Observer(stopped.clone()))};
+    let mut registration=if source_only {host.register_source_operation_pending(&label,operation_input,&identity,&catalog)}else{host.register_ue_operation_pending(&label,operation_input,&identity,&catalog)}.map_err(str::to_string)?;
     let ticket=registration.identity().ticket.clone();let native=registration.identity();
-    let intent=effect::EffectIntent{key:effect::EffectKey{project_id:c.project.clone(),operation_id:operation.clone()},owner:effect::OperationOwner{scope_id:identity.scope_id.clone(),run_id:run.clone(),project_id:c.project.clone(),root_ref:identity.root_ref.clone(),conversation_id:conversation.clone(),provider_id:identity.provider_id.clone(),model_id:"none".into(),step_id:"repair".into(),execution_id:native.execution_id.clone(),host_generation:native.ticket.host_generation.clone()},root_object_id:identity.root_ref.clone(),adapter:effect::AdapterIdentity{id:"native.ue-source-repair.v1".into(),version:1},idempotency_key:if let Some(original)=&c.restart{hash(format!("restart-restore:{}:{}",original.key.project_id,original.digest().map_err(|_|"ue_restore_intent_invalid")?).as_bytes())}else{format!("{operation}{operation}")},approved_plan_digest:p.native_plan_digest.clone(),plan_summary:format!("Approved source-batch repair of failed build {}",c.run),targets:p.preview.files.iter().map(|f|effect::EffectTarget{kind:effect::TargetKind::File,locator:f.path.clone(),before_digest:Some(f.before_hash.clone()),after_digest:Some(f.after_hash.clone())}).collect(),resources:vec![effect::ResourceClaim{kind:effect::ResourceKind::Ubt,key:engine},effect::ResourceClaim{kind:effect::ResourceKind::FileWrite,key:identity.root_ref.clone()}],created_at:now()};
+    let intent=effect::EffectIntent{key:effect::EffectKey{project_id:c.project.clone(),operation_id:operation.clone()},owner:effect::OperationOwner{scope_id:identity.scope_id.clone(),run_id:run.clone(),project_id:c.project.clone(),root_ref:identity.root_ref.clone(),conversation_id:conversation.clone(),provider_id:identity.provider_id.clone(),model_id:"none".into(),step_id:"repair".into(),execution_id:native.execution_id.clone(),host_generation:native.ticket.host_generation.clone()},root_object_id:identity.root_ref.clone(),adapter:c.restart.as_ref().map(|i|i.adapter.clone()).unwrap_or(effect::AdapterIdentity{id:"native.ue-source-repair.v1".into(),version:1}),idempotency_key:if let Some(original)=&c.restart{hash(format!("restart-restore:{}:{}",original.key.project_id,original.digest().map_err(|_|"ue_restore_intent_invalid")?).as_bytes())}else{format!("{operation}{operation}")},approved_plan_digest:p.native_plan_digest.clone(),plan_summary:if c.restoring{format!("Approved source restoration of run {}",c.run)}else{format!("Approved source-batch repair of failed build {}",c.run)},targets:p.preview.files.iter().map(|f|effect::EffectTarget{kind:effect::TargetKind::File,locator:f.path.clone(),before_digest:Some(f.before_hash.clone()),after_digest:Some(f.after_hash.clone())}).collect(),resources:effect_resources,created_at:now()};
     let a=active.clone();let task_host=host.clone();let task_owner=owner.clone();let task_label=label.clone();let task_catalog=catalog.clone();
     let completed=store.with_store_for_grant(active.document.clone(),true,move|db,cancelled,deadline|{
         let root=c.root.clone();let current=||live(&a)&&c.current()&&!cancelled.load(Ordering::Acquire)&&Instant::now()<deadline;
@@ -256,11 +261,16 @@ pub(crate) async fn prepare_historical_ue_restore(window:tauri::WebviewWindow,st
   let value:serde_json::Value=serde_json::from_slice(&backup).map_err(|_|error("ue_restore_backup_invalid"))?;
   let old:RepairPreviewInput=serde_json::from_value(value["preview"]["preview"].clone()).map_err(|_|error("ue_restore_backup_invalid"))?;
   let mut binding=old.binding;binding.host_session_id=sid.clone();
-  let mut session=RepairSession::from_verified_host(root.as_ref().clone(),binding,old.diagnostic.clone().ok_or_else(||error("ue_restore_build_origin_required"))?,report.restore_candidates.iter().map(|f|f.path.clone()).collect()).map_err(|_|error("ue_restore_scope_invalid"))?;
+  let paths=report.restore_candidates.iter().map(|f|f.path.clone()).collect();
+  let mut session=match (original.adapter.id.as_str(),old.diagnostic.clone(),old.task){
+   ("native.ue-source-repair.v1",Some(diagnostic),None)=>RepairSession::from_verified_host(root.as_ref().clone(),binding,diagnostic,paths),
+   ("native.source-change.v1",None,Some(task))=>RepairSession::from_verified_task(root.as_ref().clone(),binding,task,paths),
+   _=>return Err(error("ue_restore_origin_invalid")),
+  }.map_err(|_|error("ue_restore_scope_invalid"))?;
   let snapshot=session.read_snapshots(&sid).map_err(|_|error("ue_restore_read_failed"))?;
   let preview=session.prepare_replacements(&sid,&snapshot.snapshot_id,hash(id().map_err(|_|error("ue_restore_id"))?.as_bytes()),report.restore_candidates.into_iter().map(|f|(f.path,f.after)).collect()).map_err(|_|error("ue_restore_preview_changed"))?;
   if !live(&a){return Err(error("ue_restore_cancelled"));}
-  let c=Continuation{cycle:crate::ue_repair_cycle::Cycle::initial(&input.run_id),build_cancelled:Arc::new(AtomicBool::new(false)),project:input.project_id,prepared:pid,run:input.run_id,document,root,plan:None,restart:Some(original),session_id:sid,diagnostic:old.diagnostic.ok_or_else(||error("ue_restore_build_origin_required"))?.diagnostic_id,expires:Instant::now()+Duration::from_secs(600),settlement:None,restore:None,restoring:true,session:Some(session),snapshot:Some(snapshot),preview:Some(preview.clone()),applied:false};
+  let c=Continuation{cycle:crate::ue_repair_cycle::Cycle::initial(&input.run_id),build_cancelled:Arc::new(AtomicBool::new(false)),project:input.project_id,prepared:pid,run:input.run_id,document,root,plan:None,restart:Some(original),session_id:sid,diagnostic:old.diagnostic.map(|d|d.diagnostic_id),expires:Instant::now()+Duration::from_secs(600),settlement:None,restore:None,restoring:true,session:Some(session),snapshot:Some(snapshot),preview:Some(preview.clone()),applied:false};
   Ok((preview,c))
  }).await.map_err(|_|"ue_restore_unavailable".to_string());
  match result {Ok((preview,c))=>{finish(&state,&active,Some(c));Ok(HistoricalRestorePreview{selection:serde_json::json!({"projectId":project,"preparedId":prepared,"runId":run}),session_id,preview})},Err(e)=>{finish(&state,&active,None);Err(e)}}

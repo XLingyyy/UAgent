@@ -39,6 +39,16 @@
 
 本地证据：`.local-dev/temp/host-task-acceptance-20261106/live-source-change-summary.json`、`live-source-change-before.json`、`live-source-change-first-rejection.json`。不随仓库发布模型内容和本地运行数据。
 
+## 新任务来源的跨重启恢复
+
+`native.source-change.v1` 已接入现有历史恢复入口。重新信任原项目后，原生层核对持久化执行结束、原进程已退出、备份与当前文件，生成精确逆向差异；重新审阅并批准后创建独立恢复运行。恢复保留 `task` 来源和原 `file-write` 资源，不伪造构建诊断或要求不存在的 UBT 资源。旧构建修复继续保留原适配器与资源。
+
+先通过真实子进程复现旧入口拒绝新适配器的 `staleOwner`，再修复。29 项相关原生准入测试通过，包含新来源完整及部分写入的跨进程恢复、旧来源兼容、唯一恢复预留、外部修改、取消、其他未决效果，以及结果未落盘时保持阻止。原生产品构建通过。
+
+桌面重启后恢复写入 `b2c4b2510d71673b262274ef7e97ad68`，新恢复运行 **`87756905c336a5e0a6135abc7e7773f9`** 为 succeeded，两个文件均 applied，effect `verifiedCompleted`、dispatch `settled`。磁盘字节与原 before 内容完全相同，包括 CRLF；新 before 备份和结果附件已持久化，没有模型请求、自动重建或旧授权重放。本地证据为 `.local-dev/temp/host-task-acceptance-20261106/live-source-restart-restore-summary.json`。
+
+桌面本次覆盖完整写入后的恢复；新来源部分写入由真实子进程和合成文件测试覆盖，不扩大为未插桩桌面部分写入或断电恢复已验收。
+
 ## 尚未覆盖
 
-这条有限流程不代表通用执行任务全部完成。既有调查入口迁移、Host 内目标驱动构建/失败重试、长文件、运行语义验证仍需继续。未批准提案仅在当前应用内保留，重启后须重新调查；新 `native.source-change.v1` 写入已有历史回执和完整 before 备份，但历史恢复审批入口尚未接入。旧构建修复恢复路径不冒领新来源的权限。UE 对象跨重启续跑、数据能力、协作闭环及 Windows Beta 继续按当前状态表推进。
+这条有限流程不代表通用执行任务全部完成。既有调查入口迁移、Host 内目标驱动构建/失败重试、长文件、运行语义验证仍需继续。未批准提案仅在当前应用内保留，重启后须重新调查；新 `native.source-change.v1` 已写入记录支持上述重新批准的跨重启恢复；未结束或缺少持久结果的记录保持阻止。UE 对象跨重启续跑、数据能力、协作闭环及 Windows Beta 继续按当前状态表推进。

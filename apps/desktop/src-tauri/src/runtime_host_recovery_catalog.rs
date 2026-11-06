@@ -290,7 +290,7 @@ impl SettledRepairRestore {
         preview:&crate::ue_build_repair::NativeRepairPreview)->Result<Self,String>{
         use crate::local_run_store::effect_reconciliation::TargetKind;
         let p=&preview.preview;
-        if original.adapter.id!="native.ue-source-repair.v1"||original.adapter.version!=1
+        if !matches!(original.adapter.id.as_str(),"native.ue-source-repair.v1"|"native.source-change.v1")||original.adapter.version!=1
             ||p.binding.project_id!=original.key.project_id||p.binding.root_object_id!=original.root_object_id
             ||p.files.is_empty()||crate::ue_build_repair_io::hash(&serde_json::to_vec(p).map_err(|_|"restore_encoding")?)!=preview.native_plan_digest {
             return Err("restore_original_binding_required".into());

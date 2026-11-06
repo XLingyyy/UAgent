@@ -674,7 +674,7 @@ impl EffectJournal<'_> {
         let value:serde_json::Value=serde_json::from_slice(&backup).map_err(|_|stale())?;
         let operation=value["executionIdentity"]["operationId"].as_str().ok_or_else(stale)?;
         let record=self.required(&EffectKey{project_id:project.into(),operation_id:operation.into()})?;
-        if record.intent.owner.run_id!=run||record.intent.adapter.id!="native.ue-source-repair.v1"||record.intent.adapter.version!=1||self.gate_for(&record)?.snapshot.phase!=DispatchPhase::Settled{return Err(stale());}
+        if record.intent.owner.run_id!=run||!matches!(record.intent.adapter.id.as_str(),"native.ue-source-repair.v1"|"native.source-change.v1")||record.intent.adapter.version!=1||self.gate_for(&record)?.snapshot.phase!=DispatchPhase::Settled{return Err(stale());}
         let database=self.store.db.pin_original_database().map_err(|_|stale())?;
         if crate::ue_repair_recovery::observe_original_process(&backup,database.lookup_key(),&record.intent).map_err(|_|stale())?!=crate::repair_execution_identity::ProcessObservation::Ended{return Err(stale());}
         Ok(record)
@@ -689,7 +689,7 @@ impl EffectJournal<'_> {
     )->Result<crate::runtime_host_recovery_catalog::SettledRepairRestore>{
         context.matches(next)?;
         let original=self.required(original_key)?;
-        if original.intent.adapter.id!="native.ue-source-repair.v1"||original.intent.adapter.version!=1
+        if !matches!(original.intent.adapter.id.as_str(),"native.ue-source-repair.v1"|"native.source-change.v1")||original.intent.adapter.version!=1
             ||original.intent.key.project_id!=next.key.project_id||original.intent.root_object_id!=next.root_object_id
             ||self.gate_for(&original)?.snapshot.phase!=DispatchPhase::Settled
             ||next.idempotency_key!=hash(format!("restart-restore:{}:{}",original.intent.key.project_id,original.intent_digest).as_bytes()) {
