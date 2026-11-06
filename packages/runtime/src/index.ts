@@ -1,6 +1,7 @@
 export * from "./project-memory/index.js";
 export * from "./run/tool-registry.js";
 export * from "./run/run-coordinator.js";
+export * from "./run/run-host.js";
 export * from "./run/run-scope.js";
 export * from "./context/run-context.js";
 export * from "./provider/provider-proposals.js";

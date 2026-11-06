@@ -84,6 +84,16 @@ importers:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@20.19.43)(jsdom@24.0.0)
 
+  apps/runtime-host:
+    dependencies:
+      "@uagent/shared":
+        specifier: workspace:*
+        version: link:../../packages/shared
+    devDependencies:
+      "@types/node":
+        specifier: ^20.14.0
+        version: 20.19.43
+
   packages/mcp-client:
     dependencies:
       "@uagent/shared":

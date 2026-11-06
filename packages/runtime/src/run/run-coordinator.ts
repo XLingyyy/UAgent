@@ -24,7 +24,7 @@ import { prepareMemoryBudgetedRunContext, type ProjectMemoryContextPort, type Pr
 import { boundConversationHistory } from "../provider/conversation-history.js";
 import { runProviderComplete, runProviderStream } from "../provider/provider-runner.js";
 import { redactString } from "../secrets/redaction.js";
-import { isRunPathAllowed, ToolRegistry } from "./tool-registry.js";
+import { isRunPathAllowed, type RunToolRegistry } from "./tool-registry.js";
 
 export interface RunScopeLease {
   scope: TaskRunScope;
@@ -33,7 +33,7 @@ export interface RunScopeLease {
 }
 export interface RunCoordinatorOptions {
   adapter: ProviderAdapter;
-  registry: ToolRegistry;
+  registry: RunToolRegistry;
   createMemberAdapter?: (role:string,lease:RunScopeLease,draft:TaskDraft)=>ProviderAdapter;
   lease: RunScopeLease;
   signal?: AbortSignal;
@@ -122,14 +122,14 @@ export class RunCoordinator {
     if (this.runState && !["completed", "failed", "cancelled"].includes(this.runState.status))
       this.publish("status_changed", { status: this.runState.status, pauseRequested: true });
   }
-  cancel(): void {
+  async cancel(): Promise<void> {
     this.controller.abort();
     for(const worker of this.workers)worker.cancel();
     if (this.runState?.status === "paused" && !this.active) {
       this.setStatus("cancelled", "cancelled");
       const checkpoint = this.checkpoint("cancelled");
       this.publish("checkpoint_created", { checkpoint });
-      void this.persist(checkpoint).catch(() => {
+      await this.persist(checkpoint).catch(() => {
         this.runState!.stopReason = "persistence_failed_after_cancel";
       });
       this.releaseSignal?.();

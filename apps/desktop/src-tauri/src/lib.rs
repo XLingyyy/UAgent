@@ -69,6 +69,8 @@ pub(crate) mod runtime_host_service;
 #[cfg(windows)]
 pub(crate) mod runtime_host_commands;
 #[cfg(windows)]
+pub(crate) mod runtime_sidecar;
+#[cfg(windows)]
 pub(crate) mod native_recovery_status;
 #[cfg(windows)]
 pub(crate) mod runtime_host_recovery_catalog;

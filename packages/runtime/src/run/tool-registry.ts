@@ -14,6 +14,12 @@ export interface RunToolContext {
   isCurrent: () => boolean;
 }
 
+/** A host may forward these operations to the native owner's validated registry. */
+export interface RunToolRegistry {
+  definitions(scope: TaskRunScope): ProviderToolDefinition[];
+  execute(call: ProviderToolCall, context: RunToolContext): Promise<RunToolResult>;
+}
+
 /** Only trusted, read-only implementations may be registered. No ambient I/O is used here. */
 export interface RegisteredRunTool {
   id: string;
@@ -133,7 +139,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 type Issue = { status: "blocked" | "failed" | "cancelled"; code: string };
 
-export class ToolRegistry {
+export class ToolRegistry implements RunToolRegistry {
   private readonly toolsByName = new Map<string, RegisteredRunTool>();
   private readonly toolIds = new Set<string>();
   private readonly callsByRun = new Map<string, Set<string>>();

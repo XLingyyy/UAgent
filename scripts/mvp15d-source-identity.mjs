@@ -74,6 +74,7 @@ const EXACT_TEST_FIXTURE_DATA = Object.freeze([
   "packages/runtime/src/__fixtures__/ue-pickup-template-v2-discovery.json",
 ]);
 const EXACT_PRODUCTION_TOOLING = Object.freeze([
+  "scripts/build-runtime-host.mjs",
   "scripts/integrated-build-binding.py",
   "scripts/export-ue-scene-batch-schemas.mjs",
   "scripts/use-project-env.ps1",
@@ -97,6 +98,8 @@ const PRODUCTION_SOURCE_REQUIRED_FILES = Object.freeze(
     "apps/desktop/web/index.html",
     "apps/desktop/web/tsconfig.json",
     "apps/desktop/web/vite.config.ts",
+    "apps/runtime-host/package.json",
+    "apps/runtime-host/tsconfig.json",
     "eslint.config.mjs",
     "integrations/unreal/UAgentAssetTools/UAgentAssetTools.uplugin",
     "integrations/unreal/UAgentAssetToolsV2/UAgentAssetToolsV2.uplugin",
@@ -127,6 +130,7 @@ const PRODUCTION_SOURCE_ROOTS = Object.freeze(
     { path: "apps/desktop/src-tauri/src", required: true, class: "native-rust" },
     { path: "apps/desktop/web/public", required: false, class: "renderer-public-assets" },
     { path: "apps/desktop/web/src", required: true, class: "renderer" },
+    { path: "apps/runtime-host/src", required: true, class: "runtime-host" },
     {
       path: "integrations/unreal/UAgentAssetTools/Build",
       required: false,
