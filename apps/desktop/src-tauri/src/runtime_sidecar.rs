@@ -7,7 +7,7 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     path::PathBuf,
     process::{Command, Stdio},
-    sync::mpsc::{self, Receiver, SyncSender},
+    sync::{mpsc::{self, Receiver, SyncSender}, Arc, atomic::{AtomicBool, Ordering}},
     thread,
     time::{Duration, Instant},
 };
@@ -32,10 +32,19 @@ enum Control {
 }
 
 pub(crate) struct RuntimeSidecar {
-    control: SyncSender<Control>,
+    client: RuntimeSidecarClient,
     exited: Receiver<Result<()>>,
 }
+#[derive(Clone)]
+pub(crate) struct RuntimeSidecarClient {
+    control: SyncSender<Control>,
+    closed: Arc<AtomicBool>,
+}
+impl Drop for RuntimeSidecar {
+    fn drop(&mut self) { self.client.closed.store(true, Ordering::Release); }
+}
 impl RuntimeSidecar {
+    pub(crate) fn client(&self) -> RuntimeSidecarClient { self.client.clone() }
     pub(crate) fn start_bundled(app: &tauri::AppHandle, events: SyncSender<Value>) -> Result<Self> {
         use tauri::Manager;
         let resources = app.path().resource_dir().map_err(|_| "runtime_sidecar_missing")?;
@@ -57,12 +66,14 @@ impl RuntimeSidecar {
         let (control, commands) = mpsc::sync_channel(64);
         let (started, ready) = mpsc::sync_channel(1);
         let (finished, exited) = mpsc::sync_channel(1);
+        let closed = Arc::new(AtomicBool::new(false));
+        let supervisor_closed = closed.clone();
         thread::Builder::new().name("uagent-runtime-host".into()).spawn(move || {
-            let result = supervise(node, entry, commands, events, started);
+            let result = supervise(node, entry, commands, events, started, supervisor_closed);
             let _ = finished.send(result);
         }).map_err(|_| "runtime_sidecar_thread_failed")?;
         ready.recv_timeout(Duration::from_secs(10)).map_err(|_| "runtime_sidecar_start_timeout")??;
-        let host = Self { control, exited };
+        let host = Self { client: RuntimeSidecarClient { control, closed }, exited };
         let hello = host.request(HostCommand::Hello, json!({}), Duration::from_secs(10))?;
         if hello["protocolVersion"] != 1 || hello["engine"] != "RunCoordinator" {
             return Err("runtime_sidecar_protocol_mismatch");
@@ -71,6 +82,17 @@ impl RuntimeSidecar {
     }
 
     pub(crate) fn request(&self, command: HostCommand, input: Value, timeout: Duration) -> Result<Value> {
+        self.client.request(command, input, timeout)
+    }
+
+    pub(crate) fn wait_for_exit(&self, timeout: Duration) -> Result<()> {
+        self.exited.recv_timeout(timeout).map_err(|_| "runtime_sidecar_exit_unconfirmed")?
+    }
+}
+
+impl RuntimeSidecarClient {
+    pub(crate) fn request(&self, command: HostCommand, input: Value, timeout: Duration) -> Result<Value> {
+        if self.closed.load(Ordering::Acquire) { return Err("runtime_sidecar_owner_closed"); }
         let (reply, result) = mpsc::sync_channel(1);
         self.control.try_send(Control::Command(command, input, reply))
             .map_err(|_| "runtime_sidecar_unavailable")?;
@@ -78,13 +100,11 @@ impl RuntimeSidecar {
     }
 
     pub(crate) fn broker_reply(&self, id: u64, ok: bool, value: Value) -> Result<()> {
+        if self.closed.load(Ordering::Acquire) { return Err("runtime_sidecar_owner_closed"); }
         self.control.try_send(Control::BrokerReply(id, ok, value))
             .map_err(|_| "runtime_sidecar_unavailable")
     }
 
-    pub(crate) fn wait_for_exit(&self, timeout: Duration) -> Result<()> {
-        self.exited.recv_timeout(timeout).map_err(|_| "runtime_sidecar_exit_unconfirmed")?
-    }
 }
 
 fn node_path(path: PathBuf) -> Result<PathBuf> {
@@ -103,7 +123,7 @@ fn frame(value: Value) -> Result<Vec<u8>> {
 }
 
 fn supervise(node: PathBuf, entry: PathBuf, controls: Receiver<Control>, events: SyncSender<Value>,
-    started: SyncSender<Result<()>>) -> Result<()> {
+    started: SyncSender<Result<()>>, closed: Arc<AtomicBool>) -> Result<()> {
     use std::os::windows::process::CommandExt;
     let job = crate::ue_build_process::windows_job::OwnedJob::new()
         .map_err(|_| "runtime_sidecar_job_failed")?;
@@ -148,6 +168,7 @@ fn supervise(node: PathBuf, entry: PathBuf, controls: Receiver<Control>, events:
     let mut pipe_closed = false;
     let result = (|| -> Result<()> {
         loop {
+            if closed.load(Ordering::Acquire) { return Err("runtime_sidecar_owner_closed"); }
             if pipe_closed {
                 if let Some(status) = child.try_wait().map_err(|_| "runtime_sidecar_wait_failed")? {
                     return if status.success() { Ok(()) } else { Err("runtime_sidecar_process_failed") };
@@ -226,6 +247,17 @@ mod tests {
         let result = host.request(HostCommand::Shutdown, json!({}), Duration::from_secs(2)).unwrap();
         assert_eq!(result["checkpointed"], true);
         host.wait_for_exit(Duration::from_secs(2)).unwrap();
+    }
+
+    #[test]
+    fn dropping_owner_stops_bundled_host_even_when_broker_keeps_a_client() {
+        let resources = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources");
+        let (events, receiver) = mpsc::sync_channel(64);
+        let host = RuntimeSidecar::start_from_resources(resources, events).unwrap();
+        let client = host.client();
+        drop(host);
+        assert!(client.request(HostCommand::Hello, json!({}), Duration::from_secs(1)).is_err());
+        assert!(matches!(receiver.recv_timeout(Duration::from_secs(3)), Err(mpsc::RecvTimeoutError::Disconnected)));
     }
 
     #[test]

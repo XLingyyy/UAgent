@@ -364,14 +364,16 @@ function MemoryProviderSessionSetup({
         key = "";
         if ((await operation) === false) throw Error("session_not_opened");
       } else {
-        controller.openAccount(key);
+        const operation = controller.openHostedAccount ? controller.openHostedAccount(key) : controller.openAccount(key);
+        pendingGeneration.current = controller.getSessionGeneration?.();
         key = "";
+        if ((await operation) === false) throw Error("session_not_opened");
       }
     } catch {
       if (version === attempt.current) {
         // Responses owns its native cleanup. A superseded async attempt must
         // never close a newer provider session opened elsewhere.
-        if (!responses) controller.close("setup_failed");
+        if (!responses && (!pendingGeneration.current || controller.getSessionGeneration?.() === pendingGeneration.current)) controller.close("setup_failed");
         setError(true);
       }
     } finally {

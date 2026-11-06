@@ -701,6 +701,7 @@ pub(crate) fn begin_project_update(id: &str) -> Result<ProjectUpdateGuard> {
         (generation, runs, scopes)
     };
     let guard = ProjectUpdateGuard { project_id: id.into(), generation };
+    crate::native_host_model::revoke_project(id);
     for run in runs { run.revoke(); }
     for scope in scopes { scope.revoke(); }
     Ok(guard)

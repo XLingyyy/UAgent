@@ -89,6 +89,8 @@ pub(crate) mod provider_continuation_store;
 #[cfg(windows)]
 pub(crate) mod native_responses_commands;
 #[cfg(windows)]
+pub(crate) mod native_host_model;
+#[cfg(windows)]
 pub(crate) mod credential_vault;
 #[cfg(windows)]
 pub(crate) mod provider_credential_commands;
@@ -1771,6 +1773,7 @@ pub fn run() {
             }
             #[cfg(windows)]
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                native_host_model::release_window(webview.window().label());
                 if let Some(host) = webview.app_handle().try_state::<runtime_host_service::RuntimeHostService>() {
                     // Revoke the old generation before this lifecycle callback
                     // returns; a delayed worker could revoke a newer same-label owner.
@@ -1785,6 +1788,7 @@ pub fn run() {
         .on_window_event(|window,event| {
             #[cfg(windows)]
             if matches!(event, tauri::WindowEvent::CloseRequested{..} | tauri::WindowEvent::Destroyed) {
+                native_host_model::release_window(window.label());
                 if let Some(store) = window.try_state::<managed_run_store::ManagedRunStoreState>() { store.revoke_window(window.label()); }
             }
             #[cfg(windows)]
@@ -1916,6 +1920,8 @@ pub fn run() {
             run_store_commands::commit_native_run_store,
             #[cfg(windows)]
             run_store_commands::snapshot_native_run_store,
+            native_host_model::open_host_model_profile,
+            native_host_model::close_host_model_profile,
             run_store_commands::read_native_run_artifact,
             run_store_commands::inspect_native_repair_recovery,
             #[cfg(windows)]
@@ -2065,6 +2071,7 @@ pub fn run() {
         .run(|app, event| {
             #[cfg(windows)]
             if matches!(&event, tauri::RunEvent::Exit) {
+                native_host_model::close_all();
                 if let Some(monitor) = app.try_state::<ue_build_preview_commands::UEBuildPreviewMonitor>() {
                     monitor.shutdown();
                 }

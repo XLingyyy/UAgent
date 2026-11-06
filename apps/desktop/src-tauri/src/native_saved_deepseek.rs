@@ -48,7 +48,7 @@ fn wall() -> Result<u64> {
         .map_err(|_| error("saved_deepseek_unavailable"))?
         .as_millis() as u64)
 }
-fn saved(root: &Path, id: &str, model: &str) -> Result<ProviderSnapshot> {
+pub(crate) fn saved(root: &Path, id: &str, model: &str) -> Result<ProviderSnapshot> {
     let s = ProductSettingsStore::open(&root.join("run-store-v2"))
         .and_then(|x| x.provider(id, &NATIVE_ENDPOINT_POLICY))
         .map_err(|_| error("saved_deepseek_configuration_unavailable"))?
@@ -249,7 +249,7 @@ pub(crate) fn revoke_provider(id: &str) {
             .retain(|_, p| p.snapshot.config.provider_id != id);
     }
 }
-pub(crate) struct ProviderUpdateGuard(String);
+pub(crate) struct ProviderUpdateGuard(String, crate::native_host_model::ProviderUpdateGuard);
 impl Drop for ProviderUpdateGuard {
     fn drop(&mut self) {
         if let Ok(mut b) = lock(broker()) {
@@ -258,6 +258,7 @@ impl Drop for ProviderUpdateGuard {
     }
 }
 pub(crate) fn begin_provider_update(id: &str) -> Result<ProviderUpdateGuard> {
+    let task_update = crate::native_host_model::begin_provider_update(id).map_err(error)?;
     {
         let mut b = lock(broker())?;
         if !b.updating.insert(id.into()) {
@@ -265,7 +266,7 @@ pub(crate) fn begin_provider_update(id: &str) -> Result<ProviderUpdateGuard> {
         }
     }
     revoke_provider(id);
-    Ok(ProviderUpdateGuard(id.into()))
+    Ok(ProviderUpdateGuard(id.into(), task_update))
 }
 /// No credential lock is acquired here: poll/cancel must remain usable while a
 /// worker holds the vault-version dispatch fence.

@@ -32,6 +32,9 @@ pub(crate) struct NativeStoreTaskGrant {
     run: String,
 }
 impl NativeStoreTaskGrant {
+    pub(crate) fn belongs_to_document_app(&self, document: &NativeStoreWindowGrant) -> bool {
+        Arc::ptr_eq(&self.closed, &document.closed)
+    }
     pub(crate) fn accepts(&self, project: &str, run: &str) -> bool {
         self.project == project && self.run == run && self.grant.current()
             && !self.closed.load(Ordering::Acquire)
@@ -565,4 +568,11 @@ pub(crate) fn task_pipeline_fixture(root:std::path::PathBuf, project:&str, run:&
     let task=Arc::new(NativeStoreTaskGrant { grant:Arc::new(WindowGrant::new_owned(state.closed.clone())),
         closed:state.closed.clone(),project:project.into(),run:run.into() });
     (state,task)
+}
+
+#[cfg(test)]
+pub(crate) fn task_for_pipeline_fixture(state:&ManagedRunStoreState, project:&str, run:&str)
+    -> Arc<NativeStoreTaskGrant> {
+    Arc::new(NativeStoreTaskGrant { grant:Arc::new(WindowGrant::new_owned(state.closed.clone())),
+        closed:state.closed.clone(),project:project.into(),run:run.into() })
 }

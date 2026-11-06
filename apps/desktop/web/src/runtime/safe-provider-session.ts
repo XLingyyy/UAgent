@@ -18,6 +18,7 @@ import type { TaskDraft, ProviderRuntimeRequest } from "@uagent/shared";
 import { responsesBody } from "../../../../../packages/runtime/src/provider/responses/protocol.js";
 import { boundConversationHistory } from "../../../../../packages/runtime/src/provider/conversation-history.js";
 import type { NativeInvoke } from "./project-native-adapter";
+import type { ProviderVersion } from "../types/provider";
 import { createNativeResponsesProfile, validResponsesCredential } from "./native-responses-session";
 import { getApplicationProfile } from "./application-profile";
 import { localNativeInvoke } from "./native-provider-budget";
@@ -54,6 +55,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
   const gate = options.gate ?? outboundReviewGate,
     attachments = options.attachments ?? attachmentStore;
   let session: ReturnType<typeof createDeepSeekSession> | null = null;
+  let hostModelProfile: { id: string; closeAcknowledged(): Promise<void> } | null = null;
   type ResponsesProfile = Awaited<ReturnType<typeof createNativeResponsesProfile>>;
   type ResponsesSetup = {
     key: string;
@@ -185,6 +187,8 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     responsesChatAdapters.clear();
     const previousResponses = responsesProfile;
     const previousSavedDeepSeek = savedDeepSeekProfile;
+    const previousHostModel = hostModelProfile;
+    hostModelProfile = null;
     responsesProfile = null;
     savedDeepSeekProfile = null;
     session?.clearCredential();
@@ -206,6 +210,9 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     };
     if (previousSavedDeepSeek) void trackNativeClose(previousSavedDeepSeek);
     if (previousResponses) void trackNativeClose(previousResponses);
+    // Native navigation releases the opening profile without stopping separately
+    // approved tasks. An explicit close still revokes those task sessions.
+    if (previousHostModel && reason !== "application_exit") void trackNativeClose(previousHostModel);
     publishNativeState();
   }
   function requireSession() {
@@ -464,6 +471,66 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       Math.max(0, expiresAt - Date.now()),
     );
     emit();
+  }
+  async function openHostedAccount(credential: string): Promise<boolean> {
+    if (options.mode !== "live" || !options.nativeInvoke) {
+      openAccount(credential);
+      return true;
+    }
+    if (!state.canConfigure || !state.enabled || disposed || !state.liveAuthorized)
+      throw Error("session_setup_locked");
+    close();
+    const earlier = [...responsesSetups];
+    let finish!: () => void;
+    const holder: ResponsesSetup = { key: credential, version: context.revision,
+      generation: sessionGeneration, cancelled: false,
+      settled: new Promise<void>(resolve => { finish = resolve; }), finish: () => finish() };
+    credential = "";
+    pendingResponses = holder;
+    responsesSetups.add(holder);
+    state = { ...state, pendingSetup: true };
+    publishNativeState();
+    const current = () => pendingResponses === holder && !holder.cancelled && !disposed && state.enabled
+      && holder.generation === sessionGeneration && holder.version === context.revision;
+    let candidate: typeof hostModelProfile = null;
+    let issued = false, returned = false;
+    try {
+      await Promise.all(earlier.map(setup => setup.settled));
+      await nativeBarrier;
+      if (!current()) return false;
+      const version = await options.nativeInvoke<ProviderVersion>("get_product_provider_version", { input: { providerId: "deepseek" } });
+      if (!current()) return false;
+      issued = true;
+      const receipt = await options.nativeInvoke<{profileId:string;providerId:string;modelId:string}>("open_host_model_profile", {
+        input: { providerId: "deepseek", modelId: DEEPSEEK_MODEL, expectedProviderVersion: version, credential: holder.key },
+      });
+      returned = true;
+      if (!receipt || typeof receipt.profileId !== "string" || !/^[a-f0-9]{64}$/.test(receipt.profileId)
+        || receipt.providerId !== "deepseek" || receipt.modelId !== DEEPSEEK_MODEL) {
+        nativeRevocationFailed = true;
+        throw Error("host_model_setup_unconfirmed");
+      }
+      const id = receipt.profileId;
+      candidate = { id, closeAcknowledged: async () => { await options.nativeInvoke!("close_host_model_profile", { input: { profileId: id } }); } };
+      if (!current()) return false;
+      pendingResponses = null;
+      responsesSetups.delete(holder);
+      openAccount(holder.key);
+      hostModelProfile = candidate;
+      candidate = null;
+      return true;
+    } catch {
+      if (issued && !returned) nativeRevocationFailed = true;
+      if (current()) close("setup_failed");
+      throw Error("host_model_setup_failed");
+    } finally {
+      holder.key = "";
+      if (candidate) void trackNativeClose(candidate);
+      if (pendingResponses === holder) { pendingResponses = null; state = { ...state, pendingSetup: false }; }
+      responsesSetups.delete(holder);
+      holder.finish();
+      publishNativeState();
+    }
   }
   async function openResponses(
     providerId: string,
@@ -820,6 +887,8 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
   return {
     adapter,
     openAccount,
+    openHostedAccount,
+    getHostedProfileId: () => state.ready && !state.nativeClosing ? hostModelProfile?.id ?? null : null,
     openResponses,
     openSaved,
     captureOrdinarySend,
