@@ -13,7 +13,7 @@ struct Fixture{store:RunStore,store_path:std::path::PathBuf,root:Arc<TrustedRoot
     catalog:Arc<PersistentRecoveryCatalog>,owner:OwnerRef,identity:OwnerIdentity,settled:Arc<AtomicBool>}
 impl Fixture{
     fn new()->Self{
-        let base=std::path::PathBuf::from("E:/Codex/UAgent/2026-10-29/tmp/ue-operation-admission")
+        let base=std::path::PathBuf::from("E:/Codex/UAgent/.local-dev/temp/ue-operation-admission")
             .join(format!("{}-{}",std::process::id(),random_id().unwrap()));
         let project=base.join("project");std::fs::create_dir_all(&project).unwrap();
         let root=Arc::new(TrustedRootHandle::open_from_host_selection(&project).unwrap());
@@ -258,11 +258,13 @@ fn live_restore_case(mode:u8){
     let yes=||true;let c=ledger::CurrentRun::from_verified_host(&f.root,i.owner.clone(),&yes).unwrap();let j=f.store.open_effect_journal().unwrap();j.prepare(&c,&i).unwrap();let mut ticket=j.mark_may_have_been_sent(&c,&i.key,1,3).unwrap();
     let handoff=r.claim_ue_once(&j,&c,&mut ticket,&f.catalog,Instant::now()+Duration::from_secs(5)).unwrap();
     let mut backup=crate::ue_build_repair_result::StoreRepairJournal::new(&f.store,&i);let mut grant=NativeRepairGrant::from_verified_host_approval(&p,60000).unwrap();
-    let receipt=session.apply_then_interrupt_for_restore_test("manual",&p.preview.preview_id,&mut grant,&mut backup).unwrap();assert_eq!(receipt.status,"partial");
-    let proof=j.settle_owned_operation(handoff).unwrap();f.settled.store(true,Ordering::SeqCst);let original_ticket=r.identity().ticket.clone();r.finish(false).unwrap();assert_eq!(f.host.reconcile(&original_ticket).unwrap().phase,JobPhase::Finished);
+    let complete=mode==8;
+    let receipt=if complete{session.apply_approved("manual",&p.preview.preview_id,&mut grant,&mut backup,&AtomicBool::new(false)).unwrap()}else{session.apply_then_interrupt_for_restore_test("manual",&p.preview.preview_id,&mut grant,&mut backup).unwrap()};
+    assert_eq!(receipt.status,if complete{"applied"}else{"partial"});
+    let proof=j.settle_owned_operation(handoff).unwrap();f.settled.store(true,Ordering::SeqCst);let original_ticket=r.identity().ticket.clone();r.finish(complete).unwrap();assert_eq!(f.host.reconcile(&original_ticket).unwrap().phase,JobPhase::Finished);
     crate::ue_build_repair_result::persist(&f.store,&f.root,&i,&p,&receipt,true,&f.catalog,&proof).unwrap();
-    assert_eq!(f.catalog.report().unwrap().persistent_effect_barriers.len(),1);
-    if mode==7{
+    assert_eq!(f.catalog.report().unwrap().persistent_effect_barriers.len(),if complete{0}else{1});
+    if mode==7||complete{
         assert!(j.ended_repair_record("p","r").is_err()); // Original process is still alive.
         let output=std::env::var("UAGENT_RESTART_CHILD_OUTPUT").unwrap();
         std::fs::write(output,serde_json::to_vec(&serde_json::json!({"root":f.root.path_hint(),"store":f.store_path})).unwrap()).unwrap();return;
@@ -302,19 +304,23 @@ fn live_restore_case(mode:u8){
 #[test] fn live_restore_external_edit_after_preview_is_not_overwritten(){live_restore_case(5);}
 #[test] fn live_restore_failed_commit_never_writes(){live_restore_case(6);}
 
-#[test] fn restart_restore_child_fixture(){if std::env::var_os("UAGENT_RESTART_CHILD_OUTPUT").is_some(){live_restore_case(7);}}
-#[test] fn restart_restore_real_process_exit_then_one_use_approved_write(){
+#[test] fn restart_restore_child_fixture(){if std::env::var_os("UAGENT_RESTART_CHILD_OUTPUT").is_some(){live_restore_case(if std::env::var("UAGENT_RESTART_CHILD_COMPLETE").as_deref()==Ok("1"){8}else{7});}}
+#[test] fn restart_restore_real_process_exit_then_one_use_approved_write(){restart_restore_case(false);}
+#[test] fn restart_restore_completed_write_without_barrier_after_real_process_exit(){restart_restore_case(true);}
+fn restart_restore_case(complete:bool){
  use crate::ue_build_repair::*;use crate::ue_build_repair_io::hash;
- let output=std::path::PathBuf::from("E:/Codex/UAgent/2026-10-29/tmp/ue-operation-admission").join(format!("restart-{}.json",random_id().unwrap()));
+ let output=std::path::PathBuf::from("E:/Codex/UAgent/.local-dev/temp/ue-operation-admission").join(format!("restart-{}.json",random_id().unwrap()));
  std::fs::create_dir_all(output.parent().unwrap()).unwrap();
- let mut child=std::process::Command::new(std::env::current_exe().unwrap()).args(["restart_restore_child_fixture","--test-threads=1"]).env("UAGENT_RESTART_CHILD_OUTPUT",&output).spawn().unwrap();
+ let mut child=std::process::Command::new(std::env::current_exe().unwrap()).args(["restart_restore_child_fixture","--test-threads=1"]).env("UAGENT_RESTART_CHILD_OUTPUT",&output).env("UAGENT_RESTART_CHILD_COMPLETE",if complete{"1"}else{"0"}).spawn().unwrap();
  let deadline=Instant::now()+Duration::from_secs(30);loop{if let Some(status)=child.try_wait().unwrap(){assert!(status.success());break;}if Instant::now()>deadline{let _=child.kill();let _=child.wait();panic!("owned fixture child timeout");}std::thread::sleep(Duration::from_millis(25));}
  let data:serde_json::Value=serde_json::from_slice(&std::fs::read(output).unwrap()).unwrap();
  let root=Arc::new(TrustedRootHandle::open_from_host_selection(std::path::Path::new(data["root"].as_str().unwrap())).unwrap());
  let store=RunStore::open(std::path::Path::new(data["store"].as_str().unwrap())).unwrap();
- let journal=store.open_effect_journal().unwrap();let original=journal.ended_repair_record("p","r").unwrap().intent;
+ let journal=store.open_effect_journal().unwrap();let ended=journal.ended_repair_record("p","r").unwrap();
+  if complete{assert_eq!(ended.state,ledger::EffectState::VerifiedCompleted);}
+  let original=ended.intent;
  let backup=store.read_artifact("p","r","nativeRepairBefore").unwrap();let result=store.read_artifact("p","r","nativeRepairResult").unwrap();
- let no=AtomicBool::new(false);let report=crate::ue_repair_recovery::inspect(&root,"p","r",&backup,Some(&result),&no,Instant::now()+Duration::from_secs(10)).unwrap();assert_eq!(report.restore_candidates.len(),1);
+ let no=AtomicBool::new(false);let report=crate::ue_repair_recovery::inspect(&root,"p","r",&backup,Some(&result),&no,Instant::now()+Duration::from_secs(10)).unwrap();assert_eq!(report.restore_candidates.len(),if complete{2}else{1});
  let value:serde_json::Value=serde_json::from_slice(&backup).unwrap();let old:RepairPreviewInput=serde_json::from_value(value["preview"]["preview"].clone()).unwrap();let mut binding=old.binding;binding.host_session_id="restart".into();
  let mut session=RepairSession::from_verified_host(root.as_ref().clone(),binding,old.diagnostic,report.restore_candidates.iter().map(|f|f.path.clone()).collect()).unwrap();let snap=session.read_snapshots("restart").unwrap();
  let preview=session.prepare_replacements("restart",&snap.snapshot_id,hash(b"restart-reverse"),report.restore_candidates.into_iter().map(|f|(f.path,f.after)).collect()).unwrap();
@@ -330,9 +336,13 @@ fn live_restore_case(mode:u8){
  let permit=j.prepare_ended_repair_restore(&context,&next,&original.key,&preview,&no,Instant::now()+Duration::from_secs(10)).unwrap();
  assert!(j.prepare_ended_repair_restore(&context,&next,&original.key,&preview,&no,Instant::now()+Duration::from_secs(10)).is_err());
  let mut competitor=next.clone();competitor.key.operation_id="competing-restore".into();assert!(j.prepare_ended_repair_restore(&context,&competitor,&original.key,&preview,&no,Instant::now()+Duration::from_secs(10)).is_err());
- let mut ticket=j.mark_may_have_been_sent(&context,&next.key,1,5).unwrap();let handoff=registration.claim_ue_restore_once(&j,&context,&mut ticket,&f.catalog,Instant::now()+Duration::from_secs(5),&permit).unwrap();
+ let mut ticket=j.mark_may_have_been_sent(&context,&next.key,1,5).unwrap();
+  let handoff=registration.claim_ue_restore_once(&j,&context,&mut ticket,&f.catalog,Instant::now()+Duration::from_secs(5),&permit).expect("ended repair with a verified reverse preview must admit one approved restoration");
  let mut grant=NativeRepairGrant::from_verified_host_approval(&preview,10000).unwrap();let mut saved=crate::ue_build_repair_result::StoreRepairJournal::new(&f.store,&next);
  let restored=session.apply_approved("restart",&preview.preview.preview_id,&mut grant,&mut saved,&no).unwrap();assert_eq!(restored.status,"applied");
  f.settled.store(true,Ordering::SeqCst);registration.finish(true).unwrap();let proof=j.settle_owned_operation(handoff).unwrap();crate::ue_build_repair_result::persist(&f.store,&f.root,&next,&preview,&restored,saved.checkpoint_written,&f.catalog,&proof).unwrap();
- assert_eq!(std::fs::read_to_string(f.root.path_hint().join("Source/Game/A.cpp")).unwrap(),"int a = 1;\n");assert!(f.store.read_artifact("p","restart-run","nativeRepairResult").is_ok());assert_ne!(f.catalog.admission("p",None,&[]),RecoveryAdmission::Ready);
+ assert_eq!(std::fs::read_to_string(f.root.path_hint().join("Source/Game/A.cpp")).unwrap(),"int a = 1;\n");
+  assert_eq!(std::fs::read_to_string(f.root.path_hint().join("Source/Game/B.cpp")).unwrap(),"int a = 1;\n");
+  assert!(f.store.read_artifact("p","restart-run","nativeRepairResult").is_ok());
+  if complete{assert_eq!(f.catalog.report().unwrap().persistent_effect_barriers.len(),0);}else{assert_ne!(f.catalog.admission("p",None,&[]),RecoveryAdmission::Ready);}
 }

@@ -199,6 +199,32 @@ function status(value: unknown): NativeHistoryStatus {
 function actionStatus(value: unknown): NativeHistoryActionStatus {
   return actionStatuses.includes(text(value)) ? (value as NativeHistoryActionStatus) : invalid();
 }
+function nativeReceiptEvent(event: NativeHistoryEvent, artifacts: unknown): boolean {
+  const build = event.kind === "nativeBuildResult";
+  if (!build && event.kind !== "nativeRepairBefore" && event.kind !== "nativeRepairResult") return false;
+  const referenceId = build ? "native-build-result" : event.kind, data = object(event.data);
+  const keys = build
+    ? ["status", "exitCode", "treeStopped", "outputComplete", "receiptSha256", "repairCycle"]
+    : ["artifactSha256", "planDigest"];
+  if (event.id !== referenceId || Object.keys(data).some(key => !keys.includes(key))) return invalid();
+  const digest = text(build ? data.receiptSha256 : data.artifactSha256);
+  if (!/^[a-f0-9]{64}$/.test(digest)) return invalid();
+  if (build) {
+    text(data.status); boolean(data.treeStopped); boolean(data.outputComplete);
+    if (data.exitCode !== null && (typeof data.exitCode !== "number" || !Number.isSafeInteger(data.exitCode))) return invalid();
+    if (data.repairCycle !== undefined && data.repairCycle !== null) {
+      const cycle = object(data.repairCycle);
+      if (Object.keys(cycle).length !== 5 || Object.keys(cycle).some(key =>
+        !["chainId", "rebuilds", "maxRebuilds", "previousRunId", "status"].includes(key))) return invalid();
+      id(cycle.chainId); text(cycle.status);
+      if (integer(cycle.maxRebuilds) !== 3 || integer(cycle.rebuilds) > 3) return invalid();
+      if (cycle.previousRunId !== null) id(cycle.previousRunId);
+    }
+  } else if (!/^[a-f0-9]{64}$/.test(text(data.planDigest))) return invalid();
+  const references = list(artifacts).map(object).filter(artifact => artifact.id === referenceId);
+  if (references.length !== 1 || references[0].sha256 !== digest || references[0].mediaType !== "application/json") return invalid();
+  return true;
+}
 function descriptor(value: unknown): NativeHistoryRun {
   const source = object(value);
   return {
@@ -295,6 +321,11 @@ function parseArchive(value: unknown, projectId: string, runId: string): NativeR
   let sequence = 0;
   for (const event of events) {
     if (event.kind === "coordinator_state_v1") continue;
+    // Native receipt metadata has no coordinator envelope and cannot resume a task.
+    if (nativeReceiptEvent(event, raw.artifacts)) {
+      if (coordinatorState !== null || messages.length !== 0) return invalid();
+      continue;
+    }
     const data = object(event.data);
     if (
       data.runId !== runId ||

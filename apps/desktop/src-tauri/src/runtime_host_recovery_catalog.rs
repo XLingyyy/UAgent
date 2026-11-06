@@ -307,11 +307,11 @@ impl SettledRepairRestore {
     }
     fn validates(&self,physical:&crate::local_run_store::effect_reconciliation::runtime_host_catalog_reader::OperationRecoverySnapshot<'_>)->bool {
         let i=&physical.record().intent;
+        // Completed repairs have no remaining barrier; settlement and the exact reverse plan bind this approval.
         self.proof.matches_intent(&self.original,physical.database_pin())&&i.key!=self.original.key
             &&i.key.project_id==self.original.key.project_id&&i.root_object_id==self.original.root_object_id
             &&i.adapter==self.original.adapter&&i.approved_plan_digest==self.digest&&i.targets==self.targets
             &&i.resources==self.original.resources
-            &&physical.snapshot().effects().iter().any(|b|self.excludes(b))
     }
     fn excludes_run_summary(&self,b:&LegacyUnknown)->bool {
         b.source=="runs"&&b.status=="needsReconciliation"&&b.project_id==self.original.key.project_id

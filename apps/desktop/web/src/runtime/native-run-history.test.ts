@@ -75,6 +75,26 @@ function archiveFixture() {
     completeness: { complete: true, loadedMessageCount: 3, storedMessageCount: 3, reason: null },
   };
 }
+function nativeArchiveFixture(kind: "build" | "repair" | "recovery") {
+  const saved = archiveFixture(), before = "a".repeat(64), result = "b".repeat(64), plan = "c".repeat(64);
+  const events = kind === "build"
+    ? [{ id: "native-build-result", kind: "nativeBuildResult", createdAt: 123, data: {
+      status: "failed", exitCode: 6, treeStopped: true, outputComplete: true, receiptSha256: result,
+      repairCycle: { chainId: "initial-run", rebuilds: 3, maxRebuilds: 3, previousRunId: "previous-run", status: "round_limit" },
+    } }]
+    : [
+      { id: "nativeRepairBefore", kind: "nativeRepairBefore", createdAt: 122, data: { artifactSha256: before, planDigest: plan } },
+      { id: "nativeRepairResult", kind: "nativeRepairResult", createdAt: 123, data: { artifactSha256: result, planDigest: plan } },
+    ];
+  const artifacts = kind === "build"
+    ? [{ id: "native-build-result", sha256: result, mediaType: "application/json", label: "Original native build receipt" }]
+    : [
+      { id: "nativeRepairBefore", sha256: before, mediaType: "application/json", label: "Before backup" },
+      { id: "nativeRepairResult", sha256: result, mediaType: "application/json", label: "Source edit result" },
+    ];
+  return { ...saved, snapshot: { ...saved.snapshot, artifacts }, coordinatorState: null,
+    messages: [], events, completeness: { complete: false, loadedMessageCount: 0, storedMessageCount: null, reason: "messageCountMismatch" } };
+}
 it("selects only completed archived discussion turns, preserving the current user block and excluding failed input",()=>{
  const archive={coordinatorState:{taskMode:"discussion"},providerMessages:[{role:"user",content:"failed"},{role:"user",content:"question"},{role:"assistant",content:"answer"},{role:"user",content:"cancelled"}],events:[
  {kind:"model_started",data:{payload:{requestId:"failed",messages:[{role:"user",content:"failed"}]}}},
@@ -119,6 +139,39 @@ it("requires explicit v2 delivery confirmation and refuses unprovable old DeepSe
  expect(archive.providerMessages[1].content).toBe("Full received body");
 });
 describe("native run history read-only port", () => {
+  it.each(["build", "repair", "recovery"] as const)("opens the persisted native %s event shape as read-only history", async kind => {
+    const saved = nativeArchiveFixture(kind), invoke = vi.fn(async () => saved);
+    const result = await createNativeRunHistory(invoke).snapshot("A", "run");
+    expect(result.events).toEqual(saved.events);
+    expect(result.snapshot.artifacts).toEqual(saved.snapshot.artifacts);
+    expect(result.coordinatorState).toBeNull();
+    expect(result.providerMessages).toEqual([]);
+    expect(result.snapshot.requiresFreshAuthorization).toBe(true);
+    expect(canContinueNativeHistory(result)).toBe(false);
+    expect(invoke.mock.calls).toHaveLength(1);
+  });
+  it("keeps unknown native event shapes and malformed known metadata rejected", async () => {
+    const unknown = nativeArchiveFixture("repair");
+    unknown.events[0].kind = "nativeFutureResult";
+    await expect(createNativeRunHistory(async () => unknown).snapshot("A", "run")).rejects.toThrow("invalid_record");
+    const malformed = nativeArchiveFixture("build");
+    Object.assign(malformed.events[0].data, { exitCode: "6" });
+    await expect(createNativeRunHistory(async () => malformed).snapshot("A", "run")).rejects.toThrow("invalid_record");
+    const extra = nativeArchiveFixture("repair");
+    Object.assign(extra.events[0].data, { unexpected: "not a native field" });
+    await expect(createNativeRunHistory(async () => extra).snapshot("A", "run")).rejects.toThrow("invalid_record");
+  });
+  it("requires native event digests to match their archived artifact references", async () => {
+    const saved = nativeArchiveFixture("repair");
+    saved.snapshot.artifacts[0].sha256 = "d".repeat(64);
+    await expect(createNativeRunHistory(async () => saved).snapshot("A", "run")).rejects.toThrow("invalid_record");
+  });
+  it("does not accept a native receipt as a resumable coordinator archive", async () => {
+    const saved = nativeArchiveFixture("repair"), coordinator = archiveFixture().coordinatorState;
+    const forged = { ...saved, coordinatorState: { ...coordinator, messageCount: 0 },
+      completeness: { complete: true, loadedMessageCount: 0, storedMessageCount: 0, reason: null } };
+    await expect(createNativeRunHistory(async () => forged).snapshot("A", "run")).rejects.toThrow("invalid_record");
+  });
   it("binds discussion text to its recorded logical project namespace and known archive format",async()=>{
     const f=archiveFixture(),project="chat:project:A";
     const saved={...f,descriptor:{...f.descriptor,projectId:project,projectRoot:"conversation://chat"},
