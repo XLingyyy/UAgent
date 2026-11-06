@@ -1,5 +1,5 @@
 import {BlueprintStructureReader} from "../workspace/BlueprintStructureReader";
-import {parsePickupTemplatePlan,UE_PICKUP_PARENT,UE_PICKUP_ROOT} from "../../../../../packages/runtime/src/ue-pickup-template-v2";
+import {parsePickupTemplatePlan,UE_PICKUP_PARENT} from "../../../../../packages/runtime/src/ue-pickup-template-v2";
 import {useEffect,useRef,useState} from "react";
 import {useI18n} from "../i18n";
 import {useOptionalRuntimeStore,useOptionalProjectStore} from "../stores/ui-store";
@@ -8,13 +8,16 @@ import type {NativeInvoke} from "../runtime/project-native-adapter";
 export async function negotiatePickupConnection(invoke:NativeInvoke|null,input:{projectId:string;rootId:string;editorSessionId:string}) {
  if(!invoke)throw Error("pickup_native_unavailable");
  const result=await invoke<Record<string,unknown>>("negotiate_ue_pickup_connection",{input});
- if(result.schemaVersion!==1||result.projectId!==input.projectId||result.editorSessionId!==input.editorSessionId||result.status!=="negotiated_readonly"||result.toolsVerified!==true||result.mutationEnabled!==false||result.connectionRetained!==false||typeof result.pluginLabEnabled!=="boolean"||result.reason!=="pickup_native_plan_approval_not_integrated")throw Error("pickup_invalid_connection_report");
- return {labEnabled:result.pluginLabEnabled};
+ if(result.schemaVersion!==1||result.projectId!==input.projectId||result.editorSessionId!==input.editorSessionId||result.status!=="negotiated_readonly"||result.toolsVerified!==true||result.mutationEnabled!==false||result.connectionRetained!==false||typeof result.pluginScopeEnabled!=="boolean"||result.reason!=="pickup_discovery_only_no_write_authority")throw Error("pickup_invalid_connection_report");
+ return {scopeEnabled:result.pluginScopeEnabled};
 }
 export function BlueprintTemplateWorkflow(){
  const {locale}=useI18n(),zh=locale==="zh-CN";
  const projectId=useOptionalProjectStore(s=>s.activeProjectId);
+  const [uproject,setUproject]=useState(""),[directory,setDirectory]=useState("");
  const [name,setName]=useState("BP_Pickup"),[item,setItem]=useState("Health"),[prompt,setPrompt]=useState("Press E to collect");
+  const targetPackage=`${directory}/${name}`;
+  const validDestination=/^[A-Za-z0-9_]{1,128}\.uproject$/.test(uproject)&&/^\/Game(?:\/[A-Za-z0-9_]{1,80})+$/.test(directory)&&/^BP_[A-Za-z0-9_]{0,77}$/.test(name)&&targetPackage.length<=1024;
  const [creationAttempted,setCreationAttempted]=useState(false);
  const [effect,setEffect]=useState<"preview_ready"|"created_saved"|"failed"|null>(null);
  const [review,setReview]=useState<Record<string,unknown>|null>(null);
@@ -26,20 +29,20 @@ export function BlueprintTemplateWorkflow(){
  const session=owned??observed;
  const [busy,setBusy]=useState(false),[result,setResult]=useState<"verified"|"failed"|"start_failed"|"stop_failed"|null>(null);
  const generation=useRef(0);
- const key=[projectId,name,item,prompt,observed?.projectId,observed?.rootId,observed?.sessionId].join("|");
+  const key=JSON.stringify([projectId,uproject,directory,name,item,prompt,observed?.projectId,observed?.rootId,observed?.sessionId]);
  useEffect(()=>{generation.current++;setCreationAttempted(false);setEffect(null);setReview(null);setEffectAttempted(false);setResult(null);setStartup(null);setOperationId(null);setOwned(null);setBusy(false);return()=>{generation.current++;};},[key]);
  const check=async()=>{if(!session)return;const current=++generation.current;setBusy(true);setResult(null);
   try{await negotiatePickupConnection(localNativeInvoke(),{projectId:session.projectId,rootId:session.rootId,editorSessionId:session.sessionId});if(generation.current===current)setResult("verified");}
   catch{if(generation.current===current)setResult("failed");}finally{if(generation.current===current)setBusy(false);}
  };
  const approve=async()=>{
-  if(!projectId)return;const current=++generation.current;setBusy(true);setStartup(null);
+   if(!projectId||!validDestination)return;const current=++generation.current;setBusy(true);setStartup(null);
   try{
-   const plan=parsePickupTemplatePlan({operationId:crypto.randomUUID(),targetPackage:`${UE_PICKUP_ROOT}/${name}`,expectedDiskState:"absent",templateId:"actor.pickup.native.v1",parentClass:UE_PICKUP_PARENT,itemId:item,promptText:prompt,interactionRadiusCm:200,interactionKey:"E"});
+    const plan=parsePickupTemplatePlan({operationId:crypto.randomUUID(),targetPackage,expectedDiskState:"absent",templateId:"actor.pickup.native.v1",parentClass:UE_PICKUP_PARENT,itemId:item,promptText:prompt,interactionRadiusCm:200,interactionKey:"E"});
    const invoke=localNativeInvoke();if(!invoke)throw Error("native_required");
-   const value=await invoke<Record<string,unknown>>("approve_ue_pickup_launch_plan",{input:{projectId,plan}});
+    const value=await invoke<Record<string,unknown>>("approve_ue_pickup_launch_plan",{input:{projectId,uprojectRelativePath:uproject,plan}});
    if(value.schemaVersion!==1||value.projectId!==projectId||value.operationId!==plan.operationId||value.status!=="startup_plan_written"||value.approvalFileCreated!==true||value.editorStarted!==false||value.assetCreated!==false)throw Error("invalid_startup_receipt");
-   if(current===generation.current){setStartup("written");setOperationId(plan.operationId);}
+    if(current===generation.current){setStartup("written");setOperationId(plan.operationId);}else await invoke("stop_approved_ue_pickup_editor",{input:{projectId,operationId:plan.operationId}});
   }catch{if(current===generation.current)setStartup("failed");}finally{if(current===generation.current)setBusy(false);}
  };
  useEffect(()=>{return()=>{if(projectId&&operationId){void localNativeInvoke()?.("stop_approved_ue_pickup_editor",{input:{projectId,operationId}}).catch(()=>{});}};},[projectId,operationId]);
@@ -65,16 +68,20 @@ export function BlueprintTemplateWorkflow(){
  };
  return <section aria-label={zh?"蓝图模板":"Blueprint template"}>
   <label>{zh?"模板":"Template"} <select><option value="actor.pickup.native.v1">{zh?"交互拾取 Actor（固定原生父类）":"Interactive pickup Actor (fixed native parent)"}</option></select></label>
+   <label>{zh?"项目 .uproject 文件":"Project .uproject file"}<input value={uproject} placeholder="Test01.uproject" disabled={busy||Boolean(owned)} onChange={e=>setUproject(e.target.value)}/></label>
+   <label>{zh?"已有 /Game 子目录":"Existing /Game directory"}<input value={directory} placeholder="/Game/Gameplay/Pickups" disabled={busy||Boolean(owned)} onChange={e=>setDirectory(e.target.value)}/></label>
   <label>{zh?"新蓝图名称":"New Blueprint name"}<input value={name} disabled={busy||Boolean(owned)} onChange={e=>setName(e.target.value)}/></label>
   <label>{zh?"物品标识":"Item identifier"}<input value={item} disabled={busy||Boolean(owned)} onChange={e=>setItem(e.target.value)}/></label>
   <label>{zh?"交互提示":"Interaction prompt"}<input value={prompt} disabled={busy||Boolean(owned)} onChange={e=>setPrompt(e.target.value)}/></label>
-  <p>{zh?"固定交互距离 200 厘米，按键 E。仅支持已准备目录的隔离 UAgentBuildLab 工程。":"Fixed interaction radius: 200 cm; key: E. Requires a prepared isolated UAgentBuildLab project."}</p>
-  <button type="button" disabled={busy||!projectId||Boolean(owned)} onClick={()=>void approve()}>{zh?"审阅并批准启动计划":"Review and approve startup plan"}</button>
+   <p>{zh?"填写工程根目录中的 .uproject 文件名，以及已存在的 /Game 子目录。文件名与目录段仅支持英文字母、数字和下划线；目标目录不会自动创建。":"Enter the .uproject filename at the project root and an existing /Game subdirectory. The project name and directory segments accept only ASCII letters, digits and underscores. The target directory is not created automatically."}</p>
+   <p>{zh?"固定交互距离 200 厘米，按键 E。仅创建、编译并保存新的拾取蓝图，不操作地图。":"Fixed interaction radius: 200 cm; key: E. Creates, compiles and saves a new pickup Blueprint without map operations."}</p>
+   {validDestination&&<p>{zh?"目标蓝图：":"Target Blueprint: "}<code>{targetPackage}</code></p>}
+   <button type="button" disabled={busy||!projectId||!validDestination||Boolean(owned)} onClick={()=>void approve()}>{zh?"审阅并批准启动计划":"Review and approve startup plan"}</button>
   {operationId&&<button type="button" disabled={busy||Boolean(owned)} onClick={()=>void start()}>{zh?"确认并受管启动编辑器":"Confirm and start managed editor"}</button>}
   {busy&&operationId&&!owned&&<button type="button" onClick={()=>void stop()}>{zh?"取消编辑器启动":"Cancel editor startup"}</button>}
   {owned&&<><p>{effect==="created_saved"?(zh?"模板已创建保存。":"Template created and saved."):(effect==="failed"||creationAttempted)?(zh?"操作结果尚未确认。":"Operation outcome not confirmed."):(zh?"模板编辑器已启动；资产尚未创建。":"Template editor started; asset not created.")}</p><button type="button" onClick={()=>void stop()}>{zh?"结束模板编辑器":"Stop template editor"}</button></>}
-  {startup&&!owned&&!creationAttempted&&<p role="status">{startup==="written"?(zh?"审批文件已新建。下一步单独确认受管启动；蓝图尚未创建。":"Approval file created. Editor not started; Blueprint not created. Confirm managed startup separately."):(zh?"启动计划未完成。请检查隔离工程、参数或是否已有审批文件；不会覆盖旧文件。":"Startup plan did not complete. Check isolated project, parameters or an existing approval file; existing files are never overwritten.")}</p>}
-  {creationAttempted&&effect!=="created_saved"&&<p role="status">{zh?"创建已请求，结果尚未确认；目标资产可能已经写入，请核对工程。":"Creation requested; outcome not confirmed. The target asset may have been written; inspect the project."}</p>}
+   {startup&&!owned&&!creationAttempted&&<p role="status">{startup==="written"?(zh?"审批文件已新建。下一步单独确认受管启动；蓝图尚未创建。":"Approval file created. Editor not started; Blueprint not created. Confirm managed startup separately."):(zh?"启动计划未完成。请检查项目文件、已有目标目录、参数或是否已有审批文件；不会覆盖旧文件。":"Startup plan did not complete. Check the project file, existing target directory, parameters or an existing approval file; existing files are never overwritten.")}</p>}
+   {creationAttempted&&effect!=="created_saved"&&<p role="status">{busy?(zh?"正在审阅或执行创建请求。":"Reviewing or executing the creation request."):(zh?"创建已请求，结果尚未确认；目标资产可能已经写入，请核对工程。":"Creation requested; outcome not confirmed. The target asset may have been written; inspect the project.")}</p>}
   {owned&&<div>
    <button type="button" disabled={busy||effectAttempted||effect!==null} onClick={()=>void runEffect(false)}>{zh?"准备并编译预览":"Prepare and compile preview"}</button>
    {review&&<pre aria-label={zh?"模板操作结果":"Template operation result"}>{JSON.stringify(review,null,2)}</pre>}
@@ -86,7 +93,7 @@ export function BlueprintTemplateWorkflow(){
   <button type="button" disabled={busy||!session||session.mode!=="attached"} onClick={()=>void check()}>{zh?"检查 V2 受管连接":"Check managed V2 connection"}</button>
   {(result==="start_failed"||result==="stop_failed")&&<p role="status">{result==="start_failed"?(zh?"编辑器启动未完成或已取消。尚未创建资产。":"Editor startup did not complete or was declined. No asset was created."):(zh?"停止请求未确认，请检查受管任务状态。":"Stop request was not confirmed. Check the managed task status.")}</p>}
   {(result==="verified"||result==="failed")&&<p role="status">{result==="verified"?(zh?"受管连接与工具契约已核对。请准备编译预览，再单独批准创建。":"Managed connection and tool contract checked. Use the owned template editor to prepare a compiled preview, then approve creation separately."):(zh?"连接核对失败。需要当前可信工程的自有编辑器监听器和完整 V2 插件契约。":"Connection check failed. A current trusted project's owned editor listener and the complete V2 plugin contract are required.")}</p>}
-  {!result&&<p role="status">{zh?"创建需要隔离受管编辑器、编译预览和单独批准。":"Creation requires the isolated managed editor, a compiled preview and separate approval."}</p>}
- {owned&&<BlueprintStructureReader session={owned} initialPackage={`${UE_PICKUP_ROOT}/${name}`}/>}
+   {!result&&<p role="status">{zh?"创建需要当前可信项目的受管编辑器、编译预览和精确目标的单独批准。":"Creation requires the current trusted project's managed editor, a compiled preview and separate approval for the exact target."}</p>}
+  {owned&&<BlueprintStructureReader session={owned} initialPackage={targetPackage}/>}
  </section>;
 }

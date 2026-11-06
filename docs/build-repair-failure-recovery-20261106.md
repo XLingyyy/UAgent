@@ -36,7 +36,7 @@
 
 - 取消终态修复相关 7 项定向测试通过：已确认的 cancelled 回执保留取消终态；文档、项目根、Host 收尾和结果落账条件保持，取消不会重新开放修复或重建权限。
 - 新增缺结果进程退出测试 1 项、既有同会话恢复边界 7 项、既有跨进程恢复 2 项通过。这些是各次定向执行结果，与早先 9 项恢复测试有重叠，不累计成新的独立用例总数。
-- 去除时序插桩后的正常原生 EXE 已构建成功，exit 0；本节记录时恢复提示文案的 web build 尚待完成，不提前记作最终预览已包含该文案。
+- 去除时序插桩后的正常原生 EXE 与恢复提示文案的 web build 均已构建成功，exit 0；该文案已纳入新的正常预览 EXE。
 - 本地证据位于 `.local-dev/temp/test01-build-repair-acceptance-20261106/`，不随 GitHub 发布：`live-cancel-build-summary.json`、`live-partial-cancel-before-restore-summary.json`、`live-partial-cancel-restore-summary.json`、`live-restart-restore-summary.json`；插桩构建与准备记录为 `partial-instrumented-build.json`、`partial-fixture-preparation.json`。
 
 ## 权限边界与后续顺序

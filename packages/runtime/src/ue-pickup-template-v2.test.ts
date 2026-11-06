@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import {
   parsePickupTemplatePlan,
   UE_PICKUP_PARENT,
-  UE_PICKUP_ROOT,
   UE_PICKUP_TOOLS,
   UE_PICKUP_CONTRACT,
   negotiatePickupTemplateV2,
@@ -12,7 +11,7 @@ import {
 } from "./ue-pickup-template-v2.js";
 const plan = () => ({
   operationId: "11111111-1111-4111-8111-111111111111",
-  targetPackage: `${UE_PICKUP_ROOT}/BP_Pickup`,
+  targetPackage: "/Game/Gameplay/Pickups/BP_Pickup",
   expectedDiskState: "absent",
   templateId: "actor.pickup.native.v1",
   parentClass: UE_PICKUP_PARENT,
@@ -21,17 +20,26 @@ const plan = () => ({
   interactionRadiusCm: 200,
   interactionKey: "E",
 });
-describe("fixed pickup plan", () => {
+describe("approved project pickup plan", () => {
   it("accepts a bounded typed plan and freezes it", () => {
     expect(parsePickupTemplatePlan(plan()).interactionRadiusCm).toBe(200);
     expect(Object.isFrozen(parsePickupTemplatePlan(plan()))).toBe(true);
   });
+  it("accepts an exact target in an ordinary project subdirectory", () => {
+    expect(parsePickupTemplatePlan({...plan(),targetPackage:"/Game/Items/BP_Health"}).targetPackage).toBe("/Game/Items/BP_Health");
+  });
   it.each([
-    "/Game/User/BP_Pickup",
-    `${UE_PICKUP_ROOT}Other/BP_Pickup`,
-    `${UE_PICKUP_ROOT}/../BP_Pickup`,
-    `${UE_PICKUP_ROOT}/BP_Pickup.BP_Pickup`,
-    `${UE_PICKUP_ROOT}/Sub/BP_Pickup`,
+    "/Game/BP_Pickup",
+    "/GameOther/Items/BP_Pickup",
+    "/Engine/Items/BP_Pickup",
+    "/Game/Items/../BP_Pickup",
+    "/Game/Items/BP_Pickup.BP_Pickup",
+    "/Game/Items//BP_Pickup",
+    "/Game/Items/BP_Pickup/Child",
+    "/Game/Items/NotBlueprint",
+    "/Game/Items With Spaces/BP_Pickup",
+    `/Game/${"x".repeat(81)}/BP_Pickup`,
+    `/Game/${(`${"x".repeat(80)}/`).repeat(13)}BP_Pickup`,
   ])("rejects scope escape %s", (targetPackage) => {
     expect(() => parsePickupTemplatePlan({ ...plan(), targetPackage })).toThrow();
   });
@@ -51,7 +59,7 @@ describe("fixed pickup plan", () => {
 
 const capture = JSON.parse(
   readFileSync(
-    new URL("./__fixtures__/ue-pickup-template-v2-discovery.json", import.meta.url),
+    new URL("./__fixtures__/ue-pickup-approved-project-v2-discovery.json", import.meta.url),
     "utf8",
   ),
 );
@@ -97,21 +105,30 @@ function effectFixture() {
   };
 }
 describe("pickup versioned contract and effect binding", () => {
-  it("negotiates captured UE schemas with sanitized host identities", () => {
+  it("negotiates approved project schemas with synthetic host identities", () => {
     const { session } = sessionFixture();
     expect(createPickupCall(session, UE_PICKUP_TOOLS[1]).arguments).not.toHaveProperty(
       "hostPermit",
     );
   });
-  it("rejects changed schema types and expanded production/target scope", () => {
-    for (const mode of ["schema", "production", "root", "target"]) {
+  it("rejects changed schema types and mismatched approval scope", () => {
+    for (const mode of ["schema", "contract", "production", "root", "target", "directory", "map", "scope"]) {
       const { manifest, catalog, host } = sessionFixture();
       if (mode === "schema") catalog[1].inputSchema.properties.protocolVersion.type = "string";
-      if (mode === "production") manifest.productionSupported = true;
+      if (mode === "contract") manifest.contractVersion = "2.1.0-pickup-create-only";
+      if (mode === "production") manifest.productionSupported = false;
       if (mode === "root") host.rootObjectId = "replaced-root";
-      if (mode === "target") manifest.allowedTarget = `${UE_PICKUP_ROOT}/BP_Other`;
+      if (mode === "target") manifest.allowedTarget = "/Game/Gameplay/Pickups/BP_Other";
+      if (mode === "directory") manifest.writeRoot = "/Game/Gameplay";
+      if (mode === "map") manifest.allowedMap = "/Game/Gameplay/L_Map";
+      if (mode === "scope") manifest.scopeMode = "isolated_lab_only";
       expect(() => negotiatePickupTemplateV2(manifest, catalog, host)).toThrow();
     }
+  });
+  it("does not treat production support or discovery alone as approval", () => {
+    const {manifest,catalog,host}=sessionFixture();
+    Object.assign(manifest,{available:false,writeRoot:"",allowedTarget:""});
+    expect(() => negotiatePickupTemplateV2(manifest,catalog,host)).toThrow("scope_or_contract_mismatch");
   });
   it("requires a preview precondition for apply", () => {
     const { session } = sessionFixture();

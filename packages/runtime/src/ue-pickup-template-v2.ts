@@ -1,6 +1,5 @@
-/** Fixed create-only pickup slice. Public identity/preview hashes never confer write authority. */
-export const UE_PICKUP_CONTRACT = "2.1.0-pickup-create-only";
-export const UE_PICKUP_ROOT = "/Game/UAgentBuildLab/Pickup_T13";
+/** Approved-project create-only pickup slice. Public identity/preview hashes never confer write authority. */
+export const UE_PICKUP_CONTRACT = "2.2.0-pickup-approved-project";
 export const UE_PICKUP_PARENT = "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2";
 export const UE_PICKUP_TOOLS = [
   "uagent.v2.pickup.capabilities",
@@ -60,8 +59,8 @@ export function parsePickupTemplatePlan(value: unknown): PickupTemplatePlan {
     typeof p.operationId !== "string" ||
     !GUID.test(p.operationId) ||
     typeof p.targetPackage !== "string" ||
-    !p.targetPackage.startsWith(`${UE_PICKUP_ROOT}/`) ||
-    !/^BP_[A-Za-z0-9_]{0,77}$/.test(p.targetPackage.slice(UE_PICKUP_ROOT.length + 1)) ||
+    p.targetPackage.length > 1024 ||
+    !/^\/Game(?:\/[A-Za-z0-9_]{1,80})+\/BP_[A-Za-z0-9_]{0,77}$/.test(p.targetPackage) ||
     p.expectedDiskState !== "absent" ||
     p.templateId !== "actor.pickup.native.v1" ||
     p.parentClass !== UE_PICKUP_PARENT ||
@@ -235,14 +234,14 @@ export function negotiatePickupTemplateV2(
     m.protocolVersion !== 2 ||
     m.contractVersion !== UE_PICKUP_CONTRACT ||
     m.available !== true ||
-    m.productionSupported !== false ||
-    m.scopeMode !== "isolated_lab_only" ||
+    m.productionSupported !== true ||
+    m.scopeMode !== "approved_project_directory" ||
     m.projectKey !== host.projectKey ||
     m.rootObjectId !== host.rootObjectId ||
     !host.rootObjectId ||
     m.allowedTarget !== plan.targetPackage ||
-    m.writeRoot !== UE_PICKUP_ROOT ||
-    m.allowedMap !== `${UE_PICKUP_ROOT}/L_PickupValidation` ||
+    m.writeRoot !== plan.targetPackage.slice(0,plan.targetPackage.lastIndexOf("/")) ||
+    m.allowedMap !== "" ||
     m.parentClass !== UE_PICKUP_PARENT ||
     typeof m.instanceId !== "string" ||
     !GUID.test(m.instanceId)

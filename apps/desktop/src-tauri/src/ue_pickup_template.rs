@@ -1,10 +1,10 @@
-//! Isolated-Lab pickup capability policy. Scope/permits come only from the verified native host.
+//! Approved-project pickup policy. Scope/permits come only from the verified native host.
 //! Model arguments never mint approval. No IPC endpoint, network action or production grant is installed.
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-pub const CONTRACT: &str = "2.1.0-pickup-create-only";
+pub const CONTRACT: &str = "2.2.0-pickup-approved-project";
 pub const PARENT: &str = "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2";
-pub const ROOT: &str = "/Game/UAgentBuildLab/Pickup_T13";
+pub const SCOPE: &str = "approved_project_directory";
 const TOOLS: [&str; 4] = [
     "uagent.v2.pickup.prepare",
     "uagent.v2.pickup.preview",
@@ -24,7 +24,7 @@ pub struct PickupTemplatePlan {
     pub interaction_radius_cm: u32,
     pub interaction_key: String,
 }
-fn guid(value: &str) -> bool {
+pub(crate) fn guid(value: &str) -> bool {
     value.len() == 36
         && value.bytes().enumerate().all(|(i, b)| {
             if [8, 13, 18, 23].contains(&i) {
@@ -42,14 +42,12 @@ fn word(value: &str, max: usize) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 impl PickupTemplatePlan {
+    pub fn write_root(&self) -> Result<&str, String> {
+        target_directory(&self.target_package)
+    }
     pub fn validate(&self) -> Result<(), String> {
-        let name = self
-            .target_package
-            .strip_prefix(&format!("{ROOT}/"))
-            .ok_or("target_outside_fixed_lab_scope")?;
-        if !name.starts_with("BP_")
-            || !word(name, 80)
-            || !guid(&self.operation_id)
+        self.write_root()?;
+        if !guid(&self.operation_id)
             || self.expected_disk_state != "absent"
             || self.template_id != "actor.pickup.native.v1"
             || self.parent_class != PARENT
@@ -65,6 +63,15 @@ impl PickupTemplatePlan {
         Ok(())
     }
 }
+pub fn target_directory(target: &str) -> Result<&str, String> {
+    let (directory, name) = target.rsplit_once('/').ok_or("pickup_target_invalid")?;
+    let relative = directory.strip_prefix("/Game/").ok_or("pickup_target_invalid")?;
+    if target.len() > 1024 || !relative.split('/').all(|part| word(part, 80))
+        || !name.starts_with("BP_") || !word(name, 80) {
+        return Err("pickup_target_invalid".into());
+    }
+    Ok(directory)
+}
 #[derive(Debug)]
 pub struct PickupHostScope {
     project_key: String,
@@ -73,9 +80,9 @@ pub struct PickupHostScope {
     plan: PickupTemplatePlan,
 }
 impl PickupHostScope {
-    /// The caller must hold the actual Lab root object/owned editor lease and explicit exact-plan approval.
+    /// The caller holds the project/target directory objects, owned editor lease and exact-plan approval.
     /// Never construct this from model input or from a peer's self-asserted identity.
-    pub fn from_verified_lab_host(
+    pub fn from_verified_project_host(
         project_key: String,
         instance_id: String,
         root_object_id: String,
@@ -102,7 +109,7 @@ pub struct PickupHostAuthorization {
 }
 impl PickupHostAuthorization {
     /// Host-owned one-use permits must match the separately scoped editor launch approval.
-    pub fn new_for_verified_lab_host(
+    pub fn new_for_verified_project_host(
         scope: PickupHostScope,
         permits: [String; 3],
     ) -> Result<Self, String> {
@@ -222,11 +229,11 @@ impl PickupHostAuthorization {
 mod tests {
     use super::*;
     fn plan() -> PickupTemplatePlan {
-        serde_json::from_value(json!({"operationId":"11111111-1111-4111-8111-111111111111","targetPackage":format!("{ROOT}/BP_Pickup"),"expectedDiskState":"absent","templateId":"actor.pickup.native.v1","parentClass":PARENT,"itemId":"Health","promptText":"Press E to collect","interactionRadiusCm":200,"interactionKey":"E"})).unwrap()
+        serde_json::from_value(json!({"operationId":"11111111-1111-4111-8111-111111111111","targetPackage":"/Game/Gameplay/Pickups/BP_Pickup","expectedDiskState":"absent","templateId":"actor.pickup.native.v1","parentClass":PARENT,"itemId":"Health","promptText":"Press E to collect","interactionRadiusCm":200,"interactionKey":"E"})).unwrap()
     }
     fn host() -> PickupHostAuthorization {
-        PickupHostAuthorization::new_for_verified_lab_host(
-            PickupHostScope::from_verified_lab_host(
+        PickupHostAuthorization::new_for_verified_project_host(
+            PickupHostScope::from_verified_project_host(
                 "project".into(),
                 "instance".into(),
                 "volume:file".into(),
@@ -243,6 +250,15 @@ mod tests {
     }
     fn call(index: usize) -> Value {
         json!({"name":TOOLS[index],"arguments":{"protocolVersion":2,"contractVersion":CONTRACT,"expectedProjectKey":"project","expectedInstanceId":"instance","expectedRootObjectId":"volume:file","plan":plan()}})
+    }
+    #[test]
+    fn approved_directory_plan_rejects_invalid_package_paths() {
+        assert_eq!(plan().write_root().unwrap(), "/Game/Gameplay/Pickups");
+        for target in ["/Game/BP_Pickup", "/Engine/Pickups/BP_Pickup", "/Game//BP_Pickup", "/Game/A/../BP_Pickup", "/Game/A/BP_Pickup.BP_Pickup", "/Game/A/BP_Pickup/Sub", "/Game/A B/BP_Pickup", "/Game/A/NonBlueprint"] {
+            let mut p=plan();p.target_package=target.into();assert!(p.validate().is_err(), "{target}");
+        }
+        let mut changed=call(1);changed["arguments"]["plan"]["targetPackage"]=json!("/Game/Other/BP_Pickup");
+        assert!(host().authorize(&changed).is_err());
     }
     #[test]
     fn exact_plan_and_separate_one_use_effect_permissions() {
@@ -273,7 +289,7 @@ mod tests {
     #[test]
     fn rejects_scope_version_and_parent_escape() {
         for (key, value) in [
-            ("targetPackage", json!("/Game/UserGame/BP_Pickup")),
+            ("targetPackage", json!("/Game/Gameplay/Pickups/../BP_Pickup")),
             ("parentClass", json!("/Script/Other.Parent")),
             ("expectedDiskState", json!("overwrite")),
             ("interactionRadiusCm", json!(1001)),

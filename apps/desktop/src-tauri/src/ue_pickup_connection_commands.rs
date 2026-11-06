@@ -11,7 +11,7 @@ pub(crate) struct ConnectInput { project_id:String, root_id:String, editor_sessi
 #[serde(rename_all="camelCase")]
 pub(crate) struct ConnectionReport {
  schema_version:u32, project_id:String, editor_session_id:String,
- status:&'static str, tools_verified:bool, plugin_lab_enabled:bool,
+ status:&'static str, tools_verified:bool, plugin_scope_enabled:bool,
  mutation_enabled:bool, connection_retained:bool, reason:&'static str,
 }
 static BUSY:AtomicBool=AtomicBool::new(false);
@@ -74,7 +74,7 @@ fn connect(input:ConnectInput,document:Arc<NativeStoreWindowGrant>,_permit:Permi
  let (binding,port)=crate::ue_editor_process::resolve_pickup_discovery_listener(&input.editor_session_id,&input.project_id,&input.root_id)?;
  let mut connection=Connection{input,document,binding,port,session:None,agent:ureq::AgentBuilder::new().redirects(0).timeout(Duration::from_secs(5)).build()};
  let outcome=connection.negotiate();let closed=connection.close();let enabled=outcome?;closed?;connection.current()?;
- Ok(ConnectionReport{schema_version:1,project_id:connection.input.project_id,editor_session_id:connection.input.editor_session_id,status:"negotiated_readonly",tools_verified:true,plugin_lab_enabled:enabled,mutation_enabled:false,connection_retained:false,reason:"pickup_native_plan_approval_not_integrated"})
+ Ok(ConnectionReport{schema_version:1,project_id:connection.input.project_id,editor_session_id:connection.input.editor_session_id,status:"negotiated_readonly",tools_verified:true,plugin_scope_enabled:enabled,mutation_enabled:false,connection_retained:false,reason:"pickup_discovery_only_no_write_authority"})
 }
 #[tauri::command]
 pub(crate) async fn negotiate_ue_pickup_connection(window:tauri::WebviewWindow,store:tauri::State<'_,crate::managed_run_store::ManagedRunStoreState>,input:ConnectInput)->Result<ConnectionReport,String>{

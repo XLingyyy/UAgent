@@ -2,7 +2,7 @@
 use serde::{Deserialize,Serialize};
 use std::sync::{Arc,Mutex,OnceLock};
 use crate::managed_run_store::NativeStoreWindowGrant;
-use crate::ue_pickup_launch::{PreparedPickupLaunch,validate_lab,write_approved_launch};
+use crate::ue_pickup_launch::{PreparedPickupLaunch,prepare_launch,write_approved_launch};
 use crate::ue_pickup_template::PickupTemplatePlan;
 struct PickupEditor {process_id:String,session:crate::ue_editor_process::EditorObservationSessionResult,_approval_pin:crate::ue_build_repair_io::IdentityPin}
 impl Drop for PickupEditor{fn drop(&mut self){crate::ue_editor_process::stop_pickup_owned_editor(&self.process_id);}}
@@ -24,14 +24,15 @@ pub(crate) fn reap_stale(){
 pub(crate) fn shutdown(){if let Some(registry)=PENDING.get(){if let Ok(mut slot)=registry.lock(){let retired=slot.take();drop(slot);drop(retired);}}}
 #[derive(Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
-pub(crate) struct LaunchPlanInput { project_id:String, plan:PickupTemplatePlan }
+pub(crate) struct LaunchPlanInput { project_id:String, uproject_relative_path:String, plan:PickupTemplatePlan }
 #[derive(Serialize)]
 #[serde(rename_all="camelCase")]
 pub(crate) struct LaunchPlanReceipt {schema_version:u32,project_id:String,operation_id:String,status:&'static str,approval_file_created:bool,editor_started:bool,asset_created:bool}
 #[link(name="user32")]
 extern "system" {fn MessageBoxW(window:isize,text:*const u16,title:*const u16,flags:u32)->i32;}
-fn confirm(hwnd:isize,root:&str,plan:&PickupTemplatePlan)->bool{
- let message=format!("Approve this isolated Lab template startup plan?\nProject: {root}\nTarget: {}\nParent: {}\nItem: {}\nPrompt: {}\nRadius: {} cm\nKey: {}\nOperation: {}\n\nCreates Saved/UAgentPickupT13/host-approved-plan.json only if absent. This permits preparation and transient preview after controlled editor startup. Asset creation still requires a separate approval of the compiled preview. This step does not launch an editor or create an asset.",plan.target_package,plan.parent_class,plan.item_id,plan.prompt_text,plan.interaction_radius_cm,plan.interaction_key,plan.operation_id);
+fn confirm(hwnd:isize,root:&str,launch:&PreparedPickupLaunch)->bool{
+ let plan=&launch.plan;
+ let message=format!("Approve this pickup template startup plan?\nProject: {root}\nDescriptor: {}\nDescriptor SHA256: {}\nApproved directory: {}\nTarget: {}\nParent: {}\nItem: {}\nPrompt: {}\nRadius: {} cm\nKey: {}\nOperation: {}\nApproval file: {}\n\nCreates one new operation approval file. Preparation and transient preview follow controlled editor startup. Creating this ONE new Blueprint requires separate approval of the compiled preview. Existing assets are never overwritten. No map operation is authorized.",launch.project.project_file,launch.project.hash,launch.project.read_root,plan.target_package,plan.parent_class,plan.item_id,plan.prompt_text,plan.interaction_radius_cm,plan.interaction_key,plan.operation_id,launch.approval_path().display());
  let message:Vec<u16>=message.encode_utf16().chain(Some(0)).collect();let title:Vec<u16>="UAgent - approve pickup startup plan".encode_utf16().chain(Some(0)).collect();
  unsafe{MessageBoxW(hwnd,message.as_ptr(),title.as_ptr(),0x4|0x30|0x100)==6}
 }
@@ -51,9 +52,10 @@ pub(crate) async fn approve_ue_pickup_launch_plan(window:tauri::WebviewWindow,st
   if pending.as_ref().is_some_and(|v|!v.document.is_current()||v.launch.root.is_revoked()||v.launch.expires<=std::time::Instant::now()){pending.take();}
   if pending.as_ref().is_some_and(|v|v.document.is_current()&&v.launch.expires>std::time::Instant::now()){return Err("pickup_plan_already_pending".into());}}
   if !document.is_current(){return Err("pickup_document_revoked".into());}
-  validate_lab(&root)?;let path=root.path_hint().to_string_lossy().to_string();
-  if !confirm(hwnd,&path,&input.plan){return Err("pickup_approval_declined".into());}
-  let launch=write_approved_launch(root,input.plan,||document.is_current()&&lifecycle.ensure_lifecycle_monitor().is_ok())?;
+  let project=Arc::new(crate::ue_semantic_launch::Prepared::new(root.clone(),input.uproject_relative_path,input.plan.write_root()?.into())?);
+  let prepared=prepare_launch(project,input.plan)?;let path=root.path_hint().to_string_lossy().to_string();
+  if !confirm(hwnd,&path,&prepared){return Err("pickup_approval_declined".into());}
+  let launch=write_approved_launch(prepared,||document.is_current()&&lifecycle.ensure_lifecycle_monitor().is_ok())?;
   let operation_id=launch.plan.operation_id.clone();
   // No registry lock is held across native confirmation or filesystem work.
   let mut pending=PENDING.get().unwrap().lock().map_err(|_|"pickup_plan_unavailable")?;
@@ -85,10 +87,10 @@ pub(crate) async fn start_approved_ue_pickup_editor(window:tauri::WebviewWindow,
    if current.project_id!=input.project_id||current.launch.plan.operation_id!=input.operation_id||!current.document.same_document(&document)||current.editor.is_some(){return Err("pickup_plan_binding_mismatch".into());}
    slot.take().unwrap()
   };
-  let root=record.launch.root.clone();let expires=record.launch.expires;let live_document=record.document.clone();let live_lifecycle=lifecycle.clone();
-  let live:Arc<dyn Fn()->bool+Send+Sync>=Arc::new(move||!cancelled.load(std::sync::atomic::Ordering::Acquire)&&live_document.is_current()&&!root.is_revoked()&&root.check_current().is_ok()&&std::time::Instant::now()<expires&&live_lifecycle.ensure_lifecycle_monitor().is_ok());
+  let root=record.launch.root.clone();let project=record.launch.project.clone();let target=record.launch.target_directory.clone();let expires=record.launch.expires;let live_document=record.document.clone();let live_lifecycle=lifecycle.clone();
+  let live:Arc<dyn Fn()->bool+Send+Sync>=Arc::new(move||!cancelled.load(std::sync::atomic::Ordering::Acquire)&&live_document.is_current()&&!root.is_revoked()&&root.check_current().is_ok()&&project.current()&&target.check_current().is_ok()&&std::time::Instant::now()<expires&&live_lifecycle.ensure_lifecycle_monitor().is_ok());
   if !live(){return Err("pickup_start_revoked".into());}
-  let text=format!("Start the configured UE 5.8.4 editor for this isolated template task?\nProject: {}\nTarget: {}\nOperation: {}\n\nThis executes editor, project and plugin startup code and writes Lab/DerivedData artifacts. Read-only semantic capability is enabled only for /Game/UAgentBuildLab/Pickup_T13; each Blueprint query requires separate approval. Preparation and preview may follow; creating the target asset still requires a separate approval. The owned editor stops when this document closes or the plan expires.",record.launch.root.path_hint().display(),record.launch.plan.target_package,record.launch.plan.operation_id);
+  let text=format!("Start the configured UE 5.8.4 editor for this approved pickup task?\nProject: {}\nTarget: {}\nOperation: {}\n\nThis executes editor, project and plugin startup code and writes project Saved/DerivedData artifacts. Read-only semantic capability is limited to the approved target directory; each Blueprint query requires separate approval. Preparation and preview may follow; creating the target asset still requires a separate approval. The owned editor stops when this document closes or the plan expires.",record.launch.root.path_hint().display(),record.launch.plan.target_package,record.launch.plan.operation_id);
   let text:Vec<u16>=text.encode_utf16().chain(Some(0)).collect();let title:Vec<u16>="UAgent - start template editor".encode_utf16().chain(Some(0)).collect();
   if unsafe{MessageBoxW(hwnd,text.as_ptr(),title.as_ptr(),0x4|0x30|0x100)}!=6{
    let mut slot=PENDING.get().unwrap().lock().map_err(|_|"pickup_plan_unavailable")?;
@@ -99,7 +101,7 @@ pub(crate) async fn start_approved_ue_pickup_editor(window:tauri::WebviewWindow,
   let result=crate::ue_editor_process::start_pickup_owned_editor(&input.project_id,&record.launch,live.clone())?;
   if result.status!="ready"{return Err("pickup_editor_not_ready".into());}
   let process=result.process.ok_or("pickup_process_missing")?;
-  let attached=crate::ue_editor_process::attach_editor_process(crate::ue_editor_process::EditorAttachInput{project_id:input.project_id.clone(),root_ref:record.launch.root.path_hint().to_string_lossy().into_owned(),uproject_relative_path:"UAgentBuildLab.uproject".into(),process_id:process.id.clone(),pid_hash:process.pid_hash,process_display_name:process.display_name,mode:"attached".into()});
+  let attached=crate::ue_editor_process::attach_editor_process(crate::ue_editor_process::EditorAttachInput{project_id:input.project_id.clone(),root_ref:record.launch.root.path_hint().to_string_lossy().into_owned(),uproject_relative_path:record.launch.project.project_file.clone(),process_id:process.id.clone(),pid_hash:process.pid_hash,process_display_name:process.display_name,mode:"attached".into()});
   let session=match attached{Ok(s) if s.status=="attached"=>s,_=>{crate::ue_editor_process::stop_pickup_owned_editor(&process.id);return Err("pickup_observation_failed".into());}};
   record.editor=Some(PickupEditor{process_id:process.id,session:session.clone(),_approval_pin:pin});
   if !live(){return Err("pickup_start_revoked".into());}
@@ -135,11 +137,11 @@ async fn template_effect(window:tauri::WebviewWindow,store:tauri::State<'_,crate
   let mut record={let mut slot=PENDING.get_or_init(||Mutex::new(None)).lock().map_err(|_|"pickup_plan_unavailable")?;
    let r=slot.as_ref().ok_or("pickup_plan_missing")?;
    if r.project_id!=input.project_id||r.launch.plan.operation_id!=input.operation_id||!r.document.same_document(&document)||r.editor.is_none(){return Err("pickup_plan_binding_mismatch".into());}slot.take().unwrap()};
-  let root=record.launch.root.clone();let expires=record.launch.expires;
-  let live=||document.is_current()&&!cancelled.load(std::sync::atomic::Ordering::Acquire)&&root.check_current().is_ok()&&!root.is_revoked()&&std::time::Instant::now()<expires&&lifecycle.ensure_lifecycle_monitor().is_ok();
+  let root=record.launch.root.clone();let project=record.launch.project.clone();let target=record.launch.target_directory.clone();let expires=record.launch.expires;
+  let live=||document.is_current()&&!cancelled.load(std::sync::atomic::Ordering::Acquire)&&root.check_current().is_ok()&&project.current()&&target.check_current().is_ok()&&!root.is_revoked()&&std::time::Instant::now()<expires&&lifecycle.ensure_lifecycle_monitor().is_ok();
   let outcome=(||->Result<serde_json::Value,String>{
    if !live(){return Err("pickup_effect_revoked".into());}
-   validate_lab(&root)?;record.editor.as_ref().unwrap()._approval_pin.check()?;
+   record.launch.check_current()?;record.editor.as_ref().unwrap()._approval_pin.check()?;
    if apply{
     let review=record.execution.as_ref().ok_or("pickup_preview_required")?.review();
     if review["preview"].is_null(){return Err("pickup_preview_required".into());}

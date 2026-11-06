@@ -42,7 +42,7 @@ export function InvestigationWorkflow({ disabled, hasDraft, onApply, embedded = 
       <label>{zh ? "工作流模板" : "Workflow template"} <select value={template} onChange={e => { setTemplate(e.target.value); setError(false); }}>
         <option value="investigation">{zh ? "工程调查 · 只读" : "Project investigation · Read only"}</option>
         <option value="build">{zh ? "构建修复 · 批次修改与重建" : "Build repair · Batch edits and rebuilds"}</option>
-        <option value="blueprint">{zh ? "交互 Blueprint · 隔离拾取物模板" : "Interactive Blueprint · Isolated pickup template"}</option>
+        <option value="blueprint">{zh ? "交互 Blueprint · 普通项目拾取物模板" : "Interactive Blueprint · Project pickup template"}</option>
         <option value="scene">{zh ? "场景批次 · 当前运行内续接" : "Scene batch · Continue within the current run"}</option>
       </select></label>
       {supported ? <>

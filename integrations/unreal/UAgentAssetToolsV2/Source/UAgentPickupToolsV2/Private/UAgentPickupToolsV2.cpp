@@ -41,8 +41,8 @@ namespace UAgentPickupV2
 {
 namespace
 {
-const FString Contract = TEXT("2.1.0-pickup-create-only");
-const FString Root = TEXT("/Game/UAgentBuildLab/Pickup_T13");
+const FString Contract = TEXT("2.2.0-pickup-approved-project");
+FString WriteRoot;
 const FString Parent = TEXT("/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2");
 const FString Template = TEXT("actor.pickup.native.v1");
 const FString MeshPath = TEXT("/Engine/BasicShapes/Cube.Cube");
@@ -52,6 +52,7 @@ const TArray<FString> PlanKeys { TEXT("operationId"), TEXT("targetPackage"), TEX
 FString Instance, Project, RootId, PreviewToken, Scratch, ApprovedCanonical;
 TSharedPtr<FJsonObject> ApprovedPlan, Receipt;
 TArray<HANDLE> DirectoryHandles;
+HANDLE TargetDirectoryHandle=INVALID_HANDLE_VALUE;
 FString Permits[3]; bool Consumed[3] {false,false,false}; bool Enabled = false, Prepared = false;
 double Started = 0;
 TStrongObjectPtr<UStaticMesh> Mesh; TStrongObjectPtr<UFont> Font;
@@ -64,11 +65,20 @@ FString HashText(const FString& Text) { FTCHARToUTF8 Utf(*Text); TArray<uint8> B
 bool Guid(const FString& V) { FGuid G; return FGuid::ParseExact(V, EGuidFormats::DigitsWithHyphens, G) && G.ToString(EGuidFormats::DigitsWithHyphens).ToLower()==V; }
 bool Exact(const TSharedPtr<FJsonObject>& V, const TArray<FString>& Keys) { if (!V.IsValid() || V->Values.Num()!=Keys.Num()) return false; for (auto& K:Keys) if (!V->HasField(K)) return false; return true; }
 bool Word(const FString& S, int32 Max) { if (S.IsEmpty() || S.Len()>Max) return false; for (TCHAR C:S) if (!((C>=TEXT('A')&&C<=TEXT('Z'))||(C>=TEXT('a')&&C<=TEXT('z'))||(C>=TEXT('0')&&C<=TEXT('9'))||C==TEXT('_'))) return false; return true; }
+bool TargetDirectory(const FString& Target,FString& Directory)
+{
+ int32 Slash=INDEX_NONE;if (Target.Len()>1024||!Target.FindLastChar(TEXT('/'),Slash)) return false;
+ Directory=Target.Left(Slash);const FString Leaf=Target.Mid(Slash+1);
+ if (!Directory.StartsWith(TEXT("/Game/"))||!Leaf.StartsWith(TEXT("BP_"))||!Word(Leaf,80)) return false;
+ TArray<FString> Parts;Directory.RightChop(6).ParseIntoArray(Parts,TEXT("/"),false);
+ if (Parts.IsEmpty()) return false;for (const FString& Part:Parts) if (!Word(Part,80)) return false;
+ return true;
+}
 FString Canonical(const TSharedPtr<FJsonObject>& P)
 {
  if (!Exact(P,PlanKeys)) return FString();
- FString Op,Target,Expected,Tpl,Base,Item,Prompt,Key; double Radius=0;
- if (!P->TryGetStringField(TEXT("operationId"),Op)||!Guid(Op)||!P->TryGetStringField(TEXT("targetPackage"),Target)||!Target.StartsWith(Root+TEXT("/BP_"))||!Word(Target.RightChop(Root.Len()+1),80)||!P->TryGetStringField(TEXT("expectedDiskState"),Expected)||Expected!=TEXT("absent")||!P->TryGetStringField(TEXT("templateId"),Tpl)||Tpl!=Template||!P->TryGetStringField(TEXT("parentClass"),Base)||Base!=Parent||!P->TryGetStringField(TEXT("itemId"),Item)||!Word(Item,64)||!P->TryGetStringField(TEXT("promptText"),Prompt)||Prompt.IsEmpty()||Prompt.Len()>128||!P->TryGetNumberField(TEXT("interactionRadiusCm"),Radius)||!FMath::IsFinite(Radius)||Radius<50||Radius>1000||FMath::FloorToDouble(Radius)!=Radius||!P->TryGetStringField(TEXT("interactionKey"),Key)||(Key!=TEXT("E")&&Key!=TEXT("F"))) return FString();
+ FString Op,Target,Directory,Expected,Tpl,Base,Item,Prompt,Key; double Radius=0;
+ if (!P->TryGetStringField(TEXT("operationId"),Op)||!Guid(Op)||!P->TryGetStringField(TEXT("targetPackage"),Target)||!TargetDirectory(Target,Directory)||!P->TryGetStringField(TEXT("expectedDiskState"),Expected)||Expected!=TEXT("absent")||!P->TryGetStringField(TEXT("templateId"),Tpl)||Tpl!=Template||!P->TryGetStringField(TEXT("parentClass"),Base)||Base!=Parent||!P->TryGetStringField(TEXT("itemId"),Item)||!Word(Item,64)||!P->TryGetStringField(TEXT("promptText"),Prompt)||Prompt.IsEmpty()||Prompt.Len()>128||!P->TryGetNumberField(TEXT("interactionRadiusCm"),Radius)||!FMath::IsFinite(Radius)||Radius<50||Radius>1000||FMath::FloorToDouble(Radius)!=Radius||!P->TryGetStringField(TEXT("interactionKey"),Key)||(Key!=TEXT("E")&&Key!=TEXT("F"))) return FString();
  for (TCHAR C:Prompt) if (C<32 || C==127) return FString();
  return Op+TEXT("\n")+Target+TEXT("\nabsent\n")+Tpl+TEXT("\n")+Base+TEXT("\n")+Item+TEXT("\n")+Prompt+TEXT("\n")+FString::FromInt(static_cast<int32>(Radius))+TEXT("\n")+Key;
 }
@@ -95,10 +105,10 @@ HANDLE RelativeTarget(bool Create, LONG& Status)
 {
  using FCreate=NTSTATUS (NTAPI*)(PHANDLE,ACCESS_MASK,POBJECT_ATTRIBUTES,PIO_STATUS_BLOCK,PLARGE_INTEGER,ULONG,ULONG,ULONG,ULONG,PVOID,ULONG);
  const auto NtCreate=reinterpret_cast<FCreate>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"),"NtCreateFile"));
- if (!NtCreate || DirectoryHandles.Num()!=6) { Status=static_cast<LONG>(0xC0000008); return INVALID_HANDLE_VALUE; }
+ if (!NtCreate || TargetDirectoryHandle==INVALID_HANDLE_VALUE) { Status=static_cast<LONG>(0xC0000008); return INVALID_HANDLE_VALUE; }
  const FString Leaf=FPackageName::GetLongPackageAssetName(ApprovedPlan->GetStringField(TEXT("targetPackage")))+TEXT(".uasset");
  UNICODE_STRING Name{}; Name.Length=static_cast<USHORT>(Leaf.Len()*sizeof(WCHAR));Name.MaximumLength=Name.Length;Name.Buffer=const_cast<PWSTR>(*Leaf);
- OBJECT_ATTRIBUTES Attributes{}; Attributes.Length=sizeof(Attributes); Attributes.RootDirectory=DirectoryHandles[3];Attributes.ObjectName=&Name;Attributes.Attributes=OBJ_CASE_INSENSITIVE;
+ OBJECT_ATTRIBUTES Attributes{}; Attributes.Length=sizeof(Attributes); Attributes.RootDirectory=TargetDirectoryHandle;Attributes.ObjectName=&Name;Attributes.Attributes=OBJ_CASE_INSENSITIVE;
  IO_STATUS_BLOCK IO{};HANDLE File=INVALID_HANDLE_VALUE;
  Status=NtCreate(&File,(Create?GENERIC_WRITE:GENERIC_READ)|SYNCHRONIZE,&Attributes,&IO,nullptr,FILE_ATTRIBUTE_NORMAL,Create?0:(FILE_SHARE_READ|FILE_SHARE_WRITE),Create?FILE_CREATE:FILE_OPEN,FILE_NON_DIRECTORY_FILE|FILE_SYNCHRONOUS_IO_NONALERT|FILE_OPEN_REPARSE_POINT,nullptr,0);
  return Status>=0?File:INVALID_HANDLE_VALUE;
@@ -143,14 +153,14 @@ TSharedPtr<FJsonObject> Output(int32 Tool)
 }
 TSharedPtr<FJsonObject> Discovery()
 {
- auto R=Obj(); R->SetStringField(TEXT("schemaVersion"),TEXT("uagent.pickup.capabilities.v2")); R->SetNumberField(TEXT("protocolVersion"),2); R->SetStringField(TEXT("contractVersion"),Contract); R->SetStringField(TEXT("projectKey"),Project); R->SetStringField(TEXT("instanceId"),Instance); R->SetStringField(TEXT("rootObjectId"),RootId); R->SetBoolField(TEXT("available"),Enabled); R->SetStringField(TEXT("scopeMode"),TEXT("isolated_lab_only")); R->SetBoolField(TEXT("productionSupported"),false); R->SetStringField(TEXT("writeRoot"),Root); R->SetStringField(TEXT("allowedMap"),Root+TEXT("/L_PickupValidation")); R->SetStringField(TEXT("allowedTarget"),Enabled?ApprovedPlan->GetStringField(TEXT("targetPackage")):FString()); R->SetStringField(TEXT("parentClass"),Parent); R->SetStringField(TEXT("meshDependency"),MeshPath); R->SetStringField(TEXT("fontDependency"),FontPath); R->SetStringField(TEXT("inputDependency"),TEXT("one local PlayerController with a possessed Pawn; direct E/F key binding; no input mappings generated")); R->SetStringField(TEXT("uiDependency"),TEXT("world-space TextRender with explicit engine font; no UMG dependency")); R->SetStringField(TEXT("persistence"),TEXT("per-runtime-instance transient state; not inventory or SaveGame persistence"));
+ auto R=Obj(); R->SetStringField(TEXT("schemaVersion"),TEXT("uagent.pickup.capabilities.v2")); R->SetNumberField(TEXT("protocolVersion"),2); R->SetStringField(TEXT("contractVersion"),Contract); R->SetStringField(TEXT("projectKey"),Project); R->SetStringField(TEXT("instanceId"),Instance); R->SetStringField(TEXT("rootObjectId"),RootId); R->SetBoolField(TEXT("available"),Enabled); R->SetStringField(TEXT("scopeMode"),TEXT("approved_project_directory")); R->SetBoolField(TEXT("productionSupported"),true); R->SetStringField(TEXT("writeRoot"),Enabled?WriteRoot:FString()); R->SetStringField(TEXT("allowedMap"),TEXT("")); R->SetStringField(TEXT("allowedTarget"),Enabled?ApprovedPlan->GetStringField(TEXT("targetPackage")):FString()); R->SetStringField(TEXT("parentClass"),Parent); R->SetStringField(TEXT("meshDependency"),MeshPath); R->SetStringField(TEXT("fontDependency"),FontPath); R->SetStringField(TEXT("inputDependency"),TEXT("one local PlayerController with a possessed Pawn; direct E/F key binding; no input mappings generated")); R->SetStringField(TEXT("uiDependency"),TEXT("world-space TextRender with explicit engine font; no UMG dependency")); R->SetStringField(TEXT("persistence"),TEXT("per-runtime-instance transient state; not inventory or SaveGame persistence"));
  TArray<TSharedPtr<FJsonValue>> Tools; for (int32 I=1;I<Names.Num();++I) { auto T=Obj(); T->SetStringField(TEXT("name"),Names[I]); T->SetStringField(TEXT("effect"),I==1?TEXT("authorized_asset_preparation_may_load_compile"):I==2?TEXT("transient_copy_compile"):I==3?TEXT("create_compile_save_one_package"):TEXT("query_effect_no_asset_loading")); T->SetObjectField(TEXT("inputSchema"),Input(I)); T->SetObjectField(TEXT("outputSchema"),Output(I)); Tools.Add(MakeShared<FJsonValueObject>(T)); } R->SetArrayField(TEXT("tools"),Tools); return R;
 }
 bool Validate(int32 Tool,const TSharedPtr<FJsonObject>& Args,FString& Error)
 {
  if (!IsInGameThread()) { Error=TEXT("game_thread_required"); return false; }
  if (Tool==0) { if (!Exact(Args,{})) { Error=TEXT("unknown_argument"); return false; } return true; }
- if (!Enabled || (Tool<4 && FPlatformTime::Seconds()-Started>600)) { Error=TEXT("pickup_lab_scope_disabled_or_expired"); return false; }
+ if (!Enabled || (Tool<4 && FPlatformTime::Seconds()-Started>600)) { Error=TEXT("pickup_project_scope_disabled_or_expired"); return false; }
  TArray<FString> Keys{TEXT("protocolVersion"),TEXT("contractVersion"),TEXT("expectedProjectKey"),TEXT("expectedInstanceId"),TEXT("expectedRootObjectId"),TEXT("plan")}; if (Tool<4) Keys.Add(TEXT("hostPermit")); if (Tool==3) Keys.Add(TEXT("previewToken"));
  if (!Exact(Args,Keys)) { Error=TEXT("unknown_or_missing_argument"); return false; }
  double V=0; FString S; if (!Args->TryGetNumberField(TEXT("protocolVersion"),V)||V!=2||!Args->TryGetStringField(TEXT("contractVersion"),S)||S!=Contract||!Args->TryGetStringField(TEXT("expectedProjectKey"),S)||S!=Project||!Args->TryGetStringField(TEXT("expectedInstanceId"),S)||S!=Instance||!Args->TryGetStringField(TEXT("expectedRootObjectId"),S)||S!=RootId) { Error=TEXT("stale_identity_or_version"); return false; }
@@ -228,10 +238,13 @@ FModelContextProtocolToolResult Invoke(int32 Tool,const TSharedPtr<FJsonObject>&
  Receipt=Obj(); Receipt->SetObjectField(TEXT("plan"),ApprovedPlan); Receipt->SetStringField(TEXT("state"),TEXT("preparing")); if (!WriteJson(ReceiptFile(),Receipt)) return Fail(TEXT("receipt_intent_persistence_failed"));
  TArray<TSharedPtr<FJsonValue>> Diagnostics; UBlueprint* BP=Make(ApprovedPlan->GetStringField(TEXT("targetPackage")),Diagnostics);
  if (!BP) { Receipt->SetStringField(TEXT("state"),TEXT("failed_editor_only")); WriteJson(ReceiptFile(),Receipt); return Fail(TEXT("target_blueprint_compile_failed_query_effect_before_retry")); }
- const FString Stage=FPaths::Combine(Scratch,FGuid::NewGuid().ToString(EGuidFormats::Digits)+TEXT(".staged.uasset")); FSavePackageArgs Save; Save.TopLevelFlags=RF_Public|RF_Standalone; Save.SaveFlags=SAVE_NoError;
- if (!UPackage::SavePackage(BP->GetOutermost(),BP,*Stage,Save)) { Receipt->SetStringField(TEXT("state"),TEXT("failed_editor_only")); WriteJson(ReceiptFile(),Receipt); return Fail(TEXT("scoped_stage_save_failed_query_effect")); }
+ const FString Stage=FPaths::Combine(Scratch,FGuid::NewGuid().ToString(EGuidFormats::Digits)+TEXT(".staged.uasset")); FSavePackageArgs Save; Save.TopLevelFlags=RF_Public|RF_Standalone; Save.SaveFlags=SAVE_NoError|SAVE_Async;
+ // The host pins Scratch without write sharing; UE's temp-file rename conflicts with that directory lease.
+ // Serialize to memory and finish the direct staged write before inspecting bytes or creating the final target.
+ const bool Staged=UPackage::SavePackage(BP->GetOutermost(),BP,*Stage,Save);UPackage::WaitForAsyncFileWrites();
+ if (!Staged) { Receipt->SetStringField(TEXT("state"),TEXT("failed_editor_only")); WriteJson(ReceiptFile(),Receipt); return Fail(TEXT("scoped_stage_save_failed_query_effect")); }
  BP->GetOutermost()->SetLoadedPath(FPackagePath::FromPackageNameChecked(ApprovedPlan->GetStringField(TEXT("targetPackage"))));
- TArray<uint8> Bytes; if (!FFileHelper::LoadFileToArray(Bytes,*Stage)||Bytes.IsEmpty()||Bytes.Num()>64*1024*1024) return Fail(TEXT("staged_package_read_failed_query_effect"));
+ TArray<uint8> Bytes; if (!FFileHelper::LoadFileToArray(Bytes,*Stage)||Bytes.IsEmpty()||Bytes.Num()>64*1024*1024) { Receipt->SetStringField(TEXT("state"),TEXT("failed_editor_only")); WriteJson(ReceiptFile(),Receipt); return Fail(TEXT("staged_package_read_failed_query_effect")); }
  Receipt->SetStringField(TEXT("expectedDiskHash"),Hash(Bytes)); Receipt->SetStringField(TEXT("state"),TEXT("committing")); if (!WriteJson(ReceiptFile(),Receipt)) return Fail(TEXT("receipt_precommit_persistence_failed"));
  // NT FILE_CREATE relative to held target directory plus an exclusive handle rejects externally created targets.
  LONG CreateStatus=0; HANDLE Output=RelativeTarget(true,CreateStatus);
@@ -247,7 +260,7 @@ class FTool final:public IModelContextProtocolTool
  int32 Id;
 public:
  explicit FTool(int32 I):Id(I){} FString GetName() const override { return Names[Id]; }
- FString GetDescription() const override { return Id==0?TEXT("Discover separate scoped pickup template contract. Not authorization; disabled outside explicitly approved isolated Lab."):TEXT("Exact fixed create-only pickup operation. Native host approval required for preparation, transient compilation and one-package creation. Query does not load assets."); }
+ FString GetDescription() const override { return Id==0?TEXT("Discover separate scoped pickup template contract. Not authorization; disabled without an exact approved project/directory plan."):TEXT("Exact fixed create-only pickup operation. Native host approval required for preparation, transient compilation and one-package creation. Query does not load assets."); }
  TSharedPtr<FJsonObject> GetInputJsonSchema() const override { return Input(Id); }
  TSharedPtr<FJsonObject> GetOutputJsonSchema() const override { return Output(Id); }
  FModelContextProtocolToolResult Run(const TSharedPtr<FJsonObject>& Args) override { return Invoke(Id,Args); }
@@ -270,6 +283,13 @@ bool VerifyIsolatedLabPreconditions(const TSharedPtr<FJsonObject>& Report)
 #endif
 }
 #if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPickupApprovedDirectoryTest,"UAgent.Pickup.ApprovedDirectory",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FPickupApprovedDirectoryTest::RunTest(const FString& Parameters)
+{
+ FString Directory;TestTrue(TEXT("Ordinary project nested directory"),TargetDirectory(TEXT("/Game/Gameplay/Pickups/BP_Pickup"),Directory));TestEqual(TEXT("Exact parent"),Directory,FString(TEXT("/Game/Gameplay/Pickups")));
+ for (const TCHAR* Invalid:{TEXT("/Game/BP_Pickup"),TEXT("/Engine/Pickups/BP_Pickup"),TEXT("/Game//BP_Pickup"),TEXT("/Game/A/../BP_Pickup"),TEXT("/Game/A/BP_Pickup.BP_Pickup"),TEXT("/Game/A/BP_Pickup/Sub"),TEXT("/Game/A B/BP_Pickup"),TEXT("/Game/A/Other")}) TestFalse(Invalid,TargetDirectory(Invalid,Directory));
+ const auto Capabilities=Discovery();TestEqual(TEXT("No map authority"),Capabilities->GetStringField(TEXT("allowedMap")),FString());TestTrue(TEXT("Ordinary project capability"),Capabilities->GetBoolField(TEXT("productionSupported")));return true;
+}
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPickupEditorEffectObservationTest,"UAgent.Pickup.EditorEffectObservation",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
 bool FPickupEditorEffectObservationTest::RunTest(const FString& Parameters)
 {
@@ -290,22 +310,31 @@ bool FPickupEditorEffectObservationTest::RunTest(const FString& Parameters)
 class FModule final:public IModuleInterface
 {
  TArray<TSharedRef<IModelContextProtocolTool>> Tools;
- void EnableLab()
+ void EnableApprovedProject()
  {
-  FString ApprovedFile,PlanFile; if (!FParse::Param(FCommandLine::Get(),TEXT("UAgentPickupEnableLabWrites"))||!FParse::Value(FCommandLine::Get(),TEXT("UAgentPickupAllowedProjectFile="),ApprovedFile)||!FParse::Value(FCommandLine::Get(),TEXT("UAgentPickupApprovedPlanFile="),PlanFile)||FString(FApp::GetProjectName())!=TEXT("UAgentBuildLab")||!FPaths::IsSamePath(ApprovedFile,FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()))) return;
-  auto Marker=ReadJson(FPaths::Combine(FPaths::ProjectDir(),TEXT(".uagent-isolated-lab.json"))); bool Existing=true; if (!Marker.IsValid()||Marker->GetStringField(TEXT("project"))!=TEXT("UAgentBuildLab")||!Marker->TryGetBoolField(TEXT("existingUserProject"),Existing)||Existing) return;
+  FString ApprovedFile,PlanFile;
+  if (!FParse::Param(FCommandLine::Get(),TEXT("UAgentPickupEnableApprovedProjectWrites"))||!FParse::Value(FCommandLine::Get(),TEXT("UAgentPickupAllowedProjectFile="),ApprovedFile)||!FParse::Value(FCommandLine::Get(),TEXT("UAgentPickupApprovedPlanFile="),PlanFile)||!FPaths::IsSamePath(ApprovedFile,FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()))) return;
   Scratch=FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectSavedDir(),TEXT("UAgentPickupT13")));
-  if (!FPaths::IsSamePath(FPaths::ConvertRelativePathToFull(PlanFile),FPaths::Combine(Scratch,TEXT("host-approved-plan.json")))) return;
-  if (!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::ProjectDir()),&RootId)||!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir()))||!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectContentDir(),TEXT("UAgentBuildLab"))))||!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectContentDir(),TEXT("UAgentBuildLab/Pickup_T13"))))||!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()))||!HoldDirectory(Scratch)) return;
-  auto Approval=ReadJson(PlanFile); if (!Approval.IsValid()||Approval->GetStringField(TEXT("rootObjectId"))!=RootId) return;
-  const TSharedPtr<FJsonObject>* P=nullptr; if (!Approval->TryGetObjectField(TEXT("plan"),P)||(ApprovedCanonical=Canonical(*P)).IsEmpty()) return; ApprovedPlan=*P;
+  const FString Prefix=TEXT("host-approved-"),Leaf=FPaths::GetCleanFilename(PlanFile);
+  if (FPaths::IsRelative(PlanFile)||!Leaf.StartsWith(Prefix)||!Leaf.EndsWith(TEXT(".json"))) return;
+  const FString Operation=Leaf.Mid(Prefix.Len(),Leaf.Len()-Prefix.Len()-5);
+  if (!Guid(Operation)||!FPaths::IsSamePath(FPaths::ConvertRelativePathToFull(PlanFile),FPaths::Combine(Scratch,Leaf))) return;
+  if (!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::ProjectDir()),&RootId)||!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir()))||!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()))||!HoldDirectory(Scratch)) return;
+  auto Approval=ReadJson(PlanFile);FString ApprovedProject,ApprovedRoot,ApprovedDirectory;
+  if (!Approval.IsValid()||!Approval->TryGetStringField(TEXT("projectFile"),ApprovedProject)||ApprovedProject!=FPaths::GetCleanFilename(ApprovedFile)||!Approval->TryGetStringField(TEXT("rootObjectId"),ApprovedRoot)||ApprovedRoot!=RootId||!Approval->TryGetStringField(TEXT("writeRoot"),ApprovedDirectory)) return;
+  const TSharedPtr<FJsonObject>* P=nullptr;
+  if (!Approval->TryGetObjectField(TEXT("plan"),P)||(ApprovedCanonical=Canonical(*P)).IsEmpty()||(*P)->GetStringField(TEXT("operationId"))!=Operation||!TargetDirectory((*P)->GetStringField(TEXT("targetPackage")),WriteRoot)||WriteRoot!=ApprovedDirectory) return;
+  // Hold every real Content ancestor; the final FILE_CREATE uses this exact directory object.
+  FString Directory=FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir());TArray<FString> Parts;WriteRoot.RightChop(6).ParseIntoArray(Parts,TEXT("/"),false);
+  for (const FString& Part:Parts) { Directory=FPaths::Combine(Directory,Part);if (!HoldDirectory(Directory)) return; }
+  TargetDirectoryHandle=DirectoryHandles.Last();ApprovedPlan=*P;
   for (int32 I=0;I<3;++I) { if (!Approval->TryGetStringField(I==0?TEXT("preparePermit"):I==1?TEXT("previewPermit"):TEXT("applyPermit"),Permits[I])||!Guid(Permits[I])) return; }
   if (Permits[0]==Permits[1]||Permits[1]==Permits[2]||Permits[0]==Permits[2]) return;
   Enabled=true; Started=FPlatformTime::Seconds();
  }
-public:
- void StartupModule() override { Instance=FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens).ToLower(); Project=UAgentSemanticV2::Capabilities()->GetStringField(TEXT("projectKey")); EnableLab(); for (int32 I=0;I<Names.Num();++I) { auto T=MakeShared<FTool>(I); if (IModelContextProtocolModule::GetChecked().AddTool(T)) Tools.Add(T); } }
- void ShutdownModule() override { Enabled=false; if (auto* M=IModelContextProtocolModule::Get()) for (auto& T:Tools) M->RemoveTool(T); Tools.Reset(); Preview.Reset(); Mesh.Reset(); Font.Reset(); for (int32 I=DirectoryHandles.Num()-1;I>=0;--I) CloseHandle(DirectoryHandles[I]); DirectoryHandles.Reset(); }
+ public:
+ void StartupModule() override { Instance=FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens).ToLower(); Project=UAgentSemanticV2::Capabilities()->GetStringField(TEXT("projectKey")); EnableApprovedProject(); for (int32 I=0;I<Names.Num();++I) { auto T=MakeShared<FTool>(I); if (IModelContextProtocolModule::GetChecked().AddTool(T)) Tools.Add(T); } }
+ void ShutdownModule() override { Enabled=false;TargetDirectoryHandle=INVALID_HANDLE_VALUE; if (auto* M=IModelContextProtocolModule::Get()) for (auto& T:Tools) M->RemoveTool(T); Tools.Reset(); Preview.Reset(); Mesh.Reset(); Font.Reset(); for (int32 I=DirectoryHandles.Num()-1;I>=0;--I) CloseHandle(DirectoryHandles[I]); DirectoryHandles.Reset(); }
 };
 }
 IMPLEMENT_MODULE(UAgentPickupV2::FModule,UAgentPickupToolsV2);

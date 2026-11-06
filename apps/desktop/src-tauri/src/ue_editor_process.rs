@@ -1011,7 +1011,7 @@ fn create_managed_listener_from_context(
     if pickup_approval.is_some()||semantic_read_root.is_some(){validate_pickup_engine(&ue_executable)?;}
     let evidence_root = std::fs::canonicalize(&context.evidence_root)
         .map_err(|_| "managed_process_evidence_root_invalid".to_string())?;
-    let ddc_root = evidence_root.join("managed-ue-ddc").join(&input.phase);
+    let ddc_root = managed_editor_ddc_root(&evidence_root, &input.phase);
     std::fs::create_dir_all(&ddc_root)
         .map_err(|_| "managed_process_ddc_create_failed".to_string())?;
     let ddc_root = std::fs::canonicalize(&ddc_root)
@@ -1019,6 +1019,10 @@ fn create_managed_listener_from_context(
     if !ddc_root.starts_with(&evidence_root) {
         return Err("managed_process_ddc_outside_task_root".to_string());
     }
+    if ddc_root != managed_editor_ddc_root(&evidence_root, &input.phase) {
+        return Err("managed_process_ddc_identity_invalid".into());
+    }
+    if input.phase == "pickup-template" { validate_pickup_ddc_length(&ddc_root)?; }
 
     let mut command = Command::new(
         std::env::current_exe().map_err(|_| "managed_process_spawn_failed".to_string())?,
@@ -1330,7 +1334,10 @@ fn cleanup_task_owned_ddc(
     phase: &str,
 ) -> Result<(), String> {
     // Template artifacts remain available for inspection; this route never deletes them.
-    if matches!(phase,"pickup-template"|"scene-batch"|"semantic-read") { return Ok(()); }
+    if matches!(phase,"pickup-template"|"scene-batch"|"semantic-read") {
+        if ddc_root != managed_editor_ddc_root(evidence_root,phase) { return Err("managed_process_ddc_identity_invalid".into()); }
+        return Ok(());
+    }
     for attempt in 0..9 {
         match cleanup_task_owned_ddc_once(evidence_root, ddc_root, phase) {
             Err(reason) if reason == "managed_process_ddc_sharing_violation" && attempt < 8 => {
@@ -1363,7 +1370,7 @@ fn cleanup_task_owned_ddc_once(
     }
     let evidence_root = std::fs::canonicalize(evidence_root).map_err(|_| identity_error())?;
     let parent = evidence_root.join("managed-ue-ddc");
-    let expected = parent.join(phase);
+    let expected = managed_editor_ddc_root(&evidence_root, phase);
     // Reject parent links too, including Windows junctions, before recursive removal.
     for path in [&parent, ddc_root] {
         match std::fs::symlink_metadata(path) {
@@ -1491,10 +1498,11 @@ fn run_managed_editor_guardian() -> Result<(), String> {
         .map_err(|_| "managed_guardian_environment_invalid".to_string())?;
     let ddc = std::fs::canonicalize(ddc)
         .map_err(|_| "managed_guardian_environment_invalid".to_string())?;
-    if ddc != evidence_root.join("managed-ue-ddc").join(&phase) || !ddc.starts_with(&evidence_root)
+    if ddc != managed_editor_ddc_root(&evidence_root, &phase) || !ddc.starts_with(&evidence_root)
     {
         return Err("managed_guardian_environment_invalid".to_string());
     }
+    if phase == "pickup-template" { validate_pickup_ddc_length(&ddc)?; }
     let mut ddc_cleanup = TaskOwnedDdcCleanup {
         evidence_root,
         ddc_root: ddc.clone(),
@@ -1525,25 +1533,20 @@ fn run_managed_editor_guardian() -> Result<(), String> {
             command
         }
     } else {
-        let mut command = Command::new(&executable);
-        if phase=="semantic-read" {
+        let scope_arguments = if phase=="semantic-read" {
             validate_pickup_engine(&executable)?;
             let scope=std::env::var("UAGENT_SEMANTIC_READ_ROOT").map_err(|_|"semantic_start_scope_missing")?;
-            command.args(crate::ue_semantic_launch::arguments(&uproject,&scope)?);
+            crate::ue_semantic_launch::arguments(&uproject,&scope)?
         } else if phase=="pickup-template" {
             let approval=std::env::var_os("UAGENT_PICKUP_APPROVED_STARTUP_FILE").map(PathBuf::from).ok_or("pickup_startup_file_required")?;
-            command.args(crate::ue_pickup_launch::approved_pickup_arguments(&uproject,&approval)?);
+            let scope=std::env::var("UAGENT_SEMANTIC_READ_ROOT").map_err(|_|"pickup_start_scope_missing")?;
+            crate::ue_pickup_launch::approved_pickup_arguments(&uproject,&approval,&scope)?
         } else if phase=="scene-batch" {
             let approval=std::env::var_os("UAGENT_PICKUP_APPROVED_STARTUP_FILE").map(PathBuf::from).ok_or("scene_startup_file_required")?;
-            command.args(crate::ue_scene_launch::approved_scene_arguments(&uproject,&approval)?);
-        }
-        command
-            .args(managed_editor_headless_arguments(
-                &uproject, &ddc, port, &marker,
-            ))
-            .env("UE-LocalDataCachePath", &ddc)
-            .env("UE-SharedDataCachePath", "None");
-        command
+            crate::ue_scene_launch::approved_scene_arguments(&uproject,&approval)?
+        } else { Vec::new() };
+        managed_editor_command(&executable,&uproject,&ddc,port,&marker,scope_arguments)
+
     };
     command
         .stdin(Stdio::null())
@@ -1624,6 +1627,23 @@ fn run_managed_editor_guardian() -> Result<(), String> {
     Err("managed_guardian_closeout_failed".to_string())
 }
 
+fn managed_editor_ddc_root(evidence_root:&Path,phase:&str)->PathBuf {
+    if phase=="pickup-template" { evidence_root.join("ddc") }
+    else { evidence_root.join("managed-ue-ddc").join(phase) }
+}
+fn validate_pickup_ddc_length(path:&Path)->Result<(),String> {
+    use std::os::windows::ffi::OsStrExt;
+    // UE 5.8 Windows FileSystemCacheStore rejects absolute DDC roots of 119 UTF-16 units or more.
+    if path.as_os_str().encode_wide().count()>=119 { return Err("pickup_ddc_path_too_long".into()); }
+    Ok(())
+}
+fn managed_editor_command(executable:&Path,uproject:&Path,ddc:&Path,port:u16,marker:&str,scope_arguments:Vec<OsString>)->Command {
+    let mut command=Command::new(executable);
+    // UE selects its project from the first positional token; scoped switches must follow it.
+    command.args(managed_editor_headless_arguments(uproject,ddc,port,marker)).args(scope_arguments)
+        .env("UE-LocalDataCachePath",ddc).env("UE-SharedDataCachePath","None");
+    command
+}
 fn managed_editor_headless_arguments(
     uproject: &Path,
     ddc: &Path,
@@ -4006,6 +4026,30 @@ mod tests {
     }
 
     #[test]
+    fn managed_pickup_startup_command_keeps_project_first_with_scope() {
+        let project=Path::new("E:/Fixture/Test01.uproject");
+        let approval=Path::new("E:/Fixture/Saved/UAgentPickupT13/host-approved-11111111-1111-4111-8111-111111111111.json");
+        let scope=crate::ue_pickup_launch::approved_pickup_arguments(project,approval,"/Game/Gameplay/Pickups").unwrap();
+        let command=managed_editor_command(Path::new("G:/UE/Engine/Binaries/Win64/UnrealEditor-Cmd.exe"),project,Path::new("E:/Fixture/Saved/UAgentPickupT13/ddc"),49171,"pickup-test",scope.clone());
+        let args=command.get_args().map(|v|v.to_os_string()).collect::<Vec<_>>();
+        assert_eq!(args.first().unwrap(),project.as_os_str());
+        assert_eq!(args.iter().filter(|v|v.as_os_str()==project.as_os_str()).count(),1);
+        assert_eq!(&args[args.len()-scope.len()..],scope.as_slice());
+    }
+    #[test]
+    fn managed_pickup_startup_ddc_uses_short_owned_path_and_utf16_limit() {
+        let evidence=Path::new(r"\\?\E:\Codex\UAgent\.local-dev\temp\test01-pickup-acceptance-20261106\project\Saved\UAgentPickupT13");
+        let ddc=managed_editor_ddc_root(evidence,"pickup-template");
+        assert_eq!(ddc,evidence.join("ddc"));assert!(validate_pickup_ddc_length(&ddc).is_ok());
+        assert!(validate_pickup_ddc_length(&evidence.join("managed-ue-ddc/pickup-template")).is_err());
+        for phase in ["ui-lifecycle","product-capture","semantic-read","scene-batch"] {assert_eq!(managed_editor_ddc_root(evidence,phase),evidence.join("managed-ue-ddc").join(phase));}
+        assert!(validate_pickup_ddc_length(Path::new(&"a".repeat(118))).is_ok());
+        assert_eq!(validate_pickup_ddc_length(Path::new(&"a".repeat(119))).unwrap_err(),"pickup_ddc_path_too_long");
+        assert!(validate_pickup_ddc_length(Path::new(&format!("{}{}","a".repeat(117),'\u{1f4c1}'))).is_err());
+        assert!(cleanup_task_owned_ddc(evidence,&ddc,"pickup-template").is_ok());
+        assert!(cleanup_task_owned_ddc(evidence,&evidence.join("other"),"pickup-template").is_err());
+    }
+    #[test]
     fn managed_editor_listener_uses_the_headless_null_rhi_startup_contract() {
         let arguments = managed_editor_headless_arguments(
             Path::new("C:\\Task\\FinalHost.uproject"),
@@ -4835,15 +4879,15 @@ pub(crate) fn resolve_pickup_discovery_listener(session: &str, project: &str, ro
 /// Native-only template startup. Its owner is independent of the MVP15 evidence phase ledger.
 pub(crate) fn start_pickup_owned_editor(project_id:&str,launch:&crate::ue_pickup_launch::PreparedPickupLaunch,live:Arc<dyn Fn()->bool+Send+Sync>)->Result<ManagedEditorProcessCreateResult,String>{
  if !bridge_enabled()||!launch_enabled(){return Err("pickup_editor_launch_disabled".into());}
- launch.root.check_current().map_err(|e|e.to_string())?;
+ launch.check_current()?;
  let mut random=[0u8;16];getrandom::getrandom(&mut random).map_err(|_|"pickup_owner_random_failed")?;
  let nonce:String=random.iter().map(|b|format!("{b:02x}")).collect();
  let listener=TcpListener::bind((std::net::Ipv4Addr::LOCALHOST,0)).map_err(|_|"pickup_port_unavailable")?;
  let port=listener.local_addr().map_err(|_|"pickup_port_unavailable")?.port();drop(listener);
  let task_id=format!("pickup-{}",launch.plan.operation_id);let phase="pickup-template".to_string();
  let context=crate::mvp15d_runtime_bridge::ManagedProcessOwnerContext{task_id:task_id.clone(),phase:phase.clone(),session:nonce.clone(),generation:1,runtime_process_identity_sha256:sha256_binding(&[&std::process::id().to_string(),&nonce]),nonce_sha256:sha256_binding(&[&nonce]),marker:format!("pickup-{nonce}"),port,evidence_root:launch.root.path_hint().join("Saved/UAgentPickupT13")};
- let input=ManagedEditorProcessCreateInput{schema_version:MANAGED_CREATE_SCHEMA.into(),purpose:PHASE_LISTENER_OWNER.into(),task_id,phase,project_id:project_id.into(),root_ref:launch.root.path_hint().to_string_lossy().into_owned(),uproject_relative_path:"UAgentBuildLab.uproject".into()};
- create_managed_listener_from_context(input,context,Some(launch.root.path_hint().join("Saved/UAgentPickupT13/host-approved-plan.json")),None,Some(live))
+ let input=ManagedEditorProcessCreateInput{schema_version:MANAGED_CREATE_SCHEMA.into(),purpose:PHASE_LISTENER_OWNER.into(),task_id,phase,project_id:project_id.into(),root_ref:launch.root.path_hint().to_string_lossy().into_owned(),uproject_relative_path:launch.project.project_file.clone()};
+ create_managed_listener_from_context(input,context,Some(launch.approval_path()),Some(launch.project.read_root.clone()),Some(live))
 }
 pub(crate) fn stop_pickup_owned_editor(id:&str){
  let record=if let Ok(mut registry)=managed_child_registry().lock(){

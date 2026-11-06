@@ -1,5 +1,6 @@
 //! Exact discovery only: schemas and peer capabilities never confer mutation permission.
 use serde_json::Value;
+use crate::ue_pickup_template::{CONTRACT,SCOPE,target_directory};
 pub(crate) fn validate_catalog(value: &Value) -> Result<(), String> {
     let tools=value.get("tools").and_then(Value::as_array).ok_or("pickup_catalog_invalid")?;
     if tools.len()>256 || value.get("nextCursor").is_some_and(|v| !v.is_null()) { return Err("pickup_catalog_incomplete".into()); }
@@ -18,8 +19,8 @@ pub(crate) fn validate_capabilities(value: &Value) -> Result<bool, String> {
     if value.get("isError")==Some(&Value::Bool(true)) {return Err("pickup_discovery_failed".into());}
     let m=value.get("structuredContent").ok_or("pickup_structured_result_required")?;
     if m["schemaVersion"]!="uagent.pickup.capabilities.v2" || m["protocolVersion"]!=2
-        || m["contractVersion"]!="2.1.0-pickup-create-only" || m["productionSupported"]!=false
-        || m["scopeMode"]!="isolated_lab_only" || m["writeRoot"]!="/Game/UAgentBuildLab/Pickup_T13"
+        || m["contractVersion"]!=CONTRACT || m["productionSupported"]!=true
+        || m["scopeMode"]!=SCOPE || m["allowedMap"]!=""
         || m["parentClass"]!="/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2"
         || !m["projectKey"].as_str().is_some_and(|v|!v.is_empty())
         || !m["instanceId"].as_str().is_some_and(|v|!v.is_empty()) {
@@ -32,7 +33,12 @@ pub(crate) fn validate_capabilities(value: &Value) -> Result<bool, String> {
         let matching:Vec<_>=entries.iter().filter(|v|v["name"]==tool["name"]).collect();
         if matching.len()!=1 || matching[0]["inputSchema"]!=tool["inputSchema"] || matching[0]["outputSchema"]!=tool["outputSchema"] {return Err("pickup_schema_mismatch".into());}
     }
-    m["available"].as_bool().ok_or("pickup_capabilities_invalid".into())
+    let available=m["available"].as_bool().ok_or("pickup_capabilities_invalid")?;
+    if available {
+        let target=m["allowedTarget"].as_str().ok_or("pickup_capabilities_invalid")?;
+        if m["writeRoot"]!=target_directory(target)? {return Err("pickup_contract_mismatch".into());}
+    } else if m["writeRoot"]!=""||m["allowedTarget"]!="" {return Err("pickup_contract_mismatch".into());}
+    Ok(available)
 }
 #[cfg(test)] mod tests {
  use super::*; use serde_json::json;
@@ -59,17 +65,23 @@ pub(crate) fn negotiate(mut exchange:impl FnMut(u64,&str,Value)->Result<Value,St
 
 #[cfg(test)] mod handshake_tests {
  use super::*;use serde_json::json;
- fn fixture()->Value{serde_json::from_str(include_str!("../../../../packages/runtime/src/__fixtures__/ue-pickup-template-v2-discovery.json")).unwrap()}
+ fn fixture()->Value{serde_json::from_str(include_str!("../../../../packages/runtime/src/__fixtures__/ue-pickup-approved-project-v2-discovery.json")).unwrap()}
  #[test]fn owned_negotiation_only_uses_discovery_and_rejects_changed_protocol(){
   let f=fixture();let mut calls=Vec::new();
   assert_eq!(negotiate(|id,method,params|{calls.push((id,method.to_string()));Ok(match id{1=>json!({"protocolVersion":"2025-06-18"}),0=>Value::Null,2=>json!({"tools":f["catalog"]}),3=>{assert_eq!(params,json!({"name":"uagent.v2.pickup.capabilities","arguments":{}}));json!({"structuredContent":f["manifest"]})},_=>panic!("unexpected request")})}).unwrap(),true);
   assert_eq!(calls.iter().map(|x|x.0).collect::<Vec<_>>(),vec![1,0,2,3]);
   let mut count=0;assert!(negotiate(|_,_,_|{count+=1;Ok(json!({"protocolVersion":"wrong"}))}).is_err());assert_eq!(count,1);
  }
- #[test]fn transport_revocation_and_peer_write_claim_cannot_succeed(){
+ #[test]fn supported_plugin_without_approval_has_no_available_scope(){
+   let mut value=json!({"structuredContent":fixture()["manifest"]});
+   value["structuredContent"]["available"]=json!(false);value["structuredContent"]["writeRoot"]=json!("");value["structuredContent"]["allowedTarget"]=json!("");
+   assert_eq!(validate_capabilities(&value).unwrap(),false);
+   value["structuredContent"]["writeRoot"]=json!("/Game/Gameplay/Pickups");assert!(validate_capabilities(&value).is_err());
+  }
+  #[test]fn transport_revocation_and_legacy_scope_cannot_succeed(){
   let f=fixture();let mut count=0;
   assert!(negotiate(|id,_,_|{count+=1;if id==2{Err("pickup_connection_changed".into())}else{Ok(json!({"protocolVersion":"2025-06-18"}))}}).is_err());assert_eq!(count,3);
-  let mut value=json!({"structuredContent":f["manifest"]});value["structuredContent"]["productionSupported"]=json!(true);assert!(validate_capabilities(&value).is_err());
+  let mut value=json!({"structuredContent":f["manifest"]});value["structuredContent"]["scopeMode"]=json!("isolated_lab_only");assert!(validate_capabilities(&value).is_err());
  }
 }
 
