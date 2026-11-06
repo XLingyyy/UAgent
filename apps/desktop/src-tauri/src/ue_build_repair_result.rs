@@ -38,7 +38,7 @@ impl effect::ReadOnlyEffectObserver for Observed<'_>{
     }
 }
 pub(crate) fn persist(db:&store::RunStore,root:&TrustedRootHandle,intent:&effect::EffectIntent,preview:&NativeRepairPreview,receipt:&RepairApplyReceipt,before_written:bool,catalog:&PersistentRecoveryCatalog,proof:&effect::SettledOperationProof)->store::Result<()>{
-    if preview.native_plan_digest!=intent.approved_plan_digest||receipt.binding!=preview.preview.binding||receipt.diagnostic!=preview.preview.diagnostic||receipt.preview_id!=preview.preview.preview_id||receipt.effects.len()!=preview.preview.files.len(){return Err(err());}
+    if preview.native_plan_digest!=intent.approved_plan_digest||receipt.binding!=preview.preview.binding||receipt.diagnostic!=preview.preview.diagnostic||receipt.task!=preview.preview.task||receipt.preview_id!=preview.preview.preview_id||receipt.effects.len()!=preview.preview.files.len(){return Err(err());}
     let complete=receipt.status=="applied"&&before_written&&receipt.recovery_record.is_some()&&receipt.effects.iter().zip(&preview.preview.files).all(|(e,f)|e.status=="applied"&&e.path==f.path&&e.before_hash==f.before_hash&&e.before_object_identity==f.before_object_identity&&e.after_hash.as_ref()==Some(&f.after_hash)&&e.after_object_identity.as_ref()==Some(&f.before_object_identity));
     let not_started=["not_started","conflict"].contains(&receipt.status.as_str())&&receipt.effects.iter().all(|e|["not_started","conflict"].contains(&e.status.as_str())&&e.after_hash.is_none());
     let bytes=serde_json::to_vec(receipt).map_err(|_|err())?;

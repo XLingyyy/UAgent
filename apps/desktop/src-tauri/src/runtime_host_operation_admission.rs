@@ -8,9 +8,25 @@ impl RuntimeHostService {
     /// launch work. Move the returned guard into the original bounded native worker.
     pub(crate) fn register_ue_operation_pending(&self,window:&str,input:NativeOperationInput,
         expected:&OwnerIdentity,catalog:&Arc<PersistentRecoveryCatalog>)->HostResult<RegisteredExecution>{
+        if !input.resources.claims.iter().any(|c| c.kind == ResourceKind::Ubt) {
+            return Err("runtime_host_invalid_operation");
+        }
+        self.register_operation_pending(window, input, expected, catalog)
+    }
+    /// Exact source writes share the same durable dispatch and project exclusion.
+    pub(crate) fn register_source_operation_pending(&self, window: &str, input: NativeOperationInput,
+        expected: &OwnerIdentity, catalog: &Arc<PersistentRecoveryCatalog>) -> HostResult<RegisteredExecution> {
+        if input.resources.claims.len() != 1 || input.resources.claims[0].kind != ResourceKind::FileWrite
+            || input.resources.claims[0].key != expected.root_ref {
+            return Err("runtime_host_invalid_source_operation");
+        }
+        self.register_operation_pending(window, input, expected, catalog)
+    }
+    fn register_operation_pending(&self,window:&str,input:NativeOperationInput,
+        expected:&OwnerIdentity,catalog:&Arc<PersistentRecoveryCatalog>)->HostResult<RegisteredExecution>{
         valid_id(&input.job_id)?;valid_id(&input.step_id)?;
         if !(1..=3_600_000).contains(&input.queue_timeout_ms)||!(1..=3_600_000).contains(&input.execution_timeout_ms)
-            ||!input.resources.is_current()||!input.resources.claims.iter().any(|c|c.kind==ResourceKind::Ubt){
+            ||!input.resources.is_current(){
             return Err("runtime_host_invalid_operation");
         }
         let mut inner=self.lock()?;let now=Instant::now();refresh(&mut inner,now);prune(&mut inner,now);

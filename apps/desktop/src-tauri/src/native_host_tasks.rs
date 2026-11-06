@@ -13,6 +13,9 @@ use serde_json::{json, Value};
 use std::{collections::HashMap, sync::{Arc, Mutex, OnceLock, atomic::{AtomicBool, AtomicUsize, Ordering}, mpsc},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 use tauri::Manager;
+#[path = "native_host_source_changes.rs"]
+pub(crate) mod source_changes;
+
 type Result<T> = std::result::Result<T, &'static str>;
 
 #[derive(Default)]
@@ -26,6 +29,7 @@ struct Service {
 struct Task {
     project: String, run: String, conversation: String, scope_id: String,
     goal: String, scope: Value, draft: Value,
+    source_proposals: bool, source_change: Mutex<Option<source_changes::Proposal>>, source_receipt:Mutex<Option<Value>>, plan_version: AtomicUsize,
     grant: Arc<NativeStoreTaskGrant>, model: Arc<TaskModel>, root: Arc<TrustedRootHandle>,
     reads: Mutex<HostedReads>, checker: Arc<dyn SourceChecker>,
     creation: OnceLock<Arc<NativeRunCreation>>, alive: Arc<AtomicBool>,
@@ -180,11 +184,13 @@ fn broker(app:&tauri::AppHandle,task:&Arc<Task>,method:&str,input:Value)->Result
             let result=(||{
                 task.current()?;
                 if task.tool_count.fetch_add(1,Ordering::AcqRel)>=8 {return Err("host_task_tool_limit");}
-                task.reads.lock().map_err(|_|"host_task_unavailable")?.execute(&input,8192)
+                if input["name"] == "project_propose_source_change" && task.source_proposals {
+                    source_changes::prepare(task, &input)
+                } else { task.reads.lock().map_err(|_|"host_task_unavailable")?.execute(&input,8192) }
             })();
             // Every tool exposed here is read-only. Record a denied/failed read as
             // such, so history does not retain a falsely in-flight write effect.
-            Ok(match result {Ok(value)=>value,Err(code)=>json!({"callId":input["id"],"toolId":"project.read_file",
+            Ok(match result {Ok(value)=>value,Err(code)=>json!({"callId":input["id"],"toolId":if input["name"]=="project_propose_source_change"{"project.propose_source_change"}else{"project.read_file"},
                 "status":if code=="host_read_unavailable"{"failed"}else{"blocked"},"effectState":"not_started",
                 "output":null,"sources":[],"truncated":false,"diagnosticCode":code})})
         },
@@ -208,7 +214,7 @@ fn send_model(app:&tauri::AppHandle,task:&Arc<Task>,input:Value)->Result<Value> 
     let execution=task.host.register_memory_model_pending(&task.label,ModelJobInput{owner:task.owner.clone(),job_id:request_id.into(),
         step_id:"host-investigation-model".into(),queue_timeout_ms:remaining,execution_timeout_ms:remaining},task.root.clone(),
         &task.identity,&task.catalog,creation.clone(),task.alive.clone())?;
-    let mut transport=HostedChatTransport::new(vec![json!({"type":"function","function":crate::native_host_reads::definition()})]);
+    let mut transport=HostedChatTransport::new(task_tools(task.source_proposals).into_iter().map(|definition|json!({"type":"function","function":definition})).collect());
     let (preflight,original_transport)=session.task_preflight(prepared,lease,approval,execution,task.root.clone(),creation,task.alive.clone(),task.checker.clone(),&mut transport).map_err(|e|e.code())?;
     let original=session.clone();let catalog=task.catalog.clone();let state=app.state::<ManagedRunStoreState>();
     let ready=tauri::async_runtime::block_on(state.with_native_task_admission(task.grant.clone(),&task.project,&task.run,move|store,cancelled,deadline|{
@@ -225,7 +231,12 @@ fn send_model(app:&tauri::AppHandle,task:&Arc<Task>,input:Value)->Result<Value> 
 #[derive(serde::Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
 pub(crate) struct StartInput { profile_id:String, project_id:String, conversation_id:String, goal:String,
-    read_prefixes:Vec<String>, share_prefixes:Vec<String> }
+    read_prefixes:Vec<String>, share_prefixes:Vec<String>, #[serde(default)] source_proposals:bool }
+fn task_tools(proposals: bool) -> Vec<Value> {
+    let mut tools=vec![crate::native_host_reads::definition()];
+    if proposals { tools.push(source_changes::definition()); }
+    tools
+}
 fn id()->Result<String> { let mut bytes=[0u8;16];getrandom::getrandom(&mut bytes).map_err(|_|"host_task_unavailable")?;
     Ok(bytes.iter().map(|byte|format!("{byte:02x}")).collect()) }
 fn valid_id(value:&str)->bool { !value.is_empty()&&value.len()<=128&&value.bytes().all(|c|c.is_ascii_alphanumeric()||matches!(c,b'-'|b'_')) }
@@ -241,8 +252,9 @@ fn validate_start(input:&StartInput)->Result<()> {
 extern "system" {fn MessageBoxW(window:*mut std::ffi::c_void,text:*const u16,title:*const u16,flags:u32)->i32;}
 fn confirm(window:isize,input:&StartInput)->Result<()> {
     let paths=|values:&[String]|values.iter().map(|v|if v.is_empty(){"(whole project)"}else{v.as_str()}).collect::<Vec<_>>().join(", ");
-    let text=format!("Project: {}\nGoal: {}\n\nRead: {}\nShare with DeepSeek: {}\n\nRead-only file investigation. Up to 4 model requests, 8 file reads, 2 minutes.\nThe task continues while this view reloads. Cancel or exit the app to stop.\n\nStart this task?",
+    let text=format!("Project: {}\nGoal: {}\n\nRead: {}\nShare with DeepSeek: {}\n\nRead-only file investigation. Up to 4 model requests, 8 tool calls, 2 minutes.\nThe task continues while this view reloads. Cancel or exit the app to stop.\n\nStart this task?",
         input.project_id,input.goal.chars().take(240).collect::<String>(),paths(&input.read_prefixes),paths(&input.share_prefixes));
+    let text=if input.source_proposals {format!("{text}\n\nSource proposals are enabled. Proposals do not write files. Review the exact diff and approve a separate native write after the task finishes.")} else {text};
     let text:Vec<u16>=text.encode_utf16().chain(Some(0)).collect();let title:Vec<u16>="UAgent - Background investigation".encode_utf16().chain(Some(0)).collect();
     if unsafe{MessageBoxW(window as *mut _,text.as_ptr(),title.as_ptr(),0x134)}!=6 {return Err("host_task_confirmation_declined");} Ok(())
 }
@@ -272,16 +284,17 @@ pub(crate) async fn start_hosted_task(app:tauri::AppHandle,window:tauri::Webview
         let now=SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_|"host_task_clock")?.as_millis() as u64;
         let scope=json!({"id":scope_id,"runId":run,"projectId":input.project_id,"conversationId":input.conversation_id,"rootRef":identity.root_ref,
             "providerId":"deepseek","modelId":"deepseek-flash","endpoint":"https://api.deepseek.com","mode":"read_only",
-            "readPrefixes":input.read_prefixes,"sharePrefixes":input.share_prefixes,"toolIds":["project.read_file"],
+            "readPrefixes":input.read_prefixes,"sharePrefixes":input.share_prefixes,"toolIds":if input.source_proposals{vec!["project.read_file","project.propose_source_change"]}else{vec!["project.read_file"]},
             "limits":{"maxToolCalls":8,"maxModelRequests":4,"maxDurationMs":120000,"maxAttemptsPerFailure":1,"maxToolResultBytes":8192,"maxContextBytes":24000},"expiresAt":now+model.remaining_ms()});
         let draft=json!({"taskMode":"investigation","investigationScopeId":scope_id,"conversationId":input.conversation_id,"input":input.goal,"projectId":input.project_id,
             "permissionMode":"request_approval","providerId":"deepseek","modelId":"deepseek-flash","reasoningEffort":"none","runMode":"local","branch":null,"contextPercent":null,"createdAt":now});
         let task=Arc::new(Task{project:input.project_id,run:run.clone(),conversation:input.conversation_id,scope_id,goal:input.goal,scope:scope.clone(),draft:draft.clone(),
+            source_proposals:input.source_proposals,source_change:Mutex::new(None),source_receipt:Mutex::new(None),plan_version:AtomicUsize::new(1),
             grant,model,root,reads:Mutex::new(reads),checker,creation:OnceLock::new(),alive:Arc::new(AtomicBool::new(true)),host,owner,identity,label:native_label,
             catalog:app.state::<Arc<PersistentRecoveryCatalog>>().inner().clone(),model_count:AtomicUsize::new(0),tool_count:AtomicUsize::new(0),
             active:AtomicUsize::new(0),terminal:AtomicBool::new(false),expiry_requested:AtomicBool::new(false),request_ids:Mutex::new(std::collections::HashSet::new())});
         service.tasks.lock().map_err(|_|"host_task_unavailable")?.insert(run.clone(),task.clone());
-        let result=service.client.request(HostCommand::Start,json!({"taskId":run,"draft":draft,"scope":scope,"tools":[crate::native_host_reads::definition()]}),Duration::from_secs(10));
+        let result=service.client.request(HostCommand::Start,json!({"taskId":run,"draft":draft,"scope":scope,"tools":task_tools(input.source_proposals)}),Duration::from_secs(10));
         if result.is_err(){task.cancel();task.terminal.store(true,Ordering::Release);task.release_if_finished();}
         result
     }).await.map_err(|_|"host_task_start_unconfirmed".to_string())?.map_err(str::to_string)
@@ -308,6 +321,10 @@ pub(crate) async fn control_hosted_task(app:tauri::AppHandle,window:tauri::Webvi
         "resume"=>{task.current()?;HostCommand::Resume},_=>return Err("host_task_action_invalid".into())};
     tauri::async_runtime::spawn_blocking(move||{
         let result=service.client.request(command,payload,Duration::from_secs(15));
+        if input.action=="amend" && result.is_ok() {
+            task.plan_version.store(input.expected_plan_version.unwrap() as usize+1,Ordering::Release);
+            if let Ok(mut proposal)=task.source_change.lock(){proposal.take();}
+        }
         if input.action=="cancel"&&result.is_ok(){task.terminal.store(true,Ordering::Release);task.release_if_finished();}
         result
     })
@@ -328,7 +345,7 @@ mod tests {
     use super::*;
     #[test] fn hosted_task_accepts_native_root_ids_and_rejects_path_aliases() {
         let mut input=StartInput{profile_id:"opaque".into(),project_id:"root:a1b2".into(),conversation_id:"conversation-1".into(),
-            goal:"Read Source/Main.cpp".into(),read_prefixes:vec!["Source".into()],share_prefixes:vec!["Source".into()]};
+            goal:"Read Source/Main.cpp".into(),read_prefixes:vec!["Source".into()],share_prefixes:vec!["Source".into()],source_proposals:false};
         validate_start(&input).unwrap();
         input.project_id="E:/project".into();assert!(validate_start(&input).is_err());
         input.project_id="root:a1b2".into();input.share_prefixes=vec!["Source/../Config".into()];assert!(validate_start(&input).is_err());

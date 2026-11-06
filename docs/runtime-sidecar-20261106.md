@@ -68,3 +68,7 @@
 实现参考 [Tauri Node sidecar 文档](https://v2.tauri.app/learn/sidecar-nodejs/)及 [Node 子进程文档](https://nodejs.org/api/child_process.html)。本实现使用原生私有管道与既有 Job 托管，没有向界面开放通用 shell 启动权限。
 
 分发资源按 [Tauri resources 文档](https://v2.tauri.app/develop/resources/)配置；Node 版本与发行校验值来自 [官方发行索引](https://nodejs.org/dist/index.json)及 [24.22.2 发行清单](https://nodejs.org/dist/v24.22.2/SHASUMS256.txt)。
+
+## 后续接线：有限源码变更
+
+后台调查可选择生成基于完整读取快照的精确文本替换提案。模型阶段不写文件；成功完成后另经差异审阅与原生批准，应用创建独立源码事务，保存备份、回执和效果记录。Test01 副本的真实双文件修改与单独 UE 构建 exit 0 已通过。范围与未覆盖项见[目标驱动源码变更](goal-source-change-20261106.md)。

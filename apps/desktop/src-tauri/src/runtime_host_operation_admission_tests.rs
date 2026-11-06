@@ -221,7 +221,7 @@ fn manual_repair_live_ledger_backup_write_result_and_rebuild_input_pin() {
     let binding=RepairBinding{host_session_id:"manual".into(),project_id:"p".into(),root_object_id:f.root.identity().observation_key(),run_id:"original-failed-run".into(),profile_fingerprint:"f".repeat(64)};
     let diagnostic=RepairDiagnosticRef{diagnostic_id:"e".repeat(64),build_owner:RepairBuildOwner{run_id:binding.run_id.clone(),step_id:"build".into(),fingerprint:binding.profile_fingerprint.clone()}};
     let mut session=RepairSession::from_verified_host(f.root.as_ref().clone(),binding,diagnostic,vec!["Source/Game/A.cpp".into()]).unwrap();let snap=session.read_snapshots("manual").unwrap();let before=&snap.files[0];let after="int a = 2;\n";
-    let p=session.prepare_preview("manual",RepairPreviewInput{binding:snap.binding.clone(),diagnostic:snap.diagnostic.clone(),snapshot_id:snap.snapshot_id.clone(),preview_id:"d".repeat(64),files:vec![RepairFilePreview{path:before.path.clone(),before:before.content.clone(),after:after.into(),before_hash:before.sha256.clone(),after_hash:hash(after.as_bytes()),before_object_identity:before.object_identity.clone()}]}).unwrap();
+    let p=session.prepare_preview("manual",RepairPreviewInput{binding:snap.binding.clone(),diagnostic:snap.diagnostic.clone(),task:snap.task.clone(),snapshot_id:snap.snapshot_id.clone(),preview_id:"d".repeat(64),files:vec![RepairFilePreview{path:before.path.clone(),before:before.content.clone(),after:after.into(),before_hash:before.sha256.clone(),after_hash:hash(after.as_bytes()),before_object_identity:before.object_identity.clone()}]}).unwrap();
     let mut r=f.host.register_ue_operation_pending("window",NativeOperationInput{owner:f.owner.clone(),job_id:"manual".into(),step_id:"repair".into(),queue_timeout_ms:10000,execution_timeout_ms:10000,
         resources:NativeResourceBinding::from_verified_root(f.root.clone(),vec![ResourceClaim{kind:ResourceKind::Ubt,key:"synthetic-engine".into()},ResourceClaim{kind:ResourceKind::FileWrite,key:f.identity.root_ref.clone()}]).unwrap(),observer:Arc::new(Observer(f.settled.clone()))},&f.identity,&f.catalog).unwrap();
     let mut i=f.intent(&r,"manual");i.approved_plan_digest=p.native_plan_digest.clone();i.adapter.id="native.ue-source-repair.v1".into();i.resources.push(ledger::ResourceClaim{kind:ledger::ResourceKind::FileWrite,key:f.identity.root_ref.clone()});i.targets=vec![ledger::EffectTarget{kind:ledger::TargetKind::File,locator:before.path.clone(),before_digest:Some(before.sha256.clone()),after_digest:Some(hash(after.as_bytes()))}];
@@ -378,7 +378,7 @@ fn restart_restore_case(complete:bool){
  let backup=store.read_artifact("p","r","nativeRepairBefore").unwrap();let result=store.read_artifact("p","r","nativeRepairResult").unwrap();
  let no=AtomicBool::new(false);let report=crate::ue_repair_recovery::inspect(&root,"p","r",&backup,Some(&result),&no,Instant::now()+Duration::from_secs(10)).unwrap();assert_eq!(report.restore_candidates.len(),if complete{2}else{1});
  let value:serde_json::Value=serde_json::from_slice(&backup).unwrap();let old:RepairPreviewInput=serde_json::from_value(value["preview"]["preview"].clone()).unwrap();let mut binding=old.binding;binding.host_session_id="restart".into();
- let mut session=RepairSession::from_verified_host(root.as_ref().clone(),binding,old.diagnostic,report.restore_candidates.iter().map(|f|f.path.clone()).collect()).unwrap();let snap=session.read_snapshots("restart").unwrap();
+ let mut session=RepairSession::from_verified_host(root.as_ref().clone(),binding,old.diagnostic.unwrap(),report.restore_candidates.iter().map(|f|f.path.clone()).collect()).unwrap();let snap=session.read_snapshots("restart").unwrap();
  let preview=session.prepare_replacements("restart",&snap.snapshot_id,hash(b"restart-reverse"),report.restore_candidates.into_iter().map(|f|(f.path,f.after)).collect()).unwrap();
  store.start_run("p",&NewRun{id:"restart-run".into(),session_id:"s".into(),goal:"explicit synthetic restore".into(),created_at:4}).unwrap();
  let host=RuntimeHostService::new().unwrap();let catalog=Arc::new(PersistentRecoveryCatalog::new());host.install_recovery_catalog(catalog.clone()).unwrap();let monitor=host.start_monitor().unwrap();
@@ -401,4 +401,23 @@ fn restart_restore_case(complete:bool){
   assert_eq!(std::fs::read_to_string(f.root.path_hint().join("Source/Game/B.cpp")).unwrap(),"int a = 1;\n");
   assert!(f.store.read_artifact("p","restart-run","nativeRepairResult").is_ok());
   if complete{assert_eq!(f.catalog.report().unwrap().persistent_effect_barriers.len(),0);}else{assert_ne!(f.catalog.admission("p",None,&[]),RecoveryAdmission::Ready);}
+}
+
+#[test]
+fn source_only_operation_uses_durable_handoff_and_excludes_concurrent_builds() {
+    let f=Fixture::new();
+    let resources=NativeResourceBinding::from_verified_root(f.root.clone(),vec![ResourceClaim{kind:ResourceKind::FileWrite,key:f.identity.root_ref.clone()}]).unwrap();
+    let mut registration=f.host.register_source_operation_pending("window",NativeOperationInput{owner:f.owner.clone(),job_id:"source".into(),step_id:"source-change".into(),
+        queue_timeout_ms:10000,execution_timeout_ms:10000,resources,observer:Arc::new(Observer(f.settled.clone()))},&f.identity,&f.catalog).unwrap();
+    assert!(matches!(f.reserve("concurrent-build"),Err("runtime_host_resource_conflict")));
+    let mut intent=f.intent(&registration,"source");intent.adapter.id="native.source-change.v1".into();
+    intent.resources=vec![ledger::ResourceClaim{kind:ledger::ResourceKind::FileWrite,key:f.identity.root_ref.clone()}];
+    let yes=||true;let context=ledger::CurrentRun::from_verified_host(&f.root,intent.owner.clone(),&yes).unwrap();
+    let journal=f.store.open_effect_journal().unwrap();journal.prepare(&context,&intent).unwrap();
+    let mut ticket=journal.mark_may_have_been_sent(&context,&intent.key,1,3).unwrap();
+    assert_eq!(registration.begin().unwrap_err(),"runtime_host_operation_transaction_required");
+    let handoff=registration.claim_ue_once(&journal,&context,&mut ticket,&f.catalog,Instant::now()+Duration::from_secs(2)).unwrap();
+    registration.check_started_ue_operation(&intent).unwrap();
+    f.settled.store(true,Ordering::Release);registration.finish(true).unwrap();
+    journal.settle_owned_operation(handoff).unwrap();
 }

@@ -37,6 +37,14 @@ pub struct RepairDiagnosticRef {
     pub diagnostic_id: String,
     pub build_owner: RepairBuildOwner,
 }
+/// A host-issued goal and plan identity; it never impersonates a compiler diagnostic.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SourceTaskRef {
+    pub run_id: String,
+    pub scope_id: String,
+    pub plan_version: u32,
+}
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepairSourceSnapshot {
@@ -49,7 +57,10 @@ pub struct RepairSourceSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct RepairSnapshot {
     pub binding: RepairBinding,
-    pub diagnostic: RepairDiagnosticRef,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic: Option<RepairDiagnosticRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<SourceTaskRef>,
     pub snapshot_id: String,
     pub files: Vec<RepairSourceSnapshot>,
 }
@@ -67,7 +78,10 @@ pub struct RepairFilePreview {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepairPreviewInput {
     pub binding: RepairBinding,
-    pub diagnostic: RepairDiagnosticRef,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic: Option<RepairDiagnosticRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<SourceTaskRef>,
     pub snapshot_id: String,
     pub preview_id: String,
     pub files: Vec<RepairFilePreview>,
@@ -93,7 +107,10 @@ pub struct RepairFileEffect {
 #[serde(rename_all = "camelCase")]
 pub struct RepairApplyReceipt {
     pub binding: RepairBinding,
-    pub diagnostic: RepairDiagnosticRef,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic: Option<RepairDiagnosticRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<SourceTaskRef>,
     pub preview_id: String,
     pub status: String,
     pub reason: String,
@@ -111,7 +128,10 @@ pub struct RepairQueryFile {
 #[serde(rename_all = "camelCase")]
 pub struct RepairRecoveryQuery {
     pub binding: RepairBinding,
-    pub diagnostic: RepairDiagnosticRef,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic: Option<RepairDiagnosticRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<SourceTaskRef>,
     pub preview_id: String,
     pub query_id: String,
     pub files: Vec<RepairQueryFile>,
@@ -251,7 +271,8 @@ pub struct RepairSession {
     root: TrustedRootHandle,
     reader: ScopedReader,
     binding: RepairBinding,
-    diagnostic: RepairDiagnosticRef,
+    diagnostic: Option<RepairDiagnosticRef>,
+    task: Option<SourceTaskRef>,
     allowed: BTreeSet<String>,
     snapshot: Option<RepairSnapshot>,
     identity_pins: BTreeMap<String, Arc<IdentityPin>>,
@@ -299,19 +320,30 @@ impl RepairSession {
         diagnostic: RepairDiagnosticRef,
         allowed_paths: Vec<String>,
     ) -> Result<Self, String> {
-        root.check_current().map_err(|e| e.to_string())?;
-        if !opaque(&binding.host_session_id)
-            || !opaque(&binding.project_id)
-            || !opaque(&binding.run_id)
-            || binding.root_object_id != root.identity().observation_key()
-            || !hex(&binding.profile_fingerprint)
-            || !hex(&diagnostic.diagnostic_id)
+        if !hex(&diagnostic.diagnostic_id)
             || diagnostic.build_owner.run_id != binding.run_id
             || diagnostic.build_owner.fingerprint != binding.profile_fingerprint
             || !opaque(&diagnostic.build_owner.step_id)
-        {
-            return Err("repair_host_binding_invalid".into());
+        { return Err("repair_host_binding_invalid".into()); }
+        Self::from_origin(root, binding, Some(diagnostic), None, allowed_paths)
+    }
+    pub(crate) fn from_verified_task(
+        root: TrustedRootHandle, binding: RepairBinding, task: SourceTaskRef,
+        allowed_paths: Vec<String>,
+    ) -> Result<Self, String> {
+        if task.run_id != binding.run_id || !opaque(&task.scope_id) || !(1..=4).contains(&task.plan_version) {
+            return Err("source_task_binding_invalid".into());
         }
+        Self::from_origin(root, binding, None, Some(task), allowed_paths)
+    }
+    fn from_origin(
+        root: TrustedRootHandle, binding: RepairBinding, diagnostic: Option<RepairDiagnosticRef>,
+        task: Option<SourceTaskRef>, allowed_paths: Vec<String>,
+    ) -> Result<Self, String> {
+        root.check_current().map_err(|e| e.to_string())?;
+        if !opaque(&binding.host_session_id) || !opaque(&binding.project_id) || !opaque(&binding.run_id)
+            || binding.root_object_id != root.identity().observation_key() || !hex(&binding.profile_fingerprint)
+        { return Err("repair_host_binding_invalid".into()); }
         if allowed_paths.is_empty() || allowed_paths.len() > 8 {
             return Err("repair_exact_file_scope_required".into());
         }
@@ -332,6 +364,7 @@ impl RepairSession {
             reader,
             binding,
             diagnostic,
+            task,
             allowed,
             snapshot: None,
             identity_pins: BTreeMap::new(),
@@ -397,12 +430,12 @@ impl RepairSession {
         self.current(host_session)?;
         self.sequence += 1;
         let id = io::hash(
-            &serde_json::to_vec(&(&self.binding, &self.diagnostic, self.sequence, &files))
+            &serde_json::to_vec(&(&self.binding, &self.diagnostic, &self.task, self.sequence, &files))
                 .map_err(|_| "repair_snapshot_serialization_failed")?,
         );
         let snapshot = RepairSnapshot {
             binding: self.binding.clone(),
-            diagnostic: self.diagnostic.clone(),
+            diagnostic: self.diagnostic.clone(), task: self.task.clone(),
             snapshot_id: id,
             files,
         };
@@ -421,7 +454,7 @@ impl RepairSession {
             let f=snapshot.files.iter().find(|f|f.path==path).ok_or("repair_unread_file")?;
             files.push(RepairFilePreview{path:f.path.clone(),before:f.content.clone(),after_hash:io::hash(after.as_bytes()),after,before_hash:f.sha256.clone(),before_object_identity:f.object_identity.clone()});
         }
-        self.prepare_preview(host_session,RepairPreviewInput{binding:self.binding.clone(),diagnostic:self.diagnostic.clone(),snapshot_id:snapshot_id.into(),preview_id,files})
+        self.prepare_preview(host_session,RepairPreviewInput{binding:self.binding.clone(),diagnostic:self.diagnostic.clone(),task:self.task.clone(),snapshot_id:snapshot_id.into(),preview_id,files})
     }
     pub fn prepare_preview(
         &mut self,
@@ -432,6 +465,7 @@ impl RepairSession {
         let snapshot = self.snapshot.as_ref().ok_or("repair_snapshot_required")?;
         if input.binding != self.binding
             || input.diagnostic != self.diagnostic
+            || input.task != self.task
             || input.snapshot_id != snapshot.snapshot_id
             || !hex(&input.preview_id)
             || input.files.is_empty()
@@ -509,7 +543,7 @@ impl RepairSession {
     fn receipt(p: &NativeRepairPreview, status: &str, reason: &str) -> RepairApplyReceipt {
         RepairApplyReceipt {
             binding: p.preview.binding.clone(),
-            diagnostic: p.preview.diagnostic.clone(),
+            diagnostic: p.preview.diagnostic.clone(), task: p.preview.task.clone(),
             preview_id: p.preview.preview_id.clone(),
             status: status.into(),
             reason: reason.into(),
@@ -758,7 +792,7 @@ impl RepairSession {
         );
         Ok(RepairRecoveryQuery {
             binding: self.binding.clone(),
-            diagnostic: self.diagnostic.clone(),
+            diagnostic: self.diagnostic.clone(), task: self.task.clone(),
             preview_id: preview_id.into(),
             query_id,
             files,
@@ -812,7 +846,7 @@ impl RepairSession {
             host_session,
             RepairPreviewInput {
                 binding: self.binding.clone(),
-                diagnostic: self.diagnostic.clone(),
+                diagnostic: self.diagnostic.clone(), task: self.task.clone(),
                 snapshot_id: snap.snapshot_id,
                 preview_id: new_preview_id,
                 files,

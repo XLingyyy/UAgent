@@ -1929,6 +1929,8 @@ pub fn run() {
             native_host_tasks::start_hosted_task,
             native_host_tasks::control_hosted_task,
             native_host_tasks::list_hosted_tasks,
+            native_host_tasks::source_changes::hosted_source_change,
+            native_host_tasks::source_changes::approve_hosted_source_change,
             native_host_model::close_host_model_profile,
             run_store_commands::read_native_run_artifact,
             run_store_commands::inspect_native_repair_recovery,

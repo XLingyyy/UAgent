@@ -47,7 +47,7 @@ pub fn inspect(root:&TrustedRootHandle,project:&str,run:&str,backup:&[u8],result
  if let Some(r)=&receipt{
   let binding=serde_json::to_value(&p.binding).map_err(|_|"repair_inspection_invalid_result")?;
   let effects=r["effects"].as_array().ok_or("repair_inspection_invalid_result")?;
-  if r["diagnostic"]!=serde_json::to_value(&p.diagnostic).map_err(|_|"repair_inspection_invalid_result")?||r["binding"]!=binding||r["previewId"]!=p.preview_id||r["recoveryRecord"]!=backup_sha256||effects.len()!=p.files.len(){return Err("repair_inspection_result_binding_changed".into());}
+  if r["task"]!=serde_json::to_value(&p.task).map_err(|_|"repair_inspection_invalid_result")?||r["diagnostic"]!=serde_json::to_value(&p.diagnostic).map_err(|_|"repair_inspection_invalid_result")?||r["binding"]!=binding||r["previewId"]!=p.preview_id||r["recoveryRecord"]!=backup_sha256||effects.len()!=p.files.len(){return Err("repair_inspection_result_binding_changed".into());}
   for (e,f) in effects.iter().zip(&p.files){
    if e["path"]!=f.path||e["beforeHash"]!=f.before_hash||e["beforeObjectIdentity"]!=f.before_object_identity||!matches!(e["status"].as_str(),Some("applied"|"not_started"|"conflict"|"unknown")){return Err("repair_inspection_result_binding_changed".into());}
    if e["status"]=="applied"&&(e["afterHash"]!=f.after_hash||e["afterObjectIdentity"]!=f.before_object_identity){return Err("repair_inspection_result_binding_changed".into());}

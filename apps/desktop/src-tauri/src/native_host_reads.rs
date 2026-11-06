@@ -15,6 +15,7 @@ pub(crate) struct HostedReads {
     share: Vec<String>,
     monitor: NativeSourceMonitor,
     sources: Vec<(Value, SourceEvidence)>,
+    complete_files: std::collections::HashMap<String, String>,
 }
 
 pub(crate) fn valid_prefixes(prefixes: &[String]) -> bool {
@@ -39,12 +40,18 @@ impl HostedReads {
     pub(crate) fn start(project: String, root: Arc<TrustedRootHandle>, read: Vec<String>, share: Vec<String>, session: &NativeSession) -> Result<Self> {
         if !valid_prefixes(&read) || !valid_prefixes(&share) { return Err("host_read_scope_invalid"); }
         let monitor=NativeSourceMonitor::start(&project,session.source_authority())?;
-        let result=Self{project,root,read,share,monitor,sources:vec![]};
+        let result=Self{project,root,read,share,monitor,sources:vec![],complete_files:std::collections::HashMap::new()};
         result.current()?;
         Ok(result)
     }
+    pub(crate) fn has_complete_source(&self, path: &str) -> bool { self.complete_files.contains_key(path) }
+    pub(crate) fn matches_complete_source(&self, path: &str, before: &str) -> Result<bool> {
+        self.current()?;
+        for (_, evidence) in &self.sources { self.monitor.verify_evidence(evidence)?; }
+        Ok(self.complete_files.get(path).is_some_and(|text| text == before))
+    }
     pub(crate) fn checker(&self) -> Arc<dyn SourceChecker> { self.monitor.checker() }
-    pub(crate) fn release(&mut self) { self.monitor.revoke(); self.sources.clear(); }
+    pub(crate) fn release(&mut self) { self.monitor.revoke(); self.sources.clear(); self.complete_files.clear(); }
     fn current(&self) -> Result<()> {
         self.root.check_current().map_err(|_|"host_read_root_changed")?;
         let current=crate::resolve_trusted_root_handle_by_id(&self.project).map_err(|_|"host_read_root_changed")?;
@@ -82,6 +89,7 @@ impl HostedReads {
         let mut selected=self.sources.iter().map(|(_,evidence)|evidence.clone()).collect::<Vec<_>>();
         selected.push(evidence.clone());self.monitor.set_sources(&selected)?;
         self.current()?;
+        if !preview.truncated { self.complete_files.insert(path.into(),preview.content.clone()); }
         self.sources.push((reference,evidence));
         Ok(result)
     }

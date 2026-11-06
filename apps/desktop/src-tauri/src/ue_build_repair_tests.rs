@@ -99,7 +99,7 @@ fn preview(s: &mut RepairSession, label: &str) -> NativeRepairPreview {
         "host",
         RepairPreviewInput {
             binding: snapshot.binding,
-            diagnostic: snapshot.diagnostic,
+            diagnostic: snapshot.diagnostic, task: snapshot.task,
             snapshot_id: snapshot.snapshot_id,
             preview_id: io::hash(label.as_bytes()),
             files,
@@ -589,4 +589,38 @@ fn restart_inspection_dispatch_records_never_become_a_stop_proof(){
  assert_eq!(crate::ue_repair_recovery::describe_execution(&[barrier.clone()],"other","history","root").status,"no_matching_barrier");
  assert_eq!(crate::ue_repair_recovery::describe_execution(&[barrier.clone()],"p","history","other-root").status,"root_mismatch");
  assert_eq!(crate::ue_repair_recovery::describe_execution(&[barrier.clone(),barrier],"p","history","root").status,"ambiguous");
+}
+
+#[test]
+fn goal_source_change_requires_exact_task_origin_and_preserves_backup_and_restore() {
+    let f=Fixture::new();
+    let root=TrustedRootHandle::open_from_host_selection(&f.root).unwrap();
+    let binding=RepairBinding{host_session_id:"host".into(),project_id:"Fixture".into(),root_object_id:root.identity().observation_key(),run_id:"goal-run".into(),profile_fingerprint:"e".repeat(64)};
+    let task=SourceTaskRef{run_id:"goal-run".into(),scope_id:"goal-scope".into(),plan_version:1};
+    let mut session=RepairSession::from_verified_task(root,binding,task.clone(),vec!["Source/Fixture/A.cpp".into()]).unwrap();
+    let snapshot=session.read_snapshots("host").unwrap();
+    assert!(snapshot.diagnostic.is_none());assert_eq!(snapshot.task,Some(task.clone()));
+    let prepared=session.prepare_replacements("host",&snapshot.snapshot_id,io::hash(b"goal-preview"),vec![("Source/Fixture/A.cpp".into(),"int value = 2;\n".into())]).unwrap();
+    let encoded=serde_json::to_value(&prepared.preview).unwrap();
+    assert!(encoded.get("diagnostic").is_none());assert_eq!(encoded["task"]["runId"],"goal-run");
+    let mut forged=prepared.preview.clone();forged.task.as_mut().unwrap().plan_version=2;
+    assert!(session.prepare_preview("host",forged).is_err());
+    let mut grant=NativeRepairGrant::from_verified_host_approval(&prepared,15000).unwrap();
+    let receipt=session.apply_approved("host",&prepared.preview.preview_id,&mut grant,&mut f.journal(),&AtomicBool::new(false)).unwrap();
+    assert_eq!(receipt.status,"applied");assert_eq!(receipt.task,Some(task));assert!(receipt.diagnostic.is_none());
+    assert_eq!(f.read("Source/Fixture/A.cpp"),"int value = 2;\n");
+    let reverse=session.prepare_restore("host",&prepared.preview.preview_id,io::hash(b"goal-restore")).unwrap();
+    let mut reverse_grant=NativeRepairGrant::from_verified_host_approval(&reverse,15000).unwrap();
+    assert_eq!(session.apply_approved("host",&reverse.preview.preview_id,&mut reverse_grant,&mut f.journal(),&AtomicBool::new(false)).unwrap().status,"applied");
+    assert_eq!(f.read("Source/Fixture/A.cpp"),"int value = 1;\n");
+}
+#[test]
+fn build_source_preview_keeps_legacy_wire_format_without_task_field() {
+    let f=Fixture::new();let mut session=f.session();let prepared=preview(&mut session,"legacy-wire");
+    let value=serde_json::to_value(&prepared.preview).unwrap();
+    assert!(value.get("task").is_none());assert!(value["diagnostic"]["buildOwner"].is_object());
+    let restored:RepairPreviewInput=serde_json::from_value(value.clone()).unwrap();
+    assert!(restored.task.is_none());assert!(restored.diagnostic.is_some());
+    assert_eq!(serde_json::to_value(restored).unwrap(),value);
+    assert_eq!(io::hash(&serde_json::to_vec(&prepared.preview).unwrap()),prepared.native_plan_digest);
 }

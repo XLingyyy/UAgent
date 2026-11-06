@@ -256,11 +256,11 @@ pub(crate) async fn prepare_historical_ue_restore(window:tauri::WebviewWindow,st
   let value:serde_json::Value=serde_json::from_slice(&backup).map_err(|_|error("ue_restore_backup_invalid"))?;
   let old:RepairPreviewInput=serde_json::from_value(value["preview"]["preview"].clone()).map_err(|_|error("ue_restore_backup_invalid"))?;
   let mut binding=old.binding;binding.host_session_id=sid.clone();
-  let mut session=RepairSession::from_verified_host(root.as_ref().clone(),binding,old.diagnostic.clone(),report.restore_candidates.iter().map(|f|f.path.clone()).collect()).map_err(|_|error("ue_restore_scope_invalid"))?;
+  let mut session=RepairSession::from_verified_host(root.as_ref().clone(),binding,old.diagnostic.clone().ok_or_else(||error("ue_restore_build_origin_required"))?,report.restore_candidates.iter().map(|f|f.path.clone()).collect()).map_err(|_|error("ue_restore_scope_invalid"))?;
   let snapshot=session.read_snapshots(&sid).map_err(|_|error("ue_restore_read_failed"))?;
   let preview=session.prepare_replacements(&sid,&snapshot.snapshot_id,hash(id().map_err(|_|error("ue_restore_id"))?.as_bytes()),report.restore_candidates.into_iter().map(|f|(f.path,f.after)).collect()).map_err(|_|error("ue_restore_preview_changed"))?;
   if !live(&a){return Err(error("ue_restore_cancelled"));}
-  let c=Continuation{cycle:crate::ue_repair_cycle::Cycle::initial(&input.run_id),build_cancelled:Arc::new(AtomicBool::new(false)),project:input.project_id,prepared:pid,run:input.run_id,document,root,plan:None,restart:Some(original),session_id:sid,diagnostic:old.diagnostic.diagnostic_id,expires:Instant::now()+Duration::from_secs(600),settlement:None,restore:None,restoring:true,session:Some(session),snapshot:Some(snapshot),preview:Some(preview.clone()),applied:false};
+  let c=Continuation{cycle:crate::ue_repair_cycle::Cycle::initial(&input.run_id),build_cancelled:Arc::new(AtomicBool::new(false)),project:input.project_id,prepared:pid,run:input.run_id,document,root,plan:None,restart:Some(original),session_id:sid,diagnostic:old.diagnostic.ok_or_else(||error("ue_restore_build_origin_required"))?.diagnostic_id,expires:Instant::now()+Duration::from_secs(600),settlement:None,restore:None,restoring:true,session:Some(session),snapshot:Some(snapshot),preview:Some(preview.clone()),applied:false};
   Ok((preview,c))
  }).await.map_err(|_|"ue_restore_unavailable".to_string());
  match result {Ok((preview,c))=>{finish(&state,&active,Some(c));Ok(HistoricalRestorePreview{selection:serde_json::json!({"projectId":project,"preparedId":prepared,"runId":run}),session_id,preview})},Err(e)=>{finish(&state,&active,None);Err(e)}}

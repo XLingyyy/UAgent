@@ -4,3 +4,6 @@
 .ua-hosted-tasks__actions { display: flex; gap: 8px; }
 .ua-hosted-tasks-open { padding: 8px 12px; border: 1px solid var(--ua-border-strong); border-radius: 6px; background: var(--ua-bg-elevated); color: var(--ua-text-secondary); cursor: pointer; }
 .ua-hosted-tasks .ua-history-drawer__content { padding: 0 18px 18px; }
+
+.ua-hosted-tasks .ua-hosted-tasks__check { display: flex; align-items: center; gap: 8px; }
+.ua-hosted-tasks input[type="checkbox"] { width: auto; flex: none; }
