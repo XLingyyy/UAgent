@@ -56,3 +56,26 @@ it("accepts a matching workflow draft without starting or inheriting source-writ
   expect((screen.getByLabelText("Prepare source change proposals for separate review and approval") as HTMLInputElement).checked).toBe(false);
   expect(mocks.invoke.mock.calls.every(([command])=>command==="list_hosted_tasks")).toBe(true);
 });
+
+it("links a historical goal only after starting with fresh scope and clears the link for ordinary drafts",async()=>{
+  HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+  HTMLDialogElement.prototype.close=function(){this.open=false;};
+  mocks.invoke.mockImplementation(async(command:string)=>{
+    if(command==="list_hosted_tasks")return[];
+    if(command==="start_hosted_task")return{runId:"new-run"};
+    if(command==="control_hosted_task")return{settled:true,text:"done",run:{status:"completed",steps:[],modelRequests:0,toolCalls:0}};
+    if(command==="hosted_source_change")return{preview:null,receipt:null};
+    throw Error("unexpected action");
+  });
+  render(<HostedTasksPanel/>);
+  fireEvent(window,new CustomEvent("uagent:prepare-hosted-investigation",{detail:{projectId:"p",goal:"Old goal",prefix:"Source",parent:{runId:"old-run",revision:7}}}));
+  await screen.findByText(/Historical parent: old-run/);
+  expect(mocks.invoke.mock.calls.every(([command])=>command==="list_hosted_tasks")).toBe(true);
+  fireEvent.click(screen.getByRole("button",{name:"Start background investigation"}));
+  await waitFor(()=>expect(mocks.invoke).toHaveBeenCalledWith("start_hosted_task",{input:{profileId:"profile",projectId:"p",conversationId:expect.any(String),goal:"Old goal",readPrefixes:["Source"],sharePrefixes:["Source"],sourceProposals:false,parent:{runId:"old-run",revision:7}}}));
+  await screen.findByText("done");
+  fireEvent.click(screen.getByRole("button",{name:"Close panel"}));
+  fireEvent(window,new CustomEvent("uagent:prepare-hosted-investigation",{detail:{projectId:"p",goal:"Unrelated goal",prefix:"Source"}}));
+  await screen.findByRole("dialog");
+  expect(screen.queryByText(/Historical parent:/)).toBeNull();
+});

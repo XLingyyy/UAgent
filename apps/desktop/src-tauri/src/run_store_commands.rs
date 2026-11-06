@@ -1230,6 +1230,27 @@ pub async fn commit_native_run_store(app:tauri::AppHandle,window:tauri::WebviewW
     }).await
 }
 
+/// Historical identity only. No messages, tool results or execution grants are imported.
+pub(crate) fn verify_hosted_parent(store:&RunStore,project:&str,run:&str,revision:i64)->Result<bool,StoreError>{
+    use crate::local_run_store::RunStatus;
+    let snapshot=store.snapshot(project,run)?;
+    if snapshot.run.revision!=revision||!matches!(snapshot.run.status,RunStatus::Paused|RunStatus::Succeeded|RunStatus::Failed|RunStatus::Cancelled)
+        ||snapshot.has_unknown_external_effects||!snapshot.changesets.is_empty()||!snapshot.artifacts.is_empty()
+        ||snapshot.steps.iter().any(|s|matches!(s.status,ActionStatus::InFlight|ActionStatus::Unknown))
+        ||snapshot.tool_calls.iter().any(|c|matches!(c.status,ActionStatus::InFlight|ActionStatus::Unknown)
+            ||!matches!(c.tool_name.as_str(),"project_read_file"|"project_find_files"|"project_list_files"|"project_propose_source_change")) {
+        return Err(error("hostParentUnavailable","a settled read-only record at the reviewed revision is required"));
+    }
+    let batch=store.checkpoint_batch(project,run,revision)?.ok_or_else(invalid)?;
+    let state=batch.events.iter().find(|e|e.kind=="coordinator_state_v1").map(|e|&e.data).ok_or_else(invalid)?;
+    if state["format"]!="uagent.coordinator-state.v1"||state["runId"]!=run||state["projectId"]!=project
+        ||state["scopeDescription"]["mode"]!="read_only"||state["scopeDescription"]["providerId"]!="deepseek"
+        ||state["scopeDescription"]["modelId"]!="deepseek-flash"||!state["collaboration"].is_null() {
+        return Err(error("hostParentUnavailable","single-member DeepSeek file investigation required"));
+    }
+    Ok(snapshot.run.status==RunStatus::Succeeded)
+}
+
 /// Native Host only. The task identity is minted at admission and is never an IPC grant.
 pub(crate) async fn commit_hosted_run_store(
     state: &crate::managed_run_store::ManagedRunStoreState,
@@ -1528,6 +1549,25 @@ mod tests {
     }
     fn input(value: Value) -> CommitInput {
         serde_json::from_value(value).unwrap()
+    }
+    #[test]
+    fn hosted_parent_requires_exact_settled_file_record() {
+        for rejected in [None,Some("foreign-provider"),Some("foreign-tool")] {
+            let fixture=BridgeFixture::new();let store=fixture.store();
+            let mut first=first_commit();first["batch"]["toolCalls"][0]["toolName"]=if rejected==Some("foreign-tool"){"write"}else{"project_read_file"}.into();
+            apply_commit(&store,&input(first),&fixture.project_root()).unwrap();
+            assert!(verify_hosted_parent(&store,"A","run",1).is_err());
+            let mut observed=observed_commit();
+            observed["batch"]["toolCalls"][0]["toolName"]=if rejected==Some("foreign-tool"){ "write" }else{"project_read_file"}.into();
+            let state=&mut observed["batch"]["events"][3]["data"];
+            state["scopeDescription"]["providerId"]=if rejected==Some("foreign-provider"){"synthetic"}else{"deepseek"}.into();
+            state["scopeDescription"]["modelId"]="deepseek-flash".into();
+            apply_commit(&store,&input(observed),&fixture.project_root()).unwrap();
+            if rejected.is_some(){assert!(verify_hosted_parent(&store,"A","run",2).is_err());}
+            else {assert!(!verify_hosted_parent(&store,"A","run",2).unwrap());}
+            assert!(verify_hosted_parent(&store,"A","run",1).is_err());
+            assert!(verify_hosted_parent(&store,"B","run",2).is_err());
+        }
     }
     #[test]
     fn native_run_store_bridge_roundtrip_preserves_archive_plan_freshness_and_unknown_effects() {

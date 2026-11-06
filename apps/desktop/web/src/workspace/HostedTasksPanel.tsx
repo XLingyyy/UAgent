@@ -8,6 +8,7 @@ import {useProjectStore, useSettingsActions} from "../stores/ui-store";
 import "./NativeHistoryAccess.css";
 import "./HostedTasksPanel.css";
 
+interface HistoricalParent {runId:string;revision:number}
 interface TaskDescription {runId:string;projectId:string;goal:string;terminal:boolean}
 interface Snapshot {revision:number;run:TaskRun;text:string;settled:boolean}
 /** Unmounting this observer never cancels or reconstructs a native task. */
@@ -19,14 +20,16 @@ export function HostedTasksPanel() {
   const [tasks,setTasks]=useState<TaskDescription[]>([]),[selected,setSelected]=useState<string|null>(null);
   const [snapshot,setSnapshot]=useState<Snapshot|null>(null),[goal,setGoal]=useState(""),[prefix,setPrefix]=useState("Source");
   const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null);
+  const [parent,setParent]=useState<HistoricalParent|null>(null);
+  useEffect(()=>{setParent(null);},[project?.id]);
   const [sourceProposals,setSourceProposals]=useState(false);
   const [instructions,setInstructions]=useState("");
   const generation=useRef(0);
   useEffect(()=>{
     const prepare=(event:Event)=>{
-      const input=(event as CustomEvent<{projectId:string;goal:string;prefix:string}>).detail;
+      const input=(event as CustomEvent<{projectId:string;goal:string;prefix:string;parent?:HistoricalParent}>).detail;
       if(busy||!input||input.projectId!==project?.id||typeof input.goal!=="string"||!input.goal.trim()||input.goal.length>4096||typeof input.prefix!=="string")return;
-      generation.current++;setGoal(input.goal);setPrefix(input.prefix);setSourceProposals(false);setSelected(null);setSnapshot(null);setError(null);setOpen(true);
+      generation.current++;setParent(input.parent??null);setGoal(input.goal);setPrefix(input.prefix);setSourceProposals(false);setSelected(null);setSnapshot(null);setError(null);setOpen(true);
     };
     window.addEventListener("uagent:prepare-hosted-investigation",prepare);
     return()=>window.removeEventListener("uagent:prepare-hosted-investigation",prepare);
@@ -59,7 +62,7 @@ export function HostedTasksPanel() {
     const current=++generation.current;setBusy(true);setError(null);
     try{
       const result=await invoke<{runId:string}>("start_hosted_task",{input:{profileId,projectId:project.id,conversationId:crypto.randomUUID(),
-        goal,readPrefixes:[prefix.trim()],sharePrefixes:[prefix.trim()],sourceProposals}});
+        goal,readPrefixes:[prefix.trim()],sharePrefixes:[prefix.trim()],sourceProposals,...(parent?{parent}:{})}});
       if(current===generation.current){setTasks((await invoke<TaskDescription[]>("list_hosted_tasks")).filter(task=>task.projectId===project.id));setSelected(result.runId);}
     }catch{if(current===generation.current)setError(zh?"任务未启动。请检查项目已信任、临时 DeepSeek 会话已开启，并完成范围确认。":"Task did not start. Check project trust, temporary DeepSeek session and scope confirmation.");}
     finally{setBusy(false);}
@@ -82,6 +85,7 @@ export function HostedTasksPanel() {
       <div className="ua-history-drawer__content">
         <p>{zh?"只读检查指定路径中的文本文件。界面重载后任务继续；退出应用后停止，记录保存在运行历史中。":"Read text files within a selected path. Tasks survive view reloads; exiting the app stops them and retains their history."}</p>
         <p>{zh?"本次最多 4 次模型请求、8 次工具调用、2 分钟。可先检索文件路径，再读取正文。":"Up to 4 model requests, 8 tool calls and 2 minutes. Paths can be discovered before reading file contents."}</p>
+        {parent&&<p>{zh?"关联历史任务：":"Historical parent: "}{parent.runId}{zh?"。本次重新读取文件，不导入旧消息、待执行调用或旧权限。":". Current files will be read with fresh authority; old messages and pending calls are not imported."}</p>}
         <label>{zh?"读取并发送给 DeepSeek 的目录":"Directory to read and share with DeepSeek"}<input value={prefix} onChange={e=>setPrefix(e.target.value)} placeholder={zh?"留空表示整个项目":"Empty means the whole project"}/></label>
         <label>{zh?"调查目标":"Investigation goal"}<textarea value={goal} onChange={e=>setGoal(e.target.value)} maxLength={4096} rows={3}/></label>
         <label className="ua-hosted-tasks__check"><input type="checkbox" checked={sourceProposals} disabled={busy} onChange={e=>setSourceProposals(e.target.checked)}/>{zh?"生成源码修改提案，完成后单独审阅和批准":"Prepare source change proposals for separate review and approval"}</label>

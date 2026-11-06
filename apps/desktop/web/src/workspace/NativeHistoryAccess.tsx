@@ -4,7 +4,7 @@ import {RunHistoryPanel} from "./RunHistoryPanel";
 import {SessionCatalogPanel} from "./SessionCatalogPanel";
 import type {NativeSessionContinuation} from "../runtime/native-session-catalog";
 import type {NativeHistorySearchSelection} from "../runtime/native-run-history-search";
-import {canContinueNativeHistory,completedArchivedDiscussionText,type NativeRunArchive} from "../runtime/native-run-history";
+import {canPrepareHostedHistory,canContinueNativeHistory,completedArchivedDiscussionText,type NativeRunArchive} from "../runtime/native-run-history";
 import {safeProviderSession} from "../runtime/safe-provider-session";
 import {useProjectActions,useProjectStore,useComposerActions,useThreadActions,useSettingsActions,useRuntimeStore} from "../stores/ui-store";
 import "./NativeHistoryAccess.css";
@@ -34,6 +34,16 @@ export function NativeHistoryAccess(){
    throw error;
   }
  }
+ function prepareHosted(archive:NativeRunArchive){
+  if(busy||projectId!==archive.descriptor.projectId||!canPrepareHostedHistory(archive))throw Error("archive_not_continuable");
+  const scope=archive.coordinatorState?.scopeDescription;
+  const prefixes=scope&&typeof scope==="object"&&!Array.isArray(scope)?scope.readPrefixes:null;
+  const prefix=Array.isArray(prefixes)&&typeof prefixes[0]==="string"?prefixes[0]:"Source";
+  setOpen(false);
+  window.dispatchEvent(new CustomEvent("uagent:prepare-hosted-investigation",{detail:{
+   projectId,goal:archive.descriptor.goal,prefix,parent:{runId:archive.descriptor.runId,revision:archive.snapshot.run.revision},
+  }}));
+ }
  async function continueSaved(archive:NativeRunArchive,share:boolean){
   if(busy||!canContinueNativeHistory(archive))throw Error("archive_not_continuable");
   await safeProviderSession.closeAsync("revoked");threads.setActiveThread(null);
@@ -61,7 +71,7 @@ export function NativeHistoryAccess(){
     <button type="button" onClick={()=>setOpen(false)}>{locale==="zh-CN"?"关闭":"Close"}</button>
    </nav>
    <div className="ua-history-drawer__content">
-   {view==="runs"?<RunHistoryPanel projectId={projectId} onClose={()=>setOpen(false)} onContinue={continueSaved} continuationDisabled={busy}
+   {view==="runs"?<RunHistoryPanel projectId={projectId} onClose={()=>setOpen(false)} onContinue={continueSaved} onPrepareHosted={prepareHosted} continuationDisabled={busy}
       initialSelection={selection} onOpenSessions={archive=>{setAnchor(archive);setPreparationError(null);setView("sessions");}}/>:
     <>{preparationError&&<p className="ua-history-drawer__error" role="alert">{preparationError}</p>}
      <SessionCatalogPanel projectId={anchor?.descriptor.projectId??null} onClose={()=>setView("runs")}

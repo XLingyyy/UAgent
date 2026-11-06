@@ -488,6 +488,17 @@ export function createNativeRunHistory(
   };
 }
 
+export function canPrepareHostedHistory(archive: NativeRunArchive): boolean {
+  const scope = archive.coordinatorState?.scopeDescription;
+  return canContinueNativeHistory(archive) &&
+    ["paused", "succeeded", "failed", "cancelled"].includes(archive.snapshot.run.status) &&
+    scope !== null && typeof scope === "object" && !Array.isArray(scope) &&
+    scope.mode === "read_only" && scope.providerId === "deepseek" && scope.modelId === "deepseek-flash" &&
+    archive.coordinatorState?.collaboration == null &&
+    archive.snapshot.changesets.length === 0 && archive.snapshot.artifacts.length === 0 &&
+    archive.snapshot.toolCalls.every(call => ["project_read_file", "project_find_files", "project_list_files", "project_propose_source_change"].includes(call.toolName));
+}
+
 export function canContinueNativeHistory(archive: NativeRunArchive): boolean {
   return (
     archive.completeness.complete &&

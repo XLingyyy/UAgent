@@ -6,6 +6,7 @@ import { useI18n } from "../i18n";
 import {
   archivedPartialAssistantReplies,
   canContinueNativeHistory,
+  canPrepareHostedHistory,
   createNativeRunHistory,
   type NativeHistoryPage,
   type NativeHistoryRun,
@@ -24,6 +25,7 @@ export interface RunHistoryPanelProps {
   onClose?: () => void;
   /** Prepares a linked NEW task. The owner must revalidate project/sources and obtain fresh authority. */
   onContinue: (archive: NativeRunArchive, shareCompletedContext: boolean) => void | Promise<void>;
+  onPrepareHosted?: (archive: NativeRunArchive) => void | Promise<void>;
   continuationDisabled?: boolean;
   onOpenSessions?: (archive: NativeRunArchive) => void;
   initialSelection?: NativeHistorySearchSelection | null;
@@ -34,6 +36,7 @@ export function RunHistoryPanel({
   projectId,
   onClose,
   onContinue,
+  onPrepareHosted,
   continuationDisabled = false,
   onOpenSessions,
   initialSelection = null,
@@ -141,6 +144,13 @@ export function RunHistoryPanel({
     setShareCompletedContext(false);
     setContinueError(false);
     setSearchProjectId(null);
+  }
+  async function prepareHosted() {
+    if (!archive || !onPrepareHosted || !canPrepareHostedHistory(archive) || archive.descriptor.projectId !== projectId || continuationDisabled || continuing) return;
+    setContinuing(true); setContinueError(false);
+    try { await onPrepareHosted(archive); }
+    catch { if(mounted.current) setContinueError(true); }
+    finally { if(mounted.current) setContinuing(false); }
   }
   async function continueFromArchive() {
     if (!archive || !canContinueNativeHistory(archive) || continuationDisabled || continuing)
@@ -423,6 +433,13 @@ export function RunHistoryPanel({
                 >
                   {t(continuing ? "historyRun.preparing" : "historyRun.continue")}
                 </button>
+                {onPrepareHosted && canPrepareHostedHistory(archive) && <>
+                  <p>{locale === "zh-CN" ? "按原目标创建关联的后台任务，重新确认范围并读取当前文件。原记录保持不变。" : "Create a linked background task from this goal, confirm a fresh scope and read current files. The original record is retained."}</p>
+                  <button type="button" disabled={continuationDisabled || continuing || archive.descriptor.projectId !== projectId} onClick={() => void prepareHosted()}>
+                    {locale === "zh-CN" ? "按原目标新建后台调查" : "Start a new background investigation from this goal"}
+                  </button>
+                  {archive.descriptor.projectId !== projectId && <p>{locale === "zh-CN" ? "请先选择这条记录对应的项目。" : "Select this record's project first."}</p>}
+                </>}
                 {continueError && <p role="alert">{t("historyRun.continueFailed")}</p>}
               </footer>
             </>

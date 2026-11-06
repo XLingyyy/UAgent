@@ -84,3 +84,11 @@ Host 新增 `project_list_files` / `project_find_files`，复用原生来源校�
 进程职责继续参考 [Electron 进程模型](https://www.electronjs.org/docs/latest/tutorial/process-model)：长期任务由应用托管，视图作为观察者；本项目仍使用 Tauri、私有管道和 Windows Job，没有引入 Electron。
 
 真实桌面从内置模板进入后台面板并批准任务 `run-7ac5d5eb105c69b54d106f175ccb9c2b`。DeepSeek 用 3 次请求完成一次 `project_find_files` 和两次 `project_read_file`，检索得到 RepairProbe 的 `.h`/`.cpp` 并完整读取，最后引用路径、行号及未执行构建的范围。SQLite 为 succeeded、revision 11；源码字节与恢复后的 before 完全一致，本次没有效果意图或写入。前端及最终原生构建通过。本地证据：`.local-dev/temp/host-task-acceptance-20261106/live-host-discovery-summary.json`。
+
+## 历史目标的新授权后台任务
+
+历史详情对当前项目、已暂停或结束、无未决外部效果的单成员 DeepSeek 文件调查提供「按原目标新建后台调查」。入口预填原目标和原读取目录，展示父任务 ID；新任务仍需当前项目信任、临时会话和独立范围确认。原生层在确认后重新核对原项目、Run 和精确记录版本，拒绝运行中、未决调用、写入产物、其他 provider 或工具类型。
+
+新任务通过现有 `savedRun` 协议保存 `parentRunId`，明确关闭历史上下文导入。原消息、工具结果、待执行调用、预算和权限均不进入新任务；当前文件重新读取。原记录只读保留。这是新授权的目标重启，不提供断点执行状态恢复或旧外部动作重放。
+
+定向原生用例通过，覆盖运行中记录、旧 revision、其他项目、provider 和工具边界；4 项后台面板测试、当前应用类型检查、前端和原生构建通过。真实桌面从正常退出留下的 paused / revision 6 记录 `run-182aff118d07c474328fd452a6a58ae9` 创建 `run-d650d0f61752ae83c64a9b063947f3e1`，DeepSeek 4 次请求重新读取三个文件并完成，SQLite succeeded / revision 12。首检查点只有新约束、范围和目标三条消息，模型/工具计数均为零；父记录仍为 paused / revision 6，源码未变。本地证据：`.local-dev/temp/host-task-acceptance-20261106/live-host-parent-summary.json`。
