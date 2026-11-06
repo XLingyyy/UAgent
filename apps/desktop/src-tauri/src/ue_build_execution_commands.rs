@@ -27,6 +27,10 @@ fn error(code:&str)->store::StoreError{store::StoreError{kind:code.into(),messag
 fn id()->Result<String,String>{let mut b=[0u8;16];getrandom::getrandom(&mut b).map_err(|_|"ue_build_random_unavailable")?;Ok(b.iter().map(|v|format!("{v:02x}")).collect())}
 fn now()->i64{SystemTime::now().duration_since(UNIX_EPOCH).map(|v|v.as_millis() as i64).unwrap_or(0)}
 fn live(active:&Active)->bool{active.document.is_current()&&!active.cancelled.load(Ordering::SeqCst)}
+// A confirmed cancellation is a terminal observation; live() still gates every continuation.
+fn completion_scope_current(status:&str,document_current:bool,root_current:bool,cancel_requested:bool)->bool{
+    document_current&&root_current&&(!cancel_requested||status=="cancelled")
+}
 struct Observer(Arc<AtomicBool>);
 impl host::ReadOnlyExecutionObserver for Observer{
     fn observe(&self,_:&host::NativeExecutionIdentity,_:Instant)->host::ExecutionObservation{
@@ -154,11 +158,11 @@ async fn execute_approved(app:tauri::AppHandle,window:tauri::WebviewWindow,store
     }).await.map_err(|_|"ue_build_worker_unsettled")?;
     let host_settled=host.reconcile(&ticket).map(|j|j.phase==host::JobPhase::Finished).unwrap_or(false);
     let _=host.disconnect(&label,&owner);
-    let mut repair_cycle=cycle.observe(&run_id,crate::ue_repair_cycle::Observation{status:&result.status,exit_code:result.exit_code,tree_stopped:result.tree_stopped,complete:result.output_complete,truncated:result.output_truncated,stdout:&result.stdout,stderr:&result.stderr,current_settled:host_settled&&live(&active)});
+    let mut repair_cycle=cycle.observe(&run_id,crate::ue_repair_cycle::Observation{status:&result.status,exit_code:result.exit_code,tree_stopped:result.tree_stopped,complete:result.output_complete,truncated:result.output_truncated,stdout:&result.stdout,stderr:&result.stderr,current_settled:host_settled&&completion_scope_current(&result.status,active.document.is_current(),root.check_current().is_ok(),active.cancelled.load(Ordering::SeqCst))});
     let persisted=store.complete_native_ue_build(NativeBuildCompletion{
         handoff,root:root.clone(),intent:intent.clone(),result:result.clone(),cycle:repair_cycle.clone(),catalog
     }).await.is_ok();
-    if !persisted||!live(&active) {repair_cycle.status="unconfirmed".into();}
+    if !persisted||!completion_scope_current(&result.status,active.document.is_current(),root.check_current().is_ok(),active.cancelled.load(Ordering::SeqCst)) {repair_cycle.status="unconfirmed".into();}
     let repair_available=persisted&&repair_cycle.status=="awaiting_review";
     let mut repair_session_id=None;
     if repair_available {
@@ -180,6 +184,33 @@ mod tests{
             let mut value=base.clone();value[key]=serde_json::json!("untrusted");assert!(serde_json::from_value::<BuildInput>(value).is_err());
         }
         assert!(serde_json::from_value::<BuildInput>(base).is_ok());
+    }
+    #[test]
+    fn confirmed_cancelled_completion_remains_cancelled_without_continuation(){
+        let mut cycle=crate::ue_repair_cycle::Cycle::initial("cancelled-build");
+        let report=cycle.observe("cancelled-build",crate::ue_repair_cycle::Observation{status:"cancelled",exit_code:None,tree_stopped:true,complete:true,truncated:false,stdout:"",stderr:"",current_settled:completion_scope_current("cancelled",true,true,true)});
+        assert_eq!(report.status,"cancelled");
+        assert!(cycle.next().is_err());
+    }
+    #[test]
+    fn cancelled_completion_requires_current_scope_and_failed_results_remain_stopped(){
+        for (document_current,root_current,cancel_requested) in [(false,true,true),(true,false,true),(false,true,false),(true,false,false)]{
+            assert!(!completion_scope_current("cancelled",document_current,root_current,cancel_requested));
+        }
+        for status in ["failed","succeeded","unknown"]{
+            assert!(!completion_scope_current(status,true,true,true));
+        }
+        let mut cycle=crate::ue_repair_cycle::Cycle::initial("failed-build");
+        let report=cycle.observe("failed-build",crate::ue_repair_cycle::Observation{status:"failed",exit_code:Some(6),tree_stopped:true,complete:true,truncated:false,stdout:"error C2065",stderr:"",current_settled:completion_scope_current("failed",true,true,true)});
+        assert_eq!(report.status,"unconfirmed");assert!(cycle.next().is_err());
+    }
+    #[test]
+    fn cancelled_completion_without_settlement_or_complete_stopped_tree_is_unconfirmed(){
+        for (host_settled,tree_stopped,complete) in [(false,true,true),(true,false,true),(true,true,false)]{
+            let mut cycle=crate::ue_repair_cycle::Cycle::initial("cancelled-build");
+            let report=cycle.observe("cancelled-build",crate::ue_repair_cycle::Observation{status:"cancelled",exit_code:None,tree_stopped,complete,truncated:false,stdout:"",stderr:"",current_settled:host_settled&&completion_scope_current("cancelled",true,true,true)});
+            assert_eq!(report.status,"unconfirmed");assert!(cycle.next().is_err());
+        }
     }
 }
 

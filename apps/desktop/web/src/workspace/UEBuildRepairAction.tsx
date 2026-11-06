@@ -119,7 +119,7 @@ export function UEBuildRepairAction({preview,runId,initialSessionId,invoke,onAct
     {restoreAvailable&&!ended&&<button type="button" disabled={disabled} onClick={()=>void prepareRestore()}>{locale==="zh-CN"?"准备已写入文件的恢复差异":"Prepare restore of confirmed writes"}</button>}
     {restored&&<p role="status">{locale==="zh-CN"?"所选文件已恢复，恢复前备份与结果已保存。原部分失败记录仍待核对，不自动重建。":"Selected files restored; the restore backup and result were saved. The original partial failure remains unresolved; no automatic rebuild."}</p>}
     {applied&&<><p role="status">{w.applied}</p><button type="button" disabled={disabled} onClick={()=>void rebuild()}>{w.rebuild}</button></>}
-    {restoreAvailable&&<p>{locale==="zh-CN"?"仅当前原生会话仍有效且原执行已确认结束时可恢复。关闭窗口、会话过期、未知写入或外部修改会阻止恢复；重启后仍只能核对。":"Restore is available only in this live native session after confirmed execution return. Closing, expiry, unknown writes or outside changes block it; after restart inspection remains read-only."}</p>}
+    {restoreAvailable&&<p>{locale==="zh-CN"?"此入口仅在当前原生会话有效且原执行已确认结束时可恢复。关闭窗口或会话过期会使此入口失效；原进程结束后，可在历史记录中重新核对符合条件的记录并请求批准恢复。未知写入或外部修改仍会阻止恢复。":"Restore here requires a valid current native session and confirmed execution return. Closing the window or session expiry invalidates this entry. After the original process has exited, eligible records can be checked again in History and submitted for explicit restore approval. Unknown writes or external changes still block restoration."}</p>}
     {outcome&&<section aria-label={locale==="zh-CN"?"批次文件结果":"Batch file results"}>
       <h4>{locale==="zh-CN"?"批次文件结果":"Batch file results"}</h4>
       <ul>{outcome.effects.map(e=><li key={e.path}><code>{e.path}</code>: {e.status}</li>)}</ul>

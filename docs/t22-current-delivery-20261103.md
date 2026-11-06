@@ -11,7 +11,7 @@
 | 工作流 | 当前实现 | 剩余工作与验收边界 |
 | --- | --- | --- |
 | 工程调查 | 文件索引、路径搜索、读取和有界调查已接入；r14 有 Codex 普通会话与双 Agent 只读调查的真实验收。普通项目已接入受管 Blueprint 结构及直接资产引用读取。 | Codex 调查目前只开放三种文件工具；跨源码/Blueprint 联查、冷资产准备和当前 UE 真实读取验收仍缺。见 [r14 验收](releases/r14.md)。 |
-| 构建修复 | 失败构建可批准读取 1–8 个已有 Source 文件，手工编辑、请求在线建议或导入本地建议。在线建议逐文件查看后一次采纳到草稿，本地导入仍可逐项采纳；随后审阅整批差异并批准写入。原生链保留原 chain ID，最多三次逐轮批准重建，新诊断接入下一轮；重复输出、上限、取消或不确定结果会停止。 | 每轮外发、写入和重建仍按各自范围审批；在线请求保持 32 KiB / 1024 输出 token，截断或越界建议拒绝。隔离 UE 5.8.4 的两类模型单文件修复，以及 Test01 新增受控模块的手工/模型双文件写入和成功重建均有真实 UI 记录。零模型请求的同链三次手工写入/批准重建已在第 3 次失败后按 `round_limit` 停止，无第 4 次。全部写入后重建失败的历史逆向恢复已通过 UI 与独立存储核对；真实部分写入恢复、取消中断、既有游戏源码及模型连续三轮修复仍待验。旧循环验证 (`2026-10-29/evidence/t22-repair-cycle-20261105-r1/actual-result.json`; 仅本地证据，未随仓库发布) 仍按合成数据和模拟 IPC 记录。 |
+| 构建修复 | 失败构建可批准读取 1–8 个已有 Source 文件，手工编辑、请求在线建议或导入本地建议。在线建议逐文件查看后一次采纳到草稿，本地导入仍可逐项采纳；随后审阅整批差异并批准写入。原生链保留原 chain ID，最多三次逐轮批准重建，新诊断接入下一轮；重复输出、上限、取消或不确定结果会停止。 | 每轮外发、写入和重建仍按各自范围审批；在线请求保持 32 KiB / 1024 输出 token，截断或越界建议拒绝。隔离 UE 5.8.4 的两类模型单文件修复，以及 Test01 新增受控模块的手工/模型双文件写入和成功重建均有真实 UI 记录。零模型请求的同链三次手工写入/批准重建已在第 3 次失败后按 `round_limit` 停止，无第 4 次。全部写入后重建失败的历史逆向恢复已通过 UI 与独立存储核对；普通构建取消和受控停顿下部分写入/同会话恢复已另验，见[专项范围](build-repair-failure-recovery-20261106.md)；既有游戏源码、长源码及模型连续三轮修复仍待验。旧循环验证 (`2026-10-29/evidence/t22-repair-cycle-20261105-r1/actual-result.json`; 仅本地证据，未随仓库发布) 仍按合成数据和模拟 IPC 记录。 |
 | 交互 Blueprint | 隔离 UAgentBuildLab 中的固定原生父类拾取物，已接启动、编译预览、审批创建与保存。 | 普通项目范围、受支持图修改、测试地图实例及产品内 PIE/行为反馈尚缺；当前 UE 的可视交互验收未完成。见 [拾取物边界](ue-pickup-template-v2.md)。 |
 | 场景批次 | 2.4.0 已接普通可信项目的新图与 1–20 项清单，支持查询、同运行续接、独立保存；匹配插件已在 UE 5.8.4 编译。 | 仍限固定目录、三种 Engine 形状和基础材质；普通项目实际加载/执行、20 项与第 7 项中断续跑验收、跨重启续跑未完成。见 [场景当前状态](ue-scene-batch-v2.md#current-ordinary-project-entry-2026-11-05-source-contract-240)。 |
 
@@ -38,11 +38,15 @@
 
 Test01 三轮批准上限另已完成 live 验收：同链 `dfc3046ab4c1b7a41514bece466bc895` 中 3 次手工写入、3 次分别批准重建，C2065 未声明符号数为 4 → 3 → 2 → 1；最终 `c0460708e6d34aefcf05be5e78f115f8` 为 exit 6、`round_limit`、3/3，UI 无继续修复/重建入口，存储无同链第 4 次重建。模型请求为 0，首轮 CRLF → LF 已完整审阅；记录为同证据目录的 `live-round-limit-summary.json`，不计为模型三轮修复成功。
 
-随后双文件写前冲突也已由 UI 与独立存储核对确认：运行 `d4d0ecbe4060e890d32b471bdb3ac920` 为 `conflict` / `repair_source_changed_since_preview`，cpp `not_started`、h `conflict`，效果 `verifiedNotOccurred` / `settled`；无写前备份或 `recoveryRecord`，两文件保持冲突前 cpp / 外部编辑后 h 的快照字节，整批未写入且没有后续重建。记录为同目录 `live-conflict-summary.json`。这项验收覆盖写前冲突阻断，真实部分写入及其恢复仍待实测。
+随后双文件写前冲突也已由 UI 与独立存储核对确认：运行 `d4d0ecbe4060e890d32b471bdb3ac920` 为 `conflict` / `repair_source_changed_since_preview`，cpp `not_started`、h `conflict`，效果 `verifiedNotOccurred` / `settled`；无写前备份或 `recoveryRecord`，两文件保持冲突前 cpp / 外部编辑后 h 的快照字节，整批未写入且没有后续重建。记录为同目录 `live-conflict-summary.json`。这项验收只覆盖写前冲突阻断；部分写入的后续验收见[失败恢复专文](build-repair-failure-recovery-20261106.md)。
 
 历史逆向恢复另已通过真实 UI 与独立存储核对：原写入 `1b2e6c6670877e3a8ae32f16901b7b1d` 全部写入后，重建 `c0460708e6d34aefcf05be5e78f115f8` 失败；旧进程 45808 退出后，新进程 45268 中重新信任、审阅并批准恢复。恢复运行 `2a59575b5c64b26ae512551e5be53a3c` 为 `succeeded`、revision 2，只将 cpp 的 `BaseValue+0+0+0+UAgentRound3` 撤回为上一写入前的 `BaseValue+0+0+UAgentRound2+UAgentRound3`，LF 保持，无自动重建、无模型密钥需求。独立核对确认恢复为 `succeeded` / `applied`、`verifiedCompleted` / `settled`；旧 PID 创建时间匹配备份 `executionIdentity`，Win32 等待返回 0（signaled），新进程属于不同 host。恢复 before 完整等于原写入 after，恢复 after 完整等于原写入 before，仅 cpp 第五行逆向一行、LF 6 → 6；恢复验收时 cpp 匹配恢复 after，h 未变，恢复后没有 native build。摘要已生成于同证据目录的 `live-restart-restore-summary.json`；重开恢复记录的详情仍可只读查看、不可续跑。本次恢复完成时仍包含两个受控编译错误，本次只验证撤销上一轮写入，不计为编译修复或功能验证成功。
 
-Test01 原工程无 Source、Content 无文件，原工程未改，仅副本新增受控模块。本轮已覆盖受控模块的真实模型双文件修复、手工三轮上限，并通过全部写入后重建失败的历史恢复 UI 及独立存储核对；真实部分写入恢复、取消中断、已有游戏源码、运行时返回 42、模型连续三轮修复及 Beta 仍未验。中文诊断消息仍可能有损或乱码，可靠结论限定于 ASCII 错误码、路径和原生进程结果。
+Test01 原工程无 Source、Content 无文件，原工程未改，仅副本新增受控模块。本轮已覆盖受控模块的真实模型双文件修复、手工三轮上限，并通过全部写入后重建失败的历史恢复 UI 及独立存储核对；其他崩溃窗口、桌面部分写入跨重启、已有游戏源码、运行时返回 42、模型连续三轮修复及 Beta 仍未验。中文诊断消息仍可能有损或乱码，可靠结论限定于 ASCII 错误码、路径和原生进程结果。
+
+本轮又完成普通预览的真实构建取消，以及本地首文件后暂停 10 秒的插桩预览中，实际 UI 取消造成 CPP applied / H not_started、随后重新审阅并原生批准仅恢复 CPP。原 partial effect 仍为 `resultUnknown` / `executionUnknown` / settled，新恢复为 `verifiedCompleted` / settled，未自动重建。新增子进程 exit 73 验证缺失结果、未 settled 时继续只读阻断。详见[失败恢复验收范围](build-repair-failure-recovery-20261106.md)。
+
+下一顺序为普通项目交互 Blueprint → 场景批次 → 通用任务与独立 Host 恢复 → 数据、协作与 Beta。既有游戏源码需要另有 C++ 项目，长源码预算边界仍待实测。
 
 ## 历史实施记录
 

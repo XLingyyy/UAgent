@@ -261,6 +261,13 @@ fn live_restore_case(mode:u8){
     let complete=mode==8;
     let receipt=if complete{session.apply_approved("manual",&p.preview.preview_id,&mut grant,&mut backup,&AtomicBool::new(false)).unwrap()}else{session.apply_then_interrupt_for_restore_test("manual",&p.preview.preview_id,&mut grant,&mut backup).unwrap()};
     assert_eq!(receipt.status,if complete{"applied"}else{"partial"});
+    if mode==9{
+        assert!(backup.checkpoint_written);
+        let output=std::env::var("UAGENT_RESTART_CHILD_OUTPUT").unwrap();
+        std::fs::write(output,serde_json::to_vec(&serde_json::json!({"root":f.root.path_hint(),"store":f.store_path})).unwrap()).unwrap();
+        // Real process exit after one file write, before result persistence or settlement; no destructors run.
+        std::process::exit(73);
+    }
     let proof=j.settle_owned_operation(handoff).unwrap();f.settled.store(true,Ordering::SeqCst);let original_ticket=r.identity().ticket.clone();r.finish(complete).unwrap();assert_eq!(f.host.reconcile(&original_ticket).unwrap().phase,JobPhase::Finished);
     crate::ue_build_repair_result::persist(&f.store,&f.root,&i,&p,&receipt,true,&f.catalog,&proof).unwrap();
     assert_eq!(f.catalog.report().unwrap().persistent_effect_barriers.len(),if complete{0}else{1});
@@ -307,6 +314,55 @@ fn live_restore_case(mode:u8){
 #[test] fn restart_restore_child_fixture(){if std::env::var_os("UAGENT_RESTART_CHILD_OUTPUT").is_some(){live_restore_case(if std::env::var("UAGENT_RESTART_CHILD_COMPLETE").as_deref()==Ok("1"){8}else{7});}}
 #[test] fn restart_restore_real_process_exit_then_one_use_approved_write(){restart_restore_case(false);}
 #[test] fn restart_restore_completed_write_without_barrier_after_real_process_exit(){restart_restore_case(true);}
+#[test] fn restart_restore_unsettled_write_child_fixture(){if std::env::var_os("UAGENT_RESTART_CHILD_OUTPUT").is_some(){live_restore_case(9);}}
+#[test]
+fn restart_restore_exit_before_result_keeps_partial_effect_unsettled_and_blocks_retry(){
+    use ledger::runtime_host_catalog_reader::BarrierReason;
+    let output=std::path::PathBuf::from("E:/Codex/UAgent/.local-dev/temp/ue-operation-admission").join(format!("unsettled-{}.json",random_id().unwrap()));
+    std::fs::create_dir_all(output.parent().unwrap()).unwrap();
+    let mut child=std::process::Command::new(std::env::current_exe().unwrap()).args(["restart_restore_unsettled_write_child_fixture","--test-threads=1"]).env("UAGENT_RESTART_CHILD_OUTPUT",&output).spawn().unwrap();
+    let deadline=Instant::now()+Duration::from_secs(30);
+    loop{
+        if let Some(status)=child.try_wait().unwrap(){assert_eq!(status.code(),Some(73));break;}
+        if Instant::now()>deadline{let _=child.kill();let _=child.wait();panic!("owned unsettled fixture child timeout");}
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    let data:serde_json::Value=serde_json::from_slice(&std::fs::read(output).unwrap()).unwrap();
+    let root=TrustedRootHandle::open_from_host_selection(std::path::Path::new(data["root"].as_str().unwrap())).unwrap();
+    let store=RunStore::open(std::path::Path::new(data["store"].as_str().unwrap())).unwrap();
+    assert_eq!(std::fs::read_to_string(root.path_hint().join("Source/Game/A.cpp")).unwrap(),"int a = 2;\n");
+    assert_eq!(std::fs::read_to_string(root.path_hint().join("Source/Game/B.cpp")).unwrap(),"int a = 1;\n");
+    let backup=store.read_artifact("p","r","nativeRepairBefore").unwrap();
+    assert!(store.read_artifact("p","r","nativeRepairResult").is_err());
+    let no=AtomicBool::new(false);let catalog=PersistentRecoveryCatalog::new();
+    let scanned=catalog.scan_existing_store(&store,&no).unwrap();
+    assert_eq!(scanned.persistent_effect_barriers.len(),1);
+    let barrier=&scanned.persistent_effect_barriers[0];
+    assert_eq!(barrier.reason,BarrierReason::HandoffUnsettled);
+    assert_eq!(barrier.state,ledger::EffectState::MayHaveBeenSent);
+    assert_eq!(barrier.dispatch.phase,ledger::DispatchPhase::InCallback);
+    let yes=||true;let key=ledger::EffectKey{project_id:barrier.project_id.clone(),operation_id:barrier.operation_id.clone()};
+    let scope=ledger::RecoveryReadScope::from_verified_host_read(&root,key,barrier.owner.clone(),"restart-inspection".into(),&yes).unwrap();
+    let journal=store.open_effect_journal().unwrap();let original=journal.read(&scope).unwrap();
+    assert_eq!(crate::ue_repair_recovery::observe_original_process(&backup,store.repair_execution_database_key().unwrap(),&original.intent).unwrap(),crate::repair_execution_identity::ProcessObservation::Ended);
+    let report=crate::ue_repair_recovery::inspect(&root,"p","r",&backup,None,&no,Instant::now()+Duration::from_secs(10)).unwrap();
+    assert!(!report.result_present);assert!(!report.restore_available);assert!(report.restore_candidates.is_empty());
+    assert_eq!(report.restore_blocker,"original_execution_settlement_required");
+    assert_eq!(report.files.len(),2);
+    assert_eq!(report.files[0].state,"matches_after");assert_eq!(report.files[1].state,"matches_before");
+    assert!(report.files.iter().all(|file|file.saved_effect=="unrecorded"&&!file.known_applied_match));
+    assert!(journal.ended_repair_record("p","r").is_err());
+    assert_eq!(original.recovery_advice(),ledger::RecoveryAdvice::QueryOnly);
+    let context=ledger::CurrentRun::from_verified_host(&root,original.intent.owner.clone(),&yes).unwrap();
+    journal.prepare(&context,&original.intent).unwrap();
+    let retry=journal.mark_may_have_been_sent(&context,&original.intent.key,original.revision,4);
+    assert_eq!(retry.err().unwrap().kind,"freshApprovalRequired");
+    assert_eq!(journal.dispatch_gate(&scope).unwrap().phase,ledger::DispatchPhase::InCallback);
+    let rescanned=catalog.scan_existing_store(&store,&no).unwrap();
+    assert_eq!(rescanned.persistent_effect_barriers.len(),1);
+    assert_eq!(rescanned.persistent_effect_barriers[0].reason,BarrierReason::HandoffUnsettled);
+    assert_ne!(catalog.admission("p",Some(&root.identity().observation_key()),&[]),RecoveryAdmission::Ready);
+}
 fn restart_restore_case(complete:bool){
  use crate::ue_build_repair::*;use crate::ue_build_repair_io::hash;
  let output=std::path::PathBuf::from("E:/Codex/UAgent/.local-dev/temp/ue-operation-admission").join(format!("restart-{}.json",random_id().unwrap()));
