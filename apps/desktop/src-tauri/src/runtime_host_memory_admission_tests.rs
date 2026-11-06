@@ -17,7 +17,7 @@ fn batch(status:RunStatus,at:i64)->CheckpointBatch {
 }
 fn fixture()->Fixture {fixture_with_owner(true)}
 fn fixture_with_owner(bind:bool)->Fixture {
-    let base=PathBuf::from(r"E:\Codex\UAgent\2026-10-29\tmp\memory-host-admission-tests")
+    let base=PathBuf::from(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).unwrap().join(".local-dev/temp/memory-host-admission-tests")
         .join(format!("{}-{}",std::process::id(),std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
     let project_path=base.join("project");
@@ -103,6 +103,50 @@ fn original_registration_needs_real_physical_callback_and_settles_only_after_ret
     assert_eq!(finished.phase,JobPhase::Finished);
     assert_eq!(finished.execution_observation,ExecutionObservation::Quiescent);
     assert_eq!(catalog.admission("p",None,&[]),RecoveryAdmission::Unknown);
+}
+
+#[test]
+fn task_model_recovery_uses_original_row_and_physical_admission_without_memory_selection() {
+    let f = fixture();
+    let (host, _monitor, catalog, mut registration) = owner_and_registration(&f);
+    let flag = AtomicBool::new(false);
+    let execution = MemoryExecution::new(&flag, Instant::now() + Duration::from_secs(2));
+    f.store.with_owned_task_recovery_snapshot(&execution, &f.creation, &f.alive, |physical| {
+        catalog.with_transaction_admission(physical, |recovery| {
+            let mut guard = map_host(registration.lock_memory_admission(&recovery))?;
+            map_host(guard.start_at_l(&model_owner(), &f.root))
+        })
+    }).unwrap();
+    registration.check_started_memory_owner(&model_owner(), &f.root).unwrap();
+    assert_eq!(registration.finish(true).unwrap().phase, JobPhase::Finished);
+    assert_eq!(catalog.admission("p", None, &[]), RecoveryAdmission::Unknown);
+    host.close().unwrap();
+}
+
+#[test]
+fn task_model_recovery_rejects_replacement_owner_and_changed_running_row() {
+    let f = fixture();
+    let flag = AtomicBool::new(false);
+    let execution = MemoryExecution::new(&flag, Instant::now() + Duration::from_secs(2));
+    let called = std::cell::Cell::new(false);
+    let replacement = Arc::new(AtomicBool::new(true));
+    assert!(f.store.with_owned_task_recovery_snapshot(&execution, &f.creation, &replacement,
+        |_| { called.set(true); Ok(()) }).is_err());
+    let before = f.store.run("p", "r").unwrap();
+    f.store.commit_checkpoint("p", "r", before.revision, &batch(RunStatus::Running, 3)).unwrap();
+    assert!(f.store.with_owned_task_recovery_snapshot(&execution, &f.creation, &f.alive,
+        |_| { called.set(true); Ok(()) }).is_err());
+    assert!(!called.get());
+}
+
+#[test]
+fn task_model_recovery_cancellation_during_admission_cannot_return_success() {
+    let f = fixture();
+    let flag = AtomicBool::new(false);
+    let execution = MemoryExecution::new(&flag, Instant::now() + Duration::from_secs(2));
+    assert!(f.store.with_owned_task_recovery_snapshot(&execution, &f.creation, &f.alive,
+        |_| { flag.store(true, Ordering::Release); Ok(()) }).is_err());
+    assert_eq!(f.store.run("p", "r").unwrap().revision, 1);
 }
 #[test]
 fn cancel_between_validation_reservation_and_l_never_starts_it() {

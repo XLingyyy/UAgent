@@ -22,6 +22,25 @@ pub(crate) struct NativeStoreWindowGrant {
     grant: Arc<WindowGrant>,
     closed: Arc<AtomicBool>,
 }
+
+/// Storage identity for one freshly approved native task. It survives view reloads
+/// but cannot select another run or reconstruct execution authority from history.
+pub(crate) struct NativeStoreTaskGrant {
+    grant: Arc<WindowGrant>,
+    closed: Arc<AtomicBool>,
+    project: String,
+    run: String,
+}
+impl NativeStoreTaskGrant {
+    pub(crate) fn accepts(&self, project: &str, run: &str) -> bool {
+        self.project == project && self.run == run && self.grant.current()
+            && !self.closed.load(Ordering::Acquire)
+    }
+    pub(crate) fn native_document(&self) -> &Arc<crate::local_run_store::native_run_creation::NativeDocumentIdentity> {
+        &self.grant.native_document
+    }
+}
+impl Drop for NativeStoreTaskGrant { fn drop(&mut self) { self.grant.revoke(); } }
 impl NativeStoreWindowGrant {
     pub(crate) fn register_session_request(&self, project:&str, request:&str, flag:Arc<AtomicBool>) -> StoreResult<SessionRequestRegistration> {
         if !self.is_current() { return Err(unavailable()); }
@@ -77,6 +96,23 @@ impl ManagedRunStoreState {
         work:impl FnOnce(&RunStore,&AtomicBool,Instant)->StoreResult<T>+Send+'static) -> StoreResult<T> {
         if !Arc::ptr_eq(&document.closed,&self.closed) || !document.is_current() { return Err(unavailable()); }
         self.with_original_store_completion(document.grant.clone(),write,work,|value,_|Ok(value)).await
+    }
+    pub(crate) async fn with_store_for_task<T: Send + 'static>(&self, task: Arc<NativeStoreTaskGrant>,
+        project: &str, run: &str, write: bool,
+        work: impl FnOnce(&RunStore, &AtomicBool, Instant) -> StoreResult<T> + Send + 'static,
+    ) -> StoreResult<T> {
+        if !Arc::ptr_eq(&task.closed, &self.closed) || !task.accepts(project, run) { return Err(unavailable()); }
+        self.with_original_store_completion(task.grant.clone(), write, work, |value, _| Ok(value)).await
+    }
+    pub(crate) async fn with_native_task_admission(&self, task: Arc<NativeStoreTaskGrant>, project: &str, run: &str,
+        work: impl FnOnce(&RunStore, &AtomicBool, Instant) -> StoreResult<crate::native_provider_transport::PendingTaskPermit>
+            + Send + 'static,
+    ) -> StoreResult<crate::native_provider_transport::ReadyTaskPermit> {
+        if !Arc::ptr_eq(&task.closed, &self.closed) || !task.accepts(project, run) { return Err(unavailable()); }
+        self.with_original_store_completion(task.grant.clone(), true, work, |pending, released| {
+            pending.finish_owner_release(released).map_err(|error| StoreError { kind: error.code().into(),
+                message: "native task send completion was revoked".into() })
+        }).await
     }
     /// Native-only dedicated completion: ordinary CRUD cannot turn its DTO
     /// reply or temporary CancelOnDrop flag into a network send capability.
@@ -288,12 +324,42 @@ impl ManagedRunStoreState{
         let grant=self.authorize(window)?;
         Ok(Arc::new(NativeStoreWindowGrant{grant,closed:self.closed.clone()}))
     }
+    /// Called by native task admission after its scoped approval, never from a serialized grant.
+    pub(crate) fn capture_task_grant(&self, window: &tauri::WebviewWindow, project: &str, run: &str)
+        -> StoreResult<Arc<NativeStoreTaskGrant>> {
+        let document = self.authorize(window)?;
+        let owner = self.owner.get().ok_or_else(unavailable)?;
+        if !current(owner) || [project, run].iter().any(|id| id.is_empty() || id.len() > 256 || id.chars().any(char::is_control)) {
+            return Err(unavailable());
+        }
+        let task = Arc::new(NativeStoreTaskGrant { grant: Arc::new(WindowGrant::new_owned(self.closed.clone())),
+            closed: self.closed.clone(), project: project.into(), run: run.into() });
+        if !document.current() { return Err(unavailable()); }
+        Ok(task)
+    }
 }
 
 
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn task_store_identity_survives_view_revocation_but_is_bound_to_run_and_app() {
+        let closed = Arc::new(AtomicBool::new(false));
+        let view = WindowGrant::new_owned(closed.clone());
+        let task = NativeStoreTaskGrant { grant: Arc::new(WindowGrant::new_owned(closed.clone())),
+            closed: closed.clone(), project: "project".into(), run: "fresh-run".into() };
+        let flag = Arc::new(AtomicBool::new(false));
+        task.grant.track(&flag).unwrap();
+        view.revoke();
+        assert!(task.accepts("project", "fresh-run"));
+        assert!(!task.accepts("other", "fresh-run"));
+        assert!(!task.accepts("project", "historical-run"));
+        closed.store(true, Ordering::Release);
+        assert!(!task.accepts("project", "fresh-run"));
+        drop(task);
+        assert!(flag.load(Ordering::Acquire));
+    }
     #[test]
     fn replacing_a_document_revokes_only_its_pending_flags_and_cannot_regrant_it(){
         let old=WindowGrant::new();let flag=Arc::new(AtomicBool::new(false));
@@ -490,4 +556,13 @@ pub(crate) fn memory_pipeline_fixture(root:std::path::PathBuf)->(ManagedRunStore
 #[cfg(test)]
 pub(crate) fn stop_memory_pipeline_fixture(state:&ManagedRunStoreState) {
     if let Some(owner)=state.owner.get(){owner.close();}
+}
+
+#[cfg(test)]
+pub(crate) fn task_pipeline_fixture(root:std::path::PathBuf, project:&str, run:&str)
+    ->(ManagedRunStoreState,Arc<NativeStoreTaskGrant>) {
+    let state=ManagedRunStoreState::start(root).unwrap();
+    let task=Arc::new(NativeStoreTaskGrant { grant:Arc::new(WindowGrant::new_owned(state.closed.clone())),
+        closed:state.closed.clone(),project:project.into(),run:run.into() });
+    (state,task)
 }

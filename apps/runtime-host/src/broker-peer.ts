@@ -2,7 +2,7 @@ export interface BrokerRequest {
   kind: "broker_request";
   id: number;
   runId: string;
-  method: "provider.complete" | "tool.execute" | "context.validate" | "store.commit" | "store.reconcile_completed";
+  method: "provider.complete" | "tool.execute" | "context.validate" | "store.commit" | "store.snapshot";
   input: unknown;
 }
 

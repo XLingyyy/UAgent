@@ -4,7 +4,8 @@ import { once } from "node:events";
 import { access, appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
-import type { ProviderRuntimeRequest, ProviderRuntimeResponse, RunStoreCommit, TaskDraft, TaskRunScope } from "@uagent/shared";
+import type { ProviderRuntimeRequest, ProviderRuntimeResponse, TaskDraft, TaskRunScope } from "@uagent/shared";
+import type { NativeRunCommitInput } from "../../../packages/runtime/src/run/native-run-store.js";
 import { ToolRegistry } from "../../../packages/runtime/src/run/tool-registry.js";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -46,7 +47,7 @@ async function harness(options: { holdModel?: boolean; failStore?: boolean } = {
     projectId: scope.projectId, conversationId: scope.conversationId, providerId: scope.providerId,
     modelId: scope.modelId, investigationScopeId: scope.id, permissionMode: "request_approval",
     reasoningEffort: "low", runMode: "local", branch: null, contextPercent: null };
-  const reads: string[] = [], commits: RunStoreCommit[] = [];
+  const reads: string[] = [], commits: NativeRunCommitInput[] = [];
   let current = true;
   const registry = new ToolRegistry([{
     id: "read", definition: { name: "read", description: "Read a fixture reference", parameters: {
@@ -81,6 +82,9 @@ async function harness(options: { holdModel?: boolean; failStore?: boolean } = {
           if (options.failStore) throw Error("storage_failed");
           commits.push(message.input);
           await appendFile(join(directory, "commits.jsonl"), JSON.stringify(message.input) + "\n");
+          value = { schemaVersion: 1, projectId: scope.projectId, runId: scope.runId,
+            revision: message.input.expectedRevision + 1,
+            messageCount: message.input.expectedMessageCount + message.input.batch.messages.length };
           break;
         case "context.validate": value = current; break;
         case "provider.complete": {
@@ -131,7 +135,9 @@ describe("standalone TypeScript host with synthetic parent broker and real file 
     const latest = await f.command("snapshot", { runId: "run" });
     expect(latest.value.text).toBe("Value is 7");
     expect(latest.value.run.toolCalls).toBe(3);
-    expect(f.commits.at(-1)?.run.status).toBe("completed");
+    expect(f.commits.at(-1)?.batch.status).toBe("succeeded");
+    expect(JSON.stringify(f.commits)).not.toContain('"rootRef"');
+    expect(JSON.stringify(f.commits)).not.toContain('"endpoint"');
     expect((await f.command("shutdown")).value.checkpointed).toBe(true);
     expect((await f.exit)[0]).toBe(0);
     expect(f.stderr()).toBe("");
@@ -146,14 +152,14 @@ describe("standalone TypeScript host with synthetic parent broker and real file 
     f.release.resolve();
     expect((await shuttingDown).value.checkpointed).toBe(true);
     expect(f.reads).toEqual([]);
-    expect(f.commits.at(-1)?.checkpoint?.reason).toBe("user_paused");
+    expect(f.commits.at(-1)?.batch.checkpoint.reason).toBe("user_paused");
     expect((await f.exit)[0]).toBe(0);
   });
 
   it("does not report a checkpoint when persistence failed", async () => {
     const f = await harness({ failStore: true });
     await f.start();
-    expect((await f.settled.promise).snapshot.run.stopReason).toBe("persistence_failed");
+    expect((await f.settled.promise).snapshot.run.stopReason).toMatch(/^persistence_failed/);
     expect((await f.command("shutdown")).value.checkpointed).toBe(false);
     expect((await f.exit)[0]).toBe(0);
     expect(f.reads).toEqual([]);

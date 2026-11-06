@@ -10,6 +10,9 @@
 - `apps/desktop/src-tauri/src/runtime_sidecar.rs` 使用现有 Windows Job Object，挂入 Job 后才恢复子进程，后台运行，父进程关闭 Job 会终止所拥有的子进程。命令与 broker 回包分开，阻塞管道读取/写入不占 UI 线程。启动路径由原生应用选择，尚无允许界面提交 broker 回包的 Tauri 命令。
 - 子进程环境只保留 `SystemRoot`。已复现清空该项会使当前 Node/OpenSSL 的随机数初始化失败；另已复现 Node CJS 加载器拒绝 Rust `canonicalize` 产生的 verbatim Windows 入口路径，因此在启动前转换路径表示。
 - `scripts/build-runtime-host.mjs` 复用桌面已有 Vite 构建依赖，生成 `apps/runtime-host/dist/runtime-host.cjs`。源码、配置和构建脚本已纳入现有生产源码标识与构建监视范围。未增加外部运行时库。
+- Host 和桌面共用 `packages/runtime/src/run/native-run-store.ts` 的存储序列化、增量游标和提交回执核对，沿用现有数据库格式。Host 的 `store.commit` 请求已使用原生提交协议。
+- 原生 `NativeStoreTaskGrant` 将存储身份限定到一个项目和 Run，生命周期独立于窗口；应用关闭和任务释放仍会撤销它。身份只由原生层签发，历史记录和 sidecar 数据不能重建它。
+- `native_task_admission.rs` 为未选择项目记忆的任务复用现有物理恢复目录、共享模型队列和原生 transport。真实 SQLite 事务核对原始运行记录，工作线程释放数据库所有权后才能获得一次性发送许可；取消、来源变化和重复批准仍会拒绝发送。此路径尚未连接桌面业务入口。
 
 ## 验证结果
 
@@ -21,9 +24,13 @@
 | 原生受管 Node 进程 | Cargo integrated profile，`runtime_sidecar::tests::managed_node_handshake_and_shutdown` 1 项通过；覆盖真实 Windows Job/管道、握手、未知 run 拒绝、正常关闭与退出。 |
 | 生产源码范围 | 现有 representative/watch-set 测试 2 项通过，新 Host 入口、server 和构建脚本纳入范围。 |
 | TypeScript | Host 入口及其导入链检查通过。当前迁移后的依赖目录拒绝 pnpm 无 TTY 的重建请求，未强制重建；本次检查显式复用桌面已有 Node 类型目录。 |
-| 构建 | Vite SSR 构建通过，当前 bundle 约 93 kB，不含 Node 可执行文件。 |
+| 共用存储协议 | 原有桌面存储 24 项与独立进程 4 项合计 28 项通过；原生提交协议仍剥离运行授权和原始路径。 |
+| 任务存储身份 | 原生 4 项通过，覆盖窗口撤销、项目/Run 绑定和应用关闭。 |
+| 任务物理恢复校验 | 原生 3 项通过，覆盖原始运行记录、替换持有者、记录变化及校验期间取消。 |
+| 任务模型发送链 | 原生 3 项通过，真实 SQLite 工作线程与模拟 transport 验证精确请求体、释放数据库后发送、取消及来源变化后零发送、禁止重批复用。初次测试复现同一会话锁重入死锁，修正锁内取消检查后通过。 |
+| 构建 | Vite SSR 构建通过，当前 bundle 约 118 kB，不含 Node 可执行文件。 |
 
-该组没有真实模型请求，没有读取 API Key，没有桌面界面刷新或通用写任务验收。测试结束后删除其专用临时文件；原生日志位于 `.local-dev/temp/runtime-sidecar-native.log`。
+该组没有真实模型请求，没有读取 API Key，没有桌面界面刷新或通用写任务验收。进程测试清理自身临时文件；原生隔离样本保留在 `.local-dev/temp/`，日志包括 `runtime-sidecar-native.log`、`host-task-store-native.log`、`host-task-recovery-native.log` 和 `host-task-pipeline-native.log`。
 
 ## 接下来的接线
 

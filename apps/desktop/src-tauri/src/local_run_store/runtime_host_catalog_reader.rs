@@ -154,6 +154,37 @@ impl RunStore {
         owner:&std::sync::Arc<AtomicBool>,
         admit:impl for<'transaction> FnOnce(PhysicalRecoverySnapshot<'transaction>)->Result<T>,
     )->Result<T>{self.with_memory_recovery_snapshot_original(execution,memory,Some((creation,owner)),admit)}
+    /// A task with no selected project-memory records still requires its original
+    /// native running row and a complete physical recovery snapshot at admission.
+    pub(crate) fn with_owned_task_recovery_snapshot<T>(
+        &self, execution: &MemoryExecution<'_>,
+        creation: &std::sync::Arc<super::super::native_run_creation::NativeRunCreation>,
+        owner: &std::sync::Arc<AtomicBool>,
+        admit: impl for<'transaction> FnOnce(PhysicalRecoverySnapshot<'transaction>) -> Result<T>,
+    ) -> Result<T> {
+        let result = self.db.with_project_memory_budget(execution, true, || {
+            execution.check()?;
+            creation.check_original_owner(owner)?;
+            self.db.require_project_memory_write_transaction()?;
+            let database_pin = self.db.pin_original_database()?;
+            let row = self.run(creation.project_id(), creation.run_id())?;
+            creation.matches_original_row(&database_pin, &row)?;
+            let mut budget = Budget { start: Instant::now(), cancelled: execution.cancelled, bytes: 0 };
+            let snapshot = self.read_runtime_host_recovery_rows(&mut budget, Some(creation))?;
+            if !snapshot.stamp().matches_store_instance(self) { return Err(StoreError::corrupt()); }
+            self.db.require_project_memory_write_transaction()?;
+            creation.check_original_owner(owner)?;
+            execution.check()?;
+            let pending = admit(PhysicalRecoverySnapshot { snapshot: &snapshot, database_pin,
+                execution: *execution, current_creation: Some(creation.clone()), _worker: std::marker::PhantomData })?;
+            creation.check_original_owner(owner)?;
+            execution.check()?;
+            Ok(pending)
+        })?;
+        execution.check()?;
+        self.db.check_owner()?;
+        Ok(result)
+    }
     fn with_memory_recovery_snapshot_original<T>(
         &self,execution:&MemoryExecution<'_>,memory:&VerifiedMemoryBatch<'_>,
         original:Option<(&std::sync::Arc<super::super::native_run_creation::NativeRunCreation>,&std::sync::Arc<AtomicBool>)>,

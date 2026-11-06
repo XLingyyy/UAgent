@@ -26,6 +26,7 @@ fn registry()->&'static Mutex<HashMap<Key,Arc<NativeRunCreation>>>{
     REGISTRY.get_or_init(||Mutex::new(HashMap::new()))
 }
 impl NativeRunCreation {
+    pub(crate) fn project_id(&self)->&str {&self.project_id}
     pub(crate) fn run_id(&self)->&str {&self.run_id}
     pub(crate) fn invalidate(&self){
         self.live.store(false,Ordering::Release);

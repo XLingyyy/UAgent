@@ -79,6 +79,9 @@ impl FailureCode {
 #[path="native_memory_admission.rs"]
 mod memory_admission;
 pub(crate) use memory_admission::{MemoryPreflight,MemoryTransport,PendingMemoryPermit,ReadyMemoryPermit};
+#[path = "native_task_admission.rs"]
+mod task_admission;
+pub(crate) use task_admission::{PendingTaskPermit, ReadyTaskPermit};
 type Result<T> = std::result::Result<T, FailureCode>;
 
 /// Trusted native monotonic time only; implementations must not block or call out.

@@ -1,5 +1,6 @@
-import type { ProviderRuntimeResponse, ProviderToolDefinition, RunToolResult, TaskDraft, TaskRun, TaskRunScope } from "@uagent/shared";
+import type { ProviderRuntimeResponse, ProviderToolDefinition, RunToolResult, TaskDraft, TaskRunScope } from "@uagent/shared";
 import { RunHost } from "../../../packages/runtime/src/run/run-host.js";
+import { createNativeRunStore } from "../../../packages/runtime/src/run/native-run-store.js";
 import { BrokerPeer } from "./broker-peer.js";
 
 interface StartInput {
@@ -97,10 +98,11 @@ export class RuntimeHostServer {
       contextSources: {
         validate: (sources, _scope, signal) => this.broker.request<boolean>(scope.runId, "context.validate", sources, signal),
       },
-      store: {
-        commit: update => this.broker.request<void>(scope.runId, "store.commit", update),
-        reconcileCompleted: id => this.broker.request<TaskRun | null>(scope.runId, "store.reconcile_completed", { runId: id }),
-      },
+      store: createNativeRunStore((command, args) => {
+        if (command === "commit_native_run_store") return this.broker.request(scope.runId, "store.commit", args.input);
+        if (command === "snapshot_native_run_store") return this.broker.request(scope.runId, "store.snapshot", args.input);
+        throw Error("unsupported_store_operation");
+      }),
     });
     this.owners.set(scope.runId, owner);
     this.observe(scope.runId, pending);

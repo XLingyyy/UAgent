@@ -1229,6 +1229,26 @@ pub async fn commit_native_run_store(app:tauri::AppHandle,window:tauri::WebviewW
         apply_commit_for_document(store,&input,&binding.canonical_root,Some(native_document))
     }).await
 }
+
+/// Native Host only. The task identity is minted at admission and is never an IPC grant.
+pub(crate) async fn commit_hosted_run_store(
+    state: &crate::managed_run_store::ManagedRunStoreState,
+    task: Arc<crate::managed_run_store::NativeStoreTaskGrant>, input: CommitInput,
+) -> Result<CommitResult, StoreError> {
+    validate(&input)?;
+    if !task.accepts(&input.project_id, &input.run_id) { return Err(invalid()); }
+    let project = input.project_id.clone();
+    let run = input.run_id.clone();
+    let identity = task.native_document().clone();
+    state.with_store_for_task(task.clone(), &project, &run, true, move |store, cancelled, deadline| {
+        if !task.accepts(&input.project_id, &input.run_id)
+            || cancelled.load(std::sync::atomic::Ordering::Acquire) || std::time::Instant::now() >= deadline {
+            return Err(error("cancelled", "native task commit was revoked"));
+        }
+        let binding = trusted_project(&input.project_id)?;
+        apply_commit_for_document(store, &input, &binding.canonical_root, Some(identity))
+    }).await
+}
 #[tauri::command]
 pub async fn snapshot_native_run_store(
     app: tauri::AppHandle,
