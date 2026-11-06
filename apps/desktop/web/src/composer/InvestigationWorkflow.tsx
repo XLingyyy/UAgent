@@ -41,9 +41,9 @@ export function InvestigationWorkflow({ disabled, hasDraft, onApply, embedded = 
     <fieldset disabled={disabled} className="ua-workflow__fields">
       <label>{zh ? "工作流模板" : "Workflow template"} <select value={template} onChange={e => { setTemplate(e.target.value); setError(false); }}>
         <option value="investigation">{zh ? "工程调查 · 只读" : "Project investigation · Read only"}</option>
-        <option value="build">{zh ? "构建修复 · 日志与命令准备" : "Build repair · Logs and command preparation"}</option>
-        <option value="blueprint">{zh ? "交互 Blueprint · 尚未开放" : "Interactive Blueprint · Unavailable"}</option>
-        <option value="scene">{zh ? "场景批次 · 尚未开放" : "Scene batch · Unavailable"}</option>
+        <option value="build">{zh ? "构建修复 · 批次修改与重建" : "Build repair · Batch edits and rebuilds"}</option>
+        <option value="blueprint">{zh ? "交互 Blueprint · 隔离拾取物模板" : "Interactive Blueprint · Isolated pickup template"}</option>
+        <option value="scene">{zh ? "场景批次 · 当前运行内续接" : "Scene batch · Continue within the current run"}</option>
       </select></label>
       {supported ? <>
         <p>{zh ? "检索已建立的项目索引、读取相关文本，并在任务中给出带来源的调查报告。需要已信任且索引就绪的项目及受支持的模型会话；发送时仍需确认读取范围和每次外发内容。" : "Search an existing project index, read related text, and produce a sourced report in the task. Requires a trusted, indexed project and a supported model session; read scope and each outbound request still require confirmation."}</p>

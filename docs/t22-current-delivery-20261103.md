@@ -1,4 +1,25 @@
-## 当前更新（2026-11-04）：当前会话的部分失败可重新批准恢复
+# T22 当前交付与剩余工作
+
+## 当前源码与验收边界
+
+四个内置工作流均已有界面入口。构建、修复、UE 读取、拾取物和场景命令已注册；完整目标驱动执行及三条主流程的当前产品验收仍未完成。
+
+| 工作流 | 当前实现 | 剩余工作与验收边界 |
+| --- | --- | --- |
+| 工程调查 | 文件索引、路径搜索、读取和有界调查已接入；r14 有 Codex 普通会话与双 Agent 只读调查的真实验收。普通项目已接入受管 Blueprint 结构及直接资产引用读取。 | Codex 调查目前只开放三种文件工具；跨源码/Blueprint 联查、冷资产准备和当前 UE 真实读取验收仍缺。见 [r14 验收](releases/r14.md)。 |
+| 构建修复 | 失败构建可批准读取 1–8 个已有 Source 文件，手工编辑或导入本地多文件建议，审阅整批差异并批准写入；在线 DeepSeek 建议限单文件。原生链保留原 chain ID，最多三次逐轮批准重建，新诊断接入下一轮；重复输出、上限、取消或不确定结果会停止。 | 每轮外发、写入和重建仍按各自范围审批。自动多文件模型提案、完整任务闭环，以及当前 UE 代码错误/模块依赖错误两种真实修复验收未完成。已有 循环验证 (`2026-10-29/evidence/t22-repair-cycle-20261105-r1/actual-result.json`; 仅本地证据，未随仓库发布) 使用合成数据和模拟 IPC。 |
+| 交互 Blueprint | 隔离 UAgentBuildLab 中的固定原生父类拾取物，已接启动、编译预览、审批创建与保存。 | 普通项目范围、受支持图修改、测试地图实例及产品内 PIE/行为反馈尚缺；当前 UE 的可视交互验收未完成。见 [拾取物边界](ue-pickup-template-v2.md)。 |
+| 场景批次 | 2.4.0 已接普通可信项目的新图与 1–20 项清单，支持查询、同运行续接、独立保存；匹配插件已在 UE 5.8.4 编译。 | 仍限固定目录、三种 Engine 形状和基础材质；普通项目实际加载/执行、20 项与第 7 项中断续跑验收、跨重启续跑未完成。见 [场景当前状态](ue-scene-batch-v2.md#current-ordinary-project-entry-2026-11-05-source-contract-240)。 |
+
+恢复方面，活会话内的有限恢复与符合条件的新格式已结束源码修复记录，已有重新审阅和批准的恢复路径。重启后需重新信任项目并核对原执行已结束；旧记录、外部漂移、未知或执行中状态仍阻断。恢复不会自动重建或清除原任务屏障，详见 [效果核对与恢复](effect-reconciliation.md)。这不构成通用跨进程任务续跑。
+
+当前源码入口见 [构建执行](../apps/desktop/src-tauri/src/ue_build_execution_commands.rs)、[批次修复与提案入口](../apps/desktop/web/src/workspace/UEBuildRepairAction.tsx) 和 [修复轮次策略](../apps/desktop/src-tauri/src/ue_repair_cycle.rs)。真实验收仍应分别覆盖当前桌面、真实模型和 UE 5.8.4；历史 Lab 结果、合成协议检查和插件编译不能合并计为完成。
+
+## 历史实施记录
+
+以下保留 2026-11-03 至 2026-11-04 各切片的原始说明和当时结论，包括后来已解决的接线缺口、批准阻塞、单文件限制和候选版本差异。文中的“当前”“未接通”“等待授权”均限于该记录时点；最新状态以上表及链接的当前实现为准。历史证据路径保留原样。
+
+### 当前更新（2026-11-04）：当前会话的部分失败可重新批准恢复
 
 原生批量修复发生部分失败后，如果结果与备份已落账、原执行已结束、没有 unknown 文件结果，且原可信窗口会话仍有效，现在可点击“准备已写入文件的恢复差异”，重新审阅后“请求批准恢复一次”。原生确认显示精确路径与前后哈希；恢复会新建备份与结果记录，不自动重建。文件被外部修改会阻止覆盖。
 
@@ -10,7 +31,7 @@
 
 ---
 
-## 当前更新（2026-11-04）：恢复记录阶段与反向差异预览；恢复写入仍未完成
+### 当前更新（2026-11-04）：恢复记录阶段与反向差异预览；恢复写入仍未完成
 
 历史恢复核对现在显示原执行的持久派发阶段，并可展开只读恢复差异。只有保存结果确认 applied、当前文件对象和内容仍匹配写后状态的文件才出现反向候选；恢复内容来自已校验的写前备份。预览没有写入按钮，不授予恢复权限。
 
@@ -22,7 +43,7 @@
 
 ---
 
-## 当前更新（2026-11-04）：重启后的文件/备份只读核对已接通，恢复写入仍缺前置
+### 当前更新（2026-11-04）：重启后的文件/备份只读核对已接通，恢复写入仍缺前置
 
 历史修复记录现有“只读核对当前文件”入口。用户重新选择并信任原项目后，原生按历史备份派生精确文件范围，校验原根对象、备份计划/内容哈希及结果绑定，然后检查当前文件身份和内容。结果区分修改前、计划修改后、对象更换、外部内容变化和无法读取；缺失结果不会推断成功。此入口不需要保留原 RepairSession，因此支持重新启动后重新建立信任的核对流程。
 
@@ -32,7 +53,7 @@
 
 ---
 
-## 当前更新（2026-11-04）：多文件手工修复批次已接生产流程
+### 当前更新（2026-11-04）：多文件手工修复批次已接生产流程
 
 失败构建 → 原生批准读取最多 8 个已有 Source 文件（每行一个路径）→ 逐文件手工编辑/差异审阅 → 批次原生批准写入 → 全部成功、落账及收尾后另行批准重建。未编辑文件不写入。模型建议/本地响应导入仍限单文件，不扩大外发范围。
 
@@ -46,7 +67,7 @@
 
 ---
 
-## 当前状态更新（2026-11-04）：在线建议接线与差异定位已完成源码集成
+### 当前状态更新（2026-11-04）：在线建议接线与差异定位已完成源码集成
 
 用户已明确授权开发单文件 DeepSeek 修复建议。当前代码已接入原生批准读取后的单文件及匹配报错，发送前必须确认正文和按用户核实单价计算的费用估算；开发仅用模拟响应验证，未真实发送。参见 [在线建议当前交付](t22-online-repair-suggestion-20261104.md)。下方“等待开发授权/接线被拒”的段落仅是先前历史记录，不再代表当前阻塞。
 
@@ -56,7 +77,7 @@ T16 现在在原生修复精确预览及已保存修复历史中显示原/新行
 
 ---
 
-## 2026-11-04 更新：模型响应本地导入已接通，在线建议接线被审批阻止
+### 2026-11-04 更新：模型响应本地导入已接通，在线建议接线被审批阻止
 
 距离在线自动提出修复建议，关键缺口是现有 ProviderAdapter 分析请求与当前原生文件快照的连接。现有已保存凭据及 Responses 会话只允许讨论，不能伪装普通聊天绕过。拟复用临时 DeepSeek 工具反馈通道的源码变更被自动审批拒绝：新增向 DeepSeek 发送项目源码和诊断的持久出站能力缺少用户针对该目的地与数据范围的明确授权。拒绝命令未执行；随后只读确认预期目录和文件不存在。没有重试或绕过，没有新增任何 Provider/网络请求代码。
 
@@ -66,7 +87,7 @@ T16 现在在原生修复精确预览及已保存修复历史中显示原/新行
 
 后续在线接线需要用户明确授权开发“在每次外发内容和预算确认后，将当前已批准读取的单文件源码及选中诊断发送至 DeepSeek 生成建议”的能力；本轮没有获得该具体授权。实际写入和重建继续各自批准。
 
-## 2026-11-04 更新：单文件手工修复与分别批准重建已接源码
+### 2026-11-04 更新：单文件手工修复与分别批准重建已接源码
 
 入口：内置工作流 → 构建修复 → 准备目标命令 → 原生批准一次构建。仅当这次真实原生构建失败、进程结束且结果完整落账，才显示“单文件手工修复”。用户选择一个现有 `Source` 文件，原生确认读取范围；手工输入完整替换内容，审阅完整修改前后内容和精确计划 SHA-256，勾选审阅后再次原生确认写入。写入完成、备份及结果落账并确认租约收尾后，才开放独立的原生重建批准。
 
@@ -76,7 +97,7 @@ T16 现在在原生修复精确预览及已保存修复历史中显示原/新行
 
 这是一条手工单文件垂直切片，不能标成完整自动构建修复：自动提案/模型、多文件循环、未知写入恢复、真实 UE 重建验证仍不在本次已验范围。下方旧日期说明保留为历史，当前状态以本节为准。
 
-## 2026-11-04 更新：失败构建诊断入口（部分交付）
+### 2026-11-04 更新：失败构建诊断入口（部分交付）
 
 一次构建返回后，可点击“分析本次构建结果”，查看真实原生结果中解析出的错误码、阶段、文件与行号。入口与现有 BuildRepairCoordinator 共用失败可诊断条件；输出不完整、进程未确认结束、结果未保存时明确阻断。日志路径只显示，不构成文件读取或修改权限。
 
@@ -86,7 +107,7 @@ T16 现在在原生修复精确预览及已保存修复历史中显示原/新行
 
 > Current update (2026-11-04): manual, explicitly approved single-build entry is now connected in source. See the latest section below. Earlier preflight/slice sections are historical records, not the current implementation boundary. Full automatic build repair remains incomplete.
 
-# T22 current delivery — 2026-11-03
+### T22 delivery snapshot — 2026-11-03
 
 T22 remains **partially delivered**. The original four templates are project investigation, build repair, interactive Blueprint and scene batch. Build preparation is not completed build repair. Current source is ahead of the frozen QA r2 executable, which was not rebuilt or run.
 
@@ -99,7 +120,7 @@ T22 remains **partially delivered**. The original four templates are project inv
 
 Evidence: `../../../evidence/workflow-investigation-20261103-r1/actual-result.json` and `../../../evidence/workflow-build-preparation-20261103-r1/actual-result.json`. These are focused local results, not full T22 acceptance.
 
-## Concrete build-repair execution gaps
+### Concrete build-repair execution gaps
 
 - `apps/desktop/src-tauri/src/lib.rs` declares `ue_build_process` only under `cfg(all(windows, test))`; production IPC registers build preview/release, not build execution. `ue_build_repair` has no production module declaration. Preview storage intentionally exposes no executable plan retrieval. A displayed command or pasted log cannot authorize execution or become an owned build result.
 - Existing `ue_build_process.rs::execute_ue_build` already implements revalidation, held inputs, exact process ownership and settlement; it requires a separately consumed one-use host approval. These helpers need a narrow production host connection, not replacement with a new executor.
@@ -107,13 +128,13 @@ Evidence: `../../../evidence/workflow-investigation-20261103-r1/actual-result.js
 - RuntimeHost admission/resource registration already exists. A UE worker still needs to consume its native operation ticket and retain ownership through actual process settlement. Full writer-fence/cross-send integration remains incomplete; this does not mean RuntimeHost is absent.
 - The product still needs persisted build intent/results and repair checkpoints, trusted-window cancel/close handling, exact diff approval, separate rebuild approval and bounded retry/recovery integration. Unknown process/result states must remain unknown.
 
-## Minimal next implementation
+### Minimal next implementation
 
 First connect one explicitly approved native build for a fixed project/profile/target through the existing trusted document/root and RuntimeHost resource admission. Resolve and revalidate native inputs; do not accept arbitrary argv or treat a preview DTO as authority. Persist the real result and settle cancellation/close with the owned process tree. Validate this single-build lifecycle with focused isolated tests before adding source writes.
 
 Then connect the real failed-build receipt to existing diagnostics, owned snapshots, a reviewed exact proposal, one-use native apply approval, separate rebuild approval and bounded coordinator recovery. This is a proposed next step only: this task did not add IPC permissions, enable automatic edits/retries or change production dispatch. No additional preview-only template is counted as closing the execution requirement.
 
-## Single-build wiring preflight correction (2026-11-03)
+### Single-build wiring preflight correction (2026-11-03)
 
 The next implementation is not only IPC wiring. Production installs `PersistentRecoveryCatalog::new()` without a `CurrentLedgerFence`. Even a complete empty scan returns Unknown: RuntimeHost keeps an operation queued as `recovery_unknown`, and both `register_pending` and `begin` require positive admission. No production UE-specific transaction-admission path was found.
 
@@ -123,7 +144,7 @@ The immediate prerequisite is a narrow operation-specific connection between the
 
 The preflight made no execution IPC/UI change and ran no user-project build or synthetic execution test. Independent read-only review confirmed the blocker. Evidence: `../../../evidence/t22-native-build-wiring-preflight-20261103-r1/actual-result.json`. T22 build repair remains partial; there is no new approved-build user entry yet.
 
-## Implemented operation-admission slice (2026-11-03)
+### Implemented operation-admission slice (2026-11-03)
 
 The preceding preflight blocker now has an implemented native transaction bridge. `register_ue_operation_pending` reserves the exact original host/root/resources without launch authority. `dispatch_ue_once` reuses the durable one-use effect handoff; a fresh same-connection IMMEDIATE transaction scans the real ledger and admits only that exact current effect through the original catalog and host. The external callback is entered only after the claim COMMIT succeeds and final owner/cancellation/deadline checks pass. No global Ready state, model-admission substitution, restored approval or renderer execution IPC is introduced. Other sticky barriers remain.
 
@@ -135,7 +156,7 @@ Evidence: `../../../evidence/t22-operation-admission-20261103-r1/actual-result.j
 
 Still not delivered: the explicit approval UI/IPC and native one-use exact-plan grant, trusted-document cancellation wiring to the UE process, managed-store release before long-running process work, native build result persistence/observation, and precise source repair/rebuild validation. The executor remains test-configured in desktop lib.rs. This is implemented backend admission, not a user-executable build workflow. No user project, model/provider, editor or game was run; no EXE was rebuilt. General catalog admission remains conservative, and memory dispatch remains false.
 
-## Connected approved single-build entry (2026-11-04)
+### Connected approved single-build entry (2026-11-04)
 
 User path: Built-in workflows → Build repair → Prepare target command → prepare the project-bound Editor preview → Request native approval and build once. The native dialog displays the actual project, target, executable, arguments, working directory and fingerprint, defaults to No, and consumes this preview once even if declined. The renderer supplies only project ID, prepared ID and fingerprint, never a shell command, executable override or project-root authority. The original trusted document, native root, fingerprint and file bindings are rechecked.
 

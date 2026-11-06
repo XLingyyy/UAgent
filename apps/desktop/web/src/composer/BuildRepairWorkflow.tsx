@@ -10,8 +10,8 @@ export function BuildRepairWorkflow({ client }: { client?: NativeUEBuildPreview 
   const [log, setLog] = useState("");
   const [report, setReport] = useState<UEBuildDiagnosticSummary | null>(null);
   const [preview, setPreview] = useState(false);
-  return <section aria-label={zh ? "构建修复准备" : "Build repair preparation"}>
-    <p>{zh ? "可用：整理日志、批准一次构建；本次原生构建确认失败后，可选择一个现有源码文件，审阅完整前后内容，分别批准写入和重建。不调用模型，不自动重试。" : "Available: inspect logs and approve one build. After a confirmed native build failure, select one existing source file, review its complete before and after content, then separately approve the edit and rebuild. No model call or automatic retry."}</p>
+  return <section aria-label={zh ? "构建修复" : "Build repair"}>
+    <p>{zh ? "可整理日志并批准执行构建。原生构建确认失败后，可审阅并批量修改最多 8 个现有 Source 文件，再单独批准重建；单文件可请求模型建议，需另行审阅外发内容。当前修复会话最多 3 次重建，不自动重试。" : "Inspect logs and approve a build. After a confirmed native build failure, review and edit up to 8 existing Source files as a batch, then separately approve rebuilding. Model suggestions are available for a single file with separate outbound review. The current repair session allows up to 3 rebuilds, with no automatic retry."}</p>
     <label>{zh ? "粘贴构建日志" : "Paste build log"}<textarea value={log} maxLength={262144} rows={5} style={{ width: "100%" }} onChange={event => { setLog(event.target.value); setReport(null); }}/></label>
     <p>{zh ? "仅分析当前输入，最多 262144 个字符；不会上传日志，也不会把日志中的路径当成文件访问权限。" : "Analyzes the current input only, up to 262144 characters. Logs stay local; paths in logs grant no file access."}</p>
     <button type="button" className="ua-composer__mode-btn" disabled={!log.trim()} onClick={() => {

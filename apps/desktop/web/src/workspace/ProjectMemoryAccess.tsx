@@ -18,7 +18,7 @@ export function ProjectMemoryAccess(){
     {open&&<dialog ref={dialog} className="ua-memory-dialog" aria-labelledby={title}
       onCancel={event=>{event.preventDefault();setOpen(false);}} onClose={()=>setOpen(false)}>
       <header className="ua-memory-dialog__header"><h2 id={title}>{label}</h2><button type="button" onClick={()=>setOpen(false)}>{locale==="zh-CN"?"关闭":"Close"}</button></header>
-      <p className="ua-memory-dialog__hint">{locale==="zh-CN"?"本地记忆默认私有，可查看、确认和修订。使用临时凭据的 Responses 调查可在读取与共享授权后检索记忆；每次外发仍需审阅并批准完整内容。已保存凭据、普通聊天和其他模型适配器暂不支持记忆注入。":"Local memory is private by default and can be reviewed, confirmed and revised. Responses investigations using temporary credentials can retrieve memory after read/share authorization; every outbound request still requires review and approval of its full content. Saved credentials, ordinary chat and other model adapters do not yet support memory injection."}</p>
+      <p className="ua-memory-dialog__hint">{locale==="zh-CN"?"本地记忆默认私有，可查看、确认和修订。当前 Codex 和 DeepSeek 路径未接入项目记忆外发；普通聊天和调查不会自动加入这些记忆。此前的 Responses 记忆外发路径已归档。":"Local memory is private by default and can be reviewed, confirmed and revised. The current Codex and DeepSeek routes do not support sending project memory; ordinary chat and investigations do not automatically include it. The earlier Responses memory-sharing route is archived."}</p>
       <ProjectMemoryPanel projectId={project?.id??null} port={services.port} captureSources={services.captureSources}
         sources={services.sources} sourceEpoch={sourceEpoch} selection={services.selection&&project&&services.selection.projectId===project.id?services.selection.plan:null}/>
     </dialog>}

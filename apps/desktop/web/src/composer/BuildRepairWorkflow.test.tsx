@@ -37,7 +37,7 @@ it("selects build preparation without creating an executable task draft", () => 
   render(<I18nProvider store={createLocaleStore({ initialLocale: "en", storage: null })}><InvestigationWorkflow disabled={false} hasDraft={true} onApply={apply}/></I18nProvider>);
   fireEvent.click(screen.getByText("Built-in workflows"));
   fireEvent.change(screen.getByLabelText("Workflow template"), { target: { value: "build" } });
-  expect(screen.getByRole("region", { name: "Build repair preparation" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Build repair" })).toBeTruthy();
   expect(apply).not.toHaveBeenCalled();
 });
 it("parses real compiler syntax locally, redacts secrets and invalidates the report when edited", () => {

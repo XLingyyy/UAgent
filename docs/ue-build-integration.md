@@ -1,10 +1,22 @@
-> **r14 current status:** Native build/repair/preview, semantic/Blueprint read, pickup and scene commands are now registered in the desktop integration. The unregistered activation descriptions below document the earlier module-import stage, not the current source. Registration does not establish r14 real UE write/rollback acceptance. See [r14](releases/r14.md) and [UE 5.8.4 compatibility](ue584-compatibility.md).
-
-> Current engine target (2026-11-03): UE **5.8.4 / CL 58902052**, compatible CL / module BuildId **55116800**. See [current compatibility and verification limits](ue584-compatibility.md). Any 5.8.1/5.8.2 results below are historical evidence, not validation of the current engine or a current release.
-
 # UE integration index and build API
 
-## Integrated code and activation status
+## Current desktop integration
+
+The current r14 source registers native build/repair, managed semantic reads, pickup and scene commands. UE targets **5.8.4 / CL 58902052**, compatible CL / module BuildId **55116800**. Implementation, isolated checks and real desktop acceptance have different scopes; see [r14](releases/r14.md) and [current compatibility](ue584-compatibility.md).
+
+| Slice | Current source and remaining boundary |
+| --- | --- |
+| T09/T10 build repair | Approved build, diagnosis, precise review and batch repair of 1–8 existing Source files are connected. Online DeepSeek suggestions cover one file; local response import covers multiple approved files. Each write and rebuild is separately approved. The native chain allows at most three rebuilds and feeds fresh failures into the next round. Full model-driven repair and current-engine desktop acceptance remain open. See [current workflow delivery](t22-current-delivery-20261103.md). |
+| T11/T12 semantic reads | Ordinary trusted projects have managed read-only startup and exact queries for already-loaded Blueprint structure and direct Asset Registry references. Cold asset preparation and a complete source/Blueprint relation search remain open. Current Codex investigation exposes file tools only. See [managed reader](../apps/desktop/web/src/workspace/ManagedBlueprintReadWorkflow.tsx) and [read tools](../apps/desktop/web/src/runtime/project-read-tools.ts). |
+| T13 pickup | Startup, compiled preview and separately approved creation/save are connected for the fixed native-parent template in the isolated UAgentBuildLab only. Ordinary-project writes, product test-map/PIE behavior verification and unknown-effect recovery remain open. See [pickup contract](ue-pickup-template-v2.md). |
+| T14 scene batch | Contract 2.4.0 supports a trusted ordinary project, a new map under the fixed scene root and 1–20 reviewed Engine-shape objects, with query, same-run continuation and separate save approval. Its current plugin compiled against 5.8.4; live load/protocol and ordinary-project execution remain unverified. See [current scene contract](ue-scene-batch-v2.md). |
+| Recovery | Source repair has limited reapproved restoration from eligible completed records; scene continuation remains within the current owned run. Neither restores old execution permissions or provides general cross-process task continuation. See [effect reconciliation](effect-reconciliation.md). |
+
+The three design demonstrations still require current-product acceptance: real model-assisted C++ repair for code and module-dependency failures; pickup creation plus visible interaction in a test map; and a 20-object ordinary-project scene with cancellation after seven and continuation without duplicates. Historical UE 5.8.2 Lab results and current 5.8.4 compilation do not establish those results.
+
+## Historical module import and activation notes
+
+The following import, activation and Lab records retain their original implementation-stage claims through the bounded-repair subsection. Statements about unregistered commands or Lab-only scene writes describe that stage; use the current table above for product status. The later Build API sections describe the module contract.
 
 The reviewed final UE module tree from `2a60b1b77e0bae30dfc852511e62b40cf603b43e`
 is included in this development branch. Code availability does not establish a
@@ -89,7 +101,7 @@ Existing real acceptance evidence is local to the sole E-drive isolated Lab, und
 
 These captures do not establish protected main IPC, production user-project writes, packaging, rendered scene quality or cross-process recovery. The T14 dirty-world and equivalent-rotation fixes were reviewed independently. Protected host wiring and end-to-end acceptance remain outstanding; code import does not complete those boundaries.
 
-## Bounded build repair
+### Bounded build repair
 
 The separate [T10 repair contract](ue-build-repair.md) adds finite multi-file previews, native exact-source approval/apply/recovery and held after-state input guards for T09. Integrate it after T09 and the Windows held-root module; its entrypoint patch is a declaration/export suggestion only. Main protected IPC, native registry, approval UI, resource scheduling and run-store adapters remain explicit integration work.
 
@@ -104,7 +116,7 @@ The build modules prepare and execute one explicit Windows UE C++ target. They d
 - `apps/desktop/src-tauri/src/ue_build_profile.rs`: canonical path checks, engine/project association, fixed entrypoint resolution, and binding fingerprint.
 - `apps/desktop/src-tauri/src/ue_build_process.rs`: blocking execution with an owned Windows Job, bounded output capture, cancellation, timeout, and exit evidence.
 
-`ue-build-entrypoints.patch` contains the two Rust module declarations and two runtime exports only. Apply it after integrating concurrent changes to those shared files. No dependency change is needed: native code uses the existing serde, serde_json, and sha2 dependencies; Windows APIs use direct FFI. The modules are not exposed through Tauri or the runtime router until the host performs the integration below.
+`ue-build-entrypoints.patch` retains the original declaration/export sketch. Current desktop registration is in [lib.rs](../apps/desktop/src-tauri/src/lib.rs); [ue_build_execution_commands.rs](../apps/desktop/src-tauri/src/ue_build_execution_commands.rs) supplies the approved build entry. Native code uses the existing serde, serde_json and sha2 dependencies; Windows APIs use direct FFI. The following profile and host requirements still apply to each dispatch.
 
 ## Profile
 
@@ -177,7 +189,7 @@ Each stream retains its first 1 MiB while continuously draining the rest. `outpu
 
 ## Module-only checks
 
-With the repository's existing dependencies available:
+In the formal local workspace, first load the locally maintained `scripts/use-project-env.ps1`; that helper is not included in this publication. With the repository's existing dependencies available:
 
 ```powershell
 node scripts/test-ue-build-runtime.mjs

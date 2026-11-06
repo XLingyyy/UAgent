@@ -14,11 +14,11 @@ The installed ModelContextProtocol headers are checked against the existing dire
 
 ## Current verification boundary
 
-Focused identity rejection/consistency tests and application type checks are recorded in `../../../evidence/ue584-adaptation-20261103-r1/actual-result.json` when completed. No existing 5.8.1/5.8.2 compilation, PIE, Automation, Blueprint or scene-batch result proves 5.8.4 operation. Fresh plugin compile/load, MCP discovery and controlled behavior acceptance remain separate work unless recorded there as actually performed.
+Current v1 and V2 plugins have successful 5.8.4 compile records below. The later scene contract **2.4.0** also compiled with matching desktop/plugin schemas; its compile and identity record (`2026-10-29/evidence/t14-plugin-240-584-20261105-r1/actual-result.json`; local evidence, not published with the repository) records `livePluginLoaded:false`, `liveProtocolTest:false` and `realEditorRun:false`. Live loading, MCP discovery, Blueprint/scene behavior and real desktop acceptance remain open. Earlier 5.8.1/5.8.2 results do not verify these current paths.
 
 Existing evidence directories and frozen desktop QA candidates (including history-readonly QA r2) remain historical, unchanged artifacts. They must not be relabelled as current 5.8.4 builds. The version-specific `mvp15d-ue581-evidence-inventory*` scripts/schema names describe the historical inventory format and must be used with their matching archived source revision, not as a current build/release command. Their old identity literals are intentional historical labels, not current target settings.
 
-T22's project-investigation template uses the existing file/index read chain and does not run UE; its development can continue independently. Production memory dispatch remains disabled. UE writes, game launch, project conversion, engine installation/registry changes and automatic recovery are not enabled by this adaptation.
+Current product scope is recorded in the [UE integration index](ue-build-integration.md#current-desktop-integration): ordinary-project managed semantic reads and scene creation have scoped native entries; pickup creation remains isolated-Lab-only. Build repair includes a separately approved chain of at most three rebuilds. These source integrations retain their own approval and lifecycle requirements; engine compatibility alone grants no operation authority. The three complete design workflows still need current-engine end-to-end acceptance.
 
 ## Fresh v1 compile verification (2026-11-03)
 

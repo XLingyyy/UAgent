@@ -6,17 +6,21 @@
 
 Supersedes the Lab-only desktop scope described below. A user-selected, trusted UE 5.8.4 project can prepare a new map under `/Game/UAgentBuildLab/Scene_T14` with 1–20 explicitly reviewed objects. The selected root-level `.uproject` is held and hashed; startup approval, owned editor launch, preparation, placement and save retain separate confirmations. Existing maps and approval files are never overwritten. The project must already have the matching plugin and prepared `Saved/UAgentSceneT14` and `Content/UAgentBuildLab/Scene_T14` directories. The existing read-only connection does not authorize writes.
 
-Requires plugin `2.4.0-scene-batch-current-run`, scope `approved_project_new_map_current_run` and the approved-project write flag. The old frozen 2.3.0 plugin and normal EXE r3 do not contain this change. This slice has synthetic native/renderer validation only; new plugin compilation and actual UE/desktop validation remain outstanding. No ordinary user project was opened or modified.
+Requires plugin `2.4.0-scene-batch-current-run`, scope `approved_project_new_map_current_run` and the approved-project write flag. Objects use Cube/Sphere/Cylinder and the Engine basic-shape material; project-selected meshes/materials and existing-map edits are outside this contract. The native/renderer path has synthetic checks. The 2.4.0 plugin has also compiled against UE 5.8.4 with matching desktop/plugin schemas; the compile record (`2026-10-29/evidence/t14-plugin-240-584-20261105-r1/actual-result.json`; local evidence, not published with the repository) explicitly records no live plugin load, protocol test or editor run. The old frozen 2.3.0 plugin and EXE r3 do not contain this change. Ordinary-project desktop execution and the 20-item / cancel-after-seven acceptance remain outstanding.
 
-## Historical 2.3.0 integration (superseded scope)
+Continuation uses a fresh owned query in the same editor/run and preserves already-applied object identities. Cross-process or editor-restart continuation is not implemented. Local development setup is recorded in `docs/local-development-layout.md`, which is not included in this publication.
 
-## Custom object list (2026-11-05, source contract 2.3.0)
+## Historical 2.2.0 and 2.3.0 implementation records
+
+The following sections preserve the original Lab contracts, module-only status, checks and UE 5.8.2 evidence. Their fixed twenty-item, Lab-only, unregistered-entrypoint and old workspace instructions describe those revisions. They are not current execution instructions or acceptance of contract 2.4.0.
+
+### Custom object list (2026-11-05, source contract 2.3.0)
 
 The Scene batch UI supports 1–20 user-selected objects, editable names, Cube/Sphere/Cylinder meshes and per-object location, rotation and scale. The grid remains an optional list reset. Names are unique with a `UA14_` prefix; location is bounded to ±10000 cm, rotation to ±180 degrees and scale to 0.1–10. Material remains the Engine basic-shape material. Editing invalidates review; native approval binds the complete immutable list. Completion/save checks use the approved list length, with unchanged per-object verification, fresh-query continuation and separate save approval.
 
 This is still isolated UAgentBuildLab only. Ordinary projects need a separately authorized scene write scope and lifecycle integration; the existing read-only ordinary-project connection does not grant scene writes. No existing maps are overwritten. This source change requires a matching 2.3.0 scene plugin/schema and a rebuilt desktop; old 2.2.0 binaries must fail negotiation. Validation uses mock UE responses only, not a new plugin compile or editor/desktop run.
 
-## Desktop Lab entry (2026-11-05 source integration)
+### Desktop Lab entry (2026-11-05 source integration)
 
 The normal desktop workflow selector now includes Scene batch. The user reviews one new map and 1–20 explicitly selected Engine-mesh objects, approves the startup file and owned editor launch, then separately approves preparation, execution, optional same-run continuation and saving. Query receipts show all approved object identities/statuses/transforms. Cancellation leaves applied objects in the unsaved world; stopping/closing the owned editor discards unsaved work. Saving requires a fresh verified completed query and exclusive creation of the approved map.
 
@@ -25,11 +29,11 @@ The existing isolated marker and prepared `Saved/UAgentSceneT14` and `Content/UA
 Current source accepts one or two exact startup plans, preserving the historical two-plan test. This desktop entry uses one. The C++ plugin must be rebuilt with this change; old binaries requiring two plans cannot run the new entry. This slice uses mock UE responses, native protocol tests, component tests and production Rust type checking only. It does not verify actual UE/desktop execution or publish a rebuilt EXE/plugin. Receipts are local Lab evidence, not native task-history recovery grants or cross-restart resume authority.
 
 
-See the [unified integration index](ue-build-integration.md#integration-index-t09--t11--t13--t14) for commit order, main-baseline conflicts and mandatory production host boundaries.
+See the [unified integration index](ue-build-integration.md#current-desktop-integration) for commit order, main-baseline conflicts and mandatory production host boundaries.
 
 独立模块，默认不接 IPC、不注册生产工具，不支持 Host 重启后恢复。所有开发与测试产物应遵守 tools/ENVIRONMENT.md，并在 E:/G: 上运行。
 
-## 契约
+### 契约
 
 - contractVersion: `2.2.0-scene-batch-current-run`，protocolVersion: `2`。
 - 根目录固定 `/Game/UAgentBuildLab/Scene_T14`；只允许直接子包 `L_` 普通地图、原磁盘不存在、20 个固定静态对象。
@@ -41,7 +45,7 @@ See the [unified integration index](ue-build-integration.md#integration-index-t0
 - applied 的 GUID 非零小写且不重复，路径必须是 `${targetMap}.${mapName}:PersistentLevel.${objectName}`，mesh/material 必须逐项匹配。实际位置/比例比较容差为 `1e-3`；旋转按 UE FRotator 对应四元数的最短整体姿态角比较，容差为 `0.001°`，接受规范化及奇异角处的等价欧拉表示。审批计划自身始终逐值相等。
 - planHash 验证为小写 64 hex 的 BLAKE3 receipt 字段形状；模块不重新编码计划计算 hash，也不据此授予权限。权限来自完整计划与本机审批。
 
-## Native 宿主接口
+### Native 宿主接口
 
 `SceneHostScope::from_verified_owned_editor(project_key, instance_id, root_object_id, run_id, host_session_id, approved_plan)` 仅由本机可信代码调用。调用前必须实际验证 owned editor、持有 root lease、取得精确完整计划审批；这些参数不能来自模型 JSON。scope、authorization、permits 没有 Deserialize。
 
@@ -55,13 +59,13 @@ See the [unified integration index](ue-build-integration.md#integration-index-t0
 6. null、未绑定、过期或错误 token 均不能消费 resume/save 许可。任何新 query 或成功授权的 mutation 都先清除旧检查点；无效 query 响应也清除旧检查点。重复 token 不会重新绑定。
 7. 撤销调用 `revoke()`。顺序进入另一张地图前撤销上一张图的 authorization；不得把旧图或旧 scope 恢复为 authority。授权对象仅保存在当前 Host 进程内存中。
 
-## TypeScript 接口
+### TypeScript 接口
 
 `parseSceneBatchPlan` 建立深冻结的独立计划副本；`createSceneSessionFromVerifiedHost` 仅建立 frontend binding，不授予写权限。`negotiateSceneBatchV2` 校验闭合 manifest、两个完整 approvedPlans、当前 native 身份和全部七个工具的精确嵌套 schemas。`createSceneCall` 永不添加 hostPermit。`parseSceneResult` 校验完整 envelope 和每项实际效果；`sceneRemainingItemIds` 从可恢复的已解析查询中取得剩余 13 项等明细。
 
 `sceneInputSchema(tool, 'model')` 可提供去除 permit 的模型参数 schema；默认 transport schema 包含需要 native 注入的 permit。用 `node scripts/export-ue-scene-batch-schemas.mjs` 导出全部 transport schemas（stdout，无临时文件）。Backend discovery 与 tools/list 必须使用同一份契约。required/enum 的次序不影响协商，其他 schema 值不能弱化或扩张。
 
-## 最小检查
+### 最小检查
 
 同一 PowerShell 进程先运行 E 盘环境脚本，再执行：
 
@@ -73,7 +77,7 @@ node scripts/test-ue-scene-batch.mjs
 
 Native runner 仅离线编译这个纯模块，不加载 Tauri 或 UE；Cargo home 固定 `E:\Codex\UAgent\2026-10-29\build-cache\t09-cargo-home`。没有修改现有入口，因此这些局部测试不表示已连接真实 UE 或完成端到端验证。
 
-## UE companion and actual verification
+### UE companion and actual verification
 
 The companion module `UAgentSceneBatchToolsV2` is independent of shared/main IPC. It loads the generated exact transport schemas from `Resources/scene-batch-v2-schemas.json`; `scripts/export-ue-scene-batch-schemas.mjs` regenerates those declarations from the runtime contract. Missing/mismatched resources leave the tools unavailable. Default-disabled discovery uses `unverified-root`, a nil run ID and zero approved plans; that response is schema-valid but cannot establish a session.
 
