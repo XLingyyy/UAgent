@@ -66,7 +66,7 @@ pub(crate) fn approved_pickup_arguments(uproject:&std::path::Path,approval:&std:
   std::fs::write(base.join("Ordinary.uproject"),br#"{"FileVersion":3,"Description":"Synthetic; never launched"}"#).unwrap();
   let root=Arc::new(TrustedRootHandle::open_from_host_selection(&base).unwrap());
   let project=Arc::new(crate::ue_semantic_launch::Prepared::new(root,"Ordinary.uproject".into(),"/Game/Gameplay/Pickups".into()).unwrap());
-  let plan:PickupTemplatePlan=serde_json::from_value(json!({"operationId":guid().unwrap(),"targetPackage":"/Game/Gameplay/Pickups/BP_Pickup","expectedDiskState":"absent","templateId":"actor.pickup.native.v1","parentClass":crate::ue_pickup_template::PARENT,"itemId":"Health","promptText":"Press E","interactionRadiusCm":200,"interactionKey":"E"})).unwrap();(base,project,plan)
+  let plan:PickupTemplatePlan=serde_json::from_value(json!({"operationId":guid().unwrap(),"targetPackage":"/Game/Gameplay/Pickups/BP_Pickup","expectedDiskState":"absent","templateId":"actor.pickup.blueprint.v2","parentClass":crate::ue_pickup_template::PARENT,"itemId":"Health","promptText":"Press E","interactionRadiusCm":200,"interactionKey":"E"})).unwrap();(base,project,plan)
  }
  #[test]fn ordinary_pickup_approval_pins_project_directory_and_operation(){
   let (base,project,plan)=fixture();assert!(!base.join(".uagent-isolated-lab.json").exists());

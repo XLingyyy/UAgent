@@ -99,7 +99,7 @@ export const pickupPlan: PickupTemplatePlan = {
   operationId: "00000000-0000-4000-8000-000000000013",
   targetPackage: "/Game/UAgentBuildLab/Pickup_T13/BP_HealthPickup",
   expectedDiskState: "absent",
-  templateId: "actor.pickup.native.v1",
+  templateId: "actor.pickup.blueprint.v2",
   parentClass: "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2",
   itemId: "HealthPickup",
   promptText: "按 E 拾取",

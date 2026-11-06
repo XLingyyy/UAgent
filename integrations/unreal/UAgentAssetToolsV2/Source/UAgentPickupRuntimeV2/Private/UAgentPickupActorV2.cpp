@@ -62,6 +62,6 @@ bool AUAgentPickupActorV2::TryCollect(APawn* Pawn)
  if (!PickupMesh->GetStaticMesh() || !PickupPrompt->Font || (InteractionKey != EKeys::E && InteractionKey != EKeys::F) || InteractionRadiusCm < 50 || InteractionRadiusCm > 1000) { LastInteractionError = TEXT("invalid_pickup_configuration"); return false; }
  if (FVector::DistSquared(Pawn->GetActorLocation(), GetActorLocation()) > FMath::Square(InteractionRadiusCm)) { LastInteractionError = TEXT("outside_interaction_radius"); return false; }
  bCollected = true; ++CollectionCount; bPlayerNearby = false; LastInteractionError.Reset();
- PickupPrompt->SetVisibility(false); PickupMesh->SetVisibility(false); SetActorHiddenInGame(true); SetActorEnableCollision(false); ReleaseInput(); OnCollected.Broadcast(ItemId); return true;
+ PickupPrompt->SetVisibility(false); PickupMesh->SetVisibility(false); SetActorHiddenInGame(true); SetActorEnableCollision(false); ReleaseInput(); ReceiveCollected(); OnCollected.Broadcast(ItemId); return true;
 }
 IMPLEMENT_MODULE(FDefaultModuleImpl, UAgentPickupRuntimeV2);

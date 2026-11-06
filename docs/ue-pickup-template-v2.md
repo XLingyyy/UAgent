@@ -1,6 +1,6 @@
 # Pickup Blueprint: current implementation and historical Lab records
 
-The current `2.2.0-pickup-approved-project` implementation supports a single exact pickup Blueprint in an existing approved directory of an ordinary trusted project. The Test01 controlled copy passed real UE 5.8.4 startup, compiled preview, separately approved creation/compile/save, same-session read-only inspection and owned-editor stop. See [current scope, three live attempts and evidence](pickup-approved-project-20261106.md). Custom SCS components/member variables/limited graphs, restart reload, test-map placement and T15 PIE/Automation behavior remain open; the fixed native-parent result does not complete all of T13.
+The current `2.3.0-pickup-blueprint-template` creates one exact pickup Blueprint in an approved existing directory of an ordinary trusted project. It adds a fixed Blueprint-owned SCS anchor, bool variable and collection event graph. The Test01 copy passed real desktop creation/compile/save, read-only inspection, independent-process reload and real PIE input/behavior validation. See [current implementation, evidence and limits](pickup-blueprint-template-20261106.md). The PIE driver is a development acceptance harness; a general product validation workflow, arbitrary Blueprint editing and rendered visual acceptance remain open. Earlier 2.2 evidence is retained in [the historical live record](pickup-approved-project-20261106.md).
 
 ## Historical isolated-Lab records (through 2026-11-04)
 

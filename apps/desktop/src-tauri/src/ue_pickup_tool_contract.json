@@ -106,7 +106,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64,
-          "const": "2.2.0-pickup-approved-project"
+          "const": "2.3.0-pickup-blueprint-template"
         },
         "expectedProjectKey": {
           "type": "string",
@@ -147,7 +147,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
-              "const": "actor.pickup.native.v1"
+              "const": "actor.pickup.blueprint.v2"
             },
             "parentClass": {
               "type": "string",
@@ -251,7 +251,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
-              "const": "actor.pickup.native.v1"
+              "const": "actor.pickup.blueprint.v2"
             },
             "parentClass": {
               "type": "string",
@@ -333,7 +333,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64,
-          "const": "2.2.0-pickup-approved-project"
+          "const": "2.3.0-pickup-blueprint-template"
         },
         "expectedProjectKey": {
           "type": "string",
@@ -374,7 +374,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
-              "const": "actor.pickup.native.v1"
+              "const": "actor.pickup.blueprint.v2"
             },
             "parentClass": {
               "type": "string",
@@ -478,7 +478,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
-              "const": "actor.pickup.native.v1"
+              "const": "actor.pickup.blueprint.v2"
             },
             "parentClass": {
               "type": "string",
@@ -560,7 +560,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64,
-          "const": "2.2.0-pickup-approved-project"
+          "const": "2.3.0-pickup-blueprint-template"
         },
         "expectedProjectKey": {
           "type": "string",
@@ -601,7 +601,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
-              "const": "actor.pickup.native.v1"
+              "const": "actor.pickup.blueprint.v2"
             },
             "parentClass": {
               "type": "string",
@@ -711,7 +711,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
-              "const": "actor.pickup.native.v1"
+              "const": "actor.pickup.blueprint.v2"
             },
             "parentClass": {
               "type": "string",
@@ -793,7 +793,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64,
-          "const": "2.2.0-pickup-approved-project"
+          "const": "2.3.0-pickup-blueprint-template"
         },
         "expectedProjectKey": {
           "type": "string",
@@ -834,7 +834,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
-              "const": "actor.pickup.native.v1"
+              "const": "actor.pickup.blueprint.v2"
             },
             "parentClass": {
               "type": "string",
@@ -932,7 +932,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
-              "const": "actor.pickup.native.v1"
+              "const": "actor.pickup.blueprint.v2"
             },
             "parentClass": {
               "type": "string",

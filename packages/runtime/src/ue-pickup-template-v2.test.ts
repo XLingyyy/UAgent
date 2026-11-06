@@ -13,7 +13,7 @@ const plan = () => ({
   operationId: "11111111-1111-4111-8111-111111111111",
   targetPackage: "/Game/Gameplay/Pickups/BP_Pickup",
   expectedDiskState: "absent",
-  templateId: "actor.pickup.native.v1",
+  templateId: "actor.pickup.blueprint.v2",
   parentClass: UE_PICKUP_PARENT,
   itemId: "Health",
   promptText: "Press E to collect",
@@ -88,6 +88,7 @@ function effectFixture() {
     plan: session.plan,
     planHash: "a".repeat(64),
     data: {
+      semanticAfter: { blueprintTemplateVerified: true },
       state: "applied",
       observedDiskHash: "b".repeat(64),
       diskExists: true,
@@ -159,6 +160,13 @@ describe("pickup versioned contract and effect binding", () => {
         "applied_effect_not_observed",
       );
     }
+  });
+  it("rejects the earlier native-only template and unverified Blueprint structure", () => {
+    const { session } = sessionFixture();
+    expect(() => parsePickupTemplatePlan({ ...session.plan, templateId: "actor.pickup.native.v1" })).toThrow();
+    const result = effectFixture();
+    result.data.semanticAfter.blueprintTemplateVerified = false;
+    expect(() => parsePickupResult(session, UE_PICKUP_TOOLS[3], result)).toThrow("apply_not_verified");
   });
   it("never accepts missing/null/failed editor observations as apply success", () => {
     const { session } = sessionFixture();

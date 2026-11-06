@@ -2,7 +2,7 @@
 //! Model arguments never mint approval. No IPC endpoint, network action or production grant is installed.
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-pub const CONTRACT: &str = "2.2.0-pickup-approved-project";
+pub const CONTRACT: &str = "2.3.0-pickup-blueprint-template";
 pub const PARENT: &str = "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2";
 pub const SCOPE: &str = "approved_project_directory";
 const TOOLS: [&str; 4] = [
@@ -49,7 +49,7 @@ impl PickupTemplatePlan {
         self.write_root()?;
         if !guid(&self.operation_id)
             || self.expected_disk_state != "absent"
-            || self.template_id != "actor.pickup.native.v1"
+            || self.template_id != "actor.pickup.blueprint.v2"
             || self.parent_class != PARENT
             || !word(&self.item_id, 64)
             || self.prompt_text.is_empty()
@@ -229,7 +229,7 @@ impl PickupHostAuthorization {
 mod tests {
     use super::*;
     fn plan() -> PickupTemplatePlan {
-        serde_json::from_value(json!({"operationId":"11111111-1111-4111-8111-111111111111","targetPackage":"/Game/Gameplay/Pickups/BP_Pickup","expectedDiskState":"absent","templateId":"actor.pickup.native.v1","parentClass":PARENT,"itemId":"Health","promptText":"Press E to collect","interactionRadiusCm":200,"interactionKey":"E"})).unwrap()
+        serde_json::from_value(json!({"operationId":"11111111-1111-4111-8111-111111111111","targetPackage":"/Game/Gameplay/Pickups/BP_Pickup","expectedDiskState":"absent","templateId":"actor.pickup.blueprint.v2","parentClass":PARENT,"itemId":"Health","promptText":"Press E to collect","interactionRadiusCm":200,"interactionKey":"E"})).unwrap()
     }
     fn host() -> PickupHostAuthorization {
         PickupHostAuthorization::new_for_verified_project_host(

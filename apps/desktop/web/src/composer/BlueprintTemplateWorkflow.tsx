@@ -38,7 +38,7 @@ export function BlueprintTemplateWorkflow(){
  const approve=async()=>{
    if(!projectId||!validDestination)return;const current=++generation.current;setBusy(true);setStartup(null);
   try{
-    const plan=parsePickupTemplatePlan({operationId:crypto.randomUUID(),targetPackage,expectedDiskState:"absent",templateId:"actor.pickup.native.v1",parentClass:UE_PICKUP_PARENT,itemId:item,promptText:prompt,interactionRadiusCm:200,interactionKey:"E"});
+    const plan=parsePickupTemplatePlan({operationId:crypto.randomUUID(),targetPackage,expectedDiskState:"absent",templateId:"actor.pickup.blueprint.v2",parentClass:UE_PICKUP_PARENT,itemId:item,promptText:prompt,interactionRadiusCm:200,interactionKey:"E"});
    const invoke=localNativeInvoke();if(!invoke)throw Error("native_required");
     const value=await invoke<Record<string,unknown>>("approve_ue_pickup_launch_plan",{input:{projectId,uprojectRelativePath:uproject,plan}});
    if(value.schemaVersion!==1||value.projectId!==projectId||value.operationId!==plan.operationId||value.status!=="startup_plan_written"||value.approvalFileCreated!==true||value.editorStarted!==false||value.assetCreated!==false)throw Error("invalid_startup_receipt");
@@ -67,14 +67,14 @@ export function BlueprintTemplateWorkflow(){
   finally{if(current===generation.current)setBusy(false);}
  };
  return <section aria-label={zh?"蓝图模板":"Blueprint template"}>
-  <label>{zh?"模板":"Template"} <select><option value="actor.pickup.native.v1">{zh?"交互拾取 Actor（固定原生父类）":"Interactive pickup Actor (fixed native parent)"}</option></select></label>
+  <label>{zh?"模板":"Template"} <select><option value="actor.pickup.blueprint.v2">{zh?"交互拾取 Actor（固定原生父类）":"Interactive pickup Actor (fixed native parent)"}</option></select></label>
    <label>{zh?"项目 .uproject 文件":"Project .uproject file"}<input value={uproject} placeholder="Test01.uproject" disabled={busy||Boolean(owned)} onChange={e=>setUproject(e.target.value)}/></label>
    <label>{zh?"已有 /Game 子目录":"Existing /Game directory"}<input value={directory} placeholder="/Game/Gameplay/Pickups" disabled={busy||Boolean(owned)} onChange={e=>setDirectory(e.target.value)}/></label>
   <label>{zh?"新蓝图名称":"New Blueprint name"}<input value={name} disabled={busy||Boolean(owned)} onChange={e=>setName(e.target.value)}/></label>
   <label>{zh?"物品标识":"Item identifier"}<input value={item} disabled={busy||Boolean(owned)} onChange={e=>setItem(e.target.value)}/></label>
   <label>{zh?"交互提示":"Interaction prompt"}<input value={prompt} disabled={busy||Boolean(owned)} onChange={e=>setPrompt(e.target.value)}/></label>
    <p>{zh?"填写工程根目录中的 .uproject 文件名，以及已存在的 /Game 子目录。文件名与目录段仅支持英文字母、数字和下划线；目标目录不会自动创建。":"Enter the .uproject filename at the project root and an existing /Game subdirectory. The project name and directory segments accept only ASCII letters, digits and underscores. The target directory is not created automatically."}</p>
-   <p>{zh?"固定交互距离 200 厘米，按键 E。仅创建、编译并保存新的拾取蓝图，不操作地图。":"Fixed interaction radius: 200 cm; key: E. Creates, compiles and saves a new pickup Blueprint without map operations."}</p>
+   <p>{zh?"固定交互距离 200 厘米，按键 E。新增效果挂点、布尔状态和拾取事件连线，编译并保存新蓝图。":"Fixed interaction radius: 200 cm; key: E. Adds an effect anchor, Boolean state and collected-event connection, then compiles and saves the new Blueprint."}</p>
    {validDestination&&<p>{zh?"目标蓝图：":"Target Blueprint: "}<code>{targetPackage}</code></p>}
    <button type="button" disabled={busy||!projectId||!validDestination||Boolean(owned)} onClick={()=>void approve()}>{zh?"审阅并批准启动计划":"Review and approve startup plan"}</button>
   {operationId&&<button type="button" disabled={busy||Boolean(owned)} onClick={()=>void start()}>{zh?"确认并受管启动编辑器":"Confirm and start managed editor"}</button>}

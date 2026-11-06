@@ -31,6 +31,7 @@ public:
  UPROPERTY(Transient, BlueprintReadOnly, Category="Pickup|State") FString LastInteractionError;
  UPROPERTY(BlueprintAssignable, Category="Pickup") FUAgentPickupCollectedV2 OnCollected;
  UFUNCTION(BlueprintCallable, Category="Pickup") bool TryCollect(APawn* Pawn);
+ UFUNCTION(BlueprintImplementableEvent, Category="Pickup") void ReceiveCollected();
  virtual void Tick(float DeltaSeconds) override;
  virtual void OnConstruction(const FTransform& Transform) override;
 protected:

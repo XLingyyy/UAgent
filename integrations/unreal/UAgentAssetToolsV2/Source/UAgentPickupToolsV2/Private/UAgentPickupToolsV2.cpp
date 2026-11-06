@@ -10,8 +10,17 @@
 #include "Components/TextRenderComponent.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
+#include "Engine/SimpleConstructionScript.h"
+#include "Engine/SCS_Node.h"
+#include "EdGraph/EdGraph.h"
+#include "EdGraphSchema_K2.h"
+#include "K2Node_Event.h"
+#include "K2Node_VariableSet.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "UObject/UnrealType.h"
 #include "Engine/Font.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformTime.h"
 #include "Hash/Blake3.h"
@@ -41,10 +50,10 @@ namespace UAgentPickupV2
 {
 namespace
 {
-const FString Contract = TEXT("2.2.0-pickup-approved-project");
+const FString Contract = TEXT("2.3.0-pickup-blueprint-template");
 FString WriteRoot;
 const FString Parent = TEXT("/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2");
-const FString Template = TEXT("actor.pickup.native.v1");
+const FString Template = TEXT("actor.pickup.blueprint.v2");
 const FString MeshPath = TEXT("/Engine/BasicShapes/Cube.Cube");
 const FString FontPath = TEXT("/Engine/EngineFonts/RobotoDistanceField.RobotoDistanceField");
 const TArray<FString> Names { TEXT("uagent.v2.pickup.capabilities"), TEXT("uagent.v2.pickup.prepare"), TEXT("uagent.v2.pickup.preview"), TEXT("uagent.v2.pickup.apply"), TEXT("uagent.v2.pickup.query") };
@@ -176,20 +185,58 @@ const TCHAR* AbsentPrecondition()
  if (Existing || Exists) return TEXT("target_exists_or_changed_since_absence_approval");
  return nullptr;
 }
-TSharedPtr<FJsonObject> Summary()
+bool HasBlueprintTemplate(const UBlueprint* BP)
 {
- auto R=Obj(); R->SetStringField(TEXT("parentClass"),Parent); R->SetStringField(TEXT("templateId"),Template); R->SetStringField(TEXT("memberOrigin"),TEXT("inherited_native_parent; no arbitrary graph editing")); R->SetArrayField(TEXT("components"),Strings({TEXT("PickupRoot:SceneComponent"),TEXT("PickupMesh:StaticMeshComponent"),TEXT("InteractionRange:SphereComponent"),TEXT("PickupPrompt:TextRenderComponent")})); R->SetObjectField(TEXT("typedEditableParameters"),ApprovedPlan); R->SetArrayField(TEXT("parameterTypes"),Strings({TEXT("itemId:FName"),TEXT("promptText:FText"),TEXT("interactionRadiusCm:float_cm[50,1000]"),TEXT("interactionKey:FKey[E,F]")})); R->SetArrayField(TEXT("runtimeState"),Strings({TEXT("bPlayerNearby:bool"),TEXT("bCollected:bool"),TEXT("CollectionCount:int32")})); R->SetStringField(TEXT("behavior"),TEXT("local possessed pawn within radius shows world text; configured key collects once, hides actor, disables collision and broadcasts OnCollected")); return R;
+ if (!BP || !BP->SimpleConstructionScript || !BP->GeneratedClass) return false;
+ const USCS_Node* Anchor=nullptr;
+ for (const USCS_Node* Node:BP->SimpleConstructionScript->GetAllNodes()) if (Node->GetVariableName()==TEXT("PickupEffectAnchor")) Anchor=Node;
+ const auto* Component=Anchor?Cast<USceneComponent>(Anchor->ComponentTemplate):nullptr;
+ const FBoolProperty* State=FindFProperty<FBoolProperty>(BP->GeneratedClass,TEXT("bPickupEventReceived"));
+ if (!Component || Anchor->ComponentClass!=USceneComponent::StaticClass() || !Anchor->bIsParentComponentNative || Anchor->ParentComponentOrVariableName!=TEXT("PickupRoot") || Component->GetRelativeLocation()!=FVector(0,0,50) || !State || State->GetOwnerClass()!=BP->GeneratedClass || State->GetPropertyValue_InContainer(BP->GeneratedClass->GetDefaultObject())) return false;
+ const UK2Node_Event* Event=nullptr; const UK2Node_VariableSet* Set=nullptr;
+ for (const UEdGraph* Graph:BP->UbergraphPages) if (Graph->GetFName()==TEXT("PickupCollectedGraph"))
+ {
+  if (Graph->Nodes.Num()!=2) return false;
+  for (const UEdGraphNode* Node:Graph->Nodes) { if (auto* E=Cast<UK2Node_Event>(Node)) Event=E; if (auto* S=Cast<UK2Node_VariableSet>(Node)) Set=S; }
+ }
+ if (!Event || !Set || !Event->bOverrideFunction || Event->EventReference.GetMemberName()!=GET_FUNCTION_NAME_CHECKED(AUAgentPickupActorV2,ReceiveCollected) || Event->EventReference.GetMemberParentClass()!=AUAgentPickupActorV2::StaticClass() || Set->VariableReference.GetMemberName()!=TEXT("bPickupEventReceived") || !Set->VariableReference.IsSelfContext()) return false;
+ const UEdGraphPin* Out=Event->FindPin(UEdGraphSchema_K2::PN_Then),*In=Set->FindPin(UEdGraphSchema_K2::PN_Execute),*Value=Set->FindPin(TEXT("bPickupEventReceived"));
+ return Out && In && Value && Out->LinkedTo.Num()==1 && Out->LinkedTo[0]==In && In->LinkedTo.Num()==1 && In->LinkedTo[0]==Out && Value->LinkedTo.IsEmpty() && Value->DefaultValue==TEXT("true");
+}
+bool AddBlueprintTemplate(UBlueprint* BP)
+{
+ auto* SCS=BP->SimpleConstructionScript.Get(); if (!SCS) return false;
+ auto* Anchor=SCS->CreateNode(USceneComponent::StaticClass(),TEXT("PickupEffectAnchor"));
+ SCS->AddNode(Anchor); Anchor->SetParent(GetDefault<AUAgentPickupActorV2>()->PickupRoot);
+ CastChecked<USceneComponent>(Anchor->ComponentTemplate)->SetRelativeLocation(FVector(0,0,50));
+ FEdGraphPinType Type; Type.PinCategory=UEdGraphSchema_K2::PC_Boolean;
+ if (!FBlueprintEditorUtils::AddMemberVariable(BP,TEXT("bPickupEventReceived"),Type,TEXT("false"))) return false;
+ auto* Graph=FBlueprintEditorUtils::CreateNewGraph(BP,TEXT("PickupCollectedGraph"),UEdGraph::StaticClass(),UEdGraphSchema_K2::StaticClass());
+ FBlueprintEditorUtils::AddUbergraphPage(BP,Graph);
+ FGraphNodeCreator<UK2Node_Event> EventCreator(*Graph); auto* Event=EventCreator.CreateNode();
+ Event->EventReference.SetExternalMember(GET_FUNCTION_NAME_CHECKED(AUAgentPickupActorV2,ReceiveCollected),AUAgentPickupActorV2::StaticClass()); Event->bOverrideFunction=true; EventCreator.Finalize();
+ FGraphNodeCreator<UK2Node_VariableSet> SetCreator(*Graph); auto* Set=SetCreator.CreateNode();
+ Set->VariableReference.SetSelfMember(TEXT("bPickupEventReceived")); Set->NodePosX=320; SetCreator.Finalize();
+ auto* Value=Set->FindPin(TEXT("bPickupEventReceived")); if (!Value) return false;
+ Graph->GetSchema()->TrySetDefaultValue(*Value,TEXT("true"));
+ if (!Graph->GetSchema()->TryCreateConnection(Event->FindPin(UEdGraphSchema_K2::PN_Then),Set->FindPin(UEdGraphSchema_K2::PN_Execute))) return false;
+ FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP); return true;
+}
+TSharedPtr<FJsonObject> Summary(const UBlueprint* BP)
+{
+ // These names/defaults describe the fixed template; verification inspects the compiled object and graph.
+ auto R=Obj(); R->SetBoolField(TEXT("blueprintTemplateVerified"),HasBlueprintTemplate(BP)); R->SetArrayField(TEXT("declaredBlueprintMembers"),Strings({TEXT("PickupEffectAnchor:SceneComponent attached to PickupRoot at (0,0,50) cm"),TEXT("bPickupEventReceived:bool=false"),TEXT("ReceiveCollected -> set bPickupEventReceived=true")})); R->SetStringField(TEXT("parentClass"),Parent); R->SetStringField(TEXT("templateId"),Template); R->SetStringField(TEXT("memberOrigin"),TEXT("fixed_native_parent_and_declared_blueprint_template")); R->SetArrayField(TEXT("components"),Strings({TEXT("PickupRoot:SceneComponent"),TEXT("PickupMesh:StaticMeshComponent"),TEXT("InteractionRange:SphereComponent"),TEXT("PickupPrompt:TextRenderComponent")})); R->SetObjectField(TEXT("typedEditableParameters"),ApprovedPlan); R->SetArrayField(TEXT("parameterTypes"),Strings({TEXT("itemId:FName"),TEXT("promptText:FText"),TEXT("interactionRadiusCm:float_cm[50,1000]"),TEXT("interactionKey:FKey[E,F]")})); R->SetArrayField(TEXT("runtimeState"),Strings({TEXT("bPlayerNearby:bool"),TEXT("bCollected:bool"),TEXT("CollectionCount:int32")})); R->SetStringField(TEXT("behavior"),TEXT("local possessed pawn within radius shows world text; configured key collects once, hides actor, disables collision and broadcasts OnCollected")); return R;
 }
 UBlueprint* Make(const FString& PackageName,TArray<TSharedPtr<FJsonValue>>& Diagnostics)
 {
  UPackage* Package=CreatePackage(*PackageName); const FString Name=FPackageName::GetLongPackageAssetName(PackageName);
  UBlueprint* BP=FKismetEditorUtilities::CreateBlueprint(AUAgentPickupActorV2::StaticClass(),Package,*Name,BPTYPE_Normal,UBlueprint::StaticClass(),UBlueprintGeneratedClass::StaticClass(),TEXT("UAgentFixedPickupTemplate"));
- if (!BP) return nullptr;
+ if (!BP || !AddBlueprintTemplate(BP)) return nullptr;
  auto Configure=[&]() { auto* CDO=Cast<AUAgentPickupActorV2>(BP->GeneratedClass?BP->GeneratedClass->GetDefaultObject():nullptr); if (!CDO) return false; CDO->ItemId=FName(*ApprovedPlan->GetStringField(TEXT("itemId"))); CDO->PromptText=FText::FromString(ApprovedPlan->GetStringField(TEXT("promptText"))); CDO->InteractionRadiusCm=ApprovedPlan->GetNumberField(TEXT("interactionRadiusCm")); CDO->InteractionKey=ApprovedPlan->GetStringField(TEXT("interactionKey"))==TEXT("E")?EKeys::E:EKeys::F; CDO->PickupMesh->SetStaticMesh(Mesh.Get()); CDO->PickupPrompt->SetFont(Font.Get()); return true; };
  if (!Configure()) return nullptr;
  FCompilerResultsLog Log; FKismetEditorUtilities::CompileBlueprint(BP,EBlueprintCompileOptions::SkipGarbageCollection,&Log);
  for (const auto& Message:Log.Messages) Diagnostics.Add(MakeShared<FJsonValueString>(Message->ToText().ToString()));
- if (Log.NumErrors || BP->Status!=BS_UpToDate || !Configure()) return nullptr;
+ if (Log.NumErrors || BP->Status!=BS_UpToDate || !Configure() || !HasBlueprintTemplate(BP)) return nullptr;
  Package->GetMetaData().SetValue(BP,TEXT("UAgent.Template"),*Template); Package->GetMetaData().SetValue(BP,TEXT("UAgent.OperationId"),*ApprovedPlan->GetStringField(TEXT("operationId"))); Package->GetMetaData().SetValue(BP,TEXT("UAgent.PlanHash"),*HashText(ApprovedCanonical)); BP->MarkPackageDirty(); return BP;
 }
 FString ObserveEditorEffect(const FString& PackageName)
@@ -232,7 +279,7 @@ FModelContextProtocolToolResult Invoke(int32 Tool,const TSharedPtr<FJsonObject>&
  if (Tool==2)
  {
   TArray<TSharedPtr<FJsonValue>> Diagnostics; const FString Copy=TEXT("/Temp/UAgentPickupT13/Preview_")+FGuid::NewGuid().ToString(EGuidFormats::Digits); Preview.Reset(Make(Copy,Diagnostics)); if (!Preview.IsValid()) return Fail(TEXT("preview_blueprint_compile_failed")); Preview->SetFlags(RF_Transient); PreviewToken=FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens).ToLower();
-  auto R=Obj(); R->SetStringField(TEXT("previewToken"),PreviewToken); R->SetStringField(TEXT("copyObjectPath"),Preview->GetPathName()); R->SetBoolField(TEXT("copySaved"),false); auto Before=Obj(); Before->SetBoolField(TEXT("exists"),false); R->SetObjectField(TEXT("before"),Before); R->SetObjectField(TEXT("after"),Summary()); R->SetArrayField(TEXT("semanticChanges"),Strings({TEXT("create native-parent Blueprint"),TEXT("configure four inherited components"),TEXT("set four typed editable defaults"),TEXT("enable bounded pickup behavior supplied by fixed parent")})); R->SetArrayField(TEXT("compileDiagnostics"),Diagnostics); R->SetStringField(TEXT("compileStatus"),TEXT("up_to_date")); return Success(Tool,R);
+  auto R=Obj(); R->SetStringField(TEXT("previewToken"),PreviewToken); R->SetStringField(TEXT("copyObjectPath"),Preview->GetPathName()); R->SetBoolField(TEXT("copySaved"),false); auto Before=Obj(); Before->SetBoolField(TEXT("exists"),false); R->SetObjectField(TEXT("before"),Before); R->SetObjectField(TEXT("after"),Summary(Preview.Get())); R->SetArrayField(TEXT("semanticChanges"),Strings({TEXT("create native-parent Blueprint"),TEXT("configure four inherited components"),TEXT("set four typed editable defaults"),TEXT("add PickupEffectAnchor:SceneComponent under PickupRoot at (0,0,50) cm"),TEXT("declare bPickupEventReceived:bool=false"),TEXT("connect ReceiveCollected event to set bPickupEventReceived=true")})); R->SetArrayField(TEXT("compileDiagnostics"),Diagnostics); R->SetStringField(TEXT("compileStatus"),TEXT("up_to_date")); return Success(Tool,R);
  }
  FString Token; if (!Preview.IsValid()||PreviewToken.IsEmpty()||!Args->TryGetStringField(TEXT("previewToken"),Token)||Token!=PreviewToken) return Fail(TEXT("reviewed_copy_preview_required")); PreviewToken.Reset();
  Receipt=Obj(); Receipt->SetObjectField(TEXT("plan"),ApprovedPlan); Receipt->SetStringField(TEXT("state"),TEXT("preparing")); if (!WriteJson(ReceiptFile(),Receipt)) return Fail(TEXT("receipt_intent_persistence_failed"));
@@ -253,7 +300,7 @@ FModelContextProtocolToolResult Invoke(int32 Tool,const TSharedPtr<FJsonObject>&
  Receipt->SetStringField(TEXT("state"),Saved?TEXT("applied"):TEXT("unknown_partial_write")); WriteJson(ReceiptFile(),Receipt);
  if (!Saved) return Fail(TEXT("partial_target_write_query_effect_no_automatic_retry"));
  BP->GetOutermost()->SetDirtyFlag(false); FAssetRegistryModule::AssetCreated(BP); FModuleManager::GetModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get().ScanFilesSynchronous({TargetFile()},true);
- auto R=Query(); R->SetStringField(TEXT("compileStatus"),TEXT("up_to_date")); R->SetArrayField(TEXT("compileDiagnostics"),Diagnostics); R->SetArrayField(TEXT("savedPackages"),Strings({ApprovedPlan->GetStringField(TEXT("targetPackage"))})); R->SetObjectField(TEXT("semanticAfter"),Summary()); return Success(Tool,R);
+ auto R=Query(); R->SetStringField(TEXT("compileStatus"),TEXT("up_to_date")); R->SetArrayField(TEXT("compileDiagnostics"),Diagnostics); R->SetArrayField(TEXT("savedPackages"),Strings({ApprovedPlan->GetStringField(TEXT("targetPackage"))})); R->SetObjectField(TEXT("semanticAfter"),Summary(BP)); return Success(Tool,R);
 }
 class FTool final:public IModelContextProtocolTool
 {
@@ -283,6 +330,44 @@ bool VerifyIsolatedLabPreconditions(const TSharedPtr<FJsonObject>& Report)
 #endif
 }
 #if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPickupBlueprintTemplateTest,"UAgent.Pickup.BlueprintTemplate",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FPickupBlueprintTemplateTest::RunTest(const FString&)
+{
+ if (Enabled) { AddError(TEXT("Run template Automation outside an active approved write session")); return false; }
+ FString Asset; UBlueprint* BP=nullptr;
+ if (FParse::Value(FCommandLine::Get(),TEXT("UAgentPickupTemplateTestAsset="),Asset))
+ {
+  FString Directory; if (!TargetDirectory(Asset,Directory)) { AddError(TEXT("Invalid test asset")); return false; }
+  BP=LoadObject<UBlueprint>(nullptr,*(Asset+TEXT(".")+FPackageName::GetLongPackageAssetName(Asset)));
+ }
+ else
+ {
+  const auto PreviousPlan=ApprovedPlan;
+  ApprovedPlan=Obj(); ApprovedPlan->SetStringField(TEXT("operationId"),FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens)); ApprovedPlan->SetStringField(TEXT("itemId"),TEXT("Acceptance")); ApprovedPlan->SetStringField(TEXT("promptText"),TEXT("Press E")); ApprovedPlan->SetNumberField(TEXT("interactionRadiusCm"),200); ApprovedPlan->SetStringField(TEXT("interactionKey"),TEXT("E"));
+  Mesh.Reset(LoadObject<UStaticMesh>(nullptr,*MeshPath)); Font.Reset(LoadObject<UFont>(nullptr,*FontPath));
+  TArray<TSharedPtr<FJsonValue>> Diagnostics;
+  BP=Make(TEXT("/Temp/UAgentPickupT13/BP_Test_")+FGuid::NewGuid().ToString(EGuidFormats::Digits),Diagnostics);
+  ApprovedPlan=PreviousPlan;
+  for (const auto& Diagnostic:Diagnostics) AddInfo(Diagnostic->AsString());
+ }
+ if (!TestNotNull(TEXT("Compiled template"),BP) || !TestTrue(TEXT("Declared component, default and exact graph survive compilation/load"),HasBlueprintTemplate(BP))) return false;
+ UWorld* World=UWorld::CreateWorld(EWorldType::Game,false);
+ auto* Actor=World->SpawnActor<AUAgentPickupActorV2>(BP->GeneratedClass);
+ World->InitializeActorsForPlay(FURL());
+ bool Passed=TestNotNull(TEXT("Template spawns"),Actor);
+ if (Actor)
+ {
+  auto* State=FindFProperty<FBoolProperty>(BP->GeneratedClass,TEXT("bPickupEventReceived"));
+  TArray<USceneComponent*> Components; Actor->GetComponents(Components);
+  USceneComponent* Anchor=nullptr; for (auto* Component:Components) if (Component->GetFName()==TEXT("PickupEffectAnchor")) Anchor=Component;
+  Passed=TestTrue(TEXT("SCS anchor instantiated and attached to native root"),Anchor && Anchor->GetAttachParent()==Actor->PickupRoot && Anchor->GetRelativeLocation()==FVector(0,0,50)) && Passed;
+  Passed=TestFalse(TEXT("Spawned bool starts false"),State->GetPropertyValue_InContainer(Actor)) && Passed;
+  Actor->ReceiveCollected();
+  Passed=TestTrue(TEXT("Compiled event graph executes the bool assignment"),State->GetPropertyValue_InContainer(Actor)) && Passed;
+  Passed=TestFalse(TEXT("Instance execution leaves the saved default false"),State->GetPropertyValue_InContainer(BP->GeneratedClass->GetDefaultObject())) && Passed;
+ }
+ World->DestroyWorld(false); return Passed;
+}
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPickupApprovedDirectoryTest,"UAgent.Pickup.ApprovedDirectory",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
 bool FPickupApprovedDirectoryTest::RunTest(const FString& Parameters)
 {

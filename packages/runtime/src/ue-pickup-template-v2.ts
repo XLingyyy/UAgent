@@ -1,5 +1,5 @@
 /** Approved-project create-only pickup slice. Public identity/preview hashes never confer write authority. */
-export const UE_PICKUP_CONTRACT = "2.2.0-pickup-approved-project";
+export const UE_PICKUP_CONTRACT = "2.3.0-pickup-blueprint-template";
 export const UE_PICKUP_PARENT = "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2";
 export const UE_PICKUP_TOOLS = [
   "uagent.v2.pickup.capabilities",
@@ -14,7 +14,7 @@ export interface PickupTemplatePlan {
   operationId: string;
   targetPackage: string;
   expectedDiskState: "absent";
-  templateId: "actor.pickup.native.v1";
+  templateId: "actor.pickup.blueprint.v2";
   parentClass: typeof UE_PICKUP_PARENT;
   itemId: string;
   promptText: string;
@@ -62,7 +62,7 @@ export function parsePickupTemplatePlan(value: unknown): PickupTemplatePlan {
     p.targetPackage.length > 1024 ||
     !/^\/Game(?:\/[A-Za-z0-9_]{1,80})+\/BP_[A-Za-z0-9_]{0,77}$/.test(p.targetPackage) ||
     p.expectedDiskState !== "absent" ||
-    p.templateId !== "actor.pickup.native.v1" ||
+    p.templateId !== "actor.pickup.blueprint.v2" ||
     p.parentClass !== UE_PICKUP_PARENT ||
     typeof p.itemId !== "string" ||
     !/^[A-Za-z0-9_]{1,64}$/.test(p.itemId) ||
@@ -94,7 +94,7 @@ function planSchema(): ObjectValue {
     operationId: str(36),
     targetPackage: str(1024),
     expectedDiskState: str(6, "absent"),
-    templateId: str(64, "actor.pickup.native.v1"),
+    templateId: str(64, "actor.pickup.blueprint.v2"),
     parentClass: str(128, UE_PICKUP_PARENT),
     itemId: str(64),
     promptText: str(128),
@@ -330,7 +330,7 @@ export function parsePickupResult(
     fail("preparation_not_observed");
   if (
     tool === UE_PICKUP_TOOLS[2] &&
-    (typeof data.previewToken !== "string" ||
+    (obj(data.after).blueprintTemplateVerified !== true || typeof data.previewToken !== "string" ||
       !GUID.test(data.previewToken) ||
       typeof data.copyObjectPath !== "string" ||
       !data.copyObjectPath.startsWith("/Temp/UAgentPickupT13/") ||
@@ -375,7 +375,7 @@ export function parsePickupResult(
         obj(data.effects[0]).diskEffect !== "created" ||
         obj(data.effects[0]).editorEffect !== "compiled_loaded" ||
         (data.idempotentReplayNoWrite !== true &&
-          (data.compileStatus !== "up_to_date" ||
+          (obj(data.semanticAfter).blueprintTemplateVerified !== true || data.compileStatus !== "up_to_date" ||
             stable(data.savedPackages) !== stable([session.plan.targetPackage]))))
     )
       fail("apply_not_verified");

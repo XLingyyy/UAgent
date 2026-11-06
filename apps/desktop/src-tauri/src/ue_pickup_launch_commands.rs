@@ -145,7 +145,9 @@ async fn template_effect(window:tauri::WebviewWindow,store:tauri::State<'_,crate
    if apply{
     let review=record.execution.as_ref().ok_or("pickup_preview_required")?.review();
     if review["preview"].is_null(){return Err("pickup_preview_required".into());}
-    let text=format!("Create and save this ONE new Blueprint from the compiled preview?\nProject: {}\n{}\n\nThis writes the target .uasset once. Existing assets are never overwritten. No automatic retry on uncertain results.",root.path_hint().display(),serde_json::to_string_pretty(&review).map_err(|_|"pickup_review_invalid")?);
+    let plan=&record.launch.plan;
+    let changes=review["preview"]["semanticChanges"].as_array().ok_or("pickup_review_invalid")?.iter().map(|v|v.as_str().ok_or("pickup_review_invalid")).collect::<Result<Vec<_>,_>>()?.join("\n- ");
+    let text=format!("Create and save this ONE new Blueprint?\nProject: {}\nTarget: {}\nTemplate: {}\nParent: {}\nItem: {}\nPrompt: {}\nRadius: {} cm; Key: {}\nOperation: {}\n\nCompiled preview: up to date; not saved.\n- {}\n\nCreates the target .uasset once. Existing assets are never overwritten. No automatic retry on uncertain results.",root.path_hint().display(),plan.target_package,plan.template_id,plan.parent_class,plan.item_id,plan.prompt_text,plan.interaction_radius_cm,plan.interaction_key,plan.operation_id,changes);
     let text:Vec<u16>=text.encode_utf16().chain(Some(0)).collect();let title:Vec<u16>="UAgent - approve Blueprint creation".encode_utf16().chain(Some(0)).collect();
     if unsafe{MessageBoxW(hwnd,text.as_ptr(),title.as_ptr(),0x4|0x30|0x100)}!=6{return Err("pickup_creation_declined".into());}
    }

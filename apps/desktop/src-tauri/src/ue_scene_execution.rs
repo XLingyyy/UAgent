@@ -19,16 +19,21 @@ pub(crate) fn negotiate(mut send:impl FnMut(u64,&str,Value)->Result<Value,String
  Ok(m.clone())
 }
 pub(crate) struct Execution{plan:SceneBatchPlan,project:String,instance:String,root:String,run:String,auth:SceneHostAuthorization,token:Option<String>}
+fn approved_plan_matches(m:&Value,plan:&SceneBatchPlan)->bool{
+ // UE serializes integral doubles as JSON integers; compare the typed exact plan.
+ serde_json::from_value::<Vec<SceneBatchPlan>>(m["approvedPlans"].clone())
+  .is_ok_and(|plans|plans.as_slice()==std::slice::from_ref(plan))
+}
 impl Execution{
  pub(crate) fn new(m:&Value,root:String,run:String,plan:SceneBatchPlan,permits:[String;5])->Result<Self,String>{
-  if m["rootObjectId"]!=root||m["runId"]!=run||m["approvedPlans"]!=json!([plan]){return Err("scene_approved_plan_mismatch".into());}
+  if m["rootObjectId"]!=root||m["runId"]!=run||!approved_plan_matches(m,&plan){return Err("scene_approved_plan_mismatch".into());}
   let project=m["projectKey"].as_str().ok_or("scene_project_missing")?.to_owned();let instance=m["instanceId"].as_str().ok_or("scene_instance_missing")?.to_owned();
   let scope=SceneHostScope::from_verified_owned_editor(project.clone(),instance.clone(),root.clone(),run.clone(),run.clone(),plan.clone())?;
   let [prepare,execute,cancel,resume,save]=permits;
   let auth=SceneHostAuthorization::new_for_verified_owned_editor(scope,SceneHostPermits{prepare,execute,cancel,resume,save:Some(save)})?;
   Ok(Self{plan,project,instance,root,run,auth,token:None})
  }
- pub(crate) fn check(&mut self,m:&Value)->Result<(),String>{if m["projectKey"]!=self.project||m["instanceId"]!=self.instance||m["rootObjectId"]!=self.root||m["runId"]!=self.run||m["approvedPlans"]!=json!([self.plan]){self.auth.revoke();return Err("scene_editor_changed".into());}Ok(())}
+ pub(crate) fn check(&mut self,m:&Value)->Result<(),String>{if m["projectKey"]!=self.project||m["instanceId"]!=self.instance||m["rootObjectId"]!=self.root||m["runId"]!=self.run||!approved_plan_matches(m,&self.plan){self.auth.revoke();return Err("scene_editor_changed".into());}Ok(())}
  pub(crate) fn step(&mut self,stage:&str,mut send:impl FnMut(Value)->Result<Value,String>)->Result<Value,String>{
   if !["prepare","execute","cancel","query","resume","save"].contains(&stage){return Err("scene_stage_invalid".into());}
   let tool=format!("uagent.v2.scene.{stage}");let mut args=json!({"protocolVersion":2,"contractVersion":CONTRACT,"expectedProjectKey":self.project,"expectedInstanceId":self.instance,"expectedRootObjectId":self.root,"runId":self.run,"plan":self.plan});
@@ -48,6 +53,18 @@ impl Execution{
  fn plan()->SceneBatchPlan{serde_json::from_value(json!({"operationId":guid(1),"targetMap":format!("{ROOT}/L_Grid"),"expectedDiskState":"absent","items":(0..20).map(|i|json!({"itemId":format!("item_{i}"),"objectName":format!("UA14_Object_{i}"),"mesh":"/Engine/BasicShapes/Cube.Cube","material":crate::ue_scene_batch::MATERIAL,"transform":{"location":{"x":i*100,"y":0,"z":50},"rotation":{"pitch":0,"yaw":0,"roll":0},"scale":{"x":1,"y":1,"z":1}}})).collect::<Vec<_>>()})).unwrap()}
  fn manifest()->Value{json!({"projectKey":"project-lab","instanceId":guid(2),"rootObjectId":"volume:file","runId":guid(3),"approvedPlans":[plan()]})}
  fn execution()->Execution{Execution::new(&manifest(),"volume:file".into(),guid(3),plan(),[guid(10),guid(11),guid(12),guid(13),guid(14)]).unwrap()}
+ #[test]fn scene_ue_integral_numbers_preserve_exact_plan_binding(){
+  let mut m=manifest();
+  let encoded=serde_json::to_string(&m["approvedPlans"]).unwrap().replace(".0","");
+  m["approvedPlans"]=serde_json::from_str(&encoded).unwrap();
+  assert_ne!(m["approvedPlans"],json!([plan()]));
+  let mut e=Execution::new(&m,"volume:file".into(),guid(3),plan(),[guid(10),guid(11),guid(12),guid(13),guid(14)]).unwrap();
+  e.check(&m).unwrap();
+  m["approvedPlans"][0]["items"][0]["transform"]["location"]["x"]=json!(0.0001);
+  assert!(e.check(&m).is_err());
+  let mut extra=manifest();extra["approvedPlans"][0]["unapproved"]=json!(true);
+  assert!(!approved_plan_matches(&extra,&plan()));
+ }
  fn reply(call:Value,state:&str,count:usize,token:Option<u32>)->Value{
   let p:SceneBatchPlan=serde_json::from_value(call["arguments"]["plan"].clone()).unwrap();let items:Vec<_>=p.items.iter().enumerate().map(|(i,item)|if i<count{json!({"itemId":item.item_id,"objectName":item.object_name,"status":"applied","reason":"","owned":true,"actorGuid":guid(100+i as u32),"objectPath":format!("{}.L_Grid:PersistentLevel.{}",p.target_map,item.object_name),"mesh":item.mesh,"material":item.material,"transform":item.transform})}else{json!({"itemId":item.item_id,"objectName":item.object_name,"status":"not_started","reason":"","owned":false,"actorGuid":"","objectPath":"","mesh":"","material":""})}).collect();
   let mut data=json!({"state":state,"targetMap":p.target_map,"currentWorldMatches":true,"packageDirty":state!="saved","saved":state=="saved","diskExists":state=="saved","diskHash":if state=="saved"{"a".repeat(64)}else{String::new()},"conflict":false,"conflictReason":"","cancelIsRollback":false,"appliedCount":count,"items":items});if let Some(t)=token{data["queryToken"]=json!(guid(t));}

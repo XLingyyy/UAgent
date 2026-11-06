@@ -1640,7 +1640,13 @@ fn validate_pickup_ddc_length(path:&Path)->Result<(),String> {
 fn managed_editor_command(executable:&Path,uproject:&Path,ddc:&Path,port:u16,marker:&str,scope_arguments:Vec<OsString>)->Command {
     let mut command=Command::new(executable);
     // UE selects its project from the first positional token; scoped switches must follow it.
-    command.args(managed_editor_headless_arguments(uproject,ddc,port,marker)).args(scope_arguments)
+    let mut arguments=managed_editor_headless_arguments(uproject,ddc,port,marker);
+    // Scene preparation refuses to unload partitioned worlds, including UE's default OpenWorld.
+    // UE reads the startup map from the first token after the project, before switches.
+    if scope_arguments.iter().any(|arg|arg=="-UAgentSceneEnableApprovedProjectWrites") {
+        arguments.insert(1,OsString::from("/Engine/Maps/Entry"));
+    }
+    command.args(arguments).args(scope_arguments)
         .env("UE-LocalDataCachePath",ddc).env("UE-SharedDataCachePath","None");
     command
 }
@@ -4034,6 +4040,17 @@ mod tests {
         let args=command.get_args().map(|v|v.to_os_string()).collect::<Vec<_>>();
         assert_eq!(args.first().unwrap(),project.as_os_str());
         assert_eq!(args.iter().filter(|v|v.as_os_str()==project.as_os_str()).count(),1);
+        assert_eq!(&args[args.len()-scope.len()..],scope.as_slice());
+    }
+    #[test]
+    fn managed_scene_startup_uses_fixed_ordinary_engine_map() {
+        let project=Path::new("E:/Fixture/Test01.uproject");
+        let approval=Path::new("E:/Fixture/Saved/UAgentSceneT14/host-approved-plans.json");
+        let scope=crate::ue_scene_launch::approved_scene_arguments(project,approval).unwrap();
+        let command=managed_editor_command(Path::new("G:/UE/Engine/Binaries/Win64/UnrealEditor-Cmd.exe"),project,Path::new("E:/Fixture/ddc"),49171,"scene-test",scope.clone());
+        let args=command.get_args().map(|v|v.to_os_string()).collect::<Vec<_>>();
+        assert_eq!(args[0],project.as_os_str());
+        assert_eq!(args[1],"/Engine/Maps/Entry");
         assert_eq!(&args[args.len()-scope.len()..],scope.as_slice());
     }
     #[test]
