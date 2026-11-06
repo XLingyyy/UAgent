@@ -29,7 +29,7 @@ struct Service {
 struct Task {
     project: String, run: String, conversation: String, scope_id: String,
     goal: String, scope: Value, draft: Value,
-    source_proposals: bool, source_change: Mutex<Option<source_changes::Proposal>>, source_receipt:Mutex<Option<Value>>, plan_version: AtomicUsize,
+    model_limit: usize, source_proposals: bool, source_change: Mutex<Option<source_changes::Proposal>>, source_receipt:Mutex<Option<Value>>, plan_version: AtomicUsize,
     grant: Arc<NativeStoreTaskGrant>, model: Arc<TaskModel>, root: Arc<TrustedRootHandle>,
     reads: Mutex<HostedReads>, checker: Arc<dyn SourceChecker>,
     creation: OnceLock<Arc<NativeRunCreation>>, alive: Arc<AtomicBool>,
@@ -203,7 +203,7 @@ fn send_model(app:&tauri::AppHandle,task:&Arc<Task>,input:Value)->Result<Value> 
     let request=&input["request"];
     if request["providerId"]!=task.identity.provider_id || request["modelId"]!=task.identity.model_id
         || request["metadata"]["runId"]!=task.run || request["metadata"]["scopeRef"]!=task.scope_id
-        || task.model_count.fetch_add(1,Ordering::AcqRel)>=4 {return Err("host_task_model_binding");}
+        || task.model_count.fetch_add(1,Ordering::AcqRel)>=task.model_limit {return Err("host_task_model_binding");}
     let request_id=request["id"].as_str().filter(|id|!id.is_empty()&&id.len()<=128).ok_or("host_task_model_binding")?;
     let body=input["body"].as_str().ok_or("host_task_model_body")?.as_bytes().to_vec();
     let session=task.model.session();let remaining=task.model.remaining_ms();
@@ -232,7 +232,7 @@ fn send_model(app:&tauri::AppHandle,task:&Arc<Task>,input:Value)->Result<Value> 
 #[serde(rename_all="camelCase",deny_unknown_fields)]
 pub(crate) struct StartInput { profile_id:String, project_id:String, conversation_id:String, goal:String,
     read_prefixes:Vec<String>, share_prefixes:Vec<String>, #[serde(default)] source_proposals:bool,
-    #[serde(default)] parent:Option<ParentInput> }
+    #[serde(default)] parent:Option<ParentInput>, #[serde(default)] independent_review:bool }
 #[derive(Clone,serde::Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
 pub(crate) struct ParentInput {run_id:String,revision:i64}
@@ -248,6 +248,7 @@ fn validate_start(input:&StartInput)->Result<()> {
     let native_project=input.project_id.strip_prefix("root:").is_some_and(|hex|!hex.is_empty()&&hex.len()<=16&&hex.bytes().all(|c|c.is_ascii_hexdigit()));
     if !native_project||!valid_id(&input.conversation_id)||input.goal.trim().is_empty()||input.goal.len()>4096
         ||input.goal.chars().any(|c|c=='\0'||matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}'))
+        ||(input.independent_review&&(input.source_proposals||input.parent.is_some()))
         ||input.parent.as_ref().is_some_and(|p|!valid_id(&p.run_id)||p.revision<1)
         ||!crate::native_host_reads::valid_prefixes(&input.read_prefixes)||!crate::native_host_reads::valid_prefixes(&input.share_prefixes) {
         return Err("host_task_input_invalid");
@@ -257,8 +258,9 @@ fn validate_start(input:&StartInput)->Result<()> {
 extern "system" {fn MessageBoxW(window:*mut std::ffi::c_void,text:*const u16,title:*const u16,flags:u32)->i32;}
 fn confirm(window:isize,input:&StartInput)->Result<()> {
     let paths=|values:&[String]|values.iter().map(|v|if v.is_empty(){"(whole project)"}else{v.as_str()}).collect::<Vec<_>>().join(", ");
-    let text=format!("Project: {}\nGoal: {}\n\nRead: {}\nShare with DeepSeek: {}\n\nRead-only file investigation with bounded path discovery and text reads. Up to 4 model requests, 8 tool calls, 2 minutes.\nThe task continues while this view reloads. Cancel or exit the app to stop.\n\nStart this task?",
-        input.project_id,input.goal.chars().take(240).collect::<String>(),paths(&input.read_prefixes),paths(&input.share_prefixes));
+    let text=format!("Project: {}\nGoal: {}\n\nRead: {}\nShare with DeepSeek: {}\n\nRead-only file investigation with bounded path discovery and text reads. Up to {} model requests, 8 tool calls, 2 minutes.\nThe task continues while this view reloads. Cancel or exit the app to stop.\n\nStart this task?",
+        input.project_id,input.goal.chars().take(240).collect::<String>(),paths(&input.read_prefixes),paths(&input.share_prefixes),if input.independent_review{6}else{4});
+    let text=if input.independent_review{format!("{text}\n\nTwo independent file investigators using the same DeepSeek model, executed in sequence, followed by synthesis. No source proposals.")}else{text};
     let text=if let Some(parent)=&input.parent {format!("{text}\n\nNew task linked to historical run {} (revision {}). Files will be read again. Old messages, pending calls, budgets and permissions are not restored.",parent.run_id,parent.revision)}else{text};
     let text=if input.source_proposals {format!("{text}\n\nSource proposals are enabled. Proposals do not write files. Review the exact diff and approve a separate native write after the task finishes.")} else {text};
     let text:Vec<u16>=text.encode_utf16().chain(Some(0)).collect();let title:Vec<u16>="UAgent - Background investigation".encode_utf16().chain(Some(0)).collect();
@@ -294,18 +296,22 @@ pub(crate) async fn start_hosted_task(app:tauri::AppHandle,window:tauri::Webview
             root_ref:root.identity().observation_key(),provider_id:"deepseek".into(),model_id:"deepseek-flash".into()};
         let native_label=format!("host-task:{run}");let owner=host.connect(&native_label,identity.clone())?.owner;
         let now=SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_|"host_task_clock")?.as_millis() as u64;
-        let scope=json!({"id":scope_id,"runId":run,"projectId":input.project_id,"conversationId":input.conversation_id,"rootRef":identity.root_ref,
+        let model_limit=if input.independent_review{6}else{4};
+        let mut scope=json!({"id":scope_id,"runId":run,"projectId":input.project_id,"conversationId":input.conversation_id,"rootRef":identity.root_ref,
             "providerId":"deepseek","modelId":"deepseek-flash","endpoint":"https://api.deepseek.com","mode":"read_only",
             "readPrefixes":input.read_prefixes,"sharePrefixes":input.share_prefixes,"toolIds":if input.source_proposals{vec!["project.read_file","project.list_files","project.find_files","project.propose_source_change"]}else{vec!["project.read_file","project.list_files","project.find_files"]},
-            "limits":{"maxToolCalls":8,"maxModelRequests":4,"maxDurationMs":120000,"maxAttemptsPerFailure":1,"maxToolResultBytes":8192,"maxContextBytes":24000},"expiresAt":now+model.remaining_ms()});
+            "limits":{"maxToolCalls":8,"maxModelRequests":model_limit,"maxDurationMs":120000,"maxAttemptsPerFailure":1,"maxToolResultBytes":8192,"maxContextBytes":24000},"expiresAt":now+model.remaining_ms()});
         let mut draft=json!({"taskMode":"investigation","investigationScopeId":scope_id,"conversationId":input.conversation_id,"input":input.goal,"projectId":input.project_id,
             "permissionMode":"request_approval","providerId":"deepseek","modelId":"deepseek-flash","reasoningEffort":"none","runMode":"local","branch":null,"contextPercent":null,"createdAt":now});
+        if input.independent_review {
+            scope["collaboration"]=json!("independent_review");draft["collaboration"]=json!("independent_review");
+        }
         if let Some(parent)=&input.parent {
             draft["savedRun"]=json!({"parentRunId":parent.run_id,"projectId":input.project_id,"conversationId":input.conversation_id,
                 "includeCompletedContext":false,"completed":parent_completed.unwrap_or(false),"hasUnresolvedEffects":false,"messages":[]});
         }
         let task=Arc::new(Task{project:input.project_id,run:run.clone(),conversation:input.conversation_id,scope_id,goal:input.goal,scope:scope.clone(),draft:draft.clone(),
-            source_proposals:input.source_proposals,source_change:Mutex::new(None),source_receipt:Mutex::new(None),plan_version:AtomicUsize::new(1),
+            model_limit,source_proposals:input.source_proposals,source_change:Mutex::new(None),source_receipt:Mutex::new(None),plan_version:AtomicUsize::new(1),
             grant,model,root,reads:Mutex::new(reads),checker,creation:OnceLock::new(),alive:Arc::new(AtomicBool::new(true)),host,owner,identity,label:native_label,
             catalog:app.state::<Arc<PersistentRecoveryCatalog>>().inner().clone(),model_count:AtomicUsize::new(0),tool_count:AtomicUsize::new(0),
             active:AtomicUsize::new(0),terminal:AtomicBool::new(false),expiry_requested:AtomicBool::new(false),request_ids:Mutex::new(std::collections::HashSet::new())});
@@ -361,8 +367,11 @@ mod tests {
     use super::*;
     #[test] fn hosted_task_accepts_native_root_ids_and_rejects_path_aliases() {
         let mut input=StartInput{profile_id:"opaque".into(),project_id:"root:a1b2".into(),conversation_id:"conversation-1".into(),
-            goal:"Read Source/Main.cpp".into(),read_prefixes:vec!["Source".into()],share_prefixes:vec!["Source".into()],source_proposals:false,parent:None};
+            goal:"Read Source/Main.cpp".into(),read_prefixes:vec!["Source".into()],share_prefixes:vec!["Source".into()],source_proposals:false,parent:None,independent_review:false};
         validate_start(&input).unwrap();
+        input.independent_review=true;validate_start(&input).unwrap();
+        input.source_proposals=true;assert!(validate_start(&input).is_err());input.source_proposals=false;
+        input.parent=Some(ParentInput{run_id:"old-run".into(),revision:1});assert!(validate_start(&input).is_err());input.parent=None;
         input.project_id="E:/project".into();assert!(validate_start(&input).is_err());
         input.project_id="root:a1b2".into();input.share_prefixes=vec!["Source/../Config".into()];assert!(validate_start(&input).is_err());
     }

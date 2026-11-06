@@ -100,3 +100,9 @@ Host 新增 `project_list_files` / `project_find_files`，复用原生来源校�
 两项定向界面测试覆盖目标交接、未自动发送、草稿保留、手动切回原入口及附件不丢弃；当前应用类型检查和两步打包构建通过。真实桌面任务 `run-6da87957e8bfbf703338584019c1c74c` 从普通输入框进入 Host，2 次模型请求、1 次头文件读取后 succeeded / revision 6，准确指出 `4O`，没有写入或构建，关闭面板后原输入仍保留。本地证据：`.local-dev/temp/host-task-acceptance-20261106/live-host-composer-summary.json`。
 
 入口交接只传递准备数据，执行仍使用原生命令和原授权链；职责划分参考 [Tauri 前后端通信说明](https://v2.tauri.app/develop/calling-frontend/)。当前普通文件入口已接，项目记忆、UE 工具和协作的完整迁移另行推进。
+
+## 固定双成员后台调查
+
+后台面板可选择同一 DeepSeek 模型的 investigator / reviewer 两位成员，复用 RunCoordinator 原有顺序独立调查与汇总逻辑。新原生确认绑定该选择，整个任务最多 6 次模型请求、8 次只读工具调用、2 分钟。第二位成员不会继承第一位报告，最终 synthesizer 才读取两份报告。当前不开放自定义成员、混合模型、动态分工、并行成员、源码提案或该路径的历史续接；单成员额度仍为 4 次模型请求。
+
+5 项独立进程测试（含双成员隔离与汇总）、5 项后台面板测试、原生输入组合校验、Host 与当前应用类型检查及前端/原生构建通过。Test01 副本真实任务 `run-2fe9a70286509760cea6a44ddc536d18` 完成 5 次 DeepSeek 请求，每位成员各读取两个源码文件，合计 4 次工具调用；两份报告及最终汇总保存，SQLite succeeded / revision 17。第一份模型正文自行使用了“模拟成员”的标题；验收依据是宿主实际派发的两组调用与角色记录，不以模型自述证明协作。两处错误保持原样，没有写入或构建。证据：`.local-dev/temp/host-task-acceptance-20261106/live-host-team-summary.json`。

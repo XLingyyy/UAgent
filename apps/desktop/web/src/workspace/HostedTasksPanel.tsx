@@ -23,13 +23,14 @@ export function HostedTasksPanel() {
   const [parent,setParent]=useState<HistoricalParent|null>(null);
   useEffect(()=>{setParent(null);},[project?.id]);
   const [sourceProposals,setSourceProposals]=useState(false);
+  const [independentReview,setIndependentReview]=useState(false);
   const [instructions,setInstructions]=useState("");
   const generation=useRef(0);
   useEffect(()=>{
     const prepare=(event:Event)=>{
       const input=(event as CustomEvent<{projectId:string;goal:string;prefix:string;parent?:HistoricalParent}>).detail;
       if(busy||!input||input.projectId!==project?.id||typeof input.goal!=="string"||!input.goal.trim()||input.goal.length>4096||typeof input.prefix!=="string")return;
-      generation.current++;setParent(input.parent??null);setGoal(input.goal);setPrefix(input.prefix);setSourceProposals(false);setSelected(null);setSnapshot(null);setError(null);setOpen(true);
+      generation.current++;setParent(input.parent??null);setGoal(input.goal);setPrefix(input.prefix);setSourceProposals(false);setIndependentReview(false);setSelected(null);setSnapshot(null);setError(null);setOpen(true);
     };
     window.addEventListener("uagent:prepare-hosted-investigation",prepare);
     return()=>window.removeEventListener("uagent:prepare-hosted-investigation",prepare);
@@ -62,7 +63,7 @@ export function HostedTasksPanel() {
     const current=++generation.current;setBusy(true);setError(null);
     try{
       const result=await invoke<{runId:string}>("start_hosted_task",{input:{profileId,projectId:project.id,conversationId:crypto.randomUUID(),
-        goal,readPrefixes:[prefix.trim()],sharePrefixes:[prefix.trim()],sourceProposals,...(parent?{parent}:{})}});
+        goal,readPrefixes:[prefix.trim()],sharePrefixes:[prefix.trim()],sourceProposals,...(independentReview?{independentReview:true}:{}),...(parent?{parent}:{})}});
       if(current===generation.current){setTasks((await invoke<TaskDescription[]>("list_hosted_tasks")).filter(task=>task.projectId===project.id));setSelected(result.runId);}
     }catch{if(current===generation.current)setError(zh?"任务未启动。请检查项目已信任、临时 DeepSeek 会话已开启，并完成范围确认。":"Task did not start. Check project trust, temporary DeepSeek session and scope confirmation.");}
     finally{setBusy(false);}
@@ -84,11 +85,13 @@ export function HostedTasksPanel() {
       <nav className="ua-history-drawer__tabs"><strong>{zh?"后台文件调查":"Background file investigation"}</strong><button type="button" onClick={()=>setOpen(false)}>{zh?"关闭面板":"Close panel"}</button></nav>
       <div className="ua-history-drawer__content">
         <p>{zh?"只读检查指定路径中的文本文件。界面重载后任务继续；退出应用后停止，记录保存在运行历史中。":"Read text files within a selected path. Tasks survive view reloads; exiting the app stops them and retains their history."}</p>
-        <p>{zh?"本次最多 4 次模型请求、8 次工具调用、2 分钟。可先检索文件路径，再读取正文。":"Up to 4 model requests, 8 tool calls and 2 minutes. Paths can be discovered before reading file contents."}</p>
+        <p>{zh?`本次最多 ${independentReview?6:4} 次模型请求、8 次工具调用、2 分钟。可先检索文件路径，再读取正文。`:`Up to ${independentReview?6:4} model requests, 8 tool calls and 2 minutes. Paths can be discovered before reading file contents.`}</p>
         {parent&&<p>{zh?"关联历史任务：":"Historical parent: "}{parent.runId}{zh?"。本次重新读取文件，不导入旧消息、待执行调用或旧权限。":". Current files will be read with fresh authority; old messages and pending calls are not imported."}</p>}
         <label>{zh?"读取并发送给 DeepSeek 的目录":"Directory to read and share with DeepSeek"}<input value={prefix} onChange={e=>setPrefix(e.target.value)} placeholder={zh?"留空表示整个项目":"Empty means the whole project"}/></label>
         <label>{zh?"调查目标":"Investigation goal"}<textarea value={goal} onChange={e=>setGoal(e.target.value)} maxLength={4096} rows={3}/></label>
-        <label className="ua-hosted-tasks__check"><input type="checkbox" checked={sourceProposals} disabled={busy} onChange={e=>setSourceProposals(e.target.checked)}/>{zh?"生成源码修改提案，完成后单独审阅和批准":"Prepare source change proposals for separate review and approval"}</label>
+        <label className="ua-hosted-tasks__check"><input type="checkbox" checked={independentReview} disabled={busy||Boolean(parent)} onChange={e=>{setIndependentReview(e.target.checked);if(e.target.checked)setSourceProposals(false);}}/>{zh?"双成员独立文件调查后汇总（同一 DeepSeek 模型）":"Two independent file investigators then synthesis (same DeepSeek model)"}</label>
+        {independentReview&&<p>{zh?"两位成员依次独立读取并提交报告，再汇总依据与分歧。共用本次范围、额度和到期时间。":"Two members independently read and report in sequence, then synthesize evidence and disagreements. They share this task's scope, budget and expiry."}</p>}
+        <label className="ua-hosted-tasks__check"><input type="checkbox" checked={sourceProposals} disabled={busy||independentReview} onChange={e=>setSourceProposals(e.target.checked)}/>{zh?"生成源码修改提案，完成后单独审阅和批准":"Prepare source change proposals for separate review and approval"}</label>
         {sourceProposals&&<p>{zh?"仅支持已完整读取的 Source 下已有 .cpp、.h、.hpp、.Build.cs 文件；最多 8 个文件、替换内容合计 4096 字节。提案不会自动写入或构建。":"Only fully read existing .cpp, .h, .hpp and .Build.cs files under Source; up to 8 files and 4096 replacement bytes. Proposals do not automatically write or build."}</p>}
         <button type="button" disabled={busy||!goal.trim()||project?.trustState!=="trusted"} onClick={()=>void start()}>{zh?"新建后台调查":"Start background investigation"}</button>
         <p>{project?.name??(zh?"请先选择并信任项目。":"Select and trust a project first.")}</p>
@@ -96,16 +99,20 @@ export function HostedTasksPanel() {
         <label>{zh?"当前应用中的任务":"Tasks in this app session"}<select value={selected??""} onChange={e=>{setSelected(e.target.value||null);setError(null);}}>
           <option value="">{zh?"选择任务":"Select a task"}</option>{tasks.map(task=><option key={task.runId} value={task.runId}>{task.goal}</option>)}
         </select></label>
-        {snapshot&&<section aria-live="polite"><p>{snapshot.run.status} · {snapshot.run.modelRequests}/4 {zh?"模型请求":"model requests"} · {snapshot.run.toolCalls}/8 {zh?"工具调用":"tool calls"}</p>
+        {snapshot&&<section aria-live="polite"><p>{snapshot.run.status} · {snapshot.run.modelRequests}/{snapshot.run.limits?.maxModelRequests??4} {zh?"模型请求":"model requests"} · {snapshot.run.toolCalls}/{snapshot.run.limits?.maxToolCalls??8} {zh?"工具调用":"tool calls"}</p>
           <div className="ua-hosted-tasks__actions"><button disabled={busy||done||snapshot.run.status==="paused"} onClick={()=>void control("pause")}>{zh?"暂停":"Pause"}</button>
           <button disabled={busy||snapshot.run.status!=="paused"} onClick={()=>void control("resume")}>{zh?"继续":"Resume"}</button>
           <button disabled={busy||done} onClick={()=>void control("cancel")}>{zh?"取消任务":"Cancel task"}</button></div>
-          {snapshot.run.status==="paused"&&["user_paused","requirements_updated"].includes(snapshot.run.stopReason??"")&&snapshot.run.planVersion<4&&<div>
+          {snapshot.run.status==="paused"&&!snapshot.run.collaboration&&["user_paused","requirements_updated"].includes(snapshot.run.stopReason??"")&&snapshot.run.planVersion<4&&<div>
             <p>{zh?`计划版本 ${snapshot.run.planVersion}。补充要求会跳过尚未执行的调用，保留已有结果；读取范围、额度与到期时间不变。保存后点击继续。再次修改时请填写完整补充要求。`:`Plan ${snapshot.run.planVersion}. Updating requirements skips unsent calls and retains completed results. Scope, budgets and expiry stay unchanged. Save, then resume. Each update replaces the supplemental requirements.`}</p>
             <label>{zh?"补充要求":"Updated requirements"}<textarea value={instructions} onChange={e=>setInstructions(e.target.value)} maxLength={2048} rows={3}/></label>
             <button disabled={busy||!instructions.trim()} onClick={()=>void control("amend")}>{zh?"保存要求并重新规划":"Save requirements and replan"}</button>
           </div>}
           {snapshot.settled&&snapshot.run.status==="completed"&&selected&&<HostedSourceChangeReview key={selected} runId={selected} zh={zh}/> }
+          {snapshot.run.collaboration&&<section aria-label={zh?"成员报告":"Member reports"}>
+            <p>{zh?"当前角色：":"Current role: "}{snapshot.run.collaboration.activeAgent}</p>
+            {snapshot.run.collaboration.reports.map(report=><details key={report.agentId}><summary>{report.agentId}</summary><pre>{report.text}</pre></details>)}
+          </section>}
           {snapshot.run.stopReason&&<p>{snapshot.run.stopReason}</p>}<pre>{snapshot.text}</pre>
           <ul>{snapshot.run.steps.map(step=><li key={step.stepId}>{step.executor} · {step.status}{step.result?.truncated?(zh?"（结果已截断）":" (truncated)"):""}</li>)}</ul>
         </section>}

@@ -79,3 +79,25 @@ it("links a historical goal only after starting with fresh scope and clears the 
   await screen.findByRole("dialog");
   expect(screen.queryByText(/Historical parent:/)).toBeNull();
 });
+
+it("prepares a separately authorized two-member task with source proposals disabled",async()=>{
+  HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+  HTMLDialogElement.prototype.close=function(){this.open=false;};
+  mocks.invoke.mockImplementation(async(command:string)=>{
+    if(command==="list_hosted_tasks")return[];
+    if(command==="start_hosted_task")return{runId:"team"};
+    if(command==="control_hosted_task")return{settled:true,text:"summary",run:{status:"completed",steps:[],modelRequests:5,toolCalls:2,limits:{maxModelRequests:6,maxToolCalls:8},collaboration:{activeAgent:"synthesizer",reports:[{agentId:"investigator",text:"First report",stepIds:[]},{agentId:"reviewer",text:"Second report",stepIds:[]}]}}};
+    if(command==="hosted_source_change")return{preview:null,receipt:null};
+    throw Error("unexpected command");
+  });
+  render(<HostedTasksPanel/>);
+  fireEvent(window,new CustomEvent("uagent:prepare-hosted-investigation",{detail:{projectId:"p",goal:"Review source",prefix:"Source"}}));
+  fireEvent.click(await screen.findByLabelText("Prepare source change proposals for separate review and approval"));
+  fireEvent.click(screen.getByLabelText("Two independent file investigators then synthesis (same DeepSeek model)"));
+  const proposal=screen.getByLabelText("Prepare source change proposals for separate review and approval") as HTMLInputElement;
+  expect(proposal.checked).toBe(false);expect(proposal.disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button",{name:"Start background investigation"}));
+  await waitFor(()=>expect(mocks.invoke).toHaveBeenCalledWith("start_hosted_task",{input:expect.objectContaining({sourceProposals:false,independentReview:true})}));
+  await screen.findByLabelText("Member reports");
+  expect(screen.getByText("First report")).toBeTruthy();expect(screen.getByText("Second report")).toBeTruthy();
+});

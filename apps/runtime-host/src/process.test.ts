@@ -27,7 +27,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-async function harness(options: { holdModel?: boolean; failStore?: boolean } = {}) {
+async function harness(options: { holdModel?: boolean; failStore?: boolean; independentReview?: boolean } = {}) {
   await access(entry);
   const temporary = join(root, ".local-dev/temp");
   await mkdir(temporary, { recursive: true });
@@ -47,6 +47,8 @@ async function harness(options: { holdModel?: boolean; failStore?: boolean } = {
     projectId: scope.projectId, conversationId: scope.conversationId, providerId: scope.providerId,
     modelId: scope.modelId, investigationScopeId: scope.id, permissionMode: "request_approval",
     reasoningEffort: "low", runMode: "local", branch: null, contextPercent: null };
+  if(options.independentReview){scope.collaboration="independent_review";draft.collaboration="independent_review";scope.limits.maxModelRequests=6;scope.limits.maxToolCalls=8;}
+  const requests:ProviderRuntimeRequest[]=[];
   const reads: string[] = [], commits: NativeRunCommitInput[] = [];
   let current = true;
   const registry = new ToolRegistry([{
@@ -92,7 +94,17 @@ async function harness(options: { holdModel?: boolean; failStore?: boolean } = {
           if (options.holdModel) await release.promise;
           if (!current) throw Error("revoked");
           const request = message.input.request as ProviderRuntimeRequest;
+          requests.push(request);
           expect(JSON.parse(message.input.body).stream).toBe(false);
+          if(options.independentReview){
+            const phase=requests.length;
+            const path=phase===1?"manifest.json":phase===3?"value.json":null;
+            value={id:request.id+":reply",requestId:request.id,providerId:scope.providerId,modelId:scope.modelId,
+              text:path?"":phase===2?"Investigator observed manifest reference":phase===4?"Reviewer independently observed value 7":"Both reports cite distinct reads; value is 7",
+              finishReason:path?"tool_calls":"stop",createdAt:Date.now(),
+              ...(path?{toolCalls:[{id:"call-"+phase,name:"read",arguments:JSON.stringify({path})}]}:{})} satisfies ProviderRuntimeResponse;
+            break;
+          }
           const tools = request.messages.filter(item => item.role === "tool");
           const last = tools.at(-1);
           const content = last ? JSON.parse(JSON.parse(last.content).output.text) : { next: "manifest.json" };
@@ -121,7 +133,7 @@ async function harness(options: { holdModel?: boolean; failStore?: boolean } = {
     }
   });
   child.stderr.on("data", chunk => { stderr += chunk.toString("utf8"); });
-  return { child, exit, command, settled, entered, release, reads, commits, directory,
+  return { child, exit, command, settled, entered, release, reads, commits, requests, directory,
     stderr: () => stderr, revoke: () => { current = false; },
     start: () => command("start", { taskId: "task", draft, scope, tools: registry.definitions(scope) }) };
 }
@@ -142,6 +154,22 @@ describe("standalone TypeScript host with synthetic parent broker and real file 
     expect((await f.command("shutdown")).value.checkpointed).toBe(true);
     expect((await f.exit)[0]).toBe(0);
     expect(f.stderr()).toBe("");
+  });
+
+  it("runs two independent members and synthesis through the native-parent broker with retained reports",async()=>{
+    const f=await harness({independentReview:true});
+    expect((await f.start()).ok).toBe(true);
+    const final=(await f.settled.promise).snapshot;
+    expect(final.run.status).toBe("completed");
+    expect(final.run.modelRequests).toBe(5);
+    expect(f.reads).toEqual(["manifest.json","value.json"]);
+    expect(final.run.collaboration.reports.map((report:any)=>report.agentId)).toEqual(["investigator","reviewer"]);
+    expect(JSON.stringify(f.requests[2].messages)).not.toContain("Investigator observed manifest reference");
+    expect(JSON.stringify(f.requests[4].messages)).toContain("Investigator observed manifest reference");
+    expect(JSON.stringify(f.requests[4].messages)).toContain("Reviewer independently observed value 7");
+    expect(f.commits.at(-1)?.batch.status).toBe("succeeded");
+    expect((await f.command("shutdown")).value.checkpointed).toBe(true);
+    expect((await f.exit)[0]).toBe(0);
   });
 
   it("waits for the in-flight response then checkpoints before clean process exit", async () => {

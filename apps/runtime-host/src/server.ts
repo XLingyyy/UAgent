@@ -78,7 +78,8 @@ export class RuntimeHostServer {
   }
 
   private start(input: StartInput): unknown {
-    if (!input?.scope || input.draft?.taskMode !== "investigation" || input.scope.collaboration
+    if (!input?.scope || input.draft?.taskMode !== "investigation" || (input.scope.collaboration!==undefined&&input.scope.collaboration!=="independent_review")
+      || input.scope.collaborationMembers!==undefined
       || !Array.isArray(input.tools) || !input.tools.length || input.tools.length > 8
       || typeof input.taskId !== "string" || !input.taskId) throw Error("invalid_host_start");
     const { scope } = input;
