@@ -1,5 +1,5 @@
 import {act,cleanup,fireEvent,render,screen,waitFor} from "@testing-library/react";
-import {afterEach,describe,expect,it,vi} from "vitest";
+import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import {createOutboundConsentGate,boundConversationHistory,DEEPSEEK_MODEL} from "@uagent/runtime";
 import type {TaskDraft,TaskEvent,TaskRecord} from "@uagent/shared";
 import {createSafeProviderSession,safeProviderSession} from "./safe-provider-session";
@@ -14,6 +14,10 @@ import {I18nProvider,createLocaleStore,localizeText} from "../i18n";
 import {createSupportedProvider} from "../provider/runtime-availability";
 
 const managers:ReturnType<typeof createSafeProviderSession>[]=[];
+beforeEach(()=>{
+ Object.defineProperty(HTMLDialogElement.prototype,"showModal",{configurable:true,value:vi.fn(function(this:HTMLDialogElement){this.setAttribute("open","");})});
+ Object.defineProperty(HTMLDialogElement.prototype,"close",{configurable:true,value:vi.fn(function(this:HTMLDialogElement){this.removeAttribute("open");})});
+});
 afterEach(()=>{cleanup();managers.splice(0).forEach(m=>m.dispose());safeProviderSession.close("cleared");vi.unstubAllGlobals();vi.restoreAllMocks();});
 async function mount(ordinary=false,savedRun?:TaskDraft["savedRun"]){
  vi.stubGlobal("fetch",vi.fn(()=>{throw Error("REAL NETWORK FORBIDDEN");}));

@@ -12,15 +12,16 @@ export function OutboundRequestReview({gate=outboundReviewGate}:{gate?:OutboundC
   const model=useComposerStore(s=>s.selectedModelId);
   const pending=useSyncExternalStore(gate.subscribe,gate.getPending,gate.getPending);
   useEffect(()=>{gate.invalidate(); return ()=>gate.invalidate();},[gate,project,input,model]);
-  const panel=useRef<HTMLElement>(null);
+  const panel=useRef<HTMLDialogElement>(null);
   useEffect(()=>{
-    if(!pending)return;const previous=document.activeElement as HTMLElement|null;const node=panel.current;node?.querySelector<HTMLElement>("pre")?.focus();
+    const node=panel.current;if(!pending||!node)return;const previous=document.activeElement as HTMLElement|null;
+    if(!node.open)node.showModal();node.querySelector<HTMLElement>("pre")?.focus();
     const key=(event:KeyboardEvent)=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();gate.invalidate();}if(event.key==="Tab"){const buttons=Array.from(node?.querySelectorAll<HTMLElement>('pre[tabindex="0"],button')??[]);if((event.shiftKey&&document.activeElement===buttons[0])||(!event.shiftKey&&document.activeElement===buttons[buttons.length-1])){event.preventDefault();(event.shiftKey?buttons[buttons.length-1]:buttons[0])?.focus();}}};
     const app=document.querySelector<HTMLElement>(".ua-app");const wasInert=app?.hasAttribute("inert");app?.setAttribute("inert","");
-    node?.addEventListener("keydown",key);return()=>{node?.removeEventListener("keydown",key);if(!wasInert)app?.removeAttribute("inert");previous?.isConnected&&previous.focus();};
+    node.addEventListener("keydown",key);return()=>{node.removeEventListener("keydown",key);if(node.open)node.close();if(!wasInert)app?.removeAttribute("inert");previous?.isConnected&&previous.focus();};
   },[pending?.id,gate]);
   if(!pending) return null;
-  return <section ref={panel} role="dialog" aria-modal="true" aria-label={uiText("Exact outbound request review")} className="ua-outbound-review">
+  return <dialog ref={panel} aria-label={uiText("Exact outbound request review")} className="ua-outbound-review" onCancel={event=>{event.preventDefault();gate.invalidate();}}>
     {getApplicationProfile().offlineDemo&&<p role="status">{t("demo.banner")}</p>}
     <span className="ua-eyebrow">{uiText("Review before sending")}</span><h2>{uiText("Confirm this exact outbound request")}</h2>
     <p>{t("outbound.projectGeneration",{project:pending.envelope.projectId??uiText("None"),generation:pending.envelope.epoch})}</p>
@@ -35,5 +36,5 @@ export function OutboundRequestReview({gate=outboundReviewGate}:{gate?:OutboundC
     <p>{uiText("This approves one model request only. It grants no file, terminal or UE permission. Editing the draft, changing project/model, clearing/disabling the session or pressing Stop revokes this confirmation.")}</p>
     <button className="ua-btn ua-btn--primary" type="button" onClick={()=>gate.approve(pending.id)}>{uiText("Confirm this request once")}</button>
     <button className="ua-btn" type="button" onClick={()=>gate.invalidate()}>{uiText("Reject outbound request")}</button>
-  </section>;
+  </dialog>;
 }

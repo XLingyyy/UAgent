@@ -96,7 +96,7 @@ export function UEBuildRepairAction({preview,runId,initialSessionId,invoke,onAct
     <label>{w.scope}<textarea rows={3} value={path} disabled={disabled||Boolean(snapshot)} onChange={e=>setPath(e.target.value)}/></label>
     {!snapshot&&<button type="button" disabled={disabled||!validPaths} onClick={()=>void read()}>{w.read}</button>}
     {snapshot&&<>
-      {!restoring&&!attempted&&snapshot.files.length===1&&buildResult&&<UEBuildRepairSuggestion key={snapshot.snapshotId+"-model"} file={snapshot.files[0]} result={buildResult} preview={preview} runId={runId} disabled={disabled} onUse={text=>{setAfter(text);setPrepared(null);setReviewed(false);}}/>}
+      {!restoring&&!attempted&&buildResult&&<UEBuildRepairSuggestion key={snapshot.snapshotId+"-model"} files={snapshot.files} result={buildResult} preview={preview} runId={runId} disabled={disabled} onUse={proposals=>{setAfters(previous=>({...previous,...Object.fromEntries(proposals.map(proposal=>[proposal.path,proposal.after]))}));setPrepared(null);setReviewed(false);}}/>}
       {!restoring&&!attempted&&snapshot.files.length===1&&<UEBuildRepairProposalImport key={snapshot.snapshotId} file={snapshot.files[0]} disabled={disabled}
         onUse={text=>{setAfter(text);setPrepared(null);setReviewed(false);}}/>}
       {!restoring&&!attempted&&snapshot.files.length>1&&<UEBuildRepairBatchProposalImport key={snapshot.snapshotId+"-batch-import"} files={snapshot.files} disabled={disabled} onUse={(path,text)=>setAfter(text,path)}/>}

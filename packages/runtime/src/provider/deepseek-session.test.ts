@@ -78,6 +78,28 @@ describe("bounded DeepSeek session (synthetic transport only)", () => {
     expect(result.text).toBe("Result: [REDACTED] done");
     expect(JSON.stringify(session)).not.toContain(syntheticKey);
   });
+  it("preserves long source identifiers and relative paths for the explicit repair feedback request", async () => {
+    const { session, fetcher } = setup();
+    const content = JSON.stringify({ files: [{ path: "Source/UAgentBuildLabCompileProbe/UAgentBuildLabCompileProbe.Build.cs", content: "public class UAgentBuildLabCompileProbe : ModuleRules {}" }, { path: "Source/Game/Probe.cpp", content: "int UAgentBuildLabCompileProbe() { return Missing; }" }] });
+    const repair = { ...request, metadata: { purpose: "tool_feedback" as const, scopeRef: "ue-build-repair" }, messages: [{ role: "user" as const, content }] };
+    expect(session.preview(repair).messages[0].content).toBe(content);
+    await session.adapter.complete(repair);
+    const body = JSON.parse((fetcher.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.messages[0].content).toBe(content);
+  });
+  it("repair feedback still masks the current credential, explicit secrets and user paths", () => {
+    const { session } = setup();
+    const secrets = [syntheticKey, "sk-proj-synthetic_1234567890", "headerValue", "apiValue", "tokenValue", "passwordValue", "secretValue"];
+    const content = `${secrets[0]}\n${secrets[1]}\nAuthorization: Bearer ${secrets[2]}\napi_key=${secrets[3]}\ntoken=${secrets[4]}\npassword=${secrets[5]}\nsecret=${secrets[6]}\nC:/Users/Dev/Source.cpp`;
+    const prepared = JSON.stringify(session.preview({ ...request, metadata: { purpose: "tool_feedback", scopeRef: "ue-build-repair" }, messages: [{ role: "user", content }] }));
+    for (const secret of secrets) expect(prepared).not.toContain(secret);
+    expect(prepared).not.toContain("C:/Users/Dev");expect(prepared).toContain("[REDACTED]");expect(prepared).toContain("[user-home]");
+  });
+  it.each([undefined, { purpose: "tool_feedback" as const }, { purpose: "tool_feedback" as const, scopeRef: "other" }, { purpose: "investigation" as const, scopeRef: "ue-build-repair", runId: "run" }])("does not relax ordinary or other feedback/investigation redaction (%j)", metadata => {
+    const { session } = setup();
+    const prepared = JSON.stringify(session.preview({ ...request, metadata, messages: [{ role: "user", content: "UAgentBuildLabCompileProbe" }] }));
+    expect(prepared).not.toContain("UAgentBuildLabCompileProbe");expect(prepared).toContain("[REDACTED]");
+  });
   it("cancels a stalled transport and retains its reservation", async () => {
     const { session, store } = setup(vi.fn(() => new Promise<Response>(() => undefined)));
     const abort = new AbortController();

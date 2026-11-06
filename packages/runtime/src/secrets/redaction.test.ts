@@ -88,6 +88,22 @@ describe("redactString", () => {
     const input = 'Hello, this is a normal message';
     expect(redactString(input)).toBe(input);
   });
+
+  it("preserves source identifiers only in the explicit source mode", () => {
+    const source = "Source/UAgentBuildLabCompileProbe/UAgentBuildLabCompileProbe.Build.cs\nclass UAgentBuildLabCompileProbe : ModuleRules {}";
+    expect(redactString(source, { preserveIdentifiers: true })).toBe(source);
+    expect(redactString(source)).not.toContain("UAgentBuildLabCompileProbe");
+  });
+
+  it("source mode keeps explicit secrets and user paths masked", () => {
+    const secrets = ["sk-proj-synthetic_1234567890", "headerValue", "apiValue", "tokenValue", "passwordValue", "secretValue"];
+    const source = `${secrets[0]}\nAuthorization: Bearer ${secrets[1]}\napi_key=${secrets[2]}\ntoken=${secrets[3]}\npassword=${secrets[4]}\nsecret=${secrets[5]}\nC:/Users/Dev/Source.cpp`;
+    const result = redactString(source, { preserveIdentifiers: true });
+    for (const secret of secrets) expect(result).not.toContain(secret);
+    expect(result).not.toContain("C:/Users/Dev");
+    expect(result).toContain("[REDACTED]");
+    expect(result).toContain("[user-home]");
+  });
 });
 
 describe("recursiveRedactValue", () => {

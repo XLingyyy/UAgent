@@ -84,7 +84,8 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
     const toolMode = !validation && request.metadata?.purpose === "investigation" && Boolean(request.metadata.runId && request.metadata.scopeRef);
     if ((request.tools?.length || request.messages.some(message=>message.role==="tool" || message.toolCalls)) && !toolMode) throw fail("provider_unavailable","Tool messages require a separately approved workflow.");
     const tools = request.tools?.length ? chatToolDefinitions(request.tools) : undefined;
-    const messages = chatToolMessages(request.messages, toolMode && Boolean(tools), credential);
+    const repairSource = request.metadata?.purpose === "tool_feedback" && request.metadata.scopeRef === "ue-build-repair";
+    const messages = chatToolMessages(request.messages, toolMode && Boolean(tools), credential, repairSource);
     const maxTokens = request.maxOutputTokens ?? 1024;
     if (!Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 1024) throw fail("provider_unavailable", "Output limit must be between 1 and 1024 tokens.");
     const body = { model: DEEPSEEK_MODEL, messages, max_tokens: maxTokens, stream: true, stream_options: { include_usage: true }, thinking: { type: "disabled" }, temperature: 0, ...(tools ? {tools, tool_choice:request.toolChoice ?? "auto"} : {}) };

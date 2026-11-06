@@ -137,7 +137,8 @@ pre,code {user-select:text}
 .ua-budget-panel dt {color:var(--ua-text-tertiary);font-size:11px}
 .ua-budget-panel dd {font-family:var(--ua-font-mono);text-align:right;font-size:12px}
 [role="alert"] {color:var(--ua-warning)!important;font-size:12px;padding:10px 12px;background:var(--ua-warning-soft);border-radius:6px;line-height:1.7}
-.ua-outbound-review {position:fixed;inset:6vh max(24px,calc((100vw - 960px)/2)) auto;max-height:88vh;overflow:auto;z-index:var(--ua-z-modal);padding:28px;background:var(--ua-bg-elevated);border:1px solid var(--ua-border-strong);border-radius:12px;box-shadow:0 0 0 100vmax #080d0bd9}
+.ua-outbound-review {position:fixed;inset:6vh max(24px,calc((100vw - 960px)/2)) auto;margin:0;width:auto;max-width:none;max-height:88vh;overflow:auto;z-index:var(--ua-z-modal);padding:28px;color:var(--ua-text-primary);background:var(--ua-bg-elevated);border:1px solid var(--ua-border-strong);border-radius:12px}
+.ua-outbound-review::backdrop {background:#080d0bd9}
 .ua-outbound-review h2 {font-size:22px;margin:12px 0 18px;letter-spacing:-.5px}
 .ua-outbound-review p {font-size:12px;color:var(--ua-text-secondary);line-height:1.8;margin:12px 0;overflow-wrap:anywhere}
 .ua-outbound-review pre {background:var(--ua-bg-input);padding:18px;border-radius:7px;font-size:12px;line-height:1.8;margin:16px 0;max-height:40vh;overflow:auto}

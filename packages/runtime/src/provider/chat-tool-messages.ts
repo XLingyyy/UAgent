@@ -32,6 +32,7 @@ export function chatToolMessages(
   messages: ProviderRuntimeMessage[],
   toolsAllowed: boolean,
   credential: string,
+  preserveIdentifiers = false,
 ) {
   const pending = new Set<string>(),
     seen = new Set<string>();
@@ -86,7 +87,7 @@ export function chatToolMessages(
       }
       return {
         role: message.role === "developer" ? "system" : message.role,
-        content: redactString(text),
+        content: redactString(text, { preserveIdentifiers }),
       };
     })
     .map((message, index, array) => {

@@ -23,26 +23,71 @@ type ProviderSessionProps = {
   credentials?: NativeProviderCredentials;
   providerVersion?: Readonly<ProviderVersion>;
 };
-/** Explicit old injected controllers retain their memory-only unit-test surface.
- * The real application always uses native storage and never falls back on error. */
+/** Explicit old injected controllers retain their memory-only unit-test surface. */
 export function ProviderSessionSetup(props: ProviderSessionProps) {
   if(!activeApiProvider(props.provider))return <p role="status">此 API 已封存，不能连接或发送，历史存档保留。目前仅开放 DeepSeek API；Codex 官方会话请使用工作区入口。 / API archived. History is retained. Only DeepSeek API is currently available; use the workspace entry for official Codex conversations.</p>;
   if (props.controller && props.controller !== safeProviderSession && !props.credentials)
     return <MemoryProviderSessionSetup provider={props.provider} controller={props.controller} />;
-  return <SavedProviderSessionSetup provider={props.provider}
+  return <ProviderSessionModes key={props.provider.providerId} provider={props.provider}
     controller={props.controller ?? safeProviderSession}
     credentials={props.credentials ?? nativeProviderCredentials} providerVersion={props.providerVersion} />;
 }
 
-function SavedProviderSessionSetup({ provider, controller, credentials, providerVersion }: {
+function ProviderSessionModes({ provider, controller, credentials, providerVersion }: {
   provider: ProviderConfig; controller: SavedSessionController; credentials: NativeProviderCredentials; providerVersion?: Readonly<ProviderVersion>;
+}) {
+  const { t } = useI18n();
+  const [mode, setMode] = useState<"saved" | "temporary">(() => {
+    const state = controller.getSnapshot();
+    const model = provider.models.find(item => item.id === provider.defaultModel) ?? provider.models[0];
+    return !state.savedCredential && sessionMatchesProviderModel(state, provider, model?.id) ? "temporary" : "saved";
+  });
+  const [switching, setSwitching] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(false);
+  const pending = useRef(false), generation = useRef(0);
+  useEffect(() => () => { generation.current++; }, [controller, provider.providerId, provider.baseUrl, provider.wireApi]);
+  async function changeMode(next: typeof mode) {
+    if (next === mode || pending.current || busy) return;
+    const current = generation.current;
+    pending.current = true; setSwitching(true); setError(false);
+    try {
+      await controller.closeAsync("revoked");
+      if (current === generation.current) setMode(next);
+    } catch {
+      if (current === generation.current) setError(true);
+    } finally {
+      pending.current = false;
+      setSwitching(false);
+    }
+  }
+  return <>
+    <fieldset disabled={switching || busy} className="ua-settings-section" style={{minWidth:0}}>
+      <legend>{t("product.credentialMode")}</legend>
+      <div className="ua-session-actions">
+        <label className="ua-checkline"><input type="radio" name={`credential-mode-${provider.providerId}`} checked={mode === "saved"} disabled={switching || busy} onChange={() => void changeMode("saved")} />{t("product.savedMode")}</label>
+        <label className="ua-checkline"><input type="radio" name={`credential-mode-${provider.providerId}`} checked={mode === "temporary"} disabled={switching || busy} onChange={() => void changeMode("temporary")} />{t("product.temporaryMode")}</label>
+      </div>
+      <p className="ua-settings-page__action-note">{t("product.credentialModeHelp")}</p>
+    </fieldset>
+    {switching && <p role="status">{t("product.switchingCredentialMode")}</p>}
+    {error && <p role="alert">{t("product.credentialModeError")}</p>}
+    <fieldset disabled={switching} style={{border:0,padding:0,margin:0,minWidth:0}}>
+      {mode === "saved"
+        ? <SavedProviderSessionSetup provider={provider} controller={controller} credentials={credentials} providerVersion={providerVersion} onBusyChange={setBusy} />
+        : <MemoryProviderSessionSetup provider={provider} controller={controller} onBusyChange={setBusy} />}
+    </fieldset>
+  </>;
+}
+
+function SavedProviderSessionSetup({ provider, controller, credentials, providerVersion, onBusyChange }: {
+  provider: ProviderConfig; controller: SavedSessionController; credentials: NativeProviderCredentials; providerVersion?: Readonly<ProviderVersion>;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const { t } = useI18n();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { setComposerModel } = useComposerActions();
   const model = provider.models.find(item => item.id === provider.defaultModel) ?? provider.models[0];
   const supported = supportsProviderModel(provider, model?.id);
-  const ready = sessionMatchesProviderModel(state, provider, model?.id);
+  const ready = state.savedCredential && sessionMatchesProviderModel(state, provider, model?.id);
   const password = useRef<HTMLInputElement>(null), generation = useRef(0);
   const [saved, setSaved] = useState<SavedProviderCredential | null>(null);
   const [replacing, setReplacing] = useState(false), [hasInput, setHasInput] = useState(false);
@@ -58,6 +103,7 @@ function SavedProviderSessionSetup({ provider, controller, credentials, provider
         version.revision === providerVersion.revision && version.exists === providerVersion.exists));
   }
   const busy = operation !== null;
+  useEffect(() => { onBusyChange?.(busy); return () => onBusyChange?.(false); }, [busy, onBusyChange]);
   const recovery = saved?.recovery ?? null;
   const cleanupPending = Boolean(saved?.cleanupPending);
   const recoveryRecord = Boolean(recovery && saved?.version);
@@ -238,9 +284,11 @@ function SavedProviderSessionSetup({ provider, controller, credentials, provider
 function MemoryProviderSessionSetup({
   provider,
   controller = safeProviderSession,
+  onBusyChange,
 }: {
   provider: ProviderConfig;
   controller?: SessionController;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const { t, locale } = useI18n();
   const state = useSyncExternalStore(
@@ -261,7 +309,8 @@ function MemoryProviderSessionSetup({
   const responses = provider.wireApi === "responses" || provider.wireApi === "anthropic",
     fixture = provider.wireApi==="responses" && responsesFixtureAvailable(),
     supported = supportsProviderModel(provider, model?.id);
-  const ready = sessionMatchesProviderModel(state, provider, model?.id);
+  const ready = !state.savedCredential && sessionMatchesProviderModel(state, provider, model?.id);
+  useEffect(() => { onBusyChange?.(pending); return () => onBusyChange?.(false); }, [pending, onBusyChange]);
   useEffect(() => {
     setAuthorized(false);
     setHasInput(false);

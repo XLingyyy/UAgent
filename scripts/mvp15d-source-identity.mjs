@@ -76,6 +76,7 @@ const EXACT_TEST_FIXTURE_DATA = Object.freeze([
 const EXACT_PRODUCTION_TOOLING = Object.freeze([
   "scripts/integrated-build-binding.py",
   "scripts/export-ue-scene-batch-schemas.mjs",
+  "scripts/use-project-env.ps1",
 ]);
 
 // Exact files outside recursively walked production roots. These inputs control

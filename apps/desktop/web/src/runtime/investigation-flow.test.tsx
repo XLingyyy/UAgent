@@ -1,6 +1,6 @@
 import { initializeApplicationProfile } from "./application-profile";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { webcrypto } from "node:crypto";
 import { DEEPSEEK_MODEL, createOutboundConsentGate } from "@uagent/runtime";
 import { createNativeProjectAdapter, type NativeInvoke } from "./project-native-adapter";
@@ -24,6 +24,10 @@ import type { NativeRunCommitInput } from "./native-run-store";
 import type { TaskRunScope } from "@uagent/shared";
 
 const managers: ReturnType<typeof createSafeProviderSession>[] = [];
+beforeEach(() => {
+  Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value: vi.fn(function(this: HTMLDialogElement) { this.setAttribute("open", ""); }) });
+  Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true, value: vi.fn(function(this: HTMLDialogElement) { this.removeAttribute("open"); }) });
+});
 afterEach(() => {
   cleanup();
   investigationScopeGate.invalidate();
@@ -398,7 +402,7 @@ async function mount(options: { storageFailure?: boolean; failFinalParent?: bool
   const input = () => screen.getByRole("textbox", { name: "Task input" }) as HTMLTextAreaElement;
   async function send(template = false,collaborative = false,configureMembers=false,dynamic=false,memberCount=2,removeFirst=false) {
     if (template) {
-      fireEvent.click(screen.getByText("Built-in workflows"));
+      fireEvent.click(screen.getByRole("button", { name: "Built-in workflows" }));
       fireEvent.change(screen.getByLabelText("Investigation question"), { target: { value: "Where is the source value defined?" } });
       fireEvent.click(screen.getByRole("button", { name: "Prepare investigation task" }));
       expect(input().value).toContain("Built-in workflow: Project investigation");

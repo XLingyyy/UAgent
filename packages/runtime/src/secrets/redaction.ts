@@ -32,14 +32,15 @@ export function createRedactedString(label: string): string {
   return `${label} [REDACTED]`;
 }
 
-export function redactString(text: string): string {
+export function redactString(text: string, options?: { preserveIdentifiers: boolean }): string {
   let result = text;
   result = result.replace(/(Authorization:\s*Bearer\s+)\S+/gi, "$1[REDACTED]");
   result = result.replace(/(api[_-]?key\s*[=:]\s*)\S+/gi, "$1[REDACTED]");
   result = result.replace(/((?:\b|_)token\s*[=:]\s*)\S+/gi, "$1[REDACTED]");
   result = result.replace(/(password\s*[=:]\s*)\S+/gi, "$1[REDACTED]");
   result = result.replace(/(secret\s*[=:]\s*)\S+/gi, "$1[REDACTED]");
-  for (const pattern of SECRET_PATTERNS) {
+  const patterns = options?.preserveIdentifiers ? [/\bsk-[A-Za-z0-9_-]+/g] : SECRET_PATTERNS;
+  for (const pattern of patterns) {
     result = result.replace(pattern, "[REDACTED]");
   }
   result = redactPathsInString(result);

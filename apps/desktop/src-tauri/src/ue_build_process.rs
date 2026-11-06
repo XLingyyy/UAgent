@@ -116,6 +116,37 @@ fn not_started(owner: UEBuildOwner, reason: &str) -> UEBuildExecutionResult {
     }
 }
 
+fn inherit_build_environment(command: &mut Command) {
+    // Avoid ambient command injection through CL, _CL_, LINK, shell startup, or credential variables.
+    // Only documented process/SDK discovery locations survive. No generic environment override input.
+    command.env_clear();
+    for key in [
+        "SystemRoot",
+        "WINDIR",
+        "PATH",
+        "TEMP",
+        "TMP",
+        "COMSPEC",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "ProgramW6432",
+        // UBA resolves CommonApplicationData through the .NET ProgramData fallback.
+        "ProgramData",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "USERPROFILE",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "NUMBER_OF_PROCESSORS",
+        "PROCESSOR_ARCHITECTURE",
+        "PROCESSOR_IDENTIFIER",
+    ] {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
+    }
+}
+
 /// Caller must consume a separate one-use host grant bound to root object identity and owner.
 /// A matching fingerprint is public plan data, not proof of approval.
 pub fn execute_ue_build(
@@ -150,32 +181,7 @@ pub fn execute_ue_build(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    // Avoid ambient command injection through CL, _CL_, LINK, shell startup, or credential variables.
-    // Only documented process/SDK discovery locations survive. No generic environment override input.
-    command.env_clear();
-    for key in [
-        "SystemRoot",
-        "WINDIR",
-        "PATH",
-        "TEMP",
-        "TMP",
-        "COMSPEC",
-        "ProgramFiles",
-        "ProgramFiles(x86)",
-        "ProgramW6432",
-        "LOCALAPPDATA",
-        "APPDATA",
-        "USERPROFILE",
-        "HOMEDRIVE",
-        "HOMEPATH",
-        "NUMBER_OF_PROCESSORS",
-        "PROCESSOR_ARCHITECTURE",
-        "PROCESSOR_IDENTIFIER",
-    ] {
-        if let Some(value) = std::env::var_os(key) {
-            command.env(key, value);
-        }
-    }
+    inherit_build_environment(&mut command);
     if let Some(root) = build.dotnet_root() {
         command
             .env("DOTNET_ROOT", root)
@@ -676,11 +682,40 @@ mod tests {
                     .spawn()
                     .unwrap();
             }
+            Ok("environment") => {
+                assert_eq!(
+                    std::env::var_os("ProgramData"),
+                    std::env::var_os("UAGENT_EXPECTED_PROGRAM_DATA")
+                );
+                for key in ["DEEPSEEK_API_KEY", "CL", "_CL_", "LINK"] {
+                    assert!(std::env::var_os(key).is_none(), "unexpected child variable: {key}");
+                }
+                println!("build environment verified");
+            }
             Ok("ok") => {
                 println!("safe fixture complete");
             }
             _ => panic!("fixture scenario required"),
         }
+    }
+    #[test]
+    fn build_environment_keeps_program_data_without_leaking_secrets() {
+        let program_data = std::env::var_os("ProgramData").expect("Windows ProgramData is required");
+        let mut command = fixture_command("environment");
+        for key in ["DEEPSEEK_API_KEY", "CL", "_CL_", "LINK"] {
+            command.env(key, "synthetic-must-not-reach-build");
+        }
+        inherit_build_environment(&mut command);
+        command
+            .env("UAGENT_BUILD_FIXTURE", "environment")
+            .env("UAGENT_EXPECTED_PROGRAM_DATA", program_data);
+        let owner = owner();
+        let cancel = UEBuildCancellation::new(owner.clone());
+        let result = execute_owned(command, owner, &cancel, Duration::from_secs(5));
+        assert_eq!(result.status, "succeeded", "{result:?}");
+        assert_eq!(result.exit_code, Some(0));
+        assert!(result.tree_stopped && result.output_complete);
+        assert!(result.stdout.contains("build environment verified"));
     }
     #[test]
     fn preserves_exit_code_and_drains_bounded_output() {

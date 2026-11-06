@@ -19,6 +19,25 @@ function Probe(){
 }
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();});
 describe("settings P2 project reasoning hydration",()=>{
+ it("publishes native filesystem readiness after trusting a restored project without changing selection",async()=>{
+  vi.stubGlobal("fetch",vi.fn(()=>{throw Error("No network");}));
+  const snapshot:ProductSettingsSnapshot={preferences:{revision:1,preferences:{theme:"dark",locale:"en",activeProjectId:"A",selectedProviderId:null,defaultProviderId:null}},providers:[],projects:[{id:"A",root:"E:/Synthetic/A",label:"A",createdAt:1}],projectPreferences:[]};
+  vi.spyOn(nativeProductSettings,"getBootstrap").mockReturnValue(snapshot);
+  vi.spyOn(nativeProductSettings,"projectPreferences").mockReturnValue(null);
+  const real=nativeProjects.createNativeProjectAdapter(),capabilities=[{kind:"Files",mode:"native_read_only",status:"completed"}];
+  let project:ProjectProfile={id:"A",name:"A",rootRef:"A",displayRoot:"[project-root]",trustState:"untrusted",indexStatus:"validated",engine:{label:"Synthetic",association:null,source:"unknown"},createdAt:1,updatedAt:1};
+  const add=vi.fn(async()=>project),trust=vi.fn(async()=>{project={...project,trustState:"trusted",updatedAt:2};return project;});
+  vi.spyOn(nativeProjects,"createNativeProjectAdapter").mockReturnValue({...real,source:"native",addProject:add,confirmTrust:trust,listProjects:()=>[project],getCapabilityStatus:()=>capabilities});
+  function RestoredProbe(){const state=useProjectStore(s=>s),actions=useProjectActions();return <><output data-testid="restored-project">{JSON.stringify(state)}</output><button onClick={()=>void actions.trustProjectRoot("A")}>Trust restored project</button></>;}
+  render(<UIProvider><RestoredProbe/></UIProvider>);
+  const state=()=>JSON.parse(screen.getByTestId("restored-project").textContent!);
+  await waitFor(()=>expect(state().activeProjectId).toBe("A"));
+  expect(state().nativeSource).toBe("unknown");expect(state().registeredProjects[0].trustState).toBe("untrusted");
+  fireEvent.click(screen.getByRole("button",{name:"Trust restored project"}));
+  await waitFor(()=>expect(state().registeredProjects[0].trustState).toBe("trusted"));
+  expect(state().nativeSource).toBe("native");expect(state().capabilityStatus).toEqual(capabilities);expect(state().fsPolicy).toEqual(real.getPolicy());
+  expect(state().activeProjectId).toBe("A");expect(add).toHaveBeenCalledTimes(1);expect(trust).toHaveBeenCalledWith("A");expect(fetch).not.toHaveBeenCalled();
+ });
  it.each([undefined,"low"] as const)("keeps B null, restores default %s and never writes hydration during A B A",async defaultEffort=>{
   vi.stubGlobal("fetch",vi.fn(()=>{throw Error("No network");}));
   const provider={...config,defaultReasoningEffort:defaultEffort};

@@ -1,7 +1,7 @@
 import {localizeText,getLocale} from "../i18n";
 const uiText=(source:string)=>localizeText(getLocale(),source);
 import {act,cleanup,fireEvent,render,screen,waitFor} from "@testing-library/react";
-import {afterEach,describe,expect,it,vi} from "vitest";
+import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import {createOutboundConsentGate,DEEPSEEK_CAMPAIGN,DEEPSEEK_ENDPOINT,DEEPSEEK_MODEL,type DeepSeekBudgetRecord,type DeepSeekBudgetStore} from "@uagent/runtime";
 import {createSafeProviderSession} from "./safe-provider-session";
 import {createAttachmentStore} from "./attachment-store";
@@ -11,6 +11,10 @@ import {ProviderProposalPanel} from "../workspace/ProviderProposalPanel";
 import {OutboundRequestReview} from "../settings/pages/OutboundRequestReview";
 import type {NativeInvoke} from "./project-native-adapter";
 let manager:ReturnType<typeof createSafeProviderSession>|undefined;
+beforeEach(()=>{
+ Object.defineProperty(HTMLDialogElement.prototype,"showModal",{configurable:true,value:vi.fn(function(this:HTMLDialogElement){this.setAttribute("open","");})});
+ Object.defineProperty(HTMLDialogElement.prototype,"close",{configurable:true,value:vi.fn(function(this:HTMLDialogElement){this.removeAttribute("open");})});
+});
 afterEach(()=>{cleanup();manager?.dispose();vi.unstubAllGlobals();});
 describe("explicit second-round UI with offline native and transport boundaries",()=>{
  it("gets two separate full-request confirmations and reservations, one tool approval, and no recursive execution",async()=>{

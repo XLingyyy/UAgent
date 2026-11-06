@@ -23,16 +23,71 @@ function harness(initial:SavedProviderCredential=absent()){
   if(command==="cleanup_provider_credentials"){receipt={...receipt,cleanupPending:false};return receipt;}
   throw Error("Unexpected synthetic command");
  });
- const state={ready:false,providerId:null,modelId:null,endpoint:null,wireApi:null,fixture:false,canConfigure:true,pendingSetup:false};
- const controller={getSnapshot:()=>state,subscribe:()=>()=>undefined,closeAsync:vi.fn(async():Promise<void>=>undefined),enable:vi.fn(),openSaved:vi.fn(async()=>true)};
+ const state={ready:false,providerId:null as string|null,modelId:null as string|null,endpoint:null as string|null,wireApi:null as "chat_completions"|null,fixture:false,canConfigure:true,pendingSetup:false,savedCredential:false};
+ const controller={getSnapshot:()=>state,subscribe:()=>()=>undefined,close:vi.fn(),closeAsync:vi.fn(async():Promise<void>=>undefined),enable:vi.fn(),openSaved:vi.fn(async()=>true),openAccount:vi.fn()};
  const credentials=createNativeProviderCredentials(invoke as NativeInvoke);
  const locale=createLocaleStore({initialLocale:"en",storage:null,eventTarget:null});
  const provider=createSupportedProvider();
  const mount=(displayedVersion?:Readonly<ProviderVersion>)=>render(<I18nProvider store={locale}><ProviderSessionSetup provider={provider} providerVersion={displayedVersion} controller={controller as unknown as SafeProviderSession} credentials={credentials}/></I18nProvider>);
- return{invoke,controller,credentials,locale,provider,mount,setReceipt:(next:typeof initial)=>{receipt=next;}};
+ return{invoke,controller,state,credentials,locale,provider,mount,setReceipt:(next:typeof initial)=>{receipt=next;}};
 }
 afterEach(()=>{cleanup();composer.setComposerModel.mockReset();composer.setComposerModel.mockResolvedValue(undefined);});
 describe("saved provider credential form (synthetic only)",()=>{
+ it("explicitly switches the production wrapper to a temporary session while retaining a saved key",async()=>{
+  const h=harness(stored()),gate=deferred<void>();h.controller.closeAsync.mockReturnValueOnce(gate.promise);h.mount();
+  await screen.findByLabelText("Saved API key");
+  const temporary=screen.getByRole("radio",{name:"This session only"}) as HTMLInputElement;
+  expect((screen.getByRole("radio",{name:"Save key"}) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(temporary);fireEvent.click(temporary);
+  expect(temporary.disabled).toBe(true);expect(h.controller.closeAsync).toHaveBeenCalledTimes(1);
+  expect(screen.queryByLabelText("Session API key")).toBeNull();
+  await act(async()=>{gate.resolve();await gate.promise;});
+  const field=await screen.findByLabelText("Session API key") as HTMLInputElement;
+  expect(field.value).toBe("");expect(h.controller.openSaved).not.toHaveBeenCalled();expect(h.controller.openAccount).not.toHaveBeenCalled();
+  fireEvent.change(field,{target:{value:"synthetic-manually-entered-key"}});
+  fireEvent.click(screen.getByLabelText("Authorize this model session"));
+  fireEvent.click(screen.getByRole("button",{name:"Open session and select model"}));
+  await waitFor(()=>expect(h.controller.openAccount).toHaveBeenCalledWith("synthetic-manually-entered-key"));
+  expect(field.value).toBe("");expect(h.invoke.mock.calls.every(c=>c[0]==="get_saved_provider_credential")).toBe(true);
+  fireEvent.click(screen.getByRole("radio",{name:"Save key"}));
+  await screen.findByLabelText("Saved API key");expect(h.controller.openSaved).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button",{name:"Use saved API key"}));
+  await waitFor(()=>expect(h.controller.openSaved).toHaveBeenCalledWith("deepseek","deepseek-flash"));
+  expect(h.invoke.mock.calls.every(c=>c[0]==="get_saved_provider_credential")).toBe(true);
+ });
+ it("keeps the saved form when closing its session fails",async()=>{
+  const h=harness(stored());h.controller.closeAsync.mockRejectedValue(Error("synthetic close failed"));h.mount();
+  await screen.findByLabelText("Saved API key");fireEvent.click(screen.getByRole("radio",{name:"This session only"}));
+  await screen.findByText("The current session could not be closed. The connection mode was not changed. Retry explicitly.");
+  expect((screen.getByRole("radio",{name:"Save key"}) as HTMLInputElement).checked).toBe(true);
+  expect(screen.queryByLabelText("Session API key")).toBeNull();expect(screen.getByLabelText("Saved API key")).toBeTruthy();
+  expect(h.controller.openSaved).not.toHaveBeenCalled();expect(h.controller.openAccount).not.toHaveBeenCalled();
+  expect(h.invoke.mock.calls.every(c=>c[0]==="get_saved_provider_credential")).toBe(true);
+ });
+ it("blocks mode changes while a saved session is opening",async()=>{
+  const h=harness(stored()),gate=deferred<boolean>();h.controller.openSaved.mockReturnValue(gate.promise);h.mount();
+  await screen.findByLabelText("Saved API key");fireEvent.click(screen.getByRole("button",{name:"Use saved API key"}));
+  await waitFor(()=>expect(h.controller.openSaved).toHaveBeenCalledTimes(1));
+  const temporary=screen.getByRole("radio",{name:"This session only"}) as HTMLInputElement;
+  expect(temporary.disabled).toBe(true);fireEvent.click(temporary);expect(h.controller.closeAsync).not.toHaveBeenCalled();
+  await act(async()=>{gate.resolve(true);await gate.promise;});expect(temporary.disabled).toBe(false);
+ });
+ it.each([false,true])("does not present a session from the other credential mode as ready (saved=%s)",async savedCredential=>{
+  const h=harness(stored());Object.assign(h.state,{ready:true,savedCredential,providerId:"deepseek",modelId:"deepseek-flash",endpoint:"https://api.deepseek.com/chat/completions",wireApi:"chat_completions"});h.mount();
+  if(savedCredential){await screen.findByLabelText("Saved API key");fireEvent.click(screen.getByRole("radio",{name:"This session only"}));await screen.findByLabelText("Session API key");expect(screen.getByText("Session closed")).toBeTruthy();}
+  else {fireEvent.click(screen.getByRole("radio",{name:"Save key"}));await screen.findByLabelText("Saved API key");expect(screen.getByRole("button",{name:"Use saved API key"})).toBeTruthy();}
+  expect(screen.queryByText("Session open · connection unverified")).toBeNull();
+ });
+ it("preserves the active temporary mode when settings are unmounted and reopened",()=>{
+  const h=harness(stored());Object.assign(h.state,{ready:true,savedCredential:false,providerId:"deepseek",modelId:"deepseek-flash",endpoint:"https://api.deepseek.com/chat/completions",wireApi:"chat_completions"});
+  const view=h.mount();expect((screen.getByRole("radio",{name:"This session only"}) as HTMLInputElement).checked).toBe(true);
+  view.unmount();h.mount();
+  expect((screen.getByRole("radio",{name:"This session only"}) as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByText("Session open · connection unverified")).toBeTruthy();
+  expect((screen.getByLabelText("Session API key") as HTMLInputElement).value).toBe("");
+  expect(h.controller.closeAsync).not.toHaveBeenCalled();expect(h.controller.close).not.toHaveBeenCalled();
+  expect(h.controller.openAccount).not.toHaveBeenCalled();expect(h.controller.openSaved).not.toHaveBeenCalled();expect(h.invoke).not.toHaveBeenCalled();
+ });
  it("loads only mask metadata without opening or sending",async()=>{
   const h=harness(stored());h.mount();
   const field=await screen.findByLabelText("Saved API key") as HTMLInputElement;

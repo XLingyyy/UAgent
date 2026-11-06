@@ -1,5 +1,5 @@
 import {act,cleanup,fireEvent,render,screen,waitFor} from "@testing-library/react";
-import {afterEach,describe,expect,it,vi} from "vitest";
+import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import {I18nProvider,createLocaleStore,translate,localizeText,getLocale} from "../i18n";
 import {UIProvider} from "../stores/ui-store";
 import {GeneralSettings} from "../settings/pages/GeneralSettings";
@@ -8,16 +8,21 @@ import {OutboundRequestReview} from "../settings/pages/OutboundRequestReview";
 import {ComposerDock} from "../composer/ComposerDock";
 import {createSafeProviderSession,safeProviderSession} from "./safe-provider-session";
 import {createDesktopRuntimeAdapter} from "./desktop-runtime-adapter";
+import {initializeApplicationProfile} from "./application-profile";
 import {createOutboundConsentGate,DEEPSEEK_CAMPAIGN,DEEPSEEK_ENDPOINT,DEEPSEEK_MODEL,type DeepSeekBudgetRecord,type DeepSeekBudgetStore,type ProviderAdapter} from "@uagent/runtime";
 import type {TaskRecord} from "@uagent/shared";
 const uiText=(source:string)=>localizeText(getLocale(),source);
 const managers:ReturnType<typeof createSafeProviderSession>[]=[];
+beforeEach(()=>{
+ Object.defineProperty(HTMLDialogElement.prototype,"showModal",{configurable:true,value:vi.fn(function(this:HTMLDialogElement){this.setAttribute("open","");})});
+ Object.defineProperty(HTMLDialogElement.prototype,"close",{configurable:true,value:vi.fn(function(this:HTMLDialogElement){this.removeAttribute("open");})});
+});
 afterEach(()=>{safeProviderSession.close("cleared");cleanup();managers.splice(0).forEach(m=>m.dispose());vi.unstubAllGlobals();vi.restoreAllMocks();});
 function setup(){
  vi.stubGlobal("fetch",vi.fn(()=>{throw Error("REAL NETWORK FORBIDDEN");}));
  const fetcher=vi.fn(async()=>new Response("synthetic"));
  const record:DeepSeekBudgetRecord={campaign:DEEPSEEK_CAMPAIGN,limitMicros:10000000,reservedMicros:3000000,requests:2,uncertainRequests:1,inputTokens:10,outputTokens:20};
- const native=vi.fn(async(name:string)=>{if(name==="read_provider_budget")return {...record};throw Error("UNEXPECTED_NATIVE_MUTATION");});vi.stubGlobal("__TAURI_INTERNALS__",{invoke:native});
+  const native=vi.fn(async(name:string)=>{if(name==="get_application_profile")return {isolated:false,offlineDemo:false};if(name==="read_provider_budget")return {...record};throw Error("UNEXPECTED_NATIVE_MUTATION");});vi.stubGlobal("__TAURI_INTERNALS__",{invoke:native});
  const ledger:DeepSeekBudgetStore={durable:true,read:vi.fn(()=>({...record})),reserve:vi.fn(()=>{throw Error("NO RESERVATION EXPECTED");}),recordUsage:vi.fn()};
  const manager=createSafeProviderSession({mode:"live",liveAuthorized:true,fetcher});managers.push(manager);
  const write=vi.fn();const locale=createLocaleStore({initialLocale:"zh-CN",storage:{getItem:()=>null,setItem:write},eventTarget:null});
@@ -62,7 +67,7 @@ describe("redesigned core UI with synthetic boundaries",()=>{
   expect((screen.getByLabelText(uiText("Composer input")) as HTMLTextAreaElement).value).toBe("Synthetic cancellable task");expect(fetch).not.toHaveBeenCalled();
  });
  it("keeps the exact pending body across locale change and revokes with keyboard Escape",async()=>{
-  const h=setup(),gate=createOutboundConsentGate();render(<I18nProvider store={h.locale}><UIProvider><div className="ua-app"><button>Original focus</button></div><OutboundRequestReview gate={gate}/></UIProvider></I18nProvider>);
+   const h=setup(),gate=createOutboundConsentGate();await initializeApplicationProfile();render(<I18nProvider store={h.locale}><UIProvider><div className="ua-app"><button>Original focus</button></div><OutboundRequestReview gate={gate}/></UIProvider></I18nProvider>);
   const original=screen.getByText("Original focus");original.focus();const envelope={endpoint:DEEPSEEK_ENDPOINT,model:DEEPSEEK_MODEL,projectId:"Synthetic A",epoch:3,revision:"one",maximumCostMicros:10000,body:JSON.stringify({messages:[{role:"user",content:"Untranslated synthetic raw data"}]})};
   let pending!:Promise<unknown>;act(()=>{pending=gate.review(envelope).catch(e=>e);});const id=gate.getPending()!.id;
   act(()=>h.locale.setLocale("en"));expect(gate.getPending()!.id).toBe(id);expect(screen.getByLabelText("Exact outbound body").textContent).toBe(envelope.body);expect(document.querySelector(".ua-app")?.hasAttribute("inert")).toBe(true);

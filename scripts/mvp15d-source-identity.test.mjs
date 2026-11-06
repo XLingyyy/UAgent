@@ -704,6 +704,7 @@ test("UE identity production imports are hashed and watched", () => {
   try {
     const paths = [
       "scripts/export-ue-scene-batch-schemas.mjs",
+      "scripts/use-project-env.ps1",
       "apps/desktop/src-tauri/src/ue_build_profile.rs",
       "packages/runtime/src/ue-scene-batch-v2.ts",
       "integrations/unreal/UAgentAssetToolsV2/UAgentAssetToolsV2.uplugin",
@@ -790,6 +791,8 @@ test("UE identity rejects unknown and near-name tooling instead of widening excl
       "scripts/test-ue-build-native-extra.ps1",
       "scripts/test-effect-reconciliation-native-extra.ps1",
       "scripts/export-ue-scene-batch-schemas-extra.mjs",
+      "scripts/use-project-env-extra.ps1",
+      "scripts/nested/use-project-env.ps1",
       "scripts/nested/test-ue-build-native.ps1",
     ]) {
       const target = resolve(fixture.repo, logical);

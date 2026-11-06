@@ -48,3 +48,6 @@ docs/agent-workflow.md
 docs/context-index.md
 docs/tasks/
 docs/superpowers/
+
+# Repository-local development caches (never commit credentials or build outputs)
+/.local-dev/

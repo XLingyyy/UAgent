@@ -1265,6 +1265,9 @@ function createUIStateBundle(
           registeredProjects: projectAdapter.listProjects(),
           activeProjectId: trusted.id,
           scanStatus: trusted.indexStatus,
+          nativeSource: projectAdapter.source,
+          capabilityStatus: projectAdapter.getCapabilityStatus(),
+          fsPolicy: projectAdapter.getPolicy(),
           lastError: null,
           auditTrail: [...previousState.auditTrail, "project_trusted"],
         }));
