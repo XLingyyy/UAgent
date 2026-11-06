@@ -92,3 +92,11 @@ Host 新增 `project_list_files` / `project_find_files`，复用原生来源校�
 新任务通过现有 `savedRun` 协议保存 `parentRunId`，明确关闭历史上下文导入。原消息、工具结果、待执行调用、预算和权限均不进入新任务；当前文件重新读取。原记录只读保留。这是新授权的目标重启，不提供断点执行状态恢复或旧外部动作重放。
 
 定向原生用例通过，覆盖运行中记录、旧 revision、其他项目、provider 和工具边界；4 项后台面板测试、当前应用类型检查、前端和原生构建通过。真实桌面从正常退出留下的 paused / revision 6 记录 `run-182aff118d07c474328fd452a6a58ae9` 创建 `run-d650d0f61752ae83c64a9b063947f3e1`，DeepSeek 4 次请求重新读取三个文件并完成，SQLite succeeded / revision 12。首检查点只有新约束、范围和目标三条消息，模型/工具计数均为零；父记录仍为 paused / revision 6，源码未变。本地证据：`.local-dev/temp/host-task-acceptance-20261106/live-host-parent-summary.json`。
+
+## 普通输入框的单成员文件调查
+
+原生桌面选择 DeepSeek Flash、调查模式、单成员且没有历史续聊或已选附件时，默认勾选「后台文件调查」。发送按钮变为「准备后台文件调查」，保留原草稿并打开目录确认面板。可以取消勾选，继续使用原有项目记忆和 UE 工具调查选项；已选附件自动保留在原入口，协作及其他模型也沿用原路径。后台目标超过 4096 字节时明确提示缩短。
+
+两项定向界面测试覆盖目标交接、未自动发送、草稿保留、手动切回原入口及附件不丢弃；当前应用类型检查和两步打包构建通过。真实桌面任务 `run-6da87957e8bfbf703338584019c1c74c` 从普通输入框进入 Host，2 次模型请求、1 次头文件读取后 succeeded / revision 6，准确指出 `4O`，没有写入或构建，关闭面板后原输入仍保留。本地证据：`.local-dev/temp/host-task-acceptance-20261106/live-host-composer-summary.json`。
+
+入口交接只传递准备数据，执行仍使用原生命令和原授权链；职责划分参考 [Tauri 前后端通信说明](https://v2.tauri.app/develop/calling-frontend/)。当前普通文件入口已接，项目记忆、UE 工具和协作的完整迁移另行推进。

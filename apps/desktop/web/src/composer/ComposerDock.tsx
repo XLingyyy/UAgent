@@ -1,3 +1,4 @@
+import {attachmentStore} from "../runtime/attachment-store";
 import {localNativeInvoke} from "../runtime/native-provider-budget";
 import {CodexLeadField} from "./CodexLeadField";
 import {CODEX_ENDPOINT,codexMemberSessions,codexLeadSession,subscribeCodexMembers,codexMembersRevision} from "../runtime/codex-member-session";
@@ -72,6 +73,8 @@ function detectTerminalIntent(input: string): CommandSuggestion | null {
 export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const {text: uiText,t,locale} = useI18n();
   const [collaboration,setCollaboration]=useState(false);
+  const [backgroundFiles,setBackgroundFiles]=useState(true);
+  const attachments=useSyncExternalStore(attachmentStore.subscribe,attachmentStore.getSnapshot,attachmentStore.getSnapshot);
   const [dynamicDelegation,setDynamicDelegation]=useState(false);
   const [settingsPanel, setSettingsPanel] = useState<"workflow" | "agents" | null>(null);
   const settingsOpen = useSettingsStore(state => state.open);
@@ -182,6 +185,11 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
     if(model?.providerId==="codex")return model.endpoint===CODEX_ENDPOINT&&codexMemberSessions[role].current(activeProject?.id??"",model.modelId);
     return !model || (state.ready&&!state.savedCredential&&!state.nativeClosing&&state.providerId===model.providerId&&state.modelId===model.modelId&&state.endpoint===model.endpoint&&providerModelOptions.some(option=>option.runtimeSupported&&option.providerId===model.providerId&&option.modelId===model.modelId));
   });
+  const hostedFileOption=Boolean(investigation&&!collaboration&&!composer.savedRun&&localNativeInvoke()&&activeProjectId&&
+    selectedOption?.providerId==="deepseek"&&selectedOption.modelId==="deepseek-flash");
+  const hasAttachments=attachments.projectId===activeProjectId&&attachments.items.some(item=>item.selected);
+  const useHostedFiles=hostedFileOption&&backgroundFiles&&!hasAttachments;
+  const hostedLabel=locale==="zh-CN"?"准备后台文件调查":"Prepare background file investigation";
   const canSubmit = memberModelsReady && trimmedInput.length > 0 && !composer.submitting && !canStop && !modelUnavailable;
   const providerStatus = !codexLead&&selectedModelId === "not-configured" ? "not_configured" : "configured";
   const nativeRoot = activeProject?.rootRef ?? null;
@@ -198,6 +206,12 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
     if (!investigation && /(sandbox|沙盒)/i.test(trimmedInput) && /(asset|资产|复制|重命名|移动|保存|duplicate|rename|move|save)/i.test(trimmedInput)) {
       setInspectorOpen(true);
       window.dispatchEvent(new CustomEvent("uagent:open-asset-workflow"));
+      return;
+    }
+    if(useHostedFiles){
+      if(new TextEncoder().encode(trimmedInput).length>4096){setStopError(locale==="zh-CN"?"后台调查目标超过 4096 字节，请缩短目标。":"Background investigation goal exceeds 4096 bytes. Shorten the goal.");return;}
+      setSettingsPanel(null);setSuggestionCard(null);setStopError(null);
+      window.dispatchEvent(new CustomEvent("uagent:prepare-hosted-investigation",{detail:{projectId:activeProjectId,goal:trimmedInput,prefix:"Source"}}));
       return;
     }
     setSettingsPanel(null);
@@ -222,6 +236,10 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         <button type="button" className="ua-composer__mode-btn" aria-expanded={settingsPanel === "workflow"} aria-controls="composer-settings" onClick={event => openSettingsPanel("workflow", event.currentTarget)}>
           <span aria-hidden="true">▧</span> {locale === "zh-CN" ? "内置工作流" : "Built-in workflows"}
         </button>
+        {hostedFileOption&&<label className="ua-composer__collaboration-toggle">
+          <input type="checkbox" checked={backgroundFiles&&!hasAttachments} disabled={composer.submitting||canStop||hasAttachments} onChange={event=>setBackgroundFiles(event.target.checked)}/>
+          {locale==="zh-CN"?"后台文件调查":"Background file investigation"}
+        </label>}
         {investigation && <label className="ua-composer__collaboration-toggle">
           <input type="checkbox" checked={collaboration && !composer.savedRun} disabled={composer.submitting || canStop || Boolean(composer.savedRun)}
             aria-label={locale === "zh-CN" ? "双 Agent 独立调查，可配置职责后汇总" : "Multi-agent independent investigation with configurable roles, then synthesis"}
@@ -333,14 +351,16 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
             className="ua-composer__send-btn"
             type="button"
             disabled={!canSubmit}
-            aria-label={composer.submitting ? uiText("Submitting task") : canSubmit ? uiText("Send task") : uiText("Send - disabled")}
+            aria-label={composer.submitting ? uiText("Submitting task") : canSubmit ? (useHostedFiles?hostedLabel:uiText("Send task")) : uiText("Send - disabled")}
             onClick={() => void handleSubmit()}
           >
-            {composer.submitting ? uiText("Preparing…") : uiText("Send task")}
+            {composer.submitting ? uiText("Preparing…") : useHostedFiles?hostedLabel:uiText("Send task")}
           </button>
         </div>
       </div>
 
+      {useHostedFiles&&<p role="status">{locale==="zh-CN"?"下一步确认文件目录。后台调查仅使用本次目标和文件读取结果；取消勾选可使用项目记忆、UE 工具等原有调查选项。":"Confirm file directories next. Background investigation uses this goal and fresh file results. Uncheck to use project memory, UE tools and existing investigation options."}</p>}
+      {hostedFileOption&&hasAttachments&&<p role="status">{locale==="zh-CN"?"已选择附件，本次使用原有调查入口。":"Attachments are selected; this task uses the existing investigation flow."}</p>}
       {!codexLead&&credentialUnavailable&&<p role="status">{t(credentialCleanupPending?"vault.cleanupPending":credentialRecovery==="missing"?"vault.recoveryMissing":credentialRecovery==="corrupt"?"vault.recoveryCorrupt":"vault.recoveryUnavailable")}</p>}
       {!codexLead&&savedModeUnavailable&&<p role="status">{t("vault.discussionOnly")}</p>}
       {responses&&selectedOption?.runtimeSupported!==true&&<p role="status">{t("responses.nativeUnavailable")}</p>}

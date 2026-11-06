@@ -1,3 +1,4 @@
+import {attachmentStore} from "../runtime/attachment-store";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider, createLocaleStore, translate, localizeText, type Locale } from "../i18n";
@@ -44,7 +45,8 @@ const mocks = vi.hoisted(() => {
   };
 });
 vi.mock("../runtime/application-profile", () => ({ getApplicationProfile: () => mocks.profile }));
-vi.mock("../runtime/safe-provider-session", () => ({
+vi.mock("../runtime/safe-provider-session", async importOriginal => ({
+  ...await importOriginal<typeof import("../runtime/safe-provider-session")>(),
   safeProviderSession: {
     subscribe: () => () => {},
     getSnapshot: () => mocks.session,
@@ -61,6 +63,7 @@ vi.mock("../stores/ui-store", () => ({
   useProjectStore: (selector: (state: unknown) => unknown) => selector(mocks.project),
   useRuntimeStore: (selector: (state: unknown) => unknown) =>
     selector({ activeTaskId: null, tasksById: {}, eventsByTaskId: {} }),
+  useSettingsStore: (selector: (state: unknown) => unknown) => selector({open:false}),
   useComposerActions: () => mocks.actions,
   useProjectActions: () => mocks.actions,
   useSettingsActions: () => mocks.actions,
@@ -414,4 +417,40 @@ describe("Responses desktop UI ownership and isolated fixture gating", () => {
       expect(mocks.actions.submitComposerTask).not.toHaveBeenCalled();
     },
   );
+});
+
+it("prepares a native single-member file investigation without sending, and retains the existing route when unselected",async()=>{
+  const p=createSupportedProvider();mocks.provider={providers:[p],selectedProviderId:p.providerId,defaultProviderId:p.providerId};
+  mocks.composer.selectedModelId=JSON.stringify([p.providerId,p.defaultModel]);
+  mocks.session={ready:true,providerId:p.providerId,modelId:p.defaultModel,endpoint:"https://api.deepseek.com/chat/completions",wireApi:"openai_compatible",fixture:false};
+  vi.stubGlobal("__TAURI_INTERNALS__",{invoke:vi.fn(async()=>{throw Error("no native side effects expected");})});
+  const prepare=vi.fn();window.addEventListener("uagent:prepare-hosted-investigation",prepare);
+  try{
+    mount(<ComposerDock/>);
+    fireEvent.click(screen.getByRole("button",{name:"Prepare background file investigation"}));
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect((prepare.mock.calls[0][0] as CustomEvent).detail).toEqual({projectId:"root:fixture",goal:"Investigate the synthetic project.",prefix:"Source"});
+    expect(mocks.actions.submitComposerTask).not.toHaveBeenCalled();
+    expect(mocks.actions.setComposerInput).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("checkbox",{name:"Background file investigation"}));
+    fireEvent.click(screen.getByRole("button",{name:"Send task"}));
+    await waitFor(()=>expect(mocks.actions.submitComposerTask).toHaveBeenCalledTimes(1));
+    expect(prepare).toHaveBeenCalledTimes(1);
+  }finally{window.removeEventListener("uagent:prepare-hosted-investigation",prepare);}
+});
+it("does not silently discard selected attachments into the background file route",()=>{
+  const p=createSupportedProvider();mocks.provider={providers:[p],selectedProviderId:p.providerId,defaultProviderId:p.providerId};
+  mocks.composer.selectedModelId=JSON.stringify([p.providerId,p.defaultModel]);
+  mocks.session={ready:true,providerId:p.providerId,modelId:p.defaultModel,endpoint:"https://api.deepseek.com/chat/completions",wireApi:"openai_compatible",fixture:false};
+  vi.stubGlobal("__TAURI_INTERNALS__",{invoke:vi.fn(async()=>{throw Error("no native side effects expected");})});
+  attachmentStore.bind("root:fixture");attachmentStore.addAsset("root:fixture","Asset","Content/Fixture.uasset","Blueprint");
+  attachmentStore.select(attachmentStore.getSnapshot().items[0].id,true);
+  try{
+    mount(<ComposerDock/>);
+    expect(screen.queryByRole("button",{name:"Prepare background file investigation"})).toBeNull();
+    expect((screen.getByRole("checkbox",{name:"Background file investigation"}) as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button",{name:"Send task"}));
+    expect(mocks.actions.submitComposerTask).toHaveBeenCalledTimes(1);
+    expect(attachmentStore.selected("root:fixture")).toHaveLength(1);
+  }finally{cleanup();attachmentStore.clear();}
 });
