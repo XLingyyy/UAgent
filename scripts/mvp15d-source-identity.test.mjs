@@ -68,6 +68,7 @@ const REPRESENTATIVE_PRODUCTION_FILES = Object.freeze([
   "apps/runtime-host/src/main.ts",
   "apps/runtime-host/src/server.ts",
   "scripts/build-runtime-host.mjs",
+  "scripts/prepare-runtime-node.py",
   "integrations/unreal/UAgentAssetTools/Resources/uagent-asset-tools.schema.json",
   "integrations/unreal/UAgentAssetTools/Source/UAgentAssetTools/Private/UAgentAssetTool.cpp",
   "integrations/unreal/UAgentAssetTools/Source/UAgentAssetToolsTests/Private/UAgentAssetToolsTests.cpp",

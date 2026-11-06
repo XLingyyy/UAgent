@@ -36,6 +36,17 @@ pub(crate) struct RuntimeSidecar {
     exited: Receiver<Result<()>>,
 }
 impl RuntimeSidecar {
+    pub(crate) fn start_bundled(app: &tauri::AppHandle, events: SyncSender<Value>) -> Result<Self> {
+        use tauri::Manager;
+        let resources = app.path().resource_dir().map_err(|_| "runtime_sidecar_missing")?;
+        Self::start_from_resources(resources, events)
+    }
+
+    fn start_from_resources(resources: PathBuf, events: SyncSender<Value>) -> Result<Self> {
+        let directory = resources.join("runtime-host");
+        Self::start(directory.join("node.exe"), directory.join("runtime-host.cjs"), events)
+    }
+
     /// Paths are selected by the native application, not supplied by a webview.
     pub(crate) fn start(node: PathBuf, entry: PathBuf, events: SyncSender<Value>) -> Result<Self> {
         let node = node_path(node)?;
@@ -205,6 +216,17 @@ fn supervise(node: PathBuf, entry: PathBuf, controls: Receiver<Control>, events:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_node_resource_handshake_and_shutdown() {
+        let resources = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources");
+        assert!(resources.join("runtime-host/NODE-LICENSE.txt").is_file());
+        let (events, _receiver) = mpsc::sync_channel(64);
+        let host = RuntimeSidecar::start_from_resources(resources, events).unwrap();
+        let result = host.request(HostCommand::Shutdown, json!({}), Duration::from_secs(2)).unwrap();
+        assert_eq!(result["checkpointed"], true);
+        host.wait_for_exit(Duration::from_secs(2)).unwrap();
+    }
 
     #[test]
     fn managed_node_handshake_and_shutdown() {

@@ -75,6 +75,7 @@ const EXACT_TEST_FIXTURE_DATA = Object.freeze([
 ]);
 const EXACT_PRODUCTION_TOOLING = Object.freeze([
   "scripts/build-runtime-host.mjs",
+  "scripts/prepare-runtime-node.py",
   "scripts/integrated-build-binding.py",
   "scripts/export-ue-scene-batch-schemas.mjs",
   "scripts/use-project-env.ps1",

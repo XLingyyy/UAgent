@@ -1,6 +1,6 @@
 # TypeScript Runtime Host 进度（2026-11-06）
 
-独立进程、协调器生命周期和原生进程托管已实现并完成下列定向验证。桌面调查目前仍使用原有渲染进程协调器；原生业务 broker、界面接线、打包分发和跨重启续跑尚未完成，T17 保持进行中。
+独立进程、协调器生命周期、原生进程托管及随包资源已实现并完成下列定向验证。桌面调查目前仍使用原有渲染进程协调器；原生业务 broker、界面接线、最终安装包验收和跨重启续跑尚未完成，T17 保持进行中。
 
 ## 已有实现
 
@@ -10,6 +10,7 @@
 - `apps/desktop/src-tauri/src/runtime_sidecar.rs` 使用现有 Windows Job Object，挂入 Job 后才恢复子进程，后台运行，父进程关闭 Job 会终止所拥有的子进程。命令与 broker 回包分开，阻塞管道读取/写入不占 UI 线程。启动路径由原生应用选择，尚无允许界面提交 broker 回包的 Tauri 命令。
 - 子进程环境只保留 `SystemRoot`。已复现清空该项会使当前 Node/OpenSSL 的随机数初始化失败；另已复现 Node CJS 加载器拒绝 Rust `canonicalize` 产生的 verbatim Windows 入口路径，因此在启动前转换路径表示。
 - `scripts/build-runtime-host.mjs` 复用桌面已有 Vite 构建依赖，生成 `apps/runtime-host/dist/runtime-host.cjs`。源码、配置和构建脚本已纳入现有生产源码标识与构建监视范围。未增加外部运行时库。
+- `scripts/prepare-runtime-node.py` 下载并核对官方固定 Node **24.22.2 win-x64** 发行档，提取执行文件和完整第三方许可；该版本为本次查询官方发行索引中的最新 24.x LTS。Tauri 开发/发布前置命令准备资源，映射到应用 `runtime-host/` 目录。原生 `start_bundled` 仅从应用资源目录选择入口，不查系统 PATH。生成的二进制资源不入 Git。
 - Host 和桌面共用 `packages/runtime/src/run/native-run-store.ts` 的存储序列化、增量游标和提交回执核对，沿用现有数据库格式。Host 的 `store.commit` 请求已使用原生提交协议。
 - 原生 `NativeStoreTaskGrant` 将存储身份限定到一个项目和 Run，生命周期独立于窗口；应用关闭和任务释放仍会撤销它。身份只由原生层签发，历史记录和 sidecar 数据不能重建它。
 - `native_task_admission.rs` 为未选择项目记忆的任务复用现有物理恢复目录、共享模型队列和原生 transport。真实 SQLite 事务核对原始运行记录，工作线程释放数据库所有权后才能获得一次性发送许可；取消、来源变化和重复批准仍会拒绝发送。此路径尚未连接桌面业务入口。
@@ -22,13 +23,14 @@
 | RunHost 生命周期 | 6 项通过：观察者断开/重连、状态副本、观察者异常、退出检查点、撤销后的禁止恢复、暂停续跑和取消持久化与退出竞争。 |
 | 独立 Node 进程 | 4 项通过。模拟模型经父进程 broker 进行三轮有依赖的真实隔离文件读取；随后重新查询最终状态。另覆盖退出等待检查点、存储失败不得声称保存成功、父进程管道断开退出。 |
 | 原生受管 Node 进程 | Cargo integrated profile，`runtime_sidecar::tests::managed_node_handshake_and_shutdown` 1 项通过；覆盖真实 Windows Job/管道、握手、未知 run 拒绝、正常关闭与退出。 |
+| 随包 Node 资源 | `bundled_node_resource_handshake_and_shutdown` 1 项通过，使用官方 24.22.2 执行文件；Tauri 构建已实际复制 Node、Host 和许可证到 integrated 输出目录。尚未生成最终安装包。 |
 | 生产源码范围 | 现有 representative/watch-set 测试 2 项通过，新 Host 入口、server 和构建脚本纳入范围。 |
 | TypeScript | Host 入口及其导入链检查通过。当前迁移后的依赖目录拒绝 pnpm 无 TTY 的重建请求，未强制重建；本次检查显式复用桌面已有 Node 类型目录。 |
 | 共用存储协议 | 原有桌面存储 24 项与独立进程 4 项合计 28 项通过；原生提交协议仍剥离运行授权和原始路径。 |
 | 任务存储身份 | 原生 4 项通过，覆盖窗口撤销、项目/Run 绑定和应用关闭。 |
 | 任务物理恢复校验 | 原生 3 项通过，覆盖原始运行记录、替换持有者、记录变化及校验期间取消。 |
 | 任务模型发送链 | 原生 3 项通过，真实 SQLite 工作线程与模拟 transport 验证精确请求体、释放数据库后发送、取消及来源变化后零发送、禁止重批复用。初次测试复现同一会话锁重入死锁，修正锁内取消检查后通过。 |
-| 构建 | Vite SSR 构建通过，当前 bundle 约 118 kB，不含 Node 可执行文件。 |
+| 构建 | Vite SSR 构建通过，Host 约 118 kB；独立 Node 资源约 94 MB，另附许可证。 |
 
 该组没有真实模型请求，没有读取 API Key，没有桌面界面刷新或通用写任务验收。进程测试清理自身临时文件；原生隔离样本保留在 `.local-dev/temp/`，日志包括 `runtime-sidecar-native.log`、`host-task-store-native.log`、`host-task-recovery-native.log` 和 `host-task-pipeline-native.log`。
 
@@ -36,7 +38,9 @@
 
 1. 原生业务 broker 持有任务级授权、临时凭证、可信根和存储身份，复用现有原生 transport、读取及持久化校验。现有窗口绑定会话不能直接改成永久有效。
 2. 桌面从 Host 状态恢复展示和控制；界面订阅身份与执行身份分离，重新加载不能重建或自动重放 Run。
-3. 加入随应用分发的 Node/Host 资源和退出等待，再验证真实模型、界面重载、取消和重新打开应用后的状态核对。
+3. 将已准备的 Node/Host 资源接入应用任务与退出生命周期，再验证真实模型、界面重载、取消、重新打开应用后的状态核对和最终安装包。
 4. 在已有副作用批准、回执和恢复屏障上接通用执行任务及 UE 对象恢复。
 
 实现参考 [Tauri Node sidecar 文档](https://v2.tauri.app/learn/sidecar-nodejs/)及 [Node 子进程文档](https://nodejs.org/api/child_process.html)。本实现使用原生私有管道与既有 Job 托管，没有向界面开放通用 shell 启动权限。
+
+分发资源按 [Tauri resources 文档](https://v2.tauri.app/develop/resources/)配置；Node 版本与发行校验值来自 [官方发行索引](https://nodejs.org/dist/index.json)及 [24.22.2 发行清单](https://nodejs.org/dist/v24.22.2/SHASUMS256.txt)。

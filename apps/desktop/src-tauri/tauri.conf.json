@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../web/dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "pnpm web:dev",
-    "beforeBuildCommand": "pnpm icon:validate && pnpm web:build"
+    "beforeDevCommand": "pnpm runtime:prepare && pnpm web:dev",
+    "beforeBuildCommand": "pnpm runtime:prepare && pnpm icon:validate && pnpm web:build"
   },
   "app": {
     "windows": [
@@ -29,6 +29,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "resources/runtime-host/node.exe": "runtime-host/node.exe",
+      "resources/runtime-host/runtime-host.cjs": "runtime-host/runtime-host.cjs",
+      "resources/runtime-host/NODE-LICENSE.txt": "runtime-host/NODE-LICENSE.txt"
+    },
     "icon": [
       "icons/icon.ico"
     ]

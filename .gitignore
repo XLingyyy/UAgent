@@ -51,3 +51,4 @@ docs/superpowers/
 
 # Repository-local development caches (never commit credentials or build outputs)
 /.local-dev/
+/apps/desktop/src-tauri/resources/runtime-host/
