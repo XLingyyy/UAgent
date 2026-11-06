@@ -1,3 +1,4 @@
+import {localNativeInvoke} from "../runtime/native-provider-budget";
 import {CodexLeadField} from "./CodexLeadField";
 import {CODEX_ENDPOINT,codexMemberSessions,codexLeadSession,subscribeCodexMembers,codexMembersRevision} from "../runtime/codex-member-session";
 import {collaborationSessions} from "../runtime/collaboration-sessions";
@@ -245,7 +246,10 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         </header>
         <div className="ua-composer-settings__body">
           <section hidden={settingsPanel !== "workflow"}>
-            <InvestigationWorkflow embedded key={activeProjectId ?? "no-project"} disabled={composer.submitting || canStop} hasDraft={Boolean(input.trim())} onApply={draft => {
+            <InvestigationWorkflow embedded key={activeProjectId ?? "no-project"} disabled={composer.submitting || canStop} hasDraft={Boolean(input.trim())} onPrepareHosted={localNativeInvoke()&&activeProjectId?draft=>{
+              closeSettingsPanel();
+              window.dispatchEvent(new CustomEvent("uagent:prepare-hosted-investigation",{detail:{projectId:activeProjectId,goal:draft.input,prefix:draft.prefix}}));
+            }:undefined} onApply={draft => {
               setSavedRun(undefined);
               setComposerTaskMode("investigation");
               setComposerInput(draft.input);

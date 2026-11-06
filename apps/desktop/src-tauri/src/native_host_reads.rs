@@ -31,9 +31,20 @@ fn within(path: &str, prefixes: &[String]) -> bool {
         prefix.is_empty() || path==prefix || path.strip_prefix(&prefix).is_some_and(|tail|tail.starts_with('/'))
     })
 }
-pub(crate) fn definition() -> Value {
-    json!({"name":"project_read_file","description":"Read bounded text from an approved project-relative file. Binary, secret and generated files are blocked. Results explicitly report truncation and redaction.",
-        "parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}})
+pub(crate) fn tool_id(name:&str)->Option<&'static str> {
+    match name {"project_read_file"=>Some("project.read_file"),"project_list_files"=>Some("project.list_files"),"project_find_files"=>Some("project.find_files"),_=>None}
+}
+pub(crate) fn definitions() -> Vec<Value> {
+    let mut definitions=vec![json!({"name":"project_read_file","description":"Read bounded text from an approved project-relative file. Binary, secret and generated files are blocked. Results explicitly report truncation and redaction.",
+        "parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}})];
+    for search in [false,true] {
+        let mut properties=json!({"prefix":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":25}});
+        if search {properties["query"]=json!({"type":"string","minLength":1,"maxLength":100});}
+        definitions.push(json!({"name":if search{"project_find_files"}else{"project_list_files"},
+            "description":"List current project-relative file paths using a bounded native metadata scan. Only approved read/share prefixes are returned. Optional query matches paths, not contents. Truncation is explicit; no file contents are read.",
+            "parameters":{"type":"object","properties":properties,"required":if search{vec!["prefix","query"]}else{vec!["prefix"]},"additionalProperties":false}}));
+    }
+    definitions
 }
 impl HostedReads {
     /// The native task scope issuer supplies the confirmed path lists.
@@ -65,11 +76,38 @@ impl HostedReads {
         for (_,evidence) in &self.sources {self.monitor.verify_evidence(evidence)?;}
         Ok(true)
     }
+    fn query(&mut self,call:&Value,args:&Value,result_limit:usize)->Result<Value> {
+        let search=call["name"]=="project_find_files";
+        let object=args.as_object().ok_or("host_read_call_invalid")?;
+        if object.keys().any(|key|!matches!(key.as_str(),"prefix"|"limit")&&!(search&&key=="query")) {return Err("host_read_call_invalid");}
+        let prefix=args["prefix"].as_str().ok_or("host_read_call_invalid")?;
+        if !valid_prefixes(&[prefix.into()])||!within(prefix,&self.read)||!within(prefix,&self.share) {return Err("host_read_scope_denied");}
+        let query=if search {args["query"].as_str().filter(|q|!q.trim().is_empty()&&q.chars().count()<=100&&!q.chars().any(char::is_control)).ok_or("host_read_call_invalid")?.to_lowercase()}else{String::new()};
+        let limit=if object.contains_key("limit"){args["limit"].as_u64().filter(|n|(1..=25).contains(n)).ok_or("host_read_call_invalid")? as usize}else{20};
+        let evidence=self.monitor.capture_index()?;
+        let entries=crate::native_responses_sources::indexed_files(self.root.path_hint())?;
+        self.monitor.verify_evidence(&evidence)?;
+        let mut matches=entries.into_iter().filter(|(path,_)|within(path,&[prefix.into()])&&within(path,&self.read)&&within(path,&self.share)&&path.to_lowercase().contains(&query));
+        let mut files=Vec::new();let mut truncated=false;
+        for (path,bytes) in matches.by_ref() {
+            if files.len()==limit {truncated=true;break;}
+            files.push(json!({"path":path,"bytes":bytes}));
+            if serde_json::to_vec(&files).map_err(|_|"host_read_result_invalid")?.len()>result_limit-1500 {files.pop();truncated=true;break;}
+        }
+        let version=evidence.version();
+        let reference=json!({"projectId":self.project,"path":prefix,"version":version,"kind":"index_query"});
+        let result=json!({"callId":call["id"],"toolId":tool_id(call["name"].as_str().unwrap_or("")),"status":"completed","effectState":"not_started",
+            "output":{"files":files,"indexVersion":version,"scan":"bounded_native_metadata"},"sources":[reference],"truncated":truncated});
+        if serde_json::to_vec(&result).map_err(|_|"host_read_result_invalid")?.len()>result_limit {return Err("host_read_result_limit");}
+        let mut selected=self.sources.iter().map(|(_,evidence)|evidence.clone()).collect::<Vec<_>>();selected.push(evidence.clone());
+        self.monitor.set_sources(&selected)?;self.current()?;self.sources.push((reference,evidence));Ok(result)
+    }
     pub(crate) fn execute(&mut self, call:&Value, result_limit:usize) -> Result<Value> {
         self.current()?;
-        if call["name"]!="project_read_file" || !call["id"].as_str().is_some_and(|id|!id.is_empty()&&id.len()<=128)
+        if tool_id(call["name"].as_str().unwrap_or("")).is_none() || !call["id"].as_str().is_some_and(|id|!id.is_empty()&&id.len()<=128)
             || !(4096..=16384).contains(&result_limit) || self.sources.len()>=30 {return Err("host_read_call_invalid");}
         let args:Value=serde_json::from_str(call["arguments"].as_str().ok_or("host_read_call_invalid")?).map_err(|_|"host_read_call_invalid")?;
+        if call["name"]!="project_read_file" { return self.query(call,&args,result_limit); }
         if !args.as_object().is_some_and(|object|object.len()==1&&object.contains_key("path")) {return Err("host_read_call_invalid");}
         let path=args["path"].as_str().ok_or("host_read_call_invalid")?;
         if !within(path,&self.read)||!within(path,&self.share) {return Err("host_read_scope_denied");}

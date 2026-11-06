@@ -27,8 +27,9 @@ Result report: conclusion; evidence paths and sources; inspected and unverified 
   return { input, taskMode: "investigation" };
 }
 
-export function InvestigationWorkflow({ disabled, hasDraft, onApply, embedded = false }: {
+export function InvestigationWorkflow({ disabled, hasDraft, onApply, onPrepareHosted, embedded = false }: {
   embedded?: boolean; disabled: boolean; hasDraft: boolean; onApply: (draft: InvestigationWorkflowDraft) => void;
+  onPrepareHosted?: (draft: InvestigationWorkflowDraft & {prefix:string}) => void;
 }) {
   const { locale } = useI18n(), zh = locale === "zh-CN";
   const [template, setTemplate] = useState("investigation");
@@ -46,14 +47,18 @@ export function InvestigationWorkflow({ disabled, hasDraft, onApply, embedded = 
         <option value="scene">{zh ? "场景批次 · 当前运行内续接" : "Scene batch · Continue within the current run"}</option>
       </select></label>
       {supported ? <>
-        <p>{zh ? "检索已建立的项目索引、读取相关文本，并在任务中给出带来源的调查报告。需要已信任且索引就绪的项目及受支持的模型会话；发送时仍需确认读取范围和每次外发内容。" : "Search an existing project index, read related text, and produce a sourced report in the task. Requires a trusted, indexed project and a supported model session; read scope and each outbound request still require confirmation."}</p>
+        <p>{onPrepareHosted ? (zh ? "后台检索指定目录中的文件路径、读取相关文本并生成带来源的报告。需要已信任项目及临时 DeepSeek 会话；下一页确认读取和外发范围。界面重载后任务继续，退出应用后停止。" : "Discover paths in the selected directory, read related text and produce a sourced report in the background. Requires a trusted project and temporary DeepSeek session. Review read/share scope on the next page. View reloads keep the task running; exiting the app stops it.") : zh ? "检索已建立的项目索引、读取相关文本，并在任务中给出带来源的调查报告。需要已信任且索引就绪的项目及受支持的模型会话；发送时仍需确认读取范围和每次外发内容。" : "Search an existing project index, read related text, and produce a sourced report in the task. Requires a trusted, indexed project and a supported model session; read scope and each outbound request still require confirmation."}</p>
         <label>{zh ? "调查问题" : "Investigation question"}<input value={question} maxLength={2000} onChange={e => { setQuestion(e.target.value); setError(false); }}/></label>
         <label>{zh ? "关注目录（相对路径，可留空）" : "Focus directory (relative, optional)"}<input value={prefix} maxLength={256} onChange={e => { setPrefix(e.target.value); setError(false); }}/></label>
         <p>{zh ? "关注目录不会授予读取权限。结果报告包含结论、证据、未验证范围与待解决问题。" : "The focus directory grants no read permission. The report includes conclusions, evidence, unverified scope and open questions."}</p>
+        {onPrepareHosted&&<button type="button" className="ua-composer__mode-btn" disabled={!question.trim()} onClick={()=>{
+          try { const draft=investigationWorkflowDraft(question,prefix,zh); onPrepareHosted({...draft,prefix:prefix.trim()}); setError(false); }
+          catch { setError(true); }
+        }}>{zh?"准备后台调查":"Prepare background investigation"}</button>}
         <button type="button" className="ua-composer__mode-btn" disabled={!question.trim()} onClick={() => {
           try { const draft = investigationWorkflowDraft(question, prefix, zh); onApply(draft); setError(false); }
           catch { setError(true); }
-        }}>{hasDraft ? (zh ? "用模板替换当前草稿" : "Replace draft with template") : (zh ? "准备调查任务" : "Prepare investigation task")}</button>
+        }}>{onPrepareHosted ? (zh?"准备协作调查草稿":"Prepare collaborative investigation draft") : hasDraft ? (zh ? "用模板替换当前草稿" : "Replace draft with template") : (zh ? "准备调查任务" : "Prepare investigation task")}</button>
         {error && <p role="alert">{zh ? "请填写问题，并使用项目内相对目录（如 Source），不要使用绝对路径或 ..。" : "Enter a question and a project-relative directory such as Source, without absolute paths or .. segments."}</p>}
       </> : template === "build" ? <BuildRepairWorkflow/> : template === "blueprint" ? <BlueprintTemplateWorkflow/> : <SceneBatchWorkflow/>}
     </fieldset>

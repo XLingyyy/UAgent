@@ -22,14 +22,23 @@ export function HostedTasksPanel() {
   const [sourceProposals,setSourceProposals]=useState(false);
   const [instructions,setInstructions]=useState("");
   const generation=useRef(0);
+  useEffect(()=>{
+    const prepare=(event:Event)=>{
+      const input=(event as CustomEvent<{projectId:string;goal:string;prefix:string}>).detail;
+      if(busy||!input||input.projectId!==project?.id||typeof input.goal!=="string"||!input.goal.trim()||input.goal.length>4096||typeof input.prefix!=="string")return;
+      generation.current++;setGoal(input.goal);setPrefix(input.prefix);setSourceProposals(false);setSelected(null);setSnapshot(null);setError(null);setOpen(true);
+    };
+    window.addEventListener("uagent:prepare-hosted-investigation",prepare);
+    return()=>window.removeEventListener("uagent:prepare-hosted-investigation",prepare);
+  },[project?.id,busy]);
   useEffect(()=>{const node=panel.current;if(!open||!node)return;node.showModal();return()=>{generation.current++;if(node.open)node.close();};},[open]);
   useEffect(()=>{
     if(!open||!invoke)return;
     let active=true;
-    void invoke<TaskDescription[]>("list_hosted_tasks").then(value=>{if(active){setTasks(value);setSelected(previous=>previous??value.at(-1)?.runId??null);}})
+    void invoke<TaskDescription[]>("list_hosted_tasks").then(value=>{if(active){const scoped=value.filter(task=>task.projectId===project?.id);setTasks(scoped);setSelected(previous=>scoped.some(task=>task.runId===previous)?previous:goal.trim()?null:scoped.at(-1)?.runId??null);}})
       .catch(()=>{if(active)setError(zh?"无法读取后台任务。":"Background tasks are unavailable.");});
     return()=>{active=false;};
-  },[open,zh]);
+  },[open,zh,project?.id]);
   useEffect(()=>{
     if(!open||!selected||!invoke){setSnapshot(null);return;}
     let active=true,timer:ReturnType<typeof setTimeout>|undefined;
@@ -51,7 +60,7 @@ export function HostedTasksPanel() {
     try{
       const result=await invoke<{runId:string}>("start_hosted_task",{input:{profileId,projectId:project.id,conversationId:crypto.randomUUID(),
         goal,readPrefixes:[prefix.trim()],sharePrefixes:[prefix.trim()],sourceProposals}});
-      if(current===generation.current){setTasks(await invoke<TaskDescription[]>("list_hosted_tasks"));setSelected(result.runId);}
+      if(current===generation.current){setTasks((await invoke<TaskDescription[]>("list_hosted_tasks")).filter(task=>task.projectId===project.id));setSelected(result.runId);}
     }catch{if(current===generation.current)setError(zh?"任务未启动。请检查项目已信任、临时 DeepSeek 会话已开启，并完成范围确认。":"Task did not start. Check project trust, temporary DeepSeek session and scope confirmation.");}
     finally{setBusy(false);}
   }
@@ -72,7 +81,7 @@ export function HostedTasksPanel() {
       <nav className="ua-history-drawer__tabs"><strong>{zh?"后台文件调查":"Background file investigation"}</strong><button type="button" onClick={()=>setOpen(false)}>{zh?"关闭面板":"Close panel"}</button></nav>
       <div className="ua-history-drawer__content">
         <p>{zh?"只读检查指定路径中的文本文件。界面重载后任务继续；退出应用后停止，记录保存在运行历史中。":"Read text files within a selected path. Tasks survive view reloads; exiting the app stops them and retains their history."}</p>
-        <p>{zh?"本次最多 4 次模型请求、8 次工具调用、2 分钟。请在目标中写明项目相对文件路径。":"Up to 4 model requests, 8 tool calls and 2 minutes. Include project-relative filenames in your goal."}</p>
+        <p>{zh?"本次最多 4 次模型请求、8 次工具调用、2 分钟。可先检索文件路径，再读取正文。":"Up to 4 model requests, 8 tool calls and 2 minutes. Paths can be discovered before reading file contents."}</p>
         <label>{zh?"读取并发送给 DeepSeek 的目录":"Directory to read and share with DeepSeek"}<input value={prefix} onChange={e=>setPrefix(e.target.value)} placeholder={zh?"留空表示整个项目":"Empty means the whole project"}/></label>
         <label>{zh?"调查目标":"Investigation goal"}<textarea value={goal} onChange={e=>setGoal(e.target.value)} maxLength={4096} rows={3}/></label>
         <label className="ua-hosted-tasks__check"><input type="checkbox" checked={sourceProposals} disabled={busy} onChange={e=>setSourceProposals(e.target.checked)}/>{zh?"生成源码修改提案，完成后单独审阅和批准":"Prepare source change proposals for separate review and approval"}</label>

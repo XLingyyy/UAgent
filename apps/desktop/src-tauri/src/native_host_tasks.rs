@@ -190,7 +190,7 @@ fn broker(app:&tauri::AppHandle,task:&Arc<Task>,method:&str,input:Value)->Result
             })();
             // Every tool exposed here is read-only. Record a denied/failed read as
             // such, so history does not retain a falsely in-flight write effect.
-            Ok(match result {Ok(value)=>value,Err(code)=>json!({"callId":input["id"],"toolId":if input["name"]=="project_propose_source_change"{"project.propose_source_change"}else{"project.read_file"},
+            Ok(match result {Ok(value)=>value,Err(code)=>json!({"callId":input["id"],"toolId":if input["name"]=="project_propose_source_change"{"project.propose_source_change"}else{crate::native_host_reads::tool_id(input["name"].as_str().unwrap_or("")).unwrap_or("project.read_file")},
                 "status":if code=="host_read_unavailable"{"failed"}else{"blocked"},"effectState":"not_started",
                 "output":null,"sources":[],"truncated":false,"diagnosticCode":code})})
         },
@@ -233,7 +233,7 @@ fn send_model(app:&tauri::AppHandle,task:&Arc<Task>,input:Value)->Result<Value> 
 pub(crate) struct StartInput { profile_id:String, project_id:String, conversation_id:String, goal:String,
     read_prefixes:Vec<String>, share_prefixes:Vec<String>, #[serde(default)] source_proposals:bool }
 fn task_tools(proposals: bool) -> Vec<Value> {
-    let mut tools=vec![crate::native_host_reads::definition()];
+    let mut tools=crate::native_host_reads::definitions();
     if proposals { tools.push(source_changes::definition()); }
     tools
 }
@@ -252,7 +252,7 @@ fn validate_start(input:&StartInput)->Result<()> {
 extern "system" {fn MessageBoxW(window:*mut std::ffi::c_void,text:*const u16,title:*const u16,flags:u32)->i32;}
 fn confirm(window:isize,input:&StartInput)->Result<()> {
     let paths=|values:&[String]|values.iter().map(|v|if v.is_empty(){"(whole project)"}else{v.as_str()}).collect::<Vec<_>>().join(", ");
-    let text=format!("Project: {}\nGoal: {}\n\nRead: {}\nShare with DeepSeek: {}\n\nRead-only file investigation. Up to 4 model requests, 8 tool calls, 2 minutes.\nThe task continues while this view reloads. Cancel or exit the app to stop.\n\nStart this task?",
+    let text=format!("Project: {}\nGoal: {}\n\nRead: {}\nShare with DeepSeek: {}\n\nRead-only file investigation with bounded path discovery and text reads. Up to 4 model requests, 8 tool calls, 2 minutes.\nThe task continues while this view reloads. Cancel or exit the app to stop.\n\nStart this task?",
         input.project_id,input.goal.chars().take(240).collect::<String>(),paths(&input.read_prefixes),paths(&input.share_prefixes));
     let text=if input.source_proposals {format!("{text}\n\nSource proposals are enabled. Proposals do not write files. Review the exact diff and approve a separate native write after the task finishes.")} else {text};
     let text:Vec<u16>=text.encode_utf16().chain(Some(0)).collect();let title:Vec<u16>="UAgent - Background investigation".encode_utf16().chain(Some(0)).collect();
@@ -284,7 +284,7 @@ pub(crate) async fn start_hosted_task(app:tauri::AppHandle,window:tauri::Webview
         let now=SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_|"host_task_clock")?.as_millis() as u64;
         let scope=json!({"id":scope_id,"runId":run,"projectId":input.project_id,"conversationId":input.conversation_id,"rootRef":identity.root_ref,
             "providerId":"deepseek","modelId":"deepseek-flash","endpoint":"https://api.deepseek.com","mode":"read_only",
-            "readPrefixes":input.read_prefixes,"sharePrefixes":input.share_prefixes,"toolIds":if input.source_proposals{vec!["project.read_file","project.propose_source_change"]}else{vec!["project.read_file"]},
+            "readPrefixes":input.read_prefixes,"sharePrefixes":input.share_prefixes,"toolIds":if input.source_proposals{vec!["project.read_file","project.list_files","project.find_files","project.propose_source_change"]}else{vec!["project.read_file","project.list_files","project.find_files"]},
             "limits":{"maxToolCalls":8,"maxModelRequests":4,"maxDurationMs":120000,"maxAttemptsPerFailure":1,"maxToolResultBytes":8192,"maxContextBytes":24000},"expiresAt":now+model.remaining_ms()});
         let draft=json!({"taskMode":"investigation","investigationScopeId":scope_id,"conversationId":input.conversation_id,"input":input.goal,"projectId":input.project_id,
             "permissionMode":"request_approval","providerId":"deepseek","modelId":"deepseek-flash","reasoningEffort":"none","runMode":"local","branch":null,"contextPercent":null,"createdAt":now});

@@ -54,6 +54,9 @@ pub(crate) struct SourceEvidence {
     observation: Observation,
     digest: [u8; 32],
 }
+impl SourceEvidence {
+    pub(crate) fn version(&self)->String { self.digest.iter().map(|byte|format!("{byte:02x}")).collect() }
+}
 struct WatchedState {
     authority: SourceAuthority,
     identity: Arc<()>,
@@ -615,7 +618,14 @@ fn private_or_generated(name: &str) -> bool {
         .iter()
         .any(|suffix| lower.ends_with(suffix))
 }
-fn index_digest(root: &Path) -> Result<[u8; 32]> {
+fn index_digest(root: &Path) -> Result<[u8; 32]> { observe_index(root,&mut |_,_|{}) }
+/// Shares the same bounded, no-reparse metadata walk used for source evidence.
+pub(crate) fn indexed_files(root:&Path)->Result<Vec<(String,u64)>> {
+    let mut files=Vec::new();
+    observe_index(root,&mut |path,bytes|files.push((path.replace('\\',"/"),bytes)))?;
+    Ok(files)
+}
+fn observe_index(root: &Path, visit:&mut dyn FnMut(&str,u64)) -> Result<[u8; 32]> {
     let started = Instant::now();
     let mut count = 0usize;
     let mut hash = Sha256::new();
@@ -627,6 +637,7 @@ fn index_digest(root: &Path) -> Result<[u8; 32]> {
         count: &mut usize,
         started: Instant,
         hash: &mut Sha256,
+        visit:&mut dyn FnMut(&str,u64),
     ) -> Result<()> {
         if depth > MAX_INDEX_DEPTH || started.elapsed() > INDEX_TIME_LIMIT {
             return Err("native_source_limit");
@@ -673,15 +684,15 @@ fn index_digest(root: &Path) -> Result<[u8; 32]> {
             hash.update(metadata.creation_time().to_le_bytes());
             hash.update(metadata.last_write_time().to_le_bytes());
             if metadata.is_dir() {
-                walk(root, &path, depth + 1, count, started, hash)?;
-            }
+                walk(root, &path, depth + 1, count, started, hash,visit)?;
+            } else if metadata.is_file() { visit(&relative,metadata.len()); }
         }
         if !held.verify() {
             return Err("native_source_changed");
         }
         Ok(())
     }
-    walk(root, root, 0, &mut count, started, &mut hash)?;
+    walk(root, root, 0, &mut count, started, &mut hash,visit)?;
     Ok(hash.finalize().into())
 }
 
@@ -963,6 +974,32 @@ mod tests {
         assert!(monitor
             .capture_preview("../escape.cpp", 128, 8, &fixture.preview())
             .is_err());
+    }
+    #[test]
+    fn hosted_discovery_enforces_scope_limits_and_invalidates_even_zero_matches() {
+        let fixture=Fixture::new();
+        fs::write(fixture.path.join("Source/Other.cpp"),"int other;\n").unwrap();
+        fs::write(fixture.path.join("Source/.env"),"synthetic private config").unwrap();
+        fs::create_dir(fixture.path.join("SourcePrivate")).unwrap();
+        fs::write(fixture.path.join("SourcePrivate/Hidden.cpp"),"int hidden;\n").unwrap();
+        let session=fixture.session();let root=crate::resolve_trusted_root_handle_by_id(&fixture.project).unwrap();
+        let mut reads=crate::native_host_reads::HostedReads::start(fixture.project.clone(),root,vec!["Source".into()],vec!["Source".into()],&session).unwrap();
+        let call=|name:&str,args:serde_json::Value|serde_json::json!({"id":"fixture-call","name":name,"arguments":args.to_string()});
+        let list=reads.execute(&call("project_list_files",serde_json::json!({"prefix":"Source","limit":1})),8192).unwrap();
+        assert_eq!(list["toolId"],"project.list_files");assert_eq!(list["truncated"],true);assert_eq!(list["output"]["files"][0]["path"],"Source/Main.cpp");
+        let all=reads.execute(&call("project_list_files",serde_json::json!({"prefix":"Source"})),8192).unwrap();
+        assert_eq!(all["output"]["files"].as_array().unwrap().len(),2);assert_eq!(all["truncated"],false);
+        for args in [serde_json::json!({"prefix":"SourcePrivate"}),serde_json::json!({"prefix":""}),serde_json::json!({"prefix":"Source/.."}),serde_json::json!({"prefix":"Source","limit":0}),serde_json::json!({"prefix":"Source","query":"unexpected"})] {
+            assert!(reads.execute(&call("project_list_files",args),8192).is_err());
+        }
+        let found=reads.execute(&call("project_find_files",serde_json::json!({"prefix":"Source","query":"OTHER"})),8192).unwrap();
+        assert_eq!(found["output"]["files"][0]["path"],"Source/Other.cpp");
+        let empty=reads.execute(&call("project_find_files",serde_json::json!({"prefix":"Source","query":"Missing"})),8192).unwrap();
+        assert!(empty["output"]["files"].as_array().unwrap().is_empty());
+        assert!(reads.validate_sources(&empty["sources"]).unwrap());
+        assert!(!reads.has_complete_source("Source/Main.cpp"));
+        fs::write(fixture.path.join("Source/Missing.cpp"),"new").unwrap();
+        assert!(reads.validate_sources(&empty["sources"]).is_err());
     }
     #[test]
     fn zero_match_index_has_independent_evidence_and_new_file_prevents_dispatch() {

@@ -47,3 +47,19 @@ describe("built-in investigation task entry", () => {
     expect(draft.input).toContain("未验证");
   });
 });
+
+it("prepares the background workflow with a path-bound draft and keeps collaborative drafting separate",()=>{
+  const hosted=vi.fn(),apply=vi.fn();
+  render(<I18nProvider store={createLocaleStore({initialLocale:"en",storage:null,eventTarget:null})}>
+    <InvestigationWorkflow disabled={false} hasDraft={false} onApply={apply} onPrepareHosted={hosted}/>
+  </I18nProvider>);
+  fireEvent.click(screen.getByText("Built-in workflows"));
+  fireEvent.change(screen.getByLabelText("Investigation question"),{target:{value:"Find repair declarations"}});
+  fireEvent.click(screen.getByRole("button",{name:"Prepare background investigation"}));
+  expect(hosted).toHaveBeenCalledWith(expect.objectContaining({prefix:"Source",taskMode:"investigation",input:expect.stringContaining("Find repair declarations")}));
+  expect(apply).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Focus directory (relative, optional)"),{target:{value:"../outside"}});
+  fireEvent.click(screen.getByRole("button",{name:"Prepare background investigation"}));
+  expect(hosted).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("alert")).toBeTruthy();
+});
