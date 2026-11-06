@@ -1,0 +1,18 @@
+import {UIProvider} from "../stores/ui-store";
+import {createOutboundConsentGate} from "@uagent/runtime";
+import {OutboundRequestReview} from "../settings/pages/OutboundRequestReview";
+import {afterEach,expect,it,vi} from "vitest";
+import {cleanup,fireEvent,render,screen,act} from "@testing-library/react";
+import {I18nProvider,createLocaleStore} from "../i18n";
+import {UEBuildRepairSuggestion} from "./UEBuildRepairSuggestion";
+import {requestRepairSuggestion} from "../runtime/ue-build-repair-proposal";
+vi.mock("../runtime/ue-build-repair-proposal",()=>({requestRepairSuggestion:vi.fn(),repairSuggestionAvailable:()=>true}));
+const file={path:"Source/Test.cpp",content:"old"};const preview={} as never;
+function panel(onUse:ReturnType<typeof vi.fn>,disabled=false){return <I18nProvider store={createLocaleStore({initialLocale:"en",storage:null})}><UEBuildRepairSuggestion file={file} preview={preview} result={{} as never} runId="test" disabled={disabled} onUse={onUse}/></I18nProvider>;}
+function prices(){fireEvent.change(screen.getByLabelText("Input price"),{target:{value:"10"}});fireEvent.change(screen.getByLabelText("Output price"),{target:{value:"10"}});fireEvent.click(screen.getByLabelText("I verified these rates; next review this request and its cost"));}
+afterEach(()=>{cleanup();vi.resetAllMocks();});
+it("receiving a suggestion requires a separate explicit adoption",async()=>{vi.mocked(requestRepairSuggestion).mockResolvedValue({path:file.path,after:"new"});const use=vi.fn();render(panel(use));prices();fireEvent.click(screen.getByText("Review outbound request for suggestion"));await screen.findByText("Adopt suggestion for diff review");expect(use).not.toHaveBeenCalled();fireEvent.click(screen.getByText("Adopt suggestion for diff review"));expect(use).toHaveBeenCalledTimes(1);expect(use).toHaveBeenCalledWith("new");});
+it("closing cancels and discards a late response",async()=>{let done:(v:{path:string;after:string})=>void=()=>{};vi.mocked(requestRepairSuggestion).mockImplementation(()=>new Promise(resolve=>{done=resolve;}));const use=vi.fn();const h=render(panel(use));prices();fireEvent.click(screen.getByText("Review outbound request for suggestion"));const signal=vi.mocked(requestRepairSuggestion).mock.calls[0][1];h.unmount();expect(signal.aborted).toBe(true);await act(async()=>done({path:file.path,after:"late"}));expect(use).not.toHaveBeenCalled();});
+it("native operation disables and revokes a pending suggestion",()=>{vi.mocked(requestRepairSuggestion).mockImplementation(()=>new Promise(()=>{}));const use=vi.fn();const h=render(panel(use));prices();fireEvent.click(screen.getByText("Review outbound request for suggestion"));const signal=vi.mocked(requestRepairSuggestion).mock.calls[0][1];h.rerender(panel(use,true));expect(signal.aborted).toBe(true);expect(use).not.toHaveBeenCalled();});
+
+it("the actual outbound dialog labels account cost as an estimate rather than a reserved cap",async()=>{const gate=createOutboundConsentGate();render(<I18nProvider store={createLocaleStore({initialLocale:"en",storage:null})}><UIProvider><OutboundRequestReview gate={gate}/></UIProvider></I18nProvider>);const pending=gate.review({endpoint:"https://api.deepseek.com/chat/completions",model:"deepseek-flash",projectId:"A",epoch:1,revision:"1",body:"synthetic-file-only",estimatedCostMicros:123456}).catch(()=>null);expect((await screen.findByLabelText("Request cost estimate")).textContent).toContain("0.123456");expect(screen.getByLabelText("Request cost estimate").textContent).toContain("not a billing cap");fireEvent.click(screen.getByText("Reject outbound request"));await pending;});

@@ -672,6 +672,30 @@ impl MetadataNode {
     }
 }
 
+/// Pure policy check shared by the live native memory scope and source binder.
+#[cfg(windows)]
+pub(crate) fn memory_source_path_allowed(path:&str)->bool {
+    canonical_relative_path(path) && !blocked_source_path(path)
+}
+/// Compatibility seam requested by the isolated source author. Full identity is
+/// still checked by metadata_observation and retained separately by its caller.
+#[cfg(windows)]
+pub(crate) fn bound_file_metadata_version(file:&crate::trusted_root_handle::BoundReadFile)->Result<String,String>{
+    bound_metadata_version(file).map(|(_,version)|version)
+}
+
+/// The same meta-v1 algorithm as ordinary capture, but its inputs come from
+/// the exact retained file handle. The full native identity is not compressed
+/// into the legacy stamp and must also remain bound to the original file guard.
+#[cfg(windows)]
+pub(crate) fn bound_metadata_version(
+    file: &crate::trusted_root_handle::BoundReadFile,
+) -> Result<(crate::trusted_root_handle::ObjectIdentity, String), String> {
+    let observed = file.metadata_observation().map_err(|_| "native_source_changed".to_string())?;
+    let version = metadata_version(observed.metadata(), Some(observed.legacy_identity()));
+    Ok((observed.identity(), version))
+}
+
 fn metadata_version(metadata: &Metadata, identity: Option<(u64, u64)>) -> String {
     let mut hash = DefaultHasher::new();
     "native-project-source-metadata-v1".hash(&mut hash);
@@ -1401,5 +1425,31 @@ mod tests {
         }));
         fs::remove_file(link).unwrap();
         fs::remove_file(fixture.0.join("Leaf.cpp")).unwrap();
+    }
+}
+
+
+#[cfg(all(test, windows))]
+mod retained_metadata_stamp_tests {
+    use super::*;
+    #[test]
+    fn actual_held_handle_keeps_full_identity_and_matches_existing_meta_v1() {
+        let directory = PathBuf::from(r"E:\Codex\UAgent\2026-10-29\tmp\retained-metadata-stamp-tests")
+            .join(format!("{}-{}",std::process::id(),std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir_all(directory.join("Source")).unwrap();
+        let path=directory.join("Source/Stable.cpp");
+        fs::write(&path,b"synthetic retained file\n").unwrap();
+        let root=crate::trusted_root_handle::TrustedRootHandle::open_from_host_selection(&directory).unwrap();
+        let scope=root.scope_from_verified_host(vec![
+            crate::trusted_root_handle::ReadRule::exact_file("Source/Stable.cpp").unwrap()
+        ]).unwrap();
+        let file=scope.open_file("Source/Stable.cpp").unwrap();
+        let (identity,version)=bound_metadata_version(&file).unwrap();
+        assert_eq!(identity,file.identity());
+        assert_eq!(version,metadata_node(&path).unwrap().version());
+        assert!(fs::OpenOptions::new().write(true).open(&path).is_err());
+        assert_eq!(bound_metadata_version(&file).unwrap(),(identity,version));
+        // Retain the isolated E: fixture; no deletion.
     }
 }

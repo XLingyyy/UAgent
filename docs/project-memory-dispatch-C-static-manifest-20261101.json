@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "boundary": "C - static data contract and native request companion",
+  "recordedAtUtc": "2026-11-01T06:53:51.8611480Z",
+  "status": "static implementation and test source only; not compiled or executed",
+  "productionMemoryDispatch": "CLOSED - unchanged",
+  "integratedExe": "not produced by this author",
+  "sourceRoot": "E:\\Codex\\UAgent\\2026-10-29\\worktrees\\credential-vault",
+  "files": [
+    {
+      "path": "packages/runtime/src/project-memory/dispatch-contract.ts",
+      "bytes": 19956,
+      "sha256": "9e1f778bd49b5534d1ff78bf8005ee8ef165d063ff5caa3d50b7ba36bc463f7b",
+      "testCases": null
+    },
+    {
+      "path": "packages/runtime/src/project-memory/dispatch-contract.test.ts",
+      "bytes": 13527,
+      "sha256": "407b24192255d27abeca0b03682fe41183bd86b026c1aafcdea5d8d6e30ff4af",
+      "testCases": 14
+    },
+    {
+      "path": "apps/desktop/web/src/runtime/native-project-memory-dispatch.ts",
+      "bytes": 15528,
+      "sha256": "45b145c89eee048607e403aaf443ab222d96afb4c06e5305843c71d79f2c8672",
+      "testCases": null
+    },
+    {
+      "path": "apps/desktop/web/src/runtime/native-project-memory-dispatch.test.ts",
+      "bytes": 20437,
+      "sha256": "eac746e0130c9114d0c6fab0b90a7f9495ffb427c97860f37cbce7dcdeb03c9f",
+      "testCases": 19
+    },
+    {
+      "path": "docs/project-memory-dispatch-C-interface-20261101.md",
+      "bytes": 12695,
+      "sha256": "81ebb8f2b784317823b23e85084e4fe428ffdd349a4e440620a7c1fa36f6fe45",
+      "testCases": null
+    }
+  ],
+  "testSourceCases": 33,
+  "minimumFutureChecks": [
+    "Focused typecheck after central export/IPC reconciliation",
+    "packages/runtime/src/project-memory/dispatch-contract.test.ts only (14 cases)",
+    "apps/desktop/web/src/runtime/native-project-memory-dispatch.test.ts only (19 cases, including controlled delayed-digest expiry)"
+  ],
+  "checksActuallyPerformed": [
+    "Read plan, independent review and source interfaces",
+    "C source text inspection and searches only",
+    "File byte lengths and SHA256 hashes",
+    "Static numeric-scanner escape inspection",
+    "Read and bound B revision 2 freshness closure; inspected C compatibility delta as text only",
+    "Read C static review C-P2-01; inspected earlier expiry installation and controlled deferred-digest regression source; no execution"
+  ],
+  "notRun": [
+    "typecheck",
+    "compiler",
+    "vitest",
+    "native tests",
+    "SQL",
+    "application",
+    "installation",
+    "HTTP/API",
+    "candidate build"
+  ],
+  "notPerformed": [
+    "delete",
+    "reset",
+    "clean",
+    "credential read",
+    "push",
+    "upload",
+    "system/network/security change",
+    "close user programs"
+  ],
+  "centralDependencies": [
+    "R1 live native run/window/project/read-share grant",
+    "R2 project/root updating-generation and ABA barrier",
+    "R3 worker cleanup-complete one-shot permit delivery",
+    "R5 same-held-handle source metadata helper",
+    "R6 private native permit, original sender and final admission mutex",
+    "Exact command wrappers and runtime exports in C interface note",
+    "Full native canonical segment and immutable whole-body real consent review",
+    "Preserve absent/equal original freshness; native capture AND reobserve must use the SAME held file handle actual stamp"
+  ],
+  "inputs": [
+    {
+      "path": "E:/Codex/UAgent/2026-10-29/evidence/project-memory-dispatch-boundary-20261101-r1/implementation-boundary.md",
+      "sha256": "b1f5d21d246f69a8138c2c58c5b8b636e8a7d8176a73857680d880018bc94490"
+    },
+    {
+      "path": "E:/Codex/UAgent/2026-10-29/evidence/independent-plan-and-guard-review-20261101/project-memory-dispatch-plan-r1-independent-review.md",
+      "sha256": "88e815f7cb84943c8eec7a368bcf50c8f4d586aec20c8f0433a679f340eb7f16"
+    },
+    {
+      "path": "docs/project-memory-dispatch-B-manifest-20261101.json",
+      "sha256": "d75a87e66421569832e46f4f3d52783877ebd39e2b59e43b9d59b981bcdd7a29"
+    },
+    {
+      "path": "E:/Codex/UAgent/2026-10-29/evidence/independent-plan-and-guard-review-20261101/project-memory-dispatch-B-freshness-closure-20261101-r1.md",
+      "sha256": "d72ddcdbadfb2a2714a28fbfb47cff422115729e524c585454a9b402758bc0b3"
+    },
+    {
+      "path": "E:/Codex/UAgent/2026-10-29/evidence/independent-plan-and-guard-review-20261101/project-memory-dispatch-C-static-review-20261101-r1.md",
+      "sha256": "4cc92d738f534ba509563f39f942681a1f8db421e8b59a3ea771646e50b91ca1"
+    }
+  ],
+  "revision": 3,
+  "supersedesManifestSha256": "e31cde8e8306594cb15b765d24ad9d536409606429c864380e9bcd0ec70e429a",
+  "freshnessCompatibility": "Absent or exactly equal to original version; preserve complete original field; native capture and reobserve compare same-held-handle actual stamp, never DTO equality as proof.",
+  "deadlineCorrection": "C-P2-01: install shorter validated selection timer before asynchronous SHA256; publish selected only after hash; late digest cannot restore state. Author static correction, pending independent closure."
+}

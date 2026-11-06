@@ -12,7 +12,12 @@ $manifest | Set-Content -LiteralPath (Join-Path $scratch 'Cargo.toml') -Encoding
 $store = Get-Content -LiteralPath (Join-Path $repository 'apps/desktop/src-tauri/src/local_run_store/mod.rs') -Raw
 foreach ($name in @('schema', 'sqlite', 'legacy')) { $store = $store.Replace("mod $name;", "#[path = `"$native/local_run_store/$name.rs`"]`nmod $name;") }
 $store = $store.Replace('#[path = "../../tests/local_run_store_tests.rs"]', "#[path = `"$native/../tests/local_run_store_tests.rs`"]")
-$store += "`n#[path = `"$native/local_run_store/effect_reconciliation.rs`"]`npub mod effect_reconciliation;`n"
+$effectDeclaration = "#[path = `"$native/local_run_store/effect_reconciliation.rs`"]`npub mod effect_reconciliation;"
+if ($store.Contains('pub mod effect_reconciliation;')) {
+    $store = $store.Replace('pub mod effect_reconciliation;', $effectDeclaration)
+} else {
+    $store += "`n$effectDeclaration`n"
+}
 $store | Set-Content -LiteralPath (Join-Path $scratch 'src/local_run_store.rs') -Encoding utf8NoBOM
 @("#[path = `"$native/trusted_root_handle.rs`"]`npub mod trusted_root_handle;", 'pub mod local_run_store;') -join "`n" | Set-Content -LiteralPath (Join-Path $scratch 'src/lib.rs') -Encoding utf8NoBOM
 $log = Join-Path $scratch ('native-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfff') + '.log')

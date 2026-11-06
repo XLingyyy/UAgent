@@ -51,6 +51,7 @@ pub(crate) enum FailureCode {
     Cancelled,
     TransportFailed,
     ResponseLimit,
+    MemoryFenceRequired,
 }
 impl FailureCode {
     pub(crate) fn code(self) -> &'static str {
@@ -71,9 +72,13 @@ impl FailureCode {
             Self::Cancelled => "native_request_cancelled",
             Self::TransportFailed => "native_transport_failed",
             Self::ResponseLimit => "native_response_limit",
+            Self::MemoryFenceRequired => "memory_dispatch_fence_required",
         }
     }
 }
+#[path="native_memory_admission.rs"]
+mod memory_admission;
+pub(crate) use memory_admission::{MemoryPreflight,MemoryTransport,PendingMemoryPermit,ReadyMemoryPermit};
 type Result<T> = std::result::Result<T, FailureCode>;
 
 /// Trusted native monotonic time only; implementations must not block or call out.
@@ -461,7 +466,7 @@ impl NativeSession {
         body: Vec<u8>,
         checker: &dyn SourceChecker,
     ) -> Result<PreparedRequest> {
-        self.prepare_for(lease, base_url, body, checker, false)
+        self.prepare_for(lease, base_url, body, checker, crate::product_settings_store::WireApi::Responses)
     }
     pub(crate) fn prepare_chat_completions(
         &self,
@@ -470,7 +475,12 @@ impl NativeSession {
         body: Vec<u8>,
         checker: &dyn SourceChecker,
     ) -> Result<PreparedRequest> {
-        self.prepare_for(lease, base_url, body, checker, true)
+        self.prepare_for(lease, base_url, body, checker, crate::product_settings_store::WireApi::ChatCompletions)
+    }
+    pub(crate) fn prepare_anthropic(
+        &self, lease: &Lease, base_url: &str, body: Vec<u8>, checker: &dyn SourceChecker,
+    ) -> Result<PreparedRequest> {
+        self.prepare_for(lease, base_url, body, checker, crate::product_settings_store::WireApi::Anthropic)
     }
     fn prepare_for(
         &self,
@@ -478,13 +488,14 @@ impl NativeSession {
         base_url: &str,
         body: Vec<u8>,
         checker: &dyn SourceChecker,
-        chat: bool,
+        protocol: crate::product_settings_store::WireApi,
     ) -> Result<PreparedRequest> {
         self.check_source(lease, checker, SourcePhase::Prepare)?;
-        let endpoint = if chat {
-            crate::provider_endpoint_policy::prepare_deepseek_endpoint(base_url)
-        } else {
-            crate::provider_endpoint_policy::prepare_responses_endpoint(base_url)
+        let endpoint = match protocol {
+            crate::product_settings_store::WireApi::ChatCompletions => crate::provider_endpoint_policy::prepare_deepseek_endpoint(base_url),
+            crate::product_settings_store::WireApi::Anthropic => crate::provider_endpoint_policy::prepare_anthropic_endpoint(base_url),
+            crate::product_settings_store::WireApi::Responses => crate::provider_endpoint_policy::prepare_responses_endpoint(base_url),
+            _ => return Err(FailureCode::EndpointRejected),
         }
         .map_err(|_| FailureCode::EndpointRejected)?;
         if body.is_empty() || body.len() > MAX_REQUEST_BYTES || std::str::from_utf8(&body).is_err()
@@ -516,9 +527,12 @@ impl NativeSession {
         let prepared = PreparedRequest {
             lease: lease.clone(),
             identity: Arc::new(()),
+            memory_marker: memory_admission::body_has_memory_marker(&body),
+            memory: None,
             body: body.into(),
             binding,
             cancelled: AtomicBool::new(false),
+            host_cancel: std::sync::OnceLock::new(),
             progress: AtomicU8::new(0),
         };
         let state = self
@@ -554,6 +568,7 @@ impl NativeSession {
             request: request.identity.clone(),
             lease: lease.clone(),
             binding: request.binding.clone(),
+            memory: request.memory.clone(),
             consumed: AtomicBool::new(false),
         })
     }
@@ -565,6 +580,11 @@ impl NativeSession {
         checker: &dyn SourceChecker,
         transport: &mut dyn Transport,
     ) -> DispatchOutcome {
+        // Memory-bearing requests never fall back to the ordinary send path,
+        // even after a failed memory admission or a lost completion.
+        if request.memory.is_some() || request.memory_marker {
+            return request.failed(FailureCode::MemoryFenceRequired);
+        }
         let preflight = (|| -> Result<()> {
             request.matches_lease(lease)?;
             request.verify_body()?;
@@ -618,6 +638,13 @@ impl NativeSession {
             request.progress.store(1, Ordering::Release);
             credential
         };
+        self.dispatch_with_credential(request,lease,&credential,transport)
+    }
+    fn dispatch_with_credential(&self,request:&PreparedRequest,lease:&Lease,
+        credential:&Secret,transport:&mut dyn Transport)->DispatchOutcome {
+        // Both ordinary and memory handoffs send the exact originally approved
+        // allocation. Never reserialize from a later database or renderer value.
+        if let Err(code) = request.verify_body() { return request.failed(code); }
         let mut response = ResponseBuffer::new();
         let dispatched = transport.dispatch(
             request.view(),
@@ -647,7 +674,8 @@ impl NativeSession {
             .err();
         let error = if response.exceeded {
             Some(FailureCode::ResponseLimit)
-        } else if request.cancelled.load(Ordering::Acquire) {
+        } else if request.cancelled.load(Ordering::Acquire)
+            || request.host_cancel.get().is_some_and(|flag|flag.load(Ordering::Acquire)) {
             Some(FailureCode::Cancelled)
         } else {
             validity_error.or(error)
@@ -681,17 +709,33 @@ pub(crate) struct ApprovalGrant {
     request: Arc<()>,
     lease: Lease,
     binding: ApprovalBinding,
+    memory: Option<Arc<crate::native_responses_commands::BoundMemoryRequest>>,
     consumed: AtomicBool,
 }
 pub(crate) struct PreparedRequest {
     lease: Lease,
     identity: Arc<()>,
     body: Arc<[u8]>,
+    memory_marker: bool,
+    memory: Option<Arc<crate::native_responses_commands::BoundMemoryRequest>>,
     binding: ApprovalBinding,
     cancelled: AtomicBool,
+    host_cancel: std::sync::OnceLock<Arc<AtomicBool>>,
     progress: AtomicU8,
 }
 impl PreparedRequest {
+    pub(crate) fn body_arc(&self)->&Arc<[u8]>{&self.body}
+    pub(crate) fn memory_binding(&self)->Option<&Arc<crate::native_responses_commands::BoundMemoryRequest>> {self.memory.as_ref()}
+    pub(crate) fn dispatch_cancelled(&self)->bool { DispatchSignal{request:self}.is_cancelled() }
+    pub(crate) fn attach_memory(&mut self,binding:crate::native_responses_commands::BoundMemoryRequest)->Result<()>{
+        if self.memory.is_some() || self.progress.load(Ordering::Acquire)!=0
+            || !Arc::ptr_eq(binding.body(),&self.body)
+            || binding.body_sha256()!=self.binding.body_sha256 {
+            return Err(FailureCode::ApprovalMismatch);
+        }
+        self.memory=Some(Arc::new(binding));
+        self.verify_body()
+    }
     pub(crate) fn binding(&self) -> &ApprovalBinding {
         &self.binding
     }
@@ -713,6 +757,11 @@ impl PreparedRequest {
         Ok(())
     }
     fn verify_body(&self) -> Result<()> {
+        if self.memory_marker && self.memory.is_none(){return Err(FailureCode::MemoryFenceRequired);}
+        if let Some(memory)=&self.memory {
+            memory.compare_original(memory.batch(),&self.body).map_err(|_|FailureCode::ApprovalMismatch)?;
+            if memory.body_sha256()!=self.binding.body_sha256{return Err(FailureCode::ApprovalMismatch);}
+        }
         let digest: [u8; 32] = Sha256::digest(&self.body).into();
         if digest != self.binding.body_sha256 {
             return Err(FailureCode::ApprovalMismatch);
@@ -780,7 +829,8 @@ pub(crate) struct DispatchSignal<'a> {
 }
 impl DispatchSignal<'_> {
     pub(crate) fn is_cancelled(&self) -> bool {
-        if self.request.cancelled.load(Ordering::Acquire) {
+        if self.request.cancelled.load(Ordering::Acquire)
+            || self.request.host_cancel.get().is_some_and(|flag|flag.load(Ordering::Acquire)) {
             return true;
         }
         let session = NativeSession {
@@ -1022,6 +1072,60 @@ mod tests {
         assert_eq!(outcome.status, DispatchStatus::NotDispatched);
         assert!(outcome.error.is_some());
         assert!(outcome.response.is_none());
+        assert_eq!(transport.calls, 0);
+    }
+    #[test]
+    fn approved_snapshot_is_unchanged_by_later_input_edits() {
+        let (session, _, lease) = setup();
+        let mut input = body();
+        let request = session.prepare(&lease, "https://api.openai.com/v1", input.clone(), &SyntheticSourceChecker).unwrap();
+        let approval = session.approve(&request, &lease, &SyntheticSourceChecker).unwrap();
+        let reviewed = request.body_arc().clone();
+        input.fill(b'X');
+        let mut transport = SyntheticTransport::new();
+        let result = session.dispatch(&request, &lease, &approval, &SyntheticSourceChecker, &mut transport);
+        assert!(result.error.is_none());
+        assert_eq!(transport.seen_body, reviewed.as_ref());
+        assert_ne!(transport.seen_body, input);
+        assert!(Arc::ptr_eq(&reviewed, request.body_arc()));
+        let replay = session.dispatch(&request, &lease, &approval, &SyntheticSourceChecker, &mut transport);
+        assert_eq!(replay.error, Some(FailureCode::GrantConsumed));
+        assert_eq!(transport.calls, 1);
+    }
+    #[test]
+    fn approved_snapshot_concurrent_requests_keep_separate_bodies() {
+        let (session, _, lease) = setup();
+        let a = body();
+        let b = br#"{"model":"synthetic-model","input":"second synthetic snapshot"}"#.to_vec();
+        let first = session.prepare(&lease,"https://api.openai.com/v1",a.clone(),&SyntheticSourceChecker).unwrap();
+        let second = session.prepare(&lease,"https://api.openai.com/v1",b.clone(),&SyntheticSourceChecker).unwrap();
+        let first_grant = session.approve(&first,&lease,&SyntheticSourceChecker).unwrap();
+        let second_grant = session.approve(&second,&lease,&SyntheticSourceChecker).unwrap();
+        let barrier = std::sync::Barrier::new(2);
+        std::thread::scope(|threads| {
+            let send = |request: &PreparedRequest, grant: &ApprovalGrant| {
+                let mut transport = SyntheticTransport::new();
+                transport.during = Some(Box::new(|| { barrier.wait(); }));
+                let result = session.dispatch(request,&lease,grant,&SyntheticSourceChecker,&mut transport);
+                assert!(result.error.is_none());
+                transport.seen_body
+            };
+            let left = threads.spawn(move || send(&first,&first_grant));
+            let right = threads.spawn(move || send(&second,&second_grant));
+            assert_eq!(left.join().unwrap(),a);
+            assert_eq!(right.join().unwrap(),b);
+        });
+    }
+    #[test]
+    fn approved_snapshot_final_transport_rejects_substituted_bytes() {
+        let (session, _, lease) = setup();
+        let mut request = prepared(&session, &lease);
+        // Test-only corruption models an invalid handoff. No mutable body setter
+        // exists in production; the final shared transport boundary must deny it.
+        request.body = Arc::from(b"different body".as_slice());
+        let mut transport = SyntheticTransport::new();
+        let result = session.dispatch_with_credential(&request, &lease, &Secret(FIXTURE_KEY.to_vec()), &mut transport);
+        assert_eq!(result.error, Some(FailureCode::ApprovalMismatch));
         assert_eq!(transport.calls, 0);
     }
     #[test]

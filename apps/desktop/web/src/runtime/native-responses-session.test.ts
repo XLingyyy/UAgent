@@ -9,6 +9,7 @@ import type {
 } from "@uagent/shared";
 import { createNativeResponsesProfile } from "./native-responses-session";
 import type { NativeInvoke } from "./project-native-adapter";
+import { PROJECT_MEMORY_MESSAGE_PREFIX } from "../../../../../packages/runtime/src/project-memory/dispatch-contract";
 
 const key = "synthetic-local-bridge-key-ONLY";
 const endpoint = "https://api.openai.com/v1/responses";
@@ -33,6 +34,7 @@ beforeEach(() => {
 afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((close) => close()));
   vi.unstubAllGlobals();
+  if (vi.isFakeTimers()) { vi.clearAllTimers(); vi.useRealTimers(); }
 });
 function body(text = "Hello") {
   return {
@@ -59,7 +61,14 @@ function request(id = "request-fixture"): ProviderRuntimeRequest {
     messages: [{ role: "user", content: "Read the selected project. \u4e2d\u6587" }],
   };
 }
-function harness(autoApprove = true) {
+const memoryRow = {id:"m",revision:1,kind:"decision",body:"Synthetic whole decision",sourceRefs:[],
+  origin:{kind:"user",sessionId:null,messageId:null},confirmation:{kind:"user",confirmedAt:1},readAt:1};
+const memoryText = PROJECT_MEMORY_MESSAGE_PREFIX + JSON.stringify([memoryRow]);
+function memoryRequest(id:string):ProviderRuntimeRequest {
+  return {...request(id),messages:[{role:"system",content:"System"},{role:"developer",content:"Developer"},
+    {role:"user",content:memoryText},{role:"user",content:"Goal"}],metadata:{projectId:owner.projectId,runId:owner.runId}};
+}
+function harness(autoApprove = true, memory = false) {
   const calls: Array<{ command: string; input: Record<string, unknown> }> = [];
   const records: ProviderNativeContinuation[] = [];
   const gate = createOutboundConsentGate();
@@ -106,12 +115,20 @@ function harness(autoApprove = true) {
   let activeNativeRequest = 0;
   let nativeCancelled = false;
   let nativeStatus = "notDispatched";
+  let memoryOrdinal = 0, memoryExpiresAt = 0, memoryBatchId = "";
+  let preparedTtl: number | null = null, virtualNow: number | null = null;
+  const memoryOwner = () => ({runHandle:"native-run-handle",runId:nativeOwner.runId,projectId:nativeOwner.projectId,
+    projectEpoch:nativeOwner.projectEpoch,providerId:nativeOwner.providerId,modelId:nativeOwner.modelId});
+  const memoryAction = (action:string,batchId:unknown,requestId:unknown) => ({schemaVersion:1,owner:memoryOwner(),batchId,requestId,action,
+    dispatchStatus:nativeStatus,terminal:action==="cancelled",reason:action==="cancelled"?"cancelled":null});
   const failingCommands = new Set<string>();
+  const stalledCommands = new Set<string>();
   const invoke: NativeInvoke = async <T>(command: string, payload?: unknown) => {
     const input = (payload as { input: Record<string, unknown> }).input;
     calls.push({ command, input });
     hook?.(command);
     if (failingCommands.has(command)) throw Error("untrusted native detail " + key);
+    if (stalledCommands.has(command)) return new Promise<T>(() => {});
     let result: unknown;
     if (command === "open_native_responses_profile")
       result = {
@@ -121,8 +138,27 @@ function harness(autoApprove = true) {
         endpoint,
         expiresAt: Date.now() + 60000,
         fixture: false,
+        nativeProjectMemoryDispatch: memory,
         modelSettings: { supportsReasoning: true, requestDefaults: { temperature: null, maxOutputTokens: null } },
       };
+    else if (memory && command === "authorize_native_project_memory_scope") {
+      memoryExpiresAt = input.expiresAt as number;
+      result = {scopeId:"native-memory-scope",projectId:input.projectId,runId:input.runId,conversationId:input.conversationId,
+        readPrefixes:input.readPrefixes,sharePrefixes:input.sharePrefixes,maxContextBytes:24576,
+        expiresAt:memoryExpiresAt,productionMemoryDispatchEnabled:true};
+    } else if (memory && command === "bind_native_project_memory_run") {
+      result = {runHandle:"native-run-handle",owner:nativeOwner};
+    } else if (memory && command === "prepare_native_project_memory_selection") {
+      memoryBatchId = (++memoryOrdinal).toString(16).padStart(32,"0");
+      result = {schemaVersion:1,owner:memoryOwner(),expiresAt:memoryExpiresAt,batch:{schemaVersion:1,batchId:memoryBatchId,
+        projectId:owner.projectId,selected:input.selected,message:{role:"user",content:memoryText},
+        sectionSha256:createHash("sha256").update(memoryText).digest("hex"),maxContextBytes:24576}};
+    } else if (memory && command === "approve_native_responses_request") {
+      result = memoryAction("approved",input.memoryBatchId,input.requestId);
+    } else if (memory && command === "cancel_native_project_memory_dispatch") {
+      nativeCancelled = true;
+      result = memoryAction("cancelled",input.batchId,input.requestId);
+    }
     else if(command==="bind_native_responses_conversation"){
       nativeOwner={...owner,projectId:input.projectId===null?"chat:local":"chat:project:"+input.projectId,runId:"chat-run-fixture"};
       result={runHandle:"native-chat-handle",owner:nativeOwner};
@@ -143,9 +179,11 @@ function harness(autoApprove = true) {
         modelId: owner.modelId,
         bodySha256: digestOverride ?? createHash("sha256").update(preparedBody).digest("hex"),
       };
+      if (memory) {const prepared=result as Record<string,unknown>;delete prepared.modelId;
+        Object.assign(prepared,{schemaVersion:1,owner:memoryOwner(),expiresAt:preparedTtl === null ? memoryExpiresAt : Math.min(memoryExpiresAt, Date.now() + preparedTtl),batchId:memoryBatchId,body:preparedBody});}
     } else if (command === "dispatch_native_responses_request") {
       nativeStatus = "mayHaveBeenSent";
-      result = null;
+      result = memory ? memoryAction("scheduled",input.memoryBatchId,input.requestId) : null;
     } else if (command === "cancel_native_responses_request") {
       nativeCancelled = true;
       result = null;
@@ -220,9 +258,10 @@ function harness(autoApprove = true) {
     setHook(value: (command: string) => void) {
       hook = value;
     },
-    fail(command: string) {
-      failingCommands.add(command);
-    },
+    fail(command: string) { failingCommands.add(command); },
+    stall(command: string) { stalledCommands.add(command); },
+    setPreparedTtl(value: number) { preparedTtl = value; },
+    setClock(value: number) { virtualNow = value; },
     async open(chat=false) {
       const profile = await createNativeResponsesProfile({
         invoke,
@@ -230,6 +269,7 @@ function harness(autoApprove = true) {
         modelId: owner.modelId,
         credential: key,
         gate,
+        now: () => virtualNow ?? Date.now(),
       });
       cleanup.push(profile.close);
       const adapter = chat?profile.createConversationAdapter({projectId,conversationId:owner.conversationId,isCurrent:()=>current,getProjectContext:()=>({projectId,revision})}):profile.createRunAdapter({
@@ -731,5 +771,97 @@ describe("Responses desktop native IPC bridge (synthetic invoke only)", () => {
     expect(h.count("dispatch_native_responses_request")).toBe(1);
     expect(h.records).toHaveLength(0);
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// Synthetic IPC tests: no native grant or production transport acceptance.
+describe("memory companion in the existing Responses session",()=>{
+  it("reuses one native run for two whole-body reviewed requests and releases each without run cancellation",async()=>{
+    const h=harness(true,true),{adapter}=await h.open();
+    expect(adapter.getCapabilities().supportsNativeProjectMemory).toBe(true);
+    await adapter.complete(memoryRequest("memory-one"));
+    expect(h.count("release_native_responses_request")).toBe(1);
+    expect(h.count("cancel_native_project_memory_dispatch")).toBe(0);
+    await adapter.complete(memoryRequest("memory-two"));
+    expect(h.count("bind_native_project_memory_run")).toBe(1);
+    expect(h.count("bind_native_responses_run")).toBe(0);
+    expect(h.count("prepare_native_project_memory_selection")).toBe(2);
+    expect(h.count("approve_native_responses_request")).toBe(2);
+    expect(h.count("dispatch_native_responses_request")).toBe(2);
+    expect(h.count("release_native_responses_request")).toBe(2);
+    expect(h.count("cancel_native_project_memory_dispatch")).toBe(0);
+    const prepared=h.calls.filter(call=>call.command==="prepare_native_responses_request");
+    expect(prepared.every(call=>call.input.schemaVersion===1&&typeof call.input.memoryBatchId==="string")).toBe(true);
+    expect(h.gate.getPending()).toBeNull();expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+  it("keeps disabled native production capability fenced before scope/run creation",async()=>{
+    const h=harness(),{adapter}=await h.open();
+    await expect(adapter.complete(memoryRequest("disabled"))).rejects.toThrow();
+    expect(h.count("authorize_native_project_memory_scope")).toBe(0);
+    expect(h.count("bind_native_project_memory_run")).toBe(0);
+    expect(h.count("dispatch_native_responses_request")).toBe(0);
+  });
+  it("cancels the native memory workflow when whole-body consent is interrupted",async()=>{
+    const h=harness(false,true),{adapter}=await h.open(),controller=new AbortController();
+    const result=expect(adapter.complete(memoryRequest("stopped"),{signal:controller.signal})).rejects.toThrow();
+    await vi.waitFor(()=>expect(h.gate.getPending()).not.toBeNull());
+    expect(h.gate.getPending()!.envelope.body).toContain(memoryText.replaceAll('"','\\"'));
+    controller.abort();await result;
+    expect(h.count("cancel_native_project_memory_dispatch")).toBe(1);
+    expect(h.count("approve_native_responses_request")).toBe(0);
+    expect(h.count("dispatch_native_responses_request")).toBe(0);
+    expect(h.count("release_native_responses_request")).toBe(1);
+    expect(h.count("cancel_native_responses_request")).toBe(0);
+  });
+});
+
+// Cleanup failure must settle consumers; a timeout never certifies native stop.
+describe("memory terminal cleanup failure boundaries (synthetic IPC)",()=>{
+  it("errors a successful JSON consumer when request release fails and prevents run reuse",async()=>{
+    const h=harness(true,true),{adapter,profile}=await h.open();
+    h.fail("release_native_responses_request");
+    await expect(adapter.complete(memoryRequest("release-failed"))).rejects.toMatchObject({dispatchStatus:"sent"});
+    expect(profile.getSnapshot().lastDispatchStatus).toBe("sent");
+    expect(h.count("dispatch_native_responses_request")).toBe(1);
+    expect(h.count("release_native_responses_request")).toBe(1);
+    expect(h.count("revoke_native_project_memory_scope")).toBe(1);
+    await expect(adapter.complete(memoryRequest("no-reuse"))).rejects.toThrow();
+    expect(h.count("dispatch_native_responses_request")).toBe(1);
+  });
+  it("settles the same consumer when local success detach expires after the final poll",async()=>{
+    const h=harness(true,true);h.setPreparedTtl(1000);
+    const {adapter}=await h.open();
+    h.setHook(command=>{if(command==="poll_native_responses_request")h.setClock(Date.now()+2000);});
+    await expect(adapter.complete(memoryRequest("detach-expired"))).rejects.toMatchObject({dispatchStatus:"sent"});
+    expect(h.count("dispatch_native_responses_request")).toBe(1);
+    expect(h.count("cancel_native_project_memory_dispatch")).toBe(1);
+    expect(h.count("release_native_responses_request")).toBe(1);
+  });
+  it("bounds consent cancellation even when scope revocation never acknowledges",async()=>{
+    vi.useFakeTimers({toFake:["setTimeout","clearTimeout","Date","performance"]});
+    const h=harness(false,true),{adapter}=await h.open(),controller=new AbortController();
+    h.stall("revoke_native_project_memory_scope");
+    const stopped=expect(adapter.complete(memoryRequest("revoke-stalled"),{signal:controller.signal}))
+      .rejects.toMatchObject({dispatchStatus:"notDispatched"});
+    await vi.waitFor(()=>expect(h.gate.getPending()).not.toBeNull());
+    controller.abort();
+    await vi.waitFor(()=>expect(h.count("revoke_native_project_memory_scope")).toBe(1));
+    await vi.advanceTimersByTimeAsync(2100);await stopped;
+    expect(h.count("cancel_native_project_memory_dispatch")).toBe(1);
+    expect(h.count("release_native_responses_request")).toBe(1);
+    expect(h.count("approve_native_responses_request")).toBe(0);
+    expect(h.count("dispatch_native_responses_request")).toBe(0);
+  });
+  it("bounds a stalled release after send with a sent fact and no automatic retry",async()=>{
+    vi.useFakeTimers({toFake:["setTimeout","clearTimeout","Date","performance"]});
+    const h=harness(true,true),{adapter,profile}=await h.open();h.stall("release_native_responses_request");
+    const stopped=expect(adapter.complete(memoryRequest("release-stalled"))).rejects.toMatchObject({dispatchStatus:"sent"});
+    await vi.waitFor(()=>expect(h.count("release_native_responses_request")).toBe(1));
+    await vi.advanceTimersByTimeAsync(2100);await stopped;
+    expect(profile.getSnapshot().lastDispatchStatus).toBe("sent");
+    expect(h.count("release_native_responses_request")).toBe(1);
+    expect(h.count("revoke_native_project_memory_scope")).toBe(1);
+    await expect(adapter.complete(memoryRequest("no-retry"))).rejects.toThrow();
+    expect(h.count("dispatch_native_responses_request")).toBe(1);
   });
 });

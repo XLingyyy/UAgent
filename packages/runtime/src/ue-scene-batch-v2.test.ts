@@ -104,7 +104,7 @@ function receipt(operation: SceneOperation = UE_SCENE_TOOLS[4], applied = 7) {
 }
 const parse = (value: ReturnType<typeof receipt>) =>
   parseSceneResult(session(), value.operation, value);
-describe("T14 closed exact-20 scene plan", () => {
+describe("T14 closed bounded scene plan", () => {
   it("freezes independent nested copies of the full approved plan", () => {
     const p = plan(),
       parsed = parseSceneBatchPlan(p);
@@ -113,7 +113,7 @@ describe("T14 closed exact-20 scene plan", () => {
     expect(Object.isFrozen(parsed.items[0]!.transform.location)).toBe(true);
     expect(Object.isFrozen(parsed.items)).toBe(true);
   });
-  it.each([0, 19, 21])("rejects %s items", (count) => {
+  it.each([0, 21])("rejects %s items", (count) => {
     const p = plan();
     p.items = Array.from({ length: count }, (_, i) => p.items[i % 20]!);
     expect(() => parseSceneBatchPlan(p)).toThrow();
@@ -191,7 +191,7 @@ describe("T14 frontend binding and transport schemas", () => {
       "unverified_session",
     );
   });
-  it("publishes nested closed schemas with exactly 20 items and no generic result data", () => {
+  it("publishes nested closed schemas with 1–20 items and no generic result data", () => {
     const input = sceneInputSchema(UE_SCENE_TOOLS[5]),
       model = sceneInputSchema(UE_SCENE_TOOLS[5], "model");
     expect(input.additionalProperties).toBe(false);
@@ -210,7 +210,7 @@ describe("T14 frontend binding and transport schemas", () => {
       };
     };
     expect(output.properties.data.additionalProperties).toBe(false);
-    expect(output.properties.data.properties.items.minItems).toBe(20);
+    expect(output.properties.data.properties.items.minItems).toBe(1);
     expect(output.properties.data.properties.items.maxItems).toBe(20);
     expect(output.properties.data.properties.items.items.additionalProperties).toBe(false);
   });
@@ -398,7 +398,7 @@ describe("T14 isolated discovery negotiation", () => {
       runId: id(3),
       available: true,
       productionSupported: false,
-      scopeMode: "isolated_lab_current_run_only",
+      scopeMode: "approved_project_new_map_current_run",
       writeRoot: UE_SCENE_ROOT,
       approvedPlans: [plan(), second],
       tools: catalog.slice(1).map((entry) => ({ ...entry, effect: "host-scoped scene operation" })),
@@ -466,8 +466,8 @@ describe("T14 isolated discovery negotiation", () => {
     const placeholders = { ...host, rootObjectId: manifest.rootObjectId, runId: manifest.runId };
     expect(() => negotiateSceneBatchV2(manifest, catalog, placeholders)).toThrow();
   });
-  it.each([0, 1])(
-    "still requires two exact plans when available=true, even if %s plans satisfy the output schema",
+  it.each([0])(
+    "rejects available=true with %s approved plans",
     (count) => {
       const { manifest, catalog, host } = discovery();
       manifest.approvedPlans = manifest.approvedPlans.slice(0, count);

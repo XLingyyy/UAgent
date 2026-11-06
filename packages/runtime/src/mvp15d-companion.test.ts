@@ -112,6 +112,13 @@ function createIdentity(manifest: UAgentCompanionBuildManifest): Mvp15DCompanion
 }
 
 describe("MVP15D companion contracts", () => {
+  it.each([["5.8.1", 56057345], ["5.8.2", 56702186], ["5.8.4", 56057345]])("rejects stale or mixed engine identity %s / %s", (engineVersion, engineChangelist) => {
+    const manifest = createManifest();
+    expect(validateMvp15DIdentity(createIdentity(manifest))).toBe(true);
+    expect(validateMvp15DIdentity({ ...createIdentity(manifest), engineVersion, engineChangelist })).toBe(false);
+    expect(validateMvp15DManifest({ ...manifest, engineVersion, engineChangelist }).valid).toBe(false);
+  });
+
   it("canonicalizes object keys while preserving array order", () => {
     expect(canonicalizeMvp15DJson({ b: 2, a: ["x", 1] })).toBe('{"a":["x",1],"b":2}');
   });

@@ -1,0 +1,13 @@
+.ua-project-memory { color: var(--ua-text-primary, #e6eaf1); padding: 16px; min-width: 0; }
+.ua-project-memory header,.ua-project-memory__actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ua-project-memory header h2 { margin-right: auto; }
+.ua-project-memory form { display: grid; gap: 10px; max-width: 760px; }
+.ua-project-memory label { display: grid; gap: 4px; }
+.ua-project-memory input,.ua-project-memory select,.ua-project-memory textarea { font: inherit; color: inherit; background: var(--ua-surface, #202735); border: 1px solid var(--ua-border, #3a4556); padding: 8px; border-radius: 4px; }
+.ua-project-memory textarea { min-height: 90px; resize: vertical; }
+.ua-project-memory button { font: inherit; padding: 6px 10px; }
+.ua-project-memory__list { list-style: none; padding: 0; display: grid; gap: 12px; }
+.ua-project-memory__list > li { border-top: 1px solid var(--ua-border, #3a4556); padding-top: 12px; }
+.ua-project-memory__body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ua-project-memory__hint { color: var(--ua-text-secondary, #a8b4c7); font-size: 13px; overflow-wrap: anywhere; }
+.ua-project-memory__error { color: var(--ua-danger, #ffaaaa); }

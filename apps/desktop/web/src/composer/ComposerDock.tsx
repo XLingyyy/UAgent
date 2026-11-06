@@ -1,3 +1,9 @@
+import {CodexLeadField} from "./CodexLeadField";
+import {CODEX_ENDPOINT,codexMemberSessions,codexLeadSession,subscribeCodexMembers,codexMembersRevision} from "../runtime/codex-member-session";
+import {collaborationSessions} from "../runtime/collaboration-sessions";
+import type {CollaborationMembers} from "@uagent/shared";
+import {CollaborationMemberFields} from "./CollaborationMemberFields";
+import { InvestigationWorkflow } from "./InvestigationWorkflow";
 import {useI18n} from "../i18n";
 import {safeProviderSession} from "../runtime/safe-provider-session";
 import {nativeProviderCredentials,type ProviderCredentialRecovery} from "../runtime/native-provider-credentials";
@@ -17,6 +23,7 @@ import {
   useProviderStore,
   useRuntimeActions,
   useSettingsActions,
+  useSettingsStore,
   useLayoutActions,
 } from "../stores/ui-store";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -62,7 +69,45 @@ function detectTerminalIntent(input: string): CommandSuggestion | null {
 }
 
 export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
-  const {text: uiText,t} = useI18n();
+  const {text: uiText,t,locale} = useI18n();
+  const [collaboration,setCollaboration]=useState(false);
+  const [dynamicDelegation,setDynamicDelegation]=useState(false);
+  const [settingsPanel, setSettingsPanel] = useState<"workflow" | "agents" | null>(null);
+  const settingsOpen = useSettingsStore(state => state.open);
+  useEffect(() => {
+    if (settingsOpen) setSettingsPanel(null);
+  }, [settingsOpen]);
+  const settingsClose = useRef<HTMLButtonElement>(null);
+  const settingsTrigger = useRef<HTMLElement | null>(null);
+  const openSettingsPanel = (panel: "workflow" | "agents", trigger: HTMLElement) => {
+    settingsTrigger.current = trigger;
+    setSettingsPanel(panel);
+  };
+  const closeSettingsPanel = () => {
+    setSettingsPanel(null);
+    settingsTrigger.current?.focus();
+  };
+  useEffect(() => {
+    if (!settingsPanel) return;
+    settingsClose.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSettingsPanel(null);
+        settingsTrigger.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [settingsPanel]);
+  const [useCodexLead,setUseCodexLead]=useState(false);
+  const leadState=useSyncExternalStore(codexLeadSession.subscribe,codexLeadSession.getSnapshot,codexLeadSession.getSnapshot);
+  useSyncExternalStore(subscribeCodexMembers,codexMembersRevision,codexMembersRevision);
+  const investigatorSession=useSyncExternalStore(collaborationSessions.investigator.subscribe,collaborationSessions.investigator.getSnapshot,collaborationSessions.investigator.getSnapshot);
+  const reviewerSession=useSyncExternalStore(collaborationSessions.reviewer.subscribe,collaborationSessions.reviewer.getSnapshot,collaborationSessions.reviewer.getSnapshot);
+  const thirdSession=useSyncExternalStore(collaborationSessions.member_3.subscribe,collaborationSessions.member_3.getSnapshot,collaborationSessions.member_3.getSnapshot);
+  const fourthSession=useSyncExternalStore(collaborationSessions.member_4.subscribe,collaborationSessions.member_4.getSnapshot,collaborationSessions.member_4.getSnapshot);
+  const [collaborationMembers,setCollaborationMembers]=useState<CollaborationMembers>({investigator:{role:"source_analyst",focus:""},reviewer:{role:"risk_reviewer",focus:""}});
   const composer = useComposerStore((state) => state);
   const activeTask=useRuntimeStore(state=>state.activeTaskId?state.tasksById[state.activeTaskId]:null);
   const canStop=Boolean(activeTask&&!(["completed","failed","cancelled"] as string[]).includes(activeTask.state));
@@ -129,9 +174,15 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
   const responseModeUnavailable=responses&&investigation&&!responseProjectReady;
   const savedModeUnavailable=investigation&&Boolean(session.savedCredential||(!sessionReady&&savedUsable));
   const credentialUnavailable=Boolean((credentialRecovery||credentialCleanupPending)&&(session.savedCredential||!sessionReady));
-  const modelUnavailable=selectedModelId!=="not-configured"&&(selectedOption?.runtimeSupported!==true||(!sessionReady&&!savedUsable)||responseModeUnavailable||savedModeUnavailable||credentialUnavailable||session.nativeClosing||session.nativeCloseFailed);
-  const canSubmit = trimmedInput.length > 0 && !composer.submitting && !canStop && !modelUnavailable;
-  const providerStatus = selectedModelId === "not-configured" ? "not_configured" : "configured";
+  const codexLead=investigation&&collaboration&&!composer.savedRun&&useCodexLead;
+  const modelUnavailable=codexLead?!codexLeadSession.current(activeProjectId??"",leadState.modelId):selectedModelId!=="not-configured"&&(selectedOption?.runtimeSupported!==true||(!sessionReady&&!savedUsable)||responseModeUnavailable||savedModeUnavailable||credentialUnavailable||session.nativeClosing||session.nativeCloseFailed);
+  const memberModelsReady=(!investigation||!collaboration)||Object.keys(collaborationMembers).every(role=>{
+    const model=collaborationMembers[role].model,state=({investigator:investigatorSession,reviewer:reviewerSession,member_3:thirdSession,member_4:fourthSession} as Record<string,typeof investigatorSession>)[role];
+    if(model?.providerId==="codex")return model.endpoint===CODEX_ENDPOINT&&codexMemberSessions[role].current(activeProject?.id??"",model.modelId);
+    return !model || (state.ready&&!state.savedCredential&&!state.nativeClosing&&state.providerId===model.providerId&&state.modelId===model.modelId&&state.endpoint===model.endpoint&&providerModelOptions.some(option=>option.runtimeSupported&&option.providerId===model.providerId&&option.modelId===model.modelId));
+  });
+  const canSubmit = memberModelsReady && trimmedInput.length > 0 && !composer.submitting && !canStop && !modelUnavailable;
+  const providerStatus = !codexLead&&selectedModelId === "not-configured" ? "not_configured" : "configured";
   const nativeRoot = activeProject?.rootRef ?? null;
   const displayRoot = activeProject?.displayRoot ?? "[project-root]";
 
@@ -143,21 +194,22 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
 
   const handleSubmit = async () => {
     if (!canSubmit || submitting.current) return;
-    if (/(sandbox|沙盒)/i.test(trimmedInput) && /(asset|资产|复制|重命名|移动|保存|duplicate|rename|move|save)/i.test(trimmedInput)) {
+    if (!investigation && /(sandbox|沙盒)/i.test(trimmedInput) && /(asset|资产|复制|重命名|移动|保存|duplicate|rename|move|save)/i.test(trimmedInput)) {
       setInspectorOpen(true);
       window.dispatchEvent(new CustomEvent("uagent:open-asset-workflow"));
       return;
     }
+    setSettingsPanel(null);
     submitting.current = true;
     setSuggestionCard(null);
     setStopError(null);
     const selected = providerModelOptions.find((option) => option.id === selectedModelId);
     try {
       await submitComposerTask({
-        input: trimmedInput, projectId: activeProjectId, taskMode:investigation?"investigation":"discussion", ...(composer.savedRun?{savedRun:composer.savedRun}:{}),
+        input: trimmedInput, projectId: activeProjectId, taskMode:investigation?"investigation":"discussion", ...(investigation&&collaboration&&!composer.savedRun?{collaboration:dynamicDelegation?"dynamic_delegation" as const:"independent_review" as const,collaborationMembers}:{}), ...(composer.savedRun?{savedRun:composer.savedRun}:{}),
         permissionMode: toSharedPermissionMode(permission),
-        modelId: selected?.modelId ?? "not-configured", providerId: selected?.providerId ?? null,
-        reasoningEffort, runMode, branch: null, contextPercent: null, providerStatus,
+        modelId: codexLead?leadState.modelId:selected?.modelId ?? "not-configured", providerId: codexLead?"codex":selected?.providerId ?? null,
+        reasoningEffort: codexLead?(leadState.effort??"server default"):reasoningEffort, runMode, branch: null, contextPercent: null, providerStatus,
       });
     } catch { /* Store owns the safe, retryable error; keep the user's input. */ }
     finally { submitting.current = false; }
@@ -165,6 +217,51 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
 
   return (
     <footer className="ua-composer" aria-label={uiText("Composer dock")} data-composer-mode={mode}>
+      <div className="ua-composer__workflow-bar">
+        <button type="button" className="ua-composer__mode-btn" aria-expanded={settingsPanel === "workflow"} aria-controls="composer-settings" onClick={event => openSettingsPanel("workflow", event.currentTarget)}>
+          <span aria-hidden="true">▧</span> {locale === "zh-CN" ? "内置工作流" : "Built-in workflows"}
+        </button>
+        {investigation && <label className="ua-composer__collaboration-toggle">
+          <input type="checkbox" checked={collaboration && !composer.savedRun} disabled={composer.submitting || canStop || Boolean(composer.savedRun)}
+            aria-label={locale === "zh-CN" ? "双 Agent 独立调查，可配置职责后汇总" : "Multi-agent independent investigation with configurable roles, then synthesis"}
+            onChange={event => {
+              setCollaboration(event.target.checked);
+              if (event.target.checked) openSettingsPanel("agents", event.currentTarget);
+              else setSettingsPanel(null);
+            }}/>
+          {locale === "zh-CN" ? "多 Agent 协作" : "Multi-agent"}
+        </label>}
+        {investigation && collaboration && !composer.savedRun && <button type="button" className="ua-composer__team-summary" aria-label={locale === "zh-CN" ? "配置协作成员" : "Configure collaboration"} aria-expanded={settingsPanel === "agents"} aria-controls="composer-settings" onClick={event => openSettingsPanel("agents", event.currentTarget)}>
+          {Object.keys(collaborationMembers).length} {locale === "zh-CN" ? "位成员" : "members"} · {useCodexLead ? "Codex" : "DeepSeek"} <span aria-hidden="true">↗</span>
+        </button>}
+      </div>
+      {/* Keep connection controls mounted: hiding settings must not revoke a live session. */}
+      <aside id="composer-settings" className="ua-composer-settings" role="dialog" aria-modal="false" aria-labelledby="composer-settings-title" hidden={!settingsPanel}>
+        <header className="ua-composer-settings__header">
+          <div><span className="ua-composer-settings__eyebrow">{locale === "zh-CN" ? "任务配置" : "TASK SETUP"}</span>
+            <h2 id="composer-settings-title">{settingsPanel === "workflow" ? (locale === "zh-CN" ? "内置工作流" : "Built-in workflows") : (locale === "zh-CN" ? "Agent 协作" : "Agent collaboration")}</h2>
+          </div>
+          <button ref={settingsClose} type="button" className="ua-composer-settings__close" aria-label={locale === "zh-CN" ? "关闭任务配置" : "Close task settings"} onClick={closeSettingsPanel}>×</button>
+        </header>
+        <div className="ua-composer-settings__body">
+          <section hidden={settingsPanel !== "workflow"}>
+            <InvestigationWorkflow embedded key={activeProjectId ?? "no-project"} disabled={composer.submitting || canStop} hasDraft={Boolean(input.trim())} onApply={draft => {
+              setSavedRun(undefined);
+              setComposerTaskMode("investigation");
+              setComposerInput(draft.input);
+              setSuggestionCard(null);
+              closeSettingsPanel();
+            }}/>
+          </section>
+          <section hidden={settingsPanel !== "agents"}>
+            <p className="ua-composer-settings__intro">{locale === "zh-CN" ? "成员独立调查，主 Agent 汇总结论。共享工具预算，每次外发仍需确认。" : "Members investigate independently; the lead synthesizes their findings. Tool budget is shared and each outbound request needs approval."}</p>
+            <label className="ua-composer-settings__delegation"><input type="checkbox" checked={dynamicDelegation} disabled={composer.submitting || canStop} onChange={e => setDynamicDelegation(e.target.checked)} aria-label={locale === "zh-CN" ? "主 Agent 动态分工：根据任务分配给所配置成员，再汇总（增加一次模型请求）" : "Lead agent delegates tasks to configured members, then synthesizes (one extra model request)"}/><span>{locale === "zh-CN" ? "由主 Agent 动态分工" : "Let the lead assign tasks"}<small>{locale === "zh-CN" ? "根据任务分配职责，增加一次模型请求" : "Assign roles for this task; uses one additional request"}</small></span></label>
+            <CodexLeadField enabled={useCodexLead} onChange={setUseCodexLead} projectId={activeProjectId} input={input} disabled={composer.submitting || canStop} locale={locale}/>
+            <CollaborationMemberFields providers={provider.providers} projectId={activeProjectId} input={input} mainModel={codexLead ? `Codex / ${leadState.modelId} / ${leadState.effort ?? "server default"}` : `${selectedOption?.provider ?? ""} / ${selectedOption?.modelId ?? ""}`} members={collaborationMembers} onChange={setCollaborationMembers} disabled={composer.submitting || canStop} locale={locale}/>
+          </section>
+        </div>
+        <footer className="ua-composer-settings__footer"><span>{locale === "zh-CN" ? "关闭面板会保留当前配置" : "Your setup stays active when this panel closes"}</span><button type="button" onClick={closeSettingsPanel}>{locale === "zh-CN" ? "完成" : "Done"}</button></footer>
+      </aside>
       <div className="ua-composer__input-row">
         <div className="ua-composer__left-tools">
           <div className="ua-composer__attach">
@@ -213,7 +310,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         <div className="ua-composer__right-tools">
 
 
-          <ModelSelector
+          {codexLead?<button type="button" className="ua-composer__lead-summary" title={`Codex / ${leadState.modelId} / ${leadState.effort??"server default"}`} onClick={event=>openSettingsPanel("agents",event.currentTarget)}>Codex · {leadState.modelId || (locale === "zh-CN" ? "待配置" : "Set up")}<span>{leadState.effort}</span></button>:<ModelSelector
             modelId={selectedModelId}
             reasoningEffort={reasoningEffort}
             models={providerModelOptions}
@@ -221,10 +318,12 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
             onModelChange={setComposerModel}
             onReasoningChange={setComposerReasoning}
             onManageProviders={() => openSettings("provider")}
-          />
+          />}
 
           {canStop&&activeTask?.draft.taskMode==="investigation"&&activeTask.state!=="awaiting_approval"&&<button type="button" className="ua-composer__mode-btn" onClick={()=>pauseTaskRun?.(activeTask.id)}>{t("run.pause")}</button>}
-          {canStop&&pauseReason==="user_paused"&&<button type="button" className="ua-composer__mode-btn" onClick={()=>{void resumeTaskRun?.(activeTask!.id);}}>{t("run.resume")}</button>}
+          {canStop&&pauseReason==="persistence_failed_reconciliation_required"&&<p role="status">{locale==="zh-CN"?"原生存档确认失败，当前任务已锁定以防重复写入。可核对已保存的最终结果；无法确认时继续锁定，不会重写或再次请求模型。":"Native save acknowledgement failed. This task is locked against duplicate writes. Check the saved final result; if it cannot be confirmed, the task stays locked without writes or model retries."}</p>}
+          {canStop&&pauseReason==="persistence_failed_reconciliation_required"&&<button type="button" className="ua-composer__mode-btn" onClick={()=>{void resumeTaskRun?.(activeTask!.id);}}>{locale==="zh-CN"?"核对保存结果":"Check saved result"}</button>}
+          {canStop&&(pauseReason==="user_paused"||pauseReason==="persistence_failed")&&<button type="button" className="ua-composer__mode-btn" onClick={()=>{void resumeTaskRun?.(activeTask!.id);}}>{t("run.resume")}</button>}
           {canStop&&<button className="ua-composer__stop-btn" type="button" aria-label={uiText("Stop task")} onClick={()=>{safeProviderSession.close("stopped");void cancelRuntimeTask(activeTask!.id).catch(()=>setStopError("Stop could not be confirmed. Review task details before retrying."));}}>{uiText("Stop")}</button>}
           <button
             className="ua-composer__send-btn"
@@ -238,8 +337,8 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         </div>
       </div>
 
-      {credentialUnavailable&&<p role="status">{t(credentialCleanupPending?"vault.cleanupPending":credentialRecovery==="missing"?"vault.recoveryMissing":credentialRecovery==="corrupt"?"vault.recoveryCorrupt":"vault.recoveryUnavailable")}</p>}
-      {savedModeUnavailable&&<p role="status">{t("vault.discussionOnly")}</p>}
+      {!codexLead&&credentialUnavailable&&<p role="status">{t(credentialCleanupPending?"vault.cleanupPending":credentialRecovery==="missing"?"vault.recoveryMissing":credentialRecovery==="corrupt"?"vault.recoveryCorrupt":"vault.recoveryUnavailable")}</p>}
+      {!codexLead&&savedModeUnavailable&&<p role="status">{t("vault.discussionOnly")}</p>}
       {responses&&selectedOption?.runtimeSupported!==true&&<p role="status">{t("responses.nativeUnavailable")}</p>}
       {responses&&selectedOption?.runtimeSupported===true&&investigation&&!responseProjectReady&&<p role="status">{t("run.scopeNeedsProject")}</p>}
       {composer.savedRun&&<p role="status">{t(composer.savedRun.taskMode==="discussion"?"responses.continueChatHint":"historyRun.continueHint")} <button type="button" className="ua-btn" onClick={()=>setSavedRun(undefined)}>{t("common.cancel")}</button></p>}
@@ -291,7 +390,7 @@ export function ComposerDock({ mode = "thread" }: ComposerDockProps) {
         <ProjectSelector onManageProjects={()=>openSettings("config")} value={activeProjectId} projects={registeredProjects.map(p=>({id:p.id,name:p.name,engineVersion:p.engine.label,connectionStatus:p.trustState,path:p.displayRoot}))} onChange={setActiveProject}/>
         <span className="ua-composer__status-item"><span className="ua-composer__status-value">{permission==="request-approval"?t("chat.toolApproval"):uiText("Native approval policy enforced")}</span></span>
         <button type="button" className="ua-composer__session-link" onClick={()=>openSettings("provider")}>
-          {selectedModelId==="not-configured"?t("productUi.local"):providerModelOptions.find(m=>m.id===selectedModelId)?.runtimeSupported!==true?t("productUi.unavailable"):credentialUnavailable?t(credentialCleanupPending?"vault.cleanupPending":"vault.recoveryUnavailable"):sessionReady?t(responses&&session.fixture?"demo.sessionReady":"product.sessionReady"):savedUsable?t("vault.saved"):t("product.sessionClosed")}
+          {codexLead?(locale==="zh-CN"?"Codex 主 Agent":"Codex lead"):selectedModelId==="not-configured"?t("productUi.local"):providerModelOptions.find(m=>m.id===selectedModelId)?.runtimeSupported!==true?t("productUi.unavailable"):credentialUnavailable?t(credentialCleanupPending?"vault.cleanupPending":"vault.recoveryUnavailable"):sessionReady?t(responses&&session.fixture?"demo.sessionReady":"product.sessionReady"):savedUsable?t("vault.saved"):t("product.sessionClosed")}
         </button>
       </div>
     </footer>

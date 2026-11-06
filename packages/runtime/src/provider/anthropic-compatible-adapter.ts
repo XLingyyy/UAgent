@@ -61,7 +61,10 @@ export class AnthropicCompatibleAdapter implements ProviderAdapter {
       throw this.handleErrorResponse(response.status, response.body);
     }
 
-    const body = JSON.parse(response.body) as Record<string, unknown>;
+    let body: Record<string, unknown>;
+    try { body = JSON.parse(response.body) as Record<string, unknown>; }
+    catch { throw createProviderRuntimeError(this.id, "malformed_response", "Invalid Anthropic response JSON."); }
+    if (!body || typeof body !== "object") throw createProviderRuntimeError(this.id, "malformed_response", "Invalid Anthropic response.");
     return this.parseMessagesResponse(body, request);
   }
 
@@ -81,70 +84,49 @@ export class AnthropicCompatibleAdapter implements ProviderAdapter {
       throw normalizeProviderError(error, this.id);
     }
     let index = 0;
-
+    let usageFields: Record<string, number> = {};
+    let finishReason: "stop" | "length" = "stop";
+    const chunk = (delta: string, done: boolean): ProviderStreamChunk => ({
+      id: `${this.id}-chunk-${request.id}-${index}`, requestId: request.id,
+      providerId: this.id, modelId: request.modelId, index: index++, delta, done,
+      ...(done ? { finishReason, usage: this.parseUsage(usageFields) } : {}),
+    });
     try {
       for await (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed.startsWith("data: ")) continue;
-
-        const data = trimmed.slice(6).trim();
-        if (data === "[DONE]") {
-          yield {
-            id: `${this.id}-chunk-${request.id}-done`,
-            requestId: request.id,
-            providerId: this.id,
-            modelId: request.modelId,
-            index: index++,
-            delta: "",
-            done: true,
-          };
-          return;
-        }
-
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.type === "content_block_delta") {
-            const delta = parsed.delta?.text ?? "";
-            yield {
-              id: `${this.id}-chunk-${request.id}-${index}`,
-              requestId: request.id,
-              providerId: this.id,
-              modelId: request.modelId,
-              index: index++,
-              delta,
-              done: false,
-            };
-          } else if (parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.text) {
-            const choice = parsed.choices[0];
-            const delta = choice.delta?.content ?? choice.text ?? "";
-            yield {
-              id: `${this.id}-chunk-${request.id}-${index}`,
-              requestId: request.id,
-              providerId: this.id,
-              modelId: request.modelId,
-              index: index++,
-              delta,
-              done: false,
-            };
-          } else if (parsed.type === "message_stop") {
-            yield {
-              id: `${this.id}-chunk-${request.id}-done`,
-              requestId: request.id,
-              providerId: this.id,
-              modelId: request.modelId,
-              index: index++,
-              delta: "",
-              done: true,
-            };
-            return;
-          }
-        } catch {
-          throw createProviderRuntimeError(this.id, "malformed_response", "Anthropic-compatible stream contained malformed JSON.");
+        if (!trimmed.startsWith("data:")) continue;
+        const data = trimmed.slice(5).trim();
+        if (data === "[DONE]" && this.isFixture) { yield chunk("", true); return; }
+        let parsed: any;
+        try { parsed = JSON.parse(data); }
+        catch { throw createProviderRuntimeError(this.id, "malformed_response", "Invalid Anthropic stream JSON."); }
+        if (!parsed || typeof parsed !== "object") throw createProviderRuntimeError(this.id, "malformed_response", "Invalid Anthropic event.");
+        if (parsed.type === "error") throw createProviderRuntimeError(this.id,
+          parsed.error?.type === "rate_limit_error" ? "rate_limited" : "provider_unavailable",
+          "Anthropic stream failed. No automatic retry was sent.");
+        if (parsed.type === "message_start") {
+          usageFields = { ...(parsed.message?.usage ?? {}) };
+        } else if (parsed.type === "message_delta") {
+          usageFields = { ...usageFields, ...(parsed.usage ?? {}) };
+          if (parsed.delta?.stop_reason === "max_tokens") finishReason = "length";
+          else if (parsed.delta?.stop_reason && !["end_turn", "stop_sequence"].includes(parsed.delta.stop_reason))
+            throw createProviderRuntimeError(this.id, "malformed_response", "Unsupported Anthropic completion reason.");
+        } else if (parsed.type === "content_block_start") {
+          if (parsed.content_block?.type !== "text") throw createProviderRuntimeError(this.id, "malformed_response", "Only text blocks are supported.");
+          if (typeof parsed.content_block.text !== "string") throw createProviderRuntimeError(this.id, "malformed_response", "Invalid text block.");
+          if (parsed.content_block.text) yield chunk(parsed.content_block.text, false);
+        } else if (parsed.type === "content_block_delta") {
+          if (parsed.delta?.type !== "text_delta" || typeof parsed.delta.text !== "string")
+            throw createProviderRuntimeError(this.id, "malformed_response", "Unsupported Anthropic delta.");
+          yield chunk(parsed.delta.text, false);
+        } else if (parsed.type === "message_stop") {
+          yield chunk("", true); return;
+        } else if (this.isFixture && (parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.text)) {
+          yield chunk(parsed.choices[0].delta?.content ?? parsed.choices[0].text, false);
         }
       }
-    } catch (error) {
-      throw normalizeProviderError(error, this.id);
-    }
+      throw createProviderRuntimeError(this.id, "malformed_response", "Anthropic stream ended before message_stop.");
+    } catch (error) { throw normalizeProviderError(error, this.id); }
   }
 
   getCapabilities(): ProviderCapability {
@@ -169,13 +151,16 @@ export class AnthropicCompatibleAdapter implements ProviderAdapter {
   }
 
   private buildMessagesRequest(request: ProviderRuntimeRequest): Record<string, unknown> {
-    const systemMessages = request.messages.filter((m) => m.role === "system");
-    const nonSystemMessages = request.messages.filter((m) => m.role !== "system");
+    const systemMessages = request.messages.filter((m) => m.role === "system" || m.role === "developer");
+    const nonSystemMessages = request.messages.filter((m) => m.role !== "system" && m.role !== "developer");
 
+    if (request.modelId !== this.modelId || !Number.isSafeInteger(request.maxOutputTokens ?? 1024) ||
+        (request.maxOutputTokens ?? 1024) < 1 || nonSystemMessages.some(m => !["user", "assistant"].includes(m.role)))
+      throw createProviderRuntimeError(this.id, "malformed_response", "Unsupported Anthropic request identity or messages.");
     return {
       model: request.modelId,
       messages: nonSystemMessages.map((msg) => ({
-        role: msg.role === "developer" ? "user" : msg.role,
+        role: msg.role,
         content: msg.content,
       })),
       system: systemMessages.length > 0 ? systemMessages.map((m) => m.content).join("\n") : undefined,
@@ -186,10 +171,12 @@ export class AnthropicCompatibleAdapter implements ProviderAdapter {
 
   private parseMessagesResponse(body: Record<string, unknown>, request: ProviderRuntimeRequest): ProviderRuntimeResponse {
     const content = body.content as Array<Record<string, unknown>> | undefined;
-    const text = content
-      ?.filter((block) => block.type === "text")
-      .map((block) => block.text as string)
-      .join("") ?? this.parseOpenAiFixtureText(body);
+    if ((!Array.isArray(content) && !this.isFixture) || (Array.isArray(content) &&
+        content.some(block => !block || block.type !== "text" || typeof block.text !== "string")))
+      throw createProviderRuntimeError(this.id, "malformed_response", "Only Anthropic text responses are supported.");
+    if (!this.isFixture && !["end_turn", "stop_sequence", "max_tokens"].includes(String(body.stop_reason)))
+      throw createProviderRuntimeError(this.id, "malformed_response", "Unsupported Anthropic completion reason.");
+    const text = content?.map(block => block.text as string).join("") ?? this.parseOpenAiFixtureText(body);
 
     const usage = this.parseUsage(body.usage as Record<string, number> | undefined);
 
@@ -199,7 +186,7 @@ export class AnthropicCompatibleAdapter implements ProviderAdapter {
       providerId: this.id,
       modelId: request.modelId,
       text,
-      finishReason: (body.stop_reason as string) === "end_turn" ? "stop" : "stop",
+      finishReason: body.stop_reason === "max_tokens" ? "length" : "stop",
       usage,
       usageStatus: usage ? "reported" : "unknown",
       createdAt: Date.now(),
@@ -223,7 +210,7 @@ export class AnthropicCompatibleAdapter implements ProviderAdapter {
     return ((choice?.message as Record<string, unknown> | undefined)?.content as string | undefined) ?? (choice?.text as string | undefined) ?? "";
   }
 
-  private handleErrorResponse(status: number, bodyText: string): ProviderRuntimeError {
+  private handleErrorResponse(status: number, _bodyText: string): ProviderRuntimeError {
     if (status === 401) {
       return createProviderRuntimeError(this.id, "auth_missing", "Anthropic-compatible provider returned 401. Check API key.");
     }
@@ -233,7 +220,7 @@ export class AnthropicCompatibleAdapter implements ProviderAdapter {
     if (status >= 500) {
       return createProviderRuntimeError(this.id, "provider_unavailable", `Anthropic-compatible provider returned ${status}.`);
     }
-    return createProviderRuntimeError(this.id, "malformed_response", `Anthropic-compatible provider returned ${status}: ${bodyText.slice(0, 200)}`);
+    return createProviderRuntimeError(this.id, "malformed_response", `Anthropic-compatible provider returned ${status}.`);
   }
 
 }

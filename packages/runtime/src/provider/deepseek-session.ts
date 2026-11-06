@@ -71,7 +71,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
   // Never put the credential on adapter/config/snapshot/event objects.
   let credential = "";
   let revoked = false;
-  let busy = false;
+  const groups = new Map<AbortController, object | undefined>();
   const pending = new Set<AbortController>();
   const deliveryCandidates = new Map<string, OrdinaryChatRequestArchive>();
   const consent = validation?.consent ? Object.freeze({ ...validation.consent }) : undefined;
@@ -112,14 +112,16 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
   }
 
   async function* stream(request: ProviderRuntimeRequest, call: ProviderCallOptions = {}): AsyncIterable<ProviderStreamChunk> {
-    if (busy) throw fail("provider_unavailable", "A provider request is already pending.");
+    const group = !validation && request.metadata?.purpose === "investigation" && request.metadata.runId && request.metadata.scopeRef ? call.parallelInvestigation : undefined;
+    if (pending.size && (!group || pending.size >= 4 || [...groups.values()].some(value => value !== group)))
+      throw fail("provider_unavailable", "A provider request is already pending.");
     if (revoked || call.signal?.aborted) throw fail("cancelled", "Provider session cancelled.");
     const prepared = prepare(request);
     if (!credential) throw fail("auth_missing", "Enter a session-only credential locally.");
     if (options.mode === "offline" && !options.fetcher) throw fail("provider_unavailable", "Offline mode requires an explicit synthetic transport.");
-    busy = true;
     const controller = new AbortController();
     pending.add(controller);
+    groups.set(controller, group);
     const abort = () => controller.abort();
     call.signal?.addEventListener("abort", abort, { once: true });
     let timedOut = false;
@@ -148,7 +150,11 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
       if (options.mode === "live" && (!options.outboundGate || !options.getProjectContext)) throw fail("provider_unavailable", "Exact outbound confirmation and project context are required.");
       const scope=options.getProjectContext?.() ?? {projectId:request.metadata?.projectId??null,epoch:request.metadata?.projectEpoch??0,revision:request.id};
       if (request.metadata?.projectId !== undefined && request.metadata.projectId !== scope.projectId) throw fail("cancelled", "Project changed before outbound review.");
-      const envelope: OutboundEnvelope={endpoint:DEEPSEEK_ENDPOINT,model:DEEPSEEK_MODEL,...scope,body:prepared.serialized,...(consent?{maximumCostMicros:prepared.inputBound*consent.inputMicrosPerToken+prepared.body.max_tokens*consent.outputMicrosPerToken}:{})};
+      const rates=call.costEstimateRates;
+      if(rates && ![rates.input,rates.output].every(n=>Number.isFinite(n)&&n>0&&Number.isSafeInteger(Math.ceil(n))))throw fail("provider_unavailable","Invalid request price estimate.");
+      const estimate=rates ? prepared.inputBound*Math.ceil(rates.input)+prepared.body.max_tokens*Math.ceil(rates.output) : undefined;
+      if(estimate!==undefined&&!Number.isSafeInteger(estimate))throw fail("provider_unavailable","Request cost estimate overflow.");
+      const envelope: OutboundEnvelope={...(estimate!==undefined&&!consent?{estimatedCostMicros:estimate}:{}),endpoint:DEEPSEEK_ENDPOINT,model:DEEPSEEK_MODEL,...scope,body:prepared.serialized,...(consent?{maximumCostMicros:prepared.inputBound*consent.inputMicrosPerToken+prepared.body.max_tokens*consent.outputMicrosPerToken}:{})};
       const grant=options.outboundGate ? await Promise.race([options.outboundGate.review(envelope,controller.signal,call.outboundSendIntent).catch(()=>{throw fail("cancelled", "Outbound confirmation was withdrawn.");}),interrupted]) : null;
       if(call.beforeSend)await Promise.race([call.beforeSend(),interrupted]);
       const reservationId=await Promise.race([reserve(prepared.inputBound, prepared.body.max_tokens), interrupted]);
@@ -267,7 +273,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
       if (controller.signal.aborted) errorToReport = fail(timedOut ? "timeout" : "cancelled", timedOut ? "Provider timed out." : "Provider request cancelled.");
       // No raw transport errors, HTTP bodies, headers or request values enter logs.
       else if (error && typeof error === "object" && "name" in error && error.name === "ProviderRuntimeError") {
-        if ("code" in error && error.code === "malformed_response") { revoked = true; credential = ""; }
+        if ("code" in error && error.code === "malformed_response") { revoked = true; credential = ""; for (const other of pending) if(other !== controller) other.abort(); }
         errorToReport = error;
       } else errorToReport = fail("network_error", "Provider request failed. No automatic retry.");
     } finally {
@@ -282,7 +288,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
       if (releaseAbort) controller.signal.removeEventListener("abort", releaseAbort);
       controller.abort();
       void reader?.cancel().catch(() => undefined);
-      pending.delete(controller); busy = false;
+      pending.delete(controller); groups.delete(controller);
       if (revoked) { try { await options.ordinaryArchive?.close(); } catch { archiveFailure = true; } }
       if (archiveFailure) errorToReport = fail("provider_unavailable",
         "Conversation history delivery is unconfirmed. Saved text is excluded from restored context; no automatic retry was sent.");
@@ -301,7 +307,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
       try { await candidate.confirmDelivery(); }
       catch { throw fail("provider_unavailable", "Conversation history delivery is unconfirmed."); }
     },
-    getCapabilities: () => ({ providerId: "deepseek", modelIds: [DEEPSEEK_MODEL], supportsStreaming: true, supportsTools: !validation, supportsPreSendValidation:true, isMock: options.mode === "offline" }),
+    getCapabilities: () => ({ providerId: "deepseek", modelIds: [DEEPSEEK_MODEL], supportsStreaming: true, supportsTools: !validation, supportsPreSendValidation:true, supportsParallelInvestigation:!validation, isMock: options.mode === "offline" }),
     async complete(request, call): Promise<ProviderRuntimeResponse> {
       let text = "", usage: ProviderUsage | undefined, finishReason: Exclude<ProviderFinishReason,"error"> = "stop";
       let completedCalls:ProviderRuntimeResponse["toolCalls"];
@@ -313,7 +319,7 @@ function createDeepSeekTransport(options: DeepSeekSessionOptions | (DeepSeekAcco
   return {
     adapter,
     setCredential(value: string) {
-      if (busy || revoked || value.trim().length < 8 || value.length > 512 || /[\r\n]/.test(value)) throw fail("auth_missing", "Invalid or inactive session credential input.");
+      if (pending.size || revoked || value.trim().length < 8 || value.length > 512 || /[\r\n]/.test(value)) throw fail("auth_missing", "Invalid or inactive session credential input.");
       credential = value.trim();
     },
     clearCredential() { credential = ""; revoked = true; deliveryCandidates.clear(); for (const controller of pending) controller.abort(); if (!pending.size) void options.ordinaryArchive?.close().catch(() => undefined); },

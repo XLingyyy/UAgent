@@ -35,8 +35,8 @@
         "buildCommandFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "loadedModuleName": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+\\.dll$" },
         "loadedModuleSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "engineVersion": { "const": "5.8.1" },
-        "engineChangelist": { "const": 56057345 },
+        "engineVersion": { "const": "5.8.4" },
+        "engineChangelist": { "const": 58902052 },
         "compatibleChangelist": { "const": 55116800 },
         "moduleBuildId": { "const": "55116800" }
       }

@@ -1,4 +1,29 @@
+> Current engine target (2026-11-03): UE **5.8.4 / CL 58902052**, compatible CL / module BuildId **55116800**. See [current compatibility and verification limits](ue584-compatibility.md). Any 5.8.1/5.8.2 results below are historical evidence, not validation of the current engine or a current release.
+
 # T14 current-run scene batch policy
+
+## Current ordinary-project entry (2026-11-05, source contract 2.4.0)
+
+Supersedes the Lab-only desktop scope described below. A user-selected, trusted UE 5.8.4 project can prepare a new map under `/Game/UAgentBuildLab/Scene_T14` with 1–20 explicitly reviewed objects. The selected root-level `.uproject` is held and hashed; startup approval, owned editor launch, preparation, placement and save retain separate confirmations. Existing maps and approval files are never overwritten. The project must already have the matching plugin and prepared `Saved/UAgentSceneT14` and `Content/UAgentBuildLab/Scene_T14` directories. The existing read-only connection does not authorize writes.
+
+Requires plugin `2.4.0-scene-batch-current-run`, scope `approved_project_new_map_current_run` and the approved-project write flag. The old frozen 2.3.0 plugin and normal EXE r3 do not contain this change. This slice has synthetic native/renderer validation only; new plugin compilation and actual UE/desktop validation remain outstanding. No ordinary user project was opened or modified.
+
+## Historical 2.3.0 integration (superseded scope)
+
+## Custom object list (2026-11-05, source contract 2.3.0)
+
+The Scene batch UI supports 1–20 user-selected objects, editable names, Cube/Sphere/Cylinder meshes and per-object location, rotation and scale. The grid remains an optional list reset. Names are unique with a `UA14_` prefix; location is bounded to ±10000 cm, rotation to ±180 degrees and scale to 0.1–10. Material remains the Engine basic-shape material. Editing invalidates review; native approval binds the complete immutable list. Completion/save checks use the approved list length, with unchanged per-object verification, fresh-query continuation and separate save approval.
+
+This is still isolated UAgentBuildLab only. Ordinary projects need a separately authorized scene write scope and lifecycle integration; the existing read-only ordinary-project connection does not grant scene writes. No existing maps are overwritten. This source change requires a matching 2.3.0 scene plugin/schema and a rebuilt desktop; old 2.2.0 binaries must fail negotiation. Validation uses mock UE responses only, not a new plugin compile or editor/desktop run.
+
+## Desktop Lab entry (2026-11-05 source integration)
+
+The normal desktop workflow selector now includes Scene batch. The user reviews one new map and 1–20 explicitly selected Engine-mesh objects, approves the startup file and owned editor launch, then separately approves preparation, execution, optional same-run continuation and saving. Query receipts show all approved object identities/statuses/transforms. Cancellation leaves applied objects in the unsaved world; stopping/closing the owned editor discards unsaved work. Saving requires a fresh verified completed query and exclusive creation of the approved map.
+
+The existing isolated marker and prepared `Saved/UAgentSceneT14` and `Content/UAgentBuildLab/Scene_T14` directories are required. Startup files and `receipt-*.json` observations are created without overwriting previous files. Use a fresh isolated Lab for a new approval; the application does not delete old approval files. Scope remains Lab-only, with the existing launch gates and UE 5.8.4 identity preflight. No arbitrary existing-map or user-project write authority is enabled.
+
+Current source accepts one or two exact startup plans, preserving the historical two-plan test. This desktop entry uses one. The C++ plugin must be rebuilt with this change; old binaries requiring two plans cannot run the new entry. This slice uses mock UE responses, native protocol tests, component tests and production Rust type checking only. It does not verify actual UE/desktop execution or publish a rebuilt EXE/plugin. Receipts are local Lab evidence, not native task-history recovery grants or cross-restart resume authority.
+
 
 See the [unified integration index](ue-build-integration.md#integration-index-t09--t11--t13--t14) for commit order, main-baseline conflicts and mandatory production host boundaries.
 
@@ -52,7 +77,7 @@ Native runner 仅离线编译这个纯模块，不加载 Tauri 或 UE；Cargo ho
 
 The companion module `UAgentSceneBatchToolsV2` is independent of shared/main IPC. It loads the generated exact transport schemas from `Resources/scene-batch-v2-schemas.json`; `scripts/export-ue-scene-batch-schemas.mjs` regenerates those declarations from the runtime contract. Missing/mismatched resources leave the tools unavailable. Default-disabled discovery uses `unverified-root`, a nil run ID and zero approved plans; that response is schema-valid but cannot establish a session.
 
-Lab activation requires the matching `UAgentBuildLab` project file and isolated marker, explicit `UAgentSceneEnableLabWrites`/`UAgentSceneAllowedProjectFile`/`UAgentSceneApprovedPlansFile` launch options, and a trusted host file under `Saved/UAgentSceneT14/host-approved-plans.json`. That file approves exactly two full plans, a run/root identity and distinct per-purpose one-use permits. Its private `pauseAfterItem:7` setting is only a controlled test boundary; model arguments cannot choose a pause or broaden targets. Neither this file nor discovery should be adopted as production authority from model input.
+Lab activation requires the matching `UAgentBuildLab` project file and isolated marker, explicit `UAgentSceneEnableLabWrites`/`UAgentSceneAllowedProjectFile`/`UAgentSceneApprovedPlansFile` launch options, and a trusted host file under `Saved/UAgentSceneT14/host-approved-plans.json`. That file approves one or two exact full plans, a run/root identity and distinct per-purpose one-use permits. Its private `pauseAfterItem:7` setting is only a controlled test boundary; model arguments cannot choose a pause or broaden targets. Neither this file nor discovery should be adopted as production authority from model input.
 
 Prepare explicitly loads only the fixed Engine meshes/material and creates/names a new unsaved ordinary world. Dirty current worlds, pre-existing target maps, World Partition, external actors and streaming levels are refused. A core ticker places one native StaticMeshActor per step. It records actual weak-object identity and Actor GUID; tags are supplemental metadata and never permit adoption. Before continuing, querying or saving, it checks the current world/package, recorded object identity, exact name/label, mesh/material and transforms, baseline membership, editor modification notifications and map disk state. Runtime and native independently verify each response. A count alone cannot prove completion. Resource ownership remains serial until the approved map is saved.
 

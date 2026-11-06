@@ -1,3 +1,5 @@
+> **r14 current status:** `NativeOperationReview` is mounted in run-history and inspector views for read-only review of stored operation parameters and results. It does not restore approvals or establish current external effects. Statements below about an unmounted UI describe the earlier standalone module. See [r14](../../../../../docs/releases/r14.md).
+
 # T16 operation review
 
 An isolated review component. No App/store/root export registration, native/provider calls, file opening, persistence, or execution authority is installed.

@@ -85,3 +85,22 @@
   font-family: var(--ua-font-mono);
   color: var(--ua-text-subtle);
 }
+
+.ua-sidebar .ua-sidebar__top { padding: 10px 10px 6px; }
+.ua-sidebar .ua-primary-nav__item { min-height: 34px; padding: 7px 12px; font-size: 13px; }
+.ua-sidebar .ua-chat-new { display: flex; gap: 12px; align-items: center; min-height: 36px; margin: 12px 14px 8px; text-align: left; color: var(--ua-text-primary); background: var(--ua-bg-elevated); }
+.ua-sidebar .ua-chat-new::before { content: "+"; color: var(--ua-accent); font-size: 18px; line-height: 1; }
+.ua-sidebar__utilities { display: grid; gap: 3px; padding: 10px 14px; border-top: 1px solid var(--ua-border-soft); flex-shrink: 0; }
+.ua-sidebar__utilities > button { position: static; width: 100%; padding: 8px 10px; min-height: 33px; border: 0; border-radius: 6px; background: transparent; color: var(--ua-text-secondary); text-align: left; font-size: 12px; cursor: pointer; }
+.ua-sidebar__utilities > button:hover { background: var(--ua-bg-hover); color: var(--ua-text-primary); }
+.ua-sidebar__body { overflow-y: auto; }
+.ua-sidebar .ua-project-section { flex-shrink: 0; }
+.ua-sidebar .ua-project-card__status { background: transparent; color: var(--ua-text-secondary); padding: 0; font-size: 10px; }
+.ua-sidebar .ua-project-card__btn { min-height: 30px; margin-top: 6px; font-size: 11px; background: transparent; }
+.ua-sidebar .ua-project-card__name { font-size: 13px; }
+.ua-sidebar .ua-project-card__path { font-size: 10px; }
+@media (max-height: 720px) {
+  .ua-sidebar .ua-sidebar__top { padding-top: 6px; }
+  .ua-sidebar .ua-primary-nav__item { min-height: 30px; padding-top: 5px; padding-bottom: 5px; }
+  .ua-sidebar__utilities { padding-top: 6px; padding-bottom: 6px; }
+}

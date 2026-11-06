@@ -15,7 +15,9 @@ import type { OutboundSendIntent } from "./outbound-consent.js";
 import { createProviderRuntimeError, normalizeProviderError } from "./provider-error.js";
 
 export interface ProviderExecutionOptions {
+  executeClientTool?: import("./provider-adapter.js").ProviderCallOptions["executeClientTool"];
   signal?: AbortSignal;
+  parallelInvestigation?: object;
   outboundSendIntent?: OutboundSendIntent;
   authorizeSend?: (request: Readonly<ProviderRuntimeRequest>, stream: boolean) => OutboundSendIntent;
   timeoutTicks?: number;
@@ -87,7 +89,9 @@ export async function runProviderComplete(
   try {
     const raw = await adapter.complete(request, {
       signal: options.signal,
+      parallelInvestigation: options.parallelInvestigation,
       beforeSend: options.beforeSend,
+      executeClientTool: options.executeClientTool,
       outboundSendIntent: options.outboundSendIntent,
     });
     if (options.signal?.aborted) {
@@ -158,7 +162,9 @@ export async function runProviderStream(
   try {
     for await (const chunk of adapter.stream(request, {
       signal: options.signal,
+      parallelInvestigation: options.parallelInvestigation,
       beforeSend: options.beforeSend,
+      executeClientTool: options.executeClientTool,
       outboundSendIntent: options.outboundSendIntent,
     })) {
       if (options.signal?.aborted) {

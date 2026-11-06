@@ -1,10 +1,5 @@
-//! Exact single-process, two-thread/two-connection interleavings; synthetic handoff/observer.
+//! Exact same-owner-thread, multi-connection interleavings; synthetic handoff/observer.
 use super::*;
-use std::{
-    sync::{mpsc, Arc},
-    thread,
-};
-const WAIT: Duration = Duration::from_secs(4);
 
 fn fail_gate_commit(store: &RunStore, phase: &str) {
     assert!(matches!(phase, "closed" | "inCallback" | "settled"));
@@ -18,170 +13,63 @@ fn fail_gate_commit(store: &RunStore, phase: &str) {
 
 #[test]
 fn absence_snapshot_fences_original_live_ticket_before_other_connection_handoff() {
-    let f = Fixture::new();
-    let root = f.root();
-    let store = f.store();
-    let j = store.open_effect_journal().unwrap();
-    let i = intent(&root);
-    let yes = || true;
-    let (ready_tx, ready_rx) = mpsc::channel();
-    let (go_tx, go_rx) = mpsc::channel();
-    let (done_tx, done_rx) = mpsc::channel();
-    let handoffs = Arc::new(AtomicU64::new(0));
-    let count = handoffs.clone();
-    let path = f.path.clone();
-    let worker = thread::spawn(move || {
-        let f = Fixture { path };
-        let root = f.root();
-        let store = f.store();
-        let j = store.open_effect_journal().unwrap();
-        let i = intent(&root);
-        let yes = || true;
-        let c = CurrentRun::from_verified_host(&root, owner(), &yes).unwrap();
-        j.prepare(&c, &i).unwrap();
-        let mut ticket = j.mark_may_have_been_sent(&c, &i.key, 1, 3).unwrap();
-        ready_tx.send(()).unwrap();
-        go_rx.recv_timeout(WAIT).unwrap();
-        let result = j.dispatch_once(&c, &mut ticket, |_| {
-            count.fetch_add(1, Ordering::SeqCst);
-        });
-        done_tx.send(result.err().map(|e| e.kind)).unwrap();
+    let f=Fixture::new();let root=f.root();let store=f.store();let j=store.open_effect_journal().unwrap();
+    let second=f.store();let sender=second.open_effect_journal().unwrap();let i=intent(&root);let yes=||true;
+    let c=CurrentRun::from_verified_host(&root,owner(),&yes).unwrap();
+    sender.prepare(&c,&i).unwrap();let ticket=RefCell::new(sender.mark_may_have_been_sent(&c,&i.key,1,3).unwrap());
+    let s=scope(&root,&i,&yes);let handoffs=Cell::new(0);let rejected=RefCell::new(None);
+    let o=Observer(|q:&EffectQuery,_:&AtomicBool|{
+        assert_eq!(j.dispatch_gate(&s).unwrap().phase,DispatchPhase::Closed);
+        let result=sender.dispatch_once(&c,&mut ticket.borrow_mut(),|_|handoffs.set(handoffs.get()+1));
+        let decision=result.err().map(|e|e.kind);assert_eq!(decision,Some("conflict".into()));
+        *rejected.borrow_mut()=decision;assert_eq!(handoffs.get(),0);
+        Ok(observation(q,EffectOutcome::NotOccurred))
     });
-    ready_rx.recv_timeout(WAIT).unwrap();
-    let s = scope(&root, &i, &yes);
-    let rejected = RefCell::new(None);
-    let o = Observer(|q: &EffectQuery, _: &AtomicBool| {
-        // The caller still holds the original valid context/ticket at this exact snapshot.
-        assert_eq!(j.dispatch_gate(&s).unwrap().phase, DispatchPhase::Closed);
-        go_tx.send(()).unwrap();
-        let decision = done_rx.recv_timeout(WAIT).unwrap();
-        assert_eq!(decision, Some("conflict".into()));
-        *rejected.borrow_mut() = decision;
-        assert_eq!(handoffs.load(Ordering::SeqCst), 0);
-        Ok(observation(q, EffectOutcome::NotOccurred))
-    });
-    let result = j.reconcile(&s, 2, 4, &o, &AtomicBool::new(false)).unwrap();
-    worker.join().unwrap();
-    assert_eq!(handoffs.load(Ordering::SeqCst), 0);
-    assert_eq!(result.record.state, EffectState::VerifiedNotOccurred);
-    assert_eq!(
-        result.execution_observation(&s),
-        ExecutionObservation::Quiescent
-    );
+    let result=j.reconcile(&s,2,4,&o,&AtomicBool::new(false)).unwrap();
+    assert_eq!(result.record.state,EffectState::VerifiedNotOccurred);
+    assert_eq!(result.execution_observation(&s),ExecutionObservation::Quiescent);
     assert!(!result.record.blocks_conflicting_admission());
-    fs::write(f.path.join("query-wins.json"), serde_json::to_vec_pretty(&serde_json::json!({
-        "connections":2,"threads":2,"syntheticHandoffAndObserver":true,
-        "handoffs":handoffs.load(Ordering::SeqCst),"originalTicketError":*rejected.borrow(),
-        "state":result.record.state,"blocksAdmission":result.record.blocks_conflicting_admission(),
-        "liveExecutionObservation":result.execution_observation(&s),"gate":j.dispatch_gate(&s).unwrap()
+    fs::write(f.path.join("query-wins.json"),serde_json::to_vec_pretty(&serde_json::json!({
+        "connections":2,"threads":1,"interleaving":"observer reenters second connection on original owning thread",
+        "syntheticHandoffAndObserver":true,"handoffs":handoffs.get(),"originalTicketError":*rejected.borrow(),
+        "state":result.record.state,"gate":j.dispatch_gate(&s).unwrap()
     })).unwrap()).unwrap();
-    drop(j);
-    drop(store);
-    let reopened = f.store();
-    let j = reopened.open_effect_journal().unwrap();
-    assert_eq!(j.dispatch_gate(&s).unwrap().phase, DispatchPhase::Closed);
-    assert_eq!(
-        j.dispatch_events(&s, -1, 100)
-            .unwrap()
-            .iter()
-            .map(|e| e.gate.phase)
-            .collect::<Vec<_>>(),
-        vec![
-            DispatchPhase::Prepared,
-            DispatchPhase::Open,
-            DispatchPhase::Closed
-        ]
-    );
+    drop(sender);drop(second);drop(j);drop(store);
+    let reopened=f.store();let j=reopened.open_effect_journal().unwrap();
+    assert_eq!(j.dispatch_gate(&s).unwrap().phase,DispatchPhase::Closed);
+    assert_eq!(j.dispatch_events(&s,-1,100).unwrap().iter().map(|e|e.gate.phase).collect::<Vec<_>>(),
+        vec![DispatchPhase::Prepared,DispatchPhase::Open,DispatchPhase::Closed]);
 }
 
 #[test]
 fn claimed_callback_blocks_reverse_snapshot_across_connections_reopen_and_cancel() {
-    let f = Fixture::new();
-    let root = f.root();
-    let store = f.store();
-    let j = store.open_effect_journal().unwrap();
-    let i = intent(&root);
-    let yes = || true;
-    let (entered_tx, entered_rx) = mpsc::channel();
-    let (release_tx, release_rx) = mpsc::channel();
-    let (done_tx, done_rx) = mpsc::channel();
-    let handoffs = Arc::new(AtomicU64::new(0));
-    let count = handoffs.clone();
-    let active = Arc::new(AtomicBool::new(true));
-    let live = active.clone();
-    let path = f.path.clone();
-    let worker = thread::spawn(move || {
-        let f = Fixture { path };
-        let root = f.root();
-        let store = f.store();
-        let j = store.open_effect_journal().unwrap();
-        let i = intent(&root);
-        let current = || live.load(Ordering::Acquire);
-        let c = CurrentRun::from_verified_host(&root, owner(), &current).unwrap();
-        j.prepare(&c, &i).unwrap();
-        let mut ticket = j.mark_may_have_been_sent(&c, &i.key, 1, 3).unwrap();
-        j.dispatch_once(&c, &mut ticket, |_| {
-            entered_tx.send(()).unwrap();
-            release_rx.recv_timeout(WAIT).unwrap();
-            count.fetch_add(1, Ordering::SeqCst);
-        })
-        .unwrap();
-        done_tx.send(()).unwrap();
-    });
-    entered_rx.recv_timeout(WAIT).unwrap();
-    let s = scope(&root, &i, &yes);
-    let called = Cell::new(0);
-    let o = Observer(|q: &EffectQuery, _: &AtomicBool| {
-        called.set(called.get() + 1);
-        Ok(observation(q, EffectOutcome::NotOccurred))
-    });
-    let first_error = err(j.reconcile(&s, 2, 4, &o, &AtomicBool::new(false)));
-    assert_eq!(first_error, "handoffUnsettled");
-    assert_eq!(called.get(), 0);
-    // Reopening another connection must not turn an outstanding callback into stopped proof.
-    let reopened = f.store();
-    let other = reopened.open_effect_journal().unwrap();
-    let reopened_error = err(other.reconcile(&s, 2, 4, &o, &AtomicBool::new(false)));
-    assert_eq!(reopened_error, "handoffUnsettled");
-    let gate = other.dispatch_gate(&s).unwrap();
-    assert_eq!(gate.phase, DispatchPhase::InCallback);
-    let cancelled = other.request_cancel(&s, 2, 4).unwrap();
-    assert_eq!(cancelled.state, EffectState::ResultUnknown);
-    assert_eq!(other.dispatch_gate(&s).unwrap(), gate);
-    assert!(cancelled.blocks_conflicting_admission());
-    // Settlement is bookkeeping for the exact claim, not revival of an expired run lease.
-    active.store(false, Ordering::Release);
-    release_tx.send(()).unwrap();
-    done_rx.recv_timeout(WAIT).unwrap();
-    worker.join().unwrap();
-    assert_eq!(handoffs.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        other.dispatch_gate(&s).unwrap().phase,
-        DispatchPhase::Settled
-    );
-    let result = other
-        .reconcile(
-            &s,
-            3,
-            5,
-            &Observer(|q: &EffectQuery, _: &AtomicBool| {
-                Ok(observation(q, EffectOutcome::Completed))
-            }),
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-    assert_eq!(result.record.state, EffectState::VerifiedCompleted);
-    assert_eq!(
-        result.execution_observation(&s),
-        ExecutionObservation::Quiescent
-    );
-    fs::write(f.path.join("dispatch-wins.json"), serde_json::to_vec_pretty(&serde_json::json!({
-        "connections":2,"threads":2,"syntheticHandoffAndObserver":true,
-        "inCallbackQueryError":first_error,"reopenedInCallbackQueryError":reopened_error,
-        "preSettlementObserverCalls":called.get(),"cancelledRecordBlocked":cancelled.blocks_conflicting_admission(),
-        "inCallbackGate":gate,"afterReturnGate":other.dispatch_gate(&s).unwrap(),
-        "handoffs":handoffs.load(Ordering::SeqCst),"afterSettlementState":result.record.state,
-        "afterSettlementExecutionObservation":result.execution_observation(&s)
+    let f=Fixture::new();let root=f.root();let store=f.store();let j=store.open_effect_journal().unwrap();
+    let i=intent(&root);let yes=||true;let active=AtomicBool::new(true);let current=||active.load(Ordering::Acquire);
+    let c=CurrentRun::from_verified_host(&root,owner(),&current).unwrap();
+    j.prepare(&c,&i).unwrap();let mut ticket=j.mark_may_have_been_sent(&c,&i.key,1,3).unwrap();
+    let s=scope(&root,&i,&yes);let called=Cell::new(0);let handoffs=Cell::new(0);
+    let o=Observer(|q:&EffectQuery,_:&AtomicBool|{called.set(called.get()+1);Ok(observation(q,EffectOutcome::NotOccurred))});
+    j.dispatch_once(&c,&mut ticket,|_|{
+        // All cooperating connections belong to this one native owner thread.
+        // Reentrant handoff gives the exact InCallback observation window without
+        // waiting for a second thread that cannot acquire the lifetime Store gate.
+        let second=f.store();let other=second.open_effect_journal().unwrap();
+        assert_eq!(err(other.reconcile(&s,2,4,&o,&AtomicBool::new(false))),"handoffUnsettled");
+        let reopened=f.store();let again=reopened.open_effect_journal().unwrap();
+        assert_eq!(err(again.reconcile(&s,2,4,&o,&AtomicBool::new(false))),"handoffUnsettled");
+        assert_eq!(called.get(),0);let gate=again.dispatch_gate(&s).unwrap();assert_eq!(gate.phase,DispatchPhase::InCallback);
+        let cancelled=again.request_cancel(&s,2,4).unwrap();assert_eq!(cancelled.state,EffectState::ResultUnknown);
+        assert_eq!(again.dispatch_gate(&s).unwrap(),gate);assert!(cancelled.blocks_conflicting_admission());
+        active.store(false,Ordering::Release);handoffs.set(handoffs.get()+1);
+    }).unwrap();
+    assert_eq!(handoffs.get(),1);assert_eq!(j.dispatch_gate(&s).unwrap().phase,DispatchPhase::Settled);
+    let result=j.reconcile(&s,3,5,&Observer(|q:&EffectQuery,_:&AtomicBool|Ok(observation(q,EffectOutcome::Completed))),&AtomicBool::new(false)).unwrap();
+    assert_eq!(result.record.state,EffectState::VerifiedCompleted);
+    assert_eq!(result.execution_observation(&s),ExecutionObservation::Quiescent);
+    fs::write(f.path.join("dispatch-wins.json"),serde_json::to_vec_pretty(&serde_json::json!({
+        "connections":3,"threads":1,"interleaving":"claim callback reenters original owner thread",
+        "syntheticHandoffAndObserver":true,"preSettlementObserverCalls":called.get(),"handoffs":handoffs.get(),
+        "afterSettlementState":result.record.state,"afterReturnGate":j.dispatch_gate(&s).unwrap()
     })).unwrap()).unwrap();
 }
 

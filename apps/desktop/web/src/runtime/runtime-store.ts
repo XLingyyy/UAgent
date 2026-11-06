@@ -295,7 +295,7 @@ export interface RuntimeStoreActions {
   readMvp14EditorStatus: () => Promise<void>;
   readMvp14EditorSnapshot: () => Promise<void>;
   stopMvp14ObservationSession: () => Promise<void>;
-  runMvp15AssetDryRun: (sourceAssetPath?: string) => void;
+  runMvp15AssetDryRun: (sourceAssetPath?: string, workflow?: "lifecycle" | "duplicate_save") => void;
   approveMvp15AssetChangeSet: () => Promise<void>;
   executeMvp15AssetChangeSet: () => Promise<void>;
   verifyMvp15AssetChangeSet: () => Promise<void>;

@@ -1,3 +1,10 @@
+.ua-workbench-page {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
 .ua-main-layout {
   display: grid;
   flex: 1;

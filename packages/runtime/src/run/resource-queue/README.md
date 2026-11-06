@@ -1,3 +1,5 @@
+> **r14 current status:** The desktop now integrates shared native runtime-host owner, heartbeat and operation-admission services across windows in one application process. The standalone/unregistered statements below describe the original queue module. Cross-process exclusion and crash recovery are not established by this registration. See [r14](../../../../../docs/releases/r14.md).
+
 # T19: unregistered run resource queue
 
 Scope: **one shared instance, in one JavaScript process/event loop**, used by

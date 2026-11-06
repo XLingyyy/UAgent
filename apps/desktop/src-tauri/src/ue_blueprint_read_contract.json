@@ -1,0 +1,227 @@
+[
+  {
+    "name": "uagent.v2.capabilities",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "string"
+        },
+        "projectKey": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "integer"
+        },
+        "contractVersion": {
+          "type": "string"
+        },
+        "engineVersion": {
+          "type": "string"
+        },
+        "projectName": {
+          "type": "string"
+        },
+        "readScopeEnabled": {
+          "type": "boolean"
+        },
+        "readRoots": {
+          "type": "array"
+        },
+        "legacyV1Contract": {
+          "type": "string"
+        },
+        "legacyV1RemainsSeparate": {
+          "type": "boolean"
+        },
+        "writeCapabilities": {
+          "type": "array"
+        },
+        "capabilities": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectKey",
+        "instanceId",
+        "protocolVersion",
+        "contractVersion",
+        "engineVersion",
+        "projectName",
+        "readScopeEnabled",
+        "readRoots",
+        "legacyV1Contract",
+        "legacyV1RemainsSeparate",
+        "writeCapabilities",
+        "capabilities"
+      ]
+    }
+  },
+  {
+    "name": "uagent.v2.blueprint.describe",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "const": 2
+        },
+        "expectedProjectKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expectedInstanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "packageName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "expectedRevision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "expectedProjectKey",
+        "expectedInstanceId",
+        "packageName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "string"
+        },
+        "projectKey": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "observedAtUtc": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object"
+        },
+        "mutationCount": {
+          "type": "integer",
+          "const": 0
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectKey",
+        "instanceId",
+        "operation",
+        "observedAtUtc",
+        "data",
+        "mutationCount"
+      ]
+    }
+  },
+  {
+    "name": "uagent.v2.asset.references",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "const": 2
+        },
+        "expectedProjectKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expectedInstanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "packageName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "expectedProjectKey",
+        "expectedInstanceId",
+        "packageName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "string"
+        },
+        "projectKey": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "observedAtUtc": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object"
+        },
+        "mutationCount": {
+          "type": "integer",
+          "const": 0
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectKey",
+        "instanceId",
+        "operation",
+        "observedAtUtc",
+        "data",
+        "mutationCount"
+      ]
+    }
+  }
+]

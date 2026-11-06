@@ -120,7 +120,7 @@ export {
 } from "./asset-mutation.js";
 export type {
   PermissionMode,
-  TaskDraft, SavedRunContinuation,
+  TaskDraft, SavedRunContinuation, CollaborationRole, CollaborationMember, CollaborationMembers,
   TaskEvent,
   TaskEventLevel,
   TaskEventType,

@@ -1,7 +1,7 @@
 {
   "FileVersion": 3,
-  "Version": 20200,
-  "VersionName": "2.2.0-scene-batch-lab",
+  "Version": 20400,
+  "VersionName": "2.4.0-scene-batch-approved-project",
   "FriendlyName": "UAgent Asset Tools v2",
   "Description": "Scoped semantic reads, pickup templates and current-run static scene batches under separate isolated Lab approvals.",
   "Category": "UAgent",

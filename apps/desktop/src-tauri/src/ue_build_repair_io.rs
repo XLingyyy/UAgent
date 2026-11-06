@@ -121,11 +121,15 @@ fn identity(file: &File) -> Result<String, String> {
         i.id.iter().map(|b| format!("{b:02x}")).collect::<String>()
     ))
 }
-fn open(
+fn open(directory:&PinnedDirectory,leaf:&str,create:bool,identity_only:bool)->Result<File,String>{
+    open_with_share(directory,leaf,create,identity_only,None)
+}
+fn open_with_share(
     directory: &PinnedDirectory,
     leaf: &str,
     create: bool,
     identity_only: bool,
+    share_override:Option<u32>,
 ) -> Result<File, String> {
     ReadRule::exact_file(leaf).map_err(|e| e.to_string())?;
     if leaf.contains(['/', '\\']) {
@@ -158,7 +162,9 @@ fn open(
     let status = unsafe {
         NtCreateFile(
             &mut h,
-            if identity_only {
+            if share_override.is_some() {
+                0x0012_0089 // FILE_READ_DATA makes Windows enforce the requested sharing restriction.
+            } else if identity_only {
                 0x0010_0080
             } else {
                 0x0012_019f
@@ -167,7 +173,7 @@ fn open(
             &mut io,
             null_mut(),
             0x80,
-            if identity_only { 7 } else { 0 },
+            share_override.unwrap_or(if identity_only { 7 } else { 0 }),
             if create { 2 } else { 1 },
             0x40 | 0x20 | 0x20_0000,
             null_mut(),
@@ -197,6 +203,12 @@ pub(crate) struct IdentityPin {
     pub identity: String,
 }
 impl IdentityPin {
+    /// Allows UE to read the approved file while denying modification/deletion for this lease.
+    pub(crate) fn read_shared(directory:&PinnedDirectory,leaf:&str)->Result<Self,String>{
+        let file=open_with_share(directory,leaf,false,true,Some(1))?;
+        let identity=identity(&file)?;Ok(Self{file,identity})
+    }
+
     pub fn open(directory: &PinnedDirectory, leaf: &str) -> Result<Self, String> {
         let file = open(directory, leaf, false, true)?;
         let identity = identity(&file)?;

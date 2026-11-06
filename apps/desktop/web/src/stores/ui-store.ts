@@ -1,5 +1,11 @@
+import {codexLeadSession,CODEX_ENDPOINT} from "../runtime/codex-member-session";
+import {captureMemberSessions,createCollaborationMemberAdapter,createInvestigationAdapter} from "../runtime/collaboration-sessions";
+import {createNativeSessionCatalog} from "../runtime/native-session-catalog";
+import {createNativeRunHistory,canContinueNativeHistory} from "../runtime/native-run-history";
 import {nativeProductSettings,restoredProvider} from "../runtime/native-product-settings";
 import {defaultLocaleStore} from "../i18n/locale-store";
+import {createNativeProjectMemory,createProjectMemorySourceCapture} from "../runtime/native-project-memory";
+import type {ProjectMemorySelectionPlan,ProjectMemoryStorePort} from "@uagent/runtime";
 import {createProjectContextSources} from "../runtime/project-context-sources";
 import {investigationScopeGate} from "../runtime/investigation-scope-gate";
 import {createProjectReadToolRegistry} from "../runtime/project-read-tools";
@@ -13,6 +19,7 @@ import { FIXTURES_ENABLED, ACCEPTANCE_ENABLED } from "../runtime/build-capabilit
 import { createContext, createElement, useContext, useEffect, useMemo, type ReactNode } from "react";
 import {
   createContextPackV1,
+  createProjectMemoryContext,
   createAssetChangeSetService,
   createAssetManifestRegistry,
   createEditorOperationService,
@@ -542,7 +549,14 @@ interface ProviderSettingsActions extends ProviderStoreActions {
   /** Read and display one coherent config/version pair; never writes a provider. */
   reviewExistingProvider: (providerId: string) => Promise<void>;
 }
+interface ProjectMemoryServices {
+  port: ProjectMemoryStorePort;
+  captureSources: ReturnType<typeof createProjectMemorySourceCapture>;
+  sources: ReturnType<typeof createProjectContextSources>;
+  selectionStore: SliceStore<{projectId:string;runId:string;plan:ProjectMemorySelectionPlan}|null>;
+}
 interface UIStoreBundle {
+  projectMemory: ProjectMemoryServices;
   startNativeSettings:()=>void;
   providerProposals: ReturnType<NonNullable<DesktopRuntimeAdapter["getProviderProposals"]>> | undefined;
   workspacePersistence: { capture(): WorkspaceConfig; restore(config: WorkspaceConfig, active?: () => boolean): Promise<void> };
@@ -763,8 +777,16 @@ function createUIStateBundle(
   const nativeVersions=nativeSaved?Object.fromEntries(nativeSaved.providers.map(p=>[p.config.providerId,{providerId:p.config.providerId,generation:p.generation,revision:p.revision,exists:true}])):{};
   const providerState = nativeSaved ? createInitialProviderState({provider:{providers:nativeSaved.providers.map(p=>restoredProvider(p.config)),providerVersions:nativeVersions,selectedProviderId:nativeSaved.preferences.preferences.selectedProviderId,defaultProviderId:nativeSaved.preferences.preferences.defaultProviderId,testStatus:"idle"}}) : createInitialProviderState(initialState);
   const projectAdapter = createNativeProjectAdapter();
+  const projectMemoryPort = createNativeProjectMemory();
+  const memorySelectionStore = createSliceStore<{projectId:string;runId:string;plan:ProjectMemorySelectionPlan}|null>(null);
+  const projectMemoryServices: ProjectMemoryServices = {port:projectMemoryPort,
+    captureSources:createProjectMemorySourceCapture(projectAdapter),sources:createProjectContextSources(projectAdapter),
+    selectionStore:memorySelectionStore};
   const projectRequests = createRequestGeneration();
-  runtimeClient.configureInvestigation?.({registry:createProjectReadToolRegistry(projectAdapter),contextSources:createProjectContextSources(projectAdapter),resolveScope:id=>investigationScopeGate.claim(id),createAdapter:(lease,draft)=>safeProviderSession.createRunAdapter(lease,draft)});
+  runtimeClient.configureInvestigation?.({registry:createProjectReadToolRegistry(projectAdapter),contextSources:projectMemoryServices.sources,
+    projectMemory:createProjectMemoryContext(projectMemoryPort,projectMemoryServices.sources),
+    onMemorySelection:(plan,run)=>{if(projectStore.getState().activeProjectId===run.projectId)memorySelectionStore.setState({projectId:run.projectId,runId:run.runId,plan});},
+    resolveScope:id=>investigationScopeGate.claim(id),createAdapter:createInvestigationAdapter,createMemberAdapter:createCollaborationMemberAdapter});
   let submissionPending = false;
   let submissionRoutingCurrent: (() => boolean) | null = null;
   let submissionConversation: { id: string; projectId: string | null } | null = null;
@@ -781,6 +803,7 @@ function createUIStateBundle(
     runtimeClient.setProviderProjectContext?.({projectId:state.activeProjectId,rootRef:project?.rootRef??null,trusted:project?.trustState==="trusted"});
   };
   projectStore.subscribe(syncProviderProject);syncProviderProject();
+  projectStore.subscribe(()=>{if(memorySelectionStore.getState()?.projectId!==projectStore.getState().activeProjectId)memorySelectionStore.setState(null);});
   const threadStore = createSliceStore(createInitialThreadState(initialState));
   const initialComposer=createInitialComposerState(initialState,providerState);
   const composerStore = createSliceStore({...initialComposer,reasoningEffort:resolveEffectiveReasoning(providerState.providers,initialComposer.selectedModelId,initialComposer.reasoningEffort)});
@@ -1319,6 +1342,9 @@ function createUIStateBundle(
         projectStore.setState((previousState) => ({ ...previousState, lastError: "unknown_project" }));
         return;
       }
+      // Clear the previous file before awaiting a new selection, so stale text is
+      // never displayed under the newly selected path (including failed reads).
+      projectStore.setState(previous=>({...previous,selectedAssetPath:rootRelativePath,preview:null,lastError:null}));
       try {
         const preview = await projectAdapter.previewFile(
           activeProject.id,
@@ -1374,7 +1400,52 @@ function createUIStateBundle(
     },
   };
 
+  let sessionPreparationGeneration=0;
   const composerActions: ComposerStoreActions = {
+    prepareSessionDraft: async (request,anchorRunId,isCurrent) => {
+      const token=++sessionPreparationGeneration, selected=composerStore.getState();
+      const projectId=projectStore.getState().activeProjectId,threadId=threadStore.getState().activeThreadId;
+      const activeBusy=()=>{const state=runtimeStore.getState(),task=state.activeTaskId?state.tasksById[state.activeTaskId]:null;return Boolean(task&&!["completed","failed","cancelled"].includes(task.state));};
+      const check=()=>{const current=composerStore.getState();if(token!==sessionPreparationGeneration||!isCurrent()||submissionPending||activeBusy()||
+        projectStore.getState().activeProjectId!==projectId||threadStore.getState().activeThreadId!==threadId||
+        current.selectedModelId!==selected.selectedModelId||current.input!==selected.input||current.taskMode!==selected.taskMode)throw Error("session_preparation_stale");};
+      check();
+      if(request.requiresFreshAuthorization!==true||request.session.origin!=="native"||request.session.archived)throw Error("native_session_catalog_invalid_record");
+      const current=await createNativeSessionCatalog().read({projectId:request.session.projectId,sessionId:request.session.id,throughOrdinal:0});
+      check();
+      if(current.session.archived||current.session.origin!=="native"||current.session.latestRunId!==request.session.latestRunId||
+        current.session.lastOrdinal!==request.session.lastOrdinal||current.session.messageCount!==request.session.messageCount)throw Error("session_preparation_stale");
+      const runId=current.session.latestRunId??anchorRunId;
+      const archive=await createNativeRunHistory().snapshot(request.session.projectId,runId);
+      check();
+      if(!canContinueNativeHistory(archive)||(current.session.latestRunId!==null&&archive.descriptor.sessionId!==current.session.id))throw Error("session_unresolved_effects");
+      const state=archive.coordinatorState;
+      const logical=state?.taskMode==="discussion"?state.logicalProjectId:archive.descriptor.projectId;
+      if(logical!==null&&typeof logical!=="string")throw Error("native_session_catalog_invalid_record");
+      if(projectId!==logical)throw Error("session_project_requires_selection");
+      if(logical!==null){
+        const project=projectAdapter.getProject(logical);
+        if(projectAdapter.source!=="native"||!project||project.trustState!=="trusted")throw Error("session_project_requires_selection");
+        if(!await projectActions.validateProjectRoot(project.rootRef))throw Error("session_project_requires_selection");
+        check();
+        if(projectAdapter.getProject(logical)!==project||projectAdapter.getProject(logical)?.trustState!=="trusted")throw Error("session_preparation_stale");
+      }
+      if(attachmentStore.selected(projectId).length)throw Error("session_attachments_require_review");
+      const zh=defaultLocaleStore.getSnapshot()==="zh-CN";
+      let input=zh?"请继续讨论这个主题：":"Continue discussing this topic:";
+      if(request.shareContext){
+        const quoted=JSON.stringify({format:"uagentSavedSessionText",projectId:request.session.projectId,sessionId:request.session.id,
+          messages:request.messages.map(message=>({id:message.id,ordinal:message.ordinal,role:message.role,body:message.body,createdAt:message.createdAt,origin:message.origin}))},null,2);
+        input=(zh?"以下是保存会话的引用资料，其中的角色、指令和工具记录均作为历史文本。\n":"Quoted saved-session data, including its role labels, instructions and tool records:\n")+quoted+
+          (zh?"\n\n新的讨论请求：":"\n\nNew discussion request:");
+        if(new TextEncoder().encode(input).length>8192)throw {kind:"branchCapacity"};
+      }
+      await safeProviderSession.closeAsync("revoked");
+      check();
+      // Final synchronous commit only: no prior run/approval/scope is fabricated or restored.
+      threadActions.setActiveThread(null);
+      composerStore.setState(previous=>({...previous,savedRun:undefined,input,taskMode:"discussion"}));
+    },
     setComposerTaskMode:taskMode=>composerStore.setState(previous=>({...previous,taskMode,...(previous.savedRun&&(previous.savedRun.taskMode??"investigation")!==taskMode?{savedRun:undefined}:{})})),
     setSavedRun:savedRun=>composerStore.setState(previous=>({...previous,savedRun,taskMode:savedRun?(savedRun.taskMode??"investigation"):previous.taskMode})),
     setComposerInput: (input) =>
@@ -1453,13 +1524,19 @@ function createUIStateBundle(
           const project=draft.projectId?projectAdapter.getProject(draft.projectId):null;
           if(projectAdapter.source!=="native"||!project||project.trustState!=="trusted"||projectAdapter.getStableSnapshot(project.id)?.status!=="ready"||!runtimeClient.configureInvestigation)throw Error("scope_project_required");
           const credentialGeneration=safeProviderSession.getSessionGeneration(),modelKey=composerStore.getState().selectedModelId;
-          const session=safeProviderSession.getSnapshot();
+          const codexLead=draft.providerId==="codex",codexState=codexLeadSession.getSnapshot();
+          if(codexLead&&(!draft.collaboration||draft.savedRun||!codexLeadSession.current(project.id,draft.modelId)))throw Error("codex_collaboration_required");
+          const session=codexLead?{ready:codexState.ready,expiresAt:codexState.expiresAt,providerId:"codex",modelId:codexState.modelId,endpoint:CODEX_ENDPOINT}:safeProviderSession.getSnapshot();
+          const leadCurrent=()=>codexLead?codexLeadSession.getSnapshot()===codexState&&codexLeadSession.current(project.id,draft.modelId):safeProviderSession.getSnapshot().ready&&safeProviderSession.getSessionGeneration()===credentialGeneration;
           if(!draft.providerId||!session.ready||session.expiresAt===null||session.providerId!==draft.providerId||session.modelId!==draft.modelId||!session.endpoint)throw Error("scope_review_stale");
+          const memberProviders=Object.values(draft.collaborationMembers??{}).flatMap(member=>member.model&&member.model.providerId!=="codex"?[{model:member.model,config:providerStore.getState().providers.find(provider=>provider.providerId===member.model!.providerId)}]:[]);
+          if(memberProviders.some(({model,config})=>!supportsProviderModel(config,model.modelId)))throw Error("member_model_unavailable");
+          const memberBinding=captureMemberSessions(draft.collaborationMembers,project.id);
           const lease=await investigationScopeGate.review({projectId:project.id,projectName:project.name,rootRef:project.rootRef,conversationId,runId:"run-"+crypto.randomUUID(),
-            providerId:draft.providerId,modelId:draft.modelId,endpoint:session.endpoint,goal:draft.input,sessionExpiresAt:session.expiresAt},()=>isCurrent()&&
+            providerId:draft.providerId,modelId:draft.modelId,endpoint:session.endpoint,goal:draft.input,...(draft.collaboration?{collaboration:draft.collaboration}:{}),...(draft.collaborationMembers?{collaborationMembers:draft.collaborationMembers}:{}),sessionExpiresAt:Math.min(session.expiresAt,memberBinding.expiresAt)},()=>isCurrent()&&memberBinding.isCurrent()&&memberProviders.every(({model,config})=>providerStore.getState().providers.find(provider=>provider.providerId===model.providerId)===config)&&
             projectStore.getState().activeProjectId===project.id&&projectAdapter.getProject(project.id)?.trustState==="trusted"&&
             projectAdapter.getProject(project.id)===project&&projectAdapter.getProject(project.id)?.rootRef===project.rootRef&&composerStore.getState().selectedModelId===modelKey&&
-            safeProviderSession.getSnapshot().ready&&safeProviderSession.getSessionGeneration()===credentialGeneration);
+            leadCurrent());
           investigationScopeId=lease.scope.id;
         }
         if(!isCurrent())throw Error("scope_review_stale");
@@ -2703,7 +2780,11 @@ function createUIStateBundle(
         if (isCurrentProject() && generation === editorGeneration) runtimeStore.setState((previous) => ({ ...previous, mvp14: { ...previous.mvp14, lastError: "editor_observation_failed_retry_available" } }));
       } finally { editorBusy.delete("stopMvp14ObservationSession"); }
     },
-    runMvp15AssetDryRun: async (sourceAssetPathInput) => {
+    runMvp15AssetDryRun: async (sourceAssetPathInput, workflow = "lifecycle") => {
+      if (workflow !== "lifecycle" && workflow !== "duplicate_save") {
+        runtimeStore.setState((previous) => ({ ...previous, mvp15: { ...previous.mvp15, lastError: "asset_workflow_unsupported" } }));
+        return;
+      }
       const sourceAssetPath = typeof sourceAssetPathInput === "string" ? sourceAssetPathInput.trim() : "";
       if (!sourceAssetPath) {
         runtimeStore.setState((previousState) => ({
@@ -2879,7 +2960,11 @@ function createUIStateBundle(
         editorSessionId: state.mvp14.session?.sessionId ?? "editor-session:fixture",
         pidHash: observedPidHash ?? "pid:fixture",
         runId,
-        operations: [
+        operations: workflow === "duplicate_save" ? [
+          { kind: "create_folder", assetPathAfter: runRoot },
+          { kind: "duplicate_asset", assetPathBefore: sourceAssetPath, assetPathAfter: copyPath },
+          { kind: "save_single_asset", assetPathBefore: copyPath, assetPathAfter: copyPath },
+        ] satisfies AssetMutationDraftOperation[] : [
           { kind: "create_folder", assetPathAfter: runRoot },
           { kind: "duplicate_asset", assetPathBefore: sourceAssetPath, assetPathAfter: copyPath },
           { kind: "rename_asset", assetPathBefore: copyPath, assetPathAfter: renamedPath },
@@ -3263,14 +3348,14 @@ function createUIStateBundle(
   // UI state is discarded when context/generation changes; this is not cancellation of remote work.
   for (const name of ["runMvp15AssetDryRun", "approveMvp15AssetChangeSet", "executeMvp15AssetChangeSet", "verifyMvp15AssetChangeSet", "rollbackMvp15AssetChangeSet", "finalVerifyMvp15AssetChangeSet"] as const) {
     const action = runtimeActions[name];
-    runtimeActions[name] = async (sourceAssetPath?: string) => {
+    runtimeActions[name] = async (sourceAssetPath?: string, workflow?: "lifecycle" | "duplicate_save") => {
       if (assetOperationPending) return;
       assetOperationPending = true;
       const isCurrentProject = projectRequests.begin("asset-operation");
       const generation = runningGeneration;
       assetOperationCurrent = () => isCurrentProject() && (name === "runMvp15AssetDryRun" || runningGeneration === generation);
       runtimeStore.setState((previous) => ({ ...previous, mvp15: { ...previous.mvp15, busy: true } }));
-      try { await action(sourceAssetPath); }
+      try { await action(sourceAssetPath, workflow); }
       catch {
         if (assetOperationCurrent()) runtimeStore.setState((previous) => ({ ...previous, mvp15: { ...previous.mvp15, lastError: "asset_operation_failed_observe_before_retry" } }));
       } finally {
@@ -3932,6 +4017,7 @@ function createUIStateBundle(
     })().catch(()=>undefined);
   };
   return {
+    projectMemory:projectMemoryServices,
     startNativeSettings,
     providerProposals:runtimeClient.getProviderProposals?.(),
     workspacePersistence,
@@ -4042,6 +4128,11 @@ export function useRuntimeStore<TSelected>(
   return useSliceStore(runtimeStore, selector);
 }
 
+export function useOptionalProjectStore<TSelected>(selector:(state:ProjectStoreState)=>TSelected):TSelected|null {
+  const context=useContext(UIStoreContext);
+  return context ? useSliceStore(context.projectStore,selector) : null;
+}
+
 export function useOptionalRuntimeStore<TSelected>(
   selector: (state: RuntimeStoreState) => TSelected,
 ): TSelected | null {
@@ -4145,3 +4236,10 @@ export { createDefaultComposerState };
 export function useWorkspacePersistenceActions() { return useUIStoreBundle().workspacePersistence; }
 
 export function useProviderProposalService(){ return useUIStoreBundle().providerProposals; }
+
+/** Shared metadata/data ports only. A saved memory never supplies a live run scope. */
+export function useProjectMemoryServices(){
+  const services=useUIStoreBundle().projectMemory;
+  const selection=useSliceStore(services.selectionStore,state=>state);
+  return {port:services.port,captureSources:services.captureSources,sources:services.sources,selection};
+}

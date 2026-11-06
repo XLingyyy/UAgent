@@ -1,5 +1,8 @@
 //! Opt-in T18 extension of RunStore. No IPC, executor, credential or permission is installed.
 //! This child module reuses its parent's connection, FULL/DELETE journal and transactions.
+#[path = "runtime_host_catalog_reader.rs"]
+pub(crate) mod runtime_host_catalog_reader;
+
 use super::{hash, id, json, timestamp, valid_hash, Result, RunStore, StoreError};
 use crate::trusted_root_handle::TrustedRootHandle;
 use serde::{Deserialize, Serialize};
@@ -358,6 +361,25 @@ struct HandoffClaim {
     epoch: i64,
 }
 
+/// Native handoff ownership across managed-store release. Drop never closes the
+/// durable InCallback barrier. No serialization/Clone or restoration constructor.
+pub(crate) struct OwnedOperationHandoff {
+    database:std::sync::Arc<super::database_owner::NativeDatabasePin>,
+    claim:HandoffClaim,
+}
+/// Created only after the original owned claim's settlement COMMIT.
+pub(crate) struct SettledOperationProof {
+    database:std::sync::Arc<super::database_owner::NativeDatabasePin>,key:EffectKey,digest:String,
+}
+impl SettledOperationProof {
+    pub(crate) fn matches_intent(&self,intent:&EffectIntent,database:&super::database_owner::NativeDatabasePin)->bool {
+        self.key==intent.key && intent.digest().map(|digest|digest==self.digest).unwrap_or(false)
+            &&self.database.same_original_database(database)
+    }
+    pub(crate) fn matches(&self,record:&EffectRecord,database:&super::database_owner::NativeDatabasePin)->bool {
+        self.key==record.intent.key&&self.digest==record.intent_digest&&self.database.same_original_database(database)
+    }
+}
 /// A volatile, nonserializable one-use gate returned only after the durable pre-send commit.
 /// It is neither a user approval nor a native executor capability.
 pub struct DispatchTicket {
@@ -425,7 +447,21 @@ pub struct EffectJournal<'a> {
 impl RunStore {
     /// Explicit opt-in only. The production module declaration/IPC registration is not installed.
     pub fn open_effect_journal(&self) -> Result<EffectJournal<'_>> {
+        self.open_effect_journal_inner(false)
+    }
+    // Bootstrap only a completely absent journal. Existing/partial evidence is never repaired.
+    pub(crate) fn ensure_memory_effect_journal(&self) -> Result<()> {
+        self.open_effect_journal_inner(true).map(drop)
+    }
+    fn open_effect_journal_inner(&self, memory_bootstrap: bool) -> Result<EffectJournal<'_>> {
         self.db.transaction(|| {
+            if memory_bootstrap {
+                let tables = self.db.query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('effect_journal_meta','effect_intents','effect_journal_events','effect_dispatch_gates','effect_dispatch_events')", &[])?;
+                if tables.len() == 5 { return Ok(()); }
+                if !tables.is_empty() {
+                    return Err(StoreError::new("catalogJournalAbsentOrPartial", "partial effect journal requires reconciliation; memory bootstrap cannot repair it"));
+                }
+            }
             self.db.execute("CREATE TABLE IF NOT EXISTS effect_journal_meta (singleton INTEGER PRIMARY KEY CHECK(singleton=1), version INTEGER NOT NULL)", &[])?;
             let version = self.db.query("SELECT version FROM effect_journal_meta WHERE singleton=1", &[])?;
             if let Some(row) = version.first() {
@@ -545,6 +581,40 @@ impl EffectJournal<'_> {
         ticket: &mut DispatchTicket,
         send: impl FnOnce(&EffectIntent),
     ) -> Result<()> {
+        self.dispatch_once_admitted(context, ticket, |_, _| Ok(()), send)
+    }
+    /// Native operation bridge only: admission executes inside the same IMMEDIATE
+    /// transaction as the one-use handoff claim. No callback runs before COMMIT.
+    pub(crate) fn dispatch_once_admitted(
+        &self, context: &CurrentRun<'_>, ticket: &mut DispatchTicket,
+        admit: impl FnOnce(&RunStore, &EffectRecord) -> Result<()>,
+        send: impl FnOnce(&EffectIntent),
+    ) -> Result<()> {
+        let (record,claim)=self.claim_once_admitted(context,ticket,admit)?;
+        // The claim COMMIT above must succeed before entering the callback. If a query won
+        // first, it already closed this ticket; if we won, it must refuse InCallback.
+        let eligible = (|| {
+            context.matches(&record.intent)?;
+            let current = self.required(&ticket.key)?;
+            if current.cancel_requested || current.manual_review_required {
+                return Err(conflict("handoff cancelled before callback entry"));
+            }
+            Ok(())
+        })();
+        if let Err(error) = eligible {
+            self.finish_handoff(&claim, DispatchPhase::Closed)?;
+            return Err(error);
+        }
+        // No DB write lock spans external work. A panic/abort before settlement leaves the
+        // durable InCallback barrier intact; no timeout/reopen can infer it has returned.
+        send(&record.intent);
+        self.finish_handoff(&claim, DispatchPhase::Settled)?;
+        Ok(())
+    }
+    fn claim_once_admitted(
+        &self,context:&CurrentRun<'_>,ticket:&mut DispatchTicket,
+        admit:impl FnOnce(&RunStore,&EffectRecord)->Result<()>,
+    )->Result<(EffectRecord,HandoffClaim)>{
         if ticket.used {
             return Err(conflict("dispatch ticket already consumed"));
         }
@@ -583,27 +653,70 @@ impl EffectJournal<'_> {
                 claim_id,
                 epoch: next.epoch,
             };
+            admit(self.store, &record)?;
+            context.matches(&record.intent)?;
             Ok((record, claim))
         })?;
-        // The claim COMMIT above must succeed before entering the callback. If a query won
-        // first, it already closed this ticket; if we won, it must refuse InCallback.
-        let eligible = (|| {
-            context.matches(&record.intent)?;
-            let current = self.required(&ticket.key)?;
-            if current.cancel_requested || current.manual_review_required {
-                return Err(conflict("handoff cancelled before callback entry"));
-            }
-            Ok(())
-        })();
-        if let Err(error) = eligible {
-            self.finish_handoff(&claim, DispatchPhase::Closed)?;
-            return Err(error);
+        Ok((record,claim))
+    }
+    pub(crate) fn claim_owned_operation(
+        &self,context:&CurrentRun<'_>,ticket:&mut DispatchTicket,
+        admit:impl FnOnce(&RunStore,&EffectRecord)->Result<()>,
+    )->Result<OwnedOperationHandoff>{
+        let database=self.store.db.pin_original_database()?;
+        let (record,claim)=self.claim_once_admitted(context,ticket,admit)?;
+        // An error here retains the committed InCallback gate. It never fabricates settlement.
+        context.matches(&record.intent)?;
+        Ok(OwnedOperationHandoff{database,claim})
+    }
+    pub(crate) fn ended_repair_record(&self,project:&str,run:&str)->Result<EffectRecord>{
+        let backup=self.store.read_artifact_bounded(project,run,"nativeRepairBefore",2*1024*1024)?;
+        let value:serde_json::Value=serde_json::from_slice(&backup).map_err(|_|stale())?;
+        let operation=value["executionIdentity"]["operationId"].as_str().ok_or_else(stale)?;
+        let record=self.required(&EffectKey{project_id:project.into(),operation_id:operation.into()})?;
+        if record.intent.owner.run_id!=run||record.intent.adapter.id!="native.ue-source-repair.v1"||record.intent.adapter.version!=1||self.gate_for(&record)?.snapshot.phase!=DispatchPhase::Settled{return Err(stale());}
+        let database=self.store.db.pin_original_database().map_err(|_|stale())?;
+        if crate::ue_repair_recovery::observe_original_process(&backup,database.lookup_key(),&record.intent).map_err(|_|stale())?!=crate::repair_execution_identity::ProcessObservation::Ended{return Err(stale());}
+        Ok(record)
+    }
+    /// Restricted restart path for a durably settled synchronous source repair.
+    /// The unique idempotency key atomically reserves one restoration; all normal
+    /// RuntimeHost admission and fresh explicit write approval remain mandatory.
+    pub(crate) fn prepare_ended_repair_restore(
+        &self,context:&CurrentRun<'_>,next:&EffectIntent,original_key:&EffectKey,
+        preview:&crate::ue_build_repair::NativeRepairPreview,
+        cancelled:&AtomicBool,deadline:std::time::Instant,
+    )->Result<crate::runtime_host_recovery_catalog::SettledRepairRestore>{
+        context.matches(next)?;
+        let original=self.required(original_key)?;
+        if original.intent.adapter.id!="native.ue-source-repair.v1"||original.intent.adapter.version!=1
+            ||original.intent.key.project_id!=next.key.project_id||original.intent.root_object_id!=next.root_object_id
+            ||self.gate_for(&original)?.snapshot.phase!=DispatchPhase::Settled
+            ||next.idempotency_key!=hash(format!("restart-restore:{}:{}",original.intent.key.project_id,original.intent_digest).as_bytes()) {
+            return Err(StoreError::new("restartRestoreBlocked","original settled repair and one-use binding required"));
         }
-        // No DB write lock spans external work. A panic/abort before settlement leaves the
-        // durable InCallback barrier intact; no timeout/reopen can infer it has returned.
-        send(&record.intent);
-        self.finish_handoff(&claim, DispatchPhase::Settled)?;
-        Ok(())
+        let backup=self.store.read_artifact_bounded(&original.intent.key.project_id,&original.intent.owner.run_id,"nativeRepairBefore",2*1024*1024)?;
+        let result=self.store.read_artifact_bounded(&original.intent.key.project_id,&original.intent.owner.run_id,"nativeRepairResult",2*1024*1024)?;
+        let database=self.store.db.pin_original_database().map_err(|_|stale())?;
+        if crate::ue_repair_recovery::observe_original_process(&backup,database.lookup_key(),&original.intent)
+            .map_err(|_|stale())?!=crate::repair_execution_identity::ProcessObservation::Ended{return Err(stale());}
+        let report=crate::ue_repair_recovery::inspect(context.root,&next.key.project_id,&original.intent.owner.run_id,&backup,Some(&result),cancelled,deadline).map_err(|_|stale())?;
+        if report.restore_candidates.is_empty()||report.restore_candidates.len()!=preview.preview.files.len()
+            ||report.restore_candidates.iter().zip(&preview.preview.files).any(|(a,b)|a.path!=b.path||a.before!=b.before||a.after!=b.after||a.before_hash!=b.before_hash||a.after_hash!=b.after_hash) {
+            return Err(StoreError::new("restartRestoreChanged","reviewed reverse diff no longer matches durable backup and files"));
+        }
+        let proof=SettledOperationProof{database,key:original.intent.key.clone(),digest:original.intent_digest.clone()};
+        let restore=crate::runtime_host_recovery_catalog::SettledRepairRestore::new(proof,original.intent,preview).map_err(|_|stale())?;
+        if self.find(&next.key)?.is_some(){return Err(conflict("restart restore already reserved"));}
+        self.prepare(context,next)?;
+        Ok(restore)
+    }
+    /// Original claim only, after the owned callback/executor has actually returned.
+    pub(crate) fn settle_owned_operation(&self,handoff:OwnedOperationHandoff)->Result<SettledOperationProof> {
+        let current=self.store.db.pin_original_database()?;
+        if !handoff.database.same_original_database(&current){return Err(stale());}
+        self.finish_handoff(&handoff.claim,DispatchPhase::Settled)?;
+        Ok(SettledOperationProof{database:handoff.database,key:handoff.claim.key,digest:handoff.claim.intent_digest})
     }
     fn finish_handoff(&self, claim: &HandoffClaim, phase: DispatchPhase) -> Result<()> {
         self.store.db.transaction(|| {

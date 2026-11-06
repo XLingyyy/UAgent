@@ -1,11 +1,11 @@
-//! T14 isolated-Lab, current-process/current-editor scene policy. No IPC or production grant is installed.
+//! T14 isolated-Lab, current-process/current-editor scene policy. The protected Lab desktop route is in ue_scene_commands; no general-project grant is installed.
 //! Host scopes, session generations and permits are deliberately not Deserialize. They must come from
 //! a live owned-editor/root lease plus exact-plan approval; model JSON cannot construct authority.
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
-pub const CONTRACT: &str = "2.2.0-scene-batch-current-run";
+pub const CONTRACT: &str = "2.4.0-scene-batch-current-run";
 pub const ROOT: &str = "/Game/UAgentBuildLab/Scene_T14";
 pub const MATERIAL: &str = "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial";
 pub const TOOLS: [&str; 6] = [
@@ -160,7 +160,7 @@ impl SceneBatchPlan {
             || !name.starts_with("L_")
             || !word(name, 80)
             || self.expected_disk_state != "absent"
-            || self.items.len() != 20
+            || (self.items.is_empty() || self.items.len() > 20)
         {
             return Err("invalid_fixed_scene_plan".into());
         }
@@ -320,7 +320,7 @@ impl SceneHostScope {
             || data.target_map != self.plan.target_map
             || data.cancel_is_rollback
             || (!data.conflict && !data.conflict_reason.is_empty())
-            || data.items.len() != 20
+            || data.items.len() != self.plan.items.len()
             || (if data.disk_exists {
                 !hash(&data.disk_hash)
             } else {
@@ -383,7 +383,7 @@ impl SceneHostScope {
             return Err("incorrect_applied_count".into());
         }
         if ["completed", "saved"].contains(&data.state.as_str())
-            && (applied != 20 || !data.current_world_matches || data.conflict)
+            && (applied != self.plan.items.len() || !data.current_world_matches || data.conflict)
         {
             return Err("scene_completion_not_verified".into());
         }
@@ -722,7 +722,7 @@ mod tests {
         h.bind_owned_editor_query(SESSION, result)
     }
     #[test]
-    fn exact20_closed_plan_rejects_bounds_scope_resources_and_duplicates() {
+    fn bounded_closed_plan_rejects_bounds_scope_resources_and_duplicates() {
         plan().validate().unwrap();
         for bad in [
             format!("{ROOT}/Sub/L_Map"),
@@ -736,7 +736,7 @@ mod tests {
             assert!(p.validate().is_err());
         }
         let mut p = plan();
-        p.items.pop();
+        p.items.clear();
         assert!(p.validate().is_err());
         let mut p = plan();
         p.items[1].item_id = p.items[0].item_id.clone();

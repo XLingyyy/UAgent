@@ -1,3 +1,5 @@
+> **r14 current status:** The effect-reconciliation module is declared and integrated with the native recovery catalog and startup barriers. The unregistered/future-host statements below are historical foundation-stage descriptions. Current recovery does not recreate old authority, blindly resend effects or prove external process completion. See [r14](releases/r14.md).
+
 # T18 persistent effect reconciliation foundation
 
 This is an **unregistered native module**, based on `1ea43939ce57effc07584a17dd55e95905c30a93`. It adds no Tauri command, runtime export, UE permission, Provider call, background service or automatic resume. Production `local_run_store/mod.rs` remains unchanged; [the declaration patch](effect-reconciliation-entrypoints.patch) is only a future integration suggestion.

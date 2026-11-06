@@ -260,7 +260,17 @@ export class ToolRegistry {
       if (!isRecord(parsed)) throw new Error("invalid_tool_arguments");
       args = freezeJson(parsed);
       if (tool.validate(args) !== undefined) throw new Error("invalid_tool_validator");
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === "invalid_tool_limit") {
+        return {
+          ...failed("invalid_tool_limit"),
+          output: {
+            reason: "invalid_tool_limit",
+            message: "No files were read. Correct limit using the tool schema, or omit the optional limit to use its default.",
+            parameters: cloneJson(tool.definition.parameters),
+          },
+        };
+      }
       return blocked("invalid_tool_arguments");
     }
     let paths: string[];

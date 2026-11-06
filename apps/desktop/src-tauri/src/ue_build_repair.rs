@@ -153,6 +153,7 @@ pub struct NativeRepairGrant {
     ttl: Duration,
     used: bool,
     revoked: Arc<AtomicBool>,
+    liveness: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
 }
 impl NativeRepairGrant {
     pub fn from_verified_host_approval(
@@ -175,7 +176,14 @@ impl NativeRepairGrant {
             ttl: Duration::from_millis(ttl_ms),
             used: false,
             revoked: Arc::new(AtomicBool::new(false)),
+            liveness: None,
         })
+    }
+    pub(crate) fn with_liveness(mut self, current: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
+        self.liveness = Some(current); self
+    }
+    fn live(&self) -> bool {
+        self.liveness.as_ref().map_or(true, |f| std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f())).unwrap_or(false))
     }
     pub fn revoke(&self) {
         self.revoked.store(true, Ordering::Release);
@@ -187,7 +195,8 @@ impl NativeRepairGrant {
         self.used
     }
     fn valid(&self, p: &NativeRepairPreview) -> bool {
-        !self.used
+        self.live()
+            && !self.used
             && !self.revoked.load(Ordering::Acquire)
             && self.started.elapsed() < self.ttl
             && self.binding == p.preview.binding
@@ -258,7 +267,7 @@ fn hex(s: &str) -> bool {
 fn opaque(s: &str) -> bool {
     !s.is_empty() && s.len() <= 256 && !s.chars().any(char::is_control)
 }
-fn source_path(path: &str) -> Result<(), String> {
+pub(crate) fn source_path(path: &str) -> Result<(), String> {
     ReadRule::exact_file(path).map_err(|e| e.to_string())?;
     if path.contains('\\')
         || !path.starts_with("Source/")
@@ -401,6 +410,19 @@ impl RepairSession {
         self.snapshot = Some(snapshot.clone());
         Ok(snapshot)
     }
+    /// Derive every before-image and hash from the native snapshot; renderer supplies only selected replacements.
+    pub fn prepare_replacements(&mut self,host_session:&str,snapshot_id:&str,preview_id:String,replacements:Vec<(String,String)>)->Result<NativeRepairPreview,String>{
+        self.current(host_session)?;
+        let snapshot=self.snapshot.as_ref().ok_or("repair_snapshot_required")?;
+        if snapshot.snapshot_id!=snapshot_id{return Err("repair_snapshot_changed".into());}
+        if replacements.is_empty()||replacements.len()>8{return Err("repair_exact_file_scope_required".into());}
+        let mut files=Vec::new();
+        for (path,after) in replacements {
+            let f=snapshot.files.iter().find(|f|f.path==path).ok_or("repair_unread_file")?;
+            files.push(RepairFilePreview{path:f.path.clone(),before:f.content.clone(),after_hash:io::hash(after.as_bytes()),after,before_hash:f.sha256.clone(),before_object_identity:f.object_identity.clone()});
+        }
+        self.prepare_preview(host_session,RepairPreviewInput{binding:self.binding.clone(),diagnostic:self.diagnostic.clone(),snapshot_id:snapshot_id.into(),preview_id,files})
+    }
     pub fn prepare_preview(
         &mut self,
         host_session: &str,
@@ -518,6 +540,11 @@ impl RepairSession {
     ) -> Result<RepairApplyReceipt, String> {
         self.apply_with_after_item_hook(host_session, preview_id, grant, journal, cancel, |_| {})
     }
+    #[cfg(test)]
+    pub(crate) fn apply_then_interrupt_for_restore_test(&mut self,host:&str,preview:&str,grant:&mut NativeRepairGrant,journal:&mut impl RepairJournal)->Result<RepairApplyReceipt,String>{
+        let flag=AtomicBool::new(false);
+        self.apply_with_after_item_hook(host,preview,grant,journal,&flag,|count|{if count==1{flag.store(true,Ordering::Release);}})
+    }
     fn apply_with_after_item_hook(
         &mut self,
         host_session: &str,
@@ -598,6 +625,7 @@ impl RepairSession {
         receipt.reason = "ok".into();
         for (i, file) in opened.iter_mut().enumerate() {
             if cancel.load(Ordering::Acquire)
+                || !grant.live()
                 || grant.revoked.load(Ordering::Acquire)
                 || grant.started.elapsed() >= grant.ttl
             {

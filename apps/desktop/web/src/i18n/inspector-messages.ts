@@ -1,5 +1,11 @@
 /** Static panel summaries and the explicitly marked preview/fixture surfaces. */
 export const inspectorMessages = {
+  "assets.workflow": ["资产操作", "Asset workflow"],
+  "assets.demo": ["沙盒生命周期演示", "Sandbox lifecycle demonstration"],
+  "assets.copy": ["复制资产并保存副本", "Duplicate asset and save copy"],
+  "assets.copyHint": ["在新的沙盒任务目录中创建副本，仅保存副本。批准前请核对下方的具体目标路径。", "Creates a copy in a new sandbox run folder and saves only that copy. Review the exact destination below before approval."],
+  "assets.changed": ["输入已变更。批准或执行前请重新预演。", "Inputs changed. Run dry-run again before approval or execution."],
+
   "tools.summary.review": ["待检查项目", "Review queue"],
   "tools.summary.diagnostics": ["模拟诊断", "Mock diagnostics"],
   "tools.summary.runtime": ["任务事件状态", "Task event state"],

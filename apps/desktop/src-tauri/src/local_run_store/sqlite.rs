@@ -1,5 +1,6 @@
-//! Small ownership wrapper for the SQLite shipped with supported Windows 10/11.
-//! SQL and transactions stay native; no subprocess, shell, or additional SQLite package.
+// Small ownership wrapper for the SQLite shipped with supported Windows 10/11.
+// SQL and transactions stay native; no subprocess, shell, or additional SQLite package.
+
 use super::{Result, StoreError};
 use std::{
     ffi::{c_char, c_int, c_void, CStr, CString},
@@ -96,15 +97,18 @@ impl Value {
     }
 }
 
-pub(super) struct Db(*mut c_void);
+pub(super) struct Db(*mut c_void, crate::local_run_store::database_owner::ConnectionLease);
 struct Statement<'a> {
     db: &'a Db,
     raw: *mut c_void,
 }
 impl Drop for Db {
     fn drop(&mut self) {
+        // Includes legacy worker unwinding and schema/open failures, before the
+        // shared gate can be released to another connection.
+        if std::thread::panicking() { self.1.quarantine(); }
         unsafe {
-            sqlite3_close_v2(self.0);
+            if sqlite3_close_v2(self.0) != OK { self.1.quarantine(); }
         }
     }
 }
@@ -117,7 +121,15 @@ impl Drop for Statement<'_> {
 }
 
 impl Db {
+    pub(super) fn pin_original_database(&self) -> Result<std::sync::Arc<crate::local_run_store::database_owner::NativeDatabasePin>> {
+        self.1.pin_original_database().map_err(|kind|StoreError::new(kind,"the original physical SQLite pin is unavailable"))
+    }
+    pub(super) fn check_owner(&self) -> Result<()> {
+        self.1.check().map_err(|kind| StoreError::new(kind, "native SQLite ownership expired"))
+    }
     pub fn open(path: &Path) -> Result<Self> {
+        let lease = crate::local_run_store::database_owner::ConnectionLease::acquire(path)
+            .map_err(|kind| StoreError::new(kind, "native SQLite ownership is unavailable"))?;
         if unsafe { sqlite3_libversion_number() } < 3_031_000 {
             return Err(StoreError::new(
                 "unsupportedRuntime",
@@ -136,7 +148,7 @@ impl Db {
         if raw.is_null() {
             return Err(StoreError::new("sqlite", "cannot open database"));
         }
-        let db = Self(raw);
+        let db = Self(raw, lease);
         db.check(code)?;
         db.check(unsafe { sqlite3_extended_result_codes(db.0, 1) })?;
         db.check(unsafe { sqlite3_busy_timeout(db.0, 5000) })?;
@@ -161,6 +173,8 @@ impl Db {
         }
     }
     fn prepare(&self, sql: &str, params: &[Value]) -> Result<Statement<'_>> {
+        // Cleanup is permitted after revocation; stale COMMIT and all other work are denied.
+        if sql != "ROLLBACK" { self.1.check().map_err(|kind| StoreError::new(kind, "native SQLite operation expired"))?; }
         let sql = CString::new(sql).map_err(|_| StoreError::invalid("SQL contains NUL"))?;
         let mut raw = ptr::null_mut();
         self.check(unsafe {
@@ -195,6 +209,7 @@ impl Db {
         let stmt = self.prepare(sql, params)?;
         let mut rows = Vec::new();
         loop {
+            if sql != "ROLLBACK" { self.1.check().map_err(|kind| StoreError::new(kind, "native SQLite operation expired"))?; }
             match unsafe { sqlite3_step(stmt.raw) } {
                 DONE => return Ok(rows),
                 ROW => {
@@ -246,6 +261,7 @@ impl Db {
         Ok(result)
     }
     pub fn backup_to(&self, destination: &Db) -> Result<()> {
+        self.1.check().and_then(|_| destination.1.check()).map_err(|kind| StoreError::new(kind, "native SQLite backup ownership expired"))?;
         let main = b"main\0";
         let backup = unsafe {
             sqlite3_backup_init(

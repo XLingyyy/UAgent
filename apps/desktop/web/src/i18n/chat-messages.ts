@@ -22,7 +22,7 @@ export const chatMessages={
  "chat.new":["新对话","New conversation"],
  "chat.replying":["正在回复…","Replying…"],
  "chat.stopped":["已停止。未完成的回复不会用于后续上下文。","Stopped. This incomplete reply will not be used as conversation context."],
- "chat.failed":["回复未完成。可查看详情后重新发送。","The reply did not complete. Review details before retrying."],
+ "chat.failed":["回复未完成。请查看运行详情中的失败原因；已收到的内容会保留。","The reply did not complete. Check run details for the cause. Any received text is preserved."],
  "chat.details":["查看运行详情","View run details"],
  "chat.contextCount":["对话上下文 · 下次携带 {count} 轮","Conversation context · {count} turns for the next request"],
  "chat.context":["对话上下文","Conversation context"],

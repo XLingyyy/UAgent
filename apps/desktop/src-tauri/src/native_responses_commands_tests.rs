@@ -254,6 +254,7 @@ impl Fixture {
             snapshot: snapshot.clone(),
             model_id: "fixture-model".into(),
             fixture_root: None,
+            saved_credential: None,
             endpoint: "https://api.openai.com/v1/responses".into(),
             key: Secret(b"synthetic-broker-fixture-only".to_vec()),
             clock: Arc::new(MonotonicClock::new()),
@@ -363,6 +364,7 @@ fn destroyed_window_rejects_delayed_open_captured_before_destruction_without_reg
             model_id: "fixture-model".into(),
             endpoint: "https://api.openai.com/v1/responses".into(),
             fixture_root: None,
+            saved_credential: None,
             key: Secret(b"synthetic-destroy-race-fixture-only".to_vec()),
             clock: Arc::new(MonotonicClock::new()),
             expires_at: PROFILE_TTL,
@@ -418,6 +420,7 @@ fn destroyed_window_tombstone_rejects_current_generation_and_alive_injected_prof
         model_id: "fixture-model".into(),
         endpoint: "https://api.openai.com/v1/responses".into(),
         fixture_root: None,
+        saved_credential: None,
         key: Secret(b"synthetic-tombstone-fixture-only".to_vec()),
         clock: Arc::new(MonotonicClock::new()),
         expires_at: PROFILE_TTL,
@@ -820,4 +823,23 @@ fn provider_resolution_refuses_disabled_wrong_protocol_auth_and_nontransport_end
         provider(&fixture.root, &config.provider_id, "fixture-model").unwrap_err(),
         "native_responses_endpoint_rejected"
     );
+}
+
+#[path="native_memory_pipeline_tests.rs"]
+mod memory_pipeline_tests;
+
+#[test]
+fn anthropic_native_receipt_and_sqlite_chat_archive_roundtrip() {
+ let fixture=Fixture::new();
+ let events=vec![json!({"type":"message_start","message":{"id":"msg_fixture","model":"claude-fixture","usage":{"input_tokens":2,"output_tokens":0}}}),json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"synthetic answer"}}),json!({"type":"content_block_stop","index":0}),json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}),json!({"type":"message_stop"})];
+ let raw=events.iter().map(|e|format!("data:{}\n\n",e)).collect::<String>();
+ let mut response=ResponseState{chunks:raw.as_bytes().chunks(7).map(|v|v.to_vec()).collect(),bytes:raw.len(),head:Some(Head{status:200,content_type:"text/event-stream".into()}),done:true,error:None,dispatch_status:"sent".into()};
+ let (id,text,usage)=anthropic::result(&response,"claude-fixture").unwrap();assert_eq!(id,"msg_fixture");assert_eq!(text,"synthetic answer");
+ let messages=anthropic::chat_messages(r#"{"model":"claude-fixture","stream":true,"max_tokens":100,"system":"synthetic","messages":[{"role":"user","content":[{"type":"text","text":"question"}]}]}"#).unwrap();
+ let root=fixture.root.join("anthropic-archive");let mut archive=ChatArchive::start_with_logical_project(&root,"chat:local","conversation","run","anthropic","claude-fixture",None).unwrap();
+ archive.begin_request("request",&messages).unwrap();archive.complete_request("request",&text,usage).unwrap();archive.finish_conversation().unwrap();drop(archive);
+ assert_eq!(crate::local_run_store::RunStore::open(&root).unwrap().run("chat:local","run").unwrap().status,crate::local_run_store::RunStatus::Succeeded);
+ assert!(anthropic::result(&response,"another-model").is_none());
+ response.chunks=raw.replace("data:{\"type\":\"message_stop\"}\n\n","").as_bytes().chunks(7).map(|v|v.to_vec()).collect();assert!(anthropic::result(&response,"claude-fixture").is_none());
+ assert!(anthropic::chat_messages(r#"{"model":"claude-fixture","messages":[{"role":"user","content":[{"type":"tool_result","content":"x"}]}]}"#).is_err());
 }

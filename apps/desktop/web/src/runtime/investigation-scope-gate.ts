@@ -1,5 +1,5 @@
 import { RunScopeAuthority, normalizeRunPath, type RunScopeLease } from "@uagent/runtime";
-import type { TaskRunScope } from "@uagent/shared";
+import type { TaskRunScope, CollaborationMembers } from "@uagent/shared";
 import { defaultInvestigationLimits, PROJECT_READ_TOOL_IDS } from "./project-read-tools";
 export interface InvestigationScopeProposal {
   projectId: string;
@@ -11,6 +11,8 @@ export interface InvestigationScopeProposal {
   modelId: string;
   endpoint: string;
   goal: string;
+  collaboration?: "independent_review" | "dynamic_delegation";
+  collaborationMembers?: CollaborationMembers;
   sessionExpiresAt: number;
 }
 export interface PendingInvestigationScope {
@@ -48,7 +50,7 @@ export function createInvestigationScopeGate() {
     review(proposal: InvestigationScopeProposal, isCurrent: () => boolean): Promise<RunScopeLease> {
       cancel();
       if (!isCurrent()) return Promise.reject(Error("scope_review_stale"));
-      pending = Object.freeze({ id: ++id, proposal: Object.freeze({ ...proposal }) });
+      pending = Object.freeze({ id: ++id, proposal: Object.freeze(JSON.parse(JSON.stringify(proposal)) as InvestigationScopeProposal) });
       current = isCurrent;
       return new Promise((resolve, reject) => {
         resolveLease = resolve;
@@ -71,14 +73,14 @@ export function createInvestigationScopeGate() {
         if (
           !prefixes.length ||
           !Number.isInteger(choice.maxToolCalls) ||
-          choice.maxToolCalls < 1 ||
+          choice.maxToolCalls < (p.collaboration?Object.keys(p.collaborationMembers??{investigator:null,reviewer:null}).length:1) ||
           choice.maxToolCalls > 30
         )
           throw Error("invalid_scope");
         const limits = {
           ...defaultInvestigationLimits(),
           maxToolCalls: choice.maxToolCalls,
-          maxModelRequests: choice.maxToolCalls + 1,
+          maxModelRequests: Math.min(31,choice.maxToolCalls + (p.collaboration?Object.keys(p.collaborationMembers??{investigator:null,reviewer:null}).length+(p.collaboration==="dynamic_delegation"?2:1):1)),
         };
         const scope: TaskRunScope = {
           id: crypto.randomUUID(),
@@ -90,6 +92,8 @@ export function createInvestigationScopeGate() {
           modelId: p.modelId,
           endpoint: p.endpoint,
           mode: "read_only",
+          ...(p.collaboration?{collaboration:p.collaboration}:{}),
+          ...(p.collaborationMembers?{collaborationMembers:p.collaborationMembers}:{}),
           readPrefixes: prefixes,
           sharePrefixes: choice.shareResults ? prefixes : [],
           toolIds: [...PROJECT_READ_TOOL_IDS],

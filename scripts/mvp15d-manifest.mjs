@@ -518,8 +518,8 @@ function validateBuildEvidence(args, provenance, packageRoot, plugin) {
     ledger.schemaVersion !== BUILD_COMMAND_SCHEMA ||
     ledger.taskGeneration !== TASK_GENERATION ||
     !ledger.toolchainFacts ||
-    ledger.toolchainFacts.engineVersion !== "5.8.1" ||
-    ledger.toolchainFacts.engineChangelist !== 56057345 ||
+    ledger.toolchainFacts.engineVersion !== "5.8.4" ||
+    ledger.toolchainFacts.engineChangelist !== 58902052 ||
     ledger.toolchainFacts.compatibleChangelist !== 55116800 ||
     ledger.toolchainFacts.moduleBuildId !== "55116800" ||
     ledger.engineIdentity.engineVersion !== ledger.toolchainFacts.engineVersion ||
@@ -694,8 +694,8 @@ function validateManifestShape(manifest) {
     !isHex(manifest.sourceCommit, 40) ||
     !isHex(manifest.sourceTreeSha256) ||
     manifest.dirty !== false ||
-    manifest.engineVersion !== "5.8.1" ||
-    manifest.engineChangelist !== 56057345 ||
+    manifest.engineVersion !== "5.8.4" ||
+    manifest.engineChangelist !== 58902052 ||
     manifest.compatibleChangelist !== 55116800 ||
     manifest.moduleBuildId !== "55116800" ||
     manifest.targetPlatform !== "Win64" ||

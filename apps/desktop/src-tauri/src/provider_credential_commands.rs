@@ -54,7 +54,7 @@ pub(crate) fn binding_at(
         .provider(provider_id, &NATIVE_ENDPOINT_POLICY)
         .map_err(|_| "credential_configuration_unavailable")?
         .ok_or("credential_configuration_unavailable")?;
-    if snapshot.config.auth_mode != AuthMode::EnvKey {
+    if !crate::product_settings_commands::active_api(&snapshot.config) || snapshot.config.auth_mode != AuthMode::EnvKey {
         return Err("credential_provider_unsupported".into());
     }
     let decision = NATIVE_ENDPOINT_POLICY

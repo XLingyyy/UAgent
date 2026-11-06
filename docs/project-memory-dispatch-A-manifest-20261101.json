@@ -1,0 +1,39 @@
+{
+  "authorBoundary": "A",
+  "status": "isolated-static-source-unregistered-unrun",
+  "workspace": "E:/Codex/UAgent/2026-10-29/worktrees/credential-vault",
+  "productionMemoryDispatchEnabled": false,
+  "executedTests": false,
+  "executedBuilds": false,
+  "executedApplications": false,
+  "testSourceGroups": 7,
+  "deletedFilesOrData": false,
+  "oldFilesModifiedByA": [],
+  "files": [
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/project_memory_dispatch.rs",
+      "bytes": 11459,
+      "sha256": "0098b5e51d1303d1c15341f4597fb8554c7dce0e296ed98f4c7b1144b3db9f9b"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/project_memory_dispatch_tests.rs",
+      "bytes": 22132,
+      "sha256": "6f8f9762800a2345332aa13f7c3156e3e9b5849a893f9bafc4e7d3a8d8018a2b"
+    },
+    {
+      "path": "docs/project-memory-dispatch-A-integration-20261101.md",
+      "bytes": 9608,
+      "sha256": "17cfb0bd76ef9b911ebc4474253f135e45d61d550ea4ddca0c74717843d48489"
+    }
+  ],
+  "centralDependencies": [
+    "private dispatch child module and selected crate-only type re-exports in project_memory.rs",
+    "borrow original live native grant project/read/share fields and context limit",
+    "B MemoryBatch::capture gets A snapshot rows; final A check uses same B expected_rows slice",
+    "B held source guards and full canonical Responses input/wire byte budget checks",
+    "R1 real native run/read/share authority; R2 project/root update and registration barrier",
+    "R6 private final transport admission and original immutable body/request/batch binding",
+    "R3 dedicated owner completion AFTER original worker drops RunStore/lease/scope",
+    "independently reviewed guarded execution, full candidate build and UI lifecycle acceptance"
+  ]
+}

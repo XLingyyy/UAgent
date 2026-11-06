@@ -1,3 +1,5 @@
+import {readAssetReferences} from "./native-asset-references";
+import {blueprintPath,readBlueprint,selectedBlueprintReadSession} from "./native-blueprint-read";
 import type { RunJsonValue, RunSourceRef, RunToolResult, TaskRunScope } from "@uagent/shared";
 import {
   ToolRegistry,
@@ -14,6 +16,8 @@ export const PROJECT_READ_TOOL_IDS = [
   "project.list_files",
   "project.find_files",
   "project.read_file",
+  "ue.blueprint_structure",
+  "ue.asset_references",
 ] as const;
 function safeFile(path: string): boolean {
   try {
@@ -124,8 +128,8 @@ export function createProjectReadToolRegistry(
     definition: {
       name: search ? "project_find_files" : "project_list_files",
       description: search
-        ? "Find paths in the current approved project index. Does not search file contents or scan the disk."
-        : "List paths from the current approved project index. Use an approved project-relative prefix.",
+        ? "Find paths in the current approved project index. Does not search file contents or scan the disk. Optional limit must be an integer from 1 to 25 (default 20)."
+        : "List paths from the current approved project index. Use an approved project-relative prefix. Optional limit must be an integer from 1 to 25 (default 20).",
       parameters: {
         type: "object",
         properties: {
@@ -294,7 +298,38 @@ export function createProjectReadToolRegistry(
       };
     },
   };
-  return new ToolRegistry([list(false), list(true), read]);
+  const blueprint:RegisteredRunTool={
+    id:"ue.blueprint_structure",
+    definition:{name:"ue_blueprint_structure",description:"Read declared structure of an already-loaded Blueprint in the selected managed editor, with a separate native approval. Point-in-time observation only; not a reusable or disk-coherent source. Never loads, compiles or saves assets.",parameters:{type:"object",properties:{packageName:{type:"string"}},required:["packageName"],additionalProperties:false}},
+    validate:args=>{validateArgs(args,["packageName"],["packageName"]);blueprintPath(args.packageName as string);},
+    paths:args=>[blueprintPath(args.packageName as string)],
+    execute:async(args,context)=>{
+      project(context);if(!isRunPathAllowed(blueprintPath(args.packageName as string),context.scope.sharePrefixes))throw Error("semantic_sharing_scope_required");const session=selectedBlueprintReadSession(context.projectId);if(!session)throw Error("semantic_managed_editor_required");
+      const observation=await readBlueprint(session,args.packageName as string,context.signal);
+      project(context);if(selectedBlueprintReadSession(context.projectId)!==session)throw Error("semantic_editor_changed");
+      // Preserve native provenance in the tool result, never invent a disk freshness token.
+      return {status:"completed",effectState:"not_started",output:{observation,usage:"Historical editor observation at observedAtUtc; re-query for current state. Not disk-coherent or reusable as a file source."} as unknown as RunJsonValue,sources:[],truncated:(observation.result.data as Record<string,unknown>).truncated===true};
+    },
+  };
+  const references:RegisteredRunTool={
+    id:"ue.asset_references",
+    definition:{name:"ue_asset_references",description:"Read direct Asset Registry package dependencies and referencers in the selected managed editor. Separate native approval required. No loading/scanning/writes or recursive traversal. Names outside approved read/sharing scope are omitted. Registry may be incomplete or stale; empty is not proof of no references.",parameters:{type:"object",properties:{packageName:{type:"string"}},required:["packageName"],additionalProperties:false}},
+    validate:args=>{validateArgs(args,["packageName"],["packageName"]);blueprintPath(args.packageName as string);},
+    paths:args=>[blueprintPath(args.packageName as string)],
+    execute:async(args,context)=>{
+      project(context);const packageName=args.packageName as string;
+      if(!isRunPathAllowed(blueprintPath(packageName),context.scope.sharePrefixes))throw Error("semantic_sharing_scope_required");
+      const session=selectedBlueprintReadSession(context.projectId);if(!session)throw Error("semantic_managed_editor_required");
+      const observation=await readAssetReferences(session,packageName,context.signal);
+      project(context);if(selectedBlueprintReadSession(context.projectId)!==session)throw Error("semantic_editor_changed");
+      const visible=(name:string)=>{try{const path=blueprintPath(name);return isRunPathAllowed(path,context.scope.readPrefixes)&&isRunPathAllowed(path,context.scope.sharePrefixes);}catch{return false;}};
+      const original=observation.result.data,dependencies=original.dependencies.filter(visible),referencers=original.referencers.filter(visible);
+      const omitted={dependencies:original.dependencies.length-dependencies.length,referencers:original.referencers.length-referencers.length};
+      const filtered={...observation,result:{...observation.result,data:{...original,dependencies,referencers}}};
+      return {status:"completed",effectState:"not_started",output:{observation:filtered,omittedOutsideScope:omitted,usage:"Direct package edges only; no hard/soft distinction or runtime object references. Historical registry observation, not a complete/current disk graph. No recursive lookup or asset loading."} as unknown as RunJsonValue,sources:[],truncated:original.truncated||original.assetRegistryLoading||omitted.dependencies>0||omitted.referencers>0};
+    },
+  };
+  return new ToolRegistry([list(false), list(true), read, blueprint,references]);
 }
 export function defaultInvestigationLimits(): TaskRunScope["limits"] {
   return {

@@ -31,6 +31,7 @@ pub struct UEBuildCancellation {
     owner: UEBuildOwner,
     requested: Arc<AtomicBool>,
     start_gate: Arc<Mutex<BuildStartState>>,
+    liveness: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
 }
 impl UEBuildCancellation {
     pub fn new(owner: UEBuildOwner) -> Self {
@@ -38,7 +39,17 @@ impl UEBuildCancellation {
             owner,
             requested: Arc::new(AtomicBool::new(false)),
             start_gate: Arc::new(Mutex::new(BuildStartState::Pending)),
+            liveness: None,
         }
+    }
+    pub(crate) fn with_liveness(owner:UEBuildOwner, live:Arc<dyn Fn()->bool+Send+Sync>)->Self {
+        let mut value=Self::new(owner);value.liveness=Some(live);value
+    }
+    fn is_requested(&self)->bool {
+        if self.liveness.as_ref().is_some_and(|live| !std::panic::catch_unwind(std::panic::AssertUnwindSafe(||live())).unwrap_or(false)) {
+            self.requested.store(true,Ordering::SeqCst);
+        }
+        self.requested.load(Ordering::SeqCst)
     }
     pub fn cancel(&self, owner: &UEBuildOwner) -> Result<(), String> {
         if &self.owner != owner {
@@ -58,7 +69,7 @@ impl UEBuildCancellation {
     #[cfg(any(windows, test))]
     fn resume_pending(&self, resume: impl FnOnce() -> Result<(), ()>) -> Result<bool, ()> {
         let mut gate = self.start_gate.lock().map_err(|_| ())?;
-        if *gate == BuildStartState::Cancelled || self.requested.load(Ordering::SeqCst) {
+        if *gate == BuildStartState::Cancelled || self.is_requested() {
             return Ok(false);
         }
         if *gate != BuildStartState::Pending {
@@ -119,7 +130,7 @@ pub fn execute_ue_build(
     {
         return not_started(owner, "build_owner_or_approval_mismatch");
     }
-    if cancel.requested.load(Ordering::SeqCst) {
+    if cancel.is_requested() {
         let mut result = not_started(owner, "cancelled_before_start");
         result.status = "cancelled".into();
         return result;
@@ -128,7 +139,7 @@ pub fn execute_ue_build(
         Ok(guards) => guards,
         Err(reason) => return not_started(owner, &reason),
     };
-    if cancel.requested.load(Ordering::SeqCst) {
+    if cancel.is_requested() {
         let mut result = not_started(owner, "cancelled_before_start");
         result.status = "cancelled".into();
         return result;
@@ -336,7 +347,7 @@ fn execute_owned_before_resume(
             }
             Ok(None) => {}
         }
-        if cancel.requested.load(Ordering::SeqCst) {
+        if cancel.is_requested() {
             break ("cancelled".into(), "cancel_requested".into(), None);
         }
         if started.elapsed() >= timeout {
@@ -353,7 +364,7 @@ fn execute_owned_before_resume(
         while active != Ok(0)
             && Instant::now() < grace
             && started.elapsed() < timeout
-            && !cancel.requested.load(Ordering::SeqCst)
+            && !cancel.is_requested()
         {
             std::thread::sleep(Duration::from_millis(10));
             active = job.active();
@@ -361,7 +372,7 @@ fn execute_owned_before_resume(
     }
     if active != Ok(0) {
         if status == "succeeded" || status == "failed" {
-            if cancel.requested.load(Ordering::SeqCst) {
+            if cancel.is_requested() {
                 status = "cancelled".into();
                 reason = "cancel_requested".into();
             } else if started.elapsed() >= timeout {
@@ -425,7 +436,7 @@ fn execute_owned_before_resume(
 }
 
 #[cfg(windows)]
-mod windows_job {
+pub(crate) mod windows_job {
     use super::Child;
     use std::ffi::c_void;
     use std::mem::size_of;
@@ -506,9 +517,9 @@ mod windows_job {
         fn OpenThread(access: u32, inherit: i32, thread_id: u32) -> Handle;
         fn ResumeThread(thread: Handle) -> u32;
     }
-    pub(super) struct OwnedJob(Handle);
+    pub(crate) struct OwnedJob(Handle);
     impl OwnedJob {
-        pub(super) fn new() -> Result<Self, ()> {
+        pub(crate) fn new() -> Result<Self, ()> {
             let raw = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
             if raw.is_null() {
                 return Err(());
@@ -529,14 +540,14 @@ mod windows_job {
             }
             Ok(job)
         }
-        pub(super) fn assign(&self, child: &Child) -> Result<(), ()> {
+        pub(crate) fn assign(&self, child: &Child) -> Result<(), ()> {
             if unsafe { AssignProcessToJobObject(self.0, child.as_raw_handle()) } == 0 {
                 Err(())
             } else {
                 Ok(())
             }
         }
-        pub(super) fn resume(&self, child: &Child) -> Result<(), ()> {
+        pub(crate) fn resume(&self, child: &Child) -> Result<(), ()> {
             // std::process closes the initial thread handle. Find the suspended primary thread
             // using the supported Win32 snapshot API; only threads owned by this child are resumed.
             let snapshot = unsafe { CreateToolhelp32Snapshot(0x00000004, 0) }; // TH32CS_SNAPTHREAD
@@ -578,7 +589,7 @@ mod windows_job {
                 Err(())
             }
         }
-        pub(super) fn active(&self) -> Result<u32, ()> {
+        pub(crate) fn active(&self) -> Result<u32, ()> {
             let mut accounting = Accounting::default();
             if unsafe {
                 QueryInformationJobObject(
@@ -594,7 +605,7 @@ mod windows_job {
             }
             Ok(accounting.active)
         }
-        pub(super) fn terminate(&self) -> Result<(), ()> {
+        pub(crate) fn terminate(&self) -> Result<(), ()> {
             if unsafe { TerminateJobObject(self.0, 0xC000013A) } == 0 {
                 Err(())
             } else {
@@ -822,5 +833,23 @@ mod portable_tests {
             Ok(false)
         );
         assert!(!resumed);
+    }
+}
+
+#[cfg(test)]
+mod native_liveness_tests {
+    use super::*;
+    fn owner()->UEBuildOwner{UEBuildOwner{run_id:"synthetic".into(),step_id:"build".into(),fingerprint:"a".repeat(64)}}
+    #[test]
+    fn revoked_native_liveness_prevents_resume_without_process(){
+        let alive=Arc::new(AtomicBool::new(true));let live=alive.clone();
+        let cancel=UEBuildCancellation::with_liveness(owner(),Arc::new(move||live.load(Ordering::SeqCst)));
+        alive.store(false,Ordering::SeqCst);
+        assert!(!cancel.resume_pending(||panic!("revoked process must never resume")).unwrap());
+    }
+    #[test]
+    fn panicking_native_liveness_fails_closed_without_process(){
+        let cancel=UEBuildCancellation::with_liveness(owner(),Arc::new(||panic!("synthetic native owner fault")));
+        assert!(!cancel.resume_pending(||panic!("process must never resume")).unwrap());
     }
 }

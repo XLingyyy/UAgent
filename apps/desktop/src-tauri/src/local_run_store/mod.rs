@@ -3,7 +3,16 @@
 //! The native adapter supplies a trusted app-data directory and project identity.
 #![cfg(windows)]
 mod schema;
+pub(crate) mod codex_sessions;
+#[cfg(test)]
+pub(crate) mod external_sqlite_writer_tests;
+pub mod project_memory;
+pub(crate) mod session_catalog;
+pub(crate) mod database_owner;
+pub(crate) mod native_run_creation;
+#[path = "run_store_sqlite.rs"]
 mod sqlite;
+pub mod effect_reconciliation;
 
 pub use legacy::{ImportReport, LegacySelection};
 pub use schema::SCHEMA_VERSION;
@@ -423,6 +432,7 @@ impl RunStore {
         Self::open_with_options(root, StoreOptions::default())
     }
     pub fn open_with_options(root: impl AsRef<Path>, options: StoreOptions) -> Result<Self> {
+        if !database_owner::available() { return Err(StoreError::new("unavailable", "native storage owner has closed")); }
         let root = root.as_ref();
         local_disk_prefix(root)?;
         if options.max_database_bytes < 128 * 1024
@@ -876,6 +886,7 @@ impl RunStore {
     /// Stage immutable bytes, then attach the returned digest in commit_checkpoint.
     /// A crash may leave an unreferenced file; it is counted, never mistaken for a result.
     pub fn put_artifact(&self, project: &str, bytes: &[u8]) -> Result<ArtifactBlob> {
+        self.db.check_owner()?;
         id(project)?;
         let digest = hash(bytes);
         let length = u64::try_from(bytes.len())
@@ -900,6 +911,11 @@ impl RunStore {
         })
     }
     pub fn read_artifact(&self, project: &str, run: &str, reference_id: &str) -> Result<Vec<u8>> {
+        self.read_artifact_bounded(project, run, reference_id, u64::MAX)
+    }
+    /// Display budget only: oversized records fail without returning a truncated artifact.
+    pub fn read_artifact_bounded(&self, project:&str, run:&str, reference_id:&str, max_bytes:u64)->Result<Vec<u8>> {
+        self.db.check_owner()?;
         let rows = self.db.query("SELECT r.sha256,b.bytes FROM artifact_refs r JOIN artifact_blobs b ON b.project_id=r.project_id AND b.sha256=r.sha256 WHERE r.project_id=? AND r.run_id=? AND r.id=?", &[project.into(),run.into(),reference_id.into()])?;
         let row = rows.first().ok_or_else(|| {
             StoreError::new(
@@ -909,8 +925,10 @@ impl RunStore {
         })?;
         let digest = row[0].text()?;
         let length = row[1].int()? as u64;
+        if length > max_bytes { return Err(StoreError::new("artifactDisplayLimit", "artifact exceeds the display limit")); }
         let path = self.blob_path(project, &digest)?;
-        let bytes = fs::read(path)?;
+        let mut bytes = Vec::new();
+        fs::File::open(path)?.take(max_bytes.saturating_add(1)).read_to_end(&mut bytes)?;
         if bytes.len() as u64 != length || hash(&bytes) != digest {
             return Err(StoreError::new(
                 "corruptArtifact",
@@ -938,6 +956,7 @@ impl RunStore {
         Ok(bytes)
     }
     pub fn usage(&self) -> Result<StorageUsage> {
+        self.db.check_owner()?;
         Ok(StorageUsage {
             database_bytes: fs::metadata(self.root.join("runs.sqlite3"))?.len(),
             wal_bytes: file_len_or_zero(&self.root.join("runs.sqlite3-wal"))?,
@@ -951,6 +970,7 @@ impl RunStore {
     /// verified against the backed-up DB. Destination must not already exist.
     /// Only a directory with backup.complete.json is a complete backup.
     pub fn backup(&self, destination: impl AsRef<Path>) -> Result<()> {
+        self.db.check_owner()?;
         let destination = external_destination(destination.as_ref(), &self.root)?;
         fs::create_dir(&destination)?;
         fs::create_dir(destination.join("artifacts"))?;
@@ -967,6 +987,7 @@ impl RunStore {
             verify_blob(&source, &digest, length)?;
             let filename = source.file_name().ok_or_else(StoreError::corrupt)?;
             let target_path = destination.join("artifacts").join(filename);
+            self.db.check_owner()?;
             fs::copy(&source, &target_path)?;
             fs::OpenOptions::new()
                 .write(true)
@@ -979,6 +1000,7 @@ impl RunStore {
             .write(true)
             .open(destination.join("runs.sqlite3"))?
             .sync_all()?;
+        self.db.check_owner()?;
         let mut complete = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -990,6 +1012,7 @@ impl RunStore {
     /// Read-only project export. Raw credentials/approvals are not part of the schema.
     /// Writes to a new file and returns errors rather than shortening record bodies.
     pub fn export_project_jsonl(&self, project: &str, destination: impl AsRef<Path>) -> Result<()> {
+        self.db.check_owner()?;
         let path = external_destination(destination.as_ref(), &self.root)?;
         let mut file = fs::OpenOptions::new()
             .write(true)
@@ -1021,6 +1044,7 @@ impl RunStore {
                 ("artifact_blobs","project_id,sha256,bytes"),
                 ("artifact_refs","project_id,run_id,id,sha256,payload"),
                 ("legacy_imports","project_id,source_sha256,legacy_chat_id,session_id,source_revision,prior_truncation"),
+                ("project_memories","project_id,id,revision,validity,payload"),
             ];
             for (table, columns) in tables {
                 let project_column = if *table == "projects" {
@@ -1169,3 +1193,10 @@ fn message_rows(project: &str, rows: Vec<Vec<Value>>) -> Result<Vec<Message>> {
 #[cfg(test)]
 #[path = "../../tests/local_run_store_tests.rs"]
 mod tests;
+
+impl RunStore {
+    /// Physical database coordinates for a persisted observation, never authority.
+    pub(crate) fn repair_execution_database_key(&self)->Result<(u64,[u8;16])>{
+        self.db.pin_original_database().map(|pin|pin.lookup_key()).map_err(|_|StoreError::new("repairDatabaseIdentityUnavailable","original database identity unavailable"))
+    }
+}

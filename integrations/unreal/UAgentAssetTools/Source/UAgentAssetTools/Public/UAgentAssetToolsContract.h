@@ -10,8 +10,8 @@ namespace UAgentAssetTools
 	static constexpr const TCHAR* PluginId = TEXT("UAgentAssetTools");
 	static constexpr const TCHAR* PluginVersion = TEXT("0.1.0");
 	static constexpr const TCHAR* ContractVersion = TEXT("mvp15d.asset-tools.v1");
-	static constexpr const TCHAR* EngineVersion = TEXT("5.8.1");
-	static constexpr int32 EngineChangelist = 56057345;
+	static constexpr const TCHAR* EngineVersion = TEXT("5.8.4");
+	static constexpr int32 EngineChangelist = 58902052;
 	static constexpr int32 CompatibleChangelist = 55116800;
 	static constexpr const TCHAR* ModuleBuildId = TEXT("55116800");
 	static constexpr const TCHAR* DryRunSchemaVersion = TEXT("mvp15c.dry-run.v1");

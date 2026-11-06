@@ -477,3 +477,116 @@ fn build_inputs_reject_outside_after_edit_and_hold_verified_sources_through_disp
     drop(guard);
     fs::write(&path, "// writable again after release\n").unwrap();
 }
+
+#[test]
+fn production_liveness_revoked_during_durable_backup_prevents_source_write() {
+    let f=Fixture::new();let mut session=f.session();let p=preview(&mut session,"live-backup");
+    let flag=Arc::new(AtomicBool::new(true));let live=flag.clone();
+    let mut grant=NativeRepairGrant::from_verified_host_approval(&p,60000).unwrap().with_liveness(Arc::new(move||live.load(Ordering::SeqCst)));
+    struct Revoking { inner:DirectoryRepairJournal,flag:Arc<AtomicBool> }
+    impl RepairJournal for Revoking {fn persist_before(&mut self,b:&RepairRecoveryBundle)->Result<String,String>{let result=self.inner.persist_before(b)?;self.flag.store(false,Ordering::SeqCst);Ok(result)}}
+    let mut journal=Revoking{inner:f.journal(),flag};
+    let receipt=session.apply_approved("host",&p.preview.preview_id,&mut grant,&mut journal,&AtomicBool::new(false)).unwrap();
+    assert_eq!(receipt.status,"not_started");assert!(receipt.recovery_record.is_some());assert!(grant.consumed());
+    assert_eq!(f.read("Source/Fixture/A.cpp"),"int value = 1;\n");
+    assert!(session.hold_applied_inputs_for_build("host",&p.preview.preview_id).is_err());
+    assert!(session.apply_approved("host",&p.preview.preview_id,&mut grant,&mut journal,&AtomicBool::new(false)).is_err());
+}
+#[test]
+fn production_liveness_panic_fails_before_any_backup_or_write() {
+    let f=Fixture::new();let mut session=f.session();let p=preview(&mut session,"live-panic");
+    let mut grant=NativeRepairGrant::from_verified_host_approval(&p,60000).unwrap().with_liveness(Arc::new(||panic!("synthetic document unavailable")));
+    struct Never;impl RepairJournal for Never {fn persist_before(&mut self,_:&RepairRecoveryBundle)->Result<String,String>{panic!("must not back up")}}
+    assert!(session.apply_approved("host",&p.preview.preview_id,&mut grant,&mut Never,&AtomicBool::new(false)).is_err());
+    assert_eq!(f.read("Source/Fixture/A.cpp"),"int value = 1;\n");
+}
+
+fn batch_replacements_preview(s:&mut RepairSession,label:&str)->NativeRepairPreview{
+    let snapshot=s.read_snapshots("host").unwrap();
+    let replacements=snapshot.files.iter().map(|f|(f.path.clone(),format!("{}// batch repair\n",f.content))).collect();
+    s.prepare_replacements("host",&snapshot.snapshot_id,io::hash(label.as_bytes()),replacements).unwrap()
+}
+#[test]
+fn batch_replacements_apply_back_up_both_and_require_new_grant(){
+    let f=Fixture::new();let mut s=f.session();let p=batch_replacements_preview(&mut s,"batch-success");
+    let mut grant=NativeRepairGrant::from_verified_host_approval(&p,60000).unwrap();let mut journal=f.journal();
+    let result=s.apply_approved("host",&p.preview.preview_id,&mut grant,&mut journal,&AtomicBool::new(false)).unwrap();
+    assert_eq!(result.status,"applied");assert_eq!(result.effects.len(),2);
+    let saved:serde_json::Value=serde_json::from_slice(&fs::read(f.base.join("Recovery/records").join(result.recovery_record.unwrap())).unwrap()).unwrap();
+    for file in &p.preview.files{assert_eq!(f.read(&file.path),file.after);assert!(saved["preview"]["preview"]["files"].as_array().unwrap().iter().any(|v|v["path"]==file.path&&v["before"]==file.before));}
+    assert!(s.apply_approved("host",&p.preview.preview_id,&mut grant,&mut journal,&AtomicBool::new(false)).is_err());
+    assert!(s.hold_applied_inputs_for_build("host",&p.preview.preview_id).is_ok());
+}
+#[test]
+fn batch_replacements_reject_stale_unread_duplicate_and_unchanged_input(){
+    let f=Fixture::new();let mut s=f.session();let snap=s.read_snapshots("host").unwrap();let a=&snap.files[0];
+    for (i,(snapshot,files)) in [
+        ("0".repeat(64),vec![(a.path.clone(),"changed".into())]),
+        (snap.snapshot_id.clone(),vec![("Source/Unread.cpp".into(),"changed".into())]),
+        (snap.snapshot_id.clone(),vec![(a.path.clone(),"first".into()),(a.path.clone(),"second".into())]),
+        (snap.snapshot_id.clone(),vec![(a.path.clone(),a.content.clone())]),
+    ].into_iter().enumerate(){assert!(s.prepare_replacements("host",&snapshot,io::hash(format!("bad-{i}").as_bytes()),files).is_err());}
+    for file in snap.files{assert_eq!(f.read(&file.path),file.content);}
+}
+#[test]
+fn batch_replacements_second_file_conflict_leaves_first_untouched(){
+    let f=Fixture::new();let mut s=f.session();let p=batch_replacements_preview(&mut s,"batch-conflict");
+    fs::write(f.root.join(&p.preview.files[1].path),"// outside edit\n").unwrap();
+    let mut grant=NativeRepairGrant::from_verified_host_approval(&p,60000).unwrap();
+    let result=s.apply_approved("host",&p.preview.preview_id,&mut grant,&mut f.journal(),&AtomicBool::new(false)).unwrap();
+    assert_eq!(result.status,"conflict");assert_eq!(f.read(&p.preview.files[0].path),p.preview.files[0].before);assert_eq!(f.read(&p.preview.files[1].path),"// outside edit\n");
+}
+#[test]
+fn batch_replacements_partial_preserves_backup_and_blocks_rebuild(){
+    let f=Fixture::new();let mut s=f.session();let p=batch_replacements_preview(&mut s,"batch-partial");
+    let mut grant=NativeRepairGrant::from_verified_host_approval(&p,60000).unwrap();let flag=AtomicBool::new(false);
+    let result=s.apply_with_after_item_hook("host",&p.preview.preview_id,&mut grant,&mut f.journal(),&flag,|n|{if n==1{flag.store(true,Ordering::Release);}}).unwrap();
+    assert_eq!(result.status,"partial");assert_eq!(result.effects[0].status,"applied");assert_eq!(result.effects[1].status,"not_started");
+    assert!(f.base.join("Recovery/records").join(result.recovery_record.unwrap()).is_file());
+    assert_eq!(f.read(&p.preview.files[0].path),p.preview.files[0].after);assert_eq!(f.read(&p.preview.files[1].path),p.preview.files[1].before);
+    assert!(s.hold_applied_inputs_for_build("host",&p.preview.preview_id).is_err());
+}
+
+fn restart_inspection_evidence()->(Fixture,Vec<u8>,Vec<u8>){
+ let f=Fixture::new();let mut s=f.session();let p=batch_replacements_preview(&mut s,"restart-partial");let mut grant=NativeRepairGrant::from_verified_host_approval(&p,60000).unwrap();let flag=AtomicBool::new(false);
+ let mut receipt=s.apply_with_after_item_hook("host",&p.preview.preview_id,&mut grant,&mut f.journal(),&flag,|n|{if n==1{flag.store(true,Ordering::Release);}}).unwrap();
+ let backup=fs::read(f.base.join("Recovery/records").join(receipt.recovery_record.as_ref().unwrap())).unwrap();
+ // StoreRepairJournal uses the artifact digest as the recovery reference; this synthetic directory journal uses a filename.
+ receipt.recovery_record=Some(io::hash(&backup));let result=serde_json::to_vec(&receipt).unwrap();drop(s);
+ (f,backup,result)
+}
+#[test]
+fn restart_inspection_reopens_root_and_compares_partial_effects_without_restoring_authority(){
+ let(f,b,r)=restart_inspection_evidence();let root=TrustedRootHandle::open_from_host_selection(&f.root).unwrap();
+ let report=crate::ue_repair_recovery::inspect(&root,"Fixture","history-run",&b,Some(&r),&AtomicBool::new(false),Instant::now()+Duration::from_secs(10)).unwrap();
+ assert_eq!(report.restore_candidates.len(),1);assert_eq!(report.restore_candidates[0].before_hash,report.files[0].current_sha256.clone().unwrap());assert_eq!(report.restore_candidates[0].after,"int value = 1;\n");assert_eq!(report.files[0].state,"matches_after");assert!(report.files[0].known_applied_match);assert_eq!(report.files[1].state,"matches_before");assert!(!report.restore_available);assert_eq!(report.restore_blocker,"original_execution_settlement_required");
+}
+#[test]
+fn restart_inspection_detects_external_content_and_rejects_different_root(){
+ let(f,b,r)=restart_inspection_evidence();fs::write(f.root.join("Source/Fixture/A.cpp"),"// outside edit\n").unwrap();let root=TrustedRootHandle::open_from_host_selection(&f.root).unwrap();
+ let report=crate::ue_repair_recovery::inspect(&root,"Fixture","history-run",&b,Some(&r),&AtomicBool::new(false),Instant::now()+Duration::from_secs(10)).unwrap();assert!(report.restore_candidates.is_empty());assert_eq!(report.files[0].state,"diverged");assert!(!report.files[0].known_applied_match);assert_eq!(f.read("Source/Fixture/A.cpp"),"// outside edit\n");
+ let other=Fixture::new();let other_root=TrustedRootHandle::open_from_host_selection(&other.root).unwrap();assert!(crate::ue_repair_recovery::inspect(&other_root,"Fixture","history-run",&b,Some(&r),&AtomicBool::new(false),Instant::now()+Duration::from_secs(10)).is_err());
+}
+#[test]
+fn restart_inspection_missing_receipt_does_not_infer_success(){
+ let(f,b,_)=restart_inspection_evidence();let root=TrustedRootHandle::open_from_host_selection(&f.root).unwrap();let report=crate::ue_repair_recovery::inspect(&root,"Fixture","history-run",&b,None,&AtomicBool::new(false),Instant::now()+Duration::from_secs(10)).unwrap();assert!(!report.result_present);assert!(report.restore_candidates.is_empty());assert_eq!(report.files[0].state,"matches_after");assert_eq!(report.files[0].saved_effect,"unrecorded");assert!(!report.files[0].known_applied_match);assert!(!report.restore_available);
+}
+#[test]
+fn restart_inspection_rejects_corrupt_backup_receipt_and_cancelled_read(){
+ let(f,b,r)=restart_inspection_evidence();let root=TrustedRootHandle::open_from_host_selection(&f.root).unwrap();let mut bad:serde_json::Value=serde_json::from_slice(&b).unwrap();bad["preview"]["preview"]["files"][0]["before"]="corrupt".into();
+ assert!(crate::ue_repair_recovery::inspect(&root,"Fixture","history-run",&serde_json::to_vec(&bad).unwrap(),Some(&r),&AtomicBool::new(false),Instant::now()+Duration::from_secs(10)).is_err());
+ let mut receipt:serde_json::Value=serde_json::from_slice(&r).unwrap();receipt["previewId"]="wrong".into();assert!(crate::ue_repair_recovery::inspect(&root,"Fixture","history-run",&b,Some(&serde_json::to_vec(&receipt).unwrap()),&AtomicBool::new(false),Instant::now()+Duration::from_secs(10)).is_err());
+ let mut wrong_diagnostic:serde_json::Value=serde_json::from_slice(&r).unwrap();wrong_diagnostic["diagnostic"]["diagnosticId"]="wrong".into();assert!(crate::ue_repair_recovery::inspect(&root,"Fixture","history-run",&b,Some(&serde_json::to_vec(&wrong_diagnostic).unwrap()),&AtomicBool::new(false),Instant::now()+Duration::from_secs(10)).is_err());
+ assert!(crate::ue_repair_recovery::inspect(&root,"Fixture","history-run",&b,Some(&r),&AtomicBool::new(true),Instant::now()+Duration::from_secs(10)).is_err());
+}
+
+#[test]
+fn restart_inspection_dispatch_records_never_become_a_stop_proof(){
+ use crate::local_run_store::effect_reconciliation::{OperationOwner,DispatchPhase,DispatchGateSnapshot,EffectState,runtime_host_catalog_reader::{DurableEffectBarrier,BarrierReason}};
+ let owner=OperationOwner{scope_id:"scope".into(),run_id:"history".into(),project_id:"p".into(),root_ref:"root".into(),conversation_id:"c".into(),provider_id:"native-ue-repair".into(),model_id:"none".into(),step_id:"repair".into(),execution_id:"opaque".into(),host_generation:"generation".into()};
+ let mut barrier=DurableEffectBarrier{project_id:"p".into(),operation_id:"op".into(),owner,root_object_id:"root".into(),resources:vec![],intent_digest:"a".repeat(64),revision:3,state:EffectState::ResultUnknown,dispatch:DispatchGateSnapshot{phase:DispatchPhase::InCallback,epoch:2},reason:BarrierReason::HandoffUnsettled};
+ for phase in [DispatchPhase::InCallback,DispatchPhase::Settled,DispatchPhase::Closed]{barrier.dispatch.phase=phase;let report=crate::ue_repair_recovery::describe_execution(&[barrier.clone()],"p","history","root");assert_eq!(report.status,"recorded_barrier");assert_eq!(report.recorded_phase,Some(phase));assert!(!report.stopped_proven);}
+ assert_eq!(crate::ue_repair_recovery::describe_execution(&[barrier.clone()],"other","history","root").status,"no_matching_barrier");
+ assert_eq!(crate::ue_repair_recovery::describe_execution(&[barrier.clone()],"p","history","other-root").status,"root_mismatch");
+ assert_eq!(crate::ue_repair_recovery::describe_execution(&[barrier.clone(),barrier],"p","history","root").status,"ambiguous");
+}

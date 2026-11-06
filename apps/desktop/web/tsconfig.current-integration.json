@@ -1,0 +1,35 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "vite/client"
+    ],
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": [
+    "src/app/App.tsx",
+    "src/workspace/RunHistoryPanel.tsx",
+    "src/workspace/RunHistorySearch.tsx",
+    "src/workspace/UEBuildPreviewPanel.tsx",
+    "src/operation-review/NativeOperationReview.tsx",
+    "src/runtime/native-run-history-search.ts",
+    "src/runtime/native-ue-build-preview.ts",
+    "src/runtime/shared-runtime-host-queue.ts",
+    "src/settings/pages/ConfigSettings.tsx",
+    "src/runtime/diagnostic-export.ts",
+    "src/workspace/DiagnosticsExportPanel.tsx",
+    "src/workspace/UESemanticReadPanel.tsx",
+    "src/runtime/native-ue-semantic-read.ts",
+    "src/workspace/ProjectMemoryAccess.tsx",
+    "src/workspace/ProjectMemoryPanel.tsx",
+    "src/runtime/native-project-memory.ts",
+    "src/workspace/NativeHistoryAccess.tsx",
+    "src/workspace/SessionCatalogPanel.tsx",
+    "src/runtime/native-session-catalog.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
+  ]
+}

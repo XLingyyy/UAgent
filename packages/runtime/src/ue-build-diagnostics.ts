@@ -314,3 +314,19 @@ export function parseUEBuildExecutionDiagnostics(
   summary.truncated ||= result.outputTruncated || !result.outputComplete;
   return summary;
 }
+
+/** Shared decision for the repair coordinator and the production result view.
+ * Diagnostic eligibility is an observation, never file scope or approval. */
+export function assessUEBuildRepair(
+  result: Pick<UEBuildExecutionResult, "exitCode" | "treeStopped" | "stdout" | "stderr" | "outputTruncated" | "outputComplete"> & { status: string },
+  options: UEBuildDiagnosticOptions = {},
+) {
+  const summary = parseUEBuildExecutionDiagnostics(result, options);
+  const reason = !result.treeStopped || result.status === "termination_unknown"
+    ? "termination_unconfirmed"
+    : result.status !== "failed" || result.exitCode === null || result.exitCode === 0
+      ? "not_failed_build"
+      : summary.truncated ? "incomplete_diagnostics"
+        : summary.errorCount === 0 ? "no_parsed_errors" : "diagnosed_failure";
+  return { summary, eligible: reason === "diagnosed_failure", reason } as const;
+}

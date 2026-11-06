@@ -1,3 +1,5 @@
+> Current engine target (2026-11-03): UE **5.8.4 / CL 58902052**, compatible CL / module BuildId **55116800**. See [current compatibility and verification limits](ue584-compatibility.md). Any 5.8.1/5.8.2 results below are historical evidence, not validation of the current engine or a current release.
+
 # UE semantic v2 read-only contract
 
 See the [unified integration index](ue-build-integration.md#integration-index-t09--t11--t13--t14) for commit order, main-baseline conflicts and mandatory production host boundaries.
@@ -8,7 +10,7 @@ The v2 companion reads live editor metadata through five exact MCP tools. It is 
 
 The implementation was checked against the locally installed ModelContextProtocol source (`IModelContextProtocolModule::AddTool`, refresh/remove lifecycle, structured result overload, and the `call_tool` dispatcher). It uses direct native tools; the wrapper route is admitted only after parsing its actual `tool_name` and `arguments`. Arbitrary toolsets, nested wrappers and names outside the exact read registry are rejected.
 
-The tested installation's `Engine/Build/Build.version` is 5.8.2 / CL 56702186. Its startup plugin compatibility check reports 5.8.0 / compatible CL 55116800, while the loaded companion's `FEngineVersion::Current()` returns 5.8.2 / CL 56702186. The new plugin descriptor therefore declares the observed compatible 5.8.0 version; no skip-version-check option or engine modification is used. This is one tested Windows x64 installation, not a claim about every engine binary bearing that directory name.
+The historical 5.8.2 test installation's `Engine/Build/Build.version` is 5.8.2 / CL 56702186. Its startup plugin compatibility check reports 5.8.0 / compatible CL 55116800, while the loaded companion's `FEngineVersion::Current()` returns 5.8.2 / CL 56702186. The new plugin descriptor therefore declares the observed compatible 5.8.0 version; no skip-version-check option or engine modification is used. This is one tested Windows x64 installation, not a claim about every engine binary bearing that directory name.
 
 ## Discovery and scope
 

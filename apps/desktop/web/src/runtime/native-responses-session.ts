@@ -14,12 +14,16 @@ import type {
   ProviderRuntimeRequest,
 } from "@uagent/shared";
 import type { NativeInvoke } from "./project-native-adapter";
+import { createNativeProjectMemoryDispatch, type NativeProjectMemoryDispatch, type NativeMemoryDispatchCompletion } from "./native-project-memory-dispatch";
+import { PROJECT_MEMORY_MESSAGE_PREFIX, parseProjectMemorySelectedRevisions, parseProjectMemoryUniqueJson,
+  type ProjectMemoryDispatchOwner } from "../../../../../packages/runtime/src/project-memory/dispatch-contract";
 import type { ProviderVersion } from "../types/provider";
 
-const ENDPOINT = "https://api.openai.com/v1/responses";
+const RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
 const MAX_BYTES = 4_194_304;
 const MAX_CHUNKS = 4096;
 const MAX_CHUNK_BYTES = 65_536;
+const MEMORY_CLEANUP_MS = 2000;
 export type NativeResponsesDispatchStatus = "notDispatched" | "mayHaveBeenSent" | "sent";
 function dispatchStatus(value: unknown): value is NativeResponsesDispatchStatus {
   return value === "notDispatched" || value === "mayHaveBeenSent" || value === "sent";
@@ -32,10 +36,16 @@ interface ProfileReceipt {
   endpoint: string;
   expiresAt: number;
   fixture: boolean;
+  nativeProjectMemoryDispatch?: boolean;
   modelSettings?: {
     supportsReasoning: boolean;
     requestDefaults: { temperature: number | null; maxOutputTokens: number | null };
   };
+}
+interface MemoryScopeReceipt {
+  scopeId: string; projectId: string; runId: string; conversationId: string;
+  readPrefixes: string[]; sharePrefixes: string[]; maxContextBytes: number;
+  expiresAt: number; productionMemoryDispatchEnabled: boolean;
 }
 interface RunReceipt {
   runHandle: string;
@@ -61,6 +71,7 @@ interface PollReceipt {
   dispatchStatus: "notDispatched" | "mayHaveBeenSent" | "sent";
 }
 export interface NativeResponsesProfileOptions {
+  wireApi?: "responses" | "anthropic";
   invoke: NativeInvoke;
   providerId: string;
   modelId: string;
@@ -163,6 +174,11 @@ function pause(signal?: AbortSignal): Promise<void> {
  * Native handles and continuation descriptions do not confer authorization.
  */
 export async function createNativeResponsesProfile(options: NativeResponsesProfileOptions) {
+  if (["responses","anthropic"].includes(options.wireApi ?? "responses")) throw Error("provider_api_archived");
+  const anthropic=options.wireApi==="anthropic";
+  if(anthropic)throw failure(); // Archived product API; no profile or IPC is created.
+  const ENDPOINT=anthropic?"https://api.anthropic.com/v1/messages":RESPONSES_ENDPOINT;
+  if(anthropic&&options.savedVersion)throw failure();
   const invoke = options.invoke,
     providerId = options.providerId,
     modelId = options.modelId,
@@ -203,6 +219,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
     profile.modelId === modelId &&
     profile.endpoint === ENDPOINT &&
     typeof profile.fixture === "boolean" &&
+    (profile.nativeProjectMemoryDispatch === undefined || typeof profile.nativeProjectMemoryDispatch === "boolean") &&
     (profile.fixture || validModelSettings(profile.modelSettings)) &&
     Number.isSafeInteger(profile.expiresAt) &&
     profile.expiresAt > now() &&
@@ -301,6 +318,26 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
       )
         throw failure();
       const runAbort = new AbortController();
+      let memoryMode: boolean | null = null;
+      let memoryScopeId: string | null = null, memoryExpiresAt = 0;
+      let memoryScopeRevocation: Promise<boolean> | null = null;
+      let preparingMemory: NativeProjectMemoryDispatch | null = null;
+      async function memoryCleanupCall(command: string, input: unknown, deadline: number): Promise<void> {
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          // Invoke once even when the shared waiting budget is spent. A timeout
+          // is uncertainty, never native stop proof or authorization to retry.
+          await Promise.race([call(command, input), new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(failure()), Math.max(0, Math.min(MEMORY_CLEANUP_MS, deadline - performance.now())));
+          })]);
+        } finally { if (timeout !== undefined) clearTimeout(timeout); }
+      }
+      function revokeMemoryScope(deadline = performance.now() + MEMORY_CLEANUP_MS): Promise<boolean> {
+        if (memoryScopeRevocation) return memoryScopeRevocation;
+        if (!memoryScopeId) return Promise.resolve(true);
+        return memoryScopeRevocation = memoryCleanupCall("revoke_native_project_memory_scope", { scopeId: memoryScopeId }, deadline)
+          .then(() => true, () => false);
+      }
       cancelRuns.add(() => runAbort.abort());
       function check(signal?: AbortSignal) {
         checkProfile();
@@ -322,10 +359,14 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
         approved: boolean;
         dispatched: boolean;
         cleanup: Promise<void> | null;
+        cleanupDeadline: number | null;
         detachSignal?: () => void;
         ordinal: number;
         cursor: number;
         status: NativeResponsesDispatchStatus;
+        bodySha256: string;
+        memory: NativeProjectMemoryDispatch | null;
+        terminalSuccess: NativeMemoryDispatchCompletion | null;
       };
       let pending: Pending | null = null;
       let lastRunDispatchStatus: NativeResponsesDispatchStatus = "notDispatched";
@@ -359,8 +400,27 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
       async function cleanup(request: Pending, cancel: boolean) {
         if (request.cleanup) return request.cleanup;
         request.detachSignal?.();
-        request.cleanup = (async () => {
-          if (cancel) {
+        // Publish the one cleanup promise before callbacks can synchronously
+        // abort the run and reenter this function.
+        request.cleanup = Promise.resolve().then(async () => {
+          let cleanupFailed = false;
+          const deadline = performance.now() + MEMORY_CLEANUP_MS;
+          request.cleanupDeadline = deadline;
+          if (request.memory) {
+            let detached = false;
+            if (!cancel && request.terminalSuccess) {
+              try { request.memory.complete(request.terminalSuccess); detached = true; }
+              catch { cleanupFailed = true; }
+            }
+            if (!detached) {
+              const cancelling = request.memory.cancel();
+              runAbort.abort();
+              const result = await cancelling;
+              rememberStatus(request, result.dispatchStatus, result.cancellation === "confirmed");
+              if (!await revokeMemoryScope(deadline)) cleanupFailed = true;
+              if (!cancel) cleanupFailed = true;
+            }
+          } else if (cancel) {
             await call("cancel_native_responses_request", { requestId: request.requestId }).catch(
               () => undefined,
             );
@@ -376,15 +436,19 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
                 terminalUnsentProof(final, request.cursor),
               );
           }
-          await call("release_native_responses_request", { requestId: request.requestId }).catch(
-            () => undefined,
-          );
+          try {
+            if (request.memory) await memoryCleanupCall("release_native_responses_request", { requestId: request.requestId }, deadline);
+            else await call("release_native_responses_request", { requestId: request.requestId });
+          } catch { if (request.memory) { cleanupFailed = true; runAbort.abort(); } }
           if (pending === request) pending = null;
-        })();
+          if (cleanupFailed) { await revokeMemoryScope(deadline); throw failure(); }
+        });
         return request.cleanup;
       }
       const stop = () => {
-        if (pending) void cleanup(pending, true);
+        if (pending) void cleanup(pending, true).catch(() => undefined);
+        else if (preparingMemory) void preparingMemory.cancel();
+        if (memoryMode) void revokeMemoryScope(pending?.cleanupDeadline ?? performance.now() + MEMORY_CLEANUP_MS);
       };
       runAbort.signal.addEventListener("abort", stop, { once: true });
       let ready: Promise<ReturnType<typeof createProviderRuntimeSession>> | null = null;
@@ -392,9 +456,38 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
       let logicalRequestId:string|null=null;
       async function initialize() {
         check();
-        const bound = chat?await call<RunReceipt>("bind_native_responses_conversation",{profileId:profile.profileId,projectId:logicalProject,conversationId:scope.conversationId}):await call<RunReceipt>("bind_native_responses_run", {
-          profileId: profile.profileId,projectId: scope.projectId,runId: scope.runId,scopeExpiresAt,
-        });
+        let bound: RunReceipt;
+        if (memoryMode) {
+          if (!("lease" in runOptions) || chat || profile.fixture || savedVersion || profile.nativeProjectMemoryDispatch !== true) throw failure();
+          const originalScope = runOptions.lease.scope;
+          const expiresAt = Math.min(scopeExpiresAt, profile.expiresAt, now() + 600_000);
+          try {
+            const receipt = await call<MemoryScopeReceipt>("authorize_native_project_memory_scope", {
+              profileId: profile.profileId, projectId: scope.projectId, runId: scope.runId,
+              conversationId: scope.conversationId, readPrefixes: originalScope.readPrefixes,
+              sharePrefixes: originalScope.sharePrefixes, expiresAt,
+            });
+            // Capture a returned ID even on an invalid/late reply so it can be revoked.
+            if (receipt && id(receipt.scopeId)) memoryScopeId = receipt.scopeId;
+            if (!receipt || !memoryScopeId || receipt.projectId !== scope.projectId || receipt.runId !== scope.runId ||
+                receipt.conversationId !== scope.conversationId || receipt.productionMemoryDispatchEnabled !== true ||
+                JSON.stringify(receipt.readPrefixes) !== JSON.stringify(originalScope.readPrefixes) ||
+                JSON.stringify(receipt.sharePrefixes) !== JSON.stringify(originalScope.sharePrefixes) ||
+                receipt.maxContextBytes !== 24576 || !Number.isSafeInteger(receipt.expiresAt) ||
+                receipt.expiresAt <= now() || receipt.expiresAt > expiresAt) throw failure();
+            memoryExpiresAt = receipt.expiresAt;
+            check();
+            bound = await call<RunReceipt>("bind_native_project_memory_run", {
+              schemaVersion: 1, profileId: profile.profileId, projectId: scope.projectId,
+              runId: scope.runId, conversationId: scope.conversationId,
+              memoryScopeId, scopeExpiresAt: memoryExpiresAt,
+            });
+          } catch (error) { runAbort.abort(); await revokeMemoryScope(); throw error; }
+        } else {
+          bound = chat?await call<RunReceipt>("bind_native_responses_conversation",{profileId:profile.profileId,projectId:logicalProject,conversationId:scope.conversationId}):await call<RunReceipt>("bind_native_responses_run", {
+            profileId: profile.profileId,projectId: scope.projectId,runId: scope.runId,scopeExpiresAt,
+          });
+        }
         check();
         const owner = bound?.owner;
         if (
@@ -412,9 +505,15 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
           Object.values(owner).some(
             (field) => typeof field === "string" && field.includes(credential),
           )
-        )
+        ) {
+          if (memoryMode) { runAbort.abort(); await revokeMemoryScope(); }
           throw failure();
+        }
         nativeOwner=owner;
+        const memoryOwner: ProjectMemoryDispatchOwner = Object.freeze({runHandle:bound.runHandle,
+          runId:owner.runId,projectId:owner.projectId,projectEpoch:owner.projectEpoch,providerId:owner.providerId,modelId:owner.modelId});
+        const memoryIdentity = {};
+
         const context = () => {
           check();
           const current = getProjectContext();
@@ -431,7 +530,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
           approve: (reviewId) => gate.approve(reviewId),
           invalidate: () => {
             gate.invalidate();
-            stop();
+            if (memoryMode) runAbort.abort(); else stop();
           },
           async review(envelope: OutboundEnvelope, signal?: AbortSignal, intent?: OutboundSendIntent) {
             check(signal);
@@ -444,11 +543,32 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
               typeof envelope.body !== "string"
             )
               throw failure();
-            const receipt = await call<PreparedReceipt>("prepare_native_responses_request", {
-              runHandle: bound.runHandle,
-              body: envelope.body,
-              ...(chat?{logicalRequestId}:{}),
-            });
+            let receipt: PreparedReceipt;
+            let memory: NativeProjectMemoryDispatch | null = null;
+            try {
+              if (memoryMode) {
+                const wire = parseProjectMemoryUniqueJson(envelope.body) as { input?: Array<{content?: Array<{text?: unknown}>}> };
+                const text = wire?.input?.[2]?.content?.[0]?.text;
+                if (typeof text !== "string" || !text.startsWith(PROJECT_MEMORY_MESSAGE_PREFIX)) throw failure();
+                const members = parseProjectMemoryUniqueJson(text.slice(PROJECT_MEMORY_MESSAGE_PREFIX.length));
+                if (!Array.isArray(members)) throw failure();
+                const selected = parseProjectMemorySelectedRevisions(members.map(member => ({id:member?.id,revision:member?.revision})));
+                memory = createNativeProjectMemoryDispatch({invoke:(command,args)=>invoke(command,args), owner:memoryOwner,
+                  expiresAt:memoryExpiresAt, now, signal:signal ?? runAbort.signal,
+                  getCurrentContext:()=>{check(signal); return {identity:memoryIdentity,owner:memoryOwner};}});
+                preparingMemory = memory;
+                await memory.select(selected);
+                const prepared = await memory.prepare(envelope.body);
+                receipt = {requestId:prepared.requestId,endpoint:prepared.endpoint,modelId,bodySha256:prepared.bodySha256};
+              } else {
+                receipt = await call<PreparedReceipt>("prepare_native_responses_request", {
+                  runHandle: bound.runHandle, body: envelope.body, ...(chat?{logicalRequestId}:{}),
+                });
+              }
+            } catch (error) {
+              if (memory) { await memory.cancel(); runAbort.abort(); await revokeMemoryScope(); }
+              throw error;
+            } finally { if (preparingMemory === memory) preparingMemory = null; }
             const request: Pending = {
               requestId: receipt?.requestId,
               body: envelope.body,
@@ -457,16 +577,20 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
               approved: false,
               dispatched: false,
               cleanup: null,
+              cleanupDeadline: null,
               ordinal: ++requestOrdinal,
               cursor: 0,
               status: "notDispatched",
+              bodySha256: receipt?.bodySha256,
+              memory,
+              terminalSuccess: null,
             };
             // An uncertain preparation cannot be retried automatically.
             if (!receipt || !id(receipt.requestId)) throw failure();
             pending = request;
             rememberStatus(request, "notDispatched");
             const abort = () => {
-              void cleanup(request, true);
+              void cleanup(request, true).catch(() => undefined);
             };
             signal?.addEventListener("abort", abort, { once: true });
             request.detachSignal = () => signal?.removeEventListener("abort", abort);
@@ -482,7 +606,8 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
               check(signal);
               const grant = await gate.review(envelope, signal, intent);
               check(signal);
-              await call("approve_native_responses_request", { requestId: request.requestId });
+              if (request.memory) await request.memory.approve();
+              else await call("approve_native_responses_request", { requestId: request.requestId });
               check(signal);
               request.approved = true;
               return {
@@ -496,13 +621,13 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
                       JSON.stringify(current) !== request.envelope ||
                       !grant.consume(current)
                     ) {
-                      void cleanup(request, true);
+                      void cleanup(request, true).catch(() => undefined);
                       return false;
                     }
                     request.consumed = true;
                     return true;
                   } catch {
-                    void cleanup(request, true);
+                    void cleanup(request, true).catch(() => undefined);
                     return false;
                   }
                 },
@@ -529,7 +654,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
             init?.method !== "POST" ||
             init.body !== request.body ||
             init.redirect !== "error" ||
-            headers.get("authorization") !== "Bearer " + credential ||
+            (anthropic ? headers.get("x-api-key")!==credential || headers.get("anthropic-version")!=="2023-06-01" : headers.get("authorization") !== "Bearer " + credential) ||
             headers.get("content-type") !== "application/json" ||
             !["text/event-stream", "application/json"].includes(headers.get("accept") ?? "")
           ) {
@@ -541,13 +666,17 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
             bytes = 0,
             head: ResponseHead | null = null,
             completed = false,
+            controllerSettled = false,
             streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
           let httpFailure: ReturnType<typeof createProviderRuntimeError> | null = null;
           const abort = () => {
             if (!completed) {
               completed = true;
-              streamController?.error(cancelled());
-              void cleanup(request, true);
+              if (streamController && !controllerSettled) {
+                controllerSettled = true;
+                streamController.error(cancelled());
+              }
+              void cleanup(request, true).catch(() => undefined);
             }
           };
           signal?.addEventListener("abort", abort, { once: true });
@@ -633,6 +762,13 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
             request!.cursor = cursor;
             if (!head && chunks.length) throw failure();
             if (result.done && !head) throw failure();
+            if (request!.memory && result.done) {
+              if (result.error !== null || result.dispatchStatus !== "sent") throw failure();
+              const batchId = request!.memory.snapshot().batchId;
+              if (!batchId) throw failure();
+              request!.terminalSuccess = {batchId,requestId:request!.requestId,bodySha256:request!.bodySha256,
+                done:true,error:null,dispatchStatus:"sent"};
+            }
             return { chunks, done: result.done };
           }
           try {
@@ -640,7 +776,8 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
             // The IPC outcome may be uncertain before the first native poll.
             // Conservatively report possible transmission until native refines it.
             rememberStatus(request, "mayHaveBeenSent");
-            await call("dispatch_native_responses_request", { requestId: request.requestId });
+            if (request.memory) await request.memory.dispatch();
+            else await call("dispatch_native_responses_request", { requestId: request.requestId });
             check(signal ?? undefined);
             let initial = await poll();
             while (!head) {
@@ -661,23 +798,24 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
                       if (batch.done) {
                         completed = true;
                         await finish(false);
-                        controller.close();
+                        if (!controllerSettled) { controllerSettled = true; controller.close(); }
                         return;
                       }
                       await pause(signal ?? undefined);
                       batch = await poll();
                     }
                   } catch {
-                    if (!completed) {
-                      completed = true;
-                      controller.error(failure());
-                    }
-                    await finish(true);
+                    completed = true;
+                    // Polling may already be stopped while terminal cleanup is
+                    // still pending. Always settle an unclosed consumer on error.
+                    if (!controllerSettled) { controllerSettled = true; controller.error(failure()); }
+                    await finish(true).catch(() => undefined);
                   }
                 })();
               },
               async cancel() {
                 completed = true;
+                controllerSettled = true;
                 await finish(true);
               },
             });
@@ -687,13 +825,13 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
             });
           } catch {
             completed = true;
-            await finish(true);
+            await finish(true).catch(() => undefined);
             throw httpFailure ?? failure();
           }
         };
         const session = createProviderRuntimeSession({
-          wireApi: "responses",
-          disableNativeReplay:chat,
+          wireApi: anthropic ? "anthropic" : "responses",
+          disableNativeReplay:chat || memoryMode === true,
           providerId,
           modelId,
           endpoint: ENDPOINT,
@@ -729,8 +867,18 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
         });
         check();
         session.setCredential(credential);
-        sessions.add(session);
-        return session;
+        const base=session.adapter;
+        async function persistAnthropic(requestId:string,responseId:string,text:string){
+          if(!anthropic||!chat)return;
+          try{check();await call("complete_native_anthropic_chat",{runHandle:bound.runHandle,requestId,responseId,text});check();}
+          catch(error){runAbort.abort();throw error;}
+        }
+        const wrapped=anthropic?{...session,adapter:{...base,
+          async complete(request:ProviderRuntimeRequest,callOptions?:ProviderCallOptions){const result=await base.complete(request,callOptions);await persistAnthropic(request.id,result.id,result.text);return result;},
+          async *stream(request:ProviderRuntimeRequest,callOptions?:ProviderCallOptions){let text="";for await(const chunk of base.stream!(request,callOptions)){text+=chunk.delta;if(chunk.done){const responseId=(chunk as {responseId?:string}).responseId;if(!responseId)throw failure();await persistAnthropic(request.id,responseId,text);}yield chunk;}}
+        }}:session;
+        sessions.add(wrapped);
+        return wrapped;
       }
       async function selected(request: ProviderRuntimeRequest, callOptions?: ProviderCallOptions) {
         check(callOptions?.signal);
@@ -742,6 +890,10 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
           (chat&&(request.metadata?.conversationId!==scope.conversationId||request.tools?.length||request.messages.some(m=>m.role==="tool"||m.toolCalls?.length||m.toolCallId)))
         )
           throw failure();
+        const wantsMemory = !chat && request.messages.some(message => message.content.includes(PROJECT_MEMORY_MESSAGE_PREFIX));
+        if ((wantsMemory && (anthropic || profile.fixture || savedVersion || profile.nativeProjectMemoryDispatch !== true)) ||
+            (memoryMode !== null && memoryMode !== wantsMemory)) { runAbort.abort(); throw failure(); }
+        memoryMode ??= wantsMemory;
         ready ??= initialize();
         const session = await ready;
         check(callOptions?.signal);
@@ -760,6 +912,7 @@ export async function createNativeResponsesProfile(options: NativeResponsesProfi
           supportsStreaming: true,
           supportsTools: !chat,
           supportsPreSendValidation: true,
+          supportsNativeProjectMemory: !anthropic && !chat && !profile.fixture && !savedVersion && profile.nativeProjectMemoryDispatch === true,
           isMock: profile.fixture,
         }),
         async complete(request, callOptions) {

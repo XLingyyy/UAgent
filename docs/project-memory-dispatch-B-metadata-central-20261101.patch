@@ -1,0 +1,85 @@
+*** Begin Patch
+*** Update File: E:/Codex/UAgent/2026-10-29/worktrees/credential-vault/apps/desktop/src-tauri/src/trusted_root_handle/windows.rs
+@@
+ struct FileBasicInfo {
+@@
+     attributes: u32,
+ }
++// Legacy GetFileInformationByHandle fields for the EXISTING source stamp.
++// These are not derived from or substituted for the full FILE_ID_INFO identity.
++#[repr(C)]
++#[derive(Default)]
++struct SourceFileTime { low: u32, high: u32 }
++#[repr(C)]
++#[derive(Default)]
++struct SourceFileInformation {
++    attributes: u32,
++    creation: SourceFileTime,
++    access: SourceFileTime,
++    write: SourceFileTime,
++    volume_serial: u32,
++    size_high: u32,
++    size_low: u32,
++    links: u32,
++    index_high: u32,
++    index_low: u32,
++}
+ #[link(name = "kernel32")]
+ extern "system" {
++    fn GetFileInformationByHandle(file: Handle, information: *mut SourceFileInformation) -> i32;
+@@
+ impl BoundReadFile {
++    /// Data observation only. BOTH legacy stamp fields and std Metadata are
++    /// obtained from this SAME retained file handle; no path_hint reopening,
++    /// FileId128 truncation, permission issuance or content read occurs here.
++    /// The existing full FileId128 metadata check remains independent.
++    pub(crate) fn source_version_metadata(&self) -> Result<(std::fs::Metadata, (u64, u64))> {
++        let _guard = self.read_lock.lock()
++            .map_err(|_| RootError::new("bound_read_lock_poisoned"))?;
++        self.check_current()?;
++        let target = self.path.target();
++        let before = metadata(&target.file, NodeKind::File)?;
++        let observed = target.file.metadata()
++            .map_err(|error| io_error("bound_source_metadata_unavailable", error))?;
++        let mut legacy = SourceFileInformation::default();
++        // SAFETY: repr(C) BY_HANDLE_FILE_INFORMATION and original live File.
++        let ok = unsafe { GetFileInformationByHandle(target.file.as_raw_handle(), &mut legacy) };
++        if ok == 0 {
++            return Err(io_error("bound_source_identity_unavailable", std::io::Error::last_os_error()));
++        }
++        let after = metadata(&target.file, NodeKind::File)?;
++        let legacy_len = ((legacy.size_high as u64) << 32) | legacy.size_low as u64;
++        if before != after || before.identity != self.identity()
++            || observed.len() != before.size || legacy_len != before.size
++            || legacy.links != 1 || legacy.attributes != before.attributes
++        {
++            return Err(RootError::new("bound_file_changed_during_read"));
++        }
++        self.check_current()?;
++        Ok((observed, (legacy.volume_serial as u64,
++            ((legacy.index_high as u64) << 32) | legacy.index_low as u64)))
++    }
+     pub fn identity(&self) -> ObjectIdentity {
+*** Update File: E:/Codex/UAgent/2026-10-29/worktrees/credential-vault/apps/desktop/src-tauri/src/project_source_versions.rs
+@@
+-fn metadata_version(metadata: &Metadata, identity: Option<(u64, u64)>) -> String {
++/// SAME held-handle observation; stamp remains data and grants no authority.
++/// Reuses the original algorithm and exact legacy Win32 fields unchanged.
++#[cfg(windows)]
++pub(crate) fn bound_file_metadata_version(
++    file: &crate::trusted_root_handle::BoundReadFile,
++) -> Result<String, String> {
++    let (metadata, identity) = file.source_version_metadata()
++        .map_err(|_| "source_changed".to_string())?;
++    Ok(metadata_version(&metadata, Some(identity)))
++}
++
++fn metadata_version(metadata: &Metadata, identity: Option<(u64, u64)>) -> String {
+*** Update File: E:/Codex/UAgent/2026-10-29/worktrees/credential-vault/apps/desktop/src-tauri/src/native_provider_transport.rs
+@@
+ impl PreparedRequest {
++    /// Clone this exact Arc for native memory binding before approval. Do not
++    /// reconstruct its bytes or expose the native binding as renderer authority.
++    pub(crate) fn body_arc(&self) -> &Arc<[u8]> { &self.body }
+     pub(crate) fn binding(&self) -> &ApprovalBinding {
+*** End Patch

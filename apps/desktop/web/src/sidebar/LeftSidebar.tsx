@@ -1,3 +1,6 @@
+import { ProjectMemoryAccess } from "../workspace/ProjectMemoryAccess";
+import { NativeHistoryAccess } from "../workspace/NativeHistoryAccess";
+import { UEBuildPreviewPanel } from "../workspace/UEBuildPreviewPanel";
 import {useI18n} from "../i18n";
 import { FIXTURES_ENABLED } from "../runtime/build-capabilities";
 import { PrimaryNav } from "./PrimaryNav";
@@ -160,6 +163,7 @@ export function LeftSidebar() {
         {sidebarView === "asset-browser" ? (
           <ProjectSection
             mode="projects"
+            onProjectSetup={()=>openSettings("config")}
             project={activeProject}
             projects={projectState.registeredProjects.map((p) => ({ id: p.id, name: p.name, engineVersion: p.engine.label, connectionStatus: p.trustState, path: p.displayRoot }))}
             activeProjectId={activeProjectId}
@@ -174,12 +178,13 @@ export function LeftSidebar() {
             onPreviewFile={previewProjectFile}
             selectedAssetPath={projectState.selectedAssetPath}
             preview={projectState.preview}
+            previewError={projectState.lastError}
             diagnosticCounts={diagnosticCounts}
             mutationMarkers={mutationMarkers}
           />
         ) : sidebarView === "conversation" ? (
           <>
-            <ProjectSection mode="workspace" project={activeProject} treeNodes={[]} />
+            <ProjectSection onProjectSetup={()=>openSettings("config")} mode="workspace" project={activeProject} treeNodes={[]} />
             <ThreadSection
               threads={[...runtimeThreads, ...(FIXTURES_ENABLED ? mockThreads : [])]}
               activeThreadId={activeThreadId}
@@ -188,11 +193,12 @@ export function LeftSidebar() {
           </>
         ) : (
           <>
-            <ProjectSection mode="workspace" project={activeProject} treeNodes={assetTreeNodes} onPreviewFile={previewProjectFile} />
+            <ProjectSection onProjectSetup={()=>openSettings("config")} mode="workspace" project={activeProject} treeNodes={assetTreeNodes} onPreviewFile={previewProjectFile} />
 
           </>
         )}
       </div>
+      <nav className="ua-sidebar__utilities" aria-label={uiText("Tools")}><NativeHistoryAccess /><ProjectMemoryAccess /><UEBuildPreviewPanel /></nav>
       <SidebarFooter />
     </aside>
   );

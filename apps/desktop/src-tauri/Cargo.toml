@@ -25,3 +25,10 @@ getrandom = "=0.2.17"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+
+# Bounded local integrated candidate; preserves existing debug/release products.
+[profile.integrated]
+inherits = "dev"
+debug = 0
+incremental = false
+strip = "debuginfo"

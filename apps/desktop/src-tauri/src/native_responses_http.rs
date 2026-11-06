@@ -24,24 +24,28 @@ const ENDPOINT: &str = "https://api.openai.com/v1/responses";
 enum FixedTarget {
     Responses,
     DeepSeek,
+    Anthropic,
 }
 impl FixedTarget {
     fn endpoint(self) -> &'static str {
         match self {
             Self::Responses => ENDPOINT,
             Self::DeepSeek => "https://api.deepseek.com/chat/completions",
+            Self::Anthropic => "https://api.anthropic.com/v1/messages",
         }
     }
     fn host(self) -> &'static str {
         match self {
             Self::Responses => "api.openai.com",
             Self::DeepSeek => "api.deepseek.com",
+            Self::Anthropic => "api.anthropic.com",
         }
     }
     fn path(self) -> &'static str {
         match self {
             Self::Responses => "/v1/responses",
             Self::DeepSeek => "/chat/completions",
+            Self::Anthropic => "/v1/messages",
         }
     }
 }
@@ -330,6 +334,11 @@ impl WinHttpResponsesTransport {
         transport.target = FixedTarget::DeepSeek;
         transport
     }
+    pub(crate) fn anthropic(sink: ChunkSink) -> Self {
+        let mut transport = Self::with_chunk_sink(sink);
+        transport.target = FixedTarget::Anthropic;
+        transport
+    }
     pub(crate) fn with_head_sink(mut self, sink: HeadSink) -> Self {
         self.head_sink = Some(sink);
         self
@@ -448,7 +457,10 @@ impl Transport for WinHttpResponsesTransport {
         } // Certificate revocation check.
         let (request_handle, receiver) = RequestHandle::new(opened, request.body)?;
         // Avoid an intermediate formatted String containing the credential.
-        let mut header_units = wide("Content-Type: application/json\r\nAccept: text/event-stream, application/json\r\nAuthorization: Bearer ");
+        let mut header_units = wide(match self.target {
+            FixedTarget::Anthropic => "Content-Type: application/json\r\nAccept: text/event-stream, application/json\r\nanthropic-version: 2023-06-01\r\nx-api-key: ",
+            _ => "Content-Type: application/json\r\nAccept: text/event-stream, application/json\r\nAuthorization: Bearer ",
+        });
         header_units.pop();
         header_units.extend(credential.bytes().iter().map(|byte| u16::from(*byte)));
         header_units.extend(wide("\r\nCache-Control: no-store\r\n"));
@@ -1018,6 +1030,42 @@ mod tests {
         let headers = String::from_utf8(received[..end].to_vec()).unwrap();
         assert!(headers.starts_with("POST /chat/completions HTTP/1.1"));
         assert!(headers.contains("Authorization: Bearer synthetic-winhttp-fixture-key-only"));
+        assert!(!headers.to_ascii_lowercase().contains("cookie:"));
+    }
+
+    #[test]
+    fn real_winhttp_anthropic_loopback_uses_messages_headers_and_exact_body() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let expected = b"data: {\"choices\":[{\"delta\":{\"content\":\"local\"}}]}\n\n";
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let received = receive(&mut stream);
+            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",expected.len()).unwrap();
+            stream.write_all(expected).unwrap();
+            received
+        });
+        let session = setup();
+        let lease = session.capture_lease(30_000).unwrap();
+        let body=b"{\"model\":\"fixture-model\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"local synthetic goal\"}]}";
+        let prepared = session
+            .prepare_anthropic(&lease, "https://api.anthropic.com/v1", body.to_vec(), &Source)
+            .unwrap();
+        let approved = session.approve(&prepared, &lease, &Source).unwrap();
+        let mut engine = WinHttpResponsesTransport::fixture(port, None);
+        engine.target = FixedTarget::Anthropic;
+        let result = session.dispatch(&prepared, &lease, &approved, &Source, &mut engine);
+        assert_eq!(result.status, DispatchStatus::Sent);
+        assert_eq!(result.error, None);
+        assert_eq!(result.response.unwrap().bytes(), expected);
+        let received = server.join().unwrap();
+        let end = received.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+        assert_eq!(&received[end + 4..], body);
+        let headers = String::from_utf8(received[..end].to_vec()).unwrap();
+        assert!(headers.starts_with("POST /v1/messages HTTP/1.1"));
+        assert!(headers.contains("x-api-key: synthetic-winhttp-fixture-key-only"));
+        assert!(headers.contains("anthropic-version: 2023-06-01"));
+        assert!(!headers.to_ascii_lowercase().contains("authorization:"));
         assert!(!headers.to_ascii_lowercase().contains("cookie:"));
     }
 

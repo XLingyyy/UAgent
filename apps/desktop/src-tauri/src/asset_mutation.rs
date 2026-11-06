@@ -1565,11 +1565,11 @@ fn validate_companion_manifest_metadata(
         && manifest_string(record, "pluginVersion") == Some("0.1.0")
         && manifest_string(record, "contractVersion") == Some("mvp15d.asset-tools.v1")
         && record.get("dirty").and_then(serde_json::Value::as_bool) == Some(false)
-        && manifest_string(record, "engineVersion") == Some("5.8.1")
+        && manifest_string(record, "engineVersion") == Some("5.8.4")
         && record
             .get("engineChangelist")
             .and_then(serde_json::Value::as_u64)
-            == Some(56057345)
+            == Some(58902052)
         && record
             .get("compatibleChangelist")
             .and_then(serde_json::Value::as_u64)
@@ -2311,6 +2311,7 @@ fn register_asset_mutation_approval_with_gate_at(
     {
         return blocked_registration("approval_registration_conflict");
     }
+    let operation_count = input.operations.len();
     registry.records.insert(
         registration_id.clone(),
         ApprovalRecord {
@@ -2351,7 +2352,7 @@ fn register_asset_mutation_approval_with_gate_at(
         reason: "approval_binding_registered".to_string(),
         registration_id,
         trusted_root_id,
-        operation_count: REQUIRED_OPERATION_KINDS.len(),
+        operation_count,
         approval_token: Some(approval_token),
         issued_at,
         expires_at,
@@ -2751,21 +2752,20 @@ fn validate_registration(input: &RegisterAssetMutationApprovalInput, _now: u64) 
     {
         return Some("aggregate_hash_invalid".to_string());
     }
-    if input.operations.len() != REQUIRED_OPERATION_KINDS.len() {
-        return Some("operation_count_mismatch".to_string());
-    }
-    for (index, operation) in input.operations.iter().enumerate() {
-        if let Some(reason) =
-            validate_operation(operation, &input.run_id, REQUIRED_OPERATION_KINDS[index])
-        {
+    let required: &[&str] = match input.operations.len() {
+        3 => &["create_folder", "duplicate", "save"],
+        5 => &REQUIRED_OPERATION_KINDS,
+        _ => return Some("operation_count_mismatch".to_string()),
+    };
+    for (operation, kind) in input.operations.iter().zip(required) {
+        if let Some(reason) = validate_operation(operation, &input.run_id, kind) {
             return Some(reason);
         }
     }
-    if input.operations[1].target_asset_path != input.operations[2].asset_path
-        || input.operations[2].target_asset_path != input.operations[3].asset_path
-        || input.operations[3].target_asset_path != input.operations[4].asset_path
-    {
-        return Some("operation_path_chain_mismatch".to_string());
+    for pair in input.operations[1..].windows(2) {
+        if pair[0].target_asset_path != pair[1].asset_path {
+            return Some("operation_path_chain_mismatch".to_string());
+        }
     }
     None
 }
@@ -3608,8 +3608,8 @@ mod tests {
                 }
             ],
             "dirty": false,
-            "engineVersion": "5.8.1",
-            "engineChangelist": 56057345,
+            "engineVersion": "5.8.4",
+            "engineChangelist": 58902052,
             "compatibleChangelist": 55116800,
             "moduleBuildId": "55116800",
             "targetPlatform": "Win64",

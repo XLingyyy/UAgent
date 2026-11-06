@@ -1,5 +1,18 @@
 # UAgent Development Guide
 
+## Current source: r14
+
+See [r14 release and validation notes](releases/r14.md). `r14` is an iteration label; package.json, Cargo.toml and tauri.conf.json remain at `0.0.1`. Windows is the currently validated native integration platform. A browser preview does not provide native IPC, Codex app-server, Windows credential storage or native persistence guarantees.
+
+Use only the checks needed for the change. Full-workspace commands below are optional and require an explicit request before running a full regression. This publication reran four focused files (31 tests) plus the integration TypeScript check, not the full suite.
+
+For a normal desktop build, Tauri uses `frontendDist: ../web/dist` and its build hook runs icon validation plus the web build. Cargo also includes an `integrated` development profile with debug information and incremental compilation disabled; it is not a signed release profile. Do not enable fixture/acceptance flags for normal distribution.
+
+```sh
+# From apps/desktop: the r14 publication check only
+node node_modules/vitest/vitest.mjs run web/src/runtime/codex-tool-limit-recovery.test.ts web/src/runtime/native-run-store.test.ts web/src/provider/claude-archived.test.ts web/src/composer/ComposerSettings.test.tsx --maxWorkers 1 --minWorkers 1
+```
+
 ## Prerequisites
 
 - Node.js >= 20.0.0
@@ -19,7 +32,7 @@ The web frontend builds and runs without Rust.
 
 ```bash
 # Clone and install
-git clone <repo-url> uagent
+git clone https://github.com/XLingyyy/UAgent.git uagent
 cd uagent
 pnpm install --frozen-lockfile
 
@@ -29,10 +42,8 @@ pnpm --filter @uagent/desktop web:dev
 # Start Tauri native dev (requires Rust)
 pnpm --filter @uagent/desktop dev
 
-# Run all checks
-pnpm typecheck
-pnpm lint
-pnpm test
+# Focused integration type check
+node node_modules/typescript/bin/tsc --noEmit -p apps/desktop/web/tsconfig.current-integration.json
 ```
 
 ## Development Commands
@@ -69,7 +80,7 @@ uagent/
 │       │   │   ├── workspace/    # Workspace (viewport + composer dock)
 │       │   │   ├── inspector/    # InspectorPane
 │       │   │   ├── components/   # Reusable presentational components
-│       │   │   ├── stores/       # UI state stores (placeholder)
+│       │   │   ├── stores/       # UI state and session stores
 │       │   │   ├── styles/       # tokens, theme, animations, globals
 │       │   │   └── types/        # UI type definitions
 │       │   ├── index.html

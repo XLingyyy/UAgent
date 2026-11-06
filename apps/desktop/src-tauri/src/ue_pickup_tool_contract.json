@@ -1,0 +1,1003 @@
+[
+  {
+    "name": "uagent.v2.pickup.capabilities",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "string"
+        },
+        "contractVersion": {
+          "type": "string"
+        },
+        "projectKey": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "rootObjectId": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "integer"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "productionSupported": {
+          "type": "boolean"
+        },
+        "scopeMode": {
+          "type": "string"
+        },
+        "writeRoot": {
+          "type": "string"
+        },
+        "allowedMap": {
+          "type": "string"
+        },
+        "allowedTarget": {
+          "type": "string"
+        },
+        "parentClass": {
+          "type": "string"
+        },
+        "meshDependency": {
+          "type": "string"
+        },
+        "fontDependency": {
+          "type": "string"
+        },
+        "inputDependency": {
+          "type": "string"
+        },
+        "uiDependency": {
+          "type": "string"
+        },
+        "persistence": {
+          "type": "string"
+        },
+        "tools": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "contractVersion",
+        "projectKey",
+        "instanceId",
+        "rootObjectId",
+        "protocolVersion",
+        "available",
+        "productionSupported",
+        "scopeMode",
+        "writeRoot",
+        "allowedMap",
+        "allowedTarget",
+        "parentClass",
+        "meshDependency",
+        "fontDependency",
+        "inputDependency",
+        "uiDependency",
+        "persistence",
+        "tools"
+      ]
+    }
+  },
+  {
+    "name": "uagent.v2.pickup.prepare",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "const": 2
+        },
+        "contractVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "const": "2.1.0-pickup-create-only"
+        },
+        "expectedProjectKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expectedInstanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expectedRootObjectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 36
+            },
+            "targetPackage": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "expectedDiskState": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6,
+              "const": "absent"
+            },
+            "templateId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "const": "actor.pickup.native.v1"
+            },
+            "parentClass": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "const": "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2"
+            },
+            "itemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "promptText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "interactionRadiusCm": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 1000
+            },
+            "interactionKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1,
+              "enum": [
+                "E",
+                "F"
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "targetPackage",
+            "expectedDiskState",
+            "templateId",
+            "parentClass",
+            "itemId",
+            "promptText",
+            "interactionRadiusCm",
+            "interactionKey"
+          ]
+        },
+        "hostPermit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 36
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "contractVersion",
+        "expectedProjectKey",
+        "expectedInstanceId",
+        "expectedRootObjectId",
+        "plan",
+        "hostPermit"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "string"
+        },
+        "contractVersion": {
+          "type": "string"
+        },
+        "projectKey": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "rootObjectId": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 36
+            },
+            "targetPackage": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "expectedDiskState": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6,
+              "const": "absent"
+            },
+            "templateId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "const": "actor.pickup.native.v1"
+            },
+            "parentClass": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "const": "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2"
+            },
+            "itemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "promptText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "interactionRadiusCm": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 1000
+            },
+            "interactionKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1,
+              "enum": [
+                "E",
+                "F"
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "targetPackage",
+            "expectedDiskState",
+            "templateId",
+            "parentClass",
+            "itemId",
+            "promptText",
+            "interactionRadiusCm",
+            "interactionKey"
+          ]
+        },
+        "operation": {
+          "type": "string"
+        },
+        "planHash": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "contractVersion",
+        "projectKey",
+        "instanceId",
+        "rootObjectId",
+        "plan",
+        "operation",
+        "planHash",
+        "data"
+      ]
+    }
+  },
+  {
+    "name": "uagent.v2.pickup.preview",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "const": 2
+        },
+        "contractVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "const": "2.1.0-pickup-create-only"
+        },
+        "expectedProjectKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expectedInstanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expectedRootObjectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 36
+            },
+            "targetPackage": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "expectedDiskState": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6,
+              "const": "absent"
+            },
+            "templateId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "const": "actor.pickup.native.v1"
+            },
+            "parentClass": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "const": "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2"
+            },
+            "itemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "promptText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "interactionRadiusCm": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 1000
+            },
+            "interactionKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1,
+              "enum": [
+                "E",
+                "F"
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "targetPackage",
+            "expectedDiskState",
+            "templateId",
+            "parentClass",
+            "itemId",
+            "promptText",
+            "interactionRadiusCm",
+            "interactionKey"
+          ]
+        },
+        "hostPermit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 36
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "contractVersion",
+        "expectedProjectKey",
+        "expectedInstanceId",
+        "expectedRootObjectId",
+        "plan",
+        "hostPermit"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "string"
+        },
+        "contractVersion": {
+          "type": "string"
+        },
+        "projectKey": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "rootObjectId": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 36
+            },
+            "targetPackage": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "expectedDiskState": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6,
+              "const": "absent"
+            },
+            "templateId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "const": "actor.pickup.native.v1"
+            },
+            "parentClass": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "const": "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2"
+            },
+            "itemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "promptText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "interactionRadiusCm": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 1000
+            },
+            "interactionKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1,
+              "enum": [
+                "E",
+                "F"
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "targetPackage",
+            "expectedDiskState",
+            "templateId",
+            "parentClass",
+            "itemId",
+            "promptText",
+            "interactionRadiusCm",
+            "interactionKey"
+          ]
+        },
+        "operation": {
+          "type": "string"
+        },
+        "planHash": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "contractVersion",
+        "projectKey",
+        "instanceId",
+        "rootObjectId",
+        "plan",
+        "operation",
+        "planHash",
+        "data"
+      ]
+    }
+  },
+  {
+    "name": "uagent.v2.pickup.apply",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "const": 2
+        },
+        "contractVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "const": "2.1.0-pickup-create-only"
+        },
+        "expectedProjectKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expectedInstanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expectedRootObjectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 36
+            },
+            "targetPackage": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "expectedDiskState": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6,
+              "const": "absent"
+            },
+            "templateId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "const": "actor.pickup.native.v1"
+            },
+            "parentClass": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "const": "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2"
+            },
+            "itemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "promptText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "interactionRadiusCm": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 1000
+            },
+            "interactionKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1,
+              "enum": [
+                "E",
+                "F"
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "targetPackage",
+            "expectedDiskState",
+            "templateId",
+            "parentClass",
+            "itemId",
+            "promptText",
+            "interactionRadiusCm",
+            "interactionKey"
+          ]
+        },
+        "hostPermit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 36
+        },
+        "previewToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 36
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "contractVersion",
+        "expectedProjectKey",
+        "expectedInstanceId",
+        "expectedRootObjectId",
+        "plan",
+        "hostPermit",
+        "previewToken"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "string"
+        },
+        "contractVersion": {
+          "type": "string"
+        },
+        "projectKey": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "rootObjectId": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 36
+            },
+            "targetPackage": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "expectedDiskState": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6,
+              "const": "absent"
+            },
+            "templateId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "const": "actor.pickup.native.v1"
+            },
+            "parentClass": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "const": "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2"
+            },
+            "itemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "promptText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "interactionRadiusCm": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 1000
+            },
+            "interactionKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1,
+              "enum": [
+                "E",
+                "F"
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "targetPackage",
+            "expectedDiskState",
+            "templateId",
+            "parentClass",
+            "itemId",
+            "promptText",
+            "interactionRadiusCm",
+            "interactionKey"
+          ]
+        },
+        "operation": {
+          "type": "string"
+        },
+        "planHash": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "contractVersion",
+        "projectKey",
+        "instanceId",
+        "rootObjectId",
+        "plan",
+        "operation",
+        "planHash",
+        "data"
+      ]
+    }
+  },
+  {
+    "name": "uagent.v2.pickup.query",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "const": 2
+        },
+        "contractVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "const": "2.1.0-pickup-create-only"
+        },
+        "expectedProjectKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expectedInstanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expectedRootObjectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 36
+            },
+            "targetPackage": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "expectedDiskState": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6,
+              "const": "absent"
+            },
+            "templateId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "const": "actor.pickup.native.v1"
+            },
+            "parentClass": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "const": "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2"
+            },
+            "itemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "promptText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "interactionRadiusCm": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 1000
+            },
+            "interactionKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1,
+              "enum": [
+                "E",
+                "F"
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "targetPackage",
+            "expectedDiskState",
+            "templateId",
+            "parentClass",
+            "itemId",
+            "promptText",
+            "interactionRadiusCm",
+            "interactionKey"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "contractVersion",
+        "expectedProjectKey",
+        "expectedInstanceId",
+        "expectedRootObjectId",
+        "plan"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "string"
+        },
+        "contractVersion": {
+          "type": "string"
+        },
+        "projectKey": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "rootObjectId": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 36
+            },
+            "targetPackage": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "expectedDiskState": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6,
+              "const": "absent"
+            },
+            "templateId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "const": "actor.pickup.native.v1"
+            },
+            "parentClass": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "const": "/Script/UAgentPickupRuntimeV2.UAgentPickupActorV2"
+            },
+            "itemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "promptText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "interactionRadiusCm": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 1000
+            },
+            "interactionKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1,
+              "enum": [
+                "E",
+                "F"
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "targetPackage",
+            "expectedDiskState",
+            "templateId",
+            "parentClass",
+            "itemId",
+            "promptText",
+            "interactionRadiusCm",
+            "interactionKey"
+          ]
+        },
+        "operation": {
+          "type": "string"
+        },
+        "planHash": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "contractVersion",
+        "projectKey",
+        "instanceId",
+        "rootObjectId",
+        "plan",
+        "operation",
+        "planHash",
+        "data"
+      ]
+    }
+  }
+]

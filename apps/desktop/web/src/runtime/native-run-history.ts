@@ -1,3 +1,4 @@
+import { createSha256Hash } from "@uagent/runtime";
 import type { ProviderRuntimeMessage, RunJsonValue } from "@uagent/shared";
 import type { NativeRunStoreInvoke } from "./native-run-store";
 
@@ -96,7 +97,15 @@ export interface NativeRunArchive {
     reason: string | null;
   };
 }
+export interface NativeRepairInspection {
+ schemaVersion:1;projectId:string;runId:string;backupSha256:string;resultPresent:boolean;restoreAvailable:false;restoreBlocker:"original_execution_settlement_required";
+ execution:{status:"unavailable"|"no_matching_barrier"|"ambiguous"|"root_mismatch"|"recorded_barrier";recordedPhase:"prepared"|"open"|"inCallback"|"settled"|"closed"|null;stoppedProven:false};
+ restoreCandidates:{path:string;before:string;after:string;beforeHash:string;afterHash:string}[];
+ files:{path:string;state:"matches_before"|"matches_after"|"object_changed"|"diverged"|"unavailable";savedEffect:"applied"|"not_started"|"conflict"|"unknown"|"unrecorded";currentSha256:string|null;knownAppliedMatch:boolean}[];
+}
 export interface NativeRunHistoryPort {
+  inspectRepair?(projectId:string,runId:string,backupSha256:string):Promise<NativeRepairInspection>;
+  artifact?(projectId:string,runId:string,referenceId:string,expectedSha256:string):Promise<string>;
   list(input?: { projectId?: string; offset?: number; limit?: number }): Promise<NativeHistoryPage>;
   snapshot(projectId: string, runId: string): Promise<NativeRunArchive>;
 }
@@ -386,6 +395,26 @@ export function createNativeRunHistory(
   invoke: NativeRunStoreInvoke | null = globalInvoke(),
 ): NativeRunHistoryPort {
   return {
+    async inspectRepair(projectId,runId,backupSha256){
+      id(projectId);id(runId);if(!/^[a-f0-9]{64}$/.test(backupSha256)||!invoke)throw Error("repair_inspection_unavailable");
+      const r=object(await invoke("inspect_native_repair_recovery",{input:{schemaVersion:1,projectId,runId}}));
+      if(r.schemaVersion!==1||r.projectId!==projectId||r.runId!==runId||r.backupSha256!==backupSha256||typeof r.resultPresent!=="boolean"||r.restoreAvailable!==false||r.restoreBlocker!=="original_execution_settlement_required"||!Array.isArray(r.files)||!r.files.length||r.files.length>8)return invalid();
+      const seen=new Set<string>();
+      for(const v of r.files){const f=object(v);if(typeof f.path!=="string"||!f.path.startsWith("Source/")||seen.has(f.path)||!["matches_before","matches_after","object_changed","diverged","unavailable"].includes(String(f.state))||!["applied","not_started","conflict","unknown","unrecorded"].includes(String(f.savedEffect))||typeof f.knownAppliedMatch!=="boolean"||(f.knownAppliedMatch&&(f.state!=="matches_after"||f.savedEffect!=="applied"))||(f.currentSha256!==null&&(typeof f.currentSha256!=="string"||!/^[a-f0-9]{64}$/.test(f.currentSha256))))return invalid();seen.add(f.path);}
+      const execution=object(r.execution);
+      if(execution.stoppedProven!==false||!["unavailable","no_matching_barrier","ambiguous","root_mismatch","recorded_barrier"].includes(String(execution.status))||(execution.status==="recorded_barrier"?!["prepared","open","inCallback","settled","closed"].includes(String(execution.recordedPhase)):execution.recordedPhase!==null)||!Array.isArray(r.restoreCandidates)||r.restoreCandidates.length>r.files.length)return invalid();
+      const candidates=new Set<string>();
+      for(const v of r.restoreCandidates){const f=object(v),observation=r.files.find(o=>object(o).path===f.path);if(typeof f.path!=="string"||candidates.has(f.path)||!observation||object(observation).knownAppliedMatch!==true||typeof f.before!=="string"||typeof f.after!=="string"||new TextEncoder().encode(f.before).length>262144||new TextEncoder().encode(f.after).length>262144||createSha256Hash(f.before)!==f.beforeHash||createSha256Hash(f.after)!==f.afterHash||f.beforeHash!==object(observation).currentSha256)return invalid();candidates.add(f.path);}
+      return r as unknown as NativeRepairInspection;
+    },
+    async artifact(projectId,runId,referenceId,expectedSha256) {
+      id(projectId);id(runId);
+      if(!["native-build-result","nativeRepairBefore","nativeRepairResult"].includes(referenceId)||!/^[a-f0-9]{64}$/.test(expectedSha256))return invalid();
+      if(!invoke)throw new Error("native_run_history_unavailable");
+      const r=object(await invoke("read_native_run_artifact",{input:{schemaVersion:1,projectId,runId,referenceId}}));
+      if(r.schemaVersion!==1||r.projectId!==projectId||r.runId!==runId||r.referenceId!==referenceId||r.sha256!==expectedSha256||typeof r.content!=="string"||new TextEncoder().encode(r.content).length>2097152||createSha256Hash(r.content)!==expectedSha256)return invalid();
+      JSON.parse(r.content);return r.content;
+    },
     async list(input = {}) {
       if (!invoke) throw new Error("native_run_history_unavailable");
       const offset = integer(input.offset ?? 0),

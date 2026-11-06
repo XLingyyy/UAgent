@@ -131,7 +131,7 @@ export function createComposerModelOptions(providers: ProviderConfig[]): Compose
         label: model.label,
         provider: provider.displayName,
         contextWindow: formatContextWindow(model.contextWindow),
-        enabled: true,
+        enabled: runtimeSupported,
         networkMode: responsesFixture?"fixture":provider.networkMode ?? "disabled",
         hasSecret: provider.networkMode === "live" ? (provider.secretRef ? true : false) : false,
         isFixture: responsesFixture||provider.networkMode !== "live",

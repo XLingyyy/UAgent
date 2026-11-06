@@ -2,7 +2,7 @@ import {useI18n} from "../i18n";
 import { LeftSidebar } from "../sidebar/LeftSidebar";
 import { Workspace } from "../workspace/Workspace";
 import { InspectorPane } from "../inspector/InspectorPane";
-import { useLayoutActions, useLayoutStore } from "../stores/ui-store";
+import { useLayoutActions, useLayoutStore, useSettingsStore } from "../stores/ui-store";
 import { useNarrowViewport } from "./useNarrowViewport";
 import "./MainLayout.css";
 
@@ -21,7 +21,9 @@ export function MainLayout() {
   const inspectorOpen = useLayoutStore((state) => state.inspector.open);
   const { toggleInspector } = useLayoutActions();
 
-  const modal = useNarrowViewport() && inspectorOpen;
+  const settingsOpen = useSettingsStore((state) => state.open);
+  const inspectorVisible = inspectorOpen && !settingsOpen;
+  const modal = useNarrowViewport() && inspectorVisible;
 
   return (
     <div
@@ -34,7 +36,7 @@ export function MainLayout() {
         <Workspace />
       </div>
       {modal && <button className="ua-drawer-backdrop" aria-label={uiText("Close tools backdrop")} onClick={toggleInspector} tabIndex={-1} />}
-      <InspectorPane open={inspectorOpen} onClose={toggleInspector} />
+      <InspectorPane open={inspectorVisible} onClose={toggleInspector} />
     </div>
   );
 }

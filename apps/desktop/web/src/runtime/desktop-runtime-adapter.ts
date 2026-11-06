@@ -4255,7 +4255,10 @@ export function createDesktopRuntimeAdapter(
     resumeTaskRun: taskId=>router.resumeTaskRun(taskId),
     captureOrdinarySend: options?.captureOrdinarySend,
     submitTask: async (draft, submission) => {
-      if (!FIXTURES_ENABLED && !currentDiscovery && !(options?.providerAdapter && options.providerEnabled)) {
+      // This only routes to the existing investigation scope/adapter checks below;
+      // a serialized draft does not grant authority to start Codex.
+      const scopedCodex=draft.taskMode==="investigation"&&draft.providerId==="codex"&&Boolean(draft.collaboration&&draft.investigationScopeId);
+      if (!scopedCodex && !FIXTURES_ENABLED && !currentDiscovery && !(options?.providerAdapter && options.providerEnabled)) {
         throw new Error("Connect and discover a read-only MCP session before submitting a task.");
       }
       providerProposals.invalidate();

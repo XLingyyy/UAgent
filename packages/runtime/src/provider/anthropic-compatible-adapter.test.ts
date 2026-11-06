@@ -114,3 +114,32 @@ describe("AnthropicCompatibleAdapter", () => {
     expect(results[2].done).toBe(true);
   });
 });
+
+describe("Anthropic production stream semantics", () => {
+  const stream = (events: unknown[]) => new AnthropicCompatibleAdapter({modelId:"claude-sonnet",isFixture:false,
+    transport:makeTransport({stream:events.map(event=>"data:"+JSON.stringify(event))})});
+  const collect = async(adapter:AnthropicCompatibleAdapter) => {const chunks=[];for await(const chunk of adapter.stream(makeRequest()))chunks.push(chunk);return chunks;};
+  it("retains usage and output truncation", async()=>{
+    const chunks=await collect(stream([
+      {type:"message_start",message:{usage:{input_tokens:7,output_tokens:0}}},
+      {type:"content_block_delta",delta:{type:"text_delta",text:"synthetic"}},
+      {type:"message_delta",delta:{stop_reason:"max_tokens"},usage:{output_tokens:3}},
+      {type:"message_stop"},
+    ]));
+    expect(chunks.at(-1)).toMatchObject({done:true,finishReason:"length",usage:{inputTokens:7,outputTokens:3,totalTokens:10}});
+  });
+  it("rejects truncated streams and explicit provider errors", async()=>{
+    await expect(collect(stream([{type:"content_block_delta",delta:{type:"text_delta",text:"partial"}}]))).rejects.toMatchObject({code:"malformed_response"});
+    await expect(collect(stream([{type:"error",error:{type:"rate_limit_error",message:"private fixture detail"}}]))).rejects.toMatchObject({code:"rate_limited"});
+  });
+  it("rejects unsupported tool blocks instead of reporting successful text", async()=>{
+    await expect(collect(stream([{type:"content_block_start",content_block:{type:"tool_use"}}]))).rejects.toMatchObject({code:"malformed_response"});
+  });
+  it("puts developer instructions in system and rejects mismatched model", async()=>{
+    const transport=makeTransport({json:{status:200,headers:{},body:'{"content":[{"type":"text","text":"ok"}]}'}});
+    const spy=vi.spyOn(transport,"sendJson");const adapter=new AnthropicCompatibleAdapter({modelId:"claude-sonnet",transport});
+    await adapter.complete(makeRequest({messages:[{role:"developer",content:"instructions"},{role:"user",content:"question"}]}));
+    expect(spy.mock.calls[0][0].body).toMatchObject({system:"instructions",messages:[{role:"user",content:"question"}]});
+    await expect(adapter.complete(makeRequest({modelId:"other"}))).rejects.toMatchObject({code:"malformed_response"});
+  });
+});

@@ -274,6 +274,29 @@ describe("native run-store production boundary", () => {
       requiresFreshAuthorization: true,
     });
   });
+  it("retains the last event time when persisting a tool reply without new events", async () => {
+    const fixture = nativeRecorder(), first = requested();
+    first.run.projectId = first.run.scope.projectId = "root:fbffe7488ee56fe2";
+    await fixture.store.commit(first);
+    const completed = JSON.parse(JSON.stringify(first)) as RunStoreCommit;
+    const result: RunToolResult = {
+      callId: "provider-call", toolId: "project.read", status: "completed", effectState: "not_started",
+      output: { files: [], indexVersion: "index:root:fbffe7488ee56fe2:real", indexedAt: 9842 },
+      sources: [{ projectId: first.run.projectId, path: "Source", kind: "index_query",
+        version: "cd0c9cc1-c3aa-43dc-935a-9350947cbe28:index:root:fbffe7488ee56fe2:real:1" }],
+      truncated: false,
+    };
+    Object.assign(completed.run.steps[0]!, { status: "completed", result });
+    completed.events = [{ ...event(3, "tool_completed", { result }, "run-1:step:1"), createdAt: 200 }];
+    await fixture.store.commit(completed);
+    const reply = JSON.parse(JSON.stringify(completed)) as RunStoreCommit;
+    reply.events = [];
+    reply.messages.push({ role: "tool", toolCallId: result.callId, content: JSON.stringify(result) });
+    await fixture.store.commit(reply);
+    expect(fixture.inputs.map(input => input.batch.checkpoint.capturedAt)).toEqual([102, 200, 200]);
+    expect(fixture.inputs[2]!.batch.messages[0]!.createdAt).toBe(200);
+    expect(fixture.inputs[2]!.batch.events[0]!.createdAt).toBe(200);
+  });
   it("keeps an unobserved cancelled call unknown and never fabricates an outcome", async () => {
     const fixture = nativeRecorder(),
       first = requested();
@@ -454,7 +477,7 @@ describe("native run-store production boundary", () => {
       contextPercent: null,
     };
     const outcome = await coordinator.start("task-1", draft);
-    expect(outcome.run).toMatchObject({ status: "paused", stopReason: "persistence_failed" });
+    expect(outcome.run).toMatchObject({ status: "paused", stopReason: "persistence_failed_reconciliation_required" });
     expect(execute).not.toHaveBeenCalled();
     expect(complete).toHaveBeenCalledTimes(1);
     expect(invoke).toHaveBeenCalledTimes(3); // Initial state, model intent, failed tool intent. Catch-path is poisoned.
@@ -673,4 +696,26 @@ describe("context-plan and freshness persistence boundary", () => {
     await expect(store.commit(value)).rejects.toThrow("reconciliation_required");
     expect(invoke).toHaveBeenCalledTimes(1);
   });
+});
+
+
+describe("uncertain completed commit reconciliation",()=>{
+ it.each(["exact","revision","body","state","incomplete","project"])("only confirms exact durable completion: %s",async(mode)=>{
+   let archived: any;let writes=0;
+   const store=createNativeRunStore(async(command,args)=>{
+     if(command==="snapshot_native_run_store")return archived;
+     writes++;const input=args.input as NativeRunCommitInput;
+     archived={schemaVersion:1,snapshot:{run:{projectId:input.projectId,id:input.runId,status:"succeeded",revision:1}},coordinatorState:input.batch.events.find(e=>e.kind==="coordinator_state_v1")!.data,messages:input.batch.messages,completeness:{complete:true,loadedMessageCount:2,storedMessageCount:2}};
+     throw Error("lost acknowledgement");
+   });
+   const value=update();value.run.status="completed";
+   await expect(store.commit(value)).rejects.toThrow("lost acknowledgement");
+   if(mode==="revision")archived.snapshot.run.revision++;
+   if(mode==="body")archived.messages[0].body+="changed";
+   if(mode==="state")archived.coordinatorState={};
+   if(mode==="incomplete")archived.completeness.complete=false;
+   if(mode==="project")archived.snapshot.run.projectId="foreign";
+   expect(await store.reconcileCompleted!(value.run.runId)).toEqual(mode==="exact"?value.run:null);
+   await expect(store.commit(value)).rejects.toThrow("reconciliation_required");expect(writes).toBe(1);
+ });
 });

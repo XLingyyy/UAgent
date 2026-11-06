@@ -18,8 +18,9 @@ use crate::product_settings_store::{
 use crate::provider_continuation_store::{
     ContinuationOwner, ContinuationScope, ProviderContinuationStore, ProviderNativeContinuation,
 };
-use crate::provider_endpoint_policy::{prepare_responses_endpoint, NATIVE_ENDPOINT_POLICY};
+use crate::provider_endpoint_policy::{prepare_responses_endpoint, prepare_anthropic_endpoint, NATIVE_ENDPOINT_POLICY};
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -28,6 +29,28 @@ use std::{
         Arc, Mutex, OnceLock,
     },
 };
+#[path="native_responses_scope_authority.rs"]
+mod scope_authority;
+pub(crate) use scope_authority::{
+    NativeMemoryReadShareGrant, AuthorizeMemoryScopeInput, NativeMemoryScopeReceipt, MemoryScopeInput,
+};
+#[path="native_project_memory_sources.rs"]
+mod memory_sources;
+#[path="native_project_memory_dispatch.rs"]
+mod memory_dispatch;
+#[path="native_project_memory_requests.rs"]
+mod memory_requests;
+#[path="native_project_memory_sender.rs"]
+mod memory_sender;
+#[path="native_project_memory_run.rs"]
+mod memory_run;
+pub(crate) use memory_requests::{PrepareCommandInput,PrepareCommandReply,ActionCommandInput,ActionCommandReply,
+    MemorySelectionInput,MemorySelectionReply,MemoryCancelInput,MemoryActionReply};
+pub(crate) use memory_run::MemoryBindInput;
+pub(crate) use memory_dispatch::{MemoryBatch,MemoryBatchReceipt,BoundMemoryRequest};
+pub(crate) fn reobserve_memory_sources(bound:&BoundMemoryRequest)->std::result::Result<(), &'static str>{
+    bound.batch().reobserve_sources()
+}
 type Result<T> = std::result::Result<T, String>;
 const MAX_PROFILES: usize = 4;
 const MAX_RUNS: usize = 16;
@@ -94,12 +117,17 @@ struct Run {
     profile: Arc<Profile>,
     scope: ContinuationScope,
     session: NativeSession,
+    project_registration: Option<ProjectRegistration>,
+    memory_scope: Option<Arc<NativeMemoryReadShareGrant>>,
+    native_host:Option<Arc<memory_sender::NativeRunHost>>,
+    native_creation:Option<Arc<crate::local_run_store::native_run_creation::NativeRunCreation>>,
+    memory_admitted:AtomicBool,
     monitor: Option<NativeSourceMonitor>,
     checker: Arc<dyn SourceChecker>,
     chat: Option<Mutex<ChatState>>,
     deadline: u64,
     fixture_sequence: Option<Arc<FixtureSequence>>,
-    alive: AtomicBool,
+    alive: Arc<AtomicBool>,
 }
 impl Run {
     fn current(&self) -> Result<()> {
@@ -129,14 +157,18 @@ impl Run {
             self.revoke();
             return Err(failure("native_responses_configuration_changed"));
         }
-        if self.chat.is_none() {
-            crate::resolve_trusted_root_binding_by_id(&self.scope.owner.project_id)
-                .map_err(|_| failure("native_responses_project_changed"))?;
+        if let Some(project) = &self.project_registration { project.check_current()?; }
+        if self.chat.is_none() && self.project_registration.is_none() {
+            return Err(failure("native_responses_project_changed"));
         }
         Ok(())
     }
     fn revoke(&self) {
         self.alive.store(false, Ordering::Release);
+        if let Some(creation)=&self.native_creation{creation.invalidate_for_owner(&self.alive);}
+        if let Some(scope)=&self.memory_scope { scope.revoke(); }
+        memory_requests::purge_for_run(self);
+        if let Some(host)=&self.native_host {host.revoke();}
         if let Some(monitor) = &self.monitor {
             monitor.revoke();
         }
@@ -308,6 +340,11 @@ struct Broker {
     profiles: HashMap<String, Arc<Profile>>,
     windows: HashMap<String, (u64, bool)>,
     updating: std::collections::HashSet<String>,
+    projects: HashMap<String, ProjectGeneration>,
+    memory_scopes: HashMap<String, Arc<NativeMemoryReadShareGrant>>,
+    scope_prompts: std::collections::HashSet<String>,
+    memory_preparing:HashMap<String,Arc<()>>,
+    memory_batches:HashMap<String,Arc<memory_requests::MemoryBatchRecord>>,
     runs: HashMap<String, Arc<Run>>,
     requests: HashMap<String, Arc<Request>>,
 }
@@ -315,19 +352,23 @@ fn broker() -> &'static Mutex<Broker> {
     static BROKER: OnceLock<Mutex<Broker>> = OnceLock::new();
     BROKER.get_or_init(|| Mutex::new(Broker::default()))
 }
+fn profile_endpoint(snapshot:&ProviderSnapshot)->crate::product_settings_store::Result<String>{
+    if snapshot.config.wire_api==WireApi::Anthropic {prepare_anthropic_endpoint(&snapshot.config.base_url)}
+    else {prepare_responses_endpoint(&snapshot.config.base_url)}
+}
 fn provider(root: &Path, id: &str, model: &str) -> Result<ProviderSnapshot> {
     let snapshot = ProductSettingsStore::open(root)
         .and_then(|store| store.provider(id, &NATIVE_ENDPOINT_POLICY))
         .map_err(|_| failure("native_responses_configuration_unavailable"))?
         .ok_or_else(|| failure("native_responses_configuration_unavailable"))?;
-    if !snapshot.config.enabled
+    if !crate::product_settings_commands::active_api(&snapshot.config) || !snapshot.config.enabled
         || snapshot.config.wire_api != WireApi::Responses
         || snapshot.config.auth_mode != AuthMode::EnvKey
         || !snapshot.config.models.iter().any(|entry| entry.id == model)
     {
         return Err(failure("native_responses_configuration_unavailable"));
     }
-    prepare_responses_endpoint(&snapshot.config.base_url)
+    profile_endpoint(&snapshot)
         .map_err(|_| failure("native_responses_endpoint_rejected"))?;
     Ok(snapshot)
 }
@@ -577,19 +618,92 @@ pub(crate) fn observe_preview_guarded(
     }
     Ok(())
 }
-pub(crate) fn revoke_project(id: &str) {
-    let runs = match lock(broker()) {
-        Ok(state) => state
-            .runs
-            .values()
-            .filter(|r| r.scope.owner.project_id == id)
-            .cloned()
-            .collect::<Vec<_>>(),
-        Err(_) => return,
-    };
-    for run in runs {
-        run.revoke();
+/// Generation identities are never restored, including a failed root update.
+struct ProjectGeneration { identity: Arc<()>, number: u64, updating: bool }
+impl ProjectGeneration {
+    fn new() -> Self { Self { identity: Arc::new(()), number: 1, updating: false } }
+    fn matches(&self, identity: &Arc<()>) -> bool {
+        !self.updating && Arc::ptr_eq(&self.identity, identity)
     }
+    fn begin(&mut self) -> Result<Arc<()>> {
+        if self.updating { return Err(failure("native_project_update_busy")); }
+        self.number=self.number.checked_add(1).ok_or_else(||failure("native_project_generation_exhausted"))?;
+        self.identity = Arc::new(());
+        self.updating = true;
+        Ok(self.identity.clone())
+    }
+    fn finish(&mut self, identity: &Arc<()>) {
+        if Arc::ptr_eq(&self.identity, identity) { self.updating = false; }
+    }
+}
+fn project_generation<'a>(state: &'a mut Broker, id: &str) -> Result<&'a mut ProjectGeneration> {
+    if !state.projects.contains_key(id) && state.projects.len() >= 256 {
+        return Err(failure("native_project_generation_limit"));
+    }
+    Ok(state.projects.entry(id.into()).or_insert_with(ProjectGeneration::new))
+}
+#[derive(Clone)]
+struct ProjectRegistration {
+    project_id: String,
+    generation: Arc<()>,
+    generation_number: u64,
+    root: Arc<crate::trusted_root_handle::TrustedRootHandle>,
+}
+impl ProjectRegistration {
+    fn matches(&self, state: &Broker) -> bool {
+        state.projects.get(&self.project_id).is_some_and(|p| p.matches(&self.generation))
+    }
+    fn check_current(&self) -> Result<()> {
+        if !self.matches(&*lock(broker())?) { return Err(failure("native_project_changed")); }
+        self.root.check_current().map_err(|_| failure("native_project_changed"))?;
+        let current = crate::resolve_trusted_root_handle_by_id(&self.project_id)
+            .map_err(|_| failure("native_project_changed"))?;
+        if !Arc::ptr_eq(&current, &self.root) || !self.matches(&*lock(broker())?) {
+            return Err(failure("native_project_changed"));
+        }
+        Ok(())
+    }
+}
+fn capture_project_registration(id: &str) -> Result<ProjectRegistration> {
+    let (generation,generation_number) = {
+        let mut state = lock(broker())?;
+        let project = project_generation(&mut state, id)?;
+        if project.updating { return Err(failure("native_project_update_busy")); }
+        (project.identity.clone(),project.number)
+    };
+    let root = crate::resolve_trusted_root_handle_by_id(id)
+        .map_err(|_| failure("native_project_changed"))?;
+    let captured = ProjectRegistration { project_id: id.into(), generation, generation_number, root };
+    captured.check_current()?;
+    Ok(captured)
+}
+pub(crate) struct ProjectUpdateGuard { project_id: String, generation: Arc<()> }
+impl Drop for ProjectUpdateGuard {
+    fn drop(&mut self) {
+        if let Ok(mut state) = lock(broker()) {
+            if let Some(project) = state.projects.get_mut(&self.project_id) {
+                project.finish(&self.generation);
+            }
+        }
+    }
+}
+/// Root writers hold this guard through replacement. Marking precedes run
+/// enumeration; registration checks the same never-reused generation under this
+/// broker mutex. No session/registry/SQLite lock is held while revoking runs.
+pub(crate) fn begin_project_update(id: &str) -> Result<ProjectUpdateGuard> {
+    let (generation, runs, scopes) = {
+        let mut state = lock(broker())?;
+        let generation = project_generation(&mut state, id)?.begin()?;
+        let runs = state.runs.values().filter(|r| {
+            r.project_registration.as_ref().is_some_and(|p| p.project_id == id)
+        }).cloned().collect::<Vec<_>>();
+        let scopes=state.memory_scopes.values().filter(|scope|scope.project_id()==id).cloned().collect::<Vec<_>>();
+        (generation, runs, scopes)
+    };
+    let guard = ProjectUpdateGuard { project_id: id.into(), generation };
+    for run in runs { run.revoke(); }
+    for scope in scopes { scope.revoke(); }
+    Ok(guard)
 }
 /// The read tool calls this with its actual native prefix, before redaction.
 /// It creates freshness evidence, never a new sharing permission.
@@ -694,6 +808,7 @@ pub(crate) struct OpenResult {
     endpoint: String,
     expires_at: u64,
     fixture: bool,
+    native_project_memory_dispatch:bool,
     model_settings: ModelSettings,
 }
 #[derive(Serialize)]
@@ -794,7 +909,8 @@ async fn open_profile_internal(
     };
     worker(move || {
         let snapshot = provider(&root, &input.provider_id, &input.model_id)?;
-        let endpoint = prepare_responses_endpoint(&snapshot.config.base_url)
+        if snapshot.config.wire_api==WireApi::Anthropic && (saved_version.is_some()||fixture_root.is_some()){return Err(failure("anthropic_temporary_live_profile_required"));}
+        let endpoint = profile_endpoint(&snapshot)
             .map_err(|_| failure("native_responses_endpoint_rejected"))?;
         // Validation uses the same memory-only credential contract as dispatch.
         let clock = Arc::new(MonotonicClock::new());
@@ -915,6 +1031,7 @@ async fn open_profile_internal(
             endpoint,
             expires_at: wall + PROFILE_TTL,
             fixture,
+            native_project_memory_dispatch:profile.snapshot.config.wire_api==WireApi::Responses && memory_requests::LIVE_MEMORY_DISPATCH_VALIDATED,
             model_settings,
         })
     })
@@ -927,6 +1044,57 @@ pub(crate) async fn close_native_responses_profile(
 ) -> Result<()> {
     close_profile(&input.profile_id, window.label())
 }
+/// Read/share authorization alone cannot admit a run, recover a host or send.
+#[tauri::command]
+pub(crate) async fn authorize_native_project_memory_scope(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, crate::managed_run_store::ManagedRunStoreState>,
+    input: AuthorizeMemoryScopeInput,
+) -> Result<NativeMemoryScopeReceipt> {
+    let document=state.capture_window_grant(&window).map_err(|_|failure("native_scope_window_unavailable"))?;
+    let hwnd=window.hwnd().map_err(|_|failure("native_scope_window_unavailable"))?.0 as isize;
+    let label=window.label().to_string();
+    worker(move||scope_authority::authorize(hwnd,&label,input,document)).await
+}
+#[tauri::command]
+pub(crate) async fn revoke_native_project_memory_scope(
+    window: tauri::WebviewWindow,input:MemoryScopeInput,
+) -> Result<()> {
+    let (scope,runs)={
+        let mut state=lock(broker())?;
+        let scope=state.memory_scopes.get(&input.scope_id).cloned().ok_or_else(||failure("native_scope_revoked"))?;
+        // Original profile/window registration, not a supplied label/ID, owns it.
+        let profile=state.profiles.get(&scope.profile_id().to_string()).cloned()
+            .ok_or_else(||failure("native_scope_revoked"))?;
+        if profile.window!=window.label() || state.windows.get(window.label())!=Some(&(profile.window_generation,false)) {
+            return Err(failure("native_scope_window_unavailable"));
+        }
+        state.memory_scopes.remove(&input.scope_id);
+        let runs=state.runs.values().filter(|run|run.memory_scope.as_ref().is_some_and(|g|Arc::ptr_eq(g,&scope))).cloned().collect::<Vec<_>>();
+        (scope,runs)
+    };
+    for run in runs { run.revoke(); }
+    scope.revoke();
+    Ok(())
+}
+/// Internal lookup for a NEW live run only. The caller still must obtain real
+/// RuntimeHost admission, construct/register that run under the project barrier,
+/// and call attach_native_run. This is not a memory-batch/transport permission.
+fn pending_native_memory_scope(id:&str,window:&str,project:&str,run:&str,conversation:&str)
+    ->Result<Arc<NativeMemoryReadShareGrant>>{
+    let scope=lock(broker())?.memory_scopes.get(id).cloned().ok_or_else(||failure("native_scope_revoked"))?;
+    if scope.window()!=window || scope.project_id()!=project || scope.run_id()!=run
+        || scope.conversation_id()!=conversation {return Err(failure("native_scope_binding_changed"));}
+    scope.check_authorization_current().map_err(failure)?;
+    Ok(scope)
+}
+pub(crate) fn native_memory_scope(id:&str,window:&str)->Result<Arc<NativeMemoryReadShareGrant>>{
+    let scope=lock(broker())?.memory_scopes.get(id).cloned().ok_or_else(||failure("native_scope_revoked"))?;
+    if scope.window()!=window{return Err(failure("native_scope_window_unavailable"));}
+    scope.check_current().map_err(failure)?;
+    Ok(scope)
+}
+
 #[tauri::command]
 pub(crate) async fn bind_native_responses_run(
     window: tauri::WebviewWindow,
@@ -938,8 +1106,10 @@ pub(crate) async fn bind_native_responses_run(
         if profile.fixture_root.is_none() {
             return Err(failure("responses_investigation_fixture_only"));
         }
+        let project_registration = capture_project_registration(&input.project_id)?;
         let existing = {
             let state = lock(broker())?;
+            if !project_registration.matches(&state) { return Err(failure("native_project_changed")); }
             state
                 .runs
                 .iter()
@@ -1071,6 +1241,11 @@ pub(crate) async fn bind_native_responses_run(
             profile: profile.clone(),
             scope,
             session,
+            project_registration: Some(project_registration),
+            memory_scope: None,
+        native_host:None,
+        native_creation:None,
+        memory_admitted:AtomicBool::new(false),
             checker: monitor.checker(),
             monitor: Some(monitor),
             chat: None,
@@ -1079,7 +1254,7 @@ pub(crate) async fn bind_native_responses_run(
                 .fixture_root
                 .as_ref()
                 .map(|_| Arc::new(FixtureSequence::new())),
-            alive: AtomicBool::new(true),
+            alive: Arc::new(AtomicBool::new(true)),
         });
         run.current()?;
         let id = token()?;
@@ -1088,12 +1263,15 @@ pub(crate) async fn bind_native_responses_run(
             return Err(failure("native_responses_run_limit"));
         }
         if !profile.alive.load(Ordering::Acquire)
+            || !run.project_registration.as_ref().is_some_and(|p| p.matches(&broker))
+            || broker.windows.get(&profile.window) != Some(&(profile.window_generation, false))
             || broker.updating.contains(&owner.provider_id)
             || !broker
                 .profiles
                 .get(&profile.id)
                 .is_some_and(|saved| Arc::ptr_eq(saved, &profile))
         {
+            drop(broker);
             run.revoke();
             return Err(failure("native_responses_session_closed"));
         }
@@ -1106,6 +1284,7 @@ pub(crate) async fn bind_native_responses_run(
                 run_handle: id.clone(),
                 owner: previous.scope.owner.clone(),
             };
+            drop(broker);
             run.revoke();
             return Ok(result);
         }
@@ -1199,6 +1378,11 @@ fn bind_conversation(
         profile: profile.clone(),
         scope,
         session,
+        project_registration: None,
+        memory_scope: None,
+        native_host:None,
+        native_creation:None,
+        memory_admitted:AtomicBool::new(false),
         monitor: None,
         checker,
         chat: Some(Mutex::new(ChatState {
@@ -1209,7 +1393,7 @@ fn bind_conversation(
         // still captures its own at-most-ten-minute native request lease.
         deadline: profile.expires_at,
         fixture_sequence: None,
-        alive: AtomicBool::new(true),
+        alive: Arc::new(AtomicBool::new(true)),
     });
     run.current()?;
     let id = token()?;
@@ -1384,13 +1568,20 @@ fn chat_usage(response: &ResponseState) -> UsageStatus {
     UsageStatus::Unknown
 }
 #[tauri::command]
-pub(crate) async fn prepare_native_responses_request(
+pub(crate) async fn prepare_native_responses_request(window:tauri::WebviewWindow,input:PrepareCommandInput)->Result<PrepareCommandReply>{
+    match input {
+        PrepareCommandInput::Legacy(input)=>prepare_legacy_responses_request(window,input).await.map(PrepareCommandReply::Legacy),
+        PrepareCommandInput::Memory(input)=>memory_requests::prepare(window,input).await.map(PrepareCommandReply::Memory),
+    }
+}
+async fn prepare_legacy_responses_request(
     window: tauri::WebviewWindow,
     input: PrepareInput,
 ) -> Result<PrepareResult> {
     let window = window.label().to_string();
     worker(move || {
         let run = run_owned(&input.run_handle, &window)?;
+        if run.memory_scope.is_some(){return Err(failure("memory_request_required"));}
         {
             let broker = lock(broker())?;
             if broker.requests.len() >= MAX_REQUESTS
@@ -1409,7 +1600,7 @@ pub(crate) async fn prepare_native_responses_request(
             }
         }
         let chat_body = if run.chat.is_some() {
-            Some(chat_messages(&input.body)?)
+            Some(if run.profile.snapshot.config.wire_api==WireApi::Anthropic {anthropic::chat_messages(&input.body)?} else {chat_messages(&input.body)?})
         } else {
             None
         };
@@ -1426,15 +1617,9 @@ pub(crate) async fn prepare_native_responses_request(
             .session
             .capture_lease(expires)
             .map_err(|e| failure(e.code()))?;
-        let prepared = run
-            .session
-            .prepare(
-                &lease,
-                &run.profile.snapshot.config.base_url,
-                input.body.into_bytes(),
-                run.checker.as_ref(),
-            )
-            .map_err(|e| failure(e.code()))?;
+        let prepared = if run.profile.snapshot.config.wire_api==WireApi::Anthropic {
+            run.session.prepare_anthropic(&lease,&run.profile.snapshot.config.base_url,input.body.into_bytes(),run.checker.as_ref())
+        }else{run.session.prepare(&lease,&run.profile.snapshot.config.base_url,input.body.into_bytes(),run.checker.as_ref())}.map_err(|e|failure(e.code()))?;
         run.current()?;
         let binding = prepared.binding();
         let id = token()?;
@@ -1506,40 +1691,49 @@ pub(crate) async fn prepare_native_responses_request(
     })
     .await
 }
-#[tauri::command]
-pub(crate) async fn approve_native_responses_request(
-    window: tauri::WebviewWindow,
-    input: RequestInput,
-) -> Result<()> {
-    let window = window.label().to_string();
-    worker(move || {
-        let request = request_owned(&input.request_id, &window)?;
-        request.run.current()?;
-        let mut approval = lock(&request.approval)?;
-        if approval.is_some() || request.started.load(Ordering::Acquire) {
-            return Err(failure("native_approval_consumed"));
-        }
-        *approval = Some(
-            request
-                .run
-                .session
-                .approve(
-                    &request.prepared,
-                    &request.lease,
-                    request.run.checker.as_ref(),
-                )
-                .map_err(|e| failure(e.code()))?,
-        );
-        Ok(())
-    })
-    .await
+fn approve_owned_request(request:&Arc<Request>)->Result<()> {
+    request.run.current()?;
+    let mut approval=lock(&request.approval)?;
+    if approval.is_some()||request.started.load(Ordering::Acquire){return Err(failure("native_approval_consumed"));}
+    *approval=Some(request.run.session.approve(&request.prepared,&request.lease,request.run.checker.as_ref())
+        .map_err(|e|failure(e.code()))?);
+    Ok(())
 }
 #[tauri::command]
-pub(crate) async fn dispatch_native_responses_request(
-    window: tauri::WebviewWindow,
-    input: RequestInput,
-) -> Result<()> {
-    let request = request_owned(&input.request_id, window.label())?;
+pub(crate) async fn approve_native_responses_request(window:tauri::WebviewWindow,input:ActionCommandInput)->Result<ActionCommandReply>{
+    let label=window.label().to_string();
+    worker(move||match input {
+        ActionCommandInput::Legacy(input)=>{
+            let request=request_owned(&input.request_id,&label)?;
+            if request.prepared.memory_binding().is_some(){return Err(failure("memory_action_required"));}
+            approve_owned_request(&request)?;Ok(ActionCommandReply::Legacy(()))
+        },
+        ActionCommandInput::Memory(input)=>{
+            let request=memory_requests::action_request(&label,&input)?;
+            approve_owned_request(&request)?;
+            Ok(ActionCommandReply::Memory(memory_requests::action_reply(&input,&request,"approved")))
+        },
+    }).await
+}
+#[tauri::command]
+pub(crate) async fn dispatch_native_responses_request(window:tauri::WebviewWindow,input:ActionCommandInput)->Result<ActionCommandReply>{
+    let app=window.app_handle().clone();let label=window.label().to_string();
+    worker(move||match input {
+        ActionCommandInput::Legacy(input)=>{
+            let request=request_owned(&input.request_id,&label)?;
+            if request.prepared.memory_binding().is_some(){return Err(failure("memory_action_required"));}
+            dispatch_owned_request(app,input.request_id,request)?;
+            Ok(ActionCommandReply::Legacy(()))
+        },
+        ActionCommandInput::Memory(input)=>{
+            let request=memory_requests::action_request(&label,&input)?;
+            let reply=memory_requests::action_reply(&input,&request,"scheduled");
+            dispatch_owned_request(app,input.request_id,request)?;
+            Ok(ActionCommandReply::Memory(reply))
+        },
+    }).await
+}
+fn dispatch_owned_request(app:tauri::AppHandle,request_id:String,request:Arc<Request>)->Result<()> {
     request.run.current()?;
     if request.started.swap(true, Ordering::AcqRel) {
         return Err(failure("native_approval_consumed"));
@@ -1547,13 +1741,16 @@ pub(crate) async fn dispatch_native_responses_request(
     let grant = lock(&request.approval)?
         .take()
         .ok_or_else(|| failure("native_approval_required"))?;
-    // This acknowledgement schedules the worker. It does not claim a request was sent.
+    // Register unique original host handoff BEFORE scheduling this exact sender.
+    let memory_sender=memory_sender::reserve(&app,&request_id,&request)?;
     std::thread::Builder::new()
         .name("responses-transport".into())
         .spawn(move || {
             let output = request.response.clone();
             let output_head = output.clone();
             let output_chunk = output.clone();
+            let chunk_request=request.clone();
+            let head_request=request.clone();
             let filter = if request.run.profile.saved_credential.is_some() {
                 match crate::native_saved_responses_filter::SavedResponsesFilter::new(
                     request.run.profile.key.0.clone(),
@@ -1573,6 +1770,7 @@ pub(crate) async fn dispatch_native_responses_request(
             let chunk_filter = filter.clone();
             let chunk_sink: Arc<dyn Fn(&[u8]) -> std::result::Result<(), ()> + Send + Sync> =
                 Arc::new(move |bytes| {
+                    if chunk_request.prepared.memory_binding().is_some()&&chunk_request.prepared.dispatch_cancelled(){return Err(());}
                     let frames = if let Some(filter) = &chunk_filter {
                         filter.lock().map_err(|_| ())?.push(bytes)?
                     } else {
@@ -1596,6 +1794,7 @@ pub(crate) async fn dispatch_native_responses_request(
                 });
             let head_sink: Arc<dyn Fn(u16, &str) -> std::result::Result<(), ()> + Send + Sync> =
                 Arc::new(move |status, content_type| {
+                    if head_request.prepared.memory_binding().is_some()&&head_request.prepared.dispatch_cancelled(){return Err(());}
                     let mut state = output_head.lock().map_err(|_| ())?;
                     if state.head.is_some() {
                         return Err(());
@@ -1618,32 +1817,23 @@ pub(crate) async fn dispatch_native_responses_request(
                             .with_head_sink(head_sink)
                             .with_sequence(sequence.clone()),
                     )
+                } else if request.run.profile.snapshot.config.wire_api==WireApi::Anthropic {
+                    Box::new(WinHttpResponsesTransport::anthropic(chunk_sink).with_head_sink(head_sink))
                 } else {
                     Box::new(
                         WinHttpResponsesTransport::with_chunk_sink(chunk_sink)
                             .with_head_sink(head_sink),
                     )
                 };
-            let mut dispatch = || {
-                request.run.session.dispatch(
-                    &request.prepared,
-                    &request.lease,
-                    &grant,
-                    request.run.checker.as_ref(),
-                    transport.as_mut(),
-                )
-            };
-            // The OS target guard spans the same final NativeSession dispatch.
-            // Poll/close never reacquire it, so streaming/cancellation stay live.
-            let mut outcome = if let Some(saved) = &request.run.profile.saved_credential {
-                crate::credential_vault::with_current(&saved.binding, &saved.version, dispatch)
-                    .unwrap_or(DispatchOutcome {
-                        status: DispatchStatus::NotDispatched,
-                        error: Some(FailureCode::IdentityChanged),
-                        response: None,
-                    })
-            } else {
-                dispatch()
+            let mut outcome=if let Some(sender)=memory_sender {
+                memory_sender::execute(sender,&request,grant,transport.as_mut())
+            }else{
+                let mut dispatch=||request.run.session.dispatch(&request.prepared,&request.lease,&grant,
+                    request.run.checker.as_ref(),transport.as_mut());
+                if let Some(saved)=&request.run.profile.saved_credential {
+                    crate::credential_vault::with_current(&saved.binding,&saved.version,dispatch)
+                        .unwrap_or(DispatchOutcome{status:DispatchStatus::NotDispatched,error:Some(FailureCode::IdentityChanged),response:None})
+                }else{dispatch()}
             };
             if outcome.error.is_none() {
                 if let Some(filter) = &filter {
@@ -1781,6 +1971,7 @@ pub(crate) async fn release_native_responses_request(
     input: RequestInput,
 ) -> Result<()> {
     let request = request_owned(&input.request_id, window.label())?;
+    if request.prepared.memory_binding().is_some(){return memory_requests::release(&input.request_id,&request);}
     request.prepared.cancel().map_err(|e| failure(e.code()))?;
     lock(broker())?.requests.remove(&input.request_id);
     Ok(())
@@ -1867,3 +2058,71 @@ pub(crate) async fn save_native_provider_continuation(
 #[cfg(test)]
 #[path = "native_responses_commands_tests.rs"]
 mod tests;
+
+
+#[cfg(test)]
+mod project_generation_tests {
+    use super::*;
+    #[test]
+    fn late_registration_stays_invalid_after_update_finishes_and_after_aba() {
+        let mut project = ProjectGeneration::new();
+        let old = project.identity.clone();
+        assert!(project.matches(&old));
+        let first = project.begin().unwrap();
+        assert!(!project.matches(&old));
+        assert!(!project.matches(&first));
+        project.finish(&first);
+        assert!(!project.matches(&old));
+        assert!(project.matches(&first));
+        let second = project.begin().unwrap();
+        project.finish(&second);
+        assert!(!project.matches(&old));
+        assert!(!project.matches(&first));
+        assert!(project.matches(&second));
+    }
+    #[test]
+    fn overlapping_update_cannot_clear_the_active_generation() {
+        let mut project = ProjectGeneration::new();
+        let old = project.identity.clone();
+        let active = project.begin().unwrap();
+        assert!(project.begin().is_err());
+        project.finish(&old);
+        assert!(project.updating);
+        assert!(!project.matches(&active));
+        project.finish(&active);
+        assert!(project.matches(&active));
+    }
+}
+
+#[tauri::command]
+pub(crate) async fn bind_native_project_memory_run(app:tauri::AppHandle,window:tauri::WebviewWindow,input:MemoryBindInput)->Result<BindResult>{
+    memory_run::bind(app,window,input).await
+}
+#[tauri::command]
+pub(crate) async fn prepare_native_project_memory_selection(window:tauri::WebviewWindow,input:MemorySelectionInput)->Result<MemorySelectionReply>{
+    memory_requests::select(window,input).await
+}
+#[tauri::command]
+pub(crate) async fn cancel_native_project_memory_dispatch(window:tauri::WebviewWindow,input:MemoryCancelInput)->Result<MemoryActionReply>{
+    memory_requests::cancel(window.label(),input)
+}
+
+#[path="native_anthropic_chat.rs"]
+mod anthropic;
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+pub(crate) struct AnthropicChatResult {run_handle:String,request_id:String,response_id:String,text:String}
+#[tauri::command]
+pub(crate) async fn complete_native_anthropic_chat(window:tauri::WebviewWindow,input:AnthropicChatResult)->Result<()> {
+ let window=window.label().to_string();worker(move||{
+  let run=run_owned(&input.run_handle,&window)?;
+  if run.profile.snapshot.config.wire_api!=WireApi::Anthropic{return Err(failure("anthropic_profile_required"));}
+  let mut chat=lock(run.chat.as_ref().ok_or_else(||failure("anthropic_chat_required"))?)?;
+  let pending=chat.pending.as_ref().filter(|p|p.logical_id==input.request_id).ok_or_else(||failure("anthropic_chat_request_mismatch"))?;
+  let response=lock(&pending.response)?;
+  if !response.done||response.error.is_some()||!response.head.as_ref().is_some_and(|h|(200..300).contains(&h.status)){return Err(failure("anthropic_response_unconfirmed"));}
+  let (id,text,usage)=anthropic::result(&response,&run.profile.model_id).ok_or_else(||failure("anthropic_response_unconfirmed"))?;
+  if id!=input.response_id||text!=input.text{return Err(failure("anthropic_response_mismatch"));}drop(response);
+  run.current()?;chat.archive.complete_request(&input.request_id,&text,usage).map_err(|_|failure("anthropic_archive_failed"))?;chat.pending=None;Ok(())
+ }).await
+}

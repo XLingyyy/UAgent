@@ -6,12 +6,13 @@ import {
   sessionMatchesProviderModel,
   responsesFixtureAvailable,
   supportsProviderModel,
+  activeApiProvider,
 } from "../../provider/runtime-availability";
 import type { ProviderConfig, ProviderVersion } from "../../types/provider";
 import { useComposerActions } from "../../stores/ui-store";
 
 type SessionController = SafeProviderSession & {
-  openResponses?: (providerId: string, modelId: string, credential: string) => Promise<unknown>;
+  openResponses?: (providerId: string, modelId: string, credential: string, wireApi?: "responses"|"anthropic") => Promise<unknown>;
 };
 type SavedSessionController = SessionController & {
   openSaved?: (providerId: string, modelId: string) => Promise<unknown>;
@@ -25,6 +26,7 @@ type ProviderSessionProps = {
 /** Explicit old injected controllers retain their memory-only unit-test surface.
  * The real application always uses native storage and never falls back on error. */
 export function ProviderSessionSetup(props: ProviderSessionProps) {
+  if(!activeApiProvider(props.provider))return <p role="status">此 API 已封存，不能连接或发送，历史存档保留。目前仅开放 DeepSeek API；Codex 官方会话请使用工作区入口。 / API archived. History is retained. Only DeepSeek API is currently available; use the workspace entry for official Codex conversations.</p>;
   if (props.controller && props.controller !== safeProviderSession && !props.credentials)
     return <MemoryProviderSessionSetup provider={props.provider} controller={props.controller} />;
   return <SavedProviderSessionSetup provider={props.provider}
@@ -256,8 +258,8 @@ function MemoryProviderSessionSetup({
     opening = useRef(false),
     pendingGeneration = useRef<number | undefined>(undefined);
   const model = provider.models.find((m) => m.id === provider.defaultModel) ?? provider.models[0];
-  const responses = provider.wireApi === "responses",
-    fixture = responses && responsesFixtureAvailable(),
+  const responses = provider.wireApi === "responses" || provider.wireApi === "anthropic",
+    fixture = provider.wireApi==="responses" && responsesFixtureAvailable(),
     supported = supportsProviderModel(provider, model?.id);
   const ready = sessionMatchesProviderModel(state, provider, model?.id);
   useEffect(() => {
@@ -308,7 +310,7 @@ function MemoryProviderSessionSetup({
       controller.enable();
       if (responses) {
         if (!controller.openResponses) throw Error("protocol_unavailable");
-        const operation = controller.openResponses(provider.providerId, model.id, key);
+        const operation = (provider.wireApi==="anthropic"?controller.openResponses(provider.providerId,model.id,key,"anthropic"):controller.openResponses(provider.providerId,model.id,key));
         pendingGeneration.current = controller.getSessionGeneration?.();
         key = "";
         if ((await operation) === false) throw Error("session_not_opened");
@@ -343,7 +345,7 @@ function MemoryProviderSessionSetup({
           {t("product.connection")}
         </h3>
         <p className="ua-settings-section__description">
-          {responses
+          {provider.wireApi==="anthropic" ? (locale==="zh-CN"?"Claude 使用官方 Messages 接口和仅本次会话有效的临时密钥。发送前需批准内容，连接尚未验证。暂不支持保存密钥、扩展思考或项目记忆注入。":"Claude uses the official Messages API and a temporary session key. Outbound approval is required; connectivity is unverified. Saved keys, extended thinking and project memory injection are not supported yet.") : responses
             ? supported
               ? fixture ? t("demo.sessionHelp") : (locale === "zh-CN"
                 ? "支持 OpenAI 官方 Responses 服务。开启会话只保存临时凭证；点击发送才会联网，连接状态尚未验证。"

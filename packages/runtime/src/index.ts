@@ -1,3 +1,4 @@
+export * from "./project-memory/index.js";
 export * from "./run/tool-registry.js";
 export * from "./run/run-coordinator.js";
 export * from "./run/run-scope.js";
@@ -470,3 +471,9 @@ export function reduceAgentState(state: AgentState, transition: AgentTransition)
 export * from "./provider/responses/index.js";
 export * from "./provider/responses/runtime-session.js";
 export * from "./provider/provider-session.js";
+
+export { UEBuildDiagnosticParser, type UEBuildDiagnosticSummary } from "./ue-build-diagnostics.js";
+
+export { assessUEBuildRepair } from "./ue-build-diagnostics.js";
+
+export { parseSingleFileBuildRepairProposal, parseMultiFileBuildRepairProposal } from "./ue-build-repair.js";

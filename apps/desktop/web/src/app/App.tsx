@@ -1,4 +1,3 @@
-import {NativeHistoryAccess} from "../workspace/NativeHistoryAccess";
 import {InvestigationScopeReview} from "../settings/pages/InvestigationScopeReview";
 import {ProviderSessionLifetime} from "../runtime/ProviderSessionLifetime";
 import {safeProviderSession} from "../runtime/safe-provider-session";
@@ -7,12 +6,15 @@ import { LocalWorkspaceBootstrap } from "../settings/pages/LocalWorkspacePanel";
 import { AppShell } from "../shell/AppShell";
 import { createDesktopRuntimeAdapter } from "../runtime/desktop-runtime-adapter";
 import { registerFixedAppRuntimeAdapter } from "../runtime/runtime-store";
+import { getSharedRuntimeHostQueue } from "../runtime/shared-runtime-host-queue";
 import { UIProvider } from "./providers";
 
 let fixedAppRuntimeAdapter: ReturnType<typeof createDesktopRuntimeAdapter> | null = null;
 
 export function initializeFixedAppRuntimeAdapter() {
   if (!fixedAppRuntimeAdapter) {
+    // Parse the one shared metadata adapter; no owner or work is registered here.
+    getSharedRuntimeHostQueue();
     fixedAppRuntimeAdapter = createDesktopRuntimeAdapter({providerAdapter:safeProviderSession.adapter,providerEnabled:true,captureOrdinarySend:safeProviderSession.captureOrdinarySend});
     registerFixedAppRuntimeAdapter(fixedAppRuntimeAdapter);
   }
@@ -32,7 +34,6 @@ export default function App() {
       <ProviderSessionLifetime />
       <LocalWorkspaceBootstrap />
       <AppShell />
-      <NativeHistoryAccess/>
       <InvestigationScopeReview />
       <OutboundRequestReview />
     </UIProvider>

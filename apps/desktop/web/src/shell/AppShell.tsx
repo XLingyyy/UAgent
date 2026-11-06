@@ -8,7 +8,6 @@ import { TitleBar } from "./TitleBar";
 import { MainLayout } from "./MainLayout";
 import { GlobalOverlays } from "./GlobalOverlays";
 import { SettingsShell } from "../settings/SettingsShell";
-import { useMotionKey } from "../hooks/useMotionKey";
 
 // Capability-only R5.3 binding: when the native task bridge requests the
 // Settings "config" page so the real Project-root controls render, open it.
@@ -24,8 +23,8 @@ const MVP15D_CAPABILITY_OPEN_SETTINGS_EVENT = "uagent:mvp15d-open-capability-set
  *     - SettingsShell = SettingsSidebar | SettingsContent
  *   GlobalOverlays (stacked above via z-index)
  *
- * When settings.open is true the body renders SettingsShell
- * instead of MainLayout. TitleBar and GlobalOverlays stay.
+ * MainLayout stays mounted while settings are visible so live sessions
+ * and in-progress composer configuration retain their owners.
  */
 export function AppShell() {
   const settingsOpen = useSettingsStore((state) => state.open);
@@ -34,7 +33,6 @@ export function AppShell() {
   const theme = useLayoutStore((state) => state.theme);
   const { openSettings } = useSettingsActions();
   const shellMode = settingsOpen ? "settings" : "app";
-  const motionKey = useMotionKey(shellMode);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -54,9 +52,10 @@ export function AppShell() {
       <OfflineDemoBanner/>
       <NativeSettingsNotice/>
       <div className="ua-app__body">
-        <div key={motionKey} className="ua-motion-page" data-motion="page">
-          {settingsOpen ? <SettingsShell /> : <MainLayout />}
+        <div className="ua-workbench-page" hidden={settingsOpen}>
+          <MainLayout />
         </div>
+        {settingsOpen && <div className="ua-motion-page" data-motion="page"><SettingsShell /></div>}
       </div>
       <GlobalOverlays />
     </div>

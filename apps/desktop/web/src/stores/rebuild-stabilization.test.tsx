@@ -234,3 +234,21 @@ describe("rebuild stabilization regressions", () => {
   });
 
 });
+
+it("indexed source selection clears old text and ignores a late prior read",async()=>{
+ const adapter=projectAdapter();const old=deferred<never>(),fresh=deferred<never>();vi.mocked(adapter.previewFile).mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
+ mount(null,{project:{activeProjectId:"A",registeredProjects:[project("A")]}});let first!:Promise<void>,second!:Promise<void>;
+ act(()=>{first=probe.project.previewProjectFile("Source/Old.cpp");second=probe.project.previewProjectFile("Source/New.cpp");});
+ expect(probe.projectState.preview).toBeNull();expect(probe.projectState.selectedAssetPath).toBe("Source/New.cpp");
+ await act(async()=>{fresh.resolve({projectId:"A",rootRelativePath:"Source/New.cpp",status:"ready",content:"new"} as never);await second;});
+ await act(async()=>{old.resolve({projectId:"A",rootRelativePath:"Source/Old.cpp",status:"ready",content:"old"} as never);await first;});
+ expect(probe.projectState.preview?.content).toBe("new");expect(probe.projectState.selectedAssetPath).toBe("Source/New.cpp");
+ expect(adapter.previewFile).toHaveBeenLastCalledWith("A","root:A","Source/New.cpp",4096,80);
+});
+it("indexed source failed reads and project switches never expose earlier preview text",async()=>{
+ const adapter=projectAdapter();vi.mocked(adapter.previewFile).mockResolvedValueOnce({projectId:"A",rootRelativePath:"Source/A.cpp",status:"ready",content:"previous"} as never);
+ mount(null,{project:{activeProjectId:"A",registeredProjects:[project("A"),project("B")]}});await act(async()=>{await probe.project.previewProjectFile("Source/A.cpp");});expect(probe.projectState.preview?.content).toBe("previous");
+ vi.mocked(adapter.previewFile).mockRejectedValueOnce(Error("private error"));await act(async()=>{await probe.project.previewProjectFile("Source/B.cpp");});expect(probe.projectState.preview).toBeNull();expect(probe.projectState.lastError).toBe("file_preview_failed");
+ const late=deferred<never>();vi.mocked(adapter.previewFile).mockReturnValueOnce(late.promise);let pending!:Promise<void>;
+ act(()=>{pending=probe.project.previewProjectFile("Source/A.cpp");probe.project.setActiveProject("B");});await act(async()=>{late.resolve({projectId:"A",rootRelativePath:"Source/A.cpp",status:"ready",content:"late A"} as never);await pending;});expect(probe.projectState.preview).toBeNull();
+});

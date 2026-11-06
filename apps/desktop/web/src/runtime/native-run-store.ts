@@ -56,11 +56,13 @@ export interface NativeRunCommitInput {
 }
 interface RunCursor {
   revision: number;
+  capturedAt: number;
   messages: string[];
   calls: Map<string, StoredToolCall>;
   sequence: number;
   identity: string;
   poisoned: boolean;
+  pendingCompletion?: { input: NativeRunCommitInput; messages: string[]; run: TaskRun };
   tail: Promise<void>;
 }
 const forbidden = new Set([
@@ -383,7 +385,7 @@ function eventView(
       break;
     case "tool_requested":
       argumentsValue(string("arguments"));
-      data = { callId: string("callId"), name: string("name"), arguments: string("arguments") };
+      data = { callId: string("callId"), name: string("name"), arguments: string("arguments"), ...(payload.providerCallId===undefined?{}:{providerCallId:string("providerCallId")}) };
       break;
     case "tool_started":
       data = { callId: string("callId"), name: string("name") };
@@ -453,7 +455,7 @@ function actionStatus(step: RunStep): ActionStatus {
 function mapCommit(
   update: RunStoreCommit,
   cursor: RunCursor,
-): { input: NativeRunCommitInput; next: Pick<RunCursor, "messages" | "calls" | "sequence"> } {
+): { input: NativeRunCommitInput; next: Pick<RunCursor, "messages" | "calls" | "sequence" | "capturedAt"> } {
   const run = update.run;
   if (
     run.schemaVersion !== 1 ||
@@ -562,6 +564,7 @@ function mapCommit(
   });
   if ([...cursor.calls.keys()].some((id) => !stepIds.has(id))) fail("step_removed");
   const capturedAt = Math.max(
+    cursor.capturedAt,
     integer(run.updatedAt),
     integer(run.createdAt),
     ...update.events.map((event) => event.createdAt),
@@ -582,6 +585,11 @@ function mapCommit(
     conversationId: run.conversationId,
     goal: text(run.goal),
     planVersion: integer(run.planVersion),
+    ...(run.collaboration===undefined?{}:{collaboration:safeJson({...(run.collaboration.assignments?{assignments:run.collaboration.assignments}:{}),mode:run.collaboration.mode,activeAgent:run.collaboration.activeAgent,
+      ...(run.collaboration.members?{members:Object.fromEntries(Object.entries(run.collaboration.members).map(([id,member])=>[id,{role:member.role,focus:member.focus,...(member.model?{model:{providerId:member.model.providerId,modelId:member.model.modelId}}:{})}]))}:{}),
+      ...(run.collaboration.workers?{workers:run.collaboration.workers.map(worker=>({agentId:text(worker.agentId),runId:recordId(worker.runId),status:text(worker.status),modelRequests:integer(worker.modelRequests),toolCalls:integer(worker.toolCalls),...(worker.stopReason?{stopReason:text(worker.stopReason)}:{})}))}:{}),
+      calls:run.collaboration.calls.map(call=>({agentId:text(call.agentId),requestId:text(call.requestId),callId:recordId(call.callId),providerCallId:text(call.providerCallId)})),
+      reports:run.collaboration.reports.map(report=>({agentId:text(report.agentId),text:text(report.text),stepIds:report.stepIds.map(recordId)}))})}),
     status: run.status,
     limits: safeJson(run.limits),
     ...(run.parentRunId === undefined ? {} : { parentRunId: recordId(run.parentRunId) }),
@@ -650,7 +658,7 @@ function mapCommit(
         artifacts: [],
       },
     },
-    next: { messages, calls, sequence },
+    next: { messages, calls, sequence, capturedAt },
   };
 }
 
@@ -661,7 +669,8 @@ function globalInvoke(): NativeRunStoreInvoke | null {
   );
 }
 /**
- * A failed/uncertain acknowledgement poisons this run for the life of this adapter.
+ * A failed/uncertain acknowledgement blocks writes for the life of this adapter.
+ * Only exact read-only confirmation of a final commit may restore completed UI state.
  * Reloading history is a separate display operation and never reconstructs scheduling authority.
  */
 export function createNativeRunStore(
@@ -669,6 +678,23 @@ export function createNativeRunStore(
 ): RunStorePort {
   const cursors = new Map<string, RunCursor>();
   return {
+    async reconcileCompleted(runId) {
+      const current=cursors.get(runId);
+      if(!current||!invoke)return null;
+      await current.tail;
+      const pending=current.pendingCompletion;
+      if(!current.poisoned||!pending)return null;
+      try {
+        const archive=object(await invoke("snapshot_native_run_store",{input:{schemaVersion:1,projectId:pending.input.projectId,runId}}));
+        const snapshot=object(archive.snapshot),saved=object(snapshot.run),complete=object(archive.completeness);
+        const expectedState=pending.input.batch.events.find(e=>e.kind==="coordinator_state_v1")!.data;
+        // Compare JSON structurally: Rust serialization may reorder object keys.
+        const canonical=(v:unknown):string=>JSON.stringify(v,(_key,x)=>x&&typeof x==="object"&&!Array.isArray(x)?Object.fromEntries(Object.entries(x).sort(([a],[b])=>a.localeCompare(b))):x);
+        if(archive.schemaVersion!==1||saved.projectId!==pending.input.projectId||saved.id!==runId||saved.status!=="succeeded"||saved.revision!==pending.input.expectedRevision+1||complete.complete!==true||complete.loadedMessageCount!==pending.messages.length||complete.storedMessageCount!==pending.messages.length||canonical(archive.coordinatorState)!==canonical(expectedState)||!Array.isArray(archive.messages))return null;
+        if(archive.messages.length!==pending.messages.length||archive.messages.some((value,index)=>{const m=object(value);return m.id!==runId+":message:"+(index+1)||m.body!==pending.messages[index];}))return null;
+        return JSON.parse(JSON.stringify(pending.run)) as TaskRun;
+      } catch { return null; }
+    },
     commit(update) {
       const snapshot = JSON.parse(JSON.stringify(update)) as RunStoreCommit;
       const run = snapshot.run;
@@ -676,6 +702,7 @@ export function createNativeRunStore(
       if (!cursor) {
         cursor = {
           revision: 0,
+          capturedAt: 0,
           messages: [],
           calls: new Map(),
           sequence: 0,
@@ -691,6 +718,7 @@ export function createNativeRunStore(
         try {
           if (!invoke) fail("unavailable");
           const { input, next } = mapCommit(snapshot, current);
+          if(run.status==="completed")current.pendingCompletion={input,messages:next.messages,run:snapshot.run};
           const ack = object(await invoke("commit_native_run_store", { input }));
           if (
             ack.schemaVersion !== 1 ||

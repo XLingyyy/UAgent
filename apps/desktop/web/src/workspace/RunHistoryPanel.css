@@ -176,3 +176,7 @@
     gap: 6px;
   }
 }
+
+.ua-run-history__search-match { border: 2px solid var(--ua-accent, #78b4ff); margin: 12px 0; }
+.ua-run-history__search-match:focus { outline: 2px solid var(--ua-accent, #78b4ff); outline-offset: 3px; }
+.ua-run-history__search-match pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }

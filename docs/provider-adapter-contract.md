@@ -1,3 +1,5 @@
+> **Current product scope (r14):** DeepSeek and official Codex app-server only. Responses and Anthropic implementations remain archived; protocol support described here does not enable a current product entry. Windows saved DeepSeek credentials are kept in the OS credential manager, separate from transient runtime handles and snapshots. See [current desktop behavior](desktop-provider-and-conversation.md).
+
 # Provider adapter contract
 
 Provider adapters consume ProviderRuntimeRequest and return ProviderRuntimeResponse
@@ -23,9 +25,11 @@ not constitute an implementation.
 - Map text deltas to one incremental assistant response. Keep tool argument deltas
   separate and validate complete JSON before dispatch. Reasoning/diagnostic data
   must not masquerade as ordinary assistant text.
-- Preserve measured token usage. The current shared contract requires measured
-  input/output/total counts; missing usage fails closed until an explicit unknown
-  usage contract is introduced. Do not invent measured values.
+- Preserve measured token usage. ProviderRuntimeResponse and ProviderStreamChunk
+  support optional usage and usageStatus: "reported" | "unknown". If native usage
+  is absent or incomplete, omit usage and preserve unknown status. Never substitute
+  zero, local estimates, refunds or price claims for measured values. Budget policy
+  may independently refuse further work; it must not fabricate token counts.
 - Surface authentication, rate-limit, malformed and incomplete responses honestly.
   Advertised tools/models must match actual implementation capabilities.
 

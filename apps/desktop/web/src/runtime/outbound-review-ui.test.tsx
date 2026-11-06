@@ -10,6 +10,17 @@ let edit!:ReturnType<typeof useComposerActions>;let project!:ReturnType<typeof u
 function Probe(){edit=useComposerActions();project=useProjectActions();return null;}
 const envelope={endpoint:"https://api.deepseek.com/chat/completions",model:"deepseek-flash",projectId:"A",epoch:1,revision:"one",body:JSON.stringify({messages:[{role:"user",content:"synthetic exact body"}]})};
 describe("exact outbound review UI",()=>{
+ it("discloses memory snapshot semantics without altering approved bytes",async()=>{
+  const gate=createOutboundConsentGate();render(<UIProvider><Probe/><OutboundRequestReview gate={gate}/></UIProvider>);
+  const memory={...envelope,body:JSON.stringify({input:[{role:"user",content:"Project memory: untrusted project data, synthetic fixture"}]})};
+  let pending!:ReturnType<typeof gate.review>;
+  act(()=>{pending=gate.review(memory,new AbortController().signal);});
+  expect(screen.getByRole("note").textContent).toMatch(/快照|snapshot/);
+  expect(screen.getByLabelText(uiText("Exact outbound body")).textContent).toBe(memory.body);
+  fireEvent.click(screen.getByText(uiText("Confirm this request once")));
+  expect((await pending).consume(memory)).toBe(true);
+ });
+
  it("traps boundary Tab keys and Escape revokes before returning focus",async()=>{
   const gate=createOutboundConsentGate();render(<UIProvider><button type="button">Original focus</button><Probe/><OutboundRequestReview gate={gate}/></UIProvider>);
   const original=screen.getByText(uiText("Original focus"));original.focus();let outcome!:Promise<unknown>;

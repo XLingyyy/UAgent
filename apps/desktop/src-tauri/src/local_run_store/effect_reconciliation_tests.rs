@@ -196,7 +196,7 @@ fn extension_is_opt_in_reuses_database_and_preserves_run_schema() {
     assert_eq!(json(&ResourceKind::FileWrite).unwrap(), "\"file-write\"");
     let f = Fixture::new();
     let store = f.store();
-    assert_eq!(store.schema_version().unwrap(), 2);
+    assert_eq!(store.schema_version().unwrap(), super::super::SCHEMA_VERSION);
     assert!(store
         .db
         .query(
@@ -206,7 +206,7 @@ fn extension_is_opt_in_reuses_database_and_preserves_run_schema() {
         .unwrap()
         .is_empty());
     let _journal = store.open_effect_journal().unwrap();
-    assert_eq!(store.schema_version().unwrap(), 2);
+    assert_eq!(store.schema_version().unwrap(), super::super::SCHEMA_VERSION);
     assert_eq!(store.run("project-a", "run").unwrap().revision, 0);
     assert_eq!(
         store.db.query("PRAGMA journal_mode", &[]).unwrap()[0][0]

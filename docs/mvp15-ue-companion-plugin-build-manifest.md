@@ -1,3 +1,5 @@
+> Current target updated 2026-11-03. [5.8.4 compatibility and verification limits](ue584-compatibility.md). Old evidence is not re-attested by this change.
+
 # UAgentAssetTools Build Manifest Contract
 
 A valid package is built from immutable clean source with the official UE toolchain. Planned artifacts, fixture summaries, or source snapshots cannot stand in for a package manifest or installed/loaded identity.
@@ -11,7 +13,7 @@ and contain:
 - plugin id/version and independent `mvp15d.asset-tools.v1` contract version;
 - 40-lower-hex `sourceCommit`, 64-lower-hex `sourceTreeSha256`, and literal
   `dirty: false`;
-- engine `5.8.1`, engine changelist `56057345`, compatible changelist
+- engine `5.8.4`, engine changelist `58902052`, compatible changelist
   `55116800`, module BuildId `55116800`, Win64 Development configuration, and
   non-sensitive compiler/Windows SDK/build-command fingerprint;
 - `UAgentAssetTools.uplugin`, contract schema, and every packaged module's

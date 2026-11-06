@@ -12,8 +12,8 @@ export const UAGENT_COMPANION_MANIFEST_SCHEMA_VERSION =
 export const UAGENT_COMPANION_PLUGIN_ID = "UAgentAssetTools" as const;
 export const UAGENT_COMPANION_PLUGIN_VERSION = "0.1.0" as const;
 export const UAGENT_COMPANION_CONTRACT_VERSION = "mvp15d.asset-tools.v1" as const;
-export const UAGENT_COMPANION_ENGINE_VERSION = "5.8.1" as const;
-export const UAGENT_COMPANION_ENGINE_CHANGELIST = 56057345 as const;
+export const UAGENT_COMPANION_ENGINE_VERSION = "5.8.4" as const;
+export const UAGENT_COMPANION_ENGINE_CHANGELIST = 58902052 as const;
 export const UAGENT_COMPANION_COMPATIBLE_CHANGELIST = 55116800 as const;
 export const UAGENT_COMPANION_MODULE_BUILD_ID = "55116800" as const;
 

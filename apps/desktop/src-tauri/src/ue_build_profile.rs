@@ -420,7 +420,7 @@ mod tests {
         for (name, body) in [
             (
                 "Engine/Build/Build.version",
-                "{\"MajorVersion\":5,\"MinorVersion\":8,\"PatchVersion\":2}",
+                "{\"MajorVersion\":5,\"MinorVersion\":8,\"PatchVersion\":4}",
             ),
             (
                 "Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool.exe",
@@ -475,7 +475,7 @@ mod tests {
     fn prepares_bound_argv_without_execution() {
         let (_fixture, profile, project) = fixture();
         let prepared = prepare_ue_build(&profile, &project).unwrap();
-        assert_eq!(prepared.preview.engine_version, "5.8.2");
+        assert_eq!(prepared.preview.engine_version, "5.8.4");
         assert_eq!(
             prepared.arguments[0..3],
             ["GameEditor", "Win64", "Development"]

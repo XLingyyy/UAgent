@@ -1,3 +1,4 @@
+import type { CollaborationMembers } from "./task.js";
 import type { ProviderRuntimeMessage } from "./provider-runtime.js";
 
 /** Persisted values are descriptions, never reusable credential or approval tokens. */
@@ -41,6 +42,8 @@ export interface TaskRunScope {
   modelId: string;
   endpoint: string;
   mode: "read_only";
+  collaboration?: "independent_review" | "dynamic_delegation";
+  collaborationMembers?: CollaborationMembers;
   /** Canonical project-relative directory prefixes; "" explicitly means the whole project. */
   readPrefixes: string[];
   sharePrefixes: string[];
@@ -98,6 +101,7 @@ export interface TaskRun {
   conversationId: string;
   goal: string;
   planVersion: number;
+  collaboration?: { members?:CollaborationMembers; workers?:{agentId:string;runId:string;status:RunStatus;modelRequests:number;toolCalls:number;stopReason?:string}[]; mode:"independent_review"|"dynamic_delegation"; assignments?:Record<string,string>; activeAgent:string; reports:{agentId:string;text:string;stepIds:string[]}[]; calls:{agentId:string;requestId:string;callId:string;providerCallId:string}[] };
   parentRunId?: string;
   status: RunStatus;
   limits: TaskRunLimits;
@@ -176,5 +180,7 @@ export interface RunContextPlan {
 }
 
 export interface RunStorePort {
+  /** Read-only confirmation of this live session's uncertain final commit; grants no scheduling authority. */
+  reconcileCompleted?(runId: string): Promise<TaskRun | null>;
   commit(update: RunStoreCommit): Promise<void>;
 }

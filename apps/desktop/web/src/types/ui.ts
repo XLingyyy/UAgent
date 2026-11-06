@@ -230,6 +230,7 @@ export interface ThreadStoreActions {
 export interface ComposerStoreActions {
   setComposerTaskMode:(mode:"discussion"|"investigation")=>void;
   setSavedRun:(saved:import("@uagent/shared").SavedRunContinuation|undefined)=>void;
+  prepareSessionDraft?:(request:import("../runtime/native-session-catalog").NativeSessionContinuation,anchorRunId:string,isCurrent:()=>boolean)=>Promise<void>;
   pauseTaskRun?:RuntimeStoreActions["pauseTaskRun"];
   resumeTaskRun?:RuntimeStoreActions["resumeTaskRun"];
   setComposerInput: SetComposerInput;

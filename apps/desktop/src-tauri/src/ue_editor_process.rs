@@ -16,7 +16,7 @@ use std::net::{SocketAddrV4, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc,Mutex};
 use std::time::{Duration, Instant};
 
 const DEFAULT_OBSERVATION_TTL_MILLIS: u64 = 2 * 60 * 1000;
@@ -973,6 +973,15 @@ fn create_managed_phase_listener_owner(
     let context =
         crate::mvp15d_runtime_bridge::managed_process_owner_context(&input.task_id, &input.phase)
             .map_err(str::to_string)?;
+    create_managed_listener_from_context(input,context,None,None,None)
+}
+fn create_managed_listener_from_context(
+    input:ManagedEditorProcessCreateInput,
+    context:crate::mvp15d_runtime_bridge::ManagedProcessOwnerContext,
+    pickup_approval:Option<PathBuf>,
+    semantic_read_root:Option<String>,
+    live:Option<Arc<dyn Fn()->bool+Send+Sync>>,
+)->Result<ManagedEditorProcessCreateResult,String>{
     let validation = validate_config_details(EditorProcessConfigInput {
         project_id: input.project_id.clone(),
         root_ref: input.root_ref.clone(),
@@ -999,6 +1008,7 @@ fn create_managed_phase_listener_owner(
     } else {
         resolve_managed_ue_executable()?
     };
+    if pickup_approval.is_some()||semantic_read_root.is_some(){validate_pickup_engine(&ue_executable)?;}
     let evidence_root = std::fs::canonicalize(&context.evidence_root)
         .map_err(|_| "managed_process_evidence_root_invalid".to_string())?;
     let ddc_root = evidence_root.join("managed-ue-ddc").join(&input.phase);
@@ -1035,7 +1045,12 @@ fn create_managed_phase_listener_owner(
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
+    command.env_remove("UAGENT_SEMANTIC_READ_ROOT");
+    if let Some(scope)=semantic_read_root {command.env("UAGENT_SEMANTIC_READ_ROOT",scope);}
+    command.env_remove("UAGENT_PICKUP_APPROVED_STARTUP_FILE");
+    if let Some(path)=pickup_approval {command.env("UAGENT_PICKUP_APPROVED_STARTUP_FILE",path);}
     let request = serde_json::to_value(&input).map_err(|error| error.to_string())?;
+    if live.as_ref().is_some_and(|check|!check()){return Err("pickup_start_revoked".into());}
     let mut guardian = match command.spawn() {
         Ok(guardian) => guardian,
         Err(_) => {
@@ -1070,7 +1085,18 @@ fn create_managed_phase_listener_owner(
         let result = BufReader::new(stdout).read_line(&mut line).map(|_| line);
         let _ = sender.send(result);
     });
-    let ready = match receiver.recv_timeout(Duration::from_secs(120)) {
+    let deadline=Instant::now()+Duration::from_secs(120);
+    let received=loop {
+        if live.as_ref().is_some_and(|check|!check()) {
+            cleanup_phase_owner_create_failure(&mut guardian,&evidence_root,&ddc_root,&input.phase);
+            return Err("pickup_start_revoked".into());
+        }
+        match receiver.recv_timeout(Duration::from_millis(250)) {
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) if Instant::now()<deadline=>continue,
+            result=>break result,
+        }
+    };
+    let ready = match received {
         Ok(Ok(ready)) => ready,
         Ok(Err(_)) => {
             cleanup_phase_owner_create_failure(
@@ -1303,6 +1329,8 @@ fn cleanup_task_owned_ddc(
     ddc_root: &Path,
     phase: &str,
 ) -> Result<(), String> {
+    // Template artifacts remain available for inspection; this route never deletes them.
+    if matches!(phase,"pickup-template"|"scene-batch"|"semantic-read") { return Ok(()); }
     for attempt in 0..9 {
         match cleanup_task_owned_ddc_once(evidence_root, ddc_root, phase) {
             Err(reason) if reason == "managed_process_ddc_sharing_violation" && attempt < 8 => {
@@ -1452,7 +1480,7 @@ fn run_managed_editor_guardian() -> Result<(), String> {
     );
     if marker.is_empty()
         || task_id.is_empty()
-        || !matches!(phase.as_str(), "product-capture" | "ui-lifecycle")
+        || !matches!(phase.as_str(), "product-capture" | "ui-lifecycle" | "pickup-template" | "scene-batch" | "semantic-read")
         || !uproject.is_file()
         || !ddc.is_dir()
         || !evidence_root.is_dir()
@@ -1498,6 +1526,17 @@ fn run_managed_editor_guardian() -> Result<(), String> {
         }
     } else {
         let mut command = Command::new(&executable);
+        if phase=="semantic-read" {
+            validate_pickup_engine(&executable)?;
+            let scope=std::env::var("UAGENT_SEMANTIC_READ_ROOT").map_err(|_|"semantic_start_scope_missing")?;
+            command.args(crate::ue_semantic_launch::arguments(&uproject,&scope)?);
+        } else if phase=="pickup-template" {
+            let approval=std::env::var_os("UAGENT_PICKUP_APPROVED_STARTUP_FILE").map(PathBuf::from).ok_or("pickup_startup_file_required")?;
+            command.args(crate::ue_pickup_launch::approved_pickup_arguments(&uproject,&approval)?);
+        } else if phase=="scene-batch" {
+            let approval=std::env::var_os("UAGENT_PICKUP_APPROVED_STARTUP_FILE").map(PathBuf::from).ok_or("scene_startup_file_required")?;
+            command.args(crate::ue_scene_launch::approved_scene_arguments(&uproject,&approval)?);
+        }
         command
             .args(managed_editor_headless_arguments(
                 &uproject, &ddc, port, &marker,
@@ -1513,13 +1552,17 @@ fn run_managed_editor_guardian() -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
+        command.creation_flags(0x08000000 | if matches!(phase.as_str(),"pickup-template"|"scene-batch"|"semantic-read") {0x00000004} else {0});
     }
+    #[cfg(windows)]
+    let pickup_job=if matches!(phase.as_str(),"pickup-template"|"scene-batch"|"semantic-read") {Some(crate::ue_build_process::windows_job::OwnedJob::new().map_err(|_|"pickup_job_unavailable")?)}else{None};
     let mut editor = GuardianEditorChild(
         command
             .spawn()
             .map_err(|_| "managed_guardian_spawn_failed".to_string())?,
     );
+    #[cfg(windows)]
+    if let Some(job)=&pickup_job {job.assign(&editor.0).map_err(|_|"pickup_job_assignment_failed")?;job.resume(&editor.0).map_err(|_|"pickup_job_resume_failed")?;}
     let pid = editor.id();
     let creation = observe_process_start_time(pid)
         .ok_or_else(|| "managed_guardian_process_identity_unavailable".to_string())?;
@@ -1566,6 +1609,8 @@ fn run_managed_editor_guardian() -> Result<(), String> {
         let mut lease = Vec::new();
         let _ = std::io::stdin().read_to_end(&mut lease);
     }
+    #[cfg(windows)]
+    if let Some(job)=&pickup_job {job.terminate().map_err(|_|"pickup_job_stop_failed")?;}
     let _ = editor.kill();
     let _ = editor.wait();
     let close_deadline = Instant::now() + Duration::from_secs(30);
@@ -4768,4 +4813,95 @@ mod tests {
         std::env::remove_var("UAGENT_ENABLE_UE_EDITOR_LAUNCH");
         let _ = std::fs::remove_dir_all(root);
     }
+}
+
+/// A read-only V2 handshake may reuse a native-owned listener, never its v1 mutation grant.
+/// Endpoint and PID are derived internally; revalidate before and after each exchange.
+pub(crate) fn resolve_pickup_discovery_listener(session: &str, project: &str, root: &str) -> Result<(AssetMutationObservationBinding, u16), String> {
+    let binding = validate_asset_mutation_observation(session, project, root).map_err(str::to_string)?;
+    if binding.process_source != "managed" { return Err("pickup_managed_editor_required".into()); }
+    let records = managed_child_registry().lock().map_err(|_| "pickup_owner_unavailable")?;
+    let owned = records.get(&binding.process_id).ok_or("pickup_owner_unavailable")?;
+    let port = owned.listener_port.ok_or("pickup_listener_unavailable")?;
+    if Some(owned.pid) != binding.pid || Some(owned.process_start_time) != binding.process_start_time
+        || owned.purpose != PHASE_LISTENER_OWNER
+        || observe_process_start_time(owned.guardian_pid) != Some(owned.guardian_process_start_time)
+        || !listener_owned_by_process(port, owned.pid) {
+        return Err("pickup_listener_owner_changed".into());
+    }
+    Ok((binding, port))
+}
+
+/// Native-only template startup. Its owner is independent of the MVP15 evidence phase ledger.
+pub(crate) fn start_pickup_owned_editor(project_id:&str,launch:&crate::ue_pickup_launch::PreparedPickupLaunch,live:Arc<dyn Fn()->bool+Send+Sync>)->Result<ManagedEditorProcessCreateResult,String>{
+ if !bridge_enabled()||!launch_enabled(){return Err("pickup_editor_launch_disabled".into());}
+ launch.root.check_current().map_err(|e|e.to_string())?;
+ let mut random=[0u8;16];getrandom::getrandom(&mut random).map_err(|_|"pickup_owner_random_failed")?;
+ let nonce:String=random.iter().map(|b|format!("{b:02x}")).collect();
+ let listener=TcpListener::bind((std::net::Ipv4Addr::LOCALHOST,0)).map_err(|_|"pickup_port_unavailable")?;
+ let port=listener.local_addr().map_err(|_|"pickup_port_unavailable")?.port();drop(listener);
+ let task_id=format!("pickup-{}",launch.plan.operation_id);let phase="pickup-template".to_string();
+ let context=crate::mvp15d_runtime_bridge::ManagedProcessOwnerContext{task_id:task_id.clone(),phase:phase.clone(),session:nonce.clone(),generation:1,runtime_process_identity_sha256:sha256_binding(&[&std::process::id().to_string(),&nonce]),nonce_sha256:sha256_binding(&[&nonce]),marker:format!("pickup-{nonce}"),port,evidence_root:launch.root.path_hint().join("Saved/UAgentPickupT13")};
+ let input=ManagedEditorProcessCreateInput{schema_version:MANAGED_CREATE_SCHEMA.into(),purpose:PHASE_LISTENER_OWNER.into(),task_id,phase,project_id:project_id.into(),root_ref:launch.root.path_hint().to_string_lossy().into_owned(),uproject_relative_path:"UAgentBuildLab.uproject".into()};
+ create_managed_listener_from_context(input,context,Some(launch.root.path_hint().join("Saved/UAgentPickupT13/host-approved-plan.json")),None,Some(live))
+}
+pub(crate) fn stop_pickup_owned_editor(id:&str){
+ let record=if let Ok(mut registry)=managed_child_registry().lock(){
+  if registry.get(id).is_some_and(|r|r.owner_phase=="pickup-template"){registry.remove(id)}else{None}
+ }else{None};
+ if let Some(mut record)=record{cleanup_guardian_after_create_failure(&mut record.child);
+  if let Ok(mut processes)=process_registry().lock(){processes.remove(id);}
+  if let Ok(mut sessions)=observation_registry().lock(){for session in sessions.values_mut().filter(|s|s.process_id==id){session.status="stopped".into();}}
+ }
+}
+
+fn validate_pickup_engine(executable:&Path)->Result<(),String>{
+ let engine=executable.parent().and_then(Path::parent).and_then(Path::parent).ok_or("pickup_engine_invalid")?;
+ let version:serde_json::Value=serde_json::from_slice(&std::fs::read(engine.join("Build/Build.version")).map_err(|_|"pickup_engine_identity_unavailable")?).map_err(|_|"pickup_engine_identity_unavailable")?;
+ if version["MajorVersion"]!=5||version["MinorVersion"]!=8||version["PatchVersion"]!=4||version["Changelist"]!=58902052u64||version["CompatibleChangelist"]!=55116800u64{return Err("pickup_engine_identity_mismatch".into());}
+ Ok(())
+}
+
+pub(crate) fn start_scene_owned_editor(project_id:&str,launch:&crate::ue_scene_launch::PreparedSceneLaunch,live:Arc<dyn Fn()->bool+Send+Sync>)->Result<ManagedEditorProcessCreateResult,String>{
+ if !bridge_enabled()||!launch_enabled(){return Err("scene_editor_launch_disabled".into());}
+ launch.root.check_current().map_err(|e|e.to_string())?;if !launch.project.current(){return Err("scene_project_identity_changed".into());}
+ let mut random=[0u8;16];getrandom::getrandom(&mut random).map_err(|_|"scene_owner_random_failed")?;
+ let nonce:String=random.iter().map(|b|format!("{b:02x}")).collect();
+ let listener=TcpListener::bind((std::net::Ipv4Addr::LOCALHOST,0)).map_err(|_|"scene_port_unavailable")?;
+ let port=listener.local_addr().map_err(|_|"scene_port_unavailable")?.port();drop(listener);
+ let task_id=format!("scene-{}",launch.plan.operation_id);let phase="scene-batch".to_string();
+ let context=crate::mvp15d_runtime_bridge::ManagedProcessOwnerContext{task_id:task_id.clone(),phase:phase.clone(),session:nonce.clone(),generation:1,runtime_process_identity_sha256:sha256_binding(&[&std::process::id().to_string(),&nonce]),nonce_sha256:sha256_binding(&[&nonce]),marker:format!("scene-{nonce}"),port,evidence_root:launch.root.path_hint().join("Saved/UAgentSceneT14")};
+ let input=ManagedEditorProcessCreateInput{schema_version:MANAGED_CREATE_SCHEMA.into(),purpose:PHASE_LISTENER_OWNER.into(),task_id,phase,project_id:project_id.into(),root_ref:launch.root.path_hint().to_string_lossy().into_owned(),uproject_relative_path:launch.project.project_file.clone()};
+ create_managed_listener_from_context(input,context,Some(launch.root.path_hint().join("Saved/UAgentSceneT14/host-approved-plans.json")),None,Some(live))
+}
+
+pub(crate) fn stop_scene_owned_editor(id:&str){
+ let record=if let Ok(mut registry)=managed_child_registry().lock(){
+  if registry.get(id).is_some_and(|r|r.owner_phase=="scene-batch"){registry.remove(id)}else{None}
+ }else{None};
+ if let Some(mut record)=record{cleanup_guardian_after_create_failure(&mut record.child);
+  if let Ok(mut processes)=process_registry().lock(){processes.remove(id);}
+  if let Ok(mut sessions)=observation_registry().lock(){for session in sessions.values_mut().filter(|s|s.process_id==id){session.status="stopped".into();}}
+ }
+}
+
+/// Separate read-only owner phase; no Lab startup plan, template preparation or write flags.
+pub(crate) fn start_semantic_owned_editor(project_id:&str,plan:&crate::ue_semantic_launch::Prepared,evidence_root:PathBuf,live:Arc<dyn Fn()->bool+Send+Sync>)->Result<ManagedEditorProcessCreateResult,String>{
+ if !bridge_enabled()||!launch_enabled(){return Err("semantic_editor_launch_disabled".into());}
+ if !plan.current()||!live(){return Err("semantic_start_revoked".into());}
+ let mut random=[0u8;16];getrandom::getrandom(&mut random).map_err(|_|"semantic_owner_random_failed")?;
+ let nonce:String=random.iter().map(|b|format!("{b:02x}")).collect();
+ let listener=TcpListener::bind((std::net::Ipv4Addr::LOCALHOST,0)).map_err(|_|"semantic_port_unavailable")?;
+ let port=listener.local_addr().map_err(|_|"semantic_port_unavailable")?.port();drop(listener);
+ let task_id=format!("semantic-{nonce}");let phase="semantic-read".to_string();
+ let context=crate::mvp15d_runtime_bridge::ManagedProcessOwnerContext{task_id:task_id.clone(),phase:phase.clone(),session:nonce.clone(),generation:1,runtime_process_identity_sha256:sha256_binding(&[&std::process::id().to_string(),&nonce]),nonce_sha256:sha256_binding(&[&nonce]),marker:format!("semantic-{nonce}"),port,evidence_root};
+ let input=ManagedEditorProcessCreateInput{schema_version:MANAGED_CREATE_SCHEMA.into(),purpose:PHASE_LISTENER_OWNER.into(),task_id,phase,project_id:project_id.into(),root_ref:plan.root.path_hint().to_string_lossy().into_owned(),uproject_relative_path:plan.project_file.clone()};
+ create_managed_listener_from_context(input,context,None,Some(plan.read_root.clone()),Some(live))
+}
+pub(crate) fn stop_semantic_owned_editor(id:&str){
+ let record=if let Ok(mut registry)=managed_child_registry().lock(){if registry.get(id).is_some_and(|r|r.owner_phase=="semantic-read"){registry.remove(id)}else{None}}else{None};
+ if let Some(mut record)=record{cleanup_guardian_after_create_failure(&mut record.child);
+  if let Ok(mut processes)=process_registry().lock(){processes.remove(id);}
+  if let Ok(mut sessions)=observation_registry().lock(){for session in sessions.values_mut().filter(|s|s.process_id==id){session.status="stopped".into();}}
+ }
 }

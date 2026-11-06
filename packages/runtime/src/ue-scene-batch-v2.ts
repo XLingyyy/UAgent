@@ -1,5 +1,5 @@
 /** T14 current-run scene policy. Hashes and model text never confer native write authority. */
-export const UE_SCENE_CONTRACT = "2.2.0-scene-batch-current-run";
+export const UE_SCENE_CONTRACT = "2.4.0-scene-batch-current-run";
 export const UE_SCENE_ROOT = "/Game/UAgentBuildLab/Scene_T14";
 export const UE_SCENE_MATERIAL = "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial";
 export const UE_SCENE_MESHES = Object.freeze(
@@ -181,7 +181,7 @@ function transform(value: unknown): SceneTransform {
   }
   return structuredClone(t) as unknown as SceneTransform;
 }
-/** Closed plan: exactly 20 fixed static objects in one new direct-child ordinary map. */
+/** Closed plan: 1–20 explicitly selected static objects in one new direct-child ordinary map. */
 export function parseSceneBatchPlan(value: unknown): SceneBatchPlan {
   const p = record(value);
   exact(p, PLAN_FIELDS);
@@ -192,7 +192,7 @@ export function parseSceneBatchPlan(value: unknown): SceneBatchPlan {
     !/^L_[A-Za-z0-9_]{0,78}$/.test(p.targetMap.slice(UE_SCENE_ROOT.length + 1)) ||
     p.expectedDiskState !== "absent" ||
     !Array.isArray(p.items) ||
-    p.items.length !== 20
+    (p.items.length < 1 || p.items.length > 20)
   )
     fail("invalid_fixed_plan");
   const ids = new Set<string>(),
@@ -255,7 +255,7 @@ export function scenePlanSchema(): RecordValue {
     expectedDiskState: stringSchema({ const: "absent" }),
     items: {
       type: "array",
-      minItems: 20,
+      minItems: 1,
       maxItems: 20,
       items: closedSchema({
         itemId: stringSchema({ pattern: WORD.source }),
@@ -302,7 +302,7 @@ export function sceneResultSchema(): RecordValue {
     cancelIsRollback: { type: "boolean", const: false },
     items: {
       type: "array",
-      minItems: 20,
+      minItems: 1,
       maxItems: 20,
       items: closedSchema(
         {
@@ -506,7 +506,7 @@ export function parseSceneResult(
     (data.diskExists ? !HASH.test(data.diskHash) : data.diskHash !== "") ||
     (Object.hasOwn(data, "queryToken") && !guid(data.queryToken)) ||
     !Array.isArray(data.items) ||
-    data.items.length !== 20
+    data.items.length !== session.plan.items.length
   )
     fail("invalid_result_data");
   const actorGuids = new Set<string>(),
@@ -588,7 +588,7 @@ export function sceneRemainingItemIds(data: SceneBatchData): string[] {
     data.conflict ||
     data.saved ||
     data.diskExists ||
-    data.items.length !== 20 ||
+    (data.items.length < 1 || data.items.length > 20) ||
     data.items.some((item) => item.status !== "applied" && item.status !== "not_started")
   )
     fail("query_not_resumable");
@@ -627,7 +627,7 @@ export function sceneCapabilitiesSchema(): RecordValue {
     runId: stringSchema({ pattern: GUID.source }),
     available: { type: "boolean" },
     productionSupported: { type: "boolean", const: false },
-    scopeMode: stringSchema({ const: "isolated_lab_current_run_only" }),
+    scopeMode: stringSchema({ const: "approved_project_new_map_current_run" }),
     writeRoot: stringSchema({ const: UE_SCENE_ROOT }),
     approvedPlans: { type: "array", minItems: 0, maxItems: 2, items: scenePlanSchema() },
     tools: {
@@ -683,18 +683,18 @@ export function negotiateSceneBatchV2(
     m.runId !== host.runId ||
     m.available !== true ||
     m.productionSupported !== false ||
-    m.scopeMode !== "isolated_lab_current_run_only" ||
+    m.scopeMode !== "approved_project_new_map_current_run" ||
     m.writeRoot !== UE_SCENE_ROOT ||
     !Array.isArray(m.approvedPlans) ||
-    m.approvedPlans.length !== 2 ||
+    (m.approvedPlans.length < 1 || m.approvedPlans.length > 2) ||
     !Array.isArray(m.tools) ||
     m.tools.length !== 6
   )
     fail("manifest_scope_or_contract_mismatch");
   const plans = m.approvedPlans.map(parseSceneBatchPlan);
   if (
-    new Set(plans.map((p) => p.targetMap.toLowerCase())).size !== 2 ||
-    new Set(plans.map((p) => p.operationId)).size !== 2 ||
+    new Set(plans.map((p) => p.targetMap.toLowerCase())).size !== plans.length ||
+    new Set(plans.map((p) => p.operationId)).size !== plans.length ||
     plans.filter((p) => stable(p) === stable(approvedPlan)).length !== 1
   )
     fail("manifest_approved_plan_mismatch");

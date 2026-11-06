@@ -2,7 +2,7 @@
  * A preview ID, fixture proposer, diagnostic or TS object never grants write/build permission. */
 import { createSha256Hash, createTextBackedOperation } from "./mvp12-change-set.js";
 import {
-  parseUEBuildExecutionDiagnostics,
+  assessUEBuildRepair,
   type UEBuildDiagnosticSummary,
 } from "./ue-build-diagnostics.js";
 import {
@@ -689,8 +689,7 @@ export class BuildRepairCoordinator {
       fail("inconsistent_apply_receipt");
     return frozen({ ...copy(r), effects }) as unknown as BuildRepairApplyResult;
   }
-  private newDiagnostic(build: UEBuildExecutionResult): BuildRepairDiagnosticRef {
-    const summary = parseUEBuildExecutionDiagnostics(build, this.trustedRoots);
+  private newDiagnostic(build: UEBuildExecutionResult, summary: UEBuildDiagnosticSummary): BuildRepairDiagnosticRef {
     this.current.diagnostics = frozen(summary);
     return frozen({
       buildOwner: build.owner,
@@ -741,14 +740,10 @@ export class BuildRepairCoordinator {
         }
         this.current.state = "diagnosing";
         this.current.reason = "parsing_owned_build_diagnostics";
-        const diagnostic = this.newDiagnostic(build);
+        const assessment = assessUEBuildRepair(build, this.trustedRoots);
+        const diagnostic = this.newDiagnostic(build, assessment.summary);
         if (
-          build.status !== "failed" ||
-          build.exitCode === null ||
-          build.exitCode === 0 ||
-          !build.outputComplete ||
-          this.current.diagnostics!.truncated ||
-          this.current.diagnostics!.errorCount === 0
+          !assessment.eligible
         ) {
           this.finish(
             build.status === "cancelled" ? "cancelled" : "failed",
@@ -1007,4 +1002,40 @@ export function createFixtureBuildRepairProposer(
     if (next >= saved.length) fail("fixture_proposals_exhausted");
     return copy(saved[next++]);
   };
+}
+
+/** Local response import. Reuses the coordinator's closed proposal contract and source scope.
+ * No provider call, file access, native approval or execution is performed. */
+export function parseSingleFileBuildRepairProposal(text:string, file:{path:string;content:string}):{path:string;after:string} {
+  if(text.length>BUILD_REPAIR_MAX_TOTAL_BYTES*2)fail("proposal_response_limit");
+  const expected=parseBuildRepairPath(file.path);
+  const r=obj(JSON.parse(text));closed(r,["files"]);
+  if(!Array.isArray(r.files)||r.files.length!==1)fail("proposal_single_file_required");
+  const item=obj(r.files[0]);closed(item,["path","after"]);
+  const path=parseBuildRepairPath(item.path),after=sourceText(item.after),before=sourceText(file.content);
+  if(path!==expected)fail("proposal_outside_read_scope_or_duplicate");
+  if(after.content===before.content)fail("proposal_has_no_changes");
+  if(before.bytes+after.bytes>BUILD_REPAIR_MAX_TOTAL_BYTES)fail("preview_total_limit");
+  return {path,after:after.content};
+}
+
+/** Local multi-file import, bound only to the original explicitly read snapshot.
+ * The result is editable proposal data, never a write/approval capability. */
+export function parseMultiFileBuildRepairProposal(text:string, files:readonly {path:string;content:string}[]):{path:string;after:string}[] {
+  if(text.length>BUILD_REPAIR_MAX_TOTAL_BYTES*2)fail("proposal_response_limit");
+  if(!files.length||files.length>BUILD_REPAIR_MAX_FILES)fail("proposal_file_limit");
+  const scope=new Map<string,{path:string;content:string}>();
+  for(const file of files){const path=parseBuildRepairPath(file.path);sourceText(file.content);if(scope.has(path.toLowerCase()))fail("proposal_outside_read_scope_or_duplicate");scope.set(path.toLowerCase(),file);}
+  const r=obj(JSON.parse(text));closed(r,["files"]);
+  if(!Array.isArray(r.files)||!r.files.length||r.files.length>BUILD_REPAIR_MAX_FILES)fail("proposal_file_limit");
+  const seen=new Set<string>(),result:{path:string;after:string}[]=[];let total=0;
+  for(const value of r.files){
+    const item=obj(value);closed(item,["path","after"]);
+    const path=parseBuildRepairPath(item.path),before=scope.get(path.toLowerCase()),after=sourceText(item.after);
+    if(!before||path!==before.path||seen.has(path.toLowerCase()))fail("proposal_outside_read_scope_or_duplicate");seen.add(path.toLowerCase());
+    total+=sourceText(before.content).bytes+after.bytes;if(total>BUILD_REPAIR_MAX_TOTAL_BYTES)fail("preview_total_limit");
+    if(before.content!==after.content)result.push({path,after:after.content});
+  }
+  if(!result.length)fail("proposal_has_no_changes");
+  return result;
 }

@@ -2123,7 +2123,7 @@ test("desktop icon is tracked-quality and rejects malformed or transparent paylo
   }
 });
 
-test("UE 5.8.1 response framing accepts one terminal result and rejects duplicate or truncated frames", () => {
+test("UE 5.8.4 response framing accepts one terminal result and rejects duplicate or truncated frames", () => {
   const json = parseTerminalResponse(
     "application/json",
     JSON.stringify({ jsonrpc: "2.0", id: 7, result: { ok: true } }),
@@ -2156,10 +2156,10 @@ test("UE 5.8.1 response framing accepts one terminal result and rejects duplicat
   assert.throws(() => parseTerminalResponse("application/json", '{"jsonrpc":"2.0","id":10', 10));
 });
 
-test("UE 5.8.1 BuildPlugin output derives the MSVC version from its toolchain path", () => {
+test("UE 5.8.4 BuildPlugin output derives the MSVC version from its toolchain path", () => {
   const engineIdentity = {
-    engineVersion: "5.8.1",
-    engineChangelist: 56_057_345,
+    engineVersion: "5.8.4",
+    engineChangelist: 58_902_052,
     compatibleChangelist: 55_116_800,
     moduleBuildId: "55116800",
   };
@@ -2679,7 +2679,7 @@ function writeBuilder(path, failExit = 0, { overflowChannel = null } = {}) {
       'copyFileSync(resolve(plugin,"..","Resources","mvp15d-native-binding-v2.json"),resolve(output,"Resources","mvp15d-native-binding-v2.json"));',
       'writeFileSync(resolve(output,"Binaries","Win64","UnrealEditor-UAgentAssetTools.dll"),Buffer.from("fixture-module-v1"));',
       'writeFileSync(resolve(output,"Binaries","Win64","UnrealEditor.modules"),JSON.stringify({BuildId:"55116800",Modules:{UAgentAssetTools:"UnrealEditor-UAgentAssetTools.dll"}},null,2)+"\\n");',
-      'console.log(\'UAGENT_TOOLCHAIN_JSON:{"compatibleChangelist":55116800,"compilerName":"MSVC","compilerVersion":"14.44.35207","engineChangelist":56057345,"engineVersion":"5.8.1","moduleBuildId":"55116800","sdkName":"Windows SDK","sdkVersion":"10.0.26100.0"}\');',
+      'console.log(\'UAGENT_TOOLCHAIN_JSON:{"compatibleChangelist":55116800,"compilerName":"MSVC","compilerVersion":"14.44.35207","engineChangelist":58902052,"engineVersion":"5.8.4","moduleBuildId":"55116800","sdkName":"Windows SDK","sdkVersion":"10.0.26100.0"}\');',
       ...(overflowChannel
         ? [
             `console.${overflowChannel === "stdout" ? "log" : "error"}(${JSON.stringify(
@@ -2810,8 +2810,8 @@ function createCandidate() {
         {
           MajorVersion: 5,
           MinorVersion: 8,
-          PatchVersion: 1,
-          Changelist: 56057345,
+          PatchVersion: 4,
+          Changelist: 58902052,
           CompatibleChangelist: 55116800,
           IsLicenseeVersion: 0,
           IsPromotedBuild: 1,
@@ -3554,8 +3554,8 @@ test(
       );
       assert.equal(ledger.launcher.basename, "RunUAT.bat");
       assert.equal(ledger.orderedArguments.at(-1), "-Rocket");
-      assert.equal(ledger.toolchainFacts.engineVersion, "5.8.1");
-      assert.equal(ledger.toolchainFacts.engineChangelist, 56057345);
+      assert.equal(ledger.toolchainFacts.engineVersion, "5.8.4");
+      assert.equal(ledger.toolchainFacts.engineChangelist, 58902052);
       assert.equal(ledger.toolchainFacts.compatibleChangelist, 55116800);
       assert.equal(ledger.toolchainFacts.moduleBuildId, "55116800");
     } finally {
@@ -3975,7 +3975,7 @@ test(
       assert.notEqual(created.manifestSelfSha256, created.manifestFileSha256);
       assert.equal(verifyManifest(args).status, "manifest_verified");
 
-      packagedDescriptor.EngineVersion = "5.8.1";
+      packagedDescriptor.EngineVersion = "5.8.4";
       writeFileSync(packagedDescriptorPath, `${JSON.stringify(packagedDescriptor, null, 2)}\n`);
       expectCode(() => verifyManifest(args), "PACKAGE_DESCRIPTOR_TRANSFORM_INVALID");
       writeFileSync(packagedDescriptorPath, packagedDescriptorText);

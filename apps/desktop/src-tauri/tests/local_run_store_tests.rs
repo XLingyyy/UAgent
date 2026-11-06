@@ -940,3 +940,25 @@ fn local_run_store_message_pagination_session_archive_branch_and_literal_search(
         "invalid"
     );
 }
+
+#[test]
+fn artifact_display_scopes_reference_and_refuses_truncation() {
+    // Deliberately retained evidence fixture: no Fixture/Drop cleanup.
+    let root=std::env::temp_dir().join(format!("artifact-display-{}-{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let store=RunStore::open(root).unwrap();setup(&store,"A");setup(&store,"B");
+    let data=br#"{"native":"synthetic saved result"}"#;let blob=store.put_artifact("A",data).unwrap();let mut b=batch(RunStatus::Succeeded);
+    b.artifacts.push(ArtifactRef{id:"native-build-result".into(),sha256:blob.sha256,media_type:"application/json".into(),label:"test".into()});store.commit_checkpoint("A","run",0,&b).unwrap();
+    assert_eq!(store.read_artifact_bounded("A","run","native-build-result",data.len() as u64).unwrap(),data);
+    assert_eq!(store.read_artifact_bounded("A","run","native-build-result",data.len() as u64-1).unwrap_err().kind,"artifactDisplayLimit");
+    assert!(store.read_artifact_bounded("B","run","native-build-result",1000).is_err());
+    assert!(store.read_artifact_bounded("A","other-run","native-build-result",1000).is_err());
+}
+#[test]
+fn artifact_display_rejects_changed_bytes_and_preserves_legacy_read() {
+    let root=std::env::temp_dir().join(format!("artifact-integrity-{}-{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let store=RunStore::open(root).unwrap();setup(&store,"A");let blob=store.put_artifact("A",b"1234").unwrap();let mut b=batch(RunStatus::Succeeded);
+    b.artifacts.push(ArtifactRef{id:"nativeRepairBefore".into(),sha256:blob.sha256.clone(),media_type:"application/json".into(),label:"test".into()});store.commit_checkpoint("A","run",0,&b).unwrap();
+    assert_eq!(store.read_artifact("A","run","nativeRepairBefore").unwrap(),b"1234");
+    fs::write(store.blob_path("A",&blob.sha256).unwrap(),b"5678").unwrap();
+    assert_eq!(store.read_artifact_bounded("A","run","nativeRepairBefore",100).unwrap_err().kind,"corruptArtifact");
+}

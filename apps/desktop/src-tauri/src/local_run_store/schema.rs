@@ -1,5 +1,5 @@
 use super::{sqlite::Db, Result, StoreError};
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 // Each statement is prepared separately. Never split SQL on user supplied content.
 pub(super) const V1: &[&str] = &[
@@ -40,6 +40,9 @@ pub(super) fn migrate(db: &Db) -> Result<()> {
             for sql in V2 {
                 db.execute(sql, &[])?;
             }
+        }
+        if version < 3 {
+            for sql in super::project_memory::V3 { db.execute(sql, &[])?; }
         }
         Ok(())
     })

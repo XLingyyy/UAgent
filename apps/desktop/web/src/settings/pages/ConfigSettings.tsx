@@ -1,4 +1,6 @@
 import {useI18n} from "../../i18n";
+import { DiagnosticsExportPanel } from "../../workspace/DiagnosticsExportPanel";
+import { UESemanticReadPanel } from "../../workspace/UESemanticReadPanel";
 import { LocalWorkspacePanel } from "./LocalWorkspacePanel";
 import { ACCEPTANCE_ENABLED } from "../../runtime/build-capabilities";
 import { useState } from "react";
@@ -17,17 +19,17 @@ export function ConfigSettings() {
   const {text: uiText} = useI18n();
   return (
     <SettingsPageLayout page={configPageData}>
+      <ProjectRootsDisplay />
       <LocalWorkspacePanel />
       {configPageData.sections.map((section) => (
         <SettingsSection key={section.id} section={section}>
-          {section.id === "mcp" && <McpConnectionDisplay />}
+          {section.id === "mcp" && <><McpConnectionDisplay /><UESemanticReadPanel inline /></>}
           {section.id === "approval" && <ApprovalDisplay />}
           {section.id === "sandbox" && <SandboxDisplay />}
           {section.id === "audit-session" && <AuditSessionDisplay />}
           {section.id === "paths" && <ConfigPathDisplay />}
-          {section.id === "paths" && <ProjectRootsDisplay />}
           {section.id === "terminal-execution" && <TerminalExecutionDisplay />}
-          {section.id === "diagnostics" && <DiagnosticsDisplay />}
+          {section.id === "diagnostics" && <><DiagnosticsDisplay /><DiagnosticsExportPanel inline /></>}
           {section.id === "danger-zone" && <ResetWorkspaceDisplay />}
         </SettingsSection>
       ))}
@@ -258,7 +260,7 @@ function CompanionPluginStatusDisplay() {
 }
 
 function ProjectRootsDisplay() {
-  const {text: uiText,t} = useI18n();
+  const {text: uiText,t,locale} = useI18n();
   const [projectRootDraft, setProjectRootDraft] = useState("");
   const [validatedRootRef, setValidatedRootRef] = useState<string | null>(null);
   const [addedProjectId, setAddedProjectId] = useState<string | null>(null);
@@ -282,7 +284,6 @@ function ProjectRootsDisplay() {
     const valid = await validateProjectRoot(rootRef);
     setValidatedRootRef(valid ? rootRef : null);
     setAddedProjectId(null);
-    setProjectRootDraft("");
   };
   const handleAddProjectRoot = async () => {
     if (!validatedRootRef) return;
@@ -294,6 +295,8 @@ function ProjectRootsDisplay() {
 
   return (
     <div className="ua-settings-page__static-stack" aria-label={uiText("Project roots and index")}>
+      <h3>{locale==="zh-CN"?"\u6dfb\u52a0\u4e0e\u6388\u6743\u5de5\u7a0b":"Add and authorize a project"}</h3>
+      <p>{locale==="zh-CN"?"\u8f93\u5165\u5de5\u7a0b\u6587\u4ef6\u5939\u7684\u5b8c\u6574\u8def\u5f84\uff0c\u4f9d\u6b21\u9a8c\u8bc1\u3001\u6dfb\u52a0\u5e76\u786e\u8ba4\u4fe1\u4efb\u3002\u626b\u63cf\u662f\u53ef\u9009\u64cd\u4f5c\uff0c\u6d4b\u8bd5 Codex \u804a\u5929\u65e0\u9700\u626b\u63cf\u5de5\u7a0b\u3002":"Enter the full project folder path, validate it, add it, then confirm trust. Scanning is optional and is not required to test Codex chat."}</p>
       <label className="ua-settings-page__field">
         <span className="ua-settings-page__field-label">{uiText("Project root reference")}</span>
         <input
@@ -304,7 +307,7 @@ function ProjectRootsDisplay() {
             setValidatedRootRef(null);
             setAddedProjectId(null);
           }}
-          placeholder={uiText("fixture://lyra")}
+          placeholder="E:/Projects/MyProject"
           aria-label={uiText("Project root reference")}
         />
       </label>

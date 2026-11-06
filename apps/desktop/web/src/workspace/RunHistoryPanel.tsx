@@ -1,3 +1,6 @@
+import {CollaborationHistory,delegationHistory} from "./CollaborationHistory";
+import { RunArtifactViewer } from "./RunArtifactViewer";
+import { RecoveryObservation } from "./RecoveryObservation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import {
@@ -10,6 +13,9 @@ import {
   type NativeRunHistoryPort,
 } from "../runtime/native-run-history";
 import { ConversationMarkdown } from "./ConversationMarkdown";
+import { RunHistorySearch } from "./RunHistorySearch";
+import { NativeOperationReview } from "../operation-review/NativeOperationReview";
+import type { NativeHistorySearchSelection } from "../runtime/native-run-history-search";
 import "./RunHistoryPanel.css";
 
 export interface RunHistoryPanelProps {
@@ -19,6 +25,8 @@ export interface RunHistoryPanelProps {
   /** Prepares a linked NEW task. The owner must revalidate project/sources and obtain fresh authority. */
   onContinue: (archive: NativeRunArchive, shareCompletedContext: boolean) => void | Promise<void>;
   continuationDisabled?: boolean;
+  onOpenSessions?: (archive: NativeRunArchive) => void;
+  initialSelection?: NativeHistorySearchSelection | null;
 }
 const PAGE_SIZE = 30;
 export function RunHistoryPanel({
@@ -27,6 +35,8 @@ export function RunHistoryPanel({
   onClose,
   onContinue,
   continuationDisabled = false,
+  onOpenSessions,
+  initialSelection = null,
 }: RunHistoryPanelProps) {
   const { t, locale } = useI18n();
   const port = useMemo(() => history ?? createNativeRunHistory(), [history]);
@@ -43,6 +53,13 @@ export function RunHistoryPanel({
   const [shareCompletedContext, setShareCompletedContext] = useState(false),
     [continuing, setContinuing] = useState(false),
     [continueError, setContinueError] = useState(false);
+  const [searchProjectId, setSearchProjectId] = useState<string | null>(null);
+  const [searchSession, setSearchSession] = useState<{ project: typeof projectId; port: NativeRunHistoryPort; searchProject: string } | null>(null);
+  const [searchTarget, setSearchTarget] = useState<{ selection: NativeHistorySearchSelection; index: number; project: typeof projectId; port: NativeRunHistoryPort } | null>(null);
+  const [searchTargetError, setSearchTargetError] = useState(false);
+  const searchMessageElement = useRef<HTMLElement | null>(null);
+  const visibleTarget = searchTarget && searchTarget.project === projectId && searchTarget.port === port && searchTarget.selection.archive === archive ? searchTarget : null;
+  useEffect(() => { if (visibleTarget) searchMessageElement.current?.focus(); }, [visibleTarget]);
   const selectionGeneration = useRef(0),
     mounted = useRef(true);
   useEffect(() => {
@@ -55,6 +72,9 @@ export function RunHistoryPanel({
   useEffect(() => {
     let active = true;
     setListBusy(true);
+    setSearchProjectId(null);
+    setSearchSession(null);
+    setSearchTarget(null); setSearchTargetError(false);
     setListError(false);
     setPage(null);
     setArchive(null);
@@ -80,8 +100,10 @@ export function RunHistoryPanel({
       active = false;
     };
   }, [port, currentOnly, projectId, offset, refresh]);
+  useEffect(() => { if (initialSelection) openSearchedArchive(initialSelection); }, [initialSelection]);
   async function select(run: NativeHistoryRun) {
     const generation = ++selectionGeneration.current;
+    setSearchTarget(null); setSearchTargetError(false);
     setSelected(run);
     setArchive(null);
     setArchiveBusy(true);
@@ -96,6 +118,29 @@ export function RunHistoryPanel({
     } finally {
       if (mounted.current && generation === selectionGeneration.current) setArchiveBusy(false);
     }
+  }
+  function openSearchedArchive(selection: NativeHistorySearchSelection) {
+    selectionGeneration.current++;
+    setSearchTarget(null); setSearchTargetError(false);
+    const { archive: result, identity, messageId } = selection;
+    const saved = result.descriptor, run = result.snapshot.run;
+    const matches = result.messages.map((message, index) => ({ message, index })).filter(value => value.message.id === messageId);
+    // The search adapter has already checked the body digest. Retain its exact
+    // identity at navigation; never locate by filtered conversational position.
+    if (result.schemaVersion !== 1 || saved.projectId !== identity.projectId || saved.sessionId !== identity.sessionId || saved.runId !== identity.runId ||
+        run.projectId !== identity.projectId || run.sessionId !== identity.sessionId || run.id !== identity.runId || run.revision !== identity.revision ||
+        result.snapshot.requiresFreshAuthorization !== true || matches.length !== 1 || !result.providerMessages[matches[0].index]) {
+      setArchive(null); setSelected(null); setArchiveBusy(false); setSearchProjectId(null); setSearchTargetError(true);
+      return;
+    }
+    setSearchTarget({ selection, index: matches[0].index, project: projectId, port });
+    setSelected(selection.archive.descriptor);
+    setArchive(selection.archive);
+    setArchiveBusy(false);
+    setArchiveError(false);
+    setShareCompletedContext(false);
+    setContinueError(false);
+    setSearchProjectId(null);
   }
   async function continueFromArchive() {
     if (!archive || !canContinueNativeHistory(archive) || continuationDisabled || continuing)
@@ -127,9 +172,10 @@ export function RunHistoryPanel({
       archive.snapshot.toolCalls.some(
         (call) => call.status === "inFlight" || call.status === "unknown",
       ));
+  const delegation=archive?delegationHistory(archive):null;
   const dialogMessages =
     archive?.providerMessages.filter(
-      (message) => (message.role === "user" || message.role === "assistant") && Boolean(message.content),
+      (message,index) => index!==delegation?.plannerIndex && (message.role === "user" || message.role === "assistant") && Boolean(message.content),
     ) ?? [];
   const systemMessages =
     archive?.providerMessages.filter(
@@ -139,7 +185,13 @@ export function RunHistoryPanel({
     archive?.providerMessages.filter(
       (message) => message.role === "tool" || message.toolCalls?.length,
     ) ?? [];
-  return (
+  const retainedSearch = searchSession?.project === projectId && searchSession?.port === port ? searchSession : null;
+  const searching = retainedSearch !== null && searchProjectId !== null;
+  return (<>
+    {retainedSearch && <div hidden={!searching}>
+      <RunHistorySearch projectId={retainedSearch.searchProject} active={searching} onClose={() => setSearchProjectId(null)} onOpenArchive={openSearchedArchive} />
+    </div>}
+    <div hidden={searching}>
     <section className="ua-run-history" aria-label={t("historyRun.title")}>
       <header className="ua-run-history__header">
         <h2>{t("historyRun.title")}</h2>
@@ -173,7 +225,24 @@ export function RunHistoryPanel({
         >
           {t("historyRun.refresh")}
         </button>
+        <button
+          type="button"
+          disabled={!archive || archiveBusy || continuing}
+          title={t("historyRun.searchProjectHint")}
+          onClick={() => {
+            if (archive) {
+              const searchProject = archive.descriptor.projectId;
+              if (retainedSearch?.searchProject !== searchProject) setSearchSession({ project: projectId, port, searchProject });
+              setSearchProjectId(searchProject);
+            }
+          }}
+        >
+          {t("historyRun.searchMessages")}
+        </button>
       </div>
+      {searchTargetError && <p role="alert">{t("historyRun.searchTargetUnavailable")}</p>}
+      {onOpenSessions && <button type="button" className="ua-btn" disabled={!archive || archiveBusy || continuing}
+        onClick={() => { if (archive) onOpenSessions(archive); }}>{locale === "zh-CN" ? "管理此项目的会话" : "Manage this project's sessions"}</button>}
       <div className="ua-run-history__layout">
         <nav className="ua-run-history__catalog" aria-label={t("historyRun.open")}>
           {listBusy && <p role="status">{t("historyRun.loading")}</p>}
@@ -258,6 +327,13 @@ export function RunHistoryPanel({
                   { count: archive.messages.length },
                 )}
               </p>
+              {visibleTarget && <article ref={searchMessageElement} tabIndex={-1} className="ua-run-history__message ua-run-history__search-match" aria-label={t("historyRun.searchMatch")}>
+                <h3>{t("historyRun.searchMatch")}</h3>
+                <p>{t("historyRun.searchMatchId", { id: visibleTarget.selection.messageId })}</p>
+                <p>{t("historyRun.searchMatchRole", { role: archive.messages[visibleTarget.index].role })}</p>
+                <pre>{archive.providerMessages[visibleTarget.index].content}</pre>
+              </article>}
+              {delegation&&<CollaborationHistory summary={delegation}/>}
               {!dialogMessages.length && <p>{t("historyRun.noMessages")}</p>}
               <div className="ua-run-history__conversation">
                 {dialogMessages.map((message, index) => (
@@ -281,6 +357,10 @@ export function RunHistoryPanel({
                   <ConversationMarkdown text={reply.text} />
                 </article>
               ))}
+              <h3>{t("historyRun.recoverySaved")}</h3>
+              <NativeOperationReview archive={archive} />
+              <RunArtifactViewer key={JSON.stringify(["artifacts",projectId,archive.descriptor.projectId,archive.descriptor.runId])} archive={archive} load={port.artifact} inspect={port.inspectRepair}/>
+              {!searching && <RecoveryObservation key={JSON.stringify(["recovery",projectId, archive.descriptor.projectId, archive.descriptor.runId])} projectId={archive.descriptor.projectId} runId={archive.descriptor.runId} />}
               {(archive.snapshot.toolCalls.length > 0 || toolMessages.length > 0) && (
                 <details>
                   <summary>{t("historyRun.toolRecords")}</summary>
@@ -350,5 +430,6 @@ export function RunHistoryPanel({
         </div>
       </div>
     </section>
-  );
+    </div>
+  </>);
 }

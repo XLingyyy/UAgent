@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {setLocale} from "../i18n";
+import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { McpTransportClient } from "@uagent/mcp-client";
 import {
   MVP15_ASSET_TOOL_ALLOWLIST,
@@ -38,6 +39,9 @@ import {
   UAGENT_COMPANION_PLUGIN_ID,
   UAGENT_COMPANION_PLUGIN_VERSION,
 } from "@uagent/shared";
+
+beforeEach(() => setLocale("en"));
+afterEach(() => {cleanup(); setLocale("zh-CN");});
 
 const MVP15_TEST_TOOL_NAMES = MVP15_ASSET_TOOL_ALLOWLIST;
 
@@ -770,6 +774,33 @@ describe("MVP15 desktop asset mutation UI", () => {
     expect(serialized).not.toContain("/Game/Templates/Hero");
     expect(serialized).not.toContain("ui-run-1");
     expect(serialized).toContain("/Game/Characters/Hero");
+  });
+
+  it("copies and saves the selected asset through reviewed fixture workflow", async () => {
+    render(<UIProvider><AssetMutationPanel /><Mvp15StateProbe /></UIProvider>);
+    fireEvent.change(screen.getByLabelText("Asset workflow"), {target:{value:"duplicate_save"}});
+    fireEvent.change(screen.getByLabelText("Source asset path"), {target:{value:"/Game/Characters/Hero"}});
+    fireEvent.click(screen.getByRole("button", {name:"Dry-run sandbox asset mutation"}));
+    await waitFor(() => expect(screen.getByText(/Dry-run: dry_run_completed/)).toBeTruthy());
+    const state = () => JSON.parse(screen.getByTestId("mvp15-state-probe").textContent!);
+    expect(state().activeChangeSet.operations.map((op: {kind:string}) => op.kind)).toEqual(["create_folder", "duplicate_asset", "save_single_asset"]);
+    const ops = state().activeChangeSet.operations;
+    expect(ops[1].assetPathBefore).toBe("/Game/Characters/Hero");
+    expect(ops[1].assetPathAfter).toMatch(/^\/Game\/UAgentSandbox\/[^/]+\/Work\/HeroCopy$/);
+    expect(ops[2].assetPathBefore).toBe(ops[1].assetPathAfter);
+    fireEvent.click(screen.getByRole("button", {name:"Approve sandbox asset mutation"}));
+    await waitFor(() => expect(screen.getByText(/Approval: issued/)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Asset workflow"), {target:{value:"lifecycle"}});
+    expect((screen.getByRole("button", {name:"Execute sandbox asset mutation"}) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Asset workflow"), {target:{value:"duplicate_save"}});
+    fireEvent.change(screen.getByLabelText("Source asset path"), {target:{value:"/Game/Other"}});
+    expect((screen.getByRole("button", {name:"Execute sandbox asset mutation"}) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Source asset path"), {target:{value:"/Game/Characters/Hero"}});
+    fireEvent.click(screen.getByRole("button", {name:"Execute sandbox asset mutation"}));
+    await waitFor(() => expect(screen.getByText(/Execution: executed/)).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", {name:"Verify sandbox asset mutation"}));
+    await waitFor(() => expect(screen.getByText(/Verification: passed/)).toBeTruthy());
+    expect(state().executionMode).toBe("fixture");
   });
 
   it("requires an explicit source asset path before dry-run", async () => {

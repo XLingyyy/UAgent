@@ -72,8 +72,21 @@ struct FileBasicInfo {
     change: i64,
     attributes: u32,
 }
+#[repr(C)]
+#[derive(Default)]
+struct LegacyFileTime { low: u32, high: u32 }
+#[repr(C)]
+#[derive(Default)]
+struct LegacyFileInformation {
+    attributes: u32,
+    creation: LegacyFileTime, access: LegacyFileTime, write: LegacyFileTime,
+    volume_serial: u32, size_high: u32, size_low: u32, links: u32,
+    index_high: u32, index_low: u32,
+}
+
 #[link(name = "kernel32")]
 extern "system" {
+    fn GetFileInformationByHandle(file: Handle, information: *mut LegacyFileInformation) -> i32;
     fn GetFileInformationByHandleEx(
         file: Handle,
         class: u32,
@@ -378,11 +391,26 @@ impl TrustedRootHandle {
         self.inner.root().identity
     }
     /// For existing APIs/display only. Opening this path later does not carry this lease's authority.
+    /// Observed legacy identity required by the existing UE pickup plugin contract.
+    pub(crate) fn pickup_legacy_identity(&self) -> Result<String> {
+        self.check_current()?;
+        let mut value=LegacyFileInformation::default();
+        if unsafe{GetFileInformationByHandle(self.inner.root().file.as_raw_handle(),&mut value)}==0 {
+            return Err(RootError::new("root_legacy_identity_unavailable"));
+        }
+        self.check_current()?;
+        Ok(format!("{}:{}",value.volume_serial,((value.index_high as u64)<<32)|value.index_low as u64))
+    }
     pub fn path_hint(&self) -> &Path {
         &self.inner.path_hint
     }
     pub fn check_current(&self) -> Result<()> {
         self.inner.check_current()
+    }
+    /// In-memory observation of this exact lease's permanent revocation flag.
+    /// No path lookup, filesystem I/O, renewal or replacement of check_current.
+    pub(crate) fn is_revoked(&self) -> bool {
+        self.inner.revoked.load(Ordering::Acquire)
     }
     pub fn revoke(&self) {
         self.inner.revoked.store(true, Ordering::Release);
@@ -530,6 +558,33 @@ impl BoundReadFile {
     pub fn check_current(&self) -> Result<()> {
         self.path.check_current(&self.scope.inner.root)
     }
+    /// Observe metadata only through the original handle. Read the legacy
+    /// BY_HANDLE_FILE_INFORMATION identity directly; never truncate FILE_ID_128
+    /// to recreate an old stamp or reopen path_hint for a different object.
+    pub(crate) fn metadata_observation(&self) -> Result<BoundFileMetadata> {
+        let _guard = self.read_lock.lock()
+            .map_err(|_| RootError::new("bound_read_lock_poisoned"))?;
+        self.check_current()?;
+        let file = &self.path.target().file;
+        let before = metadata(file, NodeKind::File)?;
+        let observed = file.metadata().map_err(|e| io_error("bound_metadata_failed", e))?;
+        let mut legacy = LegacyFileInformation::default();
+        if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut legacy) } == 0 {
+            return Err(io_error("bound_metadata_identity_failed", std::io::Error::last_os_error()));
+        }
+        let after = metadata(file, NodeKind::File)?;
+        if before != after || legacy.links != 1 {
+            return Err(RootError::new("bound_file_changed_during_metadata"));
+        }
+        self.check_current()?;
+        Ok(BoundFileMetadata {
+            identity: before.identity,
+            legacy_identity: (legacy.volume_serial as u64,
+                ((legacy.index_high as u64) << 32) | legacy.index_low as u64),
+            metadata: observed,
+        })
+    }
+
     /// The actual file length observed through this held handle, never a path read.
     pub fn byte_len(&self) -> Result<u64> {
         let _guard = self

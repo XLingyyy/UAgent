@@ -1,3 +1,5 @@
+> **r14 update:** Official Codex app-server now also exposes the explicitly approved UAgent read-only project tools to lead and member agents. Real independent two-agent investigation and final persistence passed r14 acceptance. Dynamic delegation and mixed provider combinations are not included in that live acceptance. Read scopes and exact result-sharing confirmations remain separate. The DeepSeek-only and memory-only credential descriptions below belong to the original investigation slice; see the [current provider contract](desktop-provider-and-conversation.md), [credential storage](provider-credential-storage.md), and [r14](releases/r14.md).
+
 # Bounded project investigation
 
 The desktop's **Investigate project** mode is an explicit read-only task, separate

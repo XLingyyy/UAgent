@@ -80,7 +80,7 @@ function setup() {
     schemaVersion: "uagent.semantic.capabilities.v2",
     protocolVersion: 2,
     contractVersion: "2.0.0-readonly",
-    engineVersion: "5.8.2-56702186",
+    engineVersion: "5.8.4-58902052",
     projectName: "UAgentBuildLab",
     projectKey: "project-a",
     instanceId: "instance-a",

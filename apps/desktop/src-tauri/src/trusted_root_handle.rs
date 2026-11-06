@@ -63,6 +63,22 @@ enum NodeKind {
     File,
 }
 
+/// Data observed through one already-held file. The full 128-bit object
+/// identity is retained separately from the legacy identity used by meta-v1.
+/// Neither observation nor a metadata digest grants permission to open a path.
+#[cfg(windows)]
+pub(crate) struct BoundFileMetadata {
+    identity: ObjectIdentity,
+    legacy_identity: (u64, u64),
+    metadata: std::fs::Metadata,
+}
+#[cfg(windows)]
+impl BoundFileMetadata {
+    pub(crate) fn identity(&self) -> ObjectIdentity { self.identity }
+    pub(crate) fn legacy_identity(&self) -> (u64, u64) { self.legacy_identity }
+    pub(crate) fn metadata(&self) -> &std::fs::Metadata { &self.metadata }
+}
+
 /// Host-selected relative scope. The subsequent scope constructor pins its actual anchor object.
 #[derive(Clone, Debug)]
 pub struct ReadRule {

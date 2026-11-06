@@ -25,6 +25,7 @@ import {
 } from "@uagent/shared";
 import { RunCoordinator, type RunScopeLease } from "./run/run-coordinator.js";
 import type { RunContextSources } from "./context/run-context.js";
+import type { ProjectMemoryContextPort, ProjectMemorySelectionPlan } from "./project-memory/index.js";
 import type { ToolRegistry } from "./run/tool-registry.js";
 import type { RunStorePort, TaskRun } from "@uagent/shared";
 import { selectAction, type AgentAction, type AgentActionSelectorContext } from "./agent-action-selector.js";
@@ -49,8 +50,11 @@ export interface InvestigationRuntimeOptions {
   resolveScope: (scopeId:string,draft:TaskDraft)=>RunScopeLease|null;
   /** Construct a per-run adapter only after the current execution lease exists. */
   createAdapter?: (lease:RunScopeLease,draft:TaskDraft)=>ProviderAdapter;
+  createMemberAdapter?: (role:string,lease:RunScopeLease,draft:TaskDraft)=>ProviderAdapter;
   store?: RunStorePort;
   contextSources?: RunContextSources;
+  projectMemory?: ProjectMemoryContextPort;
+  onMemorySelection?: (plan: ProjectMemorySelectionPlan, run: TaskRun) => void;
 }
 
 export interface AgentLoopOptions {
@@ -634,7 +638,9 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
         let failureCode="run_scope_unavailable";
         try{
           const lease=draft.investigationScopeId?config?.resolveScope(draft.investigationScopeId,draft):null;
-          const enabled=()=>providerBridge?.isEnabled()??options.providerEnabled===true;
+          // Official Codex has its own configured adapter and native per-turn consent;
+          // it must not depend on an unrelated API session being enabled.
+          const enabled=()=>draft.providerId==="codex"&&draft.collaboration&&config?.createAdapter&&lease?.scope.endpoint==="codex://app-server"?true:(providerBridge?.isEnabled()??options.providerEnabled===true);
           const current=()=>{
             if(!config||config!==options.investigation||!lease||!lease.isCurrent())return false;
             const scope=lease.scope,limits=scope.limits;
@@ -654,11 +660,12 @@ export function createAgentLoopRuntime(options: AgentLoopOptions = {}): AgentLoo
           failureCode="run_scope_unavailable";
           if(controller.signal.aborted||isStopped(taskId))return snapshot.tasksById[taskId]??record;
           if(!enabled()||!current())throw Error("run_scope_unavailable");
-          const coordinator=new RunCoordinator({adapter,registry:config.registry,lease,signal:controller.signal,store:config.store,contextSources:config.contextSources,
+          const coordinator=new RunCoordinator({adapter,createMemberAdapter:config.createMemberAdapter,registry:config.registry,lease,signal:controller.signal,store:config.store,contextSources:config.contextSources,projectMemory:config.projectMemory,onMemorySelection:config.onMemorySelection,
           onProviderEvent:event=>{if(!controller.signal.aborted&&!isStopped(taskId))applyProviderEvent(taskId,event);},
           onEvent:(event,run)=>{
             if(controller.signal.aborted||isStopped(taskId))return;
-            if(event.type==="tool_started")emit(taskId,"tool_started","Project read started","Read-only project tool.","info",{runEvent:event});
+            if(event.type==="status_changed"&&(event.payload as {activeAgent?:string})?.activeAgent)emit(taskId,"agent_step_started","Collaboration: "+(event.payload as {activeAgent:string}).activeAgent,"Independent read-only agent stage.","info",{runEvent:event,run});
+            else if(event.type==="tool_started")emit(taskId,"tool_started","Project read started","Read-only project tool.","info",{runEvent:event});
             else if(event.type==="tool_completed")emit(taskId,"tool_completed","Project read completed","Read-only result recorded.","success",{runEvent:event});
             else if(event.type==="tool_failed")emit(taskId,"agent_step_failed","Project read stopped","Review task details.","warning",{runEvent:event});
             else if(event.type==="status_changed"&&(event.payload as {pauseRequested?:boolean})?.pauseRequested)emit(taskId,"agent_step_started","Pausing investigation","Waiting for the current read or model response to finish.","info",{runEvent:event,run});

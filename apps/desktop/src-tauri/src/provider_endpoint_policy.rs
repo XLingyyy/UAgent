@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) struct DesktopEndpointPolicy;
 pub(crate) static NATIVE_ENDPOINT_POLICY: DesktopEndpointPolicy = DesktopEndpointPolicy;
-const POLICY_REVISION: &str = "desktop-endpoint-policy-v2-official-responses";
+const POLICY_REVISION: &str = "desktop-endpoint-policy-v3-official-messages";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -90,7 +90,8 @@ impl NativeEndpointPolicy for DesktopEndpointPolicy {
                 .strip_suffix('/')
                 .unwrap_or(&canonical_base_url)
                 == "https://api.openai.com/v1"
-                && matches!(wire_api, WireApi::Responses));
+                && matches!(wire_api, WireApi::Responses))
+            || (canonical_base_url.trim_end_matches('/') == "https://api.anthropic.com/v1" && !canonical_base_url.ends_with("//") && matches!(wire_api,WireApi::Anthropic));
         Ok(EndpointDecision {
             canonical_base_url,
             policy_revision: POLICY_REVISION.into(),
@@ -129,9 +130,27 @@ pub(crate) fn prepare_deepseek_endpoint(base_url: &str) -> Result<String> {
     Ok("https://api.deepseek.com/chat/completions".into())
 }
 
+/// Fixed official Messages target; product availability remains separate until IPC is wired.
+pub(crate) fn prepare_anthropic_endpoint(base_url: &str) -> Result<String> {
+    let checked = NATIVE_ENDPOINT_POLICY.validate_endpoint(WireApi::Anthropic, base_url)?;
+    if checked.canonical_base_url.trim_end_matches('/') != "https://api.anthropic.com/v1"
+        || checked.canonical_base_url.ends_with("//") {
+        return Err(StoreError { kind: "endpointPolicy".into(), message: "native Anthropic requires the official v1 API root".into() });
+    }
+    Ok("https://api.anthropic.com/v1/messages".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn anthropic_target_is_exact_and_product_route_available() {
+        assert_eq!(prepare_anthropic_endpoint("https://api.anthropic.com/v1").unwrap(), "https://api.anthropic.com/v1/messages");
+        for root in ["https://api.anthropic.com", "https://api.anthropic.com/v1/messages", "https://api.anthropic.com/v1//", "https://api.anthropic.com.evil.invalid/v1", "http://127.0.0.1/v1", "https://api.anthropic.com/v1?key=synthetic"] {
+            assert!(prepare_anthropic_endpoint(root).is_err(), "{root}");
+        }
+        assert!(NATIVE_ENDPOINT_POLICY.validate_endpoint(WireApi::Anthropic,"https://api.anthropic.com/v1").unwrap().transport_supported);
+    }
     #[test]
     fn responses_supports_only_the_explicit_official_v1_target() {
         for root in [

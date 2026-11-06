@@ -43,7 +43,7 @@ namespace UAgentSceneV2
 {
 namespace
 {
-const FString Contract=TEXT("2.2.0-scene-batch-current-run");
+const FString Contract=TEXT("2.4.0-scene-batch-current-run");
 const FString Root=TEXT("/Game/UAgentBuildLab/Scene_T14");
 const FString MaterialPath=TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial");
 const TArray<FString> ToolNames{TEXT("uagent.v2.scene.capabilities"),TEXT("uagent.v2.scene.prepare"),TEXT("uagent.v2.scene.execute"),TEXT("uagent.v2.scene.cancel"),TEXT("uagent.v2.scene.query"),TEXT("uagent.v2.scene.resume"),TEXT("uagent.v2.scene.save")};
@@ -84,7 +84,7 @@ bool ParsePlan(const TSharedPtr<FJsonObject>& P,FBatch& B)
 {
  if(!Exact(P,{TEXT("operationId"),TEXT("targetMap"),TEXT("expectedDiskState"),TEXT("items")}))return false;
  FString Expected;if(!P->TryGetStringField(TEXT("operationId"),B.Id)||!Guid(B.Id)||!P->TryGetStringField(TEXT("targetMap"),B.Map)||!B.Map.StartsWith(Root+TEXT("/L_"))||!Word(B.Map.RightChop(Root.Len()+1),80)||!P->TryGetStringField(TEXT("expectedDiskState"),Expected)||Expected!=TEXT("absent"))return false;
- const TArray<TSharedPtr<FJsonValue>>* Items=nullptr;if(!P->TryGetArrayField(TEXT("items"),Items)||Items->Num()!=20)return false;
+ const TArray<TSharedPtr<FJsonValue>>* Items=nullptr;if(!P->TryGetArrayField(TEXT("items"),Items)||(Items->Num()<1||Items->Num()>20))return false;
  TSet<FString> Ids;TSet<FName> Names;B.Canonical=B.Id+TEXT("\n")+B.Map+TEXT("\nabsent");
  for(const auto& Value:*Items)
  {
@@ -204,7 +204,7 @@ TSharedPtr<FJsonObject> Input(int32 Tool){return SchemaCatalogue.FindChecked(Too
 TSharedPtr<FJsonObject> Output(int32 Tool){return SchemaCatalogue.FindChecked(ToolNames[Tool])->GetObjectField(TEXT("outputSchema"));}
 TSharedPtr<FJsonObject> Capabilities()
 {
- auto R=Obj();R->SetStringField(TEXT("schemaVersion"),TEXT("uagent.scene.capabilities.v2"));R->SetNumberField(TEXT("protocolVersion"),2);R->SetStringField(TEXT("contractVersion"),Contract);R->SetStringField(TEXT("projectKey"),Project);R->SetStringField(TEXT("instanceId"),Instance);R->SetStringField(TEXT("rootObjectId"),RootId);R->SetStringField(TEXT("runId"),RunId);R->SetBoolField(TEXT("available"),Enabled);R->SetBoolField(TEXT("productionSupported"),false);R->SetStringField(TEXT("scopeMode"),TEXT("isolated_lab_current_run_only"));R->SetStringField(TEXT("writeRoot"),Root);
+ auto R=Obj();R->SetStringField(TEXT("schemaVersion"),TEXT("uagent.scene.capabilities.v2"));R->SetNumberField(TEXT("protocolVersion"),2);R->SetStringField(TEXT("contractVersion"),Contract);R->SetStringField(TEXT("projectKey"),Project);R->SetStringField(TEXT("instanceId"),Instance);R->SetStringField(TEXT("rootObjectId"),RootId);R->SetStringField(TEXT("runId"),RunId);R->SetBoolField(TEXT("available"),Enabled);R->SetBoolField(TEXT("productionSupported"),false);R->SetStringField(TEXT("scopeMode"),TEXT("approved_project_new_map_current_run"));R->SetStringField(TEXT("writeRoot"),Root);
  TArray<TSharedPtr<FJsonValue>> Plans;for(auto& B:Batches)Plans.Add(MakeShared<FJsonValueObject>(B->Plan));R->SetArrayField(TEXT("approvedPlans"),Plans);TArray<TSharedPtr<FJsonValue>> Tools;for(int32 I=1;I<ToolNames.Num();++I){auto T=Obj();T->SetStringField(TEXT("name"),ToolNames[I]);T->SetObjectField(TEXT("inputSchema"),Input(I));T->SetObjectField(TEXT("outputSchema"),Output(I));T->SetStringField(TEXT("effect"),I==4?TEXT("query_current_loaded_world_no_asset_loading"):I==1?TEXT("explicit_world_preparation_and_fixed_engine_asset_loading"):I==3?TEXT("request_stop_without_rollback"):I==6?TEXT("save_only_approved_new_map"):TEXT("mutate_approved_static_objects_only"));Tools.Add(MakeShared<FJsonValueObject>(T));}R->SetArrayField(TEXT("tools"),Tools);return R;
 }
 bool Tick(float)
@@ -219,7 +219,7 @@ bool Tick(float)
  AStaticMeshActor* A=B->World->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(),I.Transform,P);if(!A){I.Status=TEXT("failed");I.Reason=TEXT("spawn_failed_no_name_adoption");B->State=TEXT("failed");return true;}
  I.Actor=A;I.ActorGuid=A->GetActorGuid();A->SetActorLabel(I.Name,true);A->Tags.Add(FName(*(TEXT("UAgentOperation_")+B->Id)));A->Tags.Add(FName(*(TEXT("UAgentItem_")+I.Id)));A->GetStaticMeshComponent()->SetStaticMesh(B->Meshes.FindChecked(I.MeshPath).Get());A->GetStaticMeshComponent()->OverrideMaterials.Reset();A->GetStaticMeshComponent()->SetMaterial(0,B->Material.Get());B->World->MarkPackageDirty();I.Status=TEXT("applied");if(!Match(*B,I)){I.Status=TEXT("unknown");I.Reason=TEXT("post_spawn_verification_failed");Conflict(*B,TEXT("post_spawn_verification_failed"));return true;}++B->NextIndex;
  if(B->PauseAfter>0&&!B->TestPauseUsed&&B->NextIndex==B->PauseAfter){B->TestPauseUsed=true;B->State=TEXT("paused_for_test_cancel");}
- else if(B->NextIndex==20)B->State=TEXT("completed");return true;
+ else if(B->NextIndex==B->Items.Num())B->State=TEXT("completed");return true;
 }
 FModelContextProtocolToolResult Invoke(int32 Tool,const TSharedPtr<FJsonObject>& A)
 {
@@ -227,7 +227,7 @@ FModelContextProtocolToolResult Invoke(int32 Tool,const TSharedPtr<FJsonObject>&
  if(!Enabled||(Tool!=3&&Tool!=4&&FPlatformTime::Seconds()-Started>600))return Error(TEXT("scene_scope_disabled_or_expired"));
  TArray<FString> Keys{TEXT("protocolVersion"),TEXT("contractVersion"),TEXT("expectedProjectKey"),TEXT("expectedInstanceId"),TEXT("expectedRootObjectId"),TEXT("runId"),TEXT("plan")};if(Tool!=4)Keys.Add(TEXT("hostPermit"));if(Tool==5||Tool==6)Keys.Add(TEXT("queryToken"));if(!Exact(A,Keys))return Error(TEXT("unknown_or_missing_argument"));
  FString S;double V=0;if(!A->TryGetNumberField(TEXT("protocolVersion"),V)||V!=2||!A->TryGetStringField(TEXT("contractVersion"),S)||S!=Contract||!A->TryGetStringField(TEXT("expectedProjectKey"),S)||S!=Project||UAgentSemanticV2::Capabilities()->GetStringField(TEXT("projectKey"))!=Project||!A->TryGetStringField(TEXT("expectedInstanceId"),S)||S!=Instance||!A->TryGetStringField(TEXT("expectedRootObjectId"),S)||S!=RootId||!A->TryGetStringField(TEXT("runId"),S)||S!=RunId)return Error(TEXT("stale_identity_run_or_project_descriptor"));
- const TSharedPtr<FJsonObject>* P=nullptr;FBatch Parsed;if(!A->TryGetObjectField(TEXT("plan"),P)||!ParsePlan(*P,Parsed))return Error(TEXT("invalid_exact_twenty_item_plan"));FBatch* B=Find(Parsed.Id);if(!B||Parsed.Canonical!=B->Canonical)return Error(TEXT("plan_differs_from_exact_batch_approval"));
+ const TSharedPtr<FJsonObject>* P=nullptr;FBatch Parsed;if(!A->TryGetObjectField(TEXT("plan"),P)||!ParsePlan(*P,Parsed))return Error(TEXT("invalid_exact_bounded_item_plan"));FBatch* B=Find(Parsed.Id);if(!B||Parsed.Canonical!=B->Canonical)return Error(TEXT("plan_differs_from_exact_batch_approval"));
  if(Tool==4)return Result(Tool,*B);
  if(!ActiveId.IsEmpty()&&ActiveId!=B->Id)return Error(TEXT("editor_resource_owned_by_another_batch"));
  if(Tool==1)
@@ -249,7 +249,7 @@ FModelContextProtocolToolResult Invoke(int32 Tool,const TSharedPtr<FJsonObject>&
  if(Tool==2){if(B->State!=TEXT("prepared")||!Consume(Tool,*B,A))return Error(TEXT("approved_prepared_execute_permit_required"));B->State=TEXT("running");return Result(Tool,*B);}
  FString Token;if(!A->TryGetStringField(TEXT("queryToken"),Token)||!Guid(Token)||B->QueryToken.IsEmpty()||Token!=B->QueryToken||B->QueryDigest!=ObservationDigest(*B))return Error(TEXT("fresh_owned_query_checkpoint_required"));
  if(Tool==5){if(B->State!=TEXT("cancelled")||!Consume(Tool,*B,A))return Error(TEXT("cancelled_batch_and_one_use_resume_permission_required"));B->CancelRequested=false;B->State=TEXT("running");return Result(Tool,*B);}
- if(Tool!=6||B->State!=TEXT("completed")||B->NextIndex!=20)return Error(TEXT("save_requires_verified_complete_twenty_items"));for(const auto& I:B->Items)if(I.Status!=TEXT("applied"))return Error(TEXT("save_contains_unverified_item"));if(!Consume(Tool,*B,A))return Error(TEXT("explicit_one_use_map_save_permission_required"));
+ if(Tool!=6||B->State!=TEXT("completed")||B->NextIndex!=B->Items.Num())return Error(TEXT("save_requires_verified_complete_plan"));for(const auto& I:B->Items)if(I.Status!=TEXT("applied"))return Error(TEXT("save_contains_unverified_item"));if(!Consume(Tool,*B,A))return Error(TEXT("explicit_one_use_map_save_permission_required"));
  TGuardValue<bool> Own(OwnMutation,true);const FString Stage=FPaths::Combine(Scratch,FGuid::NewGuid().ToString(EGuidFormats::Digits)+TEXT(".staged.umap"));FSavePackageArgs Args;Args.TopLevelFlags=RF_Public|RF_Standalone;Args.SaveFlags=SAVE_NoError;
  if(!UPackage::SavePackage(B->World->GetOutermost(),B->World.Get(),*Stage,Args)){B->World->MarkPackageDirty();B->State=TEXT("failed");return Error(TEXT("scoped_map_stage_save_failed"));}B->World->GetOutermost()->SetLoadedPath(FPackagePath::FromPackageNameChecked(B->Map));
  TArray<uint8> Bytes;if(!FFileHelper::LoadFileToArray(Bytes,*Stage)||Bytes.IsEmpty()||Bytes.Num()>64*1024*1024){B->World->MarkPackageDirty();B->State=TEXT("failed");return Error(TEXT("staged_map_read_failed"));}LONG Status=0;HANDLE File=MapFile(*B,true,Status);if(File==INVALID_HANDLE_VALUE){B->World->MarkPackageDirty();Conflict(*B,TEXT("exclusive_map_create_rejected_external_change"));return Error(TEXT("exclusive_map_create_rejected_query_before_retry"));}
@@ -295,7 +295,7 @@ class FTool final:public IModelContextProtocolTool
 {
  int32 Id;
 public:
- explicit FTool(int32 I):Id(I){}FString GetName()const override{return ToolNames[Id];}FString GetDescription()const override{return Id==0?TEXT("Discover separate current-run scoped static scene batch contract. No production permission."):TEXT("Exact twenty-item ordinary-map batch. Explicit prepare/write/save authority; query reads actual owned objects without asset loading; cancel is not rollback; resume only after verified current-run query.");}TSharedPtr<FJsonObject> GetInputJsonSchema()const override{return Input(Id);}TSharedPtr<FJsonObject> GetOutputJsonSchema()const override{return Output(Id);}FModelContextProtocolToolResult Run(const TSharedPtr<FJsonObject>& A)override{return Invoke(Id,A);}
+ explicit FTool(int32 I):Id(I){}FString GetName()const override{return ToolNames[Id];}FString GetDescription()const override{return Id==0?TEXT("Discover separate current-run scoped static scene batch contract. No production permission."):TEXT("Exact 1–20 item ordinary-map batch. Explicit prepare/write/save authority; query reads actual owned objects without asset loading; cancel is not rollback; resume only after verified current-run query.");}TSharedPtr<FJsonObject> GetInputJsonSchema()const override{return Input(Id);}TSharedPtr<FJsonObject> GetOutputJsonSchema()const override{return Output(Id);}FModelContextProtocolToolResult Run(const TSharedPtr<FJsonObject>& A)override{return Invoke(Id,A);}
 };
 }
 class FModule final:public IModuleInterface
@@ -303,19 +303,18 @@ class FModule final:public IModuleInterface
  TArray<TSharedRef<IModelContextProtocolTool>> Tools;FTSTicker::FDelegateHandle TickHandle;FDelegateHandle Modified,Added,Deleted;
  void External(UObject* Object){FBatch* B=Active();if(!OwnMutation&&B&&B->World.IsValid()&&Object&&Object->GetOutermost()==B->World->GetOutermost())Conflict(*B,TEXT("external_editor_object_modification"));}
  void ExternalActor(AActor* A){External(A);}
- void EnableLab()
+ void EnableApprovedProject()
  {
-  FString ApprovedFile,PlanFile;if(!FParse::Param(FCommandLine::Get(),TEXT("UAgentSceneEnableLabWrites"))||!FParse::Value(FCommandLine::Get(),TEXT("UAgentSceneAllowedProjectFile="),ApprovedFile)||!FParse::Value(FCommandLine::Get(),TEXT("UAgentSceneApprovedPlansFile="),PlanFile)||FString(FApp::GetProjectName())!=TEXT("UAgentBuildLab")||!FPaths::IsSamePath(ApprovedFile,FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath())))return;
-  auto Marker=ReadJson(FPaths::Combine(FPaths::ProjectDir(),TEXT(".uagent-isolated-lab.json")));bool Existing=true;if(!Marker||!Marker->TryGetBoolField(TEXT("existingUserProject"),Existing)||Existing||Marker->GetStringField(TEXT("project"))!=TEXT("UAgentBuildLab"))return;
+  FString ApprovedFile,PlanFile;if(!FParse::Param(FCommandLine::Get(),TEXT("UAgentSceneEnableApprovedProjectWrites"))||!FParse::Value(FCommandLine::Get(),TEXT("UAgentSceneAllowedProjectFile="),ApprovedFile)||!FParse::Value(FCommandLine::Get(),TEXT("UAgentSceneApprovedPlansFile="),PlanFile)||!FPaths::IsSamePath(ApprovedFile,FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath())))return;
   Scratch=FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectSavedDir(),TEXT("UAgentSceneT14")));if(!FPaths::IsSamePath(FPaths::ConvertRelativePathToFull(PlanFile),FPaths::Combine(Scratch,TEXT("host-approved-plans.json"))))return;
   if(!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::ProjectDir()),&RootId)||!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir()))||!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectContentDir(),TEXT("UAgentBuildLab"))))||!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectContentDir(),TEXT("UAgentBuildLab/Scene_T14"))))||!HoldDirectory(FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()))||!HoldDirectory(Scratch))return;
-  auto Approval=ReadJson(PlanFile);if(!Approval||Approval->GetStringField(TEXT("rootObjectId"))!=RootId||!Approval->TryGetStringField(TEXT("runId"),RunId)||!Guid(RunId))return;
-  const TArray<TSharedPtr<FJsonValue>>* Operations=nullptr;if(!Approval->TryGetArrayField(TEXT("operations"),Operations)||Operations->Num()!=2)return;TSet<FString> Ids,Maps,Tokens;
+  auto Approval=ReadJson(PlanFile);if(!Approval||!Approval->HasTypedField<EJson::String>(TEXT("projectFile"))||Approval->GetStringField(TEXT("projectFile"))!=FPaths::GetCleanFilename(ApprovedFile)||Approval->GetStringField(TEXT("rootObjectId"))!=RootId||!Approval->TryGetStringField(TEXT("runId"),RunId)||!Guid(RunId))return;
+  const TArray<TSharedPtr<FJsonValue>>* Operations=nullptr;if(!Approval->TryGetArrayField(TEXT("operations"),Operations)||(Operations->Num()<1||Operations->Num()>2))return;TSet<FString> Ids,Maps,Tokens;
   for(auto& Value:*Operations){auto O=Value->AsObject();const TSharedPtr<FJsonObject>* P=nullptr;if(!O||!O->TryGetObjectField(TEXT("plan"),P))return;auto B=MakeUnique<FBatch>();if(!ParsePlan(*P,*B)||Ids.Contains(B->Id)||Maps.Contains(B->Map))return;Ids.Add(B->Id);Maps.Add(B->Map);for(int32 I=0;I<5;++I){if(!O->TryGetStringField(PurposeKeys[I],B->Permits[I])||!Guid(B->Permits[I])||Tokens.Contains(B->Permits[I]))return;Tokens.Add(B->Permits[I]);}double Pause=0;if(O->HasField(TEXT("pauseAfterItem"))&&(!O->TryGetNumberField(TEXT("pauseAfterItem"),Pause)||(Pause!=0&&Pause!=7)))return;B->PauseAfter=static_cast<int32>(Pause);Batches.Add(MoveTemp(B));}
   Enabled=true;Started=FPlatformTime::Seconds();
  }
 public:
- void StartupModule()override{Instance=FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens).ToLower();RootId=TEXT("unverified-root");RunId=TEXT("00000000-0000-0000-0000-000000000000");Project=UAgentSemanticV2::Capabilities()->GetStringField(TEXT("projectKey"));if(!LoadSchemas()){UE_LOG(LogTemp,Error,TEXT("Scene v2 exact schema resource missing or invalid; tools unavailable"));return;}EnableLab();for(int32 I=0;I<ToolNames.Num();++I){auto T=MakeShared<FTool>(I);if(IModelContextProtocolModule::GetChecked().AddTool(T))Tools.Add(T);}TickHandle=FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&Tick),0.05f);Modified=FCoreUObjectDelegates::OnObjectModified.AddRaw(this,&FModule::External);if(GEngine){Added=GEngine->OnLevelActorAdded().AddRaw(this,&FModule::ExternalActor);Deleted=GEngine->OnLevelActorDeleted().AddRaw(this,&FModule::ExternalActor);}}
+ void StartupModule()override{Instance=FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens).ToLower();RootId=TEXT("unverified-root");RunId=TEXT("00000000-0000-0000-0000-000000000000");Project=UAgentSemanticV2::Capabilities()->GetStringField(TEXT("projectKey"));if(!LoadSchemas()){UE_LOG(LogTemp,Error,TEXT("Scene v2 exact schema resource missing or invalid; tools unavailable"));return;}EnableApprovedProject();for(int32 I=0;I<ToolNames.Num();++I){auto T=MakeShared<FTool>(I);if(IModelContextProtocolModule::GetChecked().AddTool(T))Tools.Add(T);}TickHandle=FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&Tick),0.05f);Modified=FCoreUObjectDelegates::OnObjectModified.AddRaw(this,&FModule::External);if(GEngine){Added=GEngine->OnLevelActorAdded().AddRaw(this,&FModule::ExternalActor);Deleted=GEngine->OnLevelActorDeleted().AddRaw(this,&FModule::ExternalActor);}}
  void ShutdownModule()override{Enabled=false;FTSTicker::GetCoreTicker().RemoveTicker(TickHandle);FCoreUObjectDelegates::OnObjectModified.Remove(Modified);if(GEngine){GEngine->OnLevelActorAdded().Remove(Added);GEngine->OnLevelActorDeleted().Remove(Deleted);}if(auto* M=IModelContextProtocolModule::Get())for(auto& T:Tools)M->RemoveTool(T);Tools.Reset();SchemaCatalogue.Reset();Batches.Reset();for(int32 I=Directories.Num()-1;I>=0;--I)CloseHandle(Directories[I]);Directories.Reset();}
 };
 }

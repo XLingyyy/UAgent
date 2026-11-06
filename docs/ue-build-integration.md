@@ -1,3 +1,7 @@
+> **r14 current status:** Native build/repair/preview, semantic/Blueprint read, pickup and scene commands are now registered in the desktop integration. The unregistered activation descriptions below document the earlier module-import stage, not the current source. Registration does not establish r14 real UE write/rollback acceptance. See [r14](releases/r14.md) and [UE 5.8.4 compatibility](ue584-compatibility.md).
+
+> Current engine target (2026-11-03): UE **5.8.4 / CL 58902052**, compatible CL / module BuildId **55116800**. See [current compatibility and verification limits](ue584-compatibility.md). Any 5.8.1/5.8.2 results below are historical evidence, not validation of the current engine or a current release.
+
 # UE integration index and build API
 
 ## Integrated code and activation status

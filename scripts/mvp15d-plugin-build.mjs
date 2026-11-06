@@ -314,8 +314,8 @@ function readEngineIdentity(value, runUat) {
   if (
     buildVersion?.MajorVersion !== 5 ||
     buildVersion?.MinorVersion !== 8 ||
-    buildVersion?.PatchVersion !== 1 ||
-    buildVersion?.Changelist !== 56057345 ||
+    buildVersion?.PatchVersion !== 4 ||
+    buildVersion?.Changelist !== 58902052 ||
     buildVersion?.CompatibleChangelist !== 55116800 ||
     buildVersion?.BranchName !== "++UE5+Release-5.8"
   ) {
@@ -335,8 +335,8 @@ function readEngineIdentity(value, runUat) {
     fail("UE_MODULE_BUILD_ID_MISMATCH");
   }
   return {
-    engineVersion: "5.8.1",
-    engineChangelist: 56057345,
+    engineVersion: "5.8.4",
+    engineChangelist: 58902052,
     compatibleChangelist: 55116800,
     moduleBuildId: "55116800",
     branch: "++UE5+Release-5.8",

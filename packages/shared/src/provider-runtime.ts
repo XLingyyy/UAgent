@@ -220,8 +220,18 @@ export interface ProviderCapability {
   modelIds: string[];
   supportsStreaming: boolean;
   supportsTools: boolean;
+  /** Report-only worker or collaboration planning/synthesis; no UAgent tool execution. */
+  supportsTextInvestigation?: boolean;
+  /** Official app-server client tools within an active turn. */
+  supportsClientToolCalls?: boolean;
+  /** Explicit false excludes automatic memory retrieval/injection for this adapter. */
+  supportsProjectMemory?: boolean;
   /** Runs ProviderCallOptions.beforeSend after approval and before network dispatch. */
   supportsPreSendValidation?: boolean;
+  /** Two isolated read-only workers can share a session under one in-memory group. */
+  supportsParallelInvestigation?: boolean;
+  /** Describes the native whole-batch sender path; never a renderer send grant. */
+  supportsNativeProjectMemory?: boolean;
   isMock: boolean;
 }
 

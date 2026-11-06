@@ -7,6 +7,8 @@ export interface OutboundEnvelope {
   body: string;
   /** Bound to this exact request; conservative full reservation, never a refund promise. */
   maximumCostMicros?: number;
+  /** Estimate from user-confirmed prices, not a reserved account budget. */
+  estimatedCostMicros?: number;
 }
 export interface OutboundReview { id: number; envelope: Readonly<OutboundEnvelope> }
 export interface OutboundGrant { consume(envelope: OutboundEnvelope): boolean }
@@ -29,7 +31,10 @@ export interface OutboundConsentGate {
 export function createOutboundConsentGate(): OutboundConsentGate {
   let generation = 0, nextId = 0;
   let pending: OutboundReview | null = null;
-  let settle: ((approved: boolean) => void) | null = null;
+  type Entry = {review: OutboundReview; finish(approved: boolean): void};
+  const queue: Entry[] = [];
+  let invalidating=false;
+  const advance = () => { pending = queue[0]?.review ?? null; if(!invalidating)notify(); };
   const listeners = new Set<() => void>();
   const intents = new WeakMap<OutboundSendIntent, OutboundSendSnapshot & { generation: number }>();
   const notify = () => listeners.forEach(listener => listener());
@@ -46,8 +51,8 @@ export function createOutboundConsentGate(): OutboundConsentGate {
   return {
     getPending: () => pending,
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    invalidate() { generation++; settle?.(false); pending = null; notify(); },
-    approve(id) { if (pending?.id === id) settle?.(true); },
+    invalidate() { generation++; invalidating=true; try { for (const entry of [...queue]) entry.finish(false); } finally { invalidating=false; advance(); } },
+    approve(id) { if (pending?.id === id) queue[0]?.finish(true); },
     captureSendIntent(snapshot) {
       const isCurrent = snapshot.isCurrent, matches = snapshot.matches;
       if (typeof isCurrent !== "function" || typeof matches !== "function" || !valid(isCurrent))
@@ -62,25 +67,28 @@ export function createOutboundConsentGate(): OutboundConsentGate {
         // Even a rejected attempt consumes the intent; a new click is required.
         intents.delete(intent);
         const exact = Object.freeze({ ...envelope });
-        if (!snapshot || pending || signal?.aborted || snapshot.generation !== generation ||
+        if (!snapshot || invalidating || pending || signal?.aborted || snapshot.generation !== generation ||
             !valid(snapshot.isCurrent) || !valid(() => snapshot.matches(exact)))
           return Promise.reject(new Error("outbound_send_revoked"));
         return Promise.resolve(grantFor(exact, snapshot.generation, signal, snapshot.isCurrent));
       }
-      if (pending || signal?.aborted) return Promise.reject(new Error("outbound_confirmation_unavailable"));
+      if (invalidating || signal?.aborted || queue.length >= 4) return Promise.reject(new Error("outbound_confirmation_unavailable"));
       const epoch = generation, exact = Object.freeze({ ...envelope });
-      pending = Object.freeze({ id: ++nextId, envelope: exact });
       return new Promise<OutboundGrant>((resolve, reject) => {
-        const abort = () => settle?.(false);
-        signal?.addEventListener("abort", abort, { once: true });
-        settle = approved => {
-          signal?.removeEventListener("abort", abort); settle = null; pending = null; notify();
-          if (!approved || generation !== epoch || signal?.aborted) {
-            reject(new Error("outbound_confirmation_revoked")); return;
+        let settled = false;
+        const abort = () => entry.finish(false);
+        const entry: Entry = {
+          review: Object.freeze({ id: ++nextId, envelope: exact }),
+          finish(approved) {
+            if(settled)return;
+            settled=true; signal?.removeEventListener("abort",abort);
+            const index=queue.indexOf(entry); if(index>=0)queue.splice(index,1);
+            advance();
+            if(!approved || generation!==epoch || signal?.aborted){reject(new Error("outbound_confirmation_revoked"));return;}
+            resolve(grantFor(exact,epoch,signal));
           }
-          resolve(grantFor(exact, epoch, signal));
         };
-        notify();
+        queue.push(entry); signal?.addEventListener("abort",abort,{once:true}); advance();
       });
     },
   };

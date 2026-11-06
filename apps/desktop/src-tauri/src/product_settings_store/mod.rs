@@ -8,6 +8,7 @@ mod schema;
 #[path = "../local_run_store/sqlite.rs"]
 mod sqlite;
 
+// Common sqlite.rs uses the same crate-wide native connection owner.
 use crate::local_run_store::RunStore;
 pub use schema::SETTINGS_SCHEMA_VERSION;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};

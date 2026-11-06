@@ -1,8 +1,10 @@
+> Current target updated 2026-11-03. [5.8.4 compatibility and verification limits](ue584-compatibility.md). Old evidence is not re-attested by this change.
+
 # UE MCP Plugin Contract Baseline
 
 ## Repository-defined Target
 
-- Unreal Engine current target: UE `5.8.1`; engine changelist `56057345`;
+- Unreal Engine current target: UE `5.8.4`; engine changelist `58902052`;
   compatible changelist `55116800`; module BuildId `55116800`.
 - Integration target: the official Unreal MCP plugin/server route described by the project.
 - Exact tool order:

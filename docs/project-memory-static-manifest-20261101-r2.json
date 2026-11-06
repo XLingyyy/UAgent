@@ -1,0 +1,238 @@
+{
+  "module": "T07 project memory and context explanations",
+  "revision": "r2 static boundary review",
+  "capturedAtUtc": "2026-11-01T02:11:53.5624493Z",
+  "root": "E:\\Codex\\UAgent\\2026-10-29\\worktrees\\credential-vault\\",
+  "previousManifest": {
+    "sha256": "56eb80828b2cc46494c55a901a98f75e9035af09f2be90bcd142b6bef6b89542",
+    "path": "docs/project-memory-static-manifest-20261101.json"
+  },
+  "sourceFiles": [
+    {
+      "path": "packages/runtime/src/project-memory/contract.ts",
+      "bytes": 8149,
+      "sha256": "dc35c4ab2ec2d06f9065aab773feb0725a9f291ca173ad8fd9f2b5994b20dbfb"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/selection.ts",
+      "bytes": 8527,
+      "sha256": "12bb77e677fc21e96e1c2825aeadb07ee5d97b0368ad380cb0fc1ba292560bf4"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/index.ts",
+      "bytes": 93,
+      "sha256": "e13846fd591d99df8ae7184efeb6928fb63e7779a3343a5de7df3a7da0d10e6b"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/budget.ts",
+      "bytes": 3082,
+      "sha256": "6a654478eec4e915b0e8c60ffad8b69ee94f6884617d4778cf5cbf7ce97b00ed"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/selection.test.ts",
+      "bytes": 10173,
+      "sha256": "808aa736a15f8866931a6d4eb7821d657f018d8df60c7dcb8c7f493282c55d02"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/coordinator-memory.test.ts",
+      "bytes": 3192,
+      "sha256": "8f160ddabd0e0ff8b997b72c04259e626ef4915709f850d0f225bff117213230"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/test-fixtures.ts",
+      "bytes": 2555,
+      "sha256": "687861a060e7623990790a943f273a0656609f7c17c6b8f64eb5f761c82873db"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/project_memory.rs",
+      "bytes": 12956,
+      "sha256": "5a1e9952fb42a4aaae4397e9efecb0506159226c6e79766fe1c81c8fe21b5ebe"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/project_memory_tests.rs",
+      "bytes": 6438,
+      "sha256": "c873d5dc3f9ebff0f5b61c77760bc523894c3b58a961c3bd3ae95c87c92b1f26"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/project_memory_commands.rs",
+      "bytes": 2757,
+      "sha256": "b3eed3bd0fdea081b7a991426145f47c52e57ed14bd5a4dd83b3c218084b8d12"
+    },
+    {
+      "path": "apps/desktop/web/src/runtime/native-project-memory.ts",
+      "bytes": 8340,
+      "sha256": "f5bce32ee3762c19656680c99543aa181d63e7e76f4534570e166e7eb2fd15cd"
+    },
+    {
+      "path": "apps/desktop/web/src/runtime/native-project-memory.test.ts",
+      "bytes": 4176,
+      "sha256": "55991018ed3694e9d74cc26dd623c4946a0c5a50315fe6856de868514419fbea"
+    },
+    {
+      "path": "apps/desktop/web/src/workspace/ProjectMemoryPanel.tsx",
+      "bytes": 16831,
+      "sha256": "12c0385fb77cfc7f8010b52dd418072e3397e779652e31a8e79b8b46672ea596"
+    },
+    {
+      "path": "apps/desktop/web/src/workspace/ProjectMemoryPanel.css",
+      "bytes": 1199,
+      "sha256": "8e0bfa98c03c790302a716aec807603f13eb78a47896eef1b965aa69c37fc831"
+    },
+    {
+      "path": "apps/desktop/web/src/workspace/ProjectMemoryPanel.test.tsx",
+      "bytes": 7190,
+      "sha256": "a781285f7d5c5d89e79211855ffa78066fc2ad25616e7058a9623ea7d78f8bdd"
+    },
+    {
+      "path": "docs/project-memory-central-merge-20261101.patch",
+      "bytes": 1564,
+      "sha256": "f001b7a28c7db08dcad038be10c2371b975601ede659bdd90033ae69e36fb50c"
+    },
+    {
+      "path": "docs/project-memory-integration-20261101.md",
+      "bytes": 9418,
+      "sha256": "faf904c6aad9dfa2ed7162f590f08a31020a01c2dbdc3651cce7dbf443d9596f"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/budget.test.ts",
+      "bytes": 2558,
+      "sha256": "d388138a7396cc5fd51c2fd78cafd2db3201367797075e494a6d7f6f78d9ef9f"
+    },
+    {
+      "path": "docs/project-memory-boundary-review-20261101-r2.md",
+      "bytes": 7701,
+      "sha256": "4d5d9646dbfdb6397fa2f90b63b99425bd32471933fc23640cfb3fb779aad5b1"
+    }
+  ],
+  "changesFromR1": [
+    {
+      "path": "packages/runtime/src/project-memory/contract.ts",
+      "beforeSha256": "1aaa513f05756b06df61f854c03e44f9f921f81e45bdaa337f3af663e3760151",
+      "afterSha256": "dc35c4ab2ec2d06f9065aab773feb0725a9f291ca173ad8fd9f2b5994b20dbfb",
+      "change": "changed during r2 static review"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/selection.ts",
+      "beforeSha256": "f4b945b79d29bc5701e94275d82a55410eb3040296b7f12dea51f5a65914587a",
+      "afterSha256": "12bb77e677fc21e96e1c2825aeadb07ee5d97b0368ad380cb0fc1ba292560bf4",
+      "change": "changed during r2 static review"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/budget.ts",
+      "beforeSha256": "12428e229e1d89c15097da3b1f5e5233c854b11d1f3e19f7e0192ae39adac796",
+      "afterSha256": "6a654478eec4e915b0e8c60ffad8b69ee94f6884617d4778cf5cbf7ce97b00ed",
+      "change": "changed during r2 static review"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/selection.test.ts",
+      "beforeSha256": "e19f2cc4a8b61ce9f800abe4b9360348d65c6ec3ed47f1b059fe303572018041",
+      "afterSha256": "808aa736a15f8866931a6d4eb7821d657f018d8df60c7dcb8c7f493282c55d02",
+      "change": "changed during r2 static review"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/project_memory.rs",
+      "beforeSha256": "cbdbea790287d788e9613118a118706bd98c44d1520fefa654251aa5e9526547",
+      "afterSha256": "5a1e9952fb42a4aaae4397e9efecb0506159226c6e79766fe1c81c8fe21b5ebe",
+      "change": "changed during r2 static review"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/project_memory_tests.rs",
+      "beforeSha256": "37c856bb15e54f67d3403558082d99247b5d8d83a202bcf6d48016f44f982388",
+      "afterSha256": "c873d5dc3f9ebff0f5b61c77760bc523894c3b58a961c3bd3ae95c87c92b1f26",
+      "change": "changed during r2 static review"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/project_memory_commands.rs",
+      "beforeSha256": "8e1830137b270d7af4b49d5ba252c0d0233ee4b0e16857f152fb2d1455574a1f",
+      "afterSha256": "b3eed3bd0fdea081b7a991426145f47c52e57ed14bd5a4dd83b3c218084b8d12",
+      "change": "changed during r2 static review"
+    },
+    {
+      "path": "apps/desktop/web/src/runtime/native-project-memory.ts",
+      "beforeSha256": "5b5a9d94d67d61209a081128dab1e0a4d53e0b2c3fa1f4a0e474005aec7e5ff9",
+      "afterSha256": "f5bce32ee3762c19656680c99543aa181d63e7e76f4534570e166e7eb2fd15cd",
+      "change": "changed during r2 static review"
+    },
+    {
+      "path": "apps/desktop/web/src/runtime/native-project-memory.test.ts",
+      "beforeSha256": "96d61504ea11ad5d3e8166521c34c4d6f2d94db1b79fb2cc5d8e582080437f59",
+      "afterSha256": "55991018ed3694e9d74cc26dd623c4946a0c5a50315fe6856de868514419fbea",
+      "change": "changed during r2 static review"
+    },
+    {
+      "path": "apps/desktop/web/src/workspace/ProjectMemoryPanel.tsx",
+      "beforeSha256": "a57cc1f6ca01460b599ee140b7a2d81ae6f154ad19d8816968bd808493610199",
+      "afterSha256": "12c0385fb77cfc7f8010b52dd418072e3397e779652e31a8e79b8b46672ea596",
+      "change": "changed during r2 static review"
+    },
+    {
+      "path": "apps/desktop/web/src/workspace/ProjectMemoryPanel.test.tsx",
+      "beforeSha256": "6c3051f95d11ff6c5ec23d005457d4f711de95955387d0cdb8b8e0bc9cfa0bc5",
+      "afterSha256": "a781285f7d5c5d89e79211855ffa78066fc2ad25616e7058a9623ea7d78f8bdd",
+      "change": "changed during r2 static review"
+    },
+    {
+      "path": "docs/project-memory-integration-20261101.md",
+      "beforeSha256": "1a51e91527bd7f721a11a4ad600fbba87e599811a7522263ab28da955d3d5385",
+      "afterSha256": "faf904c6aad9dfa2ed7162f590f08a31020a01c2dbdc3651cce7dbf443d9596f",
+      "change": "changed during r2 static review"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/budget.test.ts",
+      "beforeSha256": null,
+      "afterSha256": "d388138a7396cc5fd51c2fd78cafd2db3201367797075e494a6d7f6f78d9ef9f",
+      "change": "new static review source/document"
+    },
+    {
+      "path": "docs/project-memory-boundary-review-20261101-r2.md",
+      "beforeSha256": null,
+      "afterSha256": "4d5d9646dbfdb6397fa2f90b63b99425bd32471933fc23640cfb3fb779aad5b1",
+      "change": "new static review source/document"
+    }
+  ],
+  "declaredTests": [
+    {
+      "path": "packages/runtime/src/project-memory/selection.test.ts",
+      "declaredCases": 14
+    },
+    {
+      "path": "packages/runtime/src/project-memory/budget.test.ts",
+      "declaredCases": 2
+    },
+    {
+      "path": "packages/runtime/src/project-memory/coordinator-memory.test.ts",
+      "declaredCases": 2
+    },
+    {
+      "path": "apps/desktop/web/src/runtime/native-project-memory.test.ts",
+      "declaredCases": 7
+    },
+    {
+      "path": "apps/desktop/web/src/workspace/ProjectMemoryPanel.test.tsx",
+      "declaredCases": 7
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/project_memory_tests.rs",
+      "declaredCases": 4
+    }
+  ],
+  "staticChecks": {
+    "paidApiCalls": 0,
+    "fileDeletionOperations": 0,
+    "buildsExecuted": 0,
+    "centralFilesEditedByThisAuthor": 0,
+    "patchAppliedByThisAuthor": false,
+    "testsExecuted": 0,
+    "typechecksExecuted": 0,
+    "testSourceCount": 36,
+    "applicationsStarted": 0
+  },
+  "pendingCentralGuarantees": [
+    "all archive and memory opens/migrations/writes use the same live managed owner/writer fence",
+    "pure handler UI ownership, trusted project registration and human confirmation boundary",
+    "real coordinator/transport invocation and fresh project/root/provider/share/expiry lease checks",
+    "batch memory revision generation/read barrier through final outbound dispatch; per-record CAS alone is insufficient",
+    "native/UI/IPC/restart/request-capture and resource-guarded serial dynamic acceptance"
+  ],
+  "status": "static source review complete; central integration guarantees and all dynamic acceptance remain pending"
+}

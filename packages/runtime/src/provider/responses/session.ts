@@ -1,3 +1,4 @@
+import {anthropicBody,parseAnthropicResult,AnthropicEvents} from "../anthropic-protocol.js";
 import type {
   ProviderRuntimeError,
   ProviderRuntimeErrorCode,
@@ -33,6 +34,7 @@ export interface ResponsesNativeReplay {
   output: ResponsesItem[];
 }
 export interface ResponsesSessionOptions {
+  protocol?: "responses" | "anthropic";
   providerId?: string;
   modelId: string;
   endpoint?: string;
@@ -67,7 +69,8 @@ interface ReplayEntry {
 
 /** No credential/config persistence, hidden model substitution, fallback or retries. */
 export function createResponsesSession(options: ResponsesSessionOptions) {
-  const nativeReplayEnabled=options.disableNativeReplay!==true;
+  const anthropic=options.protocol==="anthropic";
+  const nativeReplayEnabled=!anthropic&&options.disableNativeReplay!==true;
   const providerId = options.providerId ?? "openai-responses",
     modelId = options.modelId;
   const endpoint = options.endpoint ?? OPENAI_RESPONSES_ENDPOINT,
@@ -93,7 +96,7 @@ export function createResponsesSession(options: ResponsesSessionOptions) {
     url.password ||
     url.hash ||
     url.search ||
-    !url.pathname.endsWith("/responses") ||
+    !(anthropic ? endpoint === "https://api.anthropic.com/v1/messages" : url.pathname.endsWith("/responses")) ||
     !modelId ||
     modelId.length > 128 ||
     /[\r\n]/.test(modelId) ||
@@ -292,7 +295,7 @@ export function createResponsesSession(options: ResponsesSessionOptions) {
     for (const message of request.messages)
       for (const call of message.toolCalls ?? [])
         rejectArgumentCredentialEcho(call.arguments, key, "auth_missing");
-    const body = responsesBody(
+    const body = anthropic ? anthropicBody(request,stream) : responsesBody(
       request,
       stream,
       (message, index) => {
@@ -339,7 +342,7 @@ export function createResponsesSession(options: ResponsesSessionOptions) {
     if (containsCredential(request, key) || containsCredential(wire, key))
       throw fail("auth_missing", "Credential material cannot be included in Responses input.");
     // Inspect actual wire items after replay/serialization, without changing bytes.
-    for (const item of wire.input)
+    for (const item of wire.input ?? [])
       if (item.type === "function_call")
         rejectArgumentCredentialEcho(item.arguments, key, "auth_missing");
     return { request, serialized, scope, nativeScope };
@@ -483,7 +486,7 @@ export function createResponsesSession(options: ResponsesSessionOptions) {
         headers: {
           "Content-Type": "application/json",
           Accept: stream ? "text/event-stream" : "application/json",
-          Authorization: "Bearer " + key,
+          ...(anthropic ? {"x-api-key":key,"anthropic-version":"2023-06-01"} : {Authorization: "Bearer " + key}),
         },
         body: serialized,
         signal: controller.signal,
@@ -522,14 +525,14 @@ export function createResponsesSession(options: ResponsesSessionOptions) {
           body += decoder.decode(next.value, { stream: true });
         }
         try {
-          result = parseResponsesResult(JSON.parse(body), request);
+          result = anthropic ? parseAnthropicResult(JSON.parse(body),request) : parseResponsesResult(JSON.parse(body), request);
         } catch (error) {
           if (error instanceof SyntaxError)
             throw fail("malformed_response", "Invalid Responses JSON.");
           throw error;
         }
       } else {
-        const events = new ResponsesEvents(request);
+        const events = anthropic ? new AnthropicEvents(request) : new ResponsesEvents(request);
         for await (const event of responsesSse(reader, providerId, interrupted, maxResponseBytes)) {
           const next = events.accept(event.data, event.event);
           // Refuse a dangerous authoritative result before yielding its final deltas.
@@ -577,6 +580,12 @@ export function createResponsesSession(options: ResponsesSessionOptions) {
         throw fail("cancelled", "Responses request was cancelled.");
       remember(request, result, nativeScope, key);
       if (stream) {
+        // The shared runtime runner consumes toolCallDelta, not terminal-only toolCalls.
+        // Anthropic holds all arguments until message_stop and full validation above.
+        if(anthropic)for(const [index,call] of result.toolCalls.entries()){
+          if(controller.signal.aborted||revoked)throw fail("cancelled","Anthropic request was cancelled.");
+          yield chunk("",{toolCallDelta:{index,id:call.id,name:call.name,argumentsDelta:call.arguments}});
+        }
         for (const [index, tail] of heldArguments)
           if (tail) {
             if (controller.signal.aborted)
@@ -629,7 +638,7 @@ export function createResponsesSession(options: ResponsesSessionOptions) {
       supportsStreaming: true,
       supportsTools: true,
       supportsPreSendValidation: true,
-      wireApi: "responses",
+      wireApi: anthropic ? "anthropic-compatible" : "responses",
       endpoint,
       credentialStorage: "session-only",
       isMock: mode === "offline",

@@ -14,6 +14,10 @@ export function responsesFixtureAvailable(): boolean {
   }
 }
 
+/** Current product API scope. Archived adapters/configurations remain readable. */
+export function activeApiProvider(provider:ProviderConfig):boolean {
+ return provider.providerId==="deepseek" && provider.authMode==="env_key" && ["openai_compatible","chat_completions"].includes(provider.wireApi) && ["https://api.deepseek.com","https://api.deepseek.com/"].includes(provider.baseUrl);
+}
 /** Match the transport actually shipped in this profile. Configuration is not connectivity. */
 export function supportsProviderModel(
   provider: ProviderConfig | undefined | null,
@@ -22,11 +26,13 @@ export function supportsProviderModel(
   if (
     !provider ||
     !provider.enabled ||
+    !activeApiProvider(provider) ||
     provider.authMode !== "env_key" ||
     !modelId ||
     !provider.models.some((model) => model.id === modelId)
   )
     return false;
+  if(provider.wireApi==="anthropic")return false; // Archived by product choice; existing configurations/history retained.
   if (provider.wireApi === "responses")
     return (
       (responsesFixtureAvailable() || responsesNativeAvailable()) &&
@@ -62,6 +68,7 @@ export function sessionMatchesProviderModel(
   );
   if (!identified) return provider.providerId === "deepseek" && provider.wireApi !== "responses";
   if (state.providerId !== provider.providerId || state.modelId !== modelId) return false;
+  if(provider.wireApi==="anthropic")return state.wireApi==="anthropic"&&state.fixture===false&&state.endpoint==="https://api.anthropic.com/v1/messages";
   if (provider.wireApi === "responses")
     return (
       state.wireApi === "responses" &&
@@ -97,4 +104,8 @@ export function createSupportedProvider(): ProviderConfig {
     ],
     defaultModel: DEEPSEEK_MODEL,
   };
+}
+
+export function createAnthropicProvider():ProviderConfig {
+ return {providerId:crypto.randomUUID(),displayName:"Anthropic · Claude",baseUrl:"https://api.anthropic.com/v1",wireApi:"anthropic",authMode:"env_key",networkMode:"live",enabled:true,models:[],defaultModel:undefined};
 }

@@ -7,7 +7,8 @@ use crate::local_run_store::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{collections::HashSet, path::Path};
+use std::{collections::HashSet, path::Path,sync::Arc};
+use crate::local_run_store::native_run_creation::{NativeDocumentIdentity,NativeRunCreation};
 
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
@@ -467,6 +468,68 @@ fn validate_state_plan(
     )
 }
 
+fn validate_collaboration(team:&Value)->Result<(),StoreError>{
+    keys(team,&["mode","activeAgent","reports","calls","workers","members","assignments"])?;
+    let member_ids:Vec<&str>=if let Some(members)=team.get("members"){
+        let members=members.as_object().ok_or_else(invalid)?;
+        if !(2..=4).contains(&members.len())||members.keys().any(|id|!matches!(id.as_str(),"investigator"|"reviewer"|"member_3"|"member_4")){return Err(invalid());}
+        members.keys().map(String::as_str).collect()
+    }else{vec!["investigator","reviewer"]};
+    if let Some(members)=team.get("members"){
+        keys(members,&member_ids)?;
+        for id in &member_ids{
+            let member=&members[*id];keys(member,&["role","focus","model"])?;
+            if let Some(model)=member.get("model"){
+                keys(model,&["providerId","modelId"])?;
+                for key in ["providerId","modelId"]{record_id(model[key].as_str().ok_or_else(invalid)?)?;}
+            }
+            if !matches!(member["role"].as_str(),Some("source_analyst"|"risk_reviewer"|"performance_analyst"|"test_analyst")){return Err(invalid());}
+            let focus=member["focus"].as_str().ok_or_else(invalid)?;
+            if focus.encode_utf16().count()>240 || focus.chars().any(|c|c.is_control()&&!matches!(c,'\t'|'\n'|'\r')){return Err(invalid());}
+        }
+    }
+    if !matches!(team["mode"].as_str(),Some("independent_review"|"dynamic_delegation")) || !(matches!(team["activeAgent"].as_str(),Some("synthesizer"|"planner"))||team["activeAgent"].as_str().is_some_and(|id|member_ids.contains(&id))){return Err(invalid());}
+    if team["activeAgent"]=="planner"&&team["mode"]!="dynamic_delegation"{return Err(invalid());}
+    if let Some(assignments)=team.get("assignments"){
+        if team["mode"]!="dynamic_delegation"{return Err(invalid());}keys(assignments,&member_ids)?;
+        for role in &member_ids{let task=assignments[*role].as_str().ok_or_else(invalid)?;if task.trim().is_empty()||task.encode_utf16().count()>2000||task.chars().any(|c|c.is_control()&&!matches!(c,'\t'|'\n'|'\r')){return Err(invalid());}}
+    }
+    let reports=team["reports"].as_array().ok_or_else(invalid)?;
+    let calls=team["calls"].as_array().ok_or_else(invalid)?;
+    if reports.len()>member_ids.len() || calls.len()>64{return Err(invalid());}
+    let mut roles=HashSet::new();
+    for report in reports {
+        keys(report,&["agentId","text","stepIds"])?;
+        let role=report["agentId"].as_str().ok_or_else(invalid)?;
+        if !member_ids.contains(&role) || !roles.insert(role) || report["text"].as_str().is_none(){return Err(invalid());}
+        let steps=report["stepIds"].as_array().ok_or_else(invalid)?;
+        if steps.len()>30{return Err(invalid());}
+        for step in steps {record_id(step.as_str().ok_or_else(invalid)?)?;}
+    }
+    let mut ids=HashSet::new();
+    for call in calls {
+        keys(call,&["agentId","requestId","callId","providerCallId"])?;
+        let role=call["agentId"].as_str().ok_or_else(invalid)?;
+        if !member_ids.contains(&role)&&role!="synthesizer"&&!(role=="planner"&&team["mode"]=="dynamic_delegation"){return Err(invalid());}
+        for key in ["requestId","callId","providerCallId"] {record_id(call[key].as_str().ok_or_else(invalid)?)?;}
+        if !ids.insert(call["callId"].as_str().unwrap()){return Err(invalid());}
+    }
+    if let Some(workers)=team.get("workers") {
+        let workers=workers.as_array().ok_or_else(invalid)?;
+        if workers.len()>member_ids.len(){return Err(invalid());}
+        let mut roles=HashSet::new();let mut runs=HashSet::new();
+        for worker in workers {
+            keys(worker,&["agentId","runId","status","modelRequests","toolCalls","stopReason"])?;
+            let role=worker["agentId"].as_str().ok_or_else(invalid)?;
+            let run=worker["runId"].as_str().ok_or_else(invalid)?;record_id(run)?;
+            if !member_ids.contains(&role) || !roles.insert(role) || !runs.insert(run)
+                || !matches!(worker["status"].as_str(),Some("queued"|"running"|"paused"|"completed"|"failed"|"cancelled")){return Err(invalid());}
+            for key in ["modelRequests","toolCalls"]{integer(worker[key].as_i64().ok_or_else(invalid)?)?;}
+            if worker.get("stopReason").is_some_and(|v|v.as_str().is_none()){return Err(invalid());}
+        }
+    }
+    safe_value(team,0)
+}
 fn state_event<'a>(input: &'a CommitInput) -> Result<&'a Value, StoreError> {
     let mut states = input
         .batch
@@ -493,6 +556,7 @@ fn state_event<'a>(input: &'a CommitInput) -> Result<&'a Value, StoreError> {
             "status",
             "limits",
             "parentRunId",
+            "collaboration",
             "modelRequests",
             "toolCalls",
             "createdAt",
@@ -524,6 +588,7 @@ fn state_event<'a>(input: &'a CommitInput) -> Result<&'a Value, StoreError> {
     {
         return Err(invalid());
     }
+    if let Some(team)=value.get("collaboration") { validate_collaboration(team)?; }
     keys(
         &value["scopeDescription"],
         &[
@@ -700,7 +765,8 @@ fn validate(input: &CommitInput) -> Result<(), StoreError> {
                 }
             },
             "tool_requested" => {
-                keys(payload, &["callId", "name", "arguments"])?;
+                keys(payload, &["callId", "name", "arguments", "providerCallId"])?;
+                if let Some(id)=payload.get("providerCallId"){record_id(id.as_str().ok_or_else(invalid)?)?;}
                 let arguments: Value =
                     serde_json::from_str(payload["arguments"].as_str().ok_or_else(invalid)?)
                         .map_err(|_| invalid())?;
@@ -737,7 +803,10 @@ fn ensure_records(
     store: &RunStore,
     input: &CommitInput,
     canonical_root: &Path,
-) -> Result<(), StoreError> {
+    document:Option<&Arc<NativeDocumentIdentity>>,
+    provider:&str,model:&str,
+) -> Result<Option<Arc<NativeRunCreation>>, StoreError> {
+    let mut created=None;
     let root = canonical_root.to_str().ok_or_else(invalid)?;
     let find_project = || {
         store.projects().map(|projects| {
@@ -809,15 +878,13 @@ fn ensure_records(
             }
         }
         Err(error) if error.kind == "notFound" && input.expected_revision == 0 => {
-            if let Err(error) = store.start_run(
-                &input.project_id,
-                &NewRun {
-                    id: input.run_id.clone(),
-                    session_id: input.session_id.clone(),
-                    goal: input.goal.clone(),
-                    created_at: input.created_at,
-                },
-            ) {
+            let new_run=NewRun{id:input.run_id.clone(),session_id:input.session_id.clone(),
+                goal:input.goal.clone(),created_at:input.created_at};
+            let started=if let Some(document)=document {
+                store.start_run_for_native_document(&input.project_id,&new_run,document.clone(),provider,model)
+                    .map(|proof|{created=Some(proof);})
+            }else{store.start_run(&input.project_id,&new_run)};
+            if let Err(error)=started {
                 if error.kind != "constraint" {
                     return Err(error);
                 }
@@ -832,7 +899,7 @@ fn ensure_records(
         }
         Err(error) => return Err(error),
     }
-    Ok(())
+    Ok(created)
 }
 fn validate_plan_records(store: &RunStore, input: &CommitInput) -> Result<(), StoreError> {
     let state = state_event(input)?;
@@ -895,13 +962,20 @@ fn validate_plan_records(store: &RunStore, input: &CommitInput) -> Result<(), St
     Ok(())
 }
 
-fn apply_commit(
+fn apply_commit(store:&RunStore,input:&CommitInput,canonical_root:&Path)->Result<CommitResult,StoreError>{
+    apply_commit_for_document(store,input,canonical_root,None)
+}
+fn apply_commit_for_document(
     store: &RunStore,
     input: &CommitInput,
     canonical_root: &Path,
+    document:Option<Arc<NativeDocumentIdentity>>,
 ) -> Result<CommitResult, StoreError> {
     validate(input)?;
-    ensure_records(store, input, canonical_root)?;
+    let state=state_event(input)?;
+    let provider=state.pointer("/scopeDescription/providerId").and_then(Value::as_str).ok_or_else(invalid)?;
+    let model=state.pointer("/scopeDescription/modelId").and_then(Value::as_str).ok_or_else(invalid)?;
+    let created=ensure_records(store,input,canonical_root,document.as_ref(),provider,model)?;
     let snapshot = store.snapshot(&input.project_id, &input.run_id)?;
     if snapshot.run.revision != input.expected_revision {
         return Err(error(
@@ -946,6 +1020,10 @@ fn apply_commit(
         input.expected_revision,
         &input.batch,
     )?;
+    if let Some(document)=&document {
+        let after=store.run(&input.project_id,&input.run_id)?;
+        store.record_original_native_commit(document,created,&snapshot.run,&after,provider,model)?;
+    }
     Ok(CommitResult {
         schema_version: 1,
         project_id: input.project_id.clone(),
@@ -1137,21 +1215,19 @@ pub async fn list_native_run_history(
         .map_err(|_| error("unavailable", "native record worker did not complete"))?
 }
 #[tauri::command]
-pub async fn commit_native_run_store(
-    app: tauri::AppHandle,
-    input: CommitInput,
-) -> Result<CommitResult, StoreError> {
+pub async fn commit_native_run_store(app:tauri::AppHandle,window:tauri::WebviewWindow,
+    state:tauri::State<'_,crate::managed_run_store::ManagedRunStoreState>,input:CommitInput,
+)->Result<CommitResult,StoreError>{
     validate(&input)?;
     trusted_project(&input.project_id)?;
-    let root = app_root(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let binding = trusted_project(&input.project_id)?;
-        // Connection creation, use and destruction remain local to this blocking worker.
-        let store = RunStore::open(root)?;
-        apply_commit(&store, &input, &binding.canonical_root)
-    })
-    .await
-    .map_err(|_| error("unavailable", "native record worker did not complete"))?
+    let document=state.capture_window_grant(&window).map_err(|_|error("unavailable","original local document is required"))?;
+    let native_document=document.native_document().clone();
+    state.with_store(&window,true,move|store,cancelled,deadline|{
+        if !document.is_current()||cancelled.load(std::sync::atomic::Ordering::Acquire)
+            ||std::time::Instant::now()>=deadline{return Err(error("cancelled","native commit was revoked"));}
+        let binding=trusted_project(&input.project_id)?;
+        apply_commit_for_document(store,&input,&binding.canonical_root,Some(native_document))
+    }).await
 }
 #[tauri::command]
 pub async fn snapshot_native_run_store(
@@ -1671,4 +1747,66 @@ mod tests {
         source(&value, "A").unwrap();
         assert!(source(&value, "B").is_err());
     }
+    #[test]
+    fn native_collaboration_call_attribution_accepts_lead_roles_and_rejects_unknown_members() {
+        let mut team=serde_json::json!({"mode":"independent_review","activeAgent":"synthesizer","reports":[],
+            "calls":[{"agentId":"synthesizer","requestId":"run:model:3","callId":"client-synthesizer-3-6","providerCallId":"provider-call"}]});
+        validate_collaboration(&team).unwrap();
+        for role in ["planner","unknown","member_3"] {
+            let mut invalid_team=team.clone();invalid_team["calls"][0]["agentId"]=role.into();
+            assert!(validate_collaboration(&invalid_team).is_err(),"unexpected independent actor {role}");
+        }
+        team["mode"]="dynamic_delegation".into();
+        team["calls"][0]["agentId"]="planner".into();
+        validate_collaboration(&team).unwrap();
+        for field in ["reports","workers"] {
+            let mut invalid_team=team.clone();
+            invalid_team[field]=if field=="reports" {
+                serde_json::json!([{"agentId":"synthesizer","text":"report","stepIds":[]}])
+            } else {
+                serde_json::json!([{"agentId":"planner","runId":"run:planner","status":"completed","modelRequests":1,"toolCalls":0}])
+            };
+            assert!(validate_collaboration(&invalid_team).is_err());
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+pub struct ArtifactInput {schema_version:u32,project_id:String,run_id:String,reference_id:String}
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct ArtifactResult {schema_version:u32,project_id:String,run_id:String,reference_id:String,sha256:String,content:String}
+#[tauri::command]
+pub async fn read_native_run_artifact(window:tauri::WebviewWindow,state:tauri::State<'_,crate::managed_run_store::ManagedRunStoreState>,input:ArtifactInput)->Result<ArtifactResult,StoreError>{
+    if input.schema_version!=1||!["native-build-result","nativeRepairBefore","nativeRepairResult"].contains(&input.reference_id.as_str()){return Err(invalid());}
+    record_id(&input.project_id)?;record_id(&input.run_id)?;
+    state.with_store(&window,false,move|store,cancelled,deadline|{
+        if cancelled.load(std::sync::atomic::Ordering::Acquire)||std::time::Instant::now()>=deadline{return Err(error("cancelled","artifact display cancelled"));}
+        let bytes=store.read_artifact_bounded(&input.project_id,&input.run_id,&input.reference_id,2*1024*1024)?;
+        use sha2::{Digest,Sha256};let sha256=format!("{:x}",Sha256::digest(&bytes));
+        let content=String::from_utf8(bytes).map_err(|_|invalid())?;
+        let _:serde_json::Value=serde_json::from_str(&content).map_err(|_|invalid())?;
+        Ok(ArtifactResult{schema_version:1,project_id:input.project_id,run_id:input.run_id,reference_id:input.reference_id,sha256,content})
+    }).await
+}
+
+/// Uses only an already re-trusted native project root and artifact-bound paths. No root/path supplied by renderer.
+#[tauri::command]
+pub async fn inspect_native_repair_recovery(window:tauri::WebviewWindow,state:tauri::State<'_,crate::managed_run_store::ManagedRunStoreState>,input:SnapshotInput)->Result<crate::ue_repair_recovery::RecoveryInspection,StoreError>{
+ if input.schema_version!=1{return Err(invalid());}record_id(&input.project_id)?;record_id(&input.run_id)?;
+ let grant=state.capture_window_grant(&window)?;
+ let root=crate::resolve_trusted_root_handle_by_id(&input.project_id).map_err(|_|error("repairRetrustRequired","select and trust the same project again before inspecting current files"))?;
+ state.with_store_for_grant(grant,false,move|store,cancelled,deadline|{
+  let backup=store.read_artifact_bounded(&input.project_id,&input.run_id,"nativeRepairBefore",2*1024*1024)?;
+  let result=match store.read_artifact_bounded(&input.project_id,&input.run_id,"nativeRepairResult",2*1024*1024){Ok(bytes)=>Some(bytes),Err(e) if e.kind=="notFound"=>None,Err(e)=>return Err(e)};
+  let mut report=crate::ue_repair_recovery::inspect(&root,&input.project_id,&input.run_id,&backup,result.as_deref(),cancelled,deadline).map_err(|_|error("repairInspectionUnavailable","saved repair or current source could not be verified"))?;
+  // Existing bounded read-snapshot only: no effect-journal initialization, scan scheduling, owner or reconciliation.
+  report.execution=match store.read_runtime_host_recovery_snapshot(cancelled){
+   Ok(snapshot)=>crate::ue_repair_recovery::describe_execution(snapshot.effects(),&input.project_id,&input.run_id,&root.identity().observation_key()),
+   Err(_)=>crate::ue_repair_recovery::ExecutionEvidence::unavailable()
+  };
+  if cancelled.load(std::sync::atomic::Ordering::Acquire)||std::time::Instant::now()>=deadline||root.check_current().is_err(){return Err(error("repairInspectionUnavailable","inspection expired or root changed"));}
+  Ok(report)
+ }).await
 }

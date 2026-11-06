@@ -341,12 +341,17 @@ pub(crate) async fn save_product_preferences(
     })
     .await
 }
+pub(crate) fn active_api(config:&crate::product_settings_store::ProviderConfig)->bool {
+ config.provider_id=="deepseek" && matches!(config.wire_api,crate::product_settings_store::WireApi::ChatCompletions|crate::product_settings_store::WireApi::OpenaiCompatible) && ["https://api.deepseek.com","https://api.deepseek.com/"].contains(&config.base_url.as_str()) && config.auth_mode==crate::product_settings_store::AuthMode::EnvKey
+}
 #[tauri::command]
 pub(crate) async fn save_product_provider(
     app: tauri::AppHandle,
     input: SaveProviderInput,
 ) -> Result<ProviderSnapshot> {
     worker(move || {
+        if !active_api(&input.config){return Err(error("providerArchived","Only DeepSeek API configuration is active; archived records are retained"));}
+
         let _deepseek_update=crate::native_saved_deepseek::begin_provider_update(&input.config.provider_id).map_err(|_|error("unavailable","native provider revocation is unavailable"))?;
         let _provider_update=crate::native_responses_commands::begin_provider_update(&input.config.provider_id)
             .map_err(|_| error("unavailable","native provider session invalidation failed"))?;

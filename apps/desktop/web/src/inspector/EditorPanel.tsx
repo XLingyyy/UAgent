@@ -1,5 +1,7 @@
+import {ManagedBlueprintReadWorkflow} from "../workspace/ManagedBlueprintReadWorkflow";
+import {BlueprintStructureReader} from "../workspace/BlueprintStructureReader";
 import {useI18n} from "../i18n";
-import { useOptionalRuntimeActions, useOptionalRuntimeStore } from "../stores/ui-store";
+import { useOptionalRuntimeActions, useOptionalRuntimeStore, useProjectStore } from "../stores/ui-store";
 import "./UtilityPlaceholderPanel.css";
 
 export function EditorPanel() {
@@ -7,6 +9,7 @@ export function EditorPanel() {
   const mvp13 = useOptionalRuntimeStore((state) => state.mvp13);
   const mvp14 = useOptionalRuntimeStore((state) => state.mvp14);
   const actions = useOptionalRuntimeActions();
+  const activeProject = useProjectStore(state => state.registeredProjects.find(p => p.id === state.activeProjectId));
   const latestProposal = mvp13?.editorProposals[mvp13.editorProposals.length - 1] ?? null;
   const latestResult = mvp13?.editorResults[mvp13.editorResults.length - 1] ?? null;
   const latestProcess = mvp14?.discovery?.processes[0] ?? null;
@@ -26,6 +29,8 @@ export function EditorPanel() {
           {mvp14?.session?.status ?? mvp14?.capability.reason ?? mvp13?.editorSession?.status ?? uiText("disabled")}
         </span>
       </div>
+      {activeProject?.trustState === "trusted" && <ManagedBlueprintReadWorkflow key={activeProject.id} projectId={activeProject.id}/>}
+      {activeProject?.trustState === "trusted" && mvp14?.session?.projectId === activeProject.id && !mvp14.session.replayOnly && mvp14.session.status === "attached" && <BlueprintStructureReader key={mvp14.session.sessionId} session={mvp14.session} initialPackage="/Game/Characters/BP_Hero"/>}
       <ul className="ua-utility-placeholder__list">
         <li className="ua-utility-placeholder__item">
           {uiText("Observation:")}{" "}{mvp14?.capability.enabled ? mvp14.capability.mode : uiText("disabled")} {uiText("/ trusted root required")}{" "}</li>

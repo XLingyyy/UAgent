@@ -1,3 +1,7 @@
+export type CollaborationRole = "source_analyst" | "risk_reviewer" | "performance_analyst" | "test_analyst";
+export interface CollaborationMember { role: CollaborationRole; focus: string; model?: {providerId:string;modelId:string;endpoint:string} }
+export interface CollaborationMembers { [id: string]: CollaborationMember }
+
 export type PermissionMode = "auto" | "request_approval" | "plan_only";
 
 export type TaskState =
@@ -146,6 +150,8 @@ export interface TaskDraft {
   savedRun?:SavedRunContinuation;
   /** Investigation is opt-in and resolves an in-memory lease, never a persisted grant. */
   taskMode?: "discussion" | "investigation";
+  collaboration?: "independent_review" | "dynamic_delegation";
+  collaborationMembers?: CollaborationMembers;
   investigationScopeId?: string;
   /** Text-only, completed turns from this conversation, shown in exact outbound review. */
   conversationId?: string;

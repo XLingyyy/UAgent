@@ -18,6 +18,7 @@ export function AssetMutationPanel() {
   const mvp14 = useOptionalRuntimeStore((state) => state.mvp14);
   const actions = useOptionalRuntimeActions();
   const [sourceAssetPath, setSourceAssetPath] = useState("");
+  const [workflow, setWorkflow] = useState<"lifecycle" | "duplicate_save">("lifecycle");
   const changeSet = mvp15?.activeChangeSet ?? null;
   const dryRun = mvp15?.latestDryRun ?? null;
   const approval = changeSet?.approval ?? null;
@@ -36,8 +37,10 @@ export function AssetMutationPanel() {
   const nativeRegistrationStatus = changeSet?.nativeApprovalRegistrationStatus ?? (realMode ? "required" : "not_required");
   const bindingApprovable = realMode ? bindingBound : changeSet?.state === "approval_required";
   const companionReady = !realMode || (companion?.status === "verified" && companion.liveFingerprintReady);
-  const canApprove = changeSet?.state === "approval_required" && bindingApprovable && companionReady;
-  const canExecute = changeSet?.state === "approved"
+  const reviewedInputsMatch = changeSet?.operations.find((op) => op.kind === "duplicate_asset")?.assetPathBefore === sourceAssetPath.trim()
+    && (changeSet.operations.some((op) => op.kind === "rename_asset") ? "lifecycle" : "duplicate_save") === workflow;
+  const canApprove = reviewedInputsMatch && changeSet?.state === "approval_required" && bindingApprovable && companionReady;
+  const canExecute = reviewedInputsMatch && changeSet?.state === "approved"
     && (!realMode || (bindingBound && activeObservation && nativeRegistrationStatus === "registered" && companionReady));
   const canVerify = (changeSet?.state === "executed" || changeSet?.state === "rollback_available")
     && (!realMode || bindingBound);
@@ -82,6 +85,15 @@ export function AssetMutationPanel() {
       <ul className="ua-utility-placeholder__list">
         <li className="ua-utility-placeholder__item">{uiText("Sandbox root:")}{" "}{mvp15?.gate.sandboxRoot ?? "/Game/UAgentSandbox"}</li>
         <li className="ua-utility-placeholder__item">
+          <label>{uiText("Asset workflow")} <select aria-label={uiText("Asset workflow")} value={workflow} disabled={mvp15?.busy}
+            onChange={(event) => setWorkflow(event.currentTarget.value as "lifecycle" | "duplicate_save")}>
+            <option value="lifecycle">{uiText("Sandbox lifecycle demonstration")}</option>
+            <option value="duplicate_save">{uiText("Duplicate asset and save copy")}</option>
+          </select></label>
+          {workflow === "duplicate_save" && <p>{uiText("Creates a copy in a new sandbox run folder and saves only that copy. Review the exact destination below before approval.")}</p>}
+          {changeSet && !reviewedInputsMatch && <p role="status">{uiText("Inputs changed. Run dry-run again before approval or execution.")}</p>}
+        </li>
+        <li className="ua-utility-placeholder__item">
           <label>
             {uiText("Source asset path")}{" "}
             <input
@@ -89,6 +101,7 @@ export function AssetMutationPanel() {
               className="ua-utility-placeholder__input"
               type="text"
               value={sourceAssetPath}
+              disabled={mvp15?.busy}
               onChange={(event) => setSourceAssetPath(event.currentTarget.value)}
               placeholder="/Game/Test01"
             />
@@ -104,7 +117,7 @@ export function AssetMutationPanel() {
               aria-label={uiText("Dry-run sandbox asset mutation")}
               disabled={mvp15?.busy}
               onClick={() => {
-                void actions?.runMvp15AssetDryRun(sourceAssetPath);
+                void actions?.runMvp15AssetDryRun(sourceAssetPath, workflow);
               }}
             >
               {uiText("Dry-run")}{" "}</button>

@@ -1,3 +1,5 @@
+> Current engine target (2026-11-03): UE **5.8.4 / CL 58902052**, compatible CL / module BuildId **55116800**. See [current compatibility and verification limits](ue584-compatibility.md). Any 5.8.1/5.8.2 results below are historical evidence, not validation of the current engine or a current release.
+
 # T10 bounded multi-file build repair
 
 Independent runtime coordinator `packages/runtime/src/ue-build-repair.ts`; native `ue_build_repair.rs`, `ue_build_repair_io.rs` and their local tests. It reuses the existing MVP12 SHA-256/text-backed diff helpers and T09 build/diagnostic contracts. No shared model, global router, Tauri command, Provider transport, approval UI or production UE permission is changed. The existing path-based `text_mutation.rs` is not presented as handle-bound I/O.

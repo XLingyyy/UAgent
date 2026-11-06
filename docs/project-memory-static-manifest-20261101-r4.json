@@ -1,0 +1,239 @@
+{
+  "module": "T07 project memory and context explanations",
+  "revision": "r4 M5 panic plus failed rollback static repair",
+  "capturedAtUtc": "2026-11-01T03:06:22.4269533Z",
+  "root": "E:\\Codex\\UAgent\\2026-10-29\\worktrees\\credential-vault\\",
+  "reviewInput": "E:/Codex/UAgent/2026-10-29/evidence/independent-plan-and-guard-review-20261101/project-memory-r3-review.md",
+  "previousManifest": {
+    "path": "docs/project-memory-static-manifest-20261101-r3.json",
+    "sha256": "9acf9b190e25d6da11a0ff7b25f5550d62e1b0f16202e721bb88331e595dee3e"
+  },
+  "sourceFiles": [
+    {
+      "path": "packages/runtime/src/project-memory/contract.ts",
+      "bytes": 8371,
+      "sha256": "4ae6075b1f61acc070889c2a0633f9b100838fdf7410f7f1226b1ab6d4a1f157"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/selection.ts",
+      "bytes": 9594,
+      "sha256": "52d4fa40b9bd054caf74964b76d4a1169bd4cf93756f4f1181a959dddc609c6c"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/index.ts",
+      "bytes": 93,
+      "sha256": "e13846fd591d99df8ae7184efeb6928fb63e7779a3343a5de7df3a7da0d10e6b"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/budget.ts",
+      "bytes": 3257,
+      "sha256": "c570eda444daaf13d9627473545622c0828ccbb12434b27456a0df2851bfa243"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/selection.test.ts",
+      "bytes": 10173,
+      "sha256": "808aa736a15f8866931a6d4eb7821d657f018d8df60c7dcb8c7f493282c55d02"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/coordinator-memory.test.ts",
+      "bytes": 3192,
+      "sha256": "8f160ddabd0e0ff8b997b72c04259e626ef4915709f850d0f225bff117213230"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/test-fixtures.ts",
+      "bytes": 2555,
+      "sha256": "687861a060e7623990790a943f273a0656609f7c17c6b8f64eb5f761c82873db"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/project_memory.rs",
+      "bytes": 15381,
+      "sha256": "d5529cc3112f1c47c2db6640eaf2c6e749a6e62b51e893c88d369f4d70ebf388"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/project_memory_tests.rs",
+      "bytes": 7853,
+      "sha256": "4b3d5c2d3ae8580d289397608424d786a01d15350763cca4a7b1538331a64f00"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/project_memory_commands.rs",
+      "bytes": 2967,
+      "sha256": "db19882c341e9cacf35c545554e1a88e5a3f9c02b84e3c6d626b651c3fa8bd28"
+    },
+    {
+      "path": "apps/desktop/web/src/runtime/native-project-memory.ts",
+      "bytes": 8340,
+      "sha256": "f5bce32ee3762c19656680c99543aa181d63e7e76f4534570e166e7eb2fd15cd"
+    },
+    {
+      "path": "apps/desktop/web/src/runtime/native-project-memory.test.ts",
+      "bytes": 4176,
+      "sha256": "55991018ed3694e9d74cc26dd623c4946a0c5a50315fe6856de868514419fbea"
+    },
+    {
+      "path": "apps/desktop/web/src/workspace/ProjectMemoryPanel.tsx",
+      "bytes": 16831,
+      "sha256": "12c0385fb77cfc7f8010b52dd418072e3397e779652e31a8e79b8b46672ea596"
+    },
+    {
+      "path": "apps/desktop/web/src/workspace/ProjectMemoryPanel.css",
+      "bytes": 1199,
+      "sha256": "8e0bfa98c03c790302a716aec807603f13eb78a47896eef1b965aa69c37fc831"
+    },
+    {
+      "path": "apps/desktop/web/src/workspace/ProjectMemoryPanel.test.tsx",
+      "bytes": 7190,
+      "sha256": "a781285f7d5c5d89e79211855ffa78066fc2ad25616e7058a9623ea7d78f8bdd"
+    },
+    {
+      "path": "docs/project-memory-central-merge-20261101.patch",
+      "bytes": 1564,
+      "sha256": "f001b7a28c7db08dcad038be10c2371b975601ede659bdd90033ae69e36fb50c"
+    },
+    {
+      "path": "docs/project-memory-integration-20261101.md",
+      "bytes": 10281,
+      "sha256": "5d617e82e6863a60ff6aef805f98f808e224ff0fe8052cce467f69695e33690f"
+    },
+    {
+      "path": "packages/runtime/src/project-memory/budget.test.ts",
+      "bytes": 6633,
+      "sha256": "0f30e214dc13cfb0308918dcb6ce970ee0d647e27a3e8367de48460f3887fc55"
+    },
+    {
+      "path": "docs/project-memory-boundary-review-20261101-r2.md",
+      "bytes": 7701,
+      "sha256": "4d5d9646dbfdb6397fa2f90b63b99425bd32471933fc23640cfb3fb779aad5b1"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/sqlite_project_memory_budget.rs",
+      "bytes": 8491,
+      "sha256": "fde8bde4c03e4c0242b72032a5cf2daf301745d5d23beb44767e87861ef0cd25"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/sqlite_project_memory_budget_tests.rs",
+      "bytes": 8339,
+      "sha256": "bec100d434d39ebc0396ef42925630dee9bfeb4410f6a228409ce83b32d24844"
+    },
+    {
+      "path": "docs/project-memory-r3-central-integration.patch",
+      "bytes": 13609,
+      "sha256": "37f7dadcd1a4be93032df9d934eedc420332d040b3d25c272072f69585a7091f"
+    },
+    {
+      "path": "docs/project-memory-p2-review-20261101-r3.md",
+      "bytes": 8857,
+      "sha256": "1184954d1307b331deb5ad7199a0f5365baea12c2844b63a74c6855a5afa62aa"
+    },
+    {
+      "path": "docs/project-memory-panic-review-20261101-r4.md",
+      "bytes": 3772,
+      "sha256": "9134bffe89657320d4119c029806091bd1229f83e9a52514efc0bf73501d0e15"
+    }
+  ],
+  "changesFromR3": [
+    {
+      "path": "docs/project-memory-integration-20261101.md",
+      "beforeSha256": "ac6ed518343e39d0d12ed03fbb4f52084da2b1846fb6c964329cf3452ad0c0f1",
+      "afterSha256": "5d617e82e6863a60ff6aef805f98f808e224ff0fe8052cce467f69695e33690f",
+      "change": "M5 panic/rollback confirmation repair or current handoff"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/sqlite_project_memory_budget.rs",
+      "beforeSha256": "3d4d7b4658f042f34661d501030b944ae9a08c60ceaa16137bdde45c8816830c",
+      "afterSha256": "fde8bde4c03e4c0242b72032a5cf2daf301745d5d23beb44767e87861ef0cd25",
+      "change": "M5 panic/rollback confirmation repair or current handoff"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/sqlite_project_memory_budget_tests.rs",
+      "beforeSha256": "4544285022e65cc7e3765557fd1cb1a40b37526223e999bca8683f6d77b16051",
+      "afterSha256": "bec100d434d39ebc0396ef42925630dee9bfeb4410f6a228409ce83b32d24844",
+      "change": "M5 panic/rollback confirmation repair or current handoff"
+    },
+    {
+      "path": "docs/project-memory-panic-review-20261101-r4.md",
+      "beforeSha256": null,
+      "afterSha256": "9134bffe89657320d4119c029806091bd1229f83e9a52514efc0bf73501d0e15",
+      "change": "new r4 review explanation"
+    }
+  ],
+  "readOnlyCentralApiSnapshots": [
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/sqlite.rs",
+      "sha256": "5dd7b690ff8df0213eeded90ead337749d8397a3dc379ac466d111f5a558400b",
+      "editedByThisAuthor": false
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/run_store_sqlite.rs",
+      "sha256": "1c5669a59d083c018ddcf229523ea528dd54c2c2c02c929822409b73015c1061",
+      "editedByThisAuthor": false
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/database_owner.rs",
+      "sha256": "06a30f1690021acf0b0ae7024fac7767ab5e29229e9504033fc6a124d7452e92",
+      "editedByThisAuthor": false
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/managed_run_store.rs",
+      "sha256": "f403777bddf90dd475b2783f4b81288a0d32fa6604ffa8c963f0b4c2f0d2a9bd",
+      "editedByThisAuthor": false
+    }
+  ],
+  "declaredTests": [
+    {
+      "path": "packages/runtime/src/project-memory/selection.test.ts",
+      "declaredCases": 14
+    },
+    {
+      "path": "packages/runtime/src/project-memory/budget.test.ts",
+      "declaredCases": 7
+    },
+    {
+      "path": "packages/runtime/src/project-memory/coordinator-memory.test.ts",
+      "declaredCases": 2
+    },
+    {
+      "path": "apps/desktop/web/src/runtime/native-project-memory.test.ts",
+      "declaredCases": 7
+    },
+    {
+      "path": "apps/desktop/web/src/workspace/ProjectMemoryPanel.test.tsx",
+      "declaredCases": 7
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/project_memory_tests.rs",
+      "declaredCases": 5
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_run_store/sqlite_project_memory_budget_tests.rs",
+      "declaredCases": 8
+    }
+  ],
+  "staticChecks": {
+    "newCentralPatchRequired": false,
+    "buildsExecuted": 0,
+    "applicationsStarted": 0,
+    "testSourceCount": 50,
+    "typechecksExecuted": 0,
+    "paidApiCalls": 0,
+    "testsExecuted": 0,
+    "centralFilesEditedByThisAuthor": 0,
+    "sqlExecuted": 0,
+    "fileDeletionOperations": 0
+  },
+  "panicRepair": {
+    "dynamicStatus": "not executed",
+    "verifyAfterInnerRollbackGuard": true,
+    "catchInsideBudgetLayer": true,
+    "extraRollbackAttemptsAtMost": 1,
+    "quarantineOriginalConnectionLeaseBeforeScopedLeaseRelease": true,
+    "faultInjection": "cfg(test) SQLite authorizer denies initial ROLLBACK; retry/autocommit/unchanged rows and safe reuse asserted",
+    "retainOriginalAndCleanupPanicPayloadsUntilAfterQuarantine": true,
+    "verifyAutocommitBeforeResume": true
+  },
+  "pending": [
+    "central serial OS-Job-protected compilation and focused regression execution",
+    "real native IPC/restart/privacy/request-capture acceptance",
+    "central P1 batch dispatch seal and recovery/owner acceptance remain separate"
+  ],
+  "status": "M5 static code repair and one new regression source delivered; no runtime pass claimed"
+}

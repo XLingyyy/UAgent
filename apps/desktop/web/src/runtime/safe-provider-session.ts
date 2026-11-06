@@ -1,3 +1,4 @@
+import {anthropicBody} from "../../../../../packages/runtime/src/provider/anthropic-protocol.js";
 import {
   createDeepSeekAccountSession,
   redactString,
@@ -100,7 +101,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     providerId: null as string | null,
     modelId: null as string | null,
     endpoint: null as string | null,
-    wireApi: null as "chat_completions" | "responses" | null,
+    wireApi: null as "chat_completions" | "responses" | "anthropic" | null,
     fixture: false,
     savedCredential: false,
     savedKeyVersion: null as string | null,
@@ -310,7 +311,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       // Reuse the actual protocol serializers, including selected references and credential redaction.
       const scoped = withContext(request);
       let body: string;
-      if (profile) body = JSON.stringify(responsesBody(scoped, stream));
+      if (profile) body = JSON.stringify(state.wireApi==="anthropic"?anthropicBody(scoped,stream):responsesBody(scoped, stream));
       else {
         const preview = { ...currentSession!.preview(scoped) } as Record<string, unknown>;
         delete preview.endpoint;
@@ -358,6 +359,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
       supportsStreaming: true,
       supportsTools: !state.savedCredential && state.wireApi!=="responses",
       supportsPreSendValidation: true,
+      supportsParallelInvestigation: session?.adapter.getCapabilities().supportsParallelInvestigation === true && !state.savedCredential && state.wireApi!=="responses",
       isMock: state.ready ? state.fixture : options.mode === "offline",
     }),
     async confirmOrdinaryDelivery(requestId, identity) {
@@ -467,7 +469,9 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     providerId: string,
     modelId: string,
     credential: string,
+    wireApi: "responses"|"anthropic" = "responses",
   ): Promise<boolean> {
+    if(["responses","anthropic"].includes(wireApi)){credential="";throw Error("provider_api_archived");}
     if (
       !responsesAllowed ||
       !options.nativeInvoke ||
@@ -524,6 +528,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
         providerId,
         modelId,
         credential: holder.key,
+        wireApi,
         gate,
       });
       nativeOpenReturned = true;
@@ -550,7 +555,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
         providerId: snapshot.providerId,
         modelId: snapshot.modelId,
         endpoint: snapshot.endpoint,
-        wireApi: "responses",
+        wireApi,
         fixture: snapshot.fixture,
         expiresAt: snapshot.expiresAt,
       };
@@ -592,6 +597,7 @@ export function createSafeProviderSession(options: SafeProviderSessionOptions) {
     }
   }
   async function openSaved(providerId: string, modelId: string): Promise<boolean> {
+    if(providerId!=="deepseek"||modelId!==DEEPSEEK_MODEL)throw Error("provider_api_archived");
     if (!options.nativeInvoke || !baseCanConfigure || disposed || !state.enabled || nativeRevocationFailed)
       throw Error("saved_session_native_unavailable");
     close();
@@ -931,7 +937,7 @@ export type SafeProviderSession = ReturnType<typeof createSafeProviderSession>;
 // may open a native saved profile for the selected provider; native owns its key.
 const localProfile = getApplicationProfile();
 const nativeInvoke = localNativeInvoke();
-export const safeProviderSession = createSafeProviderSession(
+export function createDesktopProviderSession(){return createSafeProviderSession(
   localProfile.offlineDemo
     ? {
         mode: "offline",
@@ -946,4 +952,5 @@ export const safeProviderSession = createSafeProviderSession(
         nativeInvoke,
         responsesFixture: false,
       },
-);
+);}
+export const safeProviderSession=createDesktopProviderSession();

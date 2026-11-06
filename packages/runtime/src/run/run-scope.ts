@@ -34,7 +34,7 @@ export class RunScopeAuthority {
       throw Error("invalid_run_scope");
     const endpoint = new URL(scope.endpoint);
     if (
-      endpoint.protocol !== "https:" ||
+      (endpoint.protocol !== "https:" && !(scope.providerId === "codex" && scope.endpoint === "codex://app-server" && scope.collaboration)) ||
       endpoint.username ||
       endpoint.password ||
       endpoint.search ||

@@ -818,3 +818,15 @@ mod tests {
         assert_eq!(error, "native_response_read_failed");
     }
 }
+
+/// Bounded read-only V2 handshake response; shared SSE decoder keeps its existing byte bound.
+pub(crate) fn pickup_discovery_response(response:ureq::Response)->Result<McpHttpRequestResult,String>{
+ if is_event_stream_content_type(response.header("Content-Type")){return response_to_result(response,McpHttpMethod::Post);}
+ let status=response.status();let content_type=response.header("Content-Type").map(str::to_string);
+ let session_id=response.header("Mcp-Session-Id").map(str::to_string);
+ let protocol_version=response.header("MCP-Protocol-Version").map(str::to_string);
+ let mut bytes=Vec::new();response.into_reader().take((SSE_RESPONSE_MAX_BYTES+1) as u64).read_to_end(&mut bytes).map_err(|_|NATIVE_RESPONSE_READ_FAILED)?;
+ if bytes.len()>SSE_RESPONSE_MAX_BYTES{return Err("pickup_response_too_large".into());}
+ let body=String::from_utf8(bytes).map_err(|_|NATIVE_RESPONSE_READ_FAILED)?;
+ Ok(McpHttpRequestResult{method:McpHttpMethod::Post,status,body,content_type,session_id,protocol_version,observation_request:None,observation_receipts:None})
+}

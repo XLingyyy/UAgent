@@ -1,9 +1,77 @@
+#[cfg(windows)]
+mod codex_bridge;
+#[cfg(windows)]
+mod codex_commands;
+#[cfg(windows)]
+mod codex_program;
+pub(crate) mod ue_scene_batch;
+pub(crate) mod ue_scene_execution;
+#[cfg(windows)]
+pub(crate) mod ue_scene_launch;
+#[cfg(windows)]
+pub(crate) mod ue_scene_commands;
+pub(crate) mod ue_repair_cycle;
+pub(crate) mod ue_semantic_read;
+pub(crate) mod ue_blueprint_read;
+#[cfg(windows)]
+pub(crate) mod ue_blueprint_read_commands;
+#[cfg(windows)]
+pub(crate) mod ue_semantic_launch;
+#[cfg(windows)]
+pub(crate) mod ue_semantic_launch_commands;
+#[cfg(windows)]
+pub(crate) mod ue_pickup_launch;
+mod ue_pickup_execution;
+#[cfg(windows)]
+pub(crate) mod ue_pickup_launch_commands;
+pub(crate) mod ue_pickup_template;
+pub(crate) mod ue_pickup_negotiation;
+#[cfg(windows)]
+pub(crate) mod ue_pickup_connection_commands;
 pub(crate) mod app_profile;
 pub(crate) mod local_workspace;
 #[cfg(windows)]
 pub(crate) mod local_run_store;
 #[cfg(windows)]
 pub(crate) mod run_store_commands;
+#[cfg(windows)]
+pub(crate) mod managed_run_store;
+#[cfg(windows)]
+pub(crate) mod project_memory_commands;
+#[cfg(windows)]
+pub(crate) mod session_catalog_commands;
+#[cfg(all(windows, test))]
+mod native_store_contract_tests;
+#[cfg(windows)]
+pub(crate) mod run_history_search_commands;
+#[cfg(windows)]
+pub(crate) mod ue_build_profile;
+#[cfg(windows)]
+pub(crate) mod ue_build_process;
+#[cfg(windows)]
+pub(crate) mod ue_build_execution_commands;
+#[cfg(windows)]
+pub(crate) mod ue_build_result;
+#[cfg(windows)]
+pub(crate) mod ue_build_repair;
+#[cfg(windows)]
+pub(crate) mod ue_build_repair_io;
+#[cfg(windows)]
+pub(crate) mod ue_build_repair_result;
+#[cfg(windows)]
+pub(crate) mod ue_repair_recovery;
+#[cfg(windows)]
+pub(crate) mod ue_build_preview_commands;
+#[cfg(windows)]
+pub(crate) mod ue_semantic_read_commands;
+#[cfg(windows)]
+pub(crate) mod runtime_host_service;
+#[cfg(windows)]
+pub(crate) mod runtime_host_commands;
+#[cfg(windows)]
+pub(crate) mod native_recovery_status;
+#[cfg(windows)]
+pub(crate) mod runtime_host_recovery_catalog;
 #[cfg(windows)]
 pub(crate) mod product_settings_store;
 #[cfg(windows)]
@@ -512,7 +580,9 @@ fn trust_native_project_root(input: TrustRootInput) -> Result<TrustRootResult, S
     let display = redact_path_for_ui(&normalized);
     let root_id = hash_path(&normalized);
     #[cfg(windows)]
-    native_responses_commands::revoke_project(&root_id);
+    let _project_update = native_responses_commands::begin_project_update(&root_id)?;
+    // The broker update guard predates the registry lock, so the registry drops
+    // before the guard clears the update marker on every return/error path.
     let canonical_root = canonical_root_for_binding(&normalized)
         .map_err(|reason| format!("Cannot trust root: {reason}"))?;
     let object_identity = root_object_identity(&normalized, &canonical_root)
@@ -1660,14 +1730,68 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(ManagedBridgeState::new(bridge_state))
-        .setup(|app| app_profile::setup_isolated_windows(app))
-        .on_page_load(|webview,_| {
+        .setup(|app| {
+            #[cfg(windows)]
+            {
+                let store_root = app_profile::resolve_app_data_dir(app.handle())
+                    .map_err(std::io::Error::other)?.join("run-store-v2");
+                let store_owner = managed_run_store::ManagedRunStoreState::start(store_root)?;
+                if !app.manage(store_owner) {
+                    return Err(std::io::Error::other("managed_store_state_already_fixed").into());
+                }
+                app.manage(ue_build_execution_commands::UEBuildExecutionState::default());
+                let preview = ue_build_preview_commands::UEBuildPreviewState::default();
+                let preview_monitor = preview.start_monitor().map_err(std::io::Error::other)?;
+                if !app.manage(preview) || !app.manage(preview_monitor) {
+                    return Err(std::io::Error::other("ue_preview_state_already_managed").into());
+                }
+                let host = runtime_host_service::RuntimeHostService::new()
+                    .map_err(std::io::Error::other)?;
+                // One bounded startup scan discovers blockers; no writer fence is installed.
+                // Even an eventual empty scan cannot grant positive admission.
+                let catalog = std::sync::Arc::new(runtime_host_recovery_catalog::PersistentRecoveryCatalog::new());
+                host.install_recovery_catalog(catalog.clone()).map_err(std::io::Error::other)?;
+                let monitor = host.start_monitor().map_err(std::io::Error::other)?;
+                if !app.manage(host) || !app.manage(monitor) || !app.manage(catalog.clone()) {
+                    return Err(std::io::Error::other("runtime_host_state_already_managed").into());
+                }
+                // Submission failure is recorded; it cannot grant recovery admission.
+                let store=app.state::<managed_run_store::ManagedRunStoreState>();
+                let _=store.schedule_startup_scan(catalog);
+            }
+            app_profile::setup_isolated_windows(app)
+        })
+        .on_page_load(|webview, payload| {
+            #[cfg(windows)]
+            if let Some(store) = webview.app_handle().try_state::<managed_run_store::ManagedRunStoreState>() {
+                store.page_loaded(webview.window().label(), payload.url(),
+                    matches!(payload.event(), tauri::webview::PageLoadEvent::Finished));
+            }
+            #[cfg(windows)]
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                if let Some(host) = webview.app_handle().try_state::<runtime_host_service::RuntimeHostService>() {
+                    // Revoke the old generation before this lifecycle callback
+                    // returns; a delayed worker could revoke a newer same-label owner.
+                    let _ = host.disconnect_window(webview.window().label());
+                }
+            }
             #[cfg(windows)]
             { native_responses_commands::register_window(webview.window().label());
               native_discussion_archive_commands::register_window(webview.window().label());
               native_saved_deepseek::register_window(webview.window().label()); }
         })
         .on_window_event(|window,event| {
+            #[cfg(windows)]
+            if matches!(event, tauri::WindowEvent::CloseRequested{..} | tauri::WindowEvent::Destroyed) {
+                if let Some(store) = window.try_state::<managed_run_store::ManagedRunStoreState>() { store.revoke_window(window.label()); }
+            }
+            #[cfg(windows)]
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                if let Some(host) = window.try_state::<runtime_host_service::RuntimeHostService>() {
+                    // Metadata only: complete old-owner revocation synchronously.
+                    let _ = host.disconnect_window(window.label());
+                }
+            }
             #[cfg(windows)]
             if matches!(event,tauri::WindowEvent::CloseRequested{..}|tauri::WindowEvent::Destroyed) {
                 if matches!(event,tauri::WindowEvent::Destroyed) {native_responses_commands::destroy_window(window.label());}
@@ -1694,6 +1818,17 @@ pub fn run() {
             app_profile::get_application_profile,
             #[cfg(windows)]
             product_settings_commands::initialize_product_settings,
+            #[cfg(windows)] codex_commands::discover_codex,
+            #[cfg(windows)] codex_commands::list_codex_models,
+            #[cfg(windows)] codex_commands::read_codex_model_preference,
+            #[cfg(windows)] codex_commands::save_codex_model_preference,
+            #[cfg(windows)] codex_commands::list_codex_sessions,
+            #[cfg(windows)] codex_commands::start_codex_turn,
+            #[cfg(windows)] codex_commands::poll_codex_turn,
+            #[cfg(windows)] codex_commands::dispatch_codex_turn,
+            #[cfg(windows)] codex_commands::approve_codex_tool_result,
+            #[cfg(windows)] codex_commands::dispatch_codex_tool_result,
+            #[cfg(windows)] codex_commands::cancel_codex_turn,
             #[cfg(windows)]
             product_settings_commands::read_product_settings,
             #[cfg(windows)]
@@ -1713,9 +1848,74 @@ pub fn run() {
             #[cfg(windows)]
             run_store_commands::list_native_run_history,
             #[cfg(windows)]
+            list_project_memories,
+            #[cfg(windows)]
+            list_native_session_catalog,
+            #[cfg(windows)]
+            update_native_session_catalog,
+            #[cfg(windows)]
+            branch_native_session_catalog,
+            #[cfg(windows)]
+            read_native_session_catalog,
+            #[cfg(windows)]
+            cancel_native_session_catalog,
+            #[cfg(windows)]
+            get_project_memory,
+            #[cfg(windows)]
+            create_project_memory,
+            #[cfg(windows)]
+            update_project_memory,
+            #[cfg(windows)]
+            run_history_search_commands::search_native_run_history,
+            #[cfg(windows)]
+            ue_build_execution_commands::approve_and_run_ue_build,
+            ue_build_execution_commands::cancel_approved_ue_build,
+            ue_build_execution_commands::repair_commands::open_ue_build_repair,
+            ue_build_execution_commands::repair_commands::release_ue_build_repair,
+            ue_build_execution_commands::repair_commands::prepare_ue_build_repair,
+            ue_build_execution_commands::repair_commands::approve_and_apply_ue_build_repair,
+            ue_build_execution_commands::repair_commands::prepare_ue_build_restore,
+            ue_build_execution_commands::repair_commands::prepare_historical_ue_restore,
+            ue_build_execution_commands::repair_commands::approve_and_rebuild_ue_build_repair,
+            ue_build_preview_commands::prepare_ue_build_preview,
+            #[cfg(windows)]
+            ue_build_preview_commands::release_ue_build_preview,
+            #[cfg(windows)]
+            ue_semantic_read_commands::inspect_ue_semantic_read_availability,
+            ue_blueprint_read_commands::read_ue_blueprint_structure,
+            ue_blueprint_read_commands::read_ue_asset_references,
+            ue_pickup_connection_commands::negotiate_ue_pickup_connection,
+            ue_semantic_launch_commands::start_ue_semantic_editor,
+            ue_semantic_launch_commands::stop_ue_semantic_editor,
+            ue_pickup_launch_commands::approve_ue_pickup_launch_plan,
+            ue_scene_commands::approve_ue_scene_launch_plan,
+            ue_scene_commands::start_approved_ue_scene_editor,
+            ue_scene_commands::stop_approved_ue_scene_editor,
+            ue_scene_commands::scene_batch_step,
+            ue_pickup_launch_commands::start_approved_ue_pickup_editor,
+            ue_pickup_launch_commands::stop_approved_ue_pickup_editor,
+            ue_pickup_launch_commands::preview_ue_pickup_template,
+            ue_pickup_launch_commands::apply_ue_pickup_template,
+            #[cfg(windows)]
+            runtime_host_commands::connect_runtime_host_owner,
+            #[cfg(windows)]
+            runtime_host_commands::heartbeat_runtime_host_owner,
+            #[cfg(windows)]
+            runtime_host_commands::get_runtime_host_status,
+            #[cfg(windows)]
+            native_recovery_status::read_native_recovery_status,
+            #[cfg(windows)]
+            runtime_host_commands::disconnect_runtime_host_owner,
+            #[cfg(windows)]
+            runtime_host_commands::enqueue_runtime_host_model_job,
+            #[cfg(windows)]
+            runtime_host_commands::cancel_runtime_host_job,
+            #[cfg(windows)]
             run_store_commands::commit_native_run_store,
             #[cfg(windows)]
             run_store_commands::snapshot_native_run_store,
+            run_store_commands::read_native_run_artifact,
+            run_store_commands::inspect_native_repair_recovery,
             #[cfg(windows)]
             native_discussion_archive_commands::open_native_discussion_archive,
             #[cfg(windows)]
@@ -1759,6 +1959,16 @@ pub fn run() {
             #[cfg(windows)]
             native_responses_commands::bind_native_responses_run,
             #[cfg(windows)]
+            native_responses_commands::bind_native_project_memory_run,
+            #[cfg(windows)]
+            native_responses_commands::prepare_native_project_memory_selection,
+            #[cfg(windows)]
+            native_responses_commands::cancel_native_project_memory_dispatch,
+            #[cfg(windows)]
+            native_responses_commands::authorize_native_project_memory_scope,
+            #[cfg(windows)]
+            native_responses_commands::revoke_native_project_memory_scope,
+            #[cfg(windows)]
             native_responses_commands::bind_native_responses_conversation,
             #[cfg(windows)]
             native_responses_commands::prepare_native_responses_request,
@@ -1776,6 +1986,7 @@ pub fn run() {
             native_responses_commands::load_native_provider_continuations,
             #[cfg(windows)]
             native_responses_commands::save_native_provider_continuation,
+            native_responses_commands::complete_native_anthropic_chat,
             project_source_versions::inspect_native_project_sources,
             validate_project_root,
             scan_project_index,
@@ -1850,6 +2061,16 @@ pub fn run() {
         .build(context)
         .expect("error while building tauri application")
         .run(|app, event| {
+            #[cfg(windows)]
+            if matches!(&event, tauri::RunEvent::Exit) {
+                if let Some(monitor) = app.try_state::<ue_build_preview_commands::UEBuildPreviewMonitor>() {
+                    monitor.shutdown();
+                }
+                if let Some(store) = app.try_state::<managed_run_store::ManagedRunStoreState>() { store.close(); }
+                if let Some(host) = app.try_state::<runtime_host_service::RuntimeHostService>() {
+                    let _ = host.close();
+                }
+            }
             if let tauri::RunEvent::ExitRequested {
                 code: None, api, ..
             } = event
@@ -2488,7 +2709,7 @@ fn parent_lifecycle_input(
 }
 
 #[tauri::command]
-fn mvp15d_bridge_request_renderer_restart(
+async fn mvp15d_bridge_request_renderer_restart(
     input: mvp15d_runtime_bridge::RendererRestartRequestInput,
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
@@ -2506,6 +2727,17 @@ fn mvp15d_bridge_request_renderer_restart(
         .ok_or_else(|| "MVP15D_BRIDGE_DISABLED".to_string())?
         .request_renderer_restart(input)
         .map_err(|error| error.code().to_string())?;
+    #[cfg(windows)]
+    {
+        use tauri::Manager;
+        let host = app.try_state::<runtime_host_service::RuntimeHostService>()
+            .ok_or_else(|| "runtime_host_service_unavailable".to_owned())?
+            .inner().clone();
+        let label = predecessor_window_label.clone();
+        tauri::async_runtime::spawn_blocking(move || host.disconnect_window(&label))
+            .await.map_err(|_| "runtime_host_disconnect_unavailable".to_owned())?
+            .map_err(str::to_owned)?;
+    }
     let lifecycle_input = parent_lifecycle_input_with_binding(
         &result,
         &predecessor_window_label,
@@ -3585,3 +3817,76 @@ mod tests {
         trusted_roots().lock().unwrap().clear();
     }
 }
+
+#[cfg(windows)]
+#[tauri::command]
+async fn list_project_memories(window: tauri::WebviewWindow, store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: project_memory_commands::MemoryListInput)
+    -> Result<local_run_store::project_memory::MemoryPage, local_run_store::StoreError> {
+    store.with_store(&window, false, move |store, cancelled, deadline| project_memory_commands::list_project_memories(store, input, cancelled, deadline)).await
+}
+#[cfg(windows)]
+#[tauri::command]
+async fn get_project_memory(window: tauri::WebviewWindow, store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: project_memory_commands::MemoryGetInput)
+    -> Result<local_run_store::project_memory::ProjectMemory, local_run_store::StoreError> {
+    store.with_store(&window, false, move |store, cancelled, deadline| project_memory_commands::get_project_memory(store, input, cancelled, deadline)).await
+}
+#[cfg(windows)]
+#[tauri::command]
+async fn create_project_memory(window: tauri::WebviewWindow, store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: project_memory_commands::MemoryCreateInput)
+    -> Result<local_run_store::project_memory::ProjectMemory, local_run_store::StoreError> {
+    store.with_store(&window, true, move |store, cancelled, deadline| project_memory_commands::create_project_memory(store, input, cancelled, deadline)).await
+}
+#[cfg(windows)]
+#[tauri::command]
+async fn update_project_memory(window: tauri::WebviewWindow, store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: project_memory_commands::MemoryUpdateInput)
+    -> Result<local_run_store::project_memory::ProjectMemory, local_run_store::StoreError> {
+    store.with_store(&window, true, move |store, cancelled, deadline| project_memory_commands::update_project_memory(store, input, cancelled, deadline)).await
+}
+
+#[cfg(windows)]
+#[tauri::command]
+async fn list_native_session_catalog(window: tauri::WebviewWindow, store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: session_catalog_commands::ListInput)
+    -> Result<session_catalog_commands::ListResult, local_run_store::StoreError> {
+    let grant=store.capture_window_grant(&window)?;
+    let lifetime = session_catalog_commands::NativeRequestLifetime::prepare_for_grant(input.schema_version, &input.project_id, &input.request_id, &grant)?;
+    store.with_store_for_grant(grant, false, move |store, _, _| lifetime.run(|| session_catalog_commands::list(store, &input))).await
+}
+#[cfg(windows)]
+#[tauri::command]
+async fn update_native_session_catalog(window: tauri::WebviewWindow, store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: session_catalog_commands::UpdateInput)
+    -> Result<session_catalog_commands::MutationResult, local_run_store::StoreError> {
+    let grant=store.capture_window_grant(&window)?;
+    let lifetime = session_catalog_commands::NativeRequestLifetime::prepare_for_grant(input.schema_version, &input.project_id, &input.request_id, &grant)?;
+    store.with_store_for_grant(grant, true, move |store, _, _| lifetime.run(|| session_catalog_commands::update(store, &input))).await
+}
+#[cfg(windows)]
+#[tauri::command]
+async fn branch_native_session_catalog(window: tauri::WebviewWindow, store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: session_catalog_commands::BranchInput)
+    -> Result<session_catalog_commands::MutationResult, local_run_store::StoreError> {
+    let grant=store.capture_window_grant(&window)?;
+    let lifetime = session_catalog_commands::NativeRequestLifetime::prepare_for_grant(input.schema_version, &input.project_id, &input.request_id, &grant)?;
+    store.with_store_for_grant(grant, true, move |store, _, _| lifetime.run(|| {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()
+            .and_then(|value| i64::try_from(value.as_millis()).ok()).filter(|value| *value<=9_007_199_254_740_991)
+            .ok_or_else(|| local_run_store::StoreError { kind:"clock".into(),message:"system timestamp is unavailable".into() })?;
+        session_catalog_commands::branch(store, &input, now)
+    })).await
+}
+#[cfg(windows)]
+#[tauri::command]
+async fn read_native_session_catalog(window: tauri::WebviewWindow, store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: session_catalog_commands::ReadInput)
+    -> Result<session_catalog_commands::ReadResult, local_run_store::StoreError> {
+    let grant=store.capture_window_grant(&window)?;
+    let lifetime = session_catalog_commands::NativeRequestLifetime::prepare_for_grant(input.schema_version, &input.project_id, &input.request_id, &grant)?;
+    store.with_store_for_grant(grant, false, move |store, _, _| lifetime.run(|| session_catalog_commands::read(store, &input))).await
+}
+/// Cancellation never waits behind the worker it must interrupt; it opens no store.
+#[cfg(windows)]
+#[tauri::command]
+fn cancel_native_session_catalog(window: tauri::WebviewWindow, store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: session_catalog_commands::CancelInput)
+    -> Result<session_catalog_commands::CancelResult, local_run_store::StoreError> {
+    let grant=store.capture_window_grant(&window)?;
+    session_catalog_commands::cancel_for_grant(&input,&grant)
+}
+
+mod repair_execution_identity;

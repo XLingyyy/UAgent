@@ -1,94 +1,91 @@
 # UAgent
 
-面向 Unreal Engine 工作流的本地桌面 Agent 工作台，使用 React、TypeScript 和 Tauri。当前重点是清晰的模型对话、显式上下文分享，以及可单独审阅的工具操作。
+面向 Unreal Engine 工作流的本地桌面 Agent 工作台，使用 React、TypeScript 和 Tauri。
 
-Local desktop workspace for model conversations and explicitly approved Unreal Engine workflows. Windows ordinary chat supports the shipped DeepSeek Flash route and the official OpenAI Responses endpoint. Other provider configurations are not advertised as runnable integrations.
+**当前集成版本：r14。** 仅开放 **DeepSeek API** 与 **官方 Codex app-server**。Claude / Anthropic、OpenAI Responses 为归档实现，保留源码和历史记录，不开放新建或发送。r14 是本地迭代标识，包版本仍为 `0.0.1`。
 
-Read-only structured project investigation is available as an explicit task mode; see the [capability and scope contract](docs/bounded-investigation.md) for its current limits and validation boundaries.
+Local desktop workspace for model conversations and explicitly approved Unreal Engine workflows. The r14 source integrates DeepSeek and official Codex app-server. Real Windows UI acceptance covered ordinary Codex conversation and a two-agent read-only investigation with a persisted final summary. Other provider routes remain archived.
+
+- [r14 发布说明与验收边界](docs/releases/r14.md)
+- [模型连接、会话与审批](docs/desktop-provider-and-conversation.md)
+- [开发与构建指南](docs/development.md)
+- [UE 5.8.4 兼容性](docs/ue584-compatibility.md)
+
+## r14 更新
+
+- 协作成员和工作流配置移入独立侧栏，输入区保持稳定；Codex 官方会话按需打开，设置往返保留会话和草稿。
+- 修复只读工具的 `limit=200/100` 导致整组调查失败的问题。只对未发生读取的 `limit` 范围错误反馈 `1–25` 约束，允许有界纠正；父任务和成员共享纠错上限，越权和路径拒绝继续阻断。
+- 检查点时间以上一次成功提交的时间为下界，避免仅追加工具回复时出现时间倒退和归档失败。
+- 原生归档接受主 Agent 的 `synthesizer` 读取归属，仅动态分工模式接受 `planner`；未知角色和未配置成员仍被拒绝。
 
 ## 当前能力
 
-- 桌面界面默认中文，设置 → 通用可即时切换 English，重启保留语言偏好。
-- 首页动态显示实际模型或未选择状态。设置 → 模型服务管理服务商、端点与模型列表，明确区分已配置、会话关闭、连接未验证及当前构建尚不可运行。
-- 当前 Windows 普通对话支持 DeepSeek 官方端点的 `deepseek-flash` 和 OpenAI 官方 Responses 端点；Responses 此版要求精确模型快照 ID。其他服务商可保存配置，尚未接入的后端不会标成可运行。
-- 同一对话继续追问时，按 user/assistant 顺序携带最近最多 8 轮已完成纯文本，最多 12 KiB；新对话和不同项目隔离。附件、工具执行及失败/取消的轮次不自动继承，普通聊天按“发送”发起该次完整请求；调查中的额外外发仍可审阅实际历史与正文。
-- 助手正文在同一消息节点内连续流式更新，支持基础 Markdown 排版。运行详情独立查看，只展示状态、工具、用量及必要错误，不复制流式正文，也不抢占详情滚动位置；停止保留部分回复与草稿，失败不自动重试，也不伪装为成功上下文。
-- DeepSeek 普通对话自动保存完整正文和中断片段到本机 SQLite；历史恢复只选择同项目、同模型的已完成纯文本，并重新开启临时会话。旧记录不恢复凭证、审批或工具权限。存储分段和容量边界见[讨论历史契约](docs/deepseek-discussion-history.md)。
-- 本地项目索引、文件/资源引用、日志与工具入口继续保留各自的信任、能力和审批边界。模型提案不等于执行授权。
+- 默认中文，可即时切换 English，重启保留语言与非敏感模型配置。
+- DeepSeek 使用官方端点和 `deepseek-flash`。配置服务商不等于真实连接验证成功。
+- Codex 使用本机官方 `codex.exe` / app-server 和用户已有 ChatGPT 登录。普通会话、独立成员调查、主 Agent 汇总已接入；动态分工和混合成员配置已有源码，但不包含在 r14 真实模型验收结论中。
+- Codex 主 Agent 与成员可调用明确批准范围内的 UAgent 只读工具，每次原生 turn 计一次请求。每次发送和每份原样工具结果分别确认，不自动注入项目记忆。
+- DeepSeek 同一对话最多继承最近 8 轮、12 KiB 的已完成纯文本；新对话和项目隔离。附件、工具执行及失败/取消轮次不自动成为下一轮上下文。
+- 助手正文原位流式更新，运行详情独立查看。停止保留部分回复和草稿，失败不伪装为成功或自动重发。
+- 本地 SQLite 保存对话、运行、工具和协作结果；历史查询、结果查看和恢复入口不恢复旧凭证、审批或执行权限。
 
-## 开发分支模块状态
+## 已接入模块及边界
 
-下列源码已合入，但“未注册”表示尚未接入主 App、生产 IPC、权限或启动恢复流程，不能作为可用产品功能验收。
+源码接线、功能入口和真实端到端验收分别记录，不能相互替代。
 
 | 模块 | 当前边界 |
 | --- | --- |
-| [UE T09–T14（含 T10）](docs/ue-build-integration.md) | 构建、修复、语义读取、拾取物和场景批次模块均未注册；既有隔离 Lab 证据不代表主线生产接线完成。 |
-| [T16 操作审阅](apps/desktop/web/src/operation-review/README.md) | 未挂载的审阅 UI，批准默认禁用。语义 adapter 只展示 T13 创建预览，不是完整 Blueprint 图差异。 |
-| [T18 效果核对](docs/effect-reconciliation.md) | 未注册的持久日志与交接屏障；不自动迁移旧扩展，不代表生产恢复或外部执行已结束。 |
-| [T19 资源队列](packages/runtime/src/run/resource-queue/README.md) | 未注册的单进程共享实例；最多三个本地模型槽，尚未提供原生资源认证或跨进程互斥。 |
-| [Anthropic Messages](packages/runtime/src/provider/anthropic/README.md) | 未注册的协议模块；没有生产原生传输、UI 或真实账号验收。 |
-| [Responses 桌面对话](docs/responses-official-connection.md) | Windows 普通对话已开放 OpenAI 官方端点与本机临时密钥；调查仍仅隔离 fixture。真实 API 和外部 TLS 结果待用户验收。 |
+| [UE 构建、修复、语义/Blueprint 读取、拾取物与场景](docs/ue-build-integration.md) | 已注册相应原生命令与界面入口。仍须限定项目、原生审批和资源归属；不代表 r14 全部真实 UE 写入、回滚和项目生命周期验收。 |
+| [操作审阅](apps/desktop/web/src/operation-review/README.md) | 历史只读审阅已挂载，展示保存的参数和结果，不恢复审批，也不证明当前外部效果。 |
+| [效果核对与恢复](docs/effect-reconciliation.md) | 原生恢复目录、启动屏障和观察入口已有接线；不自动恢复权限、重发操作或证明外部执行结束。 |
+| [资源调度](packages/runtime/src/run/resource-queue/README.md) | 已接入同一应用进程多窗口共享的原生 host 调度。跨独立进程互斥和断电恢复不在 r14 验收范围。 |
+| [项目记忆](docs/project-memory-approved-snapshot.md) | 项目记忆存储与审阅已有集成；所链接的快照外发记录属于已归档 Responses 路径，不代表当前 Codex/DeepSeek 可用外发能力。Codex 调查不自动注入记忆。 |
+| Claude / Responses | 归档实现与历史记录保留，当前产品入口关闭。 |
 
-代码合入与生产激活分开。历史不恢复旧会话、审批或可复用的发送意图；用户明确保存的服务密钥可在新对话中用于新请求，调查外发与工具审批仍独立。
+当前 UE 目标为 **5.8.4 / CL 58902052**，兼容 CL / module BuildId 为 **55116800**。旧版 5.8.1/5.8.2 的记录只代表历史证据，详见[当前兼容性说明](docs/ue584-compatibility.md)。
 
-## 凭证、费用与审批
+## 连接与使用
 
-产品**没有固定 10 元累计费用门槛**，费用以服务商账单为准，由用户自行控制。旧测试活动的策略代码和账本可以保留作历史记录，产品会话不依赖其初始化、核价或额度预留。
+### Codex
 
-Windows 桌面可将用户主动保存的 API 密钥交给当前 Windows 用户的凭据管理器保护；界面只保留固定遮罩，不从安全存储回显完整密钥。密钥按服务商代际、协议和规范端点隔离，不写入 SQLite、配置、存档或日志。停止、切换项目/模型、过期或退出会撤销临时会话，不删除已保存密钥。替换和删除先停用旧版本；系统清理失败时明确提示，旧版本不会自动复用。见[凭证存储契约](docs/provider-credential-storage.md)。
+1. 在官方 Codex 客户端完成登录，确认本机可用的官方 `codex.exe`。
+2. 在 UAgent 打开“Codex 官方会话”，按界面读取官方模型目录、选择实际可用模型并配置会话。
+3. 输入消息并完成该次原生请求确认；成功结果应显示完成并归档。
+4. 需要项目调查时，选定可信项目及只读/外发范围，再打开协作配置。普通双 Agent 独立调查不要求开启动态分工。
 
-开启会话本身不发请求，也不代表连接验证成功。普通聊天按“发送”即授权该次完整请求，不再弹出第二次确认；该意图绑定实际端点、模型、会话、来源版本和序列化正文，只能使用一次。调查的模型轮转和额外文件外发仍保留请求审阅。改稿、切换会话/项目、撤销或停止会使旧发送意图与审批失效。文件、终端和 UE 操作仍需要独立、限定范围的审批与沙盒检查；没有自动重试或备用模型切换。
+每次发送和工具结果外发均保留确认。模型输出不能扩大批准范围或授予文件、终端、UE 写入权限。
 
-## 使用流程
+### DeepSeek
 
-1. 打开设置 → 模型服务 → 添加服务商，选择已接入的服务商类型，核对端点与模型后保存。
-2. 在服务凭证中输入 API 密钥并点击保存；保存后显示固定遮罩。以后选择该服务商的模型即可发送普通对话，无需反复输入或逐次勾选授权。保存、选择模型和开启会话本身不发送模型请求。
-3. 在工作台输入问题。简单文本对话不要求先注册 UE 项目；按“发送”开始该次请求，无需再次确认。
-4. 在同一对话继续追问；“新对话”开始独立上下文。附件需重新选择，工具结果分享需另行选择和确认。
+1. 在设置 → 模型服务中配置受支持的 DeepSeek 服务与模型。
+2. 用户主动保存的 API 密钥由当前 Windows 用户的凭据管理器保护；界面只显示固定遮罩。
+3. 普通聊天按“发送”授权该次完整请求，无需再次确认。调查的额外外发和工具操作仍保留独立审阅。
+4. 新对话使用新的请求意图；历史中的工具结果不会自动上传。
 
-Windows 原生桌面将非敏感服务商/模型配置、语言、主题及项目偏好保存到本地 SQLite。端点或模型配置变化会使旧验证失效；已保存密钥另由系统凭据管理器保护，旧临时句柄、审批与发送意图不会恢复。历史仅显式选择已完成纯文本，新的发送仍创建新原生会话/请求；工具结果不会自动上传。
+停止、切换项目/模型或退出会撤销临时会话，不删除用户已保存的密钥。密钥不写入 SQLite、日志或 Git。产品没有固定累计费用门槛，费用以服务商账单为准；Codex 内部模型调用、Token 和费用未知时不编造估算。见[凭证存储契约](docs/provider-credential-storage.md)。
 
-## 从源码开发与构建
+## 开发与构建
 
-仓库使用 pnpm workspace。根据仓库 engines，需要 Node.js 20+、pnpm 9+。原生桌面还需要 Rust 工具链；Windows 构建需要 C++ 构建工具和 WebView2 运行时。
+需要 Node.js 20+、pnpm 9+。当前原生验证平台是 Windows，另需 Rust、C++ 构建工具及 WebView2。浏览器预览不具备原生 IPC、Codex 和系统凭据能力。
 
 ```sh
 pnpm install --frozen-lockfile
-
-# 浏览器前端预览；没有原生窗口/文件系统能力
 pnpm --filter @uagent/desktop web:dev
-
-# Tauri 原生桌面开发
 pnpm --filter @uagent/desktop tauri:dev
-
-# 仅构建前端
 pnpm --filter @uagent/desktop web:build
-
-# 构建未打包的调试版桌面程序
 pnpm --filter @uagent/desktop tauri:build --debug --no-bundle
 ```
 
-以 Tauri 构建日志输出的位置为准，`CARGO_TARGET_DIR` 会影响目标目录。默认配置使用本地相对 `frontendDist`。本轮没有发布公共 Release、签名安装包或公共 exe 下载；本机交付路径不能作为其他人的下载地址。
+构建位置以日志为准，`CARGO_TARGET_DIR` 会影响原生产物目录。默认 `frontendDist` 是 `apps/desktop/web/dist`。普通分发不要启用 `VITE_UAGENT_ENABLE_FIXTURES=1` 或 `VITE_UAGENT_ACCEPTANCE_UI=1`。
 
-类型与本次对话相关的局部检查：
+此次同步的是源码与文档，未发布 GitHub Release、公共 EXE、签名或安装包。本地 r14 开发构建和历史产物不等于公开下载版本。
 
-```sh
-pnpm --filter @uagent/desktop typecheck
-pnpm --dir apps/desktop exec vitest run web/src/runtime/conversation-flow.test.tsx web/src/runtime/provider-stream-ui.test.tsx web/src/runtime/outbound-review-ui.test.tsx web/src/runtime/workspace-persistence-ui.test.tsx web/src/i18n/core.test.ts web/src/shell/TitleBar.drag.test.tsx --pool=forks --maxWorkers=1 --minWorkers=1
-```
+## 验证与未完成项
 
-普通构建默认关闭 fixture 与 acceptance 入口；不要将 `VITE_UAGENT_ENABLE_FIXTURES=1` 或 `VITE_UAGENT_ACCEPTANCE_UI=1` 用于对外分发。标题栏的部分脚本集成测试会使用本机 Cargo 缓存中与锁文件一致的 Tauri 源码；无缓存时该组会明确跳过，不会假报已验证原生拖动。
+既有 r14 真实验收使用官方 app-server `0.166.0` / `gpt-6.1-sol`：
 
-## 已验证与边界
+- 普通会话返回 `37×43=1591` 和 `UAGENT-R14-OK`，完成事件确认，正文归档。
+- 双 Agent 独立调查限定 `Source`、`Config` 只读。成员分别完成 3 次、2 次读取，主 Agent 追加第 6 次读取后完成汇总；共 3 次模型请求，父任务与成员均成功，官方线程回到 idle。
+- 原修复记录有 84 个前端/runtime 定向测试、3 个原生定向测试通过；前端类型检查/Vite 构建及 r14 原生构建已有记录。
+- 本次发布准备另跑 4 个相关测试文件，共 31 项通过，集成 TypeScript 检查通过。没有运行全仓回归或新增真实模型请求。
 
-用户报告组合版的 DeepSeek 真实验收已通过；该结论来自用户操作。新增的凭证持久化与自动开户使用合成密钥、合成传输和隔离数据验证；开发过程不代用户调用真实 API。
-
-尚未完成或不能据此宣称通过的项目：
-
-- 当前源码的真实 API 多轮质量、鉴权异常和计费回归。
-- 真实鼠标拖窗与双击验收；已修正拖动覆盖并通过锁定 Tauri 脚本测试，但当前自动化未提供原生鼠标工具。
-- 当前源码的真实 UE 项目生命周期、写入与回滚整体验收，以及 Windows Snap。
-- Responses 的真实 API / 外部 TLS 验收与生产调查、Anthropic 的生产传输，以及生产恢复接线、跨进程资源互斥和断电恢复。
-- 发布签名、安装包和全产品验收。
-
-模块边界与行为约定见 [桌面 Provider 与对话说明](docs/desktop-provider-and-conversation.md)，开发与构建见 [开发指南](docs/development.md)。
+未完成的验收包括动态分工真实闭环、混合成员组合、全部 UE 写入/回滚、鉴权和计费异常全覆盖、跨进程/断电恢复，以及签名安装和全产品验收。详见 [r14 验收记录](docs/releases/r14.md)。

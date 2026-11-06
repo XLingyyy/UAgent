@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "boundary": "B",
+  "revision": 2,
+  "status": "isolated static source only; production dispatch closed",
+  "createdAtUtc": "2026-11-01T06:25:59.4408715Z",
+  "updatedAtUtc": "2026-11-01T06:36:18.9284655Z",
+  "workspace": "E:/Codex/UAgent/2026-10-29/worktrees/credential-vault",
+  "files": [
+    {
+      "path": "apps/desktop/src-tauri/src/native_project_memory_sources.rs",
+      "bytes": 7048,
+      "sha256": "8a9d91b91cc41860d3d5273898e8c6e1b77fea75a7b6b6ca1286726251b75516",
+      "testSourceCases": 0,
+      "trailingWhitespaceLines": 0
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/native_project_memory_dispatch.rs",
+      "bytes": 15044,
+      "sha256": "0c3512a6d0ce6b7d2fefe949297290c010dcaedfb62d1a674a5e644fa98baffa",
+      "testSourceCases": 0,
+      "trailingWhitespaceLines": 0
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/native_project_memory_sources_tests.rs",
+      "bytes": 5921,
+      "sha256": "1b254c17ef45048b10d94c2d42bca5ab1c88f6a607ea38141c9eae899025a772",
+      "testSourceCases": 5,
+      "trailingWhitespaceLines": 0
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/native_project_memory_dispatch_tests.rs",
+      "bytes": 11144,
+      "sha256": "39b18b6d58c5d3f48894c39a30919cb1137f8b06411103e6b597f99fe7516073",
+      "testSourceCases": 12,
+      "trailingWhitespaceLines": 0
+    },
+    {
+      "path": "docs/project-memory-dispatch-B-interface-20261101.md",
+      "bytes": 7786,
+      "sha256": "85f9eb5303d19363b36e3e5971a7d7574cbc8d7cf5727b11423e2074cce3819d",
+      "testSourceCases": 0,
+      "trailingWhitespaceLines": 0
+    },
+    {
+      "path": "docs/project-memory-dispatch-B-delivery-20261101.md",
+      "bytes": 8947,
+      "sha256": "1a07eaff4ea8f4580081b0705e8ada0e83c33ecb9f79e53b8a9a7719b53e0d87",
+      "testSourceCases": 0,
+      "trailingWhitespaceLines": 0
+    },
+    {
+      "path": "docs/project-memory-dispatch-B-metadata-central-20261101.patch",
+      "bytes": 3980,
+      "sha256": "52a45c901b0c837982597483b5356d574f077e505c1666188c4576ba103df2d2",
+      "testSourceCases": 0,
+      "trailingWhitespaceLines": 0
+    }
+  ],
+  "testSourceCases": 17,
+  "freshnessCorrection": {
+    "finding": "AB static review r1 P2: UI file_preview freshness=version was rejected",
+    "supported": "absent freshness or exact original version alias, verified by the same held file handle at capture and reobserve",
+    "originalFieldsPreserved": true,
+    "executed": false
+  },
+  "executionScope": "B worker actions only; central integration is managed independently",
+  "execution": {
+    "buildRun": false,
+    "testsRun": false,
+    "applicationRun": false,
+    "rustfmtRun": false,
+    "metadataPatchApplied": false,
+    "modulesRegistered": false,
+    "liveAuthorityImplemented": false,
+    "productionGateOpened": false,
+    "shellManifestWriteDenied": true,
+    "manifestSavedWithDedicatedApplyPatch": true
+  },
+  "requiredCentralFiles": [
+    "apps/desktop/src-tauri/src/native_responses_commands.rs",
+    "apps/desktop/src-tauri/src/native_provider_transport.rs",
+    "apps/desktop/src-tauri/src/managed_run_store.rs",
+    "apps/desktop/src-tauri/src/trusted_root_handle/windows.rs",
+    "apps/desktop/src-tauri/src/project_source_versions.rs"
+  ],
+  "limitations": [
+    "NativeMemoryReadShareGrant is central-owned and intentionally not fabricated in B",
+    "same-held-handle metadata helper and PreparedRequest body Arc getter are proposed only",
+    "A VerifiedMemoryBatch/transaction, project-root barrier, private transport admission and cleanup-complete permit delivery remain central integration work",
+    "17 test source cases are uncompiled and unexecuted",
+    "no integrated EXE acceptance is claimed"
+  ]
+}

@@ -1,0 +1,198 @@
+diff --git a/apps/desktop/src-tauri/src/local_run_store/sqlite.rs b/apps/desktop/src-tauri/src/local_run_store/sqlite.rs
+--- a/apps/desktop/src-tauri/src/local_run_store/sqlite.rs
++++ b/apps/desktop/src-tauri/src/local_run_store/sqlite.rs
+@@ -6,6 +6,8 @@
+ mod runtime_host_scan;
+ #[path = "sqlite_session_catalog.rs"]
+ mod session_catalog_budget;
++#[path = "sqlite_project_memory_budget.rs"]
++mod project_memory_budget;
+ 
+ use super::{Result, StoreError};
+ use std::{
+diff --git a/apps/desktop/src-tauri/src/local_run_store/sqlite_history_search.rs b/apps/desktop/src-tauri/src/local_run_store/sqlite_history_search.rs
+--- a/apps/desktop/src-tauri/src/local_run_store/sqlite_history_search.rs
++++ b/apps/desktop/src-tauri/src/local_run_store/sqlite_history_search.rs
+@@ -65,16 +65,18 @@
+     state: Box<ProgressBudget>,
+     previous_length: c_int,
+     previous_busy_ms: c_int,
+-}
+-impl<'a> SearchConnectionBudget<'a> {
+-    fn install(db: &'a Db, instructions: u64) -> Result<Self> {
+-        // This connection belongs to this command's worker. It has no other progress handler.
+-        let busy = db.query("PRAGMA busy_timeout", &[])?;
+-        let previous_busy_ms = c_int::try_from(busy[0][0].int()?)
+-            .map_err(|_| StoreError::corrupt())?;
+-        let previous_length = unsafe { sqlite3_limit(db.0, SQLITE_LIMIT_LENGTH, MAX_SQL_VALUE_BYTES) };
+-        let guard = Self {
+-            db, previous_length, previous_busy_ms,
++    _sql_budget_lease: super::project_memory_budget::ScopedSqlBudgetLease,
++}
++impl<'a> SearchConnectionBudget<'a> {
++    fn install(db: &'a Db, instructions: u64) -> Result<Self> {
++        let sql_budget_lease = db.claim_scoped_sql_budget()?;
++        // This connection belongs to this command's worker. It has no other progress handler.
++        let busy = db.query("PRAGMA busy_timeout", &[])?;
++        let previous_busy_ms = c_int::try_from(busy[0][0].int()?)
++            .map_err(|_| StoreError::corrupt())?;
++        let previous_length = unsafe { sqlite3_limit(db.0, SQLITE_LIMIT_LENGTH, MAX_SQL_VALUE_BYTES) };
++        let guard = Self {
++            db, previous_length, previous_busy_ms, _sql_budget_lease: sql_budget_lease,
+             state: Box::new(ProgressBudget { started: Instant::now(), remaining: Cell::new(instructions), stopped: Cell::new(false) }),
+         };
+         db.check(unsafe { sqlite3_busy_timeout(db.0, 50) })?;
+diff --git a/apps/desktop/src-tauri/src/local_run_store/sqlite_runtime_host_scan.rs b/apps/desktop/src-tauri/src/local_run_store/sqlite_runtime_host_scan.rs
+--- a/apps/desktop/src-tauri/src/local_run_store/sqlite_runtime_host_scan.rs
++++ b/apps/desktop/src-tauri/src/local_run_store/sqlite_runtime_host_scan.rs
+@@ -57,19 +57,21 @@
+     state: Box<ProgressBudget<'cancel>>,
+     previous_busy_ms: c_int,
+     previous_length: c_int,
+-}
+-impl<'db, 'cancel> ConnectionBudget<'db, 'cancel> {
+-    fn install(db: &'db Db, cancelled: &'cancel AtomicBool, max_elapsed: Duration, instructions: u64) -> Result<Self> {
+-        let state = Box::new(ProgressBudget { started: Instant::now(), max_elapsed, cancelled,
+-            remaining: Cell::new(instructions), stopped: Cell::new(None) });
+-        state.check()?;
+-        // RunStore owns this connection on one worker. Scoped search/scan handlers never
+-        // overlap; the normal connection has no persistent progress or custom busy handler.
+-        let busy = db.query("PRAGMA busy_timeout", &[])?;
+-        let previous_busy_ms = c_int::try_from(busy[0][0].int()?).map_err(|_| StoreError::corrupt())?;
+-        if previous_busy_ms < 0 { return Err(StoreError::corrupt()); }
+-        let previous_length = unsafe { sqlite3_limit(db.0, SQLITE_LIMIT_LENGTH, -1) };
+-        let guard = Self { db, state, previous_busy_ms, previous_length };
++    _sql_budget_lease: super::project_memory_budget::ScopedSqlBudgetLease,
++}
++impl<'db, 'cancel> ConnectionBudget<'db, 'cancel> {
++    fn install(db: &'db Db, cancelled: &'cancel AtomicBool, max_elapsed: Duration, instructions: u64) -> Result<Self> {
++        let sql_budget_lease = db.claim_scoped_sql_budget()?;
++        let state = Box::new(ProgressBudget { started: Instant::now(), max_elapsed, cancelled,
++            remaining: Cell::new(instructions), stopped: Cell::new(None) });
++        state.check()?;
++        // RunStore owns this connection on one worker. Scoped search/scan handlers never
++        // overlap; the normal connection has no persistent progress or custom busy handler.
++        let busy = db.query("PRAGMA busy_timeout", &[])?;
++        let previous_busy_ms = c_int::try_from(busy[0][0].int()?).map_err(|_| StoreError::corrupt())?;
++        if previous_busy_ms < 0 { return Err(StoreError::corrupt()); }
++        let previous_length = unsafe { sqlite3_limit(db.0, SQLITE_LIMIT_LENGTH, -1) };
++        let guard = Self { db, state, previous_busy_ms, previous_length, _sql_budget_lease: sql_budget_lease };
+         // Never relax a stricter pre-existing limit.
+         unsafe { sqlite3_limit(db.0, SQLITE_LIMIT_LENGTH, previous_length.min(MAX_SQL_VALUE_BYTES)); }
+         db.check(unsafe { sqlite3_busy_timeout(db.0, previous_busy_ms.min(MAX_BUSY_MS)) })?;
+diff --git a/apps/desktop/src-tauri/src/local_run_store/sqlite_session_catalog.rs b/apps/desktop/src-tauri/src/local_run_store/sqlite_session_catalog.rs
+--- a/apps/desktop/src-tauri/src/local_run_store/sqlite_session_catalog.rs
++++ b/apps/desktop/src-tauri/src/local_run_store/sqlite_session_catalog.rs
+@@ -34,20 +34,21 @@
+     if remaining == 0 { state.stopped.set(Some("catalogBudget")); return 1; }
+     0
+ }
+-struct Guard<'a> { db: &'a Db, state: Box<State>, previous_busy: c_int, previous_length: c_int, attached: Cell<bool> }
+-impl<'a> Guard<'a> {
+-    fn install(db: &'a Db, control: &CatalogControl) -> Result<Self> {
+-        // A central owner must ensure no other feature's handler is active on this connection.
+-        // Reject nested calls here instead of silently replacing this feature's handler.
+-        let key = db.0 as usize;
+-        if ACTIVE.with(|active| active.borrow().contains_key(&key)) { return Err(StoreError::new("busy", "session catalog connection already has an active budget")); }
+-        let busy = db.query("PRAGMA busy_timeout", &[])?;
+-        let previous_busy = c_int::try_from(busy[0][0].int()?).map_err(|_| StoreError::corrupt())?;
+-        let state = Box::new(State { control: control.clone(), remaining: Cell::new(control.max_vm_instructions), stopped: Cell::new(None) });
+-        state.check()?;
+-        let previous_length = unsafe { sqlite3_limit(db.0, SQLITE_LIMIT_LENGTH, -1) };
+-        unsafe { sqlite3_limit(db.0, SQLITE_LIMIT_LENGTH, previous_length.min(VALUE_LIMIT)); }
+-        let guard = Self { db, state, previous_busy, previous_length, attached: Cell::new(false) };
++struct Guard<'a> { db: &'a Db, state: Box<State>, previous_busy: c_int, previous_length: c_int, attached: Cell<bool>, _sql_budget_lease: super::project_memory_budget::ScopedSqlBudgetLease }
++impl<'a> Guard<'a> {
++    fn install(db: &'a Db, control: &CatalogControl) -> Result<Self> {
++        let sql_budget_lease = db.claim_scoped_sql_budget()?;
++        // A central owner must ensure no other feature's handler is active on this connection.
++        // Reject nested calls here instead of silently replacing this feature's handler.
++        let key = db.0 as usize;
++        if ACTIVE.with(|active| active.borrow().contains_key(&key)) { return Err(StoreError::new("busy", "session catalog connection already has an active budget")); }
++        let busy = db.query("PRAGMA busy_timeout", &[])?;
++        let previous_busy = c_int::try_from(busy[0][0].int()?).map_err(|_| StoreError::corrupt())?;
++        let state = Box::new(State { control: control.clone(), remaining: Cell::new(control.max_vm_instructions), stopped: Cell::new(None) });
++        state.check()?;
++        let previous_length = unsafe { sqlite3_limit(db.0, SQLITE_LIMIT_LENGTH, -1) };
++        unsafe { sqlite3_limit(db.0, SQLITE_LIMIT_LENGTH, previous_length.min(VALUE_LIMIT)); }
++        let guard = Self { db, state, previous_busy, previous_length, attached: Cell::new(false), _sql_budget_lease: sql_budget_lease };
+         ACTIVE.with(|active| { active.borrow_mut().insert(key, control.clone()); });
+         db.check(unsafe { sqlite3_busy_timeout(db.0, BUSY_MS) })?;
+         unsafe { sqlite3_progress_handler(db.0, INTERVAL, Some(progress), (&*guard.state as *const State).cast_mut().cast()); }
+diff --git a/apps/desktop/src-tauri/src/lib.rs b/apps/desktop/src-tauri/src/lib.rs
+--- a/apps/desktop/src-tauri/src/lib.rs
++++ b/apps/desktop/src-tauri/src/lib.rs
+@@ -3709,25 +3709,25 @@
+ #[tauri::command]
+ async fn list_project_memories(store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: project_memory_commands::MemoryListInput)
+     -> Result<local_run_store::project_memory::MemoryPage, local_run_store::StoreError> {
+-    store.with_store(false, move |store, _, _| project_memory_commands::list_project_memories(store, input)).await
+-}
+-#[cfg(windows)]
+-#[tauri::command]
+-async fn get_project_memory(store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: project_memory_commands::MemoryGetInput)
+-    -> Result<local_run_store::project_memory::ProjectMemory, local_run_store::StoreError> {
+-    store.with_store(false, move |store, _, _| project_memory_commands::get_project_memory(store, input)).await
+-}
+-#[cfg(windows)]
+-#[tauri::command]
+-async fn create_project_memory(store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: project_memory_commands::MemoryCreateInput)
+-    -> Result<local_run_store::project_memory::ProjectMemory, local_run_store::StoreError> {
+-    store.with_store(true, move |store, _, _| project_memory_commands::create_project_memory(store, input)).await
+-}
+-#[cfg(windows)]
+-#[tauri::command]
+-async fn update_project_memory(store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: project_memory_commands::MemoryUpdateInput)
+-    -> Result<local_run_store::project_memory::ProjectMemory, local_run_store::StoreError> {
+-    store.with_store(true, move |store, _, _| project_memory_commands::update_project_memory(store, input)).await
++    store.with_store(false, move |store, cancelled, deadline| project_memory_commands::list_project_memories(store, input, cancelled, deadline)).await
++}
++#[cfg(windows)]
++#[tauri::command]
++async fn get_project_memory(store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: project_memory_commands::MemoryGetInput)
++    -> Result<local_run_store::project_memory::ProjectMemory, local_run_store::StoreError> {
++    store.with_store(false, move |store, cancelled, deadline| project_memory_commands::get_project_memory(store, input, cancelled, deadline)).await
++}
++#[cfg(windows)]
++#[tauri::command]
++async fn create_project_memory(store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: project_memory_commands::MemoryCreateInput)
++    -> Result<local_run_store::project_memory::ProjectMemory, local_run_store::StoreError> {
++    store.with_store(true, move |store, cancelled, deadline| project_memory_commands::create_project_memory(store, input, cancelled, deadline)).await
++}
++#[cfg(windows)]
++#[tauri::command]
++async fn update_project_memory(store: tauri::State<'_, managed_run_store::ManagedRunStoreState>, input: project_memory_commands::MemoryUpdateInput)
++    -> Result<local_run_store::project_memory::ProjectMemory, local_run_store::StoreError> {
++    store.with_store(true, move |store, cancelled, deadline| project_memory_commands::update_project_memory(store, input, cancelled, deadline)).await
+ }
+ 
+ #[cfg(windows)]
+diff --git a/packages/runtime/src/run/run-coordinator.ts b/packages/runtime/src/run/run-coordinator.ts
+--- a/packages/runtime/src/run/run-coordinator.ts
++++ b/packages/runtime/src/run/run-coordinator.ts
+@@ -383,13 +383,18 @@
+           goalMessageIndex: this.goalMessageIndex,
+         });
+         this.contextPlan = context.plan;
+-        const selectedSources = context.plan.segments.flatMap((segment) => segment.sources);
+-        await this.validateContextSources(selectedSources);
+-        let memory: Awaited<ReturnType<ProjectMemoryContextPort["prepare"]>> | undefined;
+-        if (this.options.projectMemory) {
+-          try {
+-            memory = await this.options.projectMemory.prepare({ run, messages: context.messages,
+-              signal: this.controller.signal, isCurrent: () => this.options.lease.isCurrent() });
++        let selectedSources = context.plan.segments.flatMap((segment) => segment.sources);
++        await this.validateContextSources(selectedSources);
++        let memory: Awaited<ReturnType<ProjectMemoryContextPort["prepare"]>> | undefined;
++        if (this.options.projectMemory) {
++          try {
++            memory = await this.options.projectMemory.prepare({ run, messages: context.messages,
++              baseContext: { records: this.messages, goalMessageIndex: this.goalMessageIndex },
++              signal: this.controller.signal, isCurrent: () => this.options.lease.isCurrent() });
++            this.check(false);
++            this.contextPlan = memory.contextPlan ?? context.plan;
++            selectedSources = this.contextPlan.segments.flatMap((segment) => segment.sources);
++            await this.validateContextSources(selectedSources);
+             this.check(false);
+             this.options.onMemorySelection?.(this.clone(memory.plan), this.clone(run));
+             // The TS port rechecks records sequentially; it cannot seal a native batch-to-send fence.

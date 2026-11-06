@@ -29,6 +29,29 @@ import { fileURLToPath } from "node:url";
 const PRODUCTION_SOURCE_BOUNDARY_VERSION = "uagent.mvp15d.production-source-boundary.v3";
 
 const EXACT_STANDALONE_TEST_RUNNERS = Object.freeze([
+  // Fixed offline validation launchers; unlisted tools still fail classification.
+  "scripts/cached-full-native-r2-resource-guard-20261101.py",
+  "scripts/cached-full-native-resource-guard-20261101.py",
+  "scripts/focused-native-fault-resource-guard-20261101.py",
+  "scripts/focused-native-fault-runtime-resource-guard-20261101.py",
+  "scripts/invoke-integrated-build-once.py",
+  "scripts/managed-store-interface-check-resource-guard-20261101.py",
+  "scripts/managed-store-interface-resource-guard-20261101.py",
+  "scripts/native-store-smoke-resource-guard-20261101.py",
+  "scripts/native-store-smoke-runtime-resource-guard-20261101.py",
+  "scripts/selected-memory-core-types-resource-guard-20261101.py",
+  "scripts/selected-memory-frontend-tests-resource-guard-20261102.py",
+  "scripts/selected-memory-host-tests-resource-guard-20261102-r2.py",
+  "scripts/selected-memory-host-tests-resource-guard-20261102-r3.py",
+  "scripts/selected-memory-host-tests-resource-guard-20261102.py",
+  "scripts/selected-memory-live-ipc-types-resource-guard-20261102-r2.py",
+  "scripts/selected-memory-live-ipc-types-resource-guard-20261102.py",
+  "scripts/selected-memory-native-creator-types-resource-guard-20261101.py",
+  "scripts/selected-memory-physical-types-resource-guard-20261101.py",
+  "scripts/selected-memory-terminal-types-resource-guard-20261102-r2.py",
+  "scripts/selected-memory-terminal-types-resource-guard-20261102.py",
+  "scripts/test-resource-guard.py",
+  "scripts/test-resource-guard-fixtures.py",
   "scripts/test-effect-reconciliation-native.ps1",
   "scripts/test-trusted-root-native.ps1",
   "scripts/test-ue-build-native.ps1",
@@ -51,6 +74,7 @@ const EXACT_TEST_FIXTURE_DATA = Object.freeze([
   "packages/runtime/src/__fixtures__/ue-pickup-template-v2-discovery.json",
 ]);
 const EXACT_PRODUCTION_TOOLING = Object.freeze([
+  "scripts/integrated-build-binding.py",
   "scripts/export-ue-scene-batch-schemas.mjs",
 ]);
 
