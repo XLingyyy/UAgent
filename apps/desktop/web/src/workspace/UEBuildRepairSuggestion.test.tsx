@@ -1,5 +1,5 @@
 import {UIProvider} from "../stores/ui-store";
-import {createOutboundConsentGate} from "@uagent/runtime";
+import {createOutboundConsentGate,createProviderRuntimeError} from "@uagent/runtime";
 import {OutboundRequestReview} from "../settings/pages/OutboundRequestReview";
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
 import {cleanup,fireEvent,render,screen,act} from "@testing-library/react";
@@ -17,6 +17,16 @@ beforeEach(()=>{
 afterEach(()=>{cleanup();vi.resetAllMocks();});
 it("receiving a single-file suggestion requires a separate explicit adoption",async()=>{const proposal=[{path:file.path,after:"new"}];vi.mocked(requestRepairSuggestion).mockResolvedValue(proposal);const use=vi.fn();render(panel(use));prices();fireEvent.click(screen.getByText("Review outbound request for suggestion"));await screen.findByText("Adopt suggestions for diff review");expect(use).not.toHaveBeenCalled();fireEvent.click(screen.getByText("Adopt suggestions for diff review"));expect(use).toHaveBeenCalledTimes(1);expect(use).toHaveBeenCalledWith(proposal);});
 it("explains a build failure without repair diagnostics and does not render raw failures",async()=>{const use=vi.fn();vi.mocked(requestRepairSuggestion).mockRejectedValueOnce(Error("repair_no_parsed_errors"));render(panel(use));prices();fireEvent.click(screen.getByText("Review outbound request for suggestion"));expect((await screen.findByRole("alert")).textContent).toContain("No model request was sent");vi.mocked(requestRepairSuggestion).mockRejectedValueOnce(Error("private untrusted error details"));fireEvent.click(screen.getByText("Review outbound request for suggestion"));await screen.findByText(/No valid suggestion/);expect(screen.queryByText(/private untrusted/)).toBeNull();expect(use).not.toHaveBeenCalled();});
+it.each(["auth_missing","rate_limited","timeout","network_error","malformed_response","cancelled","provider_unavailable"] as const)("classifies a provider %s failure without exposing its message or retrying",async code=>{
+ const use=vi.fn();vi.mocked(requestRepairSuggestion).mockRejectedValue(createProviderRuntimeError("deepseek",code,"PRIVATE_RESPONSE_DO_NOT_RENDER","PRIVATE_CAUSE_DO_NOT_RENDER"));render(panel(use));prices();fireEvent.click(screen.getByText("Review outbound request for suggestion"));
+ const alert=await screen.findByRole("alert");expect(alert.textContent).toContain(`[${code}]`);expect(alert.textContent).not.toContain("PRIVATE_");expect(requestRepairSuggestion).toHaveBeenCalledTimes(1);expect(use).not.toHaveBeenCalled();expect(screen.queryByText("Adopt suggestions for diff review")).toBeNull();
+});
+it.each(["repair_suggestion_truncated","repair_suggestion_invalid_json","repair_suggestion_rejected","repair_suggestion_invalidated"])("classifies a local %s failure without adoption",async code=>{
+ const use=vi.fn();vi.mocked(requestRepairSuggestion).mockRejectedValue(Error(code));render(panel(use));prices();fireEvent.click(screen.getByText("Review outbound request for suggestion"));expect((await screen.findByRole("alert")).textContent).toContain(`[${code}]`);expect(requestRepairSuggestion).toHaveBeenCalledTimes(1);expect(use).not.toHaveBeenCalled();
+});
+it("keeps an unknown provider code and raw syntax failure behind the existing generic message",async()=>{
+ const use=vi.fn();vi.mocked(requestRepairSuggestion).mockRejectedValueOnce({name:"ProviderRuntimeError",code:"PRIVATE_UNKNOWN_CODE",message:"PRIVATE_RESPONSE"}).mockRejectedValueOnce(new SyntaxError("PRIVATE_RESPONSE"));render(panel(use));prices();fireEvent.click(screen.getByText("Review outbound request for suggestion"));expect((await screen.findByRole("alert")).textContent).toContain("No valid suggestion: request rejected");expect(screen.queryByText(/PRIVATE_/)).toBeNull();fireEvent.click(screen.getByText("Review outbound request for suggestion"));expect((await screen.findByRole("alert")).textContent).toContain("No valid suggestion: request rejected");expect(screen.queryByText(/PRIVATE_/)).toBeNull();expect(use).not.toHaveBeenCalled();
+});
 it("shows every selected file and adopts a multi-file proposal once",async()=>{
  const selected=[file,{path:"Source/Test.Build.cs",content:"old rules"}],proposal=[{path:file.path,after:"new"},{path:selected[1].path,after:"new rules"}];
  vi.mocked(requestRepairSuggestion).mockResolvedValue(proposal);const use=vi.fn();render(panel(use,false,selected));
